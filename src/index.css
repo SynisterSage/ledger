@@ -1,0 +1,42 @@
+@import "tailwindcss";
+
+/* Glassmorphism Base Styles */
+* {
+  @apply transition-colors duration-200;
+}
+
+html {
+  @apply bg-linear-to-br from-gray-50 via-white to-gray-50 text-black;
+}
+
+html.dark {
+  @apply bg-gray-900 text-white;
+}
+
+/* Glass Effect Utilities */
+.glass {
+  @apply bg-white/40 backdrop-blur-md border border-white/30;
+}
+
+.glass-dark {
+  @apply bg-black/20 backdrop-blur-md border border-white/10;
+}
+
+/* Smooth scrollbar */
+::-webkit-scrollbar {
+  @apply w-2 h-2;
+}
+
+::-webkit-scrollbar-track {
+  @apply bg-transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-gray-300 dark:bg-gray-600 rounded-full hover:bg-gray-400 dark:hover:bg-gray-500;
+}
+
+/* Smooth focus states */
+button:focus-visible,
+input:focus-visible {
+  @apply outline-none ring-2 ring-blue-500/50 ring-offset-2 ring-offset-white dark:ring-offset-gray-900;
+}
