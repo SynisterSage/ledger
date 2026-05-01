@@ -5,9 +5,13 @@
   transition: color 150ms;
 }
 
-html {
-  background-color: white;
+html,
+body {
   color: rgb(17 24 39);
+}
+
+#root {
+  background-color: transparent;
 }
 
 /* Focus states */

@@ -5,9 +5,15 @@ import { useSidebar } from '../../context/SidebarContext'
 export const MinimizedSidebar = () => {
   const { signOut } = useAuthContext()
   const { toggleExpand } = useSidebar()
+  const iconBase =
+    'w-10 h-10 rounded-lg border transition-all duration-150 flex items-center justify-center active:scale-95'
+  const neutralIcon = `${iconBase} bg-white/30 border-white/30 hover:bg-white/55 hover:border-white/50 text-gray-700`
+  const accentIcon = neutralIcon
+  const actionIcon = `${iconBase} bg-gray-900/60 border-gray-900/10 hover:bg-gray-900/80 hover:border-gray-900/20 text-white`
+  const dangerIcon = `${iconBase} bg-red-400/30 border-red-400/20 hover:bg-red-400/45 hover:border-red-400/30 text-red-700`
 
   return (
-    <div className="w-16 h-screen bg-white border-r border-gray-200 flex flex-col items-center justify-between py-6 shadow-sm">
+    <div className="w-16 h-screen bg-white border-r border-gray-200 flex flex-col items-center justify-between py-6">
       {/* Logo */}
       <div className="text-2xl font-bold text-gray-900">L</div>
 
@@ -16,21 +22,21 @@ export const MinimizedSidebar = () => {
         <button
           title="Dashboard"
           aria-label="Open dashboard"
-          className="w-10 h-10 rounded-lg bg-gray-100 hover:bg-gray-200 transition flex items-center justify-center text-gray-600"
+          className={neutralIcon}
         >
           <BarChart3 size={18} />
         </button>
         <button
           title="Tasks"
           aria-label="Open tasks"
-          className="w-10 h-10 rounded-lg bg-gray-100 hover:bg-gray-200 transition flex items-center justify-center text-gray-600"
+          className={neutralIcon}
         >
           <CheckCircle2 size={18} />
         </button>
         <button
           title="Time Tracking"
           aria-label="Open time tracking"
-          className="w-10 h-10 rounded-lg bg-gray-100 hover:bg-gray-200 transition flex items-center justify-center text-gray-600"
+          className={neutralIcon}
         >
           <Clock3 size={18} />
         </button>
@@ -38,7 +44,7 @@ export const MinimizedSidebar = () => {
           title="Calendar"
           aria-label="Open calendar"
           onClick={() => window.desktopWindow?.toggleModule('calendar')}
-          className="w-10 h-10 rounded-lg bg-blue-50 hover:bg-blue-100 transition flex items-center justify-center text-blue-600 ring-1 ring-blue-200"
+          className={accentIcon}
         >
           <CalendarDays size={18} />
         </button>
@@ -50,7 +56,7 @@ export const MinimizedSidebar = () => {
         <button
           onClick={toggleExpand}
           title="Expand"
-          className="w-10 h-10 rounded-lg bg-gray-900 hover:bg-gray-800 transition flex items-center justify-center text-white"
+          className={actionIcon}
         >
           <ChevronRight size={20} />
         </button>
@@ -59,7 +65,7 @@ export const MinimizedSidebar = () => {
         <button
           onClick={signOut}
           title="Sign Out"
-          className="w-10 h-10 rounded-lg bg-red-50 hover:bg-red-100 transition flex items-center justify-center text-red-600"
+          className={dangerIcon}
         >
           <LogOut size={18} />
         </button>

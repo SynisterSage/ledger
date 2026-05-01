@@ -1,4 +1,4 @@
-import { CalendarDays, ChevronLeft, ChevronRight, Plus, X, BellRing, ClipboardPaste, CalendarPlus } from 'lucide-react'
+import { CalendarDays, ChevronLeft, ChevronRight, ChevronDown, Plus, X, BellRing, ClipboardPaste, CalendarPlus, Trash2 } from 'lucide-react'
 import { Fragment, type CSSProperties, useEffect, useMemo, useRef, useState } from 'react'
 import { useAuthContext } from '../../context/AuthContext'
 import { supabase } from '../../services/supabase'
@@ -19,6 +19,7 @@ type EventRow = {
   calendar_id: string
   color?: string
   status?: 'planned' | 'done' | 'missed' | 'cancelled'
+  recurrence_rule?: 'none' | 'daily' | 'weekly' | 'weekdays'
 }
 
 type ReminderRow = {
@@ -42,12 +43,21 @@ type CalendarContextMenuState = {
   hour: number
 }
 
+type ListContextMenuState = {
+  x: number
+  y: number
+  kind: 'event' | 'reminder'
+  id: string
+}
+
 type CalendarViewMode = 'day' | 'week' | 'month'
 
 const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 const hours = Array.from({ length: 12 }, (_, i) => `${i + 8}:00`)
 const NOTIFICATION_VISIBLE_MS = 4000
 const NOTIFICATION_FADE_MS = 350
+const SIDEBAR_MIN_WIDTH = 250
+const SIDEBAR_MAX_WIDTH = 460
 
 const startOfWeek = (date: Date) => {
   const d = new Date(date)
@@ -97,7 +107,22 @@ const addMonths = (date: Date, monthsToAdd: number) => {
   return d
 }
 
-const formatDateKey = (date: Date) => date.toISOString().slice(0, 10)
+const formatDateKey = (date: Date) => {
+  const y = date.getFullYear()
+  const m = String(date.getMonth() + 1).padStart(2, '0')
+  const d = String(date.getDate()).padStart(2, '0')
+  return `${y}-${m}-${d}`
+}
+const parseDateKey = (key: string) => {
+  const [year, month, day] = key.split('-').map(Number)
+  return new Date(year, (month || 1) - 1, day || 1, 0, 0, 0, 0)
+}
+const endOfLocalDay = (date: Date) => {
+  const d = new Date(date)
+  d.setHours(23, 59, 59, 999)
+  return d
+}
+const baseEventId = (id: string) => id.split('__')[0]
 const ICAL_SERVICE_URL = (import.meta.env.VITE_ICAL_SERVICE_URL ?? '').replace(/\/$/, '')
 
 type ParsedIcsEvent = {
@@ -240,6 +265,7 @@ export const CalendarWindow = () => {
   const [newEventTitle, setNewEventTitle] = useState('')
   const [newEventDate, setNewEventDate] = useState(() => formatDateKey(new Date()))
   const [newEventTime, setNewEventTime] = useState('09:00')
+  const [newEventRecurrence, setNewEventRecurrence] = useState<'none' | 'daily' | 'weekly' | 'weekdays'>('none')
   const [composerMode, setComposerMode] = useState<'event' | 'reminder'>('event')
   const [isSavingEvent, setIsSavingEvent] = useState(false)
   const [isSyncingApple, setIsSyncingApple] = useState(false)
@@ -252,17 +278,29 @@ export const CalendarWindow = () => {
   const [gridQuickAdd, setGridQuickAdd] = useState<GridQuickAddState | null>(null)
   const [gridQuickTitle, setGridQuickTitle] = useState('')
   const [contextMenu, setContextMenu] = useState<CalendarContextMenuState | null>(null)
+  const [listContextMenu, setListContextMenu] = useState<ListContextMenuState | null>(null)
   const [selectedEvent, setSelectedEvent] = useState<EventRow | null>(null)
+  const [selectedReminder, setSelectedReminder] = useState<ReminderRow | null>(null)
   const [editTitle, setEditTitle] = useState('')
   const [editDate, setEditDate] = useState('')
   const [editTime, setEditTime] = useState('')
   const [editStatus, setEditStatus] = useState<'planned' | 'done' | 'missed' | 'cancelled'>('planned')
   const [editColor, setEditColor] = useState('#93C5FD')
+  const [editRecurrence, setEditRecurrence] = useState<'none' | 'daily' | 'weekly' | 'weekdays'>('none')
+  const [reminderEditTitle, setReminderEditTitle] = useState('')
+  const [reminderEditDate, setReminderEditDate] = useState('')
+  const [reminderEditTime, setReminderEditTime] = useState('')
+  const [reminderEditColor, setReminderEditColor] = useState('#F59E0B')
+  const [reminderEditDone, setReminderEditDone] = useState(false)
   const [isSavingEdit, setIsSavingEdit] = useState(false)
   const [isDeletingEvent, setIsDeletingEvent] = useState(false)
+  const [isDeletingReminder, setIsDeletingReminder] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [calendarColorDrafts, setCalendarColorDrafts] = useState<Record<string, string>>({})
   const [isSavingColorId, setIsSavingColorId] = useState<string | null>(null)
+  const [sidebarWidth, setSidebarWidth] = useState(256)
+  const [isResizingSidebar, setIsResizingSidebar] = useState(false)
+  const [overflowDayKey, setOverflowDayKey] = useState<string | null>(null)
 
   const viewConfig = useMemo(() => {
     if (viewMode === 'day') {
@@ -303,11 +341,63 @@ export const CalendarWindow = () => {
     }
   }, [viewAnchor, viewMode])
 
+  const visibleEvents = useMemo(() => {
+    const expanded: EventRow[] = []
+    for (const event of events) {
+      const recurrence = event.recurrence_rule ?? 'none'
+      if (recurrence === 'none') {
+        expanded.push(event)
+        continue
+      }
+
+      const baseStart = new Date(event.start_at)
+      const baseEnd = new Date(event.end_at)
+      const durationMs = baseEnd.getTime() - baseStart.getTime()
+
+      let cursor = startOfDay(viewConfig.start)
+      const hardEnd = endOfLocalDay(viewConfig.end)
+
+      while (cursor <= hardEnd) {
+        const sameWeekday = cursor.getDay() === baseStart.getDay()
+        const isWeekday = cursor.getDay() >= 1 && cursor.getDay() <= 5
+        const matches =
+          recurrence === 'daily' ||
+          (recurrence === 'weekly' && sameWeekday) ||
+          (recurrence === 'weekdays' && isWeekday)
+
+        if (matches) {
+          const occurrenceStart = new Date(cursor)
+          occurrenceStart.setHours(
+            baseStart.getHours(),
+            baseStart.getMinutes(),
+            baseStart.getSeconds(),
+            baseStart.getMilliseconds()
+          )
+
+          if (occurrenceStart >= baseStart && occurrenceStart >= viewConfig.start && occurrenceStart < viewConfig.end) {
+            const occurrenceEnd = new Date(occurrenceStart.getTime() + durationMs)
+            expanded.push({
+              ...event,
+              id: `${event.id}__${formatDateKey(occurrenceStart)}`,
+              start_at: occurrenceStart.toISOString(),
+              end_at: occurrenceEnd.toISOString(),
+            })
+          }
+        }
+
+        cursor = addDays(cursor, 1)
+      }
+    }
+
+    expanded.sort((a, b) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime())
+    return expanded
+  }, [events, viewConfig.start, viewConfig.end])
+
   const eventsByDay = useMemo(() => {
     const grouped: Record<string, EventRow[]> = {}
     for (const date of viewConfig.dates) grouped[formatDateKey(date)] = []
 
-    for (const evt of events) {
+    for (const evt of visibleEvents) {
       const key = formatDateKey(new Date(evt.start_at))
       if (!grouped[key]) grouped[key] = []
       grouped[key].push(evt)
@@ -318,7 +408,7 @@ export const CalendarWindow = () => {
     }
 
     return grouped
-  }, [events, viewConfig.dates])
+  }, [visibleEvents, viewConfig.dates])
 
   const remindersByDay = useMemo(() => {
     const grouped: Record<string, ReminderRow[]> = {}
@@ -336,6 +426,16 @@ export const CalendarWindow = () => {
 
     return grouped
   }, [reminders, viewConfig.dates])
+
+  const overflowEvents = useMemo(
+    () => (overflowDayKey ? eventsByDay[overflowDayKey] ?? [] : []),
+    [overflowDayKey, eventsByDay]
+  )
+
+  const overflowReminders = useMemo(
+    () => (overflowDayKey ? remindersByDay[overflowDayKey] ?? [] : []),
+    [overflowDayKey, remindersByDay]
+  )
 
   useEffect(() => {
     let cancelled = false
@@ -449,7 +549,7 @@ export const CalendarWindow = () => {
 
       const eventResult: any = await supabase
         .from('events' as never)
-        .select('id, title, start_at, end_at, calendar_id, color, status')
+        .select('id, title, start_at, end_at, calendar_id, color, status, recurrence_rule')
         .eq('workspace_id', workspaceId)
         .gte('start_at', viewConfig.start.toISOString())
         .lt('start_at', viewConfig.end.toISOString())
@@ -557,6 +657,48 @@ export const CalendarWindow = () => {
     }
   }, [contextMenu])
 
+  useEffect(() => {
+    if (!listContextMenu) return
+
+    const closeMenu = () => setListContextMenu(null)
+    const onEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') closeMenu()
+    }
+
+    window.addEventListener('mousedown', closeMenu)
+    window.addEventListener('scroll', closeMenu, true)
+    window.addEventListener('resize', closeMenu)
+    window.addEventListener('keydown', onEscape)
+
+    return () => {
+      window.removeEventListener('mousedown', closeMenu)
+      window.removeEventListener('scroll', closeMenu, true)
+      window.removeEventListener('resize', closeMenu)
+      window.removeEventListener('keydown', onEscape)
+    }
+  }, [listContextMenu])
+
+  useEffect(() => {
+    if (!isResizingSidebar) return
+
+    const handleMove = (event: MouseEvent) => {
+      const next = Math.max(SIDEBAR_MIN_WIDTH, Math.min(SIDEBAR_MAX_WIDTH, event.clientX))
+      setSidebarWidth(next)
+    }
+
+    const handleUp = () => {
+      setIsResizingSidebar(false)
+    }
+
+    window.addEventListener('mousemove', handleMove)
+    window.addEventListener('mouseup', handleUp)
+
+    return () => {
+      window.removeEventListener('mousemove', handleMove)
+      window.removeEventListener('mouseup', handleUp)
+    }
+  }, [isResizingSidebar])
+
   const openComposerAtSlot = (
     dateKey: string,
     hour: number,
@@ -568,6 +710,7 @@ export const CalendarWindow = () => {
     setNewEventDate(dateKey)
     setNewEventTime(`${String(hour).padStart(2, '0')}:00`)
     setNewEventTitle(title)
+    setNewEventRecurrence('none')
     setComposerMode(mode)
     setIsComposerOpen(true)
   }
@@ -630,6 +773,7 @@ export const CalendarWindow = () => {
       setNewEventTitle('')
       setIsComposerOpen(false)
       setComposerMode('event')
+      setNewEventRecurrence('none')
       return
     }
 
@@ -643,8 +787,9 @@ export const CalendarWindow = () => {
         start_at: start.toISOString(),
         end_at: end.toISOString(),
         color: selectedCalendar.color,
+        recurrence_rule: newEventRecurrence,
       } as never)
-      .select('id, title, start_at, end_at, calendar_id, color, status')
+      .select('id, title, start_at, end_at, calendar_id, color, status, recurrence_rule')
       .single()
 
     setIsSavingEvent(false)
@@ -662,6 +807,7 @@ export const CalendarWindow = () => {
     setNewEventTitle('')
     setIsComposerOpen(false)
     setComposerMode('event')
+    setNewEventRecurrence('none')
   }
 
   const toggleReminderDone = async (reminder: ReminderRow) => {
@@ -693,14 +839,80 @@ export const CalendarWindow = () => {
     setReminders((prev) => prev.filter((item) => item.id !== reminderId))
   }
 
+  const openReminderEditor = (reminder: ReminderRow) => {
+    const start = new Date(reminder.remind_at)
+    setSelectedReminder(reminder)
+    setReminderEditTitle(reminder.title)
+    setReminderEditDate(formatDateKey(start))
+    setReminderEditTime(
+      `${String(start.getHours()).padStart(2, '0')}:${String(start.getMinutes()).padStart(2, '0')}`
+    )
+    setReminderEditColor(reminder.color ?? '#F59E0B')
+    setReminderEditDone(reminder.is_done)
+  }
+
+  const saveReminderEdits = async () => {
+    if (!selectedReminder || !reminderEditTitle.trim()) return
+    setIsSavingEdit(true)
+    setError(null)
+
+    const remindAt = new Date(`${reminderEditDate}T${reminderEditTime}:00`)
+    const result: any = await supabase
+      .from('reminders' as never)
+      .update({
+        title: reminderEditTitle.trim(),
+        remind_at: remindAt.toISOString(),
+        color: reminderEditColor,
+        is_done: reminderEditDone,
+        updated_at: new Date().toISOString(),
+      } as never)
+      .eq('id', selectedReminder.id)
+      .select('id, title, remind_at, calendar_id, color, is_done')
+      .single()
+
+    setIsSavingEdit(false)
+
+    if (result.error || !result.data) {
+      setError(`Could not update reminder. ${result.error?.message ?? 'Unknown error.'}`)
+      return
+    }
+
+    const updated = result.data as ReminderRow
+    setReminders((prev) =>
+      prev
+        .map((item) => (item.id === updated.id ? updated : item))
+        .sort((a, b) => new Date(a.remind_at).getTime() - new Date(b.remind_at).getTime())
+    )
+    setSelectedReminder(null)
+  }
+
+  const deleteReminderFromEditor = async () => {
+    if (!selectedReminder) return
+    setIsDeletingReminder(true)
+    setError(null)
+
+    const result: any = await supabase.from('reminders' as never).delete().eq('id', selectedReminder.id)
+    setIsDeletingReminder(false)
+
+    if (result.error) {
+      setError(`Could not delete reminder. ${result.error.message}`)
+      return
+    }
+
+    setReminders((prev) => prev.filter((item) => item.id !== selectedReminder.id))
+    setSelectedReminder(null)
+  }
+
   const openEventEditor = (event: EventRow) => {
+    const source = events.find((row) => row.id === baseEventId(event.id)) ?? event
     const start = new Date(event.start_at)
-    setSelectedEvent(event)
-    setEditTitle(event.title)
+    setSelectedEvent(source)
+    setEditTitle(source.title)
     setEditDate(formatDateKey(start))
     setEditTime(`${String(start.getHours()).padStart(2, '0')}:${String(start.getMinutes()).padStart(2, '0')}`)
-    setEditStatus(event.status ?? 'planned')
-    setEditColor(event.color ?? '#93C5FD')
+    setEditStatus(source.status ?? 'planned')
+    setEditColor(source.color ?? '#93C5FD')
+    setEditRecurrence(source.recurrence_rule ?? 'none')
     setConfirmDelete(false)
   }
 
@@ -722,10 +934,11 @@ export const CalendarWindow = () => {
         end_at: end.toISOString(),
         color: editColor,
         status: editStatus,
+        recurrence_rule: editRecurrence,
         updated_at: new Date().toISOString(),
       } as never)
       .eq('id', selectedEvent.id)
-      .select('id, title, start_at, end_at, calendar_id, color, status')
+      .select('id, title, start_at, end_at, calendar_id, color, status, recurrence_rule')
       .single()
 
     setIsSavingEdit(false)
@@ -768,12 +981,13 @@ export const CalendarWindow = () => {
   }
 
   const quickDeleteEvent = async (eventId: string) => {
-    const result: any = await supabase.from('events' as never).delete().eq('id', eventId)
+    const targetId = baseEventId(eventId)
+    const result: any = await supabase.from('events' as never).delete().eq('id', targetId)
     if (result.error) {
       setError(`Could not delete event. ${result.error.message}`)
       return
     }
-    setEvents((prev) => prev.filter((evt) => evt.id !== eventId))
+    setEvents((prev) => prev.filter((evt) => evt.id !== targetId))
   }
 
   const saveCalendarColor = async (calendar: CalendarRow, color: string) => {
@@ -825,8 +1039,9 @@ export const CalendarWindow = () => {
         start_at: start.toISOString(),
         end_at: end.toISOString(),
         color: selectedCalendar.color,
+        recurrence_rule: 'none',
       } as never)
-      .select('id, title, start_at, end_at, calendar_id, color, status')
+      .select('id, title, start_at, end_at, calendar_id, color, status, recurrence_rule')
       .single()
 
     setIsSavingEvent(false)
@@ -925,7 +1140,7 @@ export const CalendarWindow = () => {
       const result: any = await supabase
         .from('events' as never)
         .insert(payload as never)
-        .select('id, title, start_at, end_at, calendar_id, color, status')
+      .select('id, title, start_at, end_at, calendar_id, color, status, recurrence_rule')
 
       if (result.error) {
         throw new Error(result.error.message)
@@ -954,33 +1169,39 @@ export const CalendarWindow = () => {
         style={{ WebkitAppRegion: 'drag' } as CSSProperties}
       />
       <header
-        className="h-14 border-b border-gray-200 px-5 flex items-center justify-between"
+        className="h-16 border-b border-gray-200 px-5 flex items-center justify-between bg-white"
         style={{ WebkitAppRegion: 'drag' } as CSSProperties}
       >
         <div className="flex items-center gap-3">
-          <CalendarDays size={18} className="text-blue-600" />
-          <h1 className="text-sm font-semibold text-gray-900">Calendar</h1>
-          <span className="text-xs text-gray-500">{viewConfig.label}</span>
+          <div className="h-9 w-9 rounded-lg bg-blue-50 border border-blue-100 flex items-center justify-center">
+            <CalendarDays size={18} className="text-blue-600" />
+          </div>
+          <div>
+            <h1 className="text-[34px] leading-none font-semibold text-gray-900">Calendar</h1>
+            <p className="text-xs text-gray-500 mt-1">{viewConfig.label}</p>
+          </div>
         </div>
         <div className="flex items-center gap-2" style={{ WebkitAppRegion: 'no-drag' } as CSSProperties}>
+          <div className="flex items-center gap-1 rounded-lg border border-gray-200 bg-gray-50 p-1">
           <button
             onClick={() => moveView(-1)}
-            className="p-2 rounded-md border border-gray-200 hover:bg-gray-50 text-gray-600"
+            className="h-8 w-8 rounded-md hover:bg-white text-gray-600 flex items-center justify-center"
           >
             <ChevronLeft size={16} />
           </button>
           <button
             onClick={() => jumpToToday()}
-            className="px-3 py-2 rounded-md border border-gray-200 hover:bg-gray-50 text-gray-700 text-xs font-medium"
+            className="h-8 px-3 rounded-md bg-white border border-gray-200 hover:bg-gray-100 text-gray-700 text-xs font-semibold inline-flex items-center justify-center leading-none"
           >
             Today
           </button>
           <button
             onClick={() => moveView(1)}
-            className="p-2 rounded-md border border-gray-200 hover:bg-gray-50 text-gray-600"
+            className="h-8 w-8 rounded-md hover:bg-white text-gray-600 flex items-center justify-center"
           >
             <ChevronRight size={16} />
           </button>
+          </div>
           <div className="ml-2 flex items-center rounded-md border border-gray-200 bg-gray-50 p-0.5">
             {(['day', 'week', 'month'] as CalendarViewMode[]).map((mode) => (
               <button
@@ -1009,8 +1230,12 @@ export const CalendarWindow = () => {
             {isImportingIcs ? 'Importing...' : 'Import .ics'}
           </button>
           <button
-            onClick={() => setIsComposerOpen(true)}
-            className="px-3 py-2 rounded-md bg-gray-900 hover:bg-gray-800 text-white text-xs font-medium flex items-center gap-1.5"
+            onClick={() => {
+              setComposerMode('event')
+              setNewEventRecurrence('none')
+              setIsComposerOpen(true)
+            }}
+            className="px-3 py-2 rounded-md bg-gray-800/90 hover:bg-gray-800 text-white text-xs font-medium flex items-center gap-1.5"
           >
             <Plus size={14} />
             New Event
@@ -1048,116 +1273,150 @@ export const CalendarWindow = () => {
       )}
 
       <div className="flex-1 flex overflow-hidden">
-        <aside className="w-64 border-r border-gray-200 p-4 overflow-auto">
-          <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Calendars</h2>
-          <div className="space-y-2 mb-5">
-            {calendars.map((calendar) => (
-              <div key={calendar.id} className="flex items-center justify-between gap-2 text-sm text-gray-800">
-                <div className="flex items-center gap-2 min-w-0">
-                  <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: calendar.color }} />
-                  <span className="truncate">{calendar.name}</span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <input
-                    type="color"
-                    value={calendarColorDrafts[calendar.id] ?? calendar.color}
-                    onChange={(e) => {
-                      const next = e.target.value
-                      setCalendarColorDrafts((prev) => ({ ...prev, [calendar.id]: next }))
-                      void saveCalendarColor(calendar, next)
-                    }}
-                    title={`Change ${calendar.name} color`}
-                    className="h-5 w-5 rounded border border-gray-200 bg-white p-0 cursor-pointer"
-                  />
-                  {isSavingColorId === calendar.id && (
-                    <span className="text-[10px] text-gray-400">...</span>
-                  )}
-                </div>
+        <aside
+          className="border-r border-gray-200 p-4 overflow-auto shrink-0 bg-white"
+          style={{ width: `${sidebarWidth}px` }}
+        >
+          <div className="mb-5">
+            <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-2">Overview</p>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <p className="text-[10px] text-gray-500 uppercase tracking-wide">Events</p>
+                <p className="text-xl font-semibold text-gray-900 leading-tight">{visibleEvents.length}</p>
               </div>
-            ))}
-            {!isLoading && calendars.length === 0 && <p className="text-xs text-gray-500">No calendars yet.</p>}
+              <div>
+                <p className="text-[10px] text-gray-500 uppercase tracking-wide">Reminders</p>
+                <p className="text-xl font-semibold text-gray-900 leading-tight">{reminders.length}</p>
+              </div>
+            </div>
           </div>
 
-          <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">This View</h2>
-          <div className="space-y-2">
+          <div className="mb-5 border-t border-gray-100 pt-4">
+            <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Calendars</h2>
+            <div className="space-y-2">
+              {calendars.map((calendar) => (
+                <div key={calendar.id} className="flex items-center justify-between gap-2 text-sm text-gray-800">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: calendar.color }} />
+                    <span className="truncate font-medium">{calendar.name}</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      type="color"
+                      value={calendarColorDrafts[calendar.id] ?? calendar.color}
+                      onChange={(e) => {
+                        const next = e.target.value
+                        setCalendarColorDrafts((prev) => ({ ...prev, [calendar.id]: next }))
+                        void saveCalendarColor(calendar, next)
+                      }}
+                      title={`Change ${calendar.name} color`}
+                      className="h-5 w-5 rounded border border-gray-200 bg-white p-0 cursor-pointer"
+                    />
+                    {isSavingColorId === calendar.id && (
+                      <span className="text-[10px] text-gray-400">...</span>
+                    )}
+                  </div>
+                </div>
+              ))}
+              {!isLoading && calendars.length === 0 && <p className="text-xs text-gray-500">No calendars yet.</p>}
+            </div>
+          </div>
+
+          <div className="mb-5 border-t border-gray-100 pt-4">
+          <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Upcoming In View</h2>
+          <div className="space-y-2 max-h-[42vh] overflow-auto pr-1">
             {events.length === 0 && !isLoading && <p className="text-xs text-gray-500">No events in this view.</p>}
-            {events.slice(0, 8).map((event) => (
+            {events.slice(0, 6).map((event) => (
               <div
                 key={event.id}
-                className="w-full text-left p-2 rounded-md bg-gray-50 border border-gray-100 hover:bg-gray-100"
+                className="w-full text-left p-2 rounded-md hover:bg-gray-50"
+                onContextMenu={(e) => {
+                  e.preventDefault()
+                  setListContextMenu({
+                    x: e.clientX,
+                    y: e.clientY,
+                    kind: 'event',
+                    id: event.id,
+                  })
+                }}
               >
-                <div className="flex items-start justify-between gap-2">
-                  <button onClick={() => openEventEditor(event)} className="min-w-0 text-left flex-1">
-                    <p className="text-xs font-medium text-gray-900 truncate flex items-center gap-1.5">
-                      <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: event.color ?? '#93C5FD' }} />
-                      {event.title}
-                    </p>
-                    <p className="text-[11px] text-gray-600 mt-1">{new Date(event.start_at).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' })}</p>
-                  </button>
-                  <button
-                    onClick={() => void quickDeleteEvent(event.id)}
-                    className="h-5 w-5 shrink-0 rounded text-gray-400 hover:text-red-600 hover:bg-red-50"
-                    title="Delete event"
-                    aria-label="Delete event"
-                  >
-                    <X size={12} />
-                  </button>
-                </div>
+                <button onClick={() => openEventEditor(event)} className="min-w-0 text-left w-full">
+                  <p className="text-xs font-medium text-gray-900 truncate flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: event.color ?? '#93C5FD' }} />
+                    {event.title}
+                  </p>
+                  <p className="text-[11px] text-gray-600 mt-1">{new Date(event.start_at).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' })}</p>
+                </button>
               </div>
             ))}
           </div>
+          </div>
 
-          <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mt-5 mb-2">Reminders</h2>
-          <div className="space-y-2">
+          <div className="border-t border-gray-100 pt-4">
+          <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Reminders</h2>
+          <div className="space-y-2 max-h-[28vh] overflow-auto pr-1">
             {reminders.length === 0 && !isLoading && (
               <p className="text-xs text-gray-500">No reminders in this view.</p>
             )}
-            {reminders.slice(0, 8).map((reminder) => (
+            {reminders.slice(0, 6).map((reminder) => (
               <div
                 key={reminder.id}
-                className={`w-full text-left p-2 rounded-md border ${
+                className={`w-full text-left p-2 rounded-md ${
                   reminder.is_done
-                    ? 'bg-green-50 border-green-100 text-green-700'
-                    : 'bg-amber-50 border-amber-100 text-amber-900'
+                    ? 'text-green-700 hover:bg-green-50'
+                    : 'text-amber-900 hover:bg-amber-50'
                 }`}
+                onContextMenu={(e) => {
+                  e.preventDefault()
+                  setListContextMenu({
+                    x: e.clientX,
+                    y: e.clientY,
+                    kind: 'reminder',
+                    id: reminder.id,
+                  })
+                }}
               >
-                <div className="flex items-start justify-between gap-2">
-                  <button onClick={() => void toggleReminderDone(reminder)} className="min-w-0 text-left flex-1">
-                    <p className="text-xs font-medium truncate flex items-center gap-1.5">
-                      <span
-                        className="w-2 h-2 rounded-full shrink-0"
-                        style={{ backgroundColor: reminder.color ?? '#F59E0B' }}
-                      />
-                      {reminder.title}
-                    </p>
-                    <p className="text-[11px] mt-1 opacity-80">
-                      {new Date(reminder.remind_at).toLocaleString([], {
-                        weekday: 'short',
-                        hour: 'numeric',
-                        minute: '2-digit',
-                      })}
-                      {reminder.is_done ? ' · Done' : ' · Tap to mark done'}
-                    </p>
-                  </button>
-                  <button
-                    onClick={() => void quickDeleteReminder(reminder.id)}
-                    className="h-5 w-5 shrink-0 rounded text-gray-400 hover:text-red-600 hover:bg-red-50"
-                    title="Delete reminder"
-                    aria-label="Delete reminder"
-                  >
-                    <X size={12} />
-                  </button>
-                </div>
+                <button onClick={() => void toggleReminderDone(reminder)} className="min-w-0 text-left w-full">
+                  <p className="text-xs font-medium truncate flex items-center gap-1.5">
+                    <span
+                      className="w-2 h-2 rounded-full shrink-0"
+                      style={{ backgroundColor: reminder.color ?? '#F59E0B' }}
+                    />
+                    {reminder.title}
+                  </p>
+                  <p className="text-[11px] mt-1 opacity-80">
+                    {new Date(reminder.remind_at).toLocaleString([], {
+                      weekday: 'short',
+                      hour: 'numeric',
+                      minute: '2-digit',
+                    })}
+                    {reminder.is_done ? ' · Done' : ' · Tap to mark done'}
+                  </p>
+                </button>
               </div>
             ))}
+          </div>
           </div>
 
           {error && <p className="text-xs text-red-600 mt-4">{error}</p>}
         </aside>
 
+        <div
+          role="separator"
+          aria-orientation="vertical"
+          onMouseDown={(event) => {
+            event.preventDefault()
+            setIsResizingSidebar(true)
+          }}
+          className={`w-1.5 shrink-0 cursor-col-resize bg-transparent hover:bg-gray-200 transition-colors ${
+            isResizingSidebar ? 'bg-gray-300' : ''
+          }`}
+          title="Drag to resize sidebar"
+        />
+
         <section className="flex-1 overflow-auto">
           {viewMode === 'month' && (
-            <div className="min-w-[840px] p-3">
+            <div className="min-w-210 p-3">
               <div className="grid grid-cols-7 border-l border-t border-gray-200 rounded-t-lg overflow-hidden">
                 {days.map((day) => (
                   <div
@@ -1187,7 +1446,7 @@ export const CalendarWindow = () => {
                         event.preventDefault()
                         setContextMenu({ x: event.clientX, y: event.clientY, dateKey: key, hour: 9 })
                       }}
-                      className={`min-h-[116px] border-r border-b border-gray-200 text-left p-2 align-top hover:bg-blue-50/40 transition-colors ${
+                      className={`min-h-29 border-r border-b border-gray-200 text-left p-2 align-top hover:bg-blue-50/40 transition-colors ${
                         inMonth ? 'bg-white' : 'bg-gray-50 text-gray-400'
                       }`}
                     >
@@ -1205,6 +1464,16 @@ export const CalendarWindow = () => {
                             key={reminder.id}
                             className="text-[10px] rounded px-1.5 py-0.5 truncate"
                             style={{ backgroundColor: `${reminder.color ?? '#F59E0B'}33`, color: '#1F2937' }}
+                            onContextMenu={(event) => {
+                              event.preventDefault()
+                              event.stopPropagation()
+                              setListContextMenu({
+                                x: event.clientX,
+                                y: event.clientY,
+                                kind: 'reminder',
+                                id: reminder.id,
+                              })
+                            }}
                           >
                             {reminder.title}
                           </div>
@@ -1214,11 +1483,31 @@ export const CalendarWindow = () => {
                             key={event.id}
                             className="text-[10px] rounded px-1.5 py-0.5 truncate"
                             style={{ backgroundColor: `${event.color ?? '#93C5FD'}44`, color: '#1F2937' }}
+                            onContextMenu={(e) => {
+                              e.preventDefault()
+                              e.stopPropagation()
+                              setListContextMenu({
+                                x: e.clientX,
+                                y: e.clientY,
+                                kind: 'event',
+                                id: event.id,
+                              })
+                            }}
                           >
                             {event.title}
                           </div>
                         ))}
-                        {extraCount > 0 && <div className="text-[10px] text-gray-500">+{extraCount} more</div>}
+                        {extraCount > 0 && (
+                          <button
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              setOverflowDayKey(key)
+                            }}
+                            className="text-[10px] text-gray-500 hover:text-gray-700"
+                          >
+                            +{extraCount} more
+                          </button>
+                        )}
                       </div>
                     </button>
                   )
@@ -1227,7 +1516,7 @@ export const CalendarWindow = () => {
             </div>
           )}
           <div
-            className={`grid min-w-[840px] ${viewMode === 'month' ? 'hidden' : ''}`}
+            className={`grid min-w-210 ${viewMode === 'month' ? 'hidden' : ''}`}
             style={{ gridTemplateColumns: `72px repeat(${viewConfig.dates.length}, minmax(0, 1fr))` }}
           >
             <div className="sticky top-0 z-10 h-12 bg-white border-b border-gray-200" />
@@ -1264,8 +1553,11 @@ export const CalendarWindow = () => {
                       className="h-16 border-b border-l border-gray-100 relative px-1 py-1 hover:bg-blue-50/40 cursor-pointer"
                       onClick={() => {
                         setContextMenu(null)
-                        setGridQuickAdd({ dateKey: key, hour: hourInt })
+                        setListContextMenu(null)
+                        setGridQuickAdd(null)
                         setGridQuickTitle('')
+                        setViewMode('day')
+                        setViewAnchor(dayDate)
                       }}
                       onContextMenu={(event) => {
                         event.preventDefault()
@@ -1328,6 +1620,16 @@ export const CalendarWindow = () => {
                             e.stopPropagation()
                             void toggleReminderDone(reminder)
                           }}
+                          onContextMenu={(e) => {
+                            e.preventDefault()
+                            e.stopPropagation()
+                            setListContextMenu({
+                              x: e.clientX,
+                              y: e.clientY,
+                              kind: 'reminder',
+                              id: reminder.id,
+                            })
+                          }}
                           className={`text-[10px] rounded px-1.5 py-0.5 truncate w-full text-left mb-0.5 ${
                             reminder.is_done ? 'line-through opacity-60' : ''
                           }`}
@@ -1345,7 +1647,10 @@ export const CalendarWindow = () => {
                       ))}
                       {hiddenReminders > 0 && (
                         <button
-                          onClick={(e) => e.stopPropagation()}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setOverflowDayKey(key)
+                          }}
                           className="text-[10px] text-amber-700 font-medium mb-0.5"
                           title={`${hiddenReminders} more reminder${hiddenReminders === 1 ? '' : 's'}`}
                         >
@@ -1358,6 +1663,16 @@ export const CalendarWindow = () => {
                           onClick={(e) => {
                             e.stopPropagation()
                             openEventEditor(evt)
+                          }}
+                          onContextMenu={(e) => {
+                            e.preventDefault()
+                            e.stopPropagation()
+                            setListContextMenu({
+                              x: e.clientX,
+                              y: e.clientY,
+                              kind: 'event',
+                              id: evt.id,
+                            })
                           }}
                           className="text-[10px] rounded px-1.5 py-0.5 truncate w-full text-left mb-0.5 last:mb-0"
                           style={{
@@ -1372,7 +1687,7 @@ export const CalendarWindow = () => {
                         <button
                           onClick={(e) => {
                             e.stopPropagation()
-                            openEventEditor(items[0])
+                            setOverflowDayKey(key)
                           }}
                           className="text-[10px] text-gray-600 hover:text-gray-800 px-1.5 py-0.5"
                         >
@@ -1389,8 +1704,8 @@ export const CalendarWindow = () => {
       </div>
 
       {isComposerOpen && (
-        <div className="fixed inset-0 z-[100] bg-black/20 flex items-start justify-center pt-20">
-          <div className="w-[420px] rounded-xl border border-gray-200 bg-white shadow-xl p-4">
+        <div className="fixed inset-0 z-100 bg-black/20 flex items-start justify-center pt-20">
+          <div className="w-105 rounded-xl border border-gray-200 bg-white shadow-xl p-4">
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-sm font-semibold text-gray-900">
                 {composerMode === 'reminder' ? 'New Reminder' : 'New Event'}
@@ -1420,6 +1735,23 @@ export const CalendarWindow = () => {
                   className="h-9 px-2 text-sm border border-gray-200 rounded-md focus:outline-none focus:border-gray-400"
                 />
               </div>
+              {composerMode === 'event' && (
+                <div className="relative">
+                  <select
+                    value={newEventRecurrence}
+                    onChange={(e) =>
+                      setNewEventRecurrence(e.target.value as 'none' | 'daily' | 'weekly' | 'weekdays')
+                    }
+                    className="w-full h-9 pr-9 pl-2 text-sm border border-gray-200 rounded-md focus:outline-none focus:border-gray-400 bg-white appearance-none"
+                  >
+                    <option value="none">Does not repeat</option>
+                    <option value="daily">Daily</option>
+                    <option value="weekly">Weekly</option>
+                    <option value="weekdays">Weekdays</option>
+                  </select>
+                  <ChevronDown size={16} className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500" />
+                </div>
+              )}
             </div>
             <div className="mt-4 flex justify-end gap-2">
               <button onClick={() => setIsComposerOpen(false)} className="px-3 py-2 text-xs font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-md">
@@ -1438,8 +1770,8 @@ export const CalendarWindow = () => {
       )}
 
       {selectedEvent && (
-        <div className="fixed inset-0 z-[110] bg-black/20 flex items-start justify-center pt-20">
-          <div className="w-[440px] rounded-xl border border-gray-200 bg-white shadow-xl p-4">
+        <div className="fixed inset-0 z-110 bg-black/20 flex items-start justify-center pt-20">
+          <div className="w-110 rounded-xl border border-gray-200 bg-white shadow-xl p-4">
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-sm font-semibold text-gray-900">Edit Event</h3>
               <button onClick={() => setSelectedEvent(null)} className="p-1 rounded hover:bg-gray-100">
@@ -1468,16 +1800,34 @@ export const CalendarWindow = () => {
                   className="h-9 px-2 text-sm border border-gray-200 rounded-md focus:outline-none focus:border-gray-400"
                 />
               </div>
-              <select
-                value={editStatus}
-                onChange={(e) => setEditStatus(e.target.value as 'planned' | 'done' | 'missed' | 'cancelled')}
-                className="w-full h-9 px-2 text-sm border border-gray-200 rounded-md focus:outline-none focus:border-gray-400 bg-white"
-              >
-                <option value="planned">Planned</option>
-                <option value="done">Done</option>
-                <option value="missed">Missed</option>
-                <option value="cancelled">Cancelled</option>
-              </select>
+              <div className="relative">
+                <select
+                  value={editStatus}
+                  onChange={(e) => setEditStatus(e.target.value as 'planned' | 'done' | 'missed' | 'cancelled')}
+                  className="w-full h-9 pr-9 pl-2 text-sm border border-gray-200 rounded-md focus:outline-none focus:border-gray-400 bg-white appearance-none"
+                >
+                  <option value="planned">Planned</option>
+                  <option value="done">Done</option>
+                  <option value="missed">Missed</option>
+                  <option value="cancelled">Cancelled</option>
+                </select>
+                <ChevronDown size={16} className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500" />
+              </div>
+              <div className="relative">
+                <select
+                  value={editRecurrence}
+                  onChange={(e) =>
+                    setEditRecurrence(e.target.value as 'none' | 'daily' | 'weekly' | 'weekdays')
+                  }
+                  className="w-full h-9 pr-9 pl-2 text-sm border border-gray-200 rounded-md focus:outline-none focus:border-gray-400 bg-white appearance-none"
+                >
+                  <option value="none">Does not repeat</option>
+                  <option value="daily">Daily</option>
+                  <option value="weekly">Weekly</option>
+                  <option value="weekdays">Weekdays</option>
+                </select>
+                <ChevronDown size={16} className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500" />
+              </div>
               <div className="flex items-center justify-between border border-gray-200 rounded-md px-2.5 h-9">
                 <span className="text-sm text-gray-700">Event color</span>
                 <input
@@ -1534,9 +1884,143 @@ export const CalendarWindow = () => {
         </div>
       )}
 
+      {selectedReminder && (
+        <div className="fixed inset-0 z-112 bg-black/20 flex items-start justify-center pt-20">
+          <div className="w-110 rounded-xl border border-gray-200 bg-white shadow-xl p-4">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-semibold text-gray-900">Edit Reminder</h3>
+              <button onClick={() => setSelectedReminder(null)} className="p-1 rounded hover:bg-gray-100">
+                <X size={14} className="text-gray-600" />
+              </button>
+            </div>
+
+            <div className="space-y-2.5">
+              <input
+                value={reminderEditTitle}
+                onChange={(e) => setReminderEditTitle(e.target.value)}
+                placeholder="Reminder title"
+                className="w-full h-9 px-3 text-sm border border-gray-200 rounded-md focus:outline-none focus:border-gray-400"
+              />
+              <div className="grid grid-cols-2 gap-2">
+                <input
+                  type="date"
+                  value={reminderEditDate}
+                  onChange={(e) => setReminderEditDate(e.target.value)}
+                  className="h-9 px-2 text-sm border border-gray-200 rounded-md focus:outline-none focus:border-gray-400"
+                />
+                <input
+                  type="time"
+                  value={reminderEditTime}
+                  onChange={(e) => setReminderEditTime(e.target.value)}
+                  className="h-9 px-2 text-sm border border-gray-200 rounded-md focus:outline-none focus:border-gray-400"
+                />
+              </div>
+              <label className="flex items-center justify-between border border-gray-200 rounded-md px-2.5 h-9">
+                <span className="text-sm text-gray-700">Done</span>
+                <input
+                  type="checkbox"
+                  checked={reminderEditDone}
+                  onChange={(e) => setReminderEditDone(e.target.checked)}
+                />
+              </label>
+              <div className="flex items-center justify-between border border-gray-200 rounded-md px-2.5 h-9">
+                <span className="text-sm text-gray-700">Reminder color</span>
+                <input
+                  type="color"
+                  value={reminderEditColor}
+                  onChange={(e) => setReminderEditColor(e.target.value)}
+                  className="h-6 w-8 p-0 border-0 bg-transparent cursor-pointer"
+                />
+              </div>
+            </div>
+
+            <div className="mt-4 flex items-center justify-between">
+              <button
+                onClick={() => void deleteReminderFromEditor()}
+                disabled={isDeletingReminder}
+                className="px-3 py-2 text-xs font-medium text-red-700 bg-red-50 hover:bg-red-100 rounded-md disabled:opacity-60"
+              >
+                {isDeletingReminder ? 'Deleting...' : 'Delete'}
+              </button>
+              <div className="flex items-center gap-2">
+                <button onClick={() => setSelectedReminder(null)} className="px-3 py-2 text-xs font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-md">
+                  Close
+                </button>
+                <button
+                  onClick={() => void saveReminderEdits()}
+                  disabled={isSavingEdit || !reminderEditTitle.trim()}
+                  className="px-3 py-2 text-xs font-medium text-white bg-gray-900 hover:bg-gray-800 rounded-md disabled:opacity-60"
+                >
+                  {isSavingEdit ? 'Saving...' : 'Save'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {overflowDayKey && (
+        <div className="fixed inset-0 z-111 bg-black/20 flex items-start justify-center pt-20">
+          <div className="w-130 max-h-[72vh] rounded-xl border border-gray-200 bg-white shadow-xl p-4 overflow-auto">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-semibold text-gray-900">
+                {parseDateKey(overflowDayKey).toLocaleDateString([], {
+                  weekday: 'long',
+                  month: 'long',
+                  day: 'numeric',
+                })}
+              </h3>
+              <button onClick={() => setOverflowDayKey(null)} className="p-1 rounded hover:bg-gray-100">
+                <X size={14} className="text-gray-600" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-2">Reminders</p>
+                <div className="space-y-1.5">
+                  {overflowReminders.length === 0 && <p className="text-xs text-gray-500">No reminders.</p>}
+                  {overflowReminders.map((reminder) => (
+                    <button
+                      key={reminder.id}
+                      onClick={() => openReminderEditor(reminder)}
+                      className="w-full text-left rounded-md border border-amber-100 bg-amber-50 px-2.5 py-2 text-xs text-gray-800"
+                    >
+                      <span className="font-medium">{reminder.title}</span>
+                      <span className="ml-2 text-gray-600">
+                        {new Date(reminder.remind_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-2">Events</p>
+                <div className="space-y-1.5">
+                  {overflowEvents.length === 0 && <p className="text-xs text-gray-500">No events.</p>}
+                  {overflowEvents.map((event) => (
+                    <button
+                      key={event.id}
+                      onClick={() => openEventEditor(event)}
+                      className="w-full text-left rounded-md border border-gray-200 bg-gray-50 px-2.5 py-2 text-xs text-gray-800"
+                    >
+                      <span className="font-medium">{event.title}</span>
+                      <span className="ml-2 text-gray-600">
+                        {new Date(event.start_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {contextMenu && (
         <div
-          className="fixed z-[200] min-w-[168px] rounded-xl border border-white/20 bg-[#1f2530]/95 text-white shadow-2xl backdrop-blur-md p-1.5"
+          className="fixed z-200 min-w-42 rounded-xl border border-white/20 bg-[#1f2530]/95 text-white shadow-2xl backdrop-blur-md p-1.5"
           style={{
             left: Math.max(8, Math.min(contextMenu.x, window.innerWidth - 188)),
             top: Math.max(8, Math.min(contextMenu.y, window.innerHeight - 138)),
@@ -1579,6 +2063,105 @@ export const CalendarWindow = () => {
               ·
             </span>
             <span className="text-[14px] font-medium tracking-tight">Paste Event</span>
+          </button>
+        </div>
+      )}
+
+      {listContextMenu && (
+        <div
+          className="fixed z-210 min-w-38 rounded-xl border border-white/20 bg-[#1f2530]/95 text-white shadow-2xl backdrop-blur-md p-1.5"
+          style={{
+            left: Math.max(8, Math.min(listContextMenu.x, window.innerWidth - 168)),
+            top: Math.max(8, Math.min(listContextMenu.y, window.innerHeight - 74)),
+          }}
+          onClick={(e) => e.stopPropagation()}
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          <button
+            onClick={() => {
+              if (listContextMenu.kind === 'event') {
+                const event = events.find((item) => item.id === baseEventId(listContextMenu.id))
+                if (event) openEventEditor(event)
+              } else {
+                const reminder = reminders.find((item) => item.id === listContextMenu.id)
+                if (reminder) openReminderEditor(reminder)
+              }
+              setListContextMenu(null)
+            }}
+            className="w-full h-8 px-2 rounded-lg text-left hover:bg-white/10 flex items-center gap-2"
+          >
+            <CalendarPlus size={13} className="text-gray-200" />
+            <span className="text-[20px] leading-none text-gray-200" aria-hidden>
+              ·
+            </span>
+            <span className="text-[14px] font-medium tracking-tight">
+              Edit {listContextMenu.kind === 'event' ? 'Event' : 'Reminder'}
+            </span>
+          </button>
+          {listContextMenu.kind === 'event' ? (
+            <button
+              onClick={() => {
+                const event = events.find((item) => item.id === baseEventId(listContextMenu.id))
+                if (event) {
+                  const nextStatus = event.status === 'done' ? 'planned' : 'done'
+                  void supabase
+                    .from('events' as never)
+                    .update({ status: nextStatus, updated_at: new Date().toISOString() } as never)
+                    .eq('id', event.id)
+                  setEvents((prev) =>
+                    prev.map((item) =>
+                      item.id === event.id ? { ...item, status: nextStatus } : item
+                    )
+                  )
+                }
+                setListContextMenu(null)
+              }}
+              className="w-full h-8 px-2 rounded-lg text-left hover:bg-white/10 flex items-center gap-2"
+            >
+              <BellRing size={13} className="text-gray-200" />
+              <span className="text-[20px] leading-none text-gray-200" aria-hidden>
+                ·
+              </span>
+              <span className="text-[14px] font-medium tracking-tight">
+                Mark {events.find((item) => item.id === baseEventId(listContextMenu.id))?.status === 'done' ? 'Planned' : 'Done'}
+              </span>
+            </button>
+          ) : (
+            <button
+              onClick={() => {
+                const reminder = reminders.find((item) => item.id === listContextMenu.id)
+                if (reminder) void toggleReminderDone(reminder)
+                setListContextMenu(null)
+              }}
+              className="w-full h-8 px-2 rounded-lg text-left hover:bg-white/10 flex items-center gap-2"
+            >
+              <BellRing size={13} className="text-gray-200" />
+              <span className="text-[20px] leading-none text-gray-200" aria-hidden>
+                ·
+              </span>
+              <span className="text-[14px] font-medium tracking-tight">
+                Toggle Done
+              </span>
+            </button>
+          )}
+          <button
+            onClick={() => {
+              if (listContextMenu.kind === 'event') {
+                void quickDeleteEvent(listContextMenu.id)
+              } else {
+                void quickDeleteReminder(listContextMenu.id)
+              }
+              setListContextMenu(null)
+            }}
+            className="w-full h-8 px-2 rounded-lg text-left hover:bg-white/10 flex items-center gap-2 text-red-300"
+          >
+            <Trash2 size={13} />
+            <span className="text-[20px] leading-none" aria-hidden>
+              ·
+            </span>
+            <span className="text-[14px] font-medium tracking-tight">
+              Delete {listContextMenu.kind === 'event' ? 'Event' : 'Reminder'}
+            </span>
           </button>
         </div>
       )}

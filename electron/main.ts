@@ -29,6 +29,29 @@ const MODULE_WIDTH = 980
 const MODULE_HEIGHT = 760
 const MODULE_GAP = 12
 
+function lockWindowZoom(win: BrowserWindow) {
+  const { webContents } = win
+
+  webContents.on('did-finish-load', () => {
+    webContents.setZoomFactor(1)
+    void webContents.setVisualZoomLevelLimits(1, 1)
+  })
+
+  webContents.on('before-input-event', (event, input) => {
+    const key = input.key?.toLowerCase() ?? ''
+    const hasZoomModifier = input.control || input.meta
+    const isZoomShortcut =
+      hasZoomModifier && (key === '+' || key === '=' || key === '-' || key === '_' || key === '0')
+
+    const isZoomWheelGesture = input.type === 'mouseWheel' && hasZoomModifier
+
+    if (isZoomShortcut || isZoomWheelGesture) {
+      event.preventDefault()
+      webContents.setZoomFactor(1)
+    }
+  })
+}
+
 function getDockedBounds(width: number) {
   const { x, y, width: workWidth, height: workHeight } = screen.getPrimaryDisplay().workArea
   return {
@@ -119,6 +142,8 @@ function createSidebarWindow() {
     },
   })
 
+  lockWindowZoom(sidebarWin)
+
   sidebarWin.on('closed', () => {
     sidebarWin = null
     for (const [kind, moduleWin] of moduleWins.entries()) {
@@ -144,7 +169,10 @@ function openModuleWindow(kind: ModuleWindowKind) {
 
   const moduleWin = new BrowserWindow({
     ...getModuleBoundsNextToSidebar(),
+    transparent: true,
     titleBarStyle: 'hiddenInset',
+    minWidth: 1080,
+    minHeight: 680,
     resizable: true,
     minimizable: true,
     maximizable: true,
@@ -152,6 +180,17 @@ function openModuleWindow(kind: ModuleWindowKind) {
       preload: path.join(__dirname, 'preload.mjs'),
     },
   })
+
+  // Apply subtle vibrancy to module windows
+  if (process.platform === 'darwin') {
+    moduleWin.setVibrancy('content')
+  }
+
+  if (process.platform === 'win32') {
+    moduleWin.setBackgroundMaterial('auto')
+  }
+
+  lockWindowZoom(moduleWin)
 
   moduleWins.set(kind, moduleWin)
 

@@ -10,7 +10,7 @@ export const MainLayout = ({ children }: MainLayoutProps) => {
   const { state } = useSidebar()
 
   return (
-    <div className="flex h-screen bg-white overflow-hidden">
+    <div className="flex h-screen bg-gray-50 overflow-hidden">
       {/* Sidebar - Hidden in fullscreen */}
       {state !== 'fullscreen' && (
         <div>
@@ -19,7 +19,7 @@ export const MainLayout = ({ children }: MainLayoutProps) => {
       )}
 
       {/* Main Content Area */}
-      <div className="flex-1 flex flex-col overflow-hidden">
+      <div className={`flex-1 flex flex-col overflow-hidden ${state === 'fullscreen' ? 'bg-white' : ''}`}>
         {children}
       </div>
     </div>
