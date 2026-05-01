@@ -42,3 +42,15 @@ CREATE POLICY "Admins can manage members"
 -- Create indexes
 CREATE INDEX IF NOT EXISTS idx_workspace_members_workspace_id ON public.workspace_members(workspace_id);
 CREATE INDEX IF NOT EXISTS idx_workspace_members_user_id ON public.workspace_members(user_id);
+
+-- Add RLS policy to workspaces table for members to read their workspaces
+CREATE POLICY "Members can read their workspaces"
+  ON public.workspaces
+  FOR SELECT
+  USING (
+    EXISTS (
+      SELECT 1 FROM public.workspace_members
+      WHERE workspace_members.workspace_id = workspaces.id
+      AND workspace_members.user_id = auth.uid()
+    )
+  );

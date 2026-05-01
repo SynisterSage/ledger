@@ -15,18 +15,12 @@ CREATE TABLE IF NOT EXISTS public.workspaces (
 -- Enable RLS
 ALTER TABLE public.workspaces ENABLE ROW LEVEL SECURITY;
 
--- RLS Policy: Users can read workspaces they own or are members of
+-- RLS Policy: Users can read workspaces they own
+-- (Members can read will be added in 003_create_workspace_members_table)
 CREATE POLICY "Users can read own workspaces"
   ON public.workspaces
   FOR SELECT
-  USING (
-    owner_id = auth.uid() OR 
-    EXISTS (
-      SELECT 1 FROM public.workspace_members
-      WHERE workspace_members.workspace_id = workspaces.id
-      AND workspace_members.user_id = auth.uid()
-    )
-  );
+  USING (owner_id = auth.uid());
 
 -- RLS Policy: Only workspace owner can update
 CREATE POLICY "Only owner can update workspace"
