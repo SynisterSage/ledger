@@ -1,42 +1,36 @@
 @import "tailwindcss";
 
-/* Glassmorphism Base Styles */
+/* Clean, Minimal Light Theme */
 * {
-  @apply transition-colors duration-200;
+  transition-color: 150ms;
 }
 
 html {
-  @apply bg-linear-to-br from-gray-50 via-white to-gray-50 text-black;
+  background-color: white;
+  color: rgb(17 24 39);
 }
 
-html.dark {
-  @apply bg-gray-900 text-white;
-}
-
-/* Glass Effect Utilities */
-.glass {
-  @apply bg-white/40 backdrop-blur-md border border-white/30;
-}
-
-.glass-dark {
-  @apply bg-black/20 backdrop-blur-md border border-white/10;
+/* Focus states */
+input:focus,
+button:focus {
+  outline: none;
 }
 
 /* Smooth scrollbar */
 ::-webkit-scrollbar {
-  @apply w-2 h-2;
+  width: 0.5rem;
+  height: 0.5rem;
 }
 
 ::-webkit-scrollbar-track {
-  @apply bg-transparent;
+  background-color: rgb(243 244 246);
 }
 
 ::-webkit-scrollbar-thumb {
-  @apply bg-gray-300 dark:bg-gray-600 rounded-full hover:bg-gray-400 dark:hover:bg-gray-500;
+  background-color: rgb(209 213 219);
+  border-radius: 9999px;
 }
 
-/* Smooth focus states */
-button:focus-visible,
-input:focus-visible {
-  @apply outline-none ring-2 ring-blue-500/50 ring-offset-2 ring-offset-white dark:ring-offset-gray-900;
+::-webkit-scrollbar-thumb:hover {
+  background-color: rgb(156 163 175);
 }
