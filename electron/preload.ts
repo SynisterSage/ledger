@@ -33,4 +33,7 @@ contextBridge.exposeInMainWorld('desktopWindow', {
   toggleModule(kind: ModuleWindowKind) {
     return ipcRenderer.invoke('window:toggle-module', kind)
   },
+  openExternal(url: string) {
+    return ipcRenderer.invoke('window:open-external', url)
+  },
 })

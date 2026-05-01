@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, screen } from 'electron'
+import { app, BrowserWindow, ipcMain, screen, shell } from 'electron'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 
@@ -207,6 +207,13 @@ ipcMain.handle('window:toggle-module', (_event, kind: ModuleWindowKind) => {
   }
 
   openModuleWindow(kind)
+})
+
+ipcMain.handle('window:open-external', async (_event, url: string) => {
+  if (!/^https?:\/\//i.test(url) && !/^webcal:\/\//i.test(url)) {
+    throw new Error('Unsupported external URL protocol')
+  }
+  await shell.openExternal(url)
 })
 
 app.whenReady().then(createSidebarWindow)

@@ -172,9 +172,8 @@ app.post('/sync-tokens', async (req, res) => {
   try {
     await supabase
       .from('calendar_sync_tokens')
-      .update({ is_active: false, revoked_at: new Date().toISOString() })
-      .eq('user_id', userId)
-      .eq('is_active', true);
+      .delete()
+      .eq('user_id', userId);
 
     const token = crypto.randomBytes(24).toString('hex');
 
