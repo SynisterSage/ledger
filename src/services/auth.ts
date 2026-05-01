@@ -1,5 +1,5 @@
 import { supabase } from './supabase'
-import type { AuthError, Session, User } from '@supabase/supabase-js'
+import type { AuthChangeEvent, AuthError, Session, User } from '@supabase/supabase-js'
 
 export interface AuthResponse {
   data: { user: User | null; session: Session | null } | null
@@ -54,9 +54,9 @@ export const authService = {
   },
 
   // Get current user
-  async getUser(): Promise<User | null> {
-    const { data } = await supabase.auth.getUser()
-    return data.user
+  async getUser(): Promise<{ user: User | null; error: AuthError | null }> {
+    const { data, error } = await supabase.auth.getUser()
+    return { user: data.user, error }
   },
 
   // Reset password
@@ -74,9 +74,9 @@ export const authService = {
   },
 
   // Listen to auth changes
-  onAuthStateChange(callback: (session: Session | null) => void) {
+  onAuthStateChange(callback: (event: AuthChangeEvent, session: Session | null) => void) {
     return supabase.auth.onAuthStateChange((_event, session) => {
-      callback(session)
+      callback(_event, session)
     }).data?.subscription
   },
 }

@@ -8,24 +8,30 @@ export type Database = {
         Row: {
           id: string
           email: string
-          name: string | null
+          full_name: string | null
           avatar_url: string | null
+          onboarding_completed: boolean
+          onboarding_completed_at: string | null
           created_at: string
           updated_at: string
         }
         Insert: {
           id?: string
           email: string
-          name?: string | null
+          full_name?: string | null
           avatar_url?: string | null
+          onboarding_completed?: boolean
+          onboarding_completed_at?: string | null
           created_at?: string
           updated_at?: string
         }
         Update: {
           id?: string
           email?: string
-          name?: string | null
+          full_name?: string | null
           avatar_url?: string | null
+          onboarding_completed?: boolean
+          onboarding_completed_at?: string | null
           updated_at?: string
         }
       }
@@ -139,5 +145,9 @@ export type Database = {
         }
       }
     }
+    Views: Record<string, never>
+    Functions: Record<string, never>
+    Enums: Record<string, never>
+    CompositeTypes: Record<string, never>
   }
 }

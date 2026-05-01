@@ -6,7 +6,7 @@ CREATE TYPE project_status AS ENUM ('active', 'archived', 'completed');
 CREATE TABLE IF NOT EXISTS public.projects (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   workspace_id UUID NOT NULL REFERENCES public.workspaces(id) ON DELETE CASCADE,
-  category_id UUID REFERENCES public.categories(id) ON DELETE CASCADE,
+  category_id UUID REFERENCES public.categories(id) ON DELETE SET NULL,
   name VARCHAR(255) NOT NULL,
   description TEXT,
   status project_status DEFAULT 'active' NOT NULL,

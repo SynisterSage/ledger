@@ -21,31 +21,81 @@ export const useAuth = (): UseAuthReturn => {
 
   // Initialize auth state
   useEffect(() => {
+    let isMounted = true
+
+    const subscription = authService.onAuthStateChange((event, newSession) => {
+      if (!isMounted) return
+
+      setSession(newSession)
+      setUser(newSession?.user ?? null)
+
+      if (event === 'INITIAL_SESSION') {
+        setIsLoading(false)
+      }
+    })
+
     const initAuth = async () => {
       try {
-        const session = await authService.getSession()
-        setSession(session)
-        if (session?.user) {
-          setUser(session.user)
+        const currentSession = await authService.getSession()
+        if (!isMounted) return
+
+        if (!currentSession) {
+          setSession(null)
+          setUser(null)
+          return
         }
+
+        const { user: currentUser, error: userError } = await authService.getUser()
+        if (!isMounted) return
+
+        if (userError) {
+          const statusCode = (userError as { status?: number }).status
+          const invalidSession =
+            statusCode === 401 ||
+            userError.message.toLowerCase().includes('user not found') ||
+            userError.message.toLowerCase().includes('invalid')
+
+          if (invalidSession) {
+            await authService.signOut()
+            if (!isMounted) return
+            setSession(null)
+            setUser(null)
+            return
+          }
+
+          // Keep current session/user for transient backend/network issues.
+          setSession(currentSession)
+          setUser(currentSession.user)
+          return
+        }
+
+        if (!currentUser) {
+          // If backend doesn't return a user but there is no explicit auth error,
+          // keep local session to avoid dropping users on transient startup races.
+          setSession(currentSession)
+          setUser(currentSession.user)
+          return
+        }
+
+        setSession(currentSession)
+        setUser(currentUser)
       } catch (err) {
+        if (!isMounted) return
         setError(err instanceof Error ? err : new Error('Auth initialization failed'))
+        setSession(null)
+        setUser(null)
       } finally {
+        if (!isMounted) return
         setIsLoading(false)
       }
     }
 
     initAuth()
-  }, [])
 
-  // Listen for auth state changes
-  useEffect(() => {
-    const subscription = authService.onAuthStateChange((newSession) => {
-      setSession(newSession)
-      setUser(newSession?.user ?? null)
-    })
-
-    return () => subscription?.unsubscribe()
+    return () => {
+      isMounted = false
+      subscription?.unsubscribe()
+    }
   }, [])
 
   const signIn = useCallback(async (email: string, password: string) => {

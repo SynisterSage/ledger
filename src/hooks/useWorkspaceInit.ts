@@ -14,9 +14,10 @@ export const useWorkspaceInit = () => {
 
     const initializeWorkspace = async () => {
       try {
+        const workspacesTable = supabase.from('workspaces' as never)
+
         // Check if personal workspace exists
-        const { data, error } = await supabase
-          .from('workspaces')
+        const { error } = await workspacesTable
           .select('id')
           .eq('owner_id', user.id)
           .eq('is_personal', true)
@@ -24,11 +25,11 @@ export const useWorkspaceInit = () => {
 
         // If no personal workspace, create one (fallback if trigger didn't fire)
         if (error?.code === 'PGRST116') {
-          await supabase.from('workspaces').insert({
+          await workspacesTable.insert({
             owner_id: user.id,
             name: 'My Work',
             is_personal: true,
-          })
+          } as never)
         }
       } catch (err) {
         console.error('Failed to initialize workspace:', err)

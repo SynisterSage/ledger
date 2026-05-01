@@ -22,3 +22,15 @@ contextBridge.exposeInMainWorld('ipcRenderer', {
   // You can expose other APTs you need here.
   // ...
 })
+
+type SidebarWindowMode = 'auth' | 'minimized' | 'expanded' | 'fullscreen'
+type ModuleWindowKind = 'calendar'
+
+contextBridge.exposeInMainWorld('desktopWindow', {
+  setMode(mode: SidebarWindowMode) {
+    return ipcRenderer.invoke('window:set-mode', mode)
+  },
+  toggleModule(kind: ModuleWindowKind) {
+    return ipcRenderer.invoke('window:toggle-module', kind)
+  },
+})
