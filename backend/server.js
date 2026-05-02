@@ -111,6 +111,18 @@ const normalizeProjectSemanticStatus = (status) => {
   return 'not_started'
 }
 
+const normalizeProjectNameKey = (value) => String(value ?? '').trim().toLowerCase()
+
+const dedupeProjectsByName = (projects) => {
+  const seen = new Set()
+  return (projects ?? []).filter((project) => {
+    const key = `${project.workspace_id ?? ''}:${normalizeProjectNameKey(project.name)}`
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
+
 const normalizeNullableText = (value) => {
   if (value === null || value === undefined) return null
   const trimmed = String(value).trim()
@@ -327,7 +339,7 @@ app.get('/api/projects', authMiddleware, rateLimit('read'), async (req, res) => 
       .limit(24)
 
     if (error) throw error
-    const projects = data ?? []
+    const projects = dedupeProjectsByName(data ?? [])
     res.json(includeCompleted ? projects : projects.filter((project) => !isCompletedProjectStatus(project.status)).slice(0, 8))
   } catch (error) {
     res.status(500).json({ error: error.message })
@@ -346,6 +358,18 @@ app.post('/api/projects', authMiddleware, rateLimit('write'), quotaGuard('projec
     const endDate = normalizeNullableDate(req.body?.end_date, 'end date')
     const color = normalizeNullableText(req.body?.color)
     const status = req.body?.status ? projectStatusAliases[normalizeProjectSemanticStatus(req.body.status)][0] : 'NotStarted'
+
+    const { data: existingProject, error: existingError } = await supabase
+      .from('projects')
+      .select(projectSelectColumns)
+      .eq('workspace_id', req.workspaceId)
+      .ilike('name', name)
+      .maybeSingle()
+
+    if (existingError) throw existingError
+    if (existingProject) {
+      return res.json(existingProject)
+    }
 
     const { data, error } = await supabase
       .from('projects')
@@ -383,6 +407,18 @@ app.patch('/api/projects/:id', authMiddleware, rateLimit('write'), async (req, r
       const nextName = String(req.body.name).trim()
       if (!nextName) {
         return res.status(400).json({ error: 'Project name required' })
+      }
+      const nameConflict = await supabase
+        .from('projects')
+        .select('id')
+        .eq('workspace_id', workspaceId)
+        .ilike('name', nextName)
+        .neq('id', req.params.id)
+        .maybeSingle()
+
+      if (nameConflict.error) throw nameConflict.error
+      if (nameConflict.data) {
+        return res.status(409).json({ error: 'A project with that name already exists in this workspace' })
       }
       update.name = nextName
     }

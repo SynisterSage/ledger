@@ -168,6 +168,7 @@ export const ProjectsWindow = () => {
   const descriptionRef = useRef<HTMLTextAreaElement | null>(null)
   const autosaveTimerRef = useRef<number | null>(null)
   const isDirtyRef = useRef(false)
+  const isCompletenessDraggingRef = useRef(false)
   const projectContextRef = useRef<HTMLDivElement | null>(null)
   const taskContextRef = useRef<HTMLDivElement | null>(null)
 
@@ -461,26 +462,6 @@ export const ProjectsWindow = () => {
     [api, selectedProjectId, syncDraftFromProject]
   )
 
-  const updateProjectCompleteness = useCallback(
-    async (projectId: string, value: number) => {
-      const clamped = Math.max(0, Math.min(100, Math.round(value)))
-      try {
-        const data = await api.updateProject(projectId, {
-          completeness: clamped,
-        })
-        const updated = data as ProjectRow
-        setProjects((prev) => prev.map((project) => (project.id === updated.id ? updated : project)))
-
-        if (selectedProjectId === projectId) {
-          syncDraftFromProject(updated)
-        }
-      } catch (updateError) {
-        setError(updateError instanceof Error ? updateError.message : 'Could not update project progress.')
-      }
-    },
-    [api, selectedProjectId, syncDraftFromProject]
-  )
-
   const createTask = useCallback(async () => {
     if (!selectedProjectId) return
     const title = newTaskTitle.trim()
@@ -554,6 +535,7 @@ export const ProjectsWindow = () => {
 
   useEffect(() => {
     if (!selectedProject || !isDirtyRef.current) return
+    if (isCompletenessDraggingRef.current) return
 
     if (autosaveTimerRef.current) {
       window.clearTimeout(autosaveTimerRef.current)
@@ -926,7 +908,25 @@ export const ProjectsWindow = () => {
                           min="0"
                           max="100"
                           value={projectDraft.completeness}
-                          onChange={(e) => void updateProjectCompleteness(selectedProject.id, Number(e.target.value))}
+                          onPointerDown={() => {
+                            isCompletenessDraggingRef.current = true
+                            if (autosaveTimerRef.current) {
+                              window.clearTimeout(autosaveTimerRef.current)
+                            }
+                          }}
+                          onChange={(e) => updateProjectDraft({ completeness: Number(e.target.value) })}
+                          onPointerUp={() => {
+                            isCompletenessDraggingRef.current = false
+                            void flushProjectDraft()
+                          }}
+                          onPointerCancel={() => {
+                            isCompletenessDraggingRef.current = false
+                            void flushProjectDraft()
+                          }}
+                          onBlur={() => {
+                            isCompletenessDraggingRef.current = false
+                            void flushProjectDraft()
+                          }}
                           className="w-full accent-gray-900"
                         />
                       </div>
@@ -999,16 +999,22 @@ export const ProjectsWindow = () => {
                         placeholder="Add a next action"
                         className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-900 outline-none transition focus:border-gray-300 focus:ring-4 focus:ring-gray-100"
                       />
-                      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-[minmax(0,1fr)_minmax(0,140px)_minmax(0,140px)_auto]">
-                        <select
-                          value={newTaskPriority}
-                          onChange={(e) => setNewTaskPriority(e.target.value as typeof newTaskPriority)}
-                          className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 outline-none"
-                        >
-                          {Object.entries(taskPriorityLabels).map(([key, label]) => (
-                            <option key={key} value={key}>{label}</option>
-                          ))}
-                        </select>
+                      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-[minmax(0,1fr)_minmax(0,150px)_minmax(0,150px)_auto]">
+                        <div className="relative">
+                          <select
+                            value={newTaskPriority}
+                            onChange={(e) => setNewTaskPriority(e.target.value as typeof newTaskPriority)}
+                            className="w-full min-w-0 appearance-none rounded-xl border border-gray-200 bg-white py-2 pl-3 pr-10 text-sm text-gray-700 outline-none"
+                          >
+                            {Object.entries(taskPriorityLabels).map(([key, label]) => (
+                              <option key={key} value={key}>{label}</option>
+                            ))}
+                          </select>
+                          <ChevronDown
+                            size={14}
+                            className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-gray-500"
+                          />
+                        </div>
                         <input
                           type="date"
                           value={newTaskDueDate}

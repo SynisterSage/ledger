@@ -10,6 +10,16 @@ type ApiRequestOptions = RequestInit & {
 export const useApi = () => {
   const { session } = useAuthContext()
 
+  const dedupeById = <T extends { id?: string }>(items: T[]) => {
+    const seen = new Set<string>()
+    return items.filter((item) => {
+      if (!item?.id) return true
+      if (seen.has(item.id)) return false
+      seen.add(item.id)
+      return true
+    })
+  }
+
   const localDayKey = () => {
     const now = new Date()
     const year = now.getFullYear()
@@ -61,7 +71,10 @@ export const useApi = () => {
         params.set('includeCompleted', 'true')
       }
       const query = params.toString()
-      return request(`/api/projects${query ? `?${query}` : ''}`)
+      return request(`/api/projects${query ? `?${query}` : ''}`).then((data) => {
+        if (!Array.isArray(data)) return data
+        return dedupeById(data)
+      })
     },
     createProject: (
       input: string | {
@@ -102,7 +115,10 @@ export const useApi = () => {
         params.set('projectId', options.projectId)
       }
       const query = params.toString()
-      return request(`/api/tasks${query ? `?${query}` : ''}`)
+      return request(`/api/tasks${query ? `?${query}` : ''}`).then((data) => {
+        if (!Array.isArray(data)) return data
+        return dedupeById(data)
+      })
     },
     createTask: (payload: {
       title: string
