@@ -94,10 +94,10 @@ const getUserTier = (user) => {
 const isCompletedProjectStatus = (status) => String(status ?? '').toLowerCase().includes('complete')
 
 const projectStatusAliases = {
-  not_started: ['active', 'not_started', 'NotStarted', 'todo'],
-  in_progress: ['in_progress', 'InProgress', 'inprogress', 'doing'],
-  paused: ['paused', 'Paused', 'archived', 'hold'],
-  completed: ['completed', 'Completed', 'done'],
+  not_started: ['NotStarted', 'not_started', 'todo'],
+  in_progress: ['InProgress', 'in_progress', 'inprogress', 'doing'],
+  paused: ['Paused', 'paused', 'archived', 'hold'],
+  completed: ['Completed', 'completed', 'done'],
 }
 
 const normalizeProjectSemanticStatus = (status) => {
@@ -514,7 +514,7 @@ app.post('/api/events', authMiddleware, rateLimit('write'), quotaGuard('events')
         start_at: req.body?.start_at,
         end_at: req.body?.end_at,
         color: req.body?.color || null,
-        status: req.body?.status || 'active',
+        status: req.body?.status || 'NotStarted',
         recurrence_rule: req.body?.recurrence_rule || 'none',
         notes: req.body?.notes || null,
         location: req.body?.location || null,

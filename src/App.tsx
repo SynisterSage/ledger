@@ -28,12 +28,12 @@ const moduleKind = (windowParams.get('module') as ModuleKind) ?? null
 
 function AuthStatusScreen({ title, subtitle }: { title: string; subtitle: string }) {
   return (
-    <div className='relative min-h-screen overflow-hidden bg-gray-50 px-4 py-6 text-gray-900'>
-      <div className='absolute inset-0 -z-10 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.9),rgba(248,250,252,1)_55%)]' />
+    <div className='relative min-h-screen overflow-hidden bg-white px-4 py-6 text-gray-900'>
+      <div className='absolute inset-0 -z-10 bg-white' />
 
       <div className='flex min-h-[calc(100vh-3rem)] items-center justify-center'>
-        <div className='w-full max-w-sm rounded-[24px] border border-gray-200 bg-white p-7 text-center shadow-sm'>
-          <div className='mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl border border-gray-200 bg-white shadow-sm'>
+        <div className='w-full max-w-sm rounded-3xl border border-gray-200 bg-white p-7 text-center shadow-[0_18px_50px_rgba(17,24,39,0.04)]'>
+          <div className='mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl border border-gray-200 bg-white'>
             <Loader2 size={18} className='animate-spin text-gray-900' />
           </div>
           <h2 className='text-2xl font-semibold tracking-tight text-gray-900'>{title}</h2>
@@ -280,11 +280,11 @@ function DashboardContent() {
           <div className='grid gap-4 md:grid-cols-2 xl:grid-cols-4'>
             {[
               { label: 'Today focus', value: `${completedFocus}/${daily.focusItems.length}`, note: daily.focusItems.length ? 'From your daily checklist' : 'No items set yet', icon: CheckCircle2 },
-              { label: 'Active projects', value: String(activeProjects), note: 'Project pulse items in progress', icon: Folder },
+              { label: 'Active projects', value: String(activeProjects), note: 'Project Tracker items in progress', icon: Folder },
               { label: 'Upcoming items', value: String(upcoming.length), note: 'Events from your calendar', icon: CalendarDays },
               { label: 'Recent notes', value: String(recentNotes.length), note: 'Fresh ideas and captures', icon: StickyNote },
             ].map(({ label, value, note, icon: Icon }) => (
-              <div key={label} className='rounded-[24px] border border-gray-200 bg-white p-5 shadow-sm'>
+              <div key={label} className='rounded-3xl border border-gray-200 bg-white p-5 shadow-sm'>
                 <div className='flex items-center justify-between'>
                   <p className='text-sm font-medium text-gray-600'>{label}</p>
                   <Icon size={18} className='text-gray-400' />
@@ -441,7 +441,7 @@ function DashboardContent() {
                 <div className='flex items-center justify-between'>
                   <div>
                     <p className='text-xs uppercase tracking-[0.2em] text-gray-500'>Projects</p>
-                    <h3 className='mt-1 text-xl font-semibold text-gray-900'>Project pulse</h3>
+                    <h3 className='mt-1 text-xl font-semibold text-gray-900'>Project Tracker</h3>
                   </div>
                   <button
                     onClick={() => setState('expanded')}
@@ -700,7 +700,7 @@ function App() {
       <div className='relative min-h-screen overflow-hidden bg-gray-50 px-4 py-6 text-gray-900'>
         <div className='absolute inset-0 -z-10 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.9),rgba(248,250,252,1)_55%)]' />
         <div className='flex min-h-[calc(100vh-3rem)] items-center justify-center px-4'>
-          <div className='w-full max-w-md rounded-[24px] border border-gray-200 bg-white p-7 shadow-sm'>
+          <div className='w-full max-w-md rounded-3xl border border-gray-200 bg-white p-7 shadow-sm'>
             <div className='mb-5 inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-gray-200 bg-white shadow-sm'>
               <span className='text-base font-semibold text-gray-900'>L</span>
             </div>

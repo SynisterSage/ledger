@@ -113,10 +113,10 @@ export const ExpandedSidebar = () => {
   }
 
   const projectStatusCandidates: Record<ProjectSemanticStatus, string[]> = {
-    not_started: ['active', 'not_started', 'NotStarted'],
-    in_progress: ['in_progress', 'InProgress'],
-    paused: ['paused', 'Paused', 'archived'],
-    completed: ['completed', 'Completed'],
+    not_started: ['NotStarted', 'not_started'],
+    in_progress: ['InProgress', 'in_progress'],
+    paused: ['Paused', 'paused', 'archived'],
+    completed: ['Completed', 'completed'],
   }
 
   const updateProjectStatusWithFallback = async (projectId: string, semantic: ProjectSemanticStatus) => {
@@ -1102,7 +1102,7 @@ export const ExpandedSidebar = () => {
                       setCheckin((prev) => ({ ...prev, blocked: e.target.value }))
                       setCheckinSaved(false)
                     }}
-                    placeholder="What blocked you?"
+                    placeholder="What didn't you finish"
                     className="w-full h-8 px-2.5 text-xs border border-gray-200 rounded-md focus:outline-none focus:border-gray-300 bg-gray-50 text-gray-900 placeholder-gray-500"
                     disabled={isLoadingDaily}
                   />
@@ -1152,7 +1152,7 @@ export const ExpandedSidebar = () => {
 
         <section>
           <div className="flex items-center justify-between mb-2">
-            <h2 className="text-xs font-semibold text-gray-600 uppercase tracking-wider">Project Pulse</h2>
+            <h2 className="text-xs font-semibold text-gray-600 uppercase tracking-wider">Project Tracker</h2>
             <button
               onClick={() => setIsCreatingProject(!isCreatingProject)}
               className="text-xs font-medium text-blue-600 hover:text-blue-700 px-2 py-1 rounded hover:bg-blue-50"
