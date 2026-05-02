@@ -18,10 +18,11 @@ import LoginForm from './components/Common/LoginForm'
 import CalendarWindow from './components/Calendar/CalendarWindow'
 import NotesWindow from './components/Notes/NotesWindow'
 import ProjectsWindow from './components/Projects/ProjectsWindow'
+import SettingsWindow from './components/Settings/SettingsWindow'
 import { SkeletonList } from './components/Common/Skeleton'
 
 type PostAuthStage = 'idle' | 'loading' | 'onboarding' | 'welcome' | 'ready'
-type ModuleKind = 'calendar' | 'notes' | 'projects' | null
+type ModuleKind = 'calendar' | 'notes' | 'projects' | 'dashboard' | 'settings' | null
 
 const windowParams = new URLSearchParams(window.location.search)
 const isModuleWindow = windowParams.get('window') === 'module'
@@ -29,16 +30,19 @@ const moduleKind = (windowParams.get('module') as ModuleKind) ?? null
 
 function AuthStatusScreen({ title, subtitle }: { title: string; subtitle: string }) {
   return (
-    <div className='relative min-h-screen overflow-hidden bg-white px-4 py-6 text-gray-900'>
-      <div className='absolute inset-0 -z-10 bg-white' />
-
-      <div className='flex min-h-[calc(100vh-3rem)] items-center justify-center'>
-        <div className='w-full max-w-sm rounded-3xl border border-gray-200 bg-white p-7 text-center shadow-[0_18px_50px_rgba(17,24,39,0.04)]'>
-          <div className='mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl border border-gray-200 bg-white'>
-            <Loader2 size={18} className='animate-spin text-gray-900' />
+    <div className="relative min-h-screen overflow-hidden bg-[#f6f7fb] text-gray-900">
+      <div className="absolute inset-0 -z-10 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.95),rgba(246,247,251,1)_45%)]" />
+      <div className="flex min-h-screen items-center justify-center px-6">
+        <div className="flex flex-col items-center text-center">
+          <div className="mb-5 flex h-20 w-20 items-center justify-center rounded-[28px] border border-white/70 bg-white/80 shadow-[0_20px_60px_rgba(17,24,39,0.08)] backdrop-blur-sm">
+            <img src="/logo-color.svg" alt="Ledger" className="h-11 w-11" />
           </div>
-          <h2 className='text-2xl font-semibold tracking-tight text-gray-900'>{title}</h2>
-          <p className='mt-2 text-sm leading-6 text-gray-600'>{subtitle}</p>
+          <h2 className="text-2xl font-semibold tracking-tight text-gray-900">{title}</h2>
+          <p className="mt-2 max-w-sm text-sm leading-6 text-gray-600">{subtitle}</p>
+          <div className="mt-5 flex items-center gap-2 text-gray-500">
+            <Loader2 size={16} className="animate-spin" />
+            <span className="text-xs uppercase tracking-[0.22em]">Loading</span>
+          </div>
         </div>
       </div>
     </div>
@@ -253,13 +257,23 @@ function DashboardContent() {
         <div>
           {state === 'fullscreen' && (
             <div className='flex items-center gap-3'>
+              <div className='flex h-9 w-9 items-center justify-center rounded-2xl border border-gray-200 bg-white shadow-sm'>
+                <img src="/logo-color.svg" alt="Ledger" className="h-5 w-5" />
+              </div>
               <h1 className='text-lg font-semibold text-gray-900'>Ledger</h1>
             </div>
           )}
           {state !== 'fullscreen' && (
             <>
-              <p className='text-xs text-gray-500'>Workspace</p>
-              <h1 className='text-lg font-semibold text-gray-900 mt-0.5'>My Work</h1>
+              <div className='flex items-center gap-2'>
+                <div className='flex h-8 w-8 items-center justify-center rounded-2xl border border-gray-200 bg-white shadow-sm'>
+                  <img src="/logo-color.svg" alt="Ledger" className="h-4 w-4" />
+                </div>
+                <div>
+                  <p className='text-xs text-gray-500'>Workspace</p>
+                  <h1 className='text-lg font-semibold text-gray-900 mt-0.5'>My Work</h1>
+                </div>
+              </div>
             </>
           )}
         </div>
@@ -280,7 +294,7 @@ function DashboardContent() {
           </button>
           <button
             onClick={() => setState('expanded')}
-            className='px-4 py-2 bg-gray-900 hover:bg-gray-800 text-white rounded-lg flex items-center gap-2 transition-colors text-sm font-medium'
+            className='px-4 py-2 bg-[#FF5F40] hover:bg-[#ea5336] text-white rounded-lg flex items-center gap-2 transition-colors text-sm font-medium'
           >
             <Plus size={16} />
             Collapse
@@ -369,7 +383,7 @@ function DashboardContent() {
                       <button
                         onClick={() => void addFocusItem()}
                         disabled={isSavingFocus}
-                        className='inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-gray-900 text-white transition-colors hover:bg-gray-800 disabled:opacity-60'
+                        className='inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-[#FF5F40] text-white transition-colors hover:bg-[#ea5336] disabled:opacity-60'
                       >
                         <Plus size={16} />
                       </button>
@@ -621,6 +635,14 @@ function App() {
       return <ProjectsWindow />
     }
 
+    if (moduleKind === 'dashboard') {
+      return <DashboardContent />
+    }
+
+    if (moduleKind === 'settings') {
+      return <SettingsWindow />
+    }
+
     return (
       <div className='flex h-screen items-center justify-center bg-white'>
         <p className='text-sm text-gray-600'>Unknown module</p>
@@ -754,7 +776,7 @@ function App() {
         <div className='flex min-h-[calc(100vh-3rem)] items-center justify-center px-4'>
           <div className='w-full max-w-md rounded-3xl border border-gray-200 bg-white p-7 shadow-sm'>
             <div className='mb-5 inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-gray-200 bg-white shadow-sm'>
-              <span className='text-base font-semibold text-gray-900'>L</span>
+              <img src="/logo-color.svg" alt="Ledger" className="h-6 w-6" />
             </div>
             <h2 className='text-2xl font-semibold tracking-tight text-gray-900 mb-2'>Welcome to Ledger</h2>
             <p className='text-sm leading-6 text-gray-600 mb-5'>Quick setup for your first workspace and team flow.</p>
@@ -783,7 +805,7 @@ function App() {
                 setIsSavingOnboarding(false)
                 setPostAuthStage('welcome')
               }}
-              className='w-full inline-flex items-center justify-center gap-2 rounded-2xl bg-gray-900 px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-gray-800 disabled:opacity-60'
+              className='w-full inline-flex items-center justify-center gap-2 rounded-2xl bg-[#FF5F40] px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-[#ea5336] disabled:opacity-60'
             >
               {isSavingOnboarding ? (
                 <>

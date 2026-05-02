@@ -35,8 +35,8 @@ export const LoginForm: React.FC<LoginProps> = ({ onSuccess }) => {
       <div className='w-full max-w-md'>
         {/* Header */}
         <div className='mb-12'>
-          <div className='inline-flex items-center justify-center w-10 h-10 bg-gray-900 rounded-lg mb-6'>
-            <span className='text-white font-semibold text-sm'>L</span>
+          <div className='inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-white border border-gray-200 shadow-sm mb-6'>
+            <img src="/logo-color.svg" alt="Ledger" className="h-7 w-7" />
           </div>
           <h1 className='text-3xl font-semibold text-gray-900 mb-2'>Ledger</h1>
           <p className='text-base text-gray-600'>{isSignUp ? 'Create your account' : 'Sign in to continue'}</p>
@@ -101,7 +101,7 @@ export const LoginForm: React.FC<LoginProps> = ({ onSuccess }) => {
           <button
             type='submit'
             disabled={isLoading}
-            className='w-full py-3 bg-gray-900 hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium rounded-lg transition-colors flex items-center justify-center gap-2 mt-8'
+            className='w-full py-3 bg-[#FF5F40] hover:bg-[#ea5336] disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium rounded-lg transition-colors flex items-center justify-center gap-2 mt-8'
           >
             {isLoading && <Loader2 size={18} className='animate-spin' />}
             {isSignUp ? 'Create Account' : 'Sign In'}

@@ -34,6 +34,8 @@ type QuickNote = {
 }
 type QuickCaptureMode = 'none' | 'task' | 'note' | 'event'
 type ProjectStatus = 'NotStarted' | 'InProgress' | 'Paused' | 'Completed'
+
+const normalizeProjectNameKey = (value: unknown) => String(value ?? '').trim().toLowerCase()
 type ProjectSemanticStatus = 'not_started' | 'in_progress' | 'paused' | 'completed'
 
 const todayKey = () => {
@@ -81,7 +83,7 @@ export const ExpandedSidebar = () => {
   const [projectUpdating, setProjectUpdating] = useState<string | null>(null)
   const [newProjectName, setNewProjectName] = useState('')
   const [isCreatingProject, setIsCreatingProject] = useState(false)
-  const [upcomingItems, setUpcomingItems] = useState<Array<{ id: string; title: string; type: 'event' | 'task'; dueDate: string; time?: string; rawDate: string }>>([])
+  const [upcomingItems, setUpcomingItems] = useState<Array<{ id: string; title: string; type: 'event' | 'task'; dueDate: string; time?: string; rawDate: string; sortAt: number }>>([])
   const [isLoadingUpcoming, setIsLoadingUpcoming] = useState(true)
   const [expandedUpcomingId, setExpandedUpcomingId] = useState<string | null>(null)
   const [draggingProjectId, setDraggingProjectId] = useState<string | null>(null)
@@ -108,7 +110,7 @@ export const ExpandedSidebar = () => {
 
   const projectStatusStyles: Record<ProjectSemanticStatus, string> = {
     not_started: 'text-blue-700 bg-blue-50',
-    in_progress: 'text-amber-700 bg-amber-50',
+    in_progress: 'text-[#C84E2B] bg-[#FFF0EB]',
     paused: 'text-gray-700 bg-gray-100',
     completed: 'text-green-700 bg-green-50',
   }
@@ -312,7 +314,9 @@ export const ExpandedSidebar = () => {
 
         const eventItems = (events || []).map((e: any) => {
           const startDate = new Date(e.start_at)
-          const eventDateISO = startDate.toISOString().slice(0, 10)
+          const startAt = startDate.getTime()
+          const isValidDate = Number.isFinite(startAt)
+          const eventDateISO = isValidDate ? startDate.toISOString().slice(0, 10) : ''
           let dateDisplay = ''
 
           if (eventDateISO === todayISO) {
@@ -320,7 +324,9 @@ export const ExpandedSidebar = () => {
           } else if (eventDateISO === tomorrowISO) {
             dateDisplay = 'Tomorrow'
           } else {
-            dateDisplay = startDate.toLocaleDateString([], { month: 'short', day: 'numeric' })
+            dateDisplay = isValidDate
+              ? startDate.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })
+              : 'No date'
           }
 
           return {
@@ -329,16 +335,12 @@ export const ExpandedSidebar = () => {
             type: 'event' as const,
             dueDate: dateDisplay,
             rawDate: eventDateISO,
-            time: startDate.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
+            time: isValidDate ? startDate.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : undefined,
+            sortAt: isValidDate ? startAt : Number.MAX_SAFE_INTEGER,
           }
         })
 
-        eventItems.sort((a: { rawDate: string; time?: string }, b: { rawDate: string; time?: string }) => {
-          const aTime = new Date(a.rawDate).getTime()
-          const bTime = new Date(b.rawDate).getTime()
-          if (aTime !== bTime) return aTime - bTime
-          return (a.time ?? '').localeCompare(b.time ?? '')
-        })
+        eventItems.sort((a: { sortAt: number }, b: { sortAt: number }) => a.sortAt - b.sortAt)
 
         if (!cancelled) {
           setUpcomingItems(eventItems.slice(0, 5))
@@ -603,7 +605,10 @@ export const ExpandedSidebar = () => {
         ...(data as { id: string; name: string; status: string; completeness: number }),
         status: normalizeProjectStatus((data as { status: string }).status),
       }
-      setProjects((prev) => [createdProject, ...prev])
+      setProjects((prev) => {
+        const next = prev.filter((project) => normalizeProjectNameKey(project.name) !== normalizeProjectNameKey(createdProject.name))
+        return [createdProject, ...next]
+      })
       setNewProjectName('')
     } catch (error) {
       console.error('Project creation error:', error)
@@ -690,8 +695,10 @@ export const ExpandedSidebar = () => {
             <p className="text-xs text-gray-700 truncate">{user?.email}</p>
           </div>
           <button
+            onClick={() => window.desktopWindow?.toggleModule('settings')}
             className="p-1.5 hover:bg-gray-100 rounded-md transition text-gray-600 hover:text-gray-900 shrink-0"
             title="Settings"
+            aria-label="Open settings"
           >
             <Settings size={16} />
           </button>
@@ -767,7 +774,7 @@ export const ExpandedSidebar = () => {
               />
               <button
                 onClick={() => void addFocusItem()}
-                className="h-8 w-8 rounded-md bg-gray-900 text-white flex items-center justify-center hover:bg-gray-800 disabled:opacity-60"
+                className="h-8 w-8 rounded-md bg-[#FF5F40] text-white flex items-center justify-center hover:bg-[#ea5336] disabled:opacity-60"
                 title="Add task"
                 disabled={isLoadingDaily}
               >
@@ -894,7 +901,7 @@ export const ExpandedSidebar = () => {
                 <button
                   onClick={() => void saveQuickTask()}
                   disabled={!taskDraft.trim()}
-                  className="px-2 py-1 text-[11px] font-medium text-white bg-gray-900 hover:bg-gray-800 rounded-md disabled:opacity-60"
+                className="px-2 py-1 text-[11px] font-medium text-white bg-[#FF5F40] hover:bg-[#ea5336] rounded-md disabled:opacity-60"
                 >
                   Add Task
                 </button>
@@ -1163,7 +1170,7 @@ export const ExpandedSidebar = () => {
             <h2 className="text-xs font-semibold text-gray-600 uppercase tracking-wider">Project Tracker</h2>
             <button
               onClick={() => setIsCreatingProject(!isCreatingProject)}
-              className="text-xs font-medium text-blue-600 hover:text-blue-700 px-2 py-1 rounded hover:bg-blue-50"
+            className="text-xs font-medium text-[#FF5F40] hover:text-[#ea5336] px-2 py-1 rounded hover:bg-[#fff0eb]"
             >
               {isCreatingProject ? 'Cancel' : '+ New'}
             </button>
@@ -1187,7 +1194,7 @@ export const ExpandedSidebar = () => {
               <button
                 onClick={() => void createProject()}
                 disabled={!newProjectName.trim()}
-                className="w-full h-7 rounded-md bg-blue-600 text-white text-xs font-medium hover:bg-blue-700 disabled:opacity-60"
+                className="w-full h-7 rounded-md bg-[#FF5F40] text-white text-xs font-medium hover:bg-[#ea5336] disabled:opacity-60"
               >
                 Create Project
               </button>
@@ -1240,7 +1247,7 @@ export const ExpandedSidebar = () => {
                           className="mt-2 h-2 rounded-full bg-gray-200 overflow-hidden cursor-pointer hover:bg-gray-300 transition touch-none"
                         >
                           <div
-                            className={`h-full bg-blue-500 rounded-full ${draggingProjectId === project.id ? '' : 'transition-all'}`}
+                            className={`h-full bg-[#FF5F40] rounded-full ${draggingProjectId === project.id ? '' : 'transition-all'}`}
                             style={{ width: `${project.completeness}%` }}
                           />
                         </div>
@@ -1269,7 +1276,7 @@ export const ExpandedSidebar = () => {
                                 disabled={projectUpdating === project.id}
                                 className={`text-[10px] font-medium px-2 py-1 rounded transition ${
                                   normalizeProjectStatus(String(project.status)) === normalizeProjectStatus(status)
-                                    ? 'bg-blue-500 text-white'
+                                    ? 'bg-[#FF5F40] text-white'
                                     : 'bg-white border border-gray-200 text-gray-700 hover:border-gray-300'
                                 }`}
                               >
@@ -1305,21 +1312,21 @@ export const ExpandedSidebar = () => {
                       e.preventDefault()
                       setContextMenu({ type: 'upcoming', id: item.id, x: e.clientX, y: e.clientY })
                     }}
-                    className="w-full text-left bg-white rounded-lg p-2.5 border border-gray-200 hover:bg-gray-50 transition"
+                    className="w-full rounded-xl border border-gray-200 bg-white p-3 text-left transition hover:bg-gray-50"
                   >
                     <div className="flex items-start gap-2">
                       <div className="shrink-0 mt-0.5">
                         {item.type === 'event' ? (
-                          <CalendarDays size={12} className="text-blue-600" />
+                          <CalendarDays size={14} className="text-[#FF5F40]" />
                         ) : (
-                          <CheckCircle2 size={12} className="text-green-600" />
+                          <CheckCircle2 size={14} className="text-green-600" />
                         )}
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className={`text-xs font-medium text-gray-900 ${isExpanded ? '' : 'truncate'}`}>
+                        <p className={`text-[13px] font-semibold leading-5 text-gray-900 ${isExpanded ? '' : 'truncate'}`}>
                           {item.title}
                         </p>
-                        <p className="text-[10px] text-gray-600 mt-0.5">
+                        <p className="mt-1 text-[11px] text-gray-600">
                           {item.dueDate}
                           {item.time && ` · ${item.time}`}
                         </p>
@@ -1370,7 +1377,6 @@ export const ExpandedSidebar = () => {
                 onClick={() => {
                   const project = projects.find((p) => p.id === contextMenu.id)
                   if (project) {
-                    setState('expanded')
                     void window.desktopWindow?.toggleModule('projects', {
                       kind: 'projects',
                       focusProjectId: project.id,
@@ -1378,7 +1384,7 @@ export const ExpandedSidebar = () => {
                   }
                   setContextMenu(null)
                 }}
-                className="w-full text-left px-4 py-2 text-sm text-blue-600 hover:bg-blue-50 transition flex items-center gap-2"
+                className="w-full text-left px-4 py-2 text-sm text-[#FF5F40] hover:bg-[#fff0eb] transition flex items-center gap-2"
               >
                 <Folder size={14} />
                 Navigate to project
@@ -1411,12 +1417,11 @@ export const ExpandedSidebar = () => {
                 onClick={() => {
                   const event = upcomingItems.find((e) => e.id === contextMenu.id)
                   if (event) {
-                    setState('expanded')
                     void window.desktopWindow?.toggleModule('calendar', event.rawDate)
                     setContextMenu(null)
                   }
                 }}
-                className="w-full text-left px-4 py-2 text-sm text-blue-600 hover:bg-blue-50 transition flex items-center gap-2"
+                className="w-full text-left px-4 py-2 text-sm text-[#FF5F40] hover:bg-[#fff0eb] transition flex items-center gap-2"
               >
                 <CalendarDays size={14} />
                 Open in Calendar
@@ -1429,7 +1434,7 @@ export const ExpandedSidebar = () => {
       <div className="px-6 space-y-3 border-t border-white/20 pt-4">
         <button
           onClick={() => setState('fullscreen')}
-          className="w-full px-3 py-2 text-sm font-medium text-white bg-gray-900 hover:bg-gray-800 rounded-lg transition"
+          className="w-full px-3 py-2 text-sm font-medium text-white bg-[#FF5F40] hover:bg-[#ea5336] rounded-lg transition"
         >
           Open Dashboard
         </button>

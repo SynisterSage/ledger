@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
 import { useAuthContext } from '../context/AuthContext'
+import { useWorkspaceContext } from '../context/WorkspaceContext'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000'
 
@@ -9,6 +10,20 @@ type ApiRequestOptions = RequestInit & {
 
 export const useApi = () => {
   const { session } = useAuthContext()
+  const { activeWorkspaceId } = useWorkspaceContext()
+
+  const normalizeNameKey = (value: unknown) => String(value ?? '').trim().toLowerCase()
+
+  const dedupeProjects = <T extends { id?: string; name?: string }>(items: T[]) => {
+    const seen = new Set<string>()
+    return items.filter((item) => {
+      const key = normalizeNameKey(item?.name)
+      if (!key) return true
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
+  }
 
   const dedupeById = <T extends { id?: string }>(items: T[]) => {
     const seen = new Set<string>()
@@ -38,6 +53,10 @@ export const useApi = () => {
       headers['Authorization'] = `Bearer ${session.access_token}`
     }
 
+    if (activeWorkspaceId && endpoint.startsWith('/api/')) {
+      headers['X-Workspace-Id'] = activeWorkspaceId
+    }
+
     if (endpoint.includes('/api/daily-accountability')) {
       headers['X-Ledger-Day-Key'] = localDayKey()
     }
@@ -64,6 +83,14 @@ export const useApi = () => {
     getOnboardingStatus: () => request('/api/user/onboarding'),
     completeOnboarding: () => request('/api/user/onboarding', { method: 'PATCH' }),
 
+    // Workspaces
+    getWorkspaces: () => request('/api/workspaces'),
+    getActiveWorkspace: () => request('/api/workspaces/active'),
+    setActiveWorkspace: (workspaceId: string) => request('/api/workspaces/active', {
+      method: 'PATCH',
+      body: JSON.stringify({ workspace_id: workspaceId }),
+    }),
+
     // Projects
     getProjects: (options?: { includeCompleted?: boolean }) => {
       const params = new URLSearchParams()
@@ -73,7 +100,7 @@ export const useApi = () => {
       const query = params.toString()
       return request(`/api/projects${query ? `?${query}` : ''}`).then((data) => {
         if (!Array.isArray(data)) return data
-        return dedupeById(data)
+        return dedupeProjects(data)
       })
     },
     createProject: (
@@ -224,5 +251,5 @@ export const useApi = () => {
     deleteNote: (id: string) => request(`/api/notes/${id}`, {
       method: 'DELETE',
     }),
-  }), [session?.access_token])
+  }), [activeWorkspaceId, session?.access_token])
 }

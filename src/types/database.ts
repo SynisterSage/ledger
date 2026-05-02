@@ -10,6 +10,7 @@ export type Database = {
           email: string
           full_name: string | null
           avatar_url: string | null
+          active_workspace_id: string | null
           onboarding_completed: boolean
           onboarding_completed_at: string | null
           created_at: string
@@ -20,6 +21,7 @@ export type Database = {
           email: string
           full_name?: string | null
           avatar_url?: string | null
+          active_workspace_id?: string | null
           onboarding_completed?: boolean
           onboarding_completed_at?: string | null
           created_at?: string
@@ -30,6 +32,7 @@ export type Database = {
           email?: string
           full_name?: string | null
           avatar_url?: string | null
+          active_workspace_id?: string | null
           onboarding_completed?: boolean
           onboarding_completed_at?: string | null
           updated_at?: string

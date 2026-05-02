@@ -1,7 +1,7 @@
 /// <reference types="vite/client" />
 
 type SidebarWindowMode = 'auth' | 'minimized' | 'expanded' | 'fullscreen'
-type ModuleWindowKind = 'calendar' | 'notes' | 'projects'
+type ModuleWindowKind = 'calendar' | 'notes' | 'projects' | 'dashboard' | 'settings'
 type ModuleFocusPayload = {
   kind: ModuleWindowKind
   focusDate?: string | null

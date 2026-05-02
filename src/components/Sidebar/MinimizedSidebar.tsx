@@ -15,13 +15,18 @@ export const MinimizedSidebar = () => {
   return (
     <div className="w-16 h-screen bg-white border-r border-gray-200 flex flex-col items-center justify-between py-6">
       {/* Logo */}
-      <div className="text-2xl font-bold text-gray-900">L</div>
+      <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-gray-200 bg-white shadow-sm">
+        <img src="/logo-color.svg" alt="Ledger" className="h-7 w-7" />
+      </div>
 
       {/* Navigation Icons */}
       <div className="flex flex-col gap-4">
         <button
           title="Dashboard"
           aria-label="Open dashboard"
+          onClick={() => {
+            window.desktopWindow?.toggleModule('dashboard')
+          }}
           className={neutralIcon}
         >
           <BarChart3 size={18} />
@@ -74,7 +79,7 @@ export const MinimizedSidebar = () => {
           title="Expand"
           className={actionIcon}
         >
-          <ChevronRight size={20} />
+          <ChevronRight size={20} className="text-white" />
         </button>
 
         {/* Sign Out */}

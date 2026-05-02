@@ -139,7 +139,106 @@ const normalizeNullableDate = (value, fieldName) => {
   return normalized
 }
 
-const resolveWorkspaceId = async (userId) => {
+const isMissingColumnError = (error, columnName) => {
+  const message = String(error?.message ?? '').toLowerCase()
+  return message.includes('column') && message.includes(String(columnName).toLowerCase()) && message.includes('does not exist')
+}
+
+const getRequestedWorkspaceId = (req) => {
+  const headerWorkspace = req.headers['x-workspace-id']
+  if (typeof headerWorkspace === 'string' && headerWorkspace.trim()) {
+    return headerWorkspace.trim()
+  }
+
+  if (Array.isArray(headerWorkspace) && headerWorkspace[0]?.trim()) {
+    return headerWorkspace[0].trim()
+  }
+
+  const queryWorkspace = String(req.query?.workspaceId ?? '').trim()
+  if (queryWorkspace) {
+    return queryWorkspace
+  }
+
+  return null
+}
+
+const getUserWorkspaceIds = async (userId) => {
+  const [ownedResult, memberResult] = await Promise.all([
+    supabase
+      .from('workspaces')
+      .select('id')
+      .eq('owner_id', userId),
+    supabase
+      .from('workspace_members')
+      .select('workspace_id')
+      .eq('user_id', userId),
+  ])
+
+  if (ownedResult.error) throw ownedResult.error
+  if (memberResult.error) throw memberResult.error
+
+  const ids = new Set()
+  for (const row of ownedResult.data ?? []) {
+    if (row?.id) ids.add(row.id)
+  }
+  for (const row of memberResult.data ?? []) {
+    if (row?.workspace_id) ids.add(row.workspace_id)
+  }
+
+  return ids
+}
+
+const isWorkspaceAccessibleToUser = async (userId, workspaceId) => {
+  if (!workspaceId) return false
+  const workspaceIds = await getUserWorkspaceIds(userId)
+  return workspaceIds.has(workspaceId)
+}
+
+const getUserActiveWorkspaceId = async (userId) => {
+  const result = await supabase
+    .from('users')
+    .select('active_workspace_id')
+    .eq('id', userId)
+    .maybeSingle()
+
+  if (result.error) {
+    if (isMissingColumnError(result.error, 'active_workspace_id')) {
+      return null
+    }
+    throw result.error
+  }
+
+  return result.data?.active_workspace_id ?? null
+}
+
+const setUserActiveWorkspaceId = async (userId, workspaceId) => {
+  const result = await supabase
+    .from('users')
+    .update({ active_workspace_id: workspaceId, updated_at: new Date().toISOString() })
+    .eq('id', userId)
+
+  if (result.error && !isMissingColumnError(result.error, 'active_workspace_id')) {
+    throw result.error
+  }
+}
+
+const resolveWorkspaceId = async (userId, requestedWorkspaceId = null) => {
+  if (requestedWorkspaceId) {
+    const allowed = await isWorkspaceAccessibleToUser(userId, requestedWorkspaceId)
+    if (allowed) {
+      await setUserActiveWorkspaceId(userId, requestedWorkspaceId)
+      return requestedWorkspaceId
+    }
+  }
+
+  const activeWorkspaceId = await getUserActiveWorkspaceId(userId)
+  if (activeWorkspaceId) {
+    const allowed = await isWorkspaceAccessibleToUser(userId, activeWorkspaceId)
+    if (allowed) {
+      return activeWorkspaceId
+    }
+  }
+
   const personalWorkspace = await supabase
     .from('workspaces')
     .select('id')
@@ -147,7 +246,9 @@ const resolveWorkspaceId = async (userId) => {
     .eq('is_personal', true)
     .maybeSingle()
 
+  if (personalWorkspace.error) throw personalWorkspace.error
   if (personalWorkspace.data?.id) {
+    await setUserActiveWorkspaceId(userId, personalWorkspace.data.id)
     return personalWorkspace.data.id
   }
 
@@ -155,10 +256,13 @@ const resolveWorkspaceId = async (userId) => {
     .from('workspace_members')
     .select('workspace_id')
     .eq('user_id', userId)
+    .order('joined_at', { ascending: true })
     .limit(1)
     .maybeSingle()
 
+  if (membershipWorkspace.error) throw membershipWorkspace.error
   if (membershipWorkspace.data?.workspace_id) {
+    await setUserActiveWorkspaceId(userId, membershipWorkspace.data.workspace_id)
     return membershipWorkspace.data.workspace_id
   }
 
@@ -172,11 +276,18 @@ const resolveWorkspaceId = async (userId) => {
     .select('id')
     .single()
 
+  if (createdWorkspace.error) throw createdWorkspace.error
   if (createdWorkspace.data?.id) {
+    await setUserActiveWorkspaceId(userId, createdWorkspace.data.id)
     return createdWorkspace.data.id
   }
 
   throw new Error('Workspace not available')
+}
+
+const resolveWorkspaceIdForRequest = async (req) => {
+  const requestedWorkspaceId = getRequestedWorkspaceId(req)
+  return resolveWorkspaceId(req.authUser.id, requestedWorkspaceId)
 }
 
 const getCalendarId = async (workspaceId, userId) => {
@@ -274,7 +385,7 @@ const getLimitCount = async (resource, workspaceId) => {
 
 const quotaGuard = (resource) => async (req, res, next) => {
   try {
-    const workspaceId = await resolveWorkspaceId(req.authUser.id)
+    const workspaceId = await resolveWorkspaceIdForRequest(req)
     req.workspaceId = workspaceId
 
     const tier = getUserTier(req.authUser)
@@ -327,9 +438,108 @@ app.patch('/api/user/onboarding', authMiddleware, rateLimit('write'), async (req
   }
 })
 
+app.get('/api/workspaces', authMiddleware, rateLimit('read'), async (req, res) => {
+  try {
+    const userId = req.authUser.id
+    const [ownedResult, memberResult] = await Promise.all([
+      supabase
+        .from('workspaces')
+        .select('id, name, description, is_personal, color, owner_id, created_at, updated_at')
+        .eq('owner_id', userId)
+        .order('created_at', { ascending: true }),
+      supabase
+        .from('workspace_members')
+        .select('workspace_id, role, joined_at')
+        .eq('user_id', userId),
+    ])
+
+    if (ownedResult.error) throw ownedResult.error
+    if (memberResult.error) throw memberResult.error
+
+    const memberWorkspaceIds = (memberResult.data ?? []).map((row) => row.workspace_id)
+    let memberWorkspaces = []
+
+    if (memberWorkspaceIds.length > 0) {
+      const memberWorkspaceResult = await supabase
+        .from('workspaces')
+        .select('id, name, description, is_personal, color, owner_id, created_at, updated_at')
+        .in('id', memberWorkspaceIds)
+
+      if (memberWorkspaceResult.error) throw memberWorkspaceResult.error
+      memberWorkspaces = memberWorkspaceResult.data ?? []
+    }
+
+    const roleByWorkspaceId = new Map((memberResult.data ?? []).map((row) => [row.workspace_id, row.role]))
+    const merged = [...(ownedResult.data ?? []), ...memberWorkspaces]
+    const dedupedById = new Map()
+
+    for (const workspace of merged) {
+      if (!workspace?.id) continue
+      const role = workspace.owner_id === userId ? 'owner' : (roleByWorkspaceId.get(workspace.id) ?? 'member')
+      dedupedById.set(workspace.id, {
+        ...workspace,
+        role,
+      })
+    }
+
+    const sorted = [...dedupedById.values()].sort((a, b) => {
+      if (a.is_personal !== b.is_personal) return a.is_personal ? -1 : 1
+      return String(a.name ?? '').localeCompare(String(b.name ?? ''))
+    })
+
+    res.json(sorted)
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
+app.get('/api/workspaces/active', authMiddleware, rateLimit('read'), async (req, res) => {
+  try {
+    const activeWorkspaceId = await resolveWorkspaceIdForRequest(req)
+    const { data, error } = await supabase
+      .from('workspaces')
+      .select('id, name, description, is_personal, color, owner_id, created_at, updated_at')
+      .eq('id', activeWorkspaceId)
+      .maybeSingle()
+
+    if (error) throw error
+    res.json({ workspace_id: activeWorkspaceId, workspace: data ?? null })
+  } catch (error) {
+    res.status(error.statusCode || 500).json({ error: error.message })
+  }
+})
+
+app.patch('/api/workspaces/active', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = String(req.body?.workspace_id ?? '').trim()
+    if (!workspaceId) {
+      return res.status(400).json({ error: 'workspace_id is required' })
+    }
+
+    const allowed = await isWorkspaceAccessibleToUser(req.authUser.id, workspaceId)
+    if (!allowed) {
+      return res.status(403).json({ error: 'Workspace access denied' })
+    }
+
+    await setUserActiveWorkspaceId(req.authUser.id, workspaceId)
+    const activeWorkspaceId = workspaceId
+    const { data, error } = await supabase
+      .from('workspaces')
+      .select('id, name, description, is_personal, color, owner_id, created_at, updated_at')
+      .eq('id', activeWorkspaceId)
+      .maybeSingle()
+
+    if (error) throw error
+
+    res.json({ workspace_id: activeWorkspaceId, workspace: data ?? null })
+  } catch (error) {
+    res.status(error.statusCode || 500).json({ error: error.message })
+  }
+})
+
 app.get('/api/projects', authMiddleware, rateLimit('read'), async (req, res) => {
   try {
-    const workspaceId = await resolveWorkspaceId(req.authUser.id)
+    const workspaceId = await resolveWorkspaceIdForRequest(req)
     const includeCompleted = ['true', '1', 'yes'].includes(String(req.query?.includeCompleted ?? '').toLowerCase())
     const { data, error } = await supabase
       .from('projects')
@@ -396,7 +606,7 @@ app.post('/api/projects', authMiddleware, rateLimit('write'), quotaGuard('projec
 
 app.patch('/api/projects/:id', authMiddleware, rateLimit('write'), async (req, res) => {
   try {
-    const workspaceId = await resolveWorkspaceId(req.authUser.id)
+    const workspaceId = await resolveWorkspaceIdForRequest(req)
     const allowed = await ensureWorkspaceResource('projects', req.params.id, workspaceId)
     if (!allowed) {
       return res.status(404).json({ error: 'Project not found' })
@@ -452,7 +662,7 @@ app.patch('/api/projects/:id', authMiddleware, rateLimit('write'), async (req, r
 
 app.delete('/api/projects/:id', authMiddleware, rateLimit('write'), async (req, res) => {
   try {
-    const workspaceId = await resolveWorkspaceId(req.authUser.id)
+    const workspaceId = await resolveWorkspaceIdForRequest(req)
     const { error } = await supabase.from('projects').delete().eq('id', req.params.id).eq('workspace_id', workspaceId)
     if (error) throw error
     res.json({ success: true })
@@ -463,7 +673,7 @@ app.delete('/api/projects/:id', authMiddleware, rateLimit('write'), async (req, 
 
 app.get('/api/tasks', authMiddleware, rateLimit('read'), async (req, res) => {
   try {
-    const workspaceId = await resolveWorkspaceId(req.authUser.id)
+    const workspaceId = await resolveWorkspaceIdForRequest(req)
     let query = supabase
       .from('tasks')
       .select(taskSelectColumns)
@@ -483,7 +693,7 @@ app.get('/api/tasks', authMiddleware, rateLimit('read'), async (req, res) => {
 
 app.post('/api/tasks', authMiddleware, rateLimit('write'), quotaGuard('tasks'), async (req, res) => {
   try {
-    const workspaceId = await resolveWorkspaceId(req.authUser.id)
+    const workspaceId = await resolveWorkspaceIdForRequest(req)
     const title = String(req.body?.title ?? '').trim()
     if (!title) {
       return res.status(400).json({ error: 'Task title required' })
@@ -527,7 +737,7 @@ app.post('/api/tasks', authMiddleware, rateLimit('write'), quotaGuard('tasks'), 
 
 app.patch('/api/tasks/:id', authMiddleware, rateLimit('write'), async (req, res) => {
   try {
-    const workspaceId = await resolveWorkspaceId(req.authUser.id)
+    const workspaceId = await resolveWorkspaceIdForRequest(req)
     const allowed = await ensureWorkspaceResource('tasks', req.params.id, workspaceId)
     if (!allowed) {
       return res.status(404).json({ error: 'Task not found' })
@@ -578,7 +788,7 @@ app.patch('/api/tasks/:id', authMiddleware, rateLimit('write'), async (req, res)
 
 app.delete('/api/tasks/:id', authMiddleware, rateLimit('write'), async (req, res) => {
   try {
-    const workspaceId = await resolveWorkspaceId(req.authUser.id)
+    const workspaceId = await resolveWorkspaceIdForRequest(req)
     const { error } = await supabase.from('tasks').delete().eq('id', req.params.id).eq('workspace_id', workspaceId)
     if (error) throw error
     res.json({ success: true })
@@ -589,7 +799,7 @@ app.delete('/api/tasks/:id', authMiddleware, rateLimit('write'), async (req, res
 
 app.get('/api/calendars', authMiddleware, rateLimit('read'), async (req, res) => {
   try {
-    const workspaceId = await resolveWorkspaceId(req.authUser.id)
+    const workspaceId = await resolveWorkspaceIdForRequest(req)
     const { data, error } = await supabase
       .from('calendars')
       .select('id, name, color, workspace_id, is_personal')
@@ -605,7 +815,7 @@ app.get('/api/calendars', authMiddleware, rateLimit('read'), async (req, res) =>
 
 app.post('/api/calendars', authMiddleware, rateLimit('write'), async (req, res) => {
   try {
-    const workspaceId = await resolveWorkspaceId(req.authUser.id)
+    const workspaceId = await resolveWorkspaceIdForRequest(req)
     const name = String(req.body?.name ?? 'Personal').trim() || 'Personal'
 
     const { data, error } = await supabase
@@ -630,7 +840,7 @@ app.post('/api/calendars', authMiddleware, rateLimit('write'), async (req, res) 
 
 app.patch('/api/calendars/:id', authMiddleware, rateLimit('write'), async (req, res) => {
   try {
-    const workspaceId = await resolveWorkspaceId(req.authUser.id)
+    const workspaceId = await resolveWorkspaceIdForRequest(req)
     const allowed = await ensureWorkspaceResource('calendars', req.params.id, workspaceId)
     if (!allowed) {
       return res.status(404).json({ error: 'Calendar not found' })
@@ -656,7 +866,7 @@ app.patch('/api/calendars/:id', authMiddleware, rateLimit('write'), async (req, 
 
 app.get('/api/events', authMiddleware, rateLimit('read'), async (req, res) => {
   try {
-    const workspaceId = await resolveWorkspaceId(req.authUser.id)
+    const workspaceId = await resolveWorkspaceIdForRequest(req)
     let query = supabase
       .from('events')
       .select('id, title, start_at, end_at, calendar_id, color, status, recurrence_rule, created_at')
@@ -679,7 +889,7 @@ app.get('/api/events', authMiddleware, rateLimit('read'), async (req, res) => {
 
 app.get('/api/events/upcoming', authMiddleware, rateLimit('read'), async (req, res) => {
   try {
-    const workspaceId = await resolveWorkspaceId(req.authUser.id)
+    const workspaceId = await resolveWorkspaceIdForRequest(req)
     const today = new Date()
     today.setHours(0, 0, 0, 0)
     const end = new Date(today)
@@ -739,7 +949,7 @@ app.post('/api/events', authMiddleware, rateLimit('write'), quotaGuard('events')
 
 app.patch('/api/events/:id', authMiddleware, rateLimit('write'), async (req, res) => {
   try {
-    const workspaceId = await resolveWorkspaceId(req.authUser.id)
+    const workspaceId = await resolveWorkspaceIdForRequest(req)
     const allowed = await ensureWorkspaceResource('events', req.params.id, workspaceId)
     if (!allowed) {
       return res.status(404).json({ error: 'Event not found' })
@@ -766,7 +976,7 @@ app.patch('/api/events/:id', authMiddleware, rateLimit('write'), async (req, res
 
 app.delete('/api/events/:id', authMiddleware, rateLimit('write'), async (req, res) => {
   try {
-    const workspaceId = await resolveWorkspaceId(req.authUser.id)
+    const workspaceId = await resolveWorkspaceIdForRequest(req)
     const { error } = await supabase.from('events').delete().eq('id', req.params.id).eq('workspace_id', workspaceId)
     if (error) throw error
     res.json({ success: true })
@@ -777,7 +987,7 @@ app.delete('/api/events/:id', authMiddleware, rateLimit('write'), async (req, re
 
 app.get('/api/reminders', authMiddleware, rateLimit('read'), async (req, res) => {
   try {
-    const workspaceId = await resolveWorkspaceId(req.authUser.id)
+    const workspaceId = await resolveWorkspaceIdForRequest(req)
     const { data, error } = await withReminderTable((table) =>
       supabase
         .from(table)
@@ -825,7 +1035,7 @@ app.post('/api/reminders', authMiddleware, rateLimit('write'), quotaGuard('remin
 
 app.patch('/api/reminders/:id', authMiddleware, rateLimit('write'), async (req, res) => {
   try {
-    const workspaceId = await resolveWorkspaceId(req.authUser.id)
+    const workspaceId = await resolveWorkspaceIdForRequest(req)
     const allowedResult = await withReminderTable((table) =>
       supabase.from(table).select('id').eq('id', req.params.id).eq('workspace_id', workspaceId).maybeSingle()
     )
@@ -856,7 +1066,7 @@ app.patch('/api/reminders/:id', authMiddleware, rateLimit('write'), async (req, 
 
 app.delete('/api/reminders/:id', authMiddleware, rateLimit('write'), async (req, res) => {
   try {
-    const workspaceId = await resolveWorkspaceId(req.authUser.id)
+    const workspaceId = await resolveWorkspaceIdForRequest(req)
     const { error } = await withReminderTable((table) =>
       supabase
         .from(table)
@@ -874,7 +1084,7 @@ app.delete('/api/reminders/:id', authMiddleware, rateLimit('write'), async (req,
 
 app.get('/api/notes', authMiddleware, rateLimit('read'), async (req, res) => {
   try {
-    const workspaceId = await resolveWorkspaceId(req.authUser.id)
+    const workspaceId = await resolveWorkspaceIdForRequest(req)
     const { data, error } = await supabase
       .from('notes')
       .select('id, title, content, date, mood, source, created_at, updated_at')
@@ -891,7 +1101,7 @@ app.get('/api/notes', authMiddleware, rateLimit('read'), async (req, res) => {
 
 app.post('/api/notes', authMiddleware, rateLimit('write'), quotaGuard('notes'), async (req, res) => {
   try {
-    const workspaceId = req.workspaceId
+    const workspaceId = req.workspaceId ?? await resolveWorkspaceIdForRequest(req)
     const title = String(req.body?.title ?? 'Untitled').trim() || 'Untitled'
     const content = String(req.body?.content ?? '').trim()
     const date = String(req.body?.date ?? new Date().toISOString().slice(0, 10)).trim()
@@ -921,7 +1131,7 @@ app.post('/api/notes', authMiddleware, rateLimit('write'), quotaGuard('notes'), 
 
 app.patch('/api/notes/:id', authMiddleware, rateLimit('write'), async (req, res) => {
   try {
-    const workspaceId = await resolveWorkspaceId(req.authUser.id)
+    const workspaceId = await resolveWorkspaceIdForRequest(req)
     const update = {}
 
     if (req.body?.title !== undefined) update.title = String(req.body.title ?? '').trim() || 'Untitled'
@@ -949,7 +1159,7 @@ app.patch('/api/notes/:id', authMiddleware, rateLimit('write'), async (req, res)
 
 app.delete('/api/notes/:id', authMiddleware, rateLimit('write'), async (req, res) => {
   try {
-    const workspaceId = await resolveWorkspaceId(req.authUser.id)
+    const workspaceId = await resolveWorkspaceIdForRequest(req)
     const { error } = await supabase.from('notes').delete().eq('id', req.params.id).eq('workspace_id', workspaceId)
     if (error) throw error
     res.json({ success: true })

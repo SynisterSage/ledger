@@ -97,6 +97,8 @@ const taskPriorityTone: Record<string, string> = {
 
 const colorOptions = ['#007AFF', '#0EA5E9', '#8B5CF6', '#F59E0B', '#EF4444', '#10B981']
 
+const normalizeProjectNameKey = (value: unknown) => String(value ?? '').trim().toLowerCase()
+
 const todayKey = () => {
   const now = new Date()
   const year = now.getFullYear()
@@ -404,7 +406,10 @@ export const ProjectsWindow = () => {
         end_date: null,
       })
       const created = data as ProjectRow
-      setProjects((prev) => [created, ...prev])
+      setProjects((prev) => {
+        const next = prev.filter((project) => normalizeProjectNameKey(project.name) !== normalizeProjectNameKey(created.name))
+        return [created, ...next]
+      })
       setSelectedProjectId(created.id)
       syncDraftFromProject(created)
       setNewProjectName('')
@@ -1068,7 +1073,7 @@ export const ProjectsWindow = () => {
                                   <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
                                     <div className="min-w-0">
                                       <p className={`min-w-0 text-sm font-medium ${completed ? 'text-gray-400 line-through' : 'text-gray-900'}`}>{task.title}</p>
-                                      <p className="mt-1 break-words text-[11px] text-gray-500">
+                                      <p className="mt-1 wrap-break-word text-[11px] text-gray-500">
                                         {formatShortDate(task.due_date)}{formatTime(task.due_time) ? ` · ${formatTime(task.due_time)}` : ''}
                                       </p>
                                     </div>
