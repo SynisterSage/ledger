@@ -7,6 +7,7 @@ import {
 import { type CSSProperties, useEffect, useMemo, useState } from 'react'
 import { useAuthContext } from '../../context/AuthContext'
 import { useWorkspaceContext } from '../../context/WorkspaceContext'
+import { useApi } from '../../hooks/useApi'
 import authService from '../../services/auth'
 
 type SettingsSectionId = 'account' | 'workspace' | 'calendar' | 'accessibility'
@@ -20,6 +21,27 @@ type UserPreferences = {
   reduceMotion: boolean
   highContrast: boolean
   compactDensity: boolean
+}
+
+type WorkspaceRole = 'owner' | 'admin' | 'member' | 'viewer'
+
+type WorkspaceMember = {
+  user_id: string
+  role: WorkspaceRole
+  joined_at: string | null
+  email: string | null
+  full_name: string | null
+  is_owner: boolean
+}
+
+type WorkspaceInvitation = {
+  id: string
+  invited_email: string
+  role: 'admin' | 'member' | 'viewer'
+  status: 'pending' | 'accepted' | 'revoked' | 'expired'
+  expires_at: string
+  invited_by: string
+  created_at: string
 }
 
 const sectionOrder: Array<{ id: SettingsSectionId; label: string; description: string }> = [
@@ -92,6 +114,7 @@ const ToggleField = ({
 
 export const SettingsWindow = () => {
   const { user, signOut } = useAuthContext()
+  const api = useApi()
   const {
     workspaces,
     activeWorkspace,
@@ -116,6 +139,18 @@ export const SettingsWindow = () => {
   const [passwordError, setPasswordError] = useState<string | null>(null)
   const [isSwitchingWorkspace, setIsSwitchingWorkspace] = useState(false)
   const [workspaceStatus, setWorkspaceStatus] = useState<string | null>(null)
+  const [workspaceMembers, setWorkspaceMembers] = useState<WorkspaceMember[]>([])
+  const [workspaceInvitations, setWorkspaceInvitations] = useState<WorkspaceInvitation[]>([])
+  const [workspaceUserRole, setWorkspaceUserRole] = useState<WorkspaceRole>('member')
+  const [isLoadingWorkspaceAdmin, setIsLoadingWorkspaceAdmin] = useState(false)
+  const [workspaceAdminError, setWorkspaceAdminError] = useState<string | null>(null)
+  const [memberActionId, setMemberActionId] = useState<string | null>(null)
+  const [invitationActionId, setInvitationActionId] = useState<string | null>(null)
+  const [inviteEmail, setInviteEmail] = useState('')
+  const [inviteRole, setInviteRole] = useState<'admin' | 'member' | 'viewer'>('member')
+  const [inviteLink, setInviteLink] = useState<string | null>(null)
+  const [inviteToken, setInviteToken] = useState<string | null>(null)
+  const [isSendingInvite, setIsSendingInvite] = useState(false)
 
   useEffect(() => {
     setPreferences(loadPreferences())
@@ -193,6 +228,149 @@ export const SettingsWindow = () => {
       setWorkspaceStatus(err instanceof Error ? err.message : 'Could not switch workspace.')
     } finally {
       setIsSwitchingWorkspace(false)
+    }
+  }
+
+  const canManageWorkspace = workspaceUserRole === 'owner' || workspaceUserRole === 'admin'
+
+  useEffect(() => {
+    if (activeSection !== 'workspace' || !activeWorkspaceId) return
+
+    let cancelled = false
+
+    const loadWorkspaceAdminData = async () => {
+      setIsLoadingWorkspaceAdmin(true)
+      setWorkspaceAdminError(null)
+
+      try {
+        const [membersPayload, invitesPayload] = await Promise.all([
+          api.getWorkspaceMembers(activeWorkspaceId),
+          api.getWorkspaceInvitations(activeWorkspaceId),
+        ])
+
+        if (cancelled) return
+
+        const nextMembers = Array.isArray((membersPayload as { members?: unknown[] })?.members)
+          ? ((membersPayload as { members: WorkspaceMember[] }).members)
+          : []
+
+        const nextInvites = Array.isArray((invitesPayload as { invitations?: unknown[] })?.invitations)
+          ? ((invitesPayload as { invitations: WorkspaceInvitation[] }).invitations)
+          : []
+
+        setWorkspaceMembers(nextMembers)
+        setWorkspaceInvitations(nextInvites)
+
+        const roleCandidate = String((membersPayload as { current_user_role?: string })?.current_user_role ?? 'member').toLowerCase()
+        if (roleCandidate === 'owner' || roleCandidate === 'admin' || roleCandidate === 'member' || roleCandidate === 'viewer') {
+          setWorkspaceUserRole(roleCandidate)
+        }
+      } catch (err) {
+        if (cancelled) return
+        setWorkspaceAdminError(err instanceof Error ? err.message : 'Could not load workspace members')
+      } finally {
+        if (!cancelled) {
+          setIsLoadingWorkspaceAdmin(false)
+        }
+      }
+    }
+
+    void loadWorkspaceAdminData()
+
+    return () => {
+      cancelled = true
+    }
+  }, [activeSection, activeWorkspaceId, api])
+
+  const handleUpdateMemberRole = async (userId: string, role: 'admin' | 'member' | 'viewer') => {
+    if (!activeWorkspaceId) return
+    setWorkspaceAdminError(null)
+    setMemberActionId(userId)
+
+    try {
+      await api.updateWorkspaceMemberRole(activeWorkspaceId, userId, role)
+      const membersPayload = await api.getWorkspaceMembers(activeWorkspaceId)
+      const nextMembers = Array.isArray((membersPayload as { members?: unknown[] })?.members)
+        ? ((membersPayload as { members: WorkspaceMember[] }).members)
+        : []
+      setWorkspaceMembers(nextMembers)
+    } catch (err) {
+      setWorkspaceAdminError(err instanceof Error ? err.message : 'Could not update member role')
+    } finally {
+      setMemberActionId(null)
+    }
+  }
+
+  const handleRemoveMember = async (userId: string) => {
+    if (!activeWorkspaceId) return
+    setWorkspaceAdminError(null)
+    setMemberActionId(userId)
+
+    try {
+      await api.removeWorkspaceMember(activeWorkspaceId, userId)
+      const membersPayload = await api.getWorkspaceMembers(activeWorkspaceId)
+      const nextMembers = Array.isArray((membersPayload as { members?: unknown[] })?.members)
+        ? ((membersPayload as { members: WorkspaceMember[] }).members)
+        : []
+      setWorkspaceMembers(nextMembers)
+    } catch (err) {
+      setWorkspaceAdminError(err instanceof Error ? err.message : 'Could not remove member')
+    } finally {
+      setMemberActionId(null)
+    }
+  }
+
+  const handleCreateInvitation = async () => {
+    if (!activeWorkspaceId) return
+    const email = inviteEmail.trim()
+    if (!email) {
+      setWorkspaceAdminError('Invite email is required')
+      return
+    }
+
+    setWorkspaceAdminError(null)
+    setWorkspaceStatus(null)
+    setIsSendingInvite(true)
+
+    try {
+      const payload = await api.createWorkspaceInvitation(activeWorkspaceId, {
+        email,
+        role: inviteRole,
+      }) as { invite_url?: string; invite_token?: string }
+
+      setInviteEmail('')
+      setInviteRole('member')
+      setInviteLink(payload.invite_url ?? null)
+      setInviteToken(payload.invite_token ?? null)
+
+      const invitesPayload = await api.getWorkspaceInvitations(activeWorkspaceId)
+      const nextInvites = Array.isArray((invitesPayload as { invitations?: unknown[] })?.invitations)
+        ? ((invitesPayload as { invitations: WorkspaceInvitation[] }).invitations)
+        : []
+      setWorkspaceInvitations(nextInvites)
+    } catch (err) {
+      setWorkspaceAdminError(err instanceof Error ? err.message : 'Could not create invitation')
+    } finally {
+      setIsSendingInvite(false)
+    }
+  }
+
+  const handleRevokeInvitation = async (invitationId: string) => {
+    if (!activeWorkspaceId) return
+    setWorkspaceAdminError(null)
+    setInvitationActionId(invitationId)
+
+    try {
+      await api.revokeWorkspaceInvitation(activeWorkspaceId, invitationId)
+      const invitesPayload = await api.getWorkspaceInvitations(activeWorkspaceId)
+      const nextInvites = Array.isArray((invitesPayload as { invitations?: unknown[] })?.invitations)
+        ? ((invitesPayload as { invitations: WorkspaceInvitation[] }).invitations)
+        : []
+      setWorkspaceInvitations(nextInvites)
+    } catch (err) {
+      setWorkspaceAdminError(err instanceof Error ? err.message : 'Could not revoke invitation')
+    } finally {
+      setInvitationActionId(null)
     }
   }
 
@@ -381,6 +559,134 @@ export const SettingsWindow = () => {
                       </p>
                     )}
                   </div>
+
+                  <div className="mt-4 rounded-2xl border border-gray-200 bg-white p-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <h3 className="text-sm font-semibold text-gray-900">Members</h3>
+                        <p className="mt-1 text-xs text-gray-600">Manage role access for this workspace.</p>
+                      </div>
+                      <span className="rounded-full border border-gray-200 bg-gray-50 px-2.5 py-1 text-[11px] font-medium text-gray-700">
+                        You are {workspaceUserRole}
+                      </span>
+                    </div>
+
+                    <div className="mt-3 space-y-2">
+                      {isLoadingWorkspaceAdmin ? (
+                        <p className="text-xs text-gray-500">Loading members...</p>
+                      ) : workspaceMembers.length === 0 ? (
+                        <p className="text-xs text-gray-500">No members yet.</p>
+                      ) : (
+                        workspaceMembers.map((member) => {
+                          const displayName = member.full_name || member.email || member.user_id
+                          const canEditRole = canManageWorkspace && !member.is_owner && member.user_id !== user?.id
+                          return (
+                            <div key={member.user_id} className="grid grid-cols-[1fr_auto_auto] items-center gap-2 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2">
+                              <div className="min-w-0">
+                                <p className="truncate text-sm font-medium text-gray-900">{displayName}</p>
+                                <p className="truncate text-xs text-gray-600">{member.email || 'No email'}{member.is_owner ? ' · Owner' : ''}</p>
+                              </div>
+                              <select
+                                value={member.is_owner ? 'owner' : member.role}
+                                onChange={(e) => void handleUpdateMemberRole(member.user_id, e.target.value as 'admin' | 'member' | 'viewer')}
+                                disabled={!canEditRole || memberActionId === member.user_id}
+                                className="h-8 rounded-lg border border-gray-200 bg-white px-2 text-xs text-gray-800 outline-none disabled:opacity-60"
+                                aria-label={`Update ${displayName} role`}
+                              >
+                                {member.is_owner ? (
+                                  <option value="owner">owner</option>
+                                ) : (
+                                  <>
+                                    <option value="admin">admin</option>
+                                    <option value="member">member</option>
+                                    <option value="viewer">viewer</option>
+                                  </>
+                                )}
+                              </select>
+                              <button
+                                onClick={() => void handleRemoveMember(member.user_id)}
+                                disabled={!canManageWorkspace || member.is_owner || member.user_id === user?.id || memberActionId === member.user_id}
+                                className="h-8 rounded-lg border border-gray-200 bg-white px-2 text-xs font-medium text-gray-700 transition hover:bg-gray-100 disabled:opacity-50"
+                              >
+                                Remove
+                              </button>
+                            </div>
+                          )
+                        })
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="mt-4 rounded-2xl border border-gray-200 bg-white p-4">
+                    <h3 className="text-sm font-semibold text-gray-900">Invitations</h3>
+                    <p className="mt-1 text-xs text-gray-600">Invite teammates by email and set a default role.</p>
+
+                    <div className="mt-3 grid gap-2 md:grid-cols-[1fr_140px_auto]">
+                      <input
+                        value={inviteEmail}
+                        onChange={(e) => setInviteEmail(e.target.value)}
+                        placeholder="name@company.com"
+                        disabled={!canManageWorkspace || isSendingInvite}
+                        className="h-9 rounded-lg border border-gray-200 bg-gray-50 px-3 text-sm text-gray-900 outline-none focus:border-gray-300 focus:ring-4 focus:ring-gray-100 disabled:opacity-60"
+                        aria-label="Invite email"
+                      />
+                      <select
+                        value={inviteRole}
+                        onChange={(e) => setInviteRole(e.target.value as 'admin' | 'member' | 'viewer')}
+                        disabled={!canManageWorkspace || isSendingInvite}
+                        className="h-9 rounded-lg border border-gray-200 bg-gray-50 px-2 text-sm text-gray-900 outline-none focus:border-gray-300 focus:ring-4 focus:ring-gray-100 disabled:opacity-60"
+                        aria-label="Invite role"
+                      >
+                        <option value="member">member</option>
+                        <option value="admin">admin</option>
+                        <option value="viewer">viewer</option>
+                      </select>
+                      <button
+                        onClick={() => void handleCreateInvitation()}
+                        disabled={!canManageWorkspace || isSendingInvite}
+                        className="h-9 rounded-lg bg-[#FF5F40] px-3 text-sm font-medium text-white transition hover:bg-[#ea5336] disabled:opacity-60"
+                      >
+                        {isSendingInvite ? 'Sending...' : 'Send invite'}
+                      </button>
+                    </div>
+
+                    {(inviteLink || inviteToken) && (
+                      <div className="mt-3 rounded-xl border border-gray-200 bg-gray-50 p-3">
+                        <p className="text-xs font-medium text-gray-700">Latest invite link</p>
+                        {inviteLink && <p className="mt-1 break-all text-xs text-gray-600">{inviteLink}</p>}
+                        {inviteToken && <p className="mt-1 text-[11px] text-gray-500">Token: {inviteToken}</p>}
+                      </div>
+                    )}
+
+                    <div className="mt-3 space-y-2">
+                      {workspaceInvitations.length === 0 ? (
+                        <p className="text-xs text-gray-500">No invitations yet.</p>
+                      ) : (
+                        workspaceInvitations.map((invite) => (
+                          <div key={invite.id} className="grid grid-cols-[1fr_auto_auto] items-center gap-2 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2">
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-medium text-gray-900">{invite.invited_email}</p>
+                              <p className="text-xs text-gray-600">{invite.role} · {invite.status}</p>
+                            </div>
+                            <p className="text-[11px] text-gray-500">{new Date(invite.expires_at).toLocaleDateString([], { month: 'short', day: 'numeric' })}</p>
+                            <button
+                              onClick={() => void handleRevokeInvitation(invite.id)}
+                              disabled={!canManageWorkspace || invite.status !== 'pending' || invitationActionId === invite.id}
+                              className="h-8 rounded-lg border border-gray-200 bg-white px-2 text-xs font-medium text-gray-700 transition hover:bg-gray-100 disabled:opacity-50"
+                            >
+                              Revoke
+                            </button>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+
+                  {workspaceAdminError && (
+                    <p className="mt-3 text-xs text-red-700" role="status">
+                      {workspaceAdminError}
+                    </p>
+                  )}
 
                   <div className="mt-5 grid gap-4 md:grid-cols-2">
                     <div>

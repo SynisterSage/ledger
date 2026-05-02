@@ -90,6 +90,26 @@ export const useApi = () => {
       method: 'PATCH',
       body: JSON.stringify({ workspace_id: workspaceId }),
     }),
+    getWorkspaceMembers: (workspaceId: string) => request(`/api/workspaces/${workspaceId}/members`),
+    updateWorkspaceMemberRole: (workspaceId: string, userId: string, role: 'admin' | 'member' | 'viewer') => request(`/api/workspaces/${workspaceId}/members/${userId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ role }),
+    }),
+    removeWorkspaceMember: (workspaceId: string, userId: string) => request(`/api/workspaces/${workspaceId}/members/${userId}`, {
+      method: 'DELETE',
+    }),
+    getWorkspaceInvitations: (workspaceId: string) => request(`/api/workspaces/${workspaceId}/invitations`),
+    createWorkspaceInvitation: (workspaceId: string, payload: { email: string; role?: 'admin' | 'member' | 'viewer' }) => request(`/api/workspaces/${workspaceId}/invitations`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+    revokeWorkspaceInvitation: (workspaceId: string, invitationId: string) => request(`/api/workspaces/${workspaceId}/invitations/${invitationId}`, {
+      method: 'DELETE',
+    }),
+    acceptWorkspaceInvitation: (token: string) => request('/api/invitations/accept', {
+      method: 'POST',
+      body: JSON.stringify({ token }),
+    }),
 
     // Projects
     getProjects: (options?: { includeCompleted?: boolean }) => {
