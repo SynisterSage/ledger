@@ -8,7 +8,7 @@ import {
   StickyNote,
   Trash2,
 } from 'lucide-react'
-import { useEffect, useState, type CSSProperties } from 'react'
+import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { useAuthContext } from './context/AuthContext'
 import { useWorkspaceInit } from './hooks/useWorkspaceInit'
 import { useApi } from './hooks/useApi'
@@ -50,6 +50,10 @@ function DashboardContent() {
   const { user } = useAuthContext()
   const api = useApi()
   const { state, setState } = useSidebar()
+  const todayTasksRef = useRef<HTMLElement | null>(null)
+  const notesRef = useRef<HTMLElement | null>(null)
+  const projectsRef = useRef<HTMLElement | null>(null)
+  const calendarRef = useRef<HTMLElement | null>(null)
 
   const [isLoadingDashboard, setIsLoadingDashboard] = useState(true)
   const [dashboardError, setDashboardError] = useState<string | null>(null)
@@ -219,7 +223,7 @@ function DashboardContent() {
   }
 
   const completedFocus = daily.focusItems.filter((item) => item.done).length
-  const activeProjects = projects.filter((project) => !String(project.status).toLowerCase().includes('complete')).length
+  const activeProjects = projects.filter((project) => String(project.status).toLowerCase().includes('progress')).length
   const recentNotes = notes
   const firstName = (user?.user_metadata?.full_name as string | undefined)?.trim()?.split(' ')[0] || user?.email?.split('@')[0] || 'User'
   const todayLabel = new Date().toLocaleDateString([], {
@@ -227,6 +231,14 @@ function DashboardContent() {
     month: 'long',
     day: 'numeric',
   })
+
+  const scrollToSection = (ref: React.RefObject<HTMLElement | null>) => {
+    ref.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+
+  const openModule = (kind: 'calendar' | 'notes' | 'projects') => {
+    void window.desktopWindow?.toggleModule(kind)
+  }
 
   return (
     <div className="flex h-full flex-col bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.9),rgba(245,247,251,1)_45%)]">
@@ -296,32 +308,39 @@ function DashboardContent() {
 
           <div className='grid gap-4 md:grid-cols-2 xl:grid-cols-4'>
             {[
-              { label: 'Today focus', value: `${completedFocus}/${daily.focusItems.length}`, note: daily.focusItems.length ? 'From your daily checklist' : 'No items set yet', icon: CheckCircle2 },
-              { label: 'Active projects', value: String(activeProjects), note: 'Project Tracker items in progress', icon: Folder },
-              { label: 'Upcoming items', value: String(upcoming.length), note: 'Events from your calendar', icon: CalendarDays },
-              { label: 'Recent notes', value: String(recentNotes.length), note: 'Fresh ideas and captures', icon: StickyNote },
-            ].map(({ label, value, note, icon: Icon }) => (
-              <div key={label} className='rounded-3xl border border-gray-200 bg-white p-5 shadow-sm'>
+              { label: 'Today focus', value: `${completedFocus}/${daily.focusItems.length}`, note: daily.focusItems.length ? 'From your daily checklist' : 'No items set yet', icon: CheckCircle2, action: () => scrollToSection(todayTasksRef), actionLabel: 'Jump to tasks' },
+              { label: 'Active projects', value: String(activeProjects), note: 'Project Tracker items in progress', icon: Folder, action: () => openModule('projects'), actionLabel: 'Open projects' },
+              { label: 'Upcoming items', value: String(upcoming.length), note: 'Events from your calendar', icon: CalendarDays, action: () => openModule('calendar'), actionLabel: 'Open calendar' },
+              { label: 'Recent notes', value: String(recentNotes.length), note: 'Fresh ideas and captures', icon: StickyNote, action: () => openModule('notes'), actionLabel: 'Open notes' },
+            ].map(({ label, value, note, icon: Icon, action, actionLabel }) => (
+              <button
+                key={label}
+                onClick={action}
+                className='group rounded-3xl border border-gray-200 bg-white p-5 shadow-sm text-left transition-transform hover:-translate-y-0.5 hover:shadow-md'
+              >
                 <div className='flex items-center justify-between'>
                   <p className='text-sm font-medium text-gray-600'>{label}</p>
-                  <Icon size={18} className='text-gray-400' />
+                  <div className='flex items-center gap-2 text-gray-400'>
+                    <span className='text-[11px] font-medium opacity-0 transition-opacity group-hover:opacity-100'>{actionLabel}</span>
+                    <Icon size={18} className='text-gray-400' />
+                  </div>
                 </div>
                 <p className='mt-4 text-3xl font-semibold tracking-tight text-gray-900'>{value}</p>
                 <p className='mt-1 text-xs text-gray-500'>{note}</p>
-              </div>
+              </button>
             ))}
           </div>
 
           <div className='grid gap-6 xl:grid-cols-[1.25fr_0.75fr]'>
             <div className='space-y-6'>
-              <section className='rounded-[28px] border border-gray-200 bg-white p-6 shadow-sm'>
+              <section ref={todayTasksRef} className='rounded-[28px] border border-gray-200 bg-white p-6 shadow-sm'>
                 <div className='flex items-center justify-between'>
                   <div>
                     <p className='text-xs uppercase tracking-[0.2em] text-gray-500'>Today</p>
                     <h3 className='mt-1 text-xl font-semibold text-gray-900'>Today&apos;s tasks</h3>
                   </div>
                   <button
-                    onClick={() => window.desktopWindow?.toggleModule('projects')}
+                    onClick={() => openModule('projects')}
                     className='rounded-full border border-gray-200 bg-gray-50 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-100'
                   >
                     Open projects
@@ -410,14 +429,14 @@ function DashboardContent() {
                 )}
               </section>
 
-              <section className='rounded-[28px] border border-gray-200 bg-white p-6 shadow-sm'>
+              <section ref={notesRef} className='rounded-[28px] border border-gray-200 bg-white p-6 shadow-sm'>
                 <div className='flex items-center justify-between'>
                   <div>
                     <p className='text-xs uppercase tracking-[0.2em] text-gray-500'>Notes</p>
                     <h3 className='mt-1 text-xl font-semibold text-gray-900'>Recent captures</h3>
                   </div>
                   <button
-                    onClick={() => window.desktopWindow?.toggleModule('notes')}
+                    onClick={() => openModule('notes')}
                     className='rounded-full border border-gray-200 bg-gray-50 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-100'
                   >
                     Open notes
@@ -434,7 +453,11 @@ function DashboardContent() {
                     </div>
                   ) : (
                     recentNotes.map((note) => (
-                      <div key={note.id} className='rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3'>
+                      <button
+                        key={note.id}
+                        onClick={() => openModule('notes')}
+                        className='rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3 text-left transition hover:bg-white hover:shadow-sm'
+                      >
                         <div className='flex items-start justify-between gap-3'>
                           <div className='min-w-0'>
                             <p className='text-sm font-medium text-gray-900 truncate'>{note.title}</p>
@@ -446,7 +469,7 @@ function DashboardContent() {
                             {new Date(note.updated_at).toLocaleDateString([], { month: 'short', day: 'numeric' })}
                           </p>
                         </div>
-                      </div>
+                      </button>
                     ))
                   )}
                 </div>
@@ -454,14 +477,14 @@ function DashboardContent() {
             </div>
 
             <div className='space-y-6'>
-              <section className='rounded-[28px] border border-gray-200 bg-white p-6 shadow-sm'>
+              <section ref={projectsRef} className='rounded-[28px] border border-gray-200 bg-white p-6 shadow-sm'>
                 <div className='flex items-center justify-between'>
                   <div>
                     <p className='text-xs uppercase tracking-[0.2em] text-gray-500'>Projects</p>
                     <h3 className='mt-1 text-xl font-semibold text-gray-900'>Project Tracker</h3>
                   </div>
                   <button
-                    onClick={() => window.desktopWindow?.toggleModule('projects')}
+                    onClick={() => openModule('projects')}
                     className='rounded-full border border-gray-200 bg-gray-50 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-100'
                   >
                     Open
@@ -488,7 +511,11 @@ function DashboardContent() {
                             : 'Not started'
 
                       return (
-                        <div key={project.id} className='rounded-2xl border border-gray-200 bg-gray-50 p-4'>
+                        <button
+                          key={project.id}
+                          onClick={() => openModule('projects')}
+                          className='w-full rounded-2xl border border-gray-200 bg-gray-50 p-4 text-left transition hover:bg-white hover:shadow-sm'
+                        >
                           <div className='flex items-start justify-between gap-3'>
                             <div className='min-w-0'>
                               <p className='text-sm font-medium text-gray-900 truncate'>{project.name}</p>
@@ -502,21 +529,21 @@ function DashboardContent() {
                               style={{ width: `${Math.max(0, Math.min(100, project.completeness))}%` }}
                             />
                           </div>
-                        </div>
+                        </button>
                       )
                     })
                   )}
                 </div>
               </section>
 
-              <section className='rounded-[28px] border border-gray-200 bg-white p-6 shadow-sm'>
+              <section ref={calendarRef} className='rounded-[28px] border border-gray-200 bg-white p-6 shadow-sm'>
                 <div className='flex items-center justify-between'>
                   <div>
                     <p className='text-xs uppercase tracking-[0.2em] text-gray-500'>Calendar</p>
                     <h3 className='mt-1 text-xl font-semibold text-gray-900'>Upcoming</h3>
                   </div>
                   <button
-                    onClick={() => window.desktopWindow?.toggleModule('calendar')}
+                    onClick={() => openModule('calendar')}
                     className='rounded-full border border-gray-200 bg-gray-50 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-100'
                   >
                     Open
@@ -539,10 +566,14 @@ function DashboardContent() {
                       })
 
                       return (
-                        <div key={item.id} className='rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3'>
+                        <button
+                          key={item.id}
+                          onClick={() => openModule('calendar')}
+                          className='w-full rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3 text-left transition hover:bg-white hover:shadow-sm'
+                        >
                           <p className='text-sm font-medium text-gray-900 truncate'>{item.title}</p>
                           <p className='mt-1 text-[11px] text-gray-500'>{time}</p>
-                        </div>
+                        </button>
                       )
                     })
                   )}

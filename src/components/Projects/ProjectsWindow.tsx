@@ -163,6 +163,7 @@ type ProjectDraft = {
 export const ProjectsWindow = () => {
   const { user } = useAuthContext()
   const api = useApi()
+  const initialFocusProjectId = new URLSearchParams(window.location.search).get('focusProjectId')
   const titleRef = useRef<HTMLInputElement | null>(null)
   const descriptionRef = useRef<HTMLTextAreaElement | null>(null)
   const autosaveTimerRef = useRef<number | null>(null)
@@ -372,6 +373,15 @@ export const ProjectsWindow = () => {
     [flushProjectDraft, selectedProjectId, syncDraftFromProject]
   )
 
+  const focusProjectById = useCallback(
+    async (projectId: string) => {
+      const project = projects.find((item) => item.id === projectId)
+      if (!project) return
+      await selectProject(project)
+    },
+    [projects, selectProject]
+  )
+
   const updateProjectDraft = useCallback((patch: Partial<ProjectDraft>) => {
     isDirtyRef.current = true
     setProjectDraft((prev) => ({ ...prev, ...patch }))
@@ -559,6 +569,26 @@ export const ProjectsWindow = () => {
       }
     }
   }, [flushProjectDraft, projectDraft, selectedProject])
+
+  useEffect(() => {
+    if (!initialFocusProjectId) return
+    if (!projects.length) return
+    if (selectedProjectId === initialFocusProjectId) return
+    void focusProjectById(initialFocusProjectId)
+  }, [focusProjectById, initialFocusProjectId, projects, selectedProjectId])
+
+  useEffect(() => {
+    const focusProjectListener = (_event: unknown, payload: { kind?: string; focusProjectId?: string | null }) => {
+      if (payload?.kind !== 'projects' || !payload.focusProjectId) return
+      void focusProjectById(payload.focusProjectId)
+    }
+
+    window.ipcRenderer?.on('module:focus-project', focusProjectListener)
+
+    return () => {
+      window.ipcRenderer?.off('module:focus-project', focusProjectListener)
+    }
+  }, [focusProjectById])
 
   useEffect(() => {
     if (!isResizingLeftPane) return
@@ -830,21 +860,21 @@ export const ProjectsWindow = () => {
         <main className="flex-1 overflow-hidden bg-[#f5f7fb]">
           <div className="h-full overflow-auto p-5">
             {selectedProject ? (
-              <div className="mx-auto max-w-7xl grid gap-5 xl:grid-cols-[1.2fr_0.8fr]">
-                <section className="rounded-3xl border border-gray-200 bg-white shadow-sm overflow-hidden">
-                  <div className="border-b border-gray-100 px-6 py-5 flex items-start justify-between gap-4">
-                    <div>
+              <div className="mx-auto max-w-7xl grid gap-5 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)]">
+                <section className="min-w-0 overflow-hidden rounded-3xl border border-gray-200 bg-white shadow-sm">
+                  <div className="border-b border-gray-100 px-6 py-5 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+                    <div className="min-w-0">
                       <p className="text-xs uppercase tracking-[0.2em] text-gray-500">Project</p>
                       <h3 className="mt-1 text-2xl font-semibold tracking-tight text-gray-900">Project detail</h3>
                       <p className="mt-2 text-sm text-gray-500">Keep the plan lean. Update the brief, target dates, and status in one place.</p>
                     </div>
-                    <div className="flex items-center gap-2 text-xs text-gray-500">
+                    <div className="flex items-center gap-2 text-xs text-gray-500 shrink-0">
                       {isSavingProject ? 'Saving...' : isDirtyRef.current ? 'Unsaved changes' : 'Saved'}
                     </div>
                   </div>
 
                   <div className="grid gap-0 xl:grid-cols-[1fr]">
-                    <div className="p-6 space-y-5">
+                    <div className="min-w-0 p-6 space-y-5">
                       <div>
                         <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-2">Project name</label>
                         <input
@@ -901,7 +931,7 @@ export const ProjectsWindow = () => {
                         />
                       </div>
 
-                      <div className="grid gap-4 md:grid-cols-2">
+                      <div className="grid gap-4 sm:grid-cols-2">
                         <div>
                           <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-2">Start date</label>
                           <input
@@ -942,20 +972,20 @@ export const ProjectsWindow = () => {
                   </div>
                 </section>
 
-                <section className="rounded-3xl border border-gray-200 bg-white shadow-sm overflow-hidden">
-                  <div className="border-b border-gray-100 px-6 py-5 flex items-start justify-between gap-4">
-                    <div>
+                <section className="min-w-0 overflow-hidden rounded-3xl border border-gray-200 bg-white shadow-sm">
+                  <div className="border-b border-gray-100 px-6 py-5 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+                    <div className="min-w-0">
                       <p className="text-xs uppercase tracking-[0.2em] text-gray-500">Tasks</p>
                       <h3 className="mt-1 text-2xl font-semibold tracking-tight text-gray-900">Project tasks</h3>
                       <p className="mt-2 text-sm text-gray-500">Short, actionable items that move the project forward.</p>
                     </div>
-                    <div className="text-right text-xs text-gray-500">
+                    <div className="text-left sm:text-right text-xs text-gray-500 shrink-0">
                       <p>{taskCounts.active} active</p>
                       <p>{taskCounts.completed} done</p>
                     </div>
                   </div>
 
-                  <div className="p-6 space-y-4">
+                  <div className="min-w-0 p-6 space-y-4">
                     <div className="space-y-2 rounded-2xl border border-gray-200 bg-gray-50 p-4">
                       <input
                         value={newTaskTitle}
@@ -969,11 +999,11 @@ export const ProjectsWindow = () => {
                         placeholder="Add a next action"
                         className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-900 outline-none transition focus:border-gray-300 focus:ring-4 focus:ring-gray-100"
                       />
-                      <div className="grid gap-2 md:grid-cols-[1fr_132px_132px_auto]">
+                      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-[minmax(0,1fr)_minmax(0,140px)_minmax(0,140px)_auto]">
                         <select
                           value={newTaskPriority}
                           onChange={(e) => setNewTaskPriority(e.target.value as typeof newTaskPriority)}
-                          className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 outline-none"
+                          className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 outline-none"
                         >
                           {Object.entries(taskPriorityLabels).map(([key, label]) => (
                             <option key={key} value={key}>{label}</option>
@@ -983,18 +1013,18 @@ export const ProjectsWindow = () => {
                           type="date"
                           value={newTaskDueDate}
                           onChange={(e) => setNewTaskDueDate(e.target.value)}
-                          className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 outline-none"
+                          className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 outline-none"
                         />
                         <input
                           type="time"
                           value={newTaskDueTime}
                           onChange={(e) => setNewTaskDueTime(e.target.value)}
-                          className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 outline-none"
+                          className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 outline-none"
                         />
                         <button
                           onClick={() => void createTask()}
                           disabled={!newTaskTitle.trim() || isCreatingTask}
-                          className="rounded-xl bg-gray-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-gray-800 disabled:opacity-60"
+                          className="w-full rounded-xl bg-gray-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-gray-800 disabled:opacity-60 sm:col-span-2 lg:col-span-1"
                         >
                           {isCreatingTask ? 'Adding...' : 'Add'}
                         </button>
@@ -1029,10 +1059,10 @@ export const ProjectsWindow = () => {
                                   {completed && <CheckCircle2 size={12} className="text-white" />}
                                 </span>
                                 <div className="min-w-0 flex-1">
-                                  <div className="flex items-start justify-between gap-3">
+                                  <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
                                     <div className="min-w-0">
-                                      <p className={`text-sm font-medium ${completed ? 'text-gray-400 line-through' : 'text-gray-900'}`}>{task.title}</p>
-                                      <p className="mt-1 text-[11px] text-gray-500">
+                                      <p className={`min-w-0 text-sm font-medium ${completed ? 'text-gray-400 line-through' : 'text-gray-900'}`}>{task.title}</p>
+                                      <p className="mt-1 break-words text-[11px] text-gray-500">
                                         {formatShortDate(task.due_date)}{formatTime(task.due_time) ? ` · ${formatTime(task.due_time)}` : ''}
                                       </p>
                                     </div>

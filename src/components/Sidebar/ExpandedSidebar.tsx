@@ -699,30 +699,30 @@ export const ExpandedSidebar = () => {
       </div>
 
       <div className="px-6 pt-2 pb-2">
-        <div className="grid grid-cols-4 gap-2">
+        <div className="grid grid-cols-2 gap-2">
           <button
             onClick={() => setState('fullscreen')}
-            className="h-9 rounded-lg border border-gray-200 bg-white text-xs font-medium text-gray-700 hover:bg-gray-50 transition"
+            className="h-10 rounded-lg border border-gray-200 bg-white text-xs font-medium text-gray-700 hover:bg-gray-50 transition flex items-center justify-center"
           >
             Dashboard
           </button>
           <button
             onClick={() => window.desktopWindow?.toggleModule('projects')}
-            className="h-9 rounded-lg border border-gray-200 bg-white text-xs font-medium text-gray-700 hover:bg-gray-50 transition flex items-center justify-center gap-1.5"
+            className="h-10 rounded-lg border border-gray-200 bg-white text-xs font-medium text-gray-700 hover:bg-gray-50 transition flex items-center justify-center gap-1.5"
           >
             <Folder size={13} />
             Projects
           </button>
           <button
             onClick={() => window.desktopWindow?.toggleModule('notes')}
-            className="h-9 rounded-lg border border-gray-200 bg-white text-xs font-medium text-gray-700 hover:bg-gray-50 transition flex items-center justify-center gap-1.5"
+            className="h-10 rounded-lg border border-gray-200 bg-white text-xs font-medium text-gray-700 hover:bg-gray-50 transition flex items-center justify-center gap-1.5"
           >
             <StickyNote size={13} />
             Notes
           </button>
           <button
             onClick={() => window.desktopWindow?.toggleModule('calendar')}
-            className="h-9 rounded-lg border border-gray-200 bg-white text-xs font-medium text-gray-700 hover:bg-gray-50 transition flex items-center justify-center gap-1.5"
+            className="h-10 rounded-lg border border-gray-200 bg-white text-xs font-medium text-gray-700 hover:bg-gray-50 transition flex items-center justify-center gap-1.5"
           >
             <CalendarDays size={13} />
             Calendar
@@ -1365,6 +1365,23 @@ export const ExpandedSidebar = () => {
               >
                 <ChevronDown size={14} />
                 Expand
+              </button>
+              <button
+                onClick={() => {
+                  const project = projects.find((p) => p.id === contextMenu.id)
+                  if (project) {
+                    setState('expanded')
+                    void window.desktopWindow?.toggleModule('projects', {
+                      kind: 'projects',
+                      focusProjectId: project.id,
+                    })
+                  }
+                  setContextMenu(null)
+                }}
+                className="w-full text-left px-4 py-2 text-sm text-blue-600 hover:bg-blue-50 transition flex items-center gap-2"
+              >
+                <Folder size={14} />
+                Navigate to project
               </button>
               <button
                 onClick={() => {

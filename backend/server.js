@@ -111,6 +111,22 @@ const normalizeProjectSemanticStatus = (status) => {
   return 'not_started'
 }
 
+const normalizeNullableText = (value) => {
+  if (value === null || value === undefined) return null
+  const trimmed = String(value).trim()
+  if (!trimmed || trimmed.toLowerCase() === 'null') return null
+  return trimmed
+}
+
+const normalizeNullableDate = (value, fieldName) => {
+  const normalized = normalizeNullableText(value)
+  if (normalized === null) return null
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(normalized)) {
+    throw new Error(`Invalid ${fieldName} format`)
+  }
+  return normalized
+}
+
 const resolveWorkspaceId = async (userId) => {
   const personalWorkspace = await supabase
     .from('workspaces')
@@ -325,10 +341,10 @@ app.post('/api/projects', authMiddleware, rateLimit('write'), quotaGuard('projec
       return res.status(400).json({ error: 'Project name required' })
     }
 
-    const description = req.body?.description !== undefined ? String(req.body.description).trim() : ''
-    const startDate = req.body?.start_date !== undefined ? String(req.body.start_date).trim() : ''
-    const endDate = req.body?.end_date !== undefined ? String(req.body.end_date).trim() : ''
-    const color = req.body?.color !== undefined ? String(req.body.color).trim() : ''
+    const description = normalizeNullableText(req.body?.description)
+    const startDate = normalizeNullableDate(req.body?.start_date, 'start date')
+    const endDate = normalizeNullableDate(req.body?.end_date, 'end date')
+    const color = normalizeNullableText(req.body?.color)
     const status = req.body?.status ? projectStatusAliases[normalizeProjectSemanticStatus(req.body.status)][0] : 'NotStarted'
 
     const { data, error } = await supabase
@@ -337,12 +353,12 @@ app.post('/api/projects', authMiddleware, rateLimit('write'), quotaGuard('projec
         workspace_id: req.workspaceId,
         created_by: req.authUser.id,
         name,
-        description: description || null,
+        description,
         status,
         completeness: 0,
         color: color || '#007AFF',
-        start_date: startDate || null,
-        end_date: endDate || null,
+        start_date: startDate,
+        end_date: endDate,
       })
       .select(projectSelectColumns)
       .single()
@@ -370,7 +386,7 @@ app.patch('/api/projects/:id', authMiddleware, rateLimit('write'), async (req, r
       }
       update.name = nextName
     }
-    if (req.body?.description !== undefined) update.description = String(req.body.description).trim() || null
+    if (req.body?.description !== undefined) update.description = normalizeNullableText(req.body.description)
     if (req.body?.status) {
       const semantic = normalizeProjectSemanticStatus(req.body.status)
       update.status = projectStatusAliases[semantic][0]
@@ -378,9 +394,9 @@ app.patch('/api/projects/:id', authMiddleware, rateLimit('write'), async (req, r
     if (req.body?.completeness !== undefined) {
       update.completeness = Math.max(0, Math.min(100, Number(req.body.completeness)))
     }
-    if (req.body?.color !== undefined) update.color = String(req.body.color).trim() || '#007AFF'
-    if (req.body?.start_date !== undefined) update.start_date = String(req.body.start_date).trim() || null
-    if (req.body?.end_date !== undefined) update.end_date = String(req.body.end_date).trim() || null
+    if (req.body?.color !== undefined) update.color = normalizeNullableText(req.body.color) || '#007AFF'
+    if (req.body?.start_date !== undefined) update.start_date = normalizeNullableDate(req.body.start_date, 'start date')
+    if (req.body?.end_date !== undefined) update.end_date = normalizeNullableDate(req.body.end_date, 'end date')
     update.updated_at = new Date().toISOString()
 
     const { data, error } = await supabase
@@ -446,6 +462,9 @@ app.post('/api/tasks', authMiddleware, rateLimit('write'), quotaGuard('tasks'), 
     }
 
     const tags = Array.isArray(req.body?.tags) ? req.body.tags.map((tag) => String(tag).trim()).filter(Boolean) : []
+    const description = normalizeNullableText(req.body?.description)
+    const dueDate = normalizeNullableDate(req.body?.due_date, 'due date')
+    const dueTime = normalizeNullableText(req.body?.due_time)
 
     const { data, error } = await supabase
       .from('tasks')
@@ -453,9 +472,9 @@ app.post('/api/tasks', authMiddleware, rateLimit('write'), quotaGuard('tasks'), 
         workspace_id: workspaceId,
         project_id: projectId,
         title,
-        description: req.body?.description !== undefined ? String(req.body.description).trim() || null : null,
-        due_date: req.body?.due_date !== undefined ? String(req.body.due_date).trim() || null : null,
-        due_time: req.body?.due_time !== undefined ? String(req.body.due_time).trim() || null : null,
+        description,
+        due_date: dueDate,
+        due_time: dueTime,
         status: req.body?.status ? String(req.body.status) : 'todo',
         priority: req.body?.priority ? String(req.body.priority) : 'medium',
         tags,
@@ -486,9 +505,9 @@ app.patch('/api/tasks/:id', authMiddleware, rateLimit('write'), async (req, res)
       }
       update.title = nextTitle
     }
-    if (req.body?.description !== undefined) update.description = String(req.body.description).trim() || null
-    if (req.body?.due_date !== undefined) update.due_date = String(req.body.due_date).trim() || null
-    if (req.body?.due_time !== undefined) update.due_time = String(req.body.due_time).trim() || null
+    if (req.body?.description !== undefined) update.description = normalizeNullableText(req.body.description)
+    if (req.body?.due_date !== undefined) update.due_date = normalizeNullableDate(req.body.due_date, 'due date')
+    if (req.body?.due_time !== undefined) update.due_time = normalizeNullableText(req.body.due_time)
     if (req.body?.status !== undefined) update.status = String(req.body.status)
     if (req.body?.priority !== undefined) update.priority = String(req.body.priority)
     if (req.body?.tags !== undefined) {

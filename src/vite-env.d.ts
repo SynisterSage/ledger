@@ -2,6 +2,11 @@
 
 type SidebarWindowMode = 'auth' | 'minimized' | 'expanded' | 'fullscreen'
 type ModuleWindowKind = 'calendar' | 'notes' | 'projects'
+type ModuleFocusPayload = {
+  kind: ModuleWindowKind
+  focusDate?: string | null
+  focusProjectId?: string | null
+}
 
 interface ImportMetaEnv {
   readonly VITE_ICAL_SERVICE_URL?: string
@@ -14,7 +19,7 @@ interface ImportMeta {
 interface Window {
   desktopWindow?: {
     setMode: (mode: SidebarWindowMode) => Promise<void>
-    toggleModule: (kind: ModuleWindowKind, focusDate?: string | null) => Promise<void>
+    toggleModule: (kind: ModuleWindowKind, focus?: string | ModuleFocusPayload) => Promise<void>
     openExternal: (url: string) => Promise<void>
   }
 }

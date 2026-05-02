@@ -25,13 +25,21 @@ contextBridge.exposeInMainWorld('ipcRenderer', {
 
 type SidebarWindowMode = 'auth' | 'minimized' | 'expanded' | 'fullscreen'
 type ModuleWindowKind = 'calendar' | 'notes' | 'projects'
+type ModuleFocusPayload = {
+  kind: ModuleWindowKind
+  focusDate?: string | null
+  focusProjectId?: string | null
+}
 
 contextBridge.exposeInMainWorld('desktopWindow', {
   setMode(mode: SidebarWindowMode) {
     return ipcRenderer.invoke('window:set-mode', mode)
   },
-  toggleModule(kind: ModuleWindowKind, focusDate?: string | null) {
-    return ipcRenderer.invoke('window:toggle-module', { kind, focusDate })
+  toggleModule(kind: ModuleWindowKind, focus?: string | ModuleFocusPayload) {
+    const payload = typeof focus === 'string'
+      ? { kind, focusDate: focus }
+      : { kind, ...(focus ?? {}) }
+    return ipcRenderer.invoke('window:toggle-module', payload)
   },
   openExternal(url: string) {
     return ipcRenderer.invoke('window:open-external', url)
