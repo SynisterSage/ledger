@@ -17,6 +17,7 @@ type NoteRow = {
   content: string
   date: string
   mood: string | null
+  source: string
   created_at: string
   updated_at: string
 }
@@ -186,12 +187,13 @@ export const NotesWindow = () => {
       setError(null)
 
       try {
-        const data = await api.updateNote(selectedNoteId, {
-          title: noteTitle,
-          content: noteContent,
-          date: noteDate,
-          mood: noteMood,
-        })
+      const data = await api.updateNote(selectedNoteId, {
+        title: noteTitle,
+        content: noteContent,
+        date: noteDate,
+        mood: noteMood,
+        source: 'workspace',
+      })
         const updated = data as NoteRow
         setNotes((prev) => prev.map((note) => (note.id === updated.id ? updated : note)))
         setIsDirty(false)
@@ -239,6 +241,7 @@ export const NotesWindow = () => {
       const data = await api.createNote('Untitled note', '', {
         date: todayKey(),
         mood: null,
+        source: 'workspace',
       })
 
       const created = data as NoteRow

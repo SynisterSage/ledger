@@ -140,11 +140,11 @@ export const useApi = () => {
 
     // Notes
     getNotes: () => request('/api/notes'),
-    createNote: (title: string, content: string, options?: { date?: string; mood?: string | null }) => request('/api/notes', {
+    createNote: (title: string, content: string, options?: { date?: string; mood?: string | null; source?: string }) => request('/api/notes', {
       method: 'POST',
       body: JSON.stringify({ title, content, ...options }),
     }),
-    updateNote: (id: string, update: { title?: string; content?: string; date?: string; mood?: string | null }) => request(`/api/notes/${id}`, {
+    updateNote: (id: string, update: { title?: string; content?: string; date?: string; mood?: string | null; source?: string }) => request(`/api/notes/${id}`, {
       method: 'PATCH',
       body: JSON.stringify(update),
     }),

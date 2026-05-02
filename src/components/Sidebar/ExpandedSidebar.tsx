@@ -83,10 +83,12 @@ export const ExpandedSidebar = () => {
   const [upcomingItems, setUpcomingItems] = useState<Array<{ id: string; title: string; type: 'event' | 'task'; dueDate: string; time?: string; rawDate: string }>>([])
   const [isLoadingUpcoming, setIsLoadingUpcoming] = useState(true)
   const [expandedUpcomingId, setExpandedUpcomingId] = useState<string | null>(null)
+  const [draggingProjectId, setDraggingProjectId] = useState<string | null>(null)
   const [contextMenu, setContextMenu] = useState<{ type: 'project' | 'upcoming'; id: string; x: number; y: number } | null>(null)
   const taskCaptureRef = useRef<HTMLInputElement | null>(null)
   const noteCaptureRef = useRef<HTMLTextAreaElement | null>(null)
   const eventCaptureRef = useRef<HTMLInputElement | null>(null)
+  const projectDragRef = useRef<{ projectId: string; rectLeft: number; rectWidth: number; pointerId: number } | null>(null)
 
   const normalizeProjectStatus = (status: string): ProjectSemanticStatus => {
     const value = status.toLowerCase()
@@ -111,10 +113,10 @@ export const ExpandedSidebar = () => {
   }
 
   const projectStatusCandidates: Record<ProjectSemanticStatus, string[]> = {
-    not_started: ['NotStarted', 'active', 'not_started'],
-    in_progress: ['InProgress', 'in_progress'],
-    paused: ['Paused', 'archived', 'paused'],
-    completed: ['Completed', 'completed'],
+    not_started: ['active', 'not_started', 'NotStarted'],
+    in_progress: ['in_progress', 'InProgress'],
+    paused: ['paused', 'Paused', 'archived'],
+    completed: ['completed', 'Completed'],
   }
 
   const updateProjectStatusWithFallback = async (projectId: string, semantic: ProjectSemanticStatus) => {
@@ -213,12 +215,14 @@ export const ExpandedSidebar = () => {
 
         if (cancelled) return
 
-        const mapped = ((data ?? []) as Array<{ id: string; title: string; content: string; created_at: string }>).map((row) => ({
-          id: row.id,
-          title: row.title,
-          body: row.content,
-          createdAt: row.created_at,
-        }))
+        const mapped = ((data ?? []) as Array<{ id: string; title: string; content: string; created_at: string; source?: string | null }> )
+          .filter((row) => (row.source ?? 'workspace') === 'quick_capture')
+          .map((row) => ({
+            id: row.id,
+            title: row.title,
+            body: row.content,
+            createdAt: row.created_at,
+          }))
 
         setQuickNotes(mapped)
       } catch (error) {
@@ -326,6 +330,13 @@ export const ExpandedSidebar = () => {
             rawDate: eventDateISO,
             time: startDate.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
           }
+        })
+
+        eventItems.sort((a: { rawDate: string; time?: string }, b: { rawDate: string; time?: string }) => {
+          const aTime = new Date(a.rawDate).getTime()
+          const bTime = new Date(b.rawDate).getTime()
+          if (aTime !== bTime) return aTime - bTime
+          return (a.time ?? '').localeCompare(b.time ?? '')
         })
 
         if (!cancelled) {
@@ -476,7 +487,7 @@ export const ExpandedSidebar = () => {
     const firstLine = text.split('\n').find((line) => line.trim())?.trim() ?? 'Untitled note'
     const title = firstLine.replace(/^#\s*/, '').slice(0, 72)
 
-    const data = await api.createNote(title, text)
+    const data = await api.createNote(title, text, { source: 'quick_capture' })
 
     if (!data) {
       setSaveError('Could not save note.')
@@ -555,7 +566,7 @@ export const ExpandedSidebar = () => {
     try {
       const resolvedStatus = await updateProjectStatusWithFallback(projectId, semantic)
       setProjects((prev) =>
-        prev.map((p) => (p.id === projectId ? { ...p, status: normalizeProjectStatus(resolvedStatus!) } : p))
+        prev.map((p) => (p.id === projectId ? { ...p, status: normalizeProjectStatus(resolvedStatus) } : p))
       )
     } catch (error) {
       console.error('Project status update error:', error)
@@ -564,13 +575,14 @@ export const ExpandedSidebar = () => {
     setProjectUpdating(null)
   }
 
-  const updateProjectCompleteness = async (projectId: string, completeness: number) => {
+  const setProjectCompletenessLocal = (projectId: string, completeness: number) => {
     completeness = Math.max(0, Math.min(100, completeness))
+    setProjects((prev) => prev.map((p) => (p.id === projectId ? { ...p, completeness } : p)))
+  }
+
+  const saveProjectCompleteness = async (projectId: string, completeness: number) => {
     try {
       await api.updateProject(projectId, { completeness })
-      setProjects((prev) =>
-        prev.map((p) => (p.id === projectId ? { ...p, completeness } : p))
-      )
     } catch (error) {
       setSaveError('Could not update progress.')
     }
@@ -619,6 +631,43 @@ export const ExpandedSidebar = () => {
     document.addEventListener('click', handleClickOutside)
     return () => document.removeEventListener('click', handleClickOutside)
   }, [contextMenu])
+
+  useEffect(() => {
+    if (!draggingProjectId) return
+
+    const handleMove = (event: PointerEvent) => {
+      const drag = projectDragRef.current
+      if (!drag || drag.projectId !== draggingProjectId) return
+
+      const percent = Math.round(((event.clientX - drag.rectLeft) / drag.rectWidth) * 100)
+      setProjectCompletenessLocal(drag.projectId, percent)
+    }
+
+    const handleUp = () => {
+      const drag = projectDragRef.current
+      if (!drag || drag.projectId !== draggingProjectId) {
+        setDraggingProjectId(null)
+        projectDragRef.current = null
+        return
+      }
+
+      const project = projects.find((item) => item.id === drag.projectId)
+      const finalPercent = project?.completeness ?? 0
+      projectDragRef.current = null
+      setDraggingProjectId(null)
+      void saveProjectCompleteness(drag.projectId, finalPercent)
+    }
+
+    window.addEventListener('pointermove', handleMove)
+    window.addEventListener('pointerup', handleUp)
+    window.addEventListener('pointercancel', handleUp)
+
+    return () => {
+      window.removeEventListener('pointermove', handleMove)
+      window.removeEventListener('pointerup', handleUp)
+      window.removeEventListener('pointercancel', handleUp)
+    }
+  }, [draggingProjectId, projects])
 
   return (
     <div className="w-80 h-screen bg-white border-r border-gray-200 flex flex-col py-5">
@@ -1149,12 +1198,6 @@ export const ExpandedSidebar = () => {
                 const statusLabel = projectStatusLabels[statusKey]
                 const statusColor = projectStatusStyles[statusKey]
 
-                const handleProgressClick = (e: React.MouseEvent<HTMLDivElement>) => {
-                  const rect = e.currentTarget.getBoundingClientRect()
-                  const percent = Math.round(((e.clientX - rect.left) / rect.width) * 100)
-                  void updateProjectCompleteness(project.id, percent)
-                }
-
                 return (
                   <div
                     key={project.id}
@@ -1171,14 +1214,25 @@ export const ExpandedSidebar = () => {
                       <div className="flex-1 min-w-0">
                         <p className="text-xs font-semibold text-gray-900 truncate">{project.name}</p>
                         <div
-                          onClick={(e) => {
+                          onPointerDown={(e) => {
                             e.stopPropagation()
-                            handleProgressClick(e)
+                            const rect = e.currentTarget.getBoundingClientRect()
+                            const percent = Math.round(((e.clientX - rect.left) / rect.width) * 100)
+                            setDraggingProjectId(project.id)
+                            projectDragRef.current = {
+                              projectId: project.id,
+                              rectLeft: rect.left,
+                              rectWidth: rect.width,
+                              pointerId: e.pointerId,
+                            }
+                            setProjectCompletenessLocal(project.id, percent)
+                            e.currentTarget.setPointerCapture(e.pointerId)
                           }}
-                          className="mt-2 h-2 rounded-full bg-gray-200 overflow-hidden cursor-pointer hover:bg-gray-300 transition"
+                          onClick={(e) => e.stopPropagation()}
+                          className="mt-2 h-2 rounded-full bg-gray-200 overflow-hidden cursor-pointer hover:bg-gray-300 transition touch-none"
                         >
                           <div
-                            className="h-full bg-blue-500 rounded-full transition-all"
+                            className={`h-full bg-blue-500 rounded-full ${draggingProjectId === project.id ? '' : 'transition-all'}`}
                             style={{ width: `${project.completeness}%` }}
                           />
                         </div>

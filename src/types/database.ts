@@ -140,6 +140,7 @@ export type Database = {
           content: string
           date: string
           mood: string | null
+          source: string
           created_at: string
           updated_at: string
         }

@@ -323,7 +323,43 @@ export const CalendarWindow = () => {
       dates: Array.from({ length: 42 }, (_, i) => addDays(start, i)),
     }
   }, [viewAnchor])
-  const selectedEventPreview = selectedEvent ?? null
+  const selectedEventPreview = useMemo(() => {
+    if (!selectedEvent) return null
+    return events.find((row) => row.id === baseEventId(selectedEvent.id)) ?? selectedEvent
+  }, [events, selectedEvent])
+
+  const getEventStatusMeta = (status?: EventRow['status']) => {
+    switch (status) {
+      case 'done':
+        return {
+          label: 'Done',
+          chipClass: 'border-green-200 bg-green-50 text-green-900',
+          dotClass: 'bg-green-500',
+          previewClass: 'bg-green-50 border-green-200 text-green-950',
+        }
+      case 'missed':
+        return {
+          label: 'Missed',
+          chipClass: 'border-amber-200 bg-amber-50 text-amber-900',
+          dotClass: 'bg-amber-500',
+          previewClass: 'bg-amber-50 border-amber-200 text-amber-950',
+        }
+      case 'cancelled':
+        return {
+          label: 'Cancelled',
+          chipClass: 'border-gray-200 bg-gray-100 text-gray-700',
+          dotClass: 'bg-gray-400',
+          previewClass: 'bg-gray-100 border-gray-200 text-gray-700',
+        }
+      default:
+        return {
+          label: 'Planned',
+          chipClass: 'border-blue-200 bg-blue-50 text-blue-900',
+          dotClass: 'bg-blue-500',
+          previewClass: 'bg-blue-50 border-blue-200 text-blue-950',
+        }
+    }
+  }
   const selectedReminderPreview = selectedReminder ?? null
 
   useEffect(() => {
@@ -1488,10 +1524,15 @@ export const CalendarWindow = () => {
                           </div>
                         ))}
                         {visibleEvents.map((event) => (
+                          (() => {
+                            const meta = getEventStatusMeta(event.status)
+                            return (
                           <div
                             key={event.id}
-                            className="text-[10px] rounded px-1.5 py-0.5 truncate"
-                            style={{ backgroundColor: `${event.color ?? '#93C5FD'}44`, color: '#1F2937' }}
+                            className={`text-[10px] rounded px-1.5 py-0.5 truncate border ${
+                              meta.previewClass
+                            } ${event.status === 'done' ? 'line-through opacity-80' : ''} ${event.status === 'cancelled' ? 'opacity-65' : ''}`}
+                            style={{ backgroundColor: `${event.color ?? '#93C5FD'}22` }}
                             onContextMenu={(e) => {
                               e.preventDefault()
                               e.stopPropagation()
@@ -1503,8 +1544,11 @@ export const CalendarWindow = () => {
                               })
                             }}
                           >
+                            <span className={`mr-1 inline-block h-1.5 w-1.5 rounded-full ${meta.dotClass}`} />
                             {event.title}
                           </div>
+                            )
+                          })()
                         ))}
                         {extraCount > 0 && (
                           <button
@@ -1761,9 +1805,12 @@ export const CalendarWindow = () => {
                 <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Selection</p>
                 {selectedEventPreview ? (
                   <div className="mt-3 space-y-2">
-                    <div className="rounded-xl bg-blue-50 border border-blue-100 p-3">
-                      <p className="text-xs font-semibold text-blue-900">{selectedEventPreview.title}</p>
-                      <p className="mt-1 text-[11px] text-blue-800">
+                    {(() => {
+                      const meta = getEventStatusMeta(selectedEventPreview.status)
+                      return (
+                    <div className={`rounded-xl border p-3 ${meta.previewClass}`}>
+                      <p className="text-xs font-semibold">{selectedEventPreview.title}</p>
+                      <p className="mt-1 text-[11px] opacity-80">
                         {new Date(selectedEventPreview.start_at).toLocaleString([], {
                           weekday: 'short',
                           month: 'short',
@@ -1772,7 +1819,12 @@ export const CalendarWindow = () => {
                           minute: '2-digit',
                         })}
                       </p>
+                      <span className={`mt-2 inline-flex rounded-full border px-1.5 py-0.5 text-[10px] font-medium ${meta.chipClass}`}>
+                        {meta.label}
+                      </span>
                     </div>
+                      )
+                    })()}
                     <button
                       onClick={() => openEventEditor(selectedEventPreview)}
                       className="w-full h-8 rounded-md bg-gray-900 text-white text-xs font-medium hover:bg-gray-800"
@@ -1824,6 +1876,9 @@ export const CalendarWindow = () => {
                 <div className="space-y-2 max-h-48 overflow-auto pr-1">
                   {events.length === 0 && !isLoading && <p className="text-xs text-gray-500">No events in this view.</p>}
                   {events.slice(0, 6).map((event) => (
+                    (() => {
+                      const meta = getEventStatusMeta(event.status)
+                      return (
                     <button
                       key={event.id}
                       onClick={() => openEventEditor(event)}
@@ -1836,18 +1891,25 @@ export const CalendarWindow = () => {
                           id: event.id,
                         })
                       }}
-                      className="w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-left hover:bg-gray-100 transition"
+                      className={`w-full rounded-xl border px-3 py-2 text-left hover:bg-gray-100 transition ${meta.previewClass} ${
+                        event.status === 'done' ? 'line-through opacity-80' : ''
+                      } ${event.status === 'cancelled' ? 'opacity-65' : ''}`}
                     >
                       <div className="flex items-start gap-2">
-                        <span className="mt-0.5 w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: event.color ?? '#93C5FD' }} />
+                        <span className={`mt-0.5 w-2 h-2 rounded-full shrink-0 ${meta.dotClass}`} style={{ backgroundColor: event.color ?? undefined }} />
                         <div className="min-w-0">
                           <p className="text-xs font-medium text-gray-900 truncate">{event.title}</p>
                           <p className="text-[11px] text-gray-500 mt-0.5">
                             {new Date(event.start_at).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' })}
                           </p>
+                          <span className={`mt-1 inline-flex rounded-full border px-1.5 py-0.5 text-[10px] font-medium ${meta.chipClass}`}>
+                            {meta.label}
+                          </span>
                         </div>
                       </div>
                     </button>
+                      )
+                    })()
                   ))}
                 </div>
               </section>
@@ -2314,6 +2376,9 @@ export const CalendarWindow = () => {
                     prev.map((item) =>
                       item.id === event.id ? { ...item, status: nextStatus } : item
                     )
+                  )
+                  setSelectedEvent((current) =>
+                    current && baseEventId(current.id) === event.id ? { ...current, status: nextStatus } : current
                   )
                 }
                 setListContextMenu(null)

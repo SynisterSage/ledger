@@ -94,10 +94,10 @@ const getUserTier = (user) => {
 const isCompletedProjectStatus = (status) => String(status ?? '').toLowerCase().includes('complete')
 
 const projectStatusAliases = {
-  not_started: ['NotStarted', 'not_started', 'active', 'todo'],
-  in_progress: ['InProgress', 'in_progress', 'inprogress', 'doing'],
-  paused: ['Paused', 'paused', 'archived', 'hold'],
-  completed: ['Completed', 'completed', 'done'],
+  not_started: ['active', 'not_started', 'NotStarted', 'todo'],
+  in_progress: ['in_progress', 'InProgress', 'inprogress', 'doing'],
+  paused: ['paused', 'Paused', 'archived', 'hold'],
+  completed: ['completed', 'Completed', 'done'],
 }
 
 const normalizeProjectSemanticStatus = (status) => {
@@ -516,7 +516,7 @@ app.get('/api/events/upcoming', authMiddleware, rateLimit('read'), async (req, r
       .gte('start_at', today.toISOString())
       .lte('start_at', end.toISOString())
       .order('start_at', { ascending: true })
-      .limit(10)
+      .limit(20)
 
     if (error) throw error
     res.json(data ?? [])
@@ -545,7 +545,7 @@ app.post('/api/events', authMiddleware, rateLimit('write'), quotaGuard('events')
         start_at: req.body?.start_at,
         end_at: req.body?.end_at,
         color: req.body?.color || null,
-        status: req.body?.status || 'planned',
+        status: req.body?.status || 'active',
         recurrence_rule: req.body?.recurrence_rule || 'none',
         notes: req.body?.notes || null,
         location: req.body?.location || null,
@@ -701,7 +701,7 @@ app.get('/api/notes', authMiddleware, rateLimit('read'), async (req, res) => {
     const workspaceId = await resolveWorkspaceId(req.authUser.id)
     const { data, error } = await supabase
       .from('notes')
-      .select('id, title, content, date, mood, created_at, updated_at')
+      .select('id, title, content, date, mood, source, created_at, updated_at')
       .eq('workspace_id', workspaceId)
       .order('updated_at', { ascending: false })
       .limit(100)
@@ -720,6 +720,7 @@ app.post('/api/notes', authMiddleware, rateLimit('write'), quotaGuard('notes'), 
     const content = String(req.body?.content ?? '').trim()
     const date = String(req.body?.date ?? new Date().toISOString().slice(0, 10)).trim()
     const mood = req.body?.mood ? String(req.body.mood).trim() : null
+    const source = req.body?.source ? String(req.body.source).trim() : 'workspace'
 
     const { data, error } = await supabase
       .from('notes')
@@ -730,8 +731,9 @@ app.post('/api/notes', authMiddleware, rateLimit('write'), quotaGuard('notes'), 
         content,
         date,
         mood,
+        source,
       })
-      .select('id, title, content, date, mood, created_at, updated_at')
+      .select('id, title, content, date, mood, source, created_at, updated_at')
       .single()
 
     if (error) throw error
@@ -750,6 +752,7 @@ app.patch('/api/notes/:id', authMiddleware, rateLimit('write'), async (req, res)
     if (req.body?.content !== undefined) update.content = String(req.body.content ?? '')
     if (req.body?.date !== undefined) update.date = String(req.body.date ?? new Date().toISOString().slice(0, 10)).trim()
     if (req.body?.mood !== undefined) update.mood = req.body.mood ? String(req.body.mood).trim() : null
+    if (req.body?.source !== undefined) update.source = String(req.body.source ?? 'workspace').trim() || 'workspace'
 
     update.updated_at = new Date().toISOString()
 
@@ -758,7 +761,7 @@ app.patch('/api/notes/:id', authMiddleware, rateLimit('write'), async (req, res)
       .update(update)
       .eq('id', req.params.id)
       .eq('workspace_id', workspaceId)
-      .select('id, title, content, date, mood, created_at, updated_at')
+      .select('id, title, content, date, mood, source, created_at, updated_at')
       .single()
 
     if (error) throw error
@@ -781,13 +784,11 @@ app.delete('/api/notes/:id', authMiddleware, rateLimit('write'), async (req, res
 
 app.get('/api/daily-accountability', authMiddleware, rateLimit('read'), async (req, res) => {
   try {
-    const workspaceId = await resolveWorkspaceId(req.authUser.id)
     const today = String(req.headers['x-ledger-day-key'] ?? new Date().toISOString().slice(0, 10))
 
     const { data, error } = await supabase
       .from('daily_accountability')
       .select('focus_items, checkin_finished, checkin_blocked, checkin_first_task_tomorrow, entry_date, updated_at')
-      .eq('workspace_id', workspaceId)
       .eq('user_id', req.authUser.id)
       .eq('entry_date', today)
       .maybeSingle()
@@ -801,11 +802,9 @@ app.get('/api/daily-accountability', authMiddleware, rateLimit('read'), async (r
 
 app.post('/api/daily-accountability', authMiddleware, rateLimit('write'), async (req, res) => {
   try {
-    const workspaceId = await resolveWorkspaceId(req.authUser.id)
     const today = String(req.headers['x-ledger-day-key'] ?? new Date().toISOString().slice(0, 10))
 
     const payload = {
-      workspace_id: workspaceId,
       user_id: req.authUser.id,
       entry_date: today,
       focus_items: safeJson(req.body?.focus_items, []),
@@ -817,7 +816,7 @@ app.post('/api/daily-accountability', authMiddleware, rateLimit('write'), async 
 
     const { data, error } = await supabase
       .from('daily_accountability')
-      .upsert(payload, { onConflict: 'workspace_id,user_id,entry_date' })
+      .upsert(payload, { onConflict: 'user_id,entry_date' })
       .select('focus_items, checkin_finished, checkin_blocked, checkin_first_task_tomorrow, entry_date, updated_at')
       .single()
 

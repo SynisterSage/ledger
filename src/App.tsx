@@ -1,4 +1,13 @@
-import { ArrowRight, CheckCircle2, Clock, Folder, Loader2, Plus, ChevronLeft, ChevronRight } from 'lucide-react'
+import {
+  ArrowRight,
+  CalendarDays,
+  CheckCircle2,
+  Folder,
+  Loader2,
+  Plus,
+  StickyNote,
+  Trash2,
+} from 'lucide-react'
 import { useEffect, useState, type CSSProperties } from 'react'
 import { useAuthContext } from './context/AuthContext'
 import { useWorkspaceInit } from './hooks/useWorkspaceInit'
@@ -8,6 +17,7 @@ import { MainLayout } from './components/Common/MainLayout'
 import LoginForm from './components/Common/LoginForm'
 import CalendarWindow from './components/Calendar/CalendarWindow'
 import NotesWindow from './components/Notes/NotesWindow'
+import { SkeletonList } from './components/Common/Skeleton'
 
 type PostAuthStage = 'idle' | 'loading' | 'onboarding' | 'welcome' | 'ready'
 type ModuleKind = 'calendar' | 'notes' | null
@@ -37,15 +47,176 @@ function AuthStatusScreen({ title, subtitle }: { title: string; subtitle: string
 // Dashboard content component
 function DashboardContent() {
   const { user } = useAuthContext()
+  const api = useApi()
   const { state, setState } = useSidebar()
 
+  const [isLoadingDashboard, setIsLoadingDashboard] = useState(true)
+  const [dashboardError, setDashboardError] = useState<string | null>(null)
+  const [daily, setDaily] = useState<{
+    focusItems: Array<{ id: string; text: string; done: boolean }>
+    finished: string
+    blocked: string
+    firstTaskTomorrow: string
+  }>({
+    focusItems: [],
+    finished: '',
+    blocked: '',
+    firstTaskTomorrow: '',
+  })
+  const [projects, setProjects] = useState<Array<{ id: string; name: string; status: string; completeness: number }>>([])
+  const [upcoming, setUpcoming] = useState<Array<{ id: string; title: string; start_at: string; end_at: string; color?: string }>>([])
+  const [notes, setNotes] = useState<Array<{ id: string; title: string; content: string; updated_at: string }>>([])
+  const [newFocusText, setNewFocusText] = useState('')
+  const [isSavingFocus, setIsSavingFocus] = useState(false)
+  const [focusActionId, setFocusActionId] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!user) return
+
+    let cancelled = false
+
+    const loadDashboard = async () => {
+      try {
+        setIsLoadingDashboard(true)
+        setDashboardError(null)
+
+        const [dailyData, projectData, upcomingData, noteData] = await Promise.all([
+          api.getDailyAccountability(),
+          api.getProjects(),
+          api.getUpcomingEvents(),
+          api.getNotes(),
+        ])
+
+        if (cancelled) return
+
+        const row = dailyData as {
+          focus_items?: Array<{ id: string; text: string; done: boolean }> | null
+          checkin_finished?: string | null
+          checkin_blocked?: string | null
+          checkin_first_task_tomorrow?: string | null
+        } | null
+
+        setDaily({
+          focusItems: Array.isArray(row?.focus_items) ? row!.focus_items : [],
+          finished: row?.checkin_finished ?? '',
+          blocked: row?.checkin_blocked ?? '',
+          firstTaskTomorrow: row?.checkin_first_task_tomorrow ?? '',
+        })
+
+        setProjects(((projectData ?? []) as Array<{ id: string; name: string; status: string; completeness: number }>).slice(0, 4))
+        setUpcoming(((upcomingData ?? []) as Array<{ id: string; title: string; start_at: string; end_at: string; color?: string }>).slice(0, 4))
+        setNotes(((noteData ?? []) as Array<{ id: string; title: string; content: string; updated_at: string }>).slice(0, 4))
+      } catch (error) {
+        if (!cancelled) {
+          setDashboardError(error instanceof Error ? error.message : 'Could not load dashboard.')
+          setDaily({
+            focusItems: [],
+            finished: '',
+            blocked: '',
+            firstTaskTomorrow: '',
+          })
+          setProjects([])
+          setUpcoming([])
+          setNotes([])
+        }
+      } finally {
+        if (!cancelled) setIsLoadingDashboard(false)
+      }
+    }
+
+    void loadDashboard()
+    const timer = window.setInterval(() => {
+      void loadDashboard()
+    }, 60000)
+
+    return () => {
+      cancelled = true
+      window.clearInterval(timer)
+    }
+  }, [api, user])
+
+  const saveDailyAccountability = async (next: {
+    focusItems?: Array<{ id: string; text: string; done: boolean }>
+    finished?: string
+    blocked?: string
+    firstTaskTomorrow?: string
+  }) => {
+    const response = await api.saveDailyAccountability({
+      focus_items: next.focusItems ?? daily.focusItems,
+      finished: (next.finished ?? daily.finished).trim(),
+      blocked: (next.blocked ?? daily.blocked).trim(),
+      first_task_tomorrow: (next.firstTaskTomorrow ?? daily.firstTaskTomorrow).trim(),
+    })
+
+    if (!response) {
+      throw new Error('Could not save daily accountability.')
+    }
+
+    const row = response as {
+      focus_items?: Array<{ id: string; text: string; done: boolean }> | null
+      checkin_finished?: string | null
+      checkin_blocked?: string | null
+      checkin_first_task_tomorrow?: string | null
+    }
+
+    setDaily({
+      focusItems: Array.isArray(row.focus_items) ? row.focus_items : [],
+      finished: row.checkin_finished ?? '',
+      blocked: row.checkin_blocked ?? '',
+      firstTaskTomorrow: row.checkin_first_task_tomorrow ?? '',
+    })
+  }
+
+  const addFocusItem = async () => {
+    const text = newFocusText.trim()
+    if (!text) return
+
+    const next = [...daily.focusItems, { id: `focus-${Date.now()}`, text, done: false }]
+    setNewFocusText('')
+    setIsSavingFocus(true)
+    try {
+      await saveDailyAccountability({ focusItems: next })
+    } finally {
+      setIsSavingFocus(false)
+    }
+  }
+
+  const toggleFocusDone = async (id: string) => {
+    setFocusActionId(id)
+    try {
+      const next = daily.focusItems.map((item) => (item.id === id ? { ...item, done: !item.done } : item))
+      await saveDailyAccountability({ focusItems: next })
+    } finally {
+      setFocusActionId(null)
+    }
+  }
+
+  const removeFocusItem = async (id: string) => {
+    setFocusActionId(id)
+    try {
+      const next = daily.focusItems.filter((item) => item.id !== id)
+      await saveDailyAccountability({ focusItems: next })
+    } finally {
+      setFocusActionId(null)
+    }
+  }
+
+  const completedFocus = daily.focusItems.filter((item) => item.done).length
+  const activeProjects = projects.filter((project) => !String(project.status).toLowerCase().includes('complete')).length
+  const recentNotes = notes
+  const firstName = (user?.user_metadata?.full_name as string | undefined)?.trim()?.split(' ')[0] || user?.email?.split('@')[0] || 'User'
+  const todayLabel = new Date().toLocaleDateString([], {
+    weekday: 'long',
+    month: 'long',
+    day: 'numeric',
+  })
+
   return (
-    <>
+    <div className="flex h-full flex-col bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.9),rgba(245,247,251,1)_45%)]">
       <div
         className='h-8 bg-white border-b border-gray-100'
         style={{ WebkitAppRegion: 'drag' } as CSSProperties}
       />
-      {/* Header */}
       <div
         className='h-16 border-b border-gray-200 flex items-center justify-between px-8 bg-white'
         style={{ WebkitAppRegion: 'drag' } as CSSProperties}
@@ -53,14 +224,6 @@ function DashboardContent() {
         <div>
           {state === 'fullscreen' && (
             <div className='flex items-center gap-3'>
-              <button
-                onClick={() => setState('minimized')}
-                className='px-3 py-1 text-sm font-medium text-gray-900 bg-gray-100 hover:bg-gray-200 rounded-lg transition flex items-center gap-1.5'
-                style={{ WebkitAppRegion: 'no-drag' } as CSSProperties}
-              >
-                <ChevronLeft size={14} />
-                Collapse
-              </button>
               <h1 className='text-lg font-semibold text-gray-900'>Ledger</h1>
             </div>
           )}
@@ -71,74 +234,323 @@ function DashboardContent() {
             </>
           )}
         </div>
-        <button
-          className='px-4 py-2 bg-gray-900 hover:bg-gray-800 text-white rounded-lg flex items-center gap-2 transition-colors text-sm font-medium'
-          style={{ WebkitAppRegion: 'no-drag' } as CSSProperties}
-        >
-          <Plus size={16} />
-          New Task
-        </button>
+        <div className="flex items-center gap-2" style={{ WebkitAppRegion: 'no-drag' } as CSSProperties}>
+          <button
+            onClick={() => window.desktopWindow?.toggleModule('calendar')}
+            className='px-3 py-2 bg-white hover:bg-gray-50 text-gray-800 border border-gray-200 rounded-lg flex items-center gap-2 transition-colors text-sm font-medium'
+          >
+            <CalendarDays size={15} />
+            Calendar
+          </button>
+          <button
+            onClick={() => window.desktopWindow?.toggleModule('notes')}
+            className='px-3 py-2 bg-white hover:bg-gray-50 text-gray-800 border border-gray-200 rounded-lg flex items-center gap-2 transition-colors text-sm font-medium'
+          >
+            <StickyNote size={15} />
+            Notes
+          </button>
+          <button
+            onClick={() => setState('expanded')}
+            className='px-4 py-2 bg-gray-900 hover:bg-gray-800 text-white rounded-lg flex items-center gap-2 transition-colors text-sm font-medium'
+          >
+            <Plus size={16} />
+            Collapse
+          </button>
+        </div>
       </div>
 
-      {/* Content */}
-      <div className='flex-1 p-8 overflow-auto'>
-        <div className='max-w-6xl'>
-          {/* Welcome Section */}
-          <div className='mb-10'>
-            <h2 className='text-2xl font-semibold text-gray-900 mb-1'>Welcome, {user?.email?.split('@')[0]}</h2>
-            <p className='text-sm text-gray-600'>Here's what you need to focus on today</p>
-          </div>
-
-          {/* Quick Stats */}
-          <div className='grid grid-cols-3 gap-6 mb-12'>
-            {/* Tasks Today */}
-            <div className='p-6 bg-gray-50 rounded-lg border border-gray-200 hover:border-gray-300 transition-colors'>
-              <div className='flex items-center justify-between mb-4'>
-                <div className='text-sm font-medium text-gray-600'>Tasks Today</div>
-                <CheckCircle2 size={18} className='text-blue-600' />
-              </div>
-              <div className='text-3xl font-semibold text-gray-900 mb-1'>0</div>
-              <p className='text-xs text-gray-500'>All caught up!</p>
+      <div className='flex-1 overflow-auto p-8'>
+        <div className='mx-auto max-w-7xl space-y-8'>
+          <div className='flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between'>
+            <div>
+              <p className='text-xs uppercase tracking-[0.2em] text-gray-500'>Dashboard</p>
+              <h2 className='mt-2 text-3xl font-semibold tracking-tight text-gray-900'>Good to see you, {firstName}</h2>
+              <p className='mt-2 max-w-2xl text-sm leading-6 text-gray-600'>
+                {todayLabel}. Use Ledger to keep your day visible, your tasks honest, and your follow-through measurable.
+              </p>
             </div>
-
-            {/* Hours Logged */}
-            <div className='p-6 bg-gray-50 rounded-lg border border-gray-200 hover:border-gray-300 transition-colors'>
-              <div className='flex items-center justify-between mb-4'>
-                <div className='text-sm font-medium text-gray-600'>Hours Logged</div>
-                <Clock size={18} className='text-green-600' />
-              </div>
-              <div className='text-3xl font-semibold text-gray-900 mb-1'>0h</div>
-              <p className='text-xs text-gray-500'>Start tracking your time</p>
-            </div>
-
-            {/* Projects */}
-            <div className='p-6 bg-gray-50 rounded-lg border border-gray-200 hover:border-gray-300 transition-colors'>
-              <div className='flex items-center justify-between mb-4'>
-                <div className='text-sm font-medium text-gray-600'>Active Projects</div>
-                <Folder size={18} className='text-purple-600' />
-              </div>
-              <div className='text-3xl font-semibold text-gray-900 mb-1'>0</div>
-              <p className='text-xs text-gray-500'>Create your first project</p>
+            <div className='flex gap-2'>
+              <button
+                onClick={() => setState('expanded')}
+                className='rounded-full border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50'
+              >
+                Expand sidebar
+              </button>
+              <button
+                onClick={() => window.desktopWindow?.toggleModule('calendar')}
+                className='rounded-full bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800 inline-flex items-center gap-2'
+              >
+                Open calendar
+                <ArrowRight size={15} />
+              </button>
             </div>
           </div>
 
-          {/* Getting Started */}
-          <div className='p-6 bg-blue-50 rounded-lg border border-blue-200'>
-            <h3 className='text-sm font-semibold text-gray-900 mb-2'>Getting started</h3>
-            <p className='text-sm text-gray-700 mb-4'>Start by creating a task or setting up your first project to begin tracking your work.</p>
-            <div className='flex gap-3'>
-              <button className='px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2'>
-                Create Task
-                <ChevronRight size={14} />
-              </button>
-              <button className='px-4 py-2 bg-white hover:bg-gray-50 text-gray-900 border border-gray-200 rounded-lg text-sm font-medium transition-colors'>
-                Learn More
-              </button>
+          {dashboardError && (
+            <div className='rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700'>
+              {dashboardError}
+            </div>
+          )}
+
+          <div className='grid gap-4 md:grid-cols-2 xl:grid-cols-4'>
+            {[
+              { label: 'Today focus', value: `${completedFocus}/${daily.focusItems.length}`, note: daily.focusItems.length ? 'From your daily checklist' : 'No items set yet', icon: CheckCircle2 },
+              { label: 'Active projects', value: String(activeProjects), note: 'Project pulse items in progress', icon: Folder },
+              { label: 'Upcoming items', value: String(upcoming.length), note: 'Events from your calendar', icon: CalendarDays },
+              { label: 'Recent notes', value: String(recentNotes.length), note: 'Fresh ideas and captures', icon: StickyNote },
+            ].map(({ label, value, note, icon: Icon }) => (
+              <div key={label} className='rounded-[24px] border border-gray-200 bg-white p-5 shadow-sm'>
+                <div className='flex items-center justify-between'>
+                  <p className='text-sm font-medium text-gray-600'>{label}</p>
+                  <Icon size={18} className='text-gray-400' />
+                </div>
+                <p className='mt-4 text-3xl font-semibold tracking-tight text-gray-900'>{value}</p>
+                <p className='mt-1 text-xs text-gray-500'>{note}</p>
+              </div>
+            ))}
+          </div>
+
+          <div className='grid gap-6 xl:grid-cols-[1.25fr_0.75fr]'>
+            <div className='space-y-6'>
+              <section className='rounded-[28px] border border-gray-200 bg-white p-6 shadow-sm'>
+                <div className='flex items-center justify-between'>
+                  <div>
+                    <p className='text-xs uppercase tracking-[0.2em] text-gray-500'>Today</p>
+                    <h3 className='mt-1 text-xl font-semibold text-gray-900'>Today&apos;s tasks</h3>
+                  </div>
+                  <button
+                    onClick={() => setState('expanded')}
+                    className='rounded-full border border-gray-200 bg-gray-50 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-100'
+                  >
+                    Edit in sidebar
+                  </button>
+                </div>
+
+                {isLoadingDashboard ? (
+                  <div className='mt-5'>
+                    <SkeletonList count={3} />
+                  </div>
+                ) : (
+                  <>
+                    <div className='mt-5 flex items-center gap-2'>
+                      <input
+                        value={newFocusText}
+                        onChange={(e) => setNewFocusText(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault()
+                            void addFocusItem()
+                          }
+                        }}
+                        placeholder='Add a focus task for today'
+                        className='flex-1 rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm outline-none transition focus:border-gray-300 focus:ring-4 focus:ring-gray-100'
+                      />
+                      <button
+                        onClick={() => void addFocusItem()}
+                        disabled={isSavingFocus}
+                        className='inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-gray-900 text-white transition-colors hover:bg-gray-800 disabled:opacity-60'
+                      >
+                        <Plus size={16} />
+                      </button>
+                    </div>
+
+                    <div className='mt-5 space-y-3'>
+                      {daily.focusItems.length === 0 ? (
+                        <div className='rounded-2xl border border-dashed border-gray-200 bg-gray-50 p-5'>
+                          <p className='text-sm font-medium text-gray-800'>No tasks signed for today yet.</p>
+                          <p className='mt-1 text-sm text-gray-500'>Add your top priorities here or from the sidebar.</p>
+                        </div>
+                      ) : (
+                        daily.focusItems.map((item) => (
+                          <div
+                            key={item.id}
+                            className='flex items-start gap-3 rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3'
+                          >
+                            <button
+                              onClick={() => void toggleFocusDone(item.id)}
+                              disabled={focusActionId === item.id}
+                              className={`mt-0.5 flex h-5 w-5 items-center justify-center rounded-full border transition ${
+                                item.done ? 'border-green-500 bg-green-500' : 'border-gray-300 bg-white'
+                              }`}
+                            >
+                              {item.done && <CheckCircle2 size={12} className='text-white' />}
+                            </button>
+                            <div className='min-w-0 flex-1'>
+                              <p className={`text-sm font-medium ${item.done ? 'text-gray-400 line-through' : 'text-gray-900'}`}>
+                                {item.text}
+                              </p>
+                            </div>
+                            <button
+                              onClick={() => void removeFocusItem(item.id)}
+                              className='mt-0.5 rounded-lg p-1.5 text-gray-400 hover:bg-white hover:text-red-600 transition'
+                              title='Delete task'
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
+                        ))
+                      )}
+                    </div>
+
+                    <div className='mt-5 grid gap-3 md:grid-cols-3'>
+                      {[
+                        { label: 'Finished', value: daily.finished || 'Nothing yet' },
+                        { label: 'Blocked', value: daily.blocked || 'No blockers' },
+                        { label: 'Next task', value: daily.firstTaskTomorrow || 'Not set yet' },
+                      ].map((item) => (
+                        <div key={item.label} className='rounded-2xl border border-gray-200 bg-white p-4'>
+                          <p className='text-[10px] uppercase tracking-wider text-gray-500'>{item.label}</p>
+                          <p className='mt-2 text-sm leading-6 text-gray-800'>{item.value}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </section>
+
+              <section className='rounded-[28px] border border-gray-200 bg-white p-6 shadow-sm'>
+                <div className='flex items-center justify-between'>
+                  <div>
+                    <p className='text-xs uppercase tracking-[0.2em] text-gray-500'>Notes</p>
+                    <h3 className='mt-1 text-xl font-semibold text-gray-900'>Recent captures</h3>
+                  </div>
+                  <button
+                    onClick={() => window.desktopWindow?.toggleModule('notes')}
+                    className='rounded-full border border-gray-200 bg-gray-50 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-100'
+                  >
+                    Open notes
+                  </button>
+                </div>
+
+                <div className='mt-5 grid gap-3'>
+                  {isLoadingDashboard ? (
+                    <SkeletonList count={2} />
+                  ) : recentNotes.length === 0 ? (
+                    <div className='rounded-2xl border border-dashed border-gray-200 bg-gray-50 p-5'>
+                      <p className='text-sm font-medium text-gray-800'>No notes yet.</p>
+                      <p className='mt-1 text-sm text-gray-500'>Capture a thought, meeting note, or plan from the sidebar.</p>
+                    </div>
+                  ) : (
+                    recentNotes.map((note) => (
+                      <div key={note.id} className='rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3'>
+                        <div className='flex items-start justify-between gap-3'>
+                          <div className='min-w-0'>
+                            <p className='text-sm font-medium text-gray-900 truncate'>{note.title}</p>
+                            <p className='mt-1 line-clamp-2 text-sm text-gray-600'>
+                              {note.content.trim() || 'No content yet'}
+                            </p>
+                          </div>
+                          <p className='shrink-0 text-[11px] text-gray-500'>
+                            {new Date(note.updated_at).toLocaleDateString([], { month: 'short', day: 'numeric' })}
+                          </p>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </section>
+            </div>
+
+            <div className='space-y-6'>
+              <section className='rounded-[28px] border border-gray-200 bg-white p-6 shadow-sm'>
+                <div className='flex items-center justify-between'>
+                  <div>
+                    <p className='text-xs uppercase tracking-[0.2em] text-gray-500'>Projects</p>
+                    <h3 className='mt-1 text-xl font-semibold text-gray-900'>Project pulse</h3>
+                  </div>
+                  <button
+                    onClick={() => setState('expanded')}
+                    className='rounded-full border border-gray-200 bg-gray-50 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-100'
+                  >
+                    Edit
+                  </button>
+                </div>
+
+                <div className='mt-5 space-y-3'>
+                  {isLoadingDashboard ? (
+                    <SkeletonList count={3} />
+                  ) : projects.length === 0 ? (
+                    <div className='rounded-2xl border border-dashed border-gray-200 bg-gray-50 p-5'>
+                      <p className='text-sm font-medium text-gray-800'>No projects yet.</p>
+                      <p className='mt-1 text-sm text-gray-500'>Create internship, class, or job search projects in the sidebar.</p>
+                    </div>
+                  ) : (
+                    projects.map((project) => {
+                      const status = String(project.status).toLowerCase()
+                      const label = status.includes('complete')
+                        ? 'Completed'
+                        : status.includes('progress')
+                          ? 'In progress'
+                          : status.includes('pause')
+                            ? 'Paused'
+                            : 'Not started'
+
+                      return (
+                        <div key={project.id} className='rounded-2xl border border-gray-200 bg-gray-50 p-4'>
+                          <div className='flex items-start justify-between gap-3'>
+                            <div className='min-w-0'>
+                              <p className='text-sm font-medium text-gray-900 truncate'>{project.name}</p>
+                              <p className='mt-1 text-[11px] text-gray-500'>{label}</p>
+                            </div>
+                            <span className='text-[11px] font-medium text-gray-700'>{project.completeness}%</span>
+                          </div>
+                          <div className='mt-3 h-2 rounded-full bg-gray-200'>
+                            <div
+                              className='h-2 rounded-full bg-gray-900'
+                              style={{ width: `${Math.max(0, Math.min(100, project.completeness))}%` }}
+                            />
+                          </div>
+                        </div>
+                      )
+                    })
+                  )}
+                </div>
+              </section>
+
+              <section className='rounded-[28px] border border-gray-200 bg-white p-6 shadow-sm'>
+                <div className='flex items-center justify-between'>
+                  <div>
+                    <p className='text-xs uppercase tracking-[0.2em] text-gray-500'>Calendar</p>
+                    <h3 className='mt-1 text-xl font-semibold text-gray-900'>Upcoming</h3>
+                  </div>
+                  <button
+                    onClick={() => window.desktopWindow?.toggleModule('calendar')}
+                    className='rounded-full border border-gray-200 bg-gray-50 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-100'
+                  >
+                    Open
+                  </button>
+                </div>
+
+                <div className='mt-5 space-y-3'>
+                  {isLoadingDashboard ? (
+                    <SkeletonList count={3} />
+                  ) : upcoming.length === 0 ? (
+                    <div className='rounded-2xl border border-dashed border-gray-200 bg-gray-50 p-5'>
+                      <p className='text-sm font-medium text-gray-800'>No upcoming items.</p>
+                      <p className='mt-1 text-sm text-gray-500'>Add events or reminders to see them here.</p>
+                    </div>
+                  ) : (
+                    upcoming.map((item) => {
+                      const time = new Date(item.start_at).toLocaleTimeString([], {
+                        hour: 'numeric',
+                        minute: '2-digit',
+                      })
+
+                      return (
+                        <div key={item.id} className='rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3'>
+                          <p className='text-sm font-medium text-gray-900 truncate'>{item.title}</p>
+                          <p className='mt-1 text-[11px] text-gray-500'>{time}</p>
+                        </div>
+                      )
+                    })
+                  )}
+                </div>
+              </section>
             </div>
           </div>
         </div>
       </div>
-    </>
+    </div>
   )
 }
 
