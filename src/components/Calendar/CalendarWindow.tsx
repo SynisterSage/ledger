@@ -255,6 +255,7 @@ export const CalendarWindow = () => {
   const { user } = useAuthContext()
   const api = useApi()
   const centerScrollRef = useRef<HTMLDivElement | null>(null)
+  const hasLoadedDataRef = useRef(false)
   const initialFocusDate = new URLSearchParams(window.location.search).get('focusDate')
   const [viewMode, setViewMode] = useState<CalendarViewMode>('week')
   const [viewAnchor, setViewAnchor] = useState(() => {
@@ -269,6 +270,8 @@ export const CalendarWindow = () => {
   const [events, setEvents] = useState<EventRow[]>([])
   const [reminders, setReminders] = useState<ReminderRow[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const [isRefreshing, setIsRefreshing] = useState(false)
+  const [hasLoadedData, setHasLoadedData] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const [isComposerOpen, setIsComposerOpen] = useState(false)
@@ -290,6 +293,7 @@ export const CalendarWindow = () => {
   const [contextMenu, setContextMenu] = useState<CalendarContextMenuState | null>(null)
   const [listContextMenu, setListContextMenu] = useState<ListContextMenuState | null>(null)
   const [selectedEvent, setSelectedEvent] = useState<EventRow | null>(null)
+  const [eventEditorEvent, setEventEditorEvent] = useState<EventRow | null>(null)
   const [selectedReminder, setSelectedReminder] = useState<ReminderRow | null>(null)
   const [editTitle, setEditTitle] = useState('')
   const [editDate, setEditDate] = useState('')
@@ -325,8 +329,17 @@ export const CalendarWindow = () => {
   }, [viewAnchor])
   const selectedEventPreview = useMemo(() => {
     if (!selectedEvent) return null
-    return events.find((row) => row.id === baseEventId(selectedEvent.id)) ?? selectedEvent
+    const fresh = events.find((row) => row.id === baseEventId(selectedEvent.id))
+    if (!fresh) return selectedEvent
+    if (fresh.id === selectedEvent.id) return fresh
+    return {
+      ...fresh,
+      id: selectedEvent.id,
+      start_at: selectedEvent.start_at,
+      end_at: selectedEvent.end_at,
+    }
   }, [events, selectedEvent])
+  const isInitialLoading = isLoading && !hasLoadedData
 
   const getEventStatusMeta = (status?: EventRow['status']) => {
     switch (status) {
@@ -527,7 +540,12 @@ export const CalendarWindow = () => {
     const loadCalendarData = async () => {
       if (!user) return
 
-      setIsLoading(true)
+      const isInitialLoad = !hasLoadedDataRef.current
+      if (isInitialLoad) {
+        setIsLoading(true)
+      } else {
+        setIsRefreshing(true)
+      }
       setError(null)
 
       try {
@@ -568,17 +586,22 @@ export const CalendarWindow = () => {
             return remindAt >= viewConfig.start.getTime() && remindAt < viewConfig.end.getTime()
           })
         )
+        hasLoadedDataRef.current = true
+        setHasLoadedData(true)
       } catch (error) {
         if (!cancelled) {
           console.error('Failed to load calendar data:', error)
           setError('Could not load calendar data right now.')
-          setCalendars([])
-          setEvents([])
-          setReminders([])
+          if (!hasLoadedDataRef.current) {
+            setCalendars([])
+            setEvents([])
+            setReminders([])
+          }
         }
       } finally {
         if (!cancelled) {
           setIsLoading(false)
+          setIsRefreshing(false)
         }
       }
     }
@@ -895,6 +918,7 @@ export const CalendarWindow = () => {
     const source = events.find((row) => row.id === baseEventId(event.id)) ?? event
     const start = new Date(event.start_at)
     setSelectedEvent(source)
+    setEventEditorEvent(source)
     setEditTitle(source.title)
     setEditDate(formatDateKey(start))
     setEditTime(`${String(start.getHours()).padStart(2, '0')}:${String(start.getMinutes()).padStart(2, '0')}`)
@@ -905,7 +929,7 @@ export const CalendarWindow = () => {
   }
 
   const saveEventEdits = async () => {
-    if (!selectedEvent || !editTitle.trim()) return
+    if (!eventEditorEvent || !editTitle.trim()) return
 
     const start = new Date(`${editDate}T${editTime}:00`)
     const end = new Date(start)
@@ -914,7 +938,7 @@ export const CalendarWindow = () => {
     setIsSavingEdit(true)
     setError(null)
 
-    const updated = (await api.updateEvent(selectedEvent.id, {
+    const updated = (await api.updateEvent(eventEditorEvent.id, {
       title: editTitle.trim(),
       start_at: start.toISOString(),
       end_at: end.toISOString(),
@@ -935,19 +959,21 @@ export const CalendarWindow = () => {
         .map((evt) => (evt.id === updated.id ? updated : evt))
         .sort((a, b) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime())
     )
-    setSelectedEvent(null)
+    setSelectedEvent((current) => (current?.id === updated.id ? updated : current))
+    setEventEditorEvent(null)
   }
 
   const deleteEvent = async () => {
-    if (!selectedEvent) return
+    if (!eventEditorEvent) return
 
     setIsDeletingEvent(true)
     setError(null)
 
     try {
-      await api.deleteEvent(selectedEvent.id)
-      setEvents((prev) => prev.filter((evt) => evt.id !== selectedEvent.id))
-      setSelectedEvent(null)
+      await api.deleteEvent(eventEditorEvent.id)
+      setEvents((prev) => prev.filter((evt) => evt.id !== eventEditorEvent.id))
+      setSelectedEvent((current) => (current?.id === eventEditorEvent.id ? null : current))
+      setEventEditorEvent(null)
       setConfirmDelete(false)
     } catch (error) {
       setError('Could not delete event.')
@@ -1135,6 +1161,26 @@ export const CalendarWindow = () => {
     }
   }
 
+  const loadingSkeleton = (
+    <div className="h-full overflow-auto bg-white">
+      <div className="p-4 space-y-4 animate-pulse">
+        <div className="h-6 w-56 rounded bg-gray-200" />
+        <div className="grid grid-cols-7 gap-px overflow-hidden rounded-2xl border border-gray-200">
+          {Array.from({ length: 7 }).map((_, index) => (
+            <div key={index} className="h-12 bg-gray-100" />
+          ))}
+          {Array.from({ length: 28 }).map((_, index) => (
+            <div key={index} className="min-h-16 border-t border-gray-200 bg-gray-50 p-2">
+              <div className="h-3 w-6 rounded bg-gray-200" />
+              <div className="mt-2 h-3 w-4/5 rounded bg-gray-200" />
+              <div className="mt-2 h-3 w-2/3 rounded bg-gray-200" />
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+
   return (
     <div className="h-screen bg-[#f5f7fb] flex flex-col">
       <div
@@ -1179,6 +1225,9 @@ export const CalendarWindow = () => {
           </div>
         </div>
         <div className="flex items-center gap-2" style={{ WebkitAppRegion: 'no-drag' } as CSSProperties}>
+          {isRefreshing && !isInitialLoading && (
+            <span className="text-[11px] text-gray-500 mr-1">Syncing...</span>
+          )}
           <div className="flex items-center gap-1 rounded-full border border-gray-200 bg-gray-50 p-1 shadow-sm">
             <button
               onClick={() => moveView(-1)}
@@ -1443,10 +1492,10 @@ export const CalendarWindow = () => {
 
         <section className="flex-1 min-w-0 p-2.5">
           <div className="h-full rounded-3xl border border-gray-200 bg-white shadow-sm overflow-hidden flex flex-col">
-            <div
-              ref={centerScrollRef}
-              className="flex-1 min-w-0 overflow-auto"
-              onWheel={(event) => {
+          <div
+            ref={centerScrollRef}
+            className="flex-1 min-w-0 overflow-auto"
+            onWheel={(event) => {
                 const container = centerScrollRef.current
                 if (!container) return
 
@@ -1457,10 +1506,12 @@ export const CalendarWindow = () => {
                 if (delta === 0) return
 
                 event.preventDefault()
-                container.scrollLeft += delta
-              }}
-            >
-            {viewMode === 'month' && (
+              container.scrollLeft += delta
+            }}
+          >
+            {isInitialLoading ? (
+              loadingSkeleton
+            ) : viewMode === 'month' ? (
               <div className="min-w-210 p-3">
                 <div className="grid grid-cols-7 border-l border-t border-gray-200 rounded-t-lg overflow-hidden">
                 {days.map((day) => (
@@ -1567,9 +1618,9 @@ export const CalendarWindow = () => {
                 })}
                 </div>
               </div>
-            )}
+            ) : (
               <div
-                className={`grid min-w-210 ${viewMode === 'month' ? 'hidden' : ''}`}
+                className="grid min-w-210"
                 style={{ gridTemplateColumns: `72px repeat(${viewConfig.dates.length}, minmax(0, 1fr))` }}
               >
               <div className="sticky top-0 z-10 h-12 bg-white border-b border-gray-200" />
@@ -1715,7 +1766,7 @@ export const CalendarWindow = () => {
                             key={evt.id}
                             onClick={(e) => {
                               e.stopPropagation()
-                              openEventEditor(evt)
+                              setSelectedEvent(events.find((row) => row.id === baseEventId(evt.id)) ?? evt)
                             }}
                             onContextMenu={(e) => {
                               e.preventDefault()
@@ -1753,6 +1804,7 @@ export const CalendarWindow = () => {
                 </Fragment>
               ))}
               </div>
+            )}
             </div>
           </div>
         </section>
@@ -1825,12 +1877,12 @@ export const CalendarWindow = () => {
                     </div>
                       )
                     })()}
-                    <button
-                      onClick={() => openEventEditor(selectedEventPreview)}
-                      className="w-full h-8 rounded-md bg-gray-900 text-white text-xs font-medium hover:bg-gray-800"
-                    >
-                      Edit Event
-                    </button>
+              <button
+                onClick={() => openEventEditor(selectedEventPreview)}
+                className="w-full h-8 rounded-md bg-gray-900 text-white text-xs font-medium hover:bg-gray-800"
+              >
+                Open Editor
+              </button>
                   </div>
                 ) : selectedReminderPreview ? (
                   <div className="mt-3 space-y-2">
@@ -1881,7 +1933,7 @@ export const CalendarWindow = () => {
                       return (
                     <button
                       key={event.id}
-                      onClick={() => openEventEditor(event)}
+                      onClick={() => setSelectedEvent(event)}
                       onContextMenu={(e) => {
                         e.preventDefault()
                         setListContextMenu({
@@ -1893,7 +1945,9 @@ export const CalendarWindow = () => {
                       }}
                       className={`w-full rounded-xl border px-3 py-2 text-left hover:bg-gray-100 transition ${meta.previewClass} ${
                         event.status === 'done' ? 'line-through opacity-80' : ''
-                      } ${event.status === 'cancelled' ? 'opacity-65' : ''}`}
+                      } ${event.status === 'cancelled' ? 'opacity-65' : ''} ${
+                        selectedEventPreview?.id === event.id ? 'ring-1 ring-gray-400' : ''
+                      }`}
                     >
                       <div className="flex items-start gap-2">
                         <span className={`mt-0.5 w-2 h-2 rounded-full shrink-0 ${meta.dotClass}`} style={{ backgroundColor: event.color ?? undefined }} />
@@ -2036,12 +2090,18 @@ export const CalendarWindow = () => {
         </div>
       )}
 
-      {selectedEvent && (
+      {eventEditorEvent && (
         <div className="fixed inset-0 z-110 bg-black/20 flex items-start justify-center pt-20">
           <div className="w-110 rounded-xl border border-gray-200 bg-white shadow-xl p-4">
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-sm font-semibold text-gray-900">Edit Event</h3>
-              <button onClick={() => setSelectedEvent(null)} className="p-1 rounded hover:bg-gray-100">
+              <button
+                onClick={() => {
+                  setEventEditorEvent(null)
+                  setConfirmDelete(false)
+                }}
+                className="p-1 rounded hover:bg-gray-100"
+              >
                 <X size={14} className="text-gray-600" />
               </button>
             </div>
@@ -2135,7 +2195,13 @@ export const CalendarWindow = () => {
               </div>
 
               <div className="flex items-center gap-2">
-                <button onClick={() => setSelectedEvent(null)} className="px-3 py-2 text-xs font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-md">
+                <button
+                  onClick={() => {
+                    setEventEditorEvent(null)
+                    setConfirmDelete(false)
+                  }}
+                  className="px-3 py-2 text-xs font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-md"
+                >
                   Close
                 </button>
                 <button
@@ -2269,8 +2335,12 @@ export const CalendarWindow = () => {
                   {overflowEvents.map((event) => (
                     <button
                       key={event.id}
-                      onClick={() => openEventEditor(event)}
-                      className="w-full text-left rounded-md border border-gray-200 bg-gray-50 px-2.5 py-2 text-xs text-gray-800"
+                      onClick={() => setSelectedEvent(event)}
+                      className={`w-full text-left rounded-md border px-2.5 py-2 text-xs text-gray-800 ${
+                        selectedEventPreview?.id === event.id
+                          ? 'border-gray-400 bg-gray-100'
+                          : 'border-gray-200 bg-gray-50'
+                      }`}
                     >
                       <span className="font-medium">{event.title}</span>
                       <span className="ml-2 text-gray-600">

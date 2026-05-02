@@ -100,6 +100,9 @@ const projectStatusAliases = {
   completed: ['Completed', 'completed', 'done'],
 }
 
+const projectSelectColumns = 'id, name, description, status, completeness, color, start_date, end_date, created_at, updated_at'
+const taskSelectColumns = 'id, workspace_id, project_id, title, description, due_date, due_time, status, priority, assigned_to, tags, created_at, updated_at'
+
 const normalizeProjectSemanticStatus = (status) => {
   const value = String(status ?? '').toLowerCase()
   if (value.includes('complete')) return 'completed'
@@ -207,6 +210,7 @@ const withReminderTable = async (queryFactory) => {
 const getLimitCount = async (resource, workspaceId) => {
   const tableMap = {
     projects: 'projects',
+    tasks: 'tasks',
     events: 'events',
     reminders: 'calendar_reminders',
     notes: 'notes',
@@ -298,15 +302,17 @@ app.patch('/api/user/onboarding', authMiddleware, rateLimit('write'), async (req
 app.get('/api/projects', authMiddleware, rateLimit('read'), async (req, res) => {
   try {
     const workspaceId = await resolveWorkspaceId(req.authUser.id)
+    const includeCompleted = ['true', '1', 'yes'].includes(String(req.query?.includeCompleted ?? '').toLowerCase())
     const { data, error } = await supabase
       .from('projects')
-      .select('id, name, status, completeness, created_at')
+      .select(projectSelectColumns)
       .eq('workspace_id', workspaceId)
       .order('created_at', { ascending: false })
       .limit(24)
 
     if (error) throw error
-    res.json((data ?? []).filter((project) => !isCompletedProjectStatus(project.status)).slice(0, 8))
+    const projects = data ?? []
+    res.json(includeCompleted ? projects : projects.filter((project) => !isCompletedProjectStatus(project.status)).slice(0, 8))
   } catch (error) {
     res.status(500).json({ error: error.message })
   }
@@ -319,15 +325,26 @@ app.post('/api/projects', authMiddleware, rateLimit('write'), quotaGuard('projec
       return res.status(400).json({ error: 'Project name required' })
     }
 
+    const description = req.body?.description !== undefined ? String(req.body.description).trim() : ''
+    const startDate = req.body?.start_date !== undefined ? String(req.body.start_date).trim() : ''
+    const endDate = req.body?.end_date !== undefined ? String(req.body.end_date).trim() : ''
+    const color = req.body?.color !== undefined ? String(req.body.color).trim() : ''
+    const status = req.body?.status ? projectStatusAliases[normalizeProjectSemanticStatus(req.body.status)][0] : 'NotStarted'
+
     const { data, error } = await supabase
       .from('projects')
       .insert({
         workspace_id: req.workspaceId,
         created_by: req.authUser.id,
         name,
+        description: description || null,
+        status,
         completeness: 0,
+        color: color || '#007AFF',
+        start_date: startDate || null,
+        end_date: endDate || null,
       })
-      .select('id, name, status, completeness, created_at')
+      .select(projectSelectColumns)
       .single()
 
     if (error) throw error
@@ -346,6 +363,14 @@ app.patch('/api/projects/:id', authMiddleware, rateLimit('write'), async (req, r
     }
 
     const update = {}
+    if (req.body?.name !== undefined) {
+      const nextName = String(req.body.name).trim()
+      if (!nextName) {
+        return res.status(400).json({ error: 'Project name required' })
+      }
+      update.name = nextName
+    }
+    if (req.body?.description !== undefined) update.description = String(req.body.description).trim() || null
     if (req.body?.status) {
       const semantic = normalizeProjectSemanticStatus(req.body.status)
       update.status = projectStatusAliases[semantic][0]
@@ -353,13 +378,17 @@ app.patch('/api/projects/:id', authMiddleware, rateLimit('write'), async (req, r
     if (req.body?.completeness !== undefined) {
       update.completeness = Math.max(0, Math.min(100, Number(req.body.completeness)))
     }
+    if (req.body?.color !== undefined) update.color = String(req.body.color).trim() || '#007AFF'
+    if (req.body?.start_date !== undefined) update.start_date = String(req.body.start_date).trim() || null
+    if (req.body?.end_date !== undefined) update.end_date = String(req.body.end_date).trim() || null
+    update.updated_at = new Date().toISOString()
 
     const { data, error } = await supabase
       .from('projects')
       .update(update)
       .eq('id', req.params.id)
       .eq('workspace_id', workspaceId)
-      .select('id, name, status, completeness, created_at')
+      .select(projectSelectColumns)
       .single()
 
     if (error) throw error
@@ -373,6 +402,129 @@ app.delete('/api/projects/:id', authMiddleware, rateLimit('write'), async (req, 
   try {
     const workspaceId = await resolveWorkspaceId(req.authUser.id)
     const { error } = await supabase.from('projects').delete().eq('id', req.params.id).eq('workspace_id', workspaceId)
+    if (error) throw error
+    res.json({ success: true })
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
+app.get('/api/tasks', authMiddleware, rateLimit('read'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceId(req.authUser.id)
+    let query = supabase
+      .from('tasks')
+      .select(taskSelectColumns)
+      .eq('workspace_id', workspaceId)
+
+    if (req.query?.projectId) {
+      query = query.eq('project_id', String(req.query.projectId))
+    }
+
+    const { data, error } = await query.order('created_at', { ascending: false }).limit(500)
+    if (error) throw error
+    res.json(data ?? [])
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
+app.post('/api/tasks', authMiddleware, rateLimit('write'), quotaGuard('tasks'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceId(req.authUser.id)
+    const title = String(req.body?.title ?? '').trim()
+    if (!title) {
+      return res.status(400).json({ error: 'Task title required' })
+    }
+
+    const projectId = req.body?.project_id ? String(req.body.project_id) : null
+    if (projectId) {
+      const allowed = await ensureWorkspaceResource('projects', projectId, workspaceId)
+      if (!allowed) {
+        return res.status(404).json({ error: 'Project not found' })
+      }
+    }
+
+    const tags = Array.isArray(req.body?.tags) ? req.body.tags.map((tag) => String(tag).trim()).filter(Boolean) : []
+
+    const { data, error } = await supabase
+      .from('tasks')
+      .insert({
+        workspace_id: workspaceId,
+        project_id: projectId,
+        title,
+        description: req.body?.description !== undefined ? String(req.body.description).trim() || null : null,
+        due_date: req.body?.due_date !== undefined ? String(req.body.due_date).trim() || null : null,
+        due_time: req.body?.due_time !== undefined ? String(req.body.due_time).trim() || null : null,
+        status: req.body?.status ? String(req.body.status) : 'todo',
+        priority: req.body?.priority ? String(req.body.priority) : 'medium',
+        tags,
+      })
+      .select(taskSelectColumns)
+      .single()
+
+    if (error) throw error
+    res.json(data)
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
+app.patch('/api/tasks/:id', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceId(req.authUser.id)
+    const allowed = await ensureWorkspaceResource('tasks', req.params.id, workspaceId)
+    if (!allowed) {
+      return res.status(404).json({ error: 'Task not found' })
+    }
+
+    const update = {}
+    if (req.body?.title !== undefined) {
+      const nextTitle = String(req.body.title).trim()
+      if (!nextTitle) {
+        return res.status(400).json({ error: 'Task title required' })
+      }
+      update.title = nextTitle
+    }
+    if (req.body?.description !== undefined) update.description = String(req.body.description).trim() || null
+    if (req.body?.due_date !== undefined) update.due_date = String(req.body.due_date).trim() || null
+    if (req.body?.due_time !== undefined) update.due_time = String(req.body.due_time).trim() || null
+    if (req.body?.status !== undefined) update.status = String(req.body.status)
+    if (req.body?.priority !== undefined) update.priority = String(req.body.priority)
+    if (req.body?.tags !== undefined) {
+      update.tags = Array.isArray(req.body.tags) ? req.body.tags.map((tag) => String(tag).trim()).filter(Boolean) : []
+    }
+    if (req.body?.project_id !== undefined) {
+      const nextProjectId = req.body.project_id ? String(req.body.project_id) : null
+      if (nextProjectId) {
+        const projectAllowed = await ensureWorkspaceResource('projects', nextProjectId, workspaceId)
+        if (!projectAllowed) {
+          return res.status(404).json({ error: 'Project not found' })
+        }
+      }
+      update.project_id = nextProjectId
+    }
+    update.updated_at = new Date().toISOString()
+
+    const { data, error } = await supabase
+      .from('tasks')
+      .update(update)
+      .eq('id', req.params.id)
+      .eq('workspace_id', workspaceId)
+      .select(taskSelectColumns)
+      .single()
+
+    if (error) throw error
+    res.json(data)
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
+app.delete('/api/tasks/:id', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceId(req.authUser.id)
+    const { error } = await supabase.from('tasks').delete().eq('id', req.params.id).eq('workspace_id', workspaceId)
     if (error) throw error
     res.json({ success: true })
   } catch (error) {

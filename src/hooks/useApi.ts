@@ -55,16 +55,73 @@ export const useApi = () => {
     completeOnboarding: () => request('/api/user/onboarding', { method: 'PATCH' }),
 
     // Projects
-    getProjects: () => request('/api/projects'),
-    createProject: (name: string) => request('/api/projects', {
-      method: 'POST',
-      body: JSON.stringify({ name }),
-    }),
-    updateProject: (id: string, update: any) => request(`/api/projects/${id}`, {
+    getProjects: (options?: { includeCompleted?: boolean }) => {
+      const params = new URLSearchParams()
+      if (options?.includeCompleted) {
+        params.set('includeCompleted', 'true')
+      }
+      const query = params.toString()
+      return request(`/api/projects${query ? `?${query}` : ''}`)
+    },
+    createProject: (
+      input: string | {
+        name: string
+        description?: string | null
+        color?: string
+        start_date?: string | null
+        end_date?: string | null
+        status?: string
+      }
+    ) => {
+      const payload = typeof input === 'string' ? { name: input } : input
+      return request('/api/projects', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      })
+    },
+    updateProject: (id: string, update: {
+      name?: string
+      description?: string | null
+      status?: string
+      completeness?: number
+      color?: string
+      start_date?: string | null
+      end_date?: string | null
+    }) => request(`/api/projects/${id}`, {
       method: 'PATCH',
       body: JSON.stringify(update),
     }),
     deleteProject: (id: string) => request(`/api/projects/${id}`, {
+      method: 'DELETE',
+    }),
+
+    // Tasks
+    getTasks: (options?: { projectId?: string }) => {
+      const params = new URLSearchParams()
+      if (options?.projectId) {
+        params.set('projectId', options.projectId)
+      }
+      const query = params.toString()
+      return request(`/api/tasks${query ? `?${query}` : ''}`)
+    },
+    createTask: (payload: {
+      title: string
+      description?: string | null
+      due_date?: string | null
+      due_time?: string | null
+      status?: string
+      priority?: string
+      tags?: string[]
+      project_id?: string | null
+    }) => request('/api/tasks', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+    updateTask: (id: string, update: Record<string, unknown>) => request(`/api/tasks/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(update),
+    }),
+    deleteTask: (id: string) => request(`/api/tasks/${id}`, {
       method: 'DELETE',
     }),
 

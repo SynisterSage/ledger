@@ -6,6 +6,7 @@ import {
   ChevronDown,
   ChevronUp,
   ClipboardCheck,
+  Folder,
   LogOut,
   Plus,
   Settings,
@@ -671,7 +672,7 @@ export const ExpandedSidebar = () => {
 
   return (
     <div className="w-80 h-screen bg-white border-r border-gray-200 flex flex-col py-5">
-      <div className="px-6 pb-4 border-b border-white/20">
+      <div className="px-6 pb-2 border-b border-white/20">
         <div className="flex items-center justify-between mb-3">
           <h1 className="text-2xl font-bold text-gray-900">Ledger</h1>
           <button
@@ -697,13 +698,20 @@ export const ExpandedSidebar = () => {
         </div>
       </div>
 
-      <div className="px-6 pt-2">
-        <div className="grid grid-cols-3 gap-2">
+      <div className="px-6 pt-2 pb-2">
+        <div className="grid grid-cols-4 gap-2">
           <button
             onClick={() => setState('fullscreen')}
             className="h-9 rounded-lg border border-gray-200 bg-white text-xs font-medium text-gray-700 hover:bg-gray-50 transition"
           >
             Dashboard
+          </button>
+          <button
+            onClick={() => window.desktopWindow?.toggleModule('projects')}
+            className="h-9 rounded-lg border border-gray-200 bg-white text-xs font-medium text-gray-700 hover:bg-gray-50 transition flex items-center justify-center gap-1.5"
+          >
+            <Folder size={13} />
+            Projects
           </button>
           <button
             onClick={() => window.desktopWindow?.toggleModule('notes')}
@@ -722,7 +730,7 @@ export const ExpandedSidebar = () => {
         </div>
       </div>
 
-      <div className="px-6 py-6 space-y-5 flex-1 overflow-auto">
+      <div className="px-6 py-4 space-y-5 flex-1 overflow-auto">
         <section>
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-1.5">

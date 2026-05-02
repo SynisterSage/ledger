@@ -13,7 +13,7 @@ process.env.VITE_PUBLIC = VITE_DEV_SERVER_URL
   : RENDERER_DIST
 
 type SidebarWindowMode = 'auth' | 'minimized' | 'expanded' | 'fullscreen'
-type ModuleWindowKind = 'calendar' | 'notes'
+type ModuleWindowKind = 'calendar' | 'notes' | 'projects'
 type ModuleFocusPayload = {
   kind: ModuleWindowKind
   focusDate?: string | null
@@ -21,6 +21,7 @@ type ModuleFocusPayload = {
 
 let sidebarWin: BrowserWindow | null = null
 const moduleWins = new Map<ModuleWindowKind, BrowserWindow>()
+let currentSidebarMode: SidebarWindowMode = 'auth'
 
 const WINDOW_MARGIN = 16
 const MINIMIZED_WIDTH = 64
@@ -100,6 +101,7 @@ function getModuleBoundsNextToSidebar() {
 
 function applySidebarWindowMode(mode: SidebarWindowMode) {
   if (!sidebarWin || sidebarWin.isDestroyed()) return
+  currentSidebarMode = mode
 
   if (mode === 'fullscreen') {
     const bounds = getCenteredBounds(DASHBOARD_WIDTH, DASHBOARD_HEIGHT)
@@ -154,6 +156,15 @@ function createSidebarWindow() {
       if (!moduleWin.isDestroyed()) moduleWin.close()
       moduleWins.delete(kind)
     }
+  })
+
+  sidebarWin.on('close', (event) => {
+    if (process.platform !== 'darwin') return
+    if (currentSidebarMode !== 'fullscreen') return
+
+    event.preventDefault()
+    sidebarWin?.webContents.send('sidebar:state-changed', { state: 'minimized' })
+    applySidebarWindowMode('minimized')
   })
 
   if (VITE_DEV_SERVER_URL) {

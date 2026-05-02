@@ -1,4 +1,4 @@
-import { BarChart3, CheckCircle2, Clock3, CalendarDays, LogOut, ChevronRight, StickyNote } from 'lucide-react'
+import { BarChart3, CheckCircle2, Clock3, CalendarDays, LogOut, ChevronRight, StickyNote, Folder } from 'lucide-react'
 import { useAuthContext } from '../../context/AuthContext'
 import { useSidebar } from '../../context/SidebarContext'
 
@@ -47,6 +47,14 @@ export const MinimizedSidebar = () => {
           className={accentIcon}
         >
           <CalendarDays size={18} />
+        </button>
+        <button
+          title="Projects"
+          aria-label="Open projects"
+          onClick={() => window.desktopWindow?.toggleModule('projects')}
+          className={accentIcon}
+        >
+          <Folder size={18} />
         </button>
         <button
           title="Notes"

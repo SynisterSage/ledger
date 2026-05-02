@@ -17,10 +17,11 @@ import { MainLayout } from './components/Common/MainLayout'
 import LoginForm from './components/Common/LoginForm'
 import CalendarWindow from './components/Calendar/CalendarWindow'
 import NotesWindow from './components/Notes/NotesWindow'
+import ProjectsWindow from './components/Projects/ProjectsWindow'
 import { SkeletonList } from './components/Common/Skeleton'
 
 type PostAuthStage = 'idle' | 'loading' | 'onboarding' | 'welcome' | 'ready'
-type ModuleKind = 'calendar' | 'notes' | null
+type ModuleKind = 'calendar' | 'notes' | 'projects' | null
 
 const windowParams = new URLSearchParams(window.location.search)
 const isModuleWindow = windowParams.get('window') === 'module'
@@ -69,6 +70,22 @@ function DashboardContent() {
   const [newFocusText, setNewFocusText] = useState('')
   const [isSavingFocus, setIsSavingFocus] = useState(false)
   const [focusActionId, setFocusActionId] = useState<string | null>(null)
+
+  useEffect(() => {
+    const handleSidebarStateChanged = (
+      _event: unknown,
+      payload: { state?: 'minimized' | 'expanded' | 'fullscreen' }
+    ) => {
+      if (!payload?.state) return
+      setState(payload.state)
+    }
+
+    window.ipcRenderer?.on('sidebar:state-changed', handleSidebarStateChanged)
+
+    return () => {
+      window.ipcRenderer?.off('sidebar:state-changed', handleSidebarStateChanged)
+    }
+  }, [setState])
 
   useEffect(() => {
     if (!user) return
@@ -304,10 +321,10 @@ function DashboardContent() {
                     <h3 className='mt-1 text-xl font-semibold text-gray-900'>Today&apos;s tasks</h3>
                   </div>
                   <button
-                    onClick={() => setState('expanded')}
+                    onClick={() => window.desktopWindow?.toggleModule('projects')}
                     className='rounded-full border border-gray-200 bg-gray-50 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-100'
                   >
-                    Edit in sidebar
+                    Open projects
                   </button>
                 </div>
 
@@ -444,10 +461,10 @@ function DashboardContent() {
                     <h3 className='mt-1 text-xl font-semibold text-gray-900'>Project Tracker</h3>
                   </div>
                   <button
-                    onClick={() => setState('expanded')}
+                    onClick={() => window.desktopWindow?.toggleModule('projects')}
                     className='rounded-full border border-gray-200 bg-gray-50 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-100'
                   >
-                    Edit
+                    Open
                   </button>
                 </div>
 
@@ -567,6 +584,10 @@ function App() {
 
     if (moduleKind === 'notes') {
       return <NotesWindow />
+    }
+
+    if (moduleKind === 'projects') {
+      return <ProjectsWindow />
     }
 
     return (
