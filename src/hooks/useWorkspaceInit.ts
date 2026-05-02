@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { useAuthContext } from '../context/AuthContext'
-import { supabase } from '../services/supabase'
+import { useApi } from './useApi'
 
 /**
  * Hook to initialize workspace for authenticated users
@@ -8,36 +8,21 @@ import { supabase } from '../services/supabase'
  */
 export const useWorkspaceInit = () => {
   const { user } = useAuthContext()
+  const api = useApi()
 
   useEffect(() => {
     if (!user) return
 
     const initializeWorkspace = async () => {
       try {
-        const workspacesTable = supabase.from('workspaces' as never)
-
-        // Check if personal workspace exists
-        const { error } = await workspacesTable
-          .select('id')
-          .eq('owner_id', user.id)
-          .eq('is_personal', true)
-          .single()
-
-        // If no personal workspace, create one (fallback if trigger didn't fire)
-        if (error?.code === 'PGRST116') {
-          await workspacesTable.insert({
-            owner_id: user.id,
-            name: 'My Work',
-            is_personal: true,
-          } as never)
-        }
+        await api.getCalendars()
       } catch (err) {
         console.error('Failed to initialize workspace:', err)
       }
     }
 
     initializeWorkspace()
-  }, [user])
+  }, [api, user])
 }
 
 export default useWorkspaceInit

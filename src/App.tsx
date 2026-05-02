@@ -2,11 +2,11 @@ import { CheckCircle2, Clock, Folder, Plus, ChevronLeft, ChevronRight } from 'lu
 import { useEffect, useState, type CSSProperties } from 'react'
 import { useAuthContext } from './context/AuthContext'
 import { useWorkspaceInit } from './hooks/useWorkspaceInit'
+import { useApi } from './hooks/useApi'
 import { useSidebar } from './context/SidebarContext'
 import { MainLayout } from './components/Common/MainLayout'
 import LoginForm from './components/Common/LoginForm'
 import CalendarWindow from './components/Calendar/CalendarWindow'
-import { supabase } from './services/supabase'
 
 type PostAuthStage = 'idle' | 'loading' | 'onboarding' | 'welcome' | 'ready'
 type ModuleKind = 'calendar' | null
@@ -126,6 +126,7 @@ function DashboardContent() {
 // Main app component
 function App() {
   const { user, isLoading } = useAuthContext()
+  const api = useApi()
   const { state, setState } = useSidebar()
   const [uiMode, setUiMode] = useState<'auth' | 'app'>(user ? 'app' : 'auth')
   const [isAuthExiting, setIsAuthExiting] = useState(false)
@@ -198,19 +199,9 @@ function App() {
       try {
         setPostAuthStage('loading')
 
-        const { data, error } = await supabase
-          .from('users' as never)
-          .select('onboarding_completed')
-          .eq('id', user.id)
-          .maybeSingle()
+        const data = await api.getOnboardingStatus()
 
         if (isCancelled) return
-
-        if (error) {
-          console.warn('Failed to load onboarding state:', error.message)
-          setPostAuthStage('welcome')
-          return
-        }
 
         const onboardingCompleted = Boolean((data as { onboarding_completed?: boolean } | null)?.onboarding_completed)
         setPostAuthStage(onboardingCompleted ? 'welcome' : 'onboarding')
@@ -345,13 +336,7 @@ function App() {
               if (!user || isSavingOnboarding) return
               setIsSavingOnboarding(true)
 
-              await supabase
-                .from('users' as never)
-                .update({
-                  onboarding_completed: true,
-                  onboarding_completed_at: new Date().toISOString(),
-                } as never)
-                .eq('id', user.id)
+              await api.completeOnboarding()
 
               setIsSavingOnboarding(false)
               setPostAuthStage('welcome')

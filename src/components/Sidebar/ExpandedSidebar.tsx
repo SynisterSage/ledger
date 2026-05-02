@@ -16,7 +16,8 @@ import {
 import { useEffect, useRef, useState } from 'react'
 import { useAuthContext } from '../../context/AuthContext'
 import { useSidebar } from '../../context/SidebarContext'
-import { supabase } from '../../services/supabase'
+import { useApi } from '../../hooks/useApi'
+import { SkeletonList } from '../Common/Skeleton'
 
 type FocusItem = {
   id: string
@@ -34,11 +35,18 @@ type QuickCaptureMode = 'none' | 'task' | 'note' | 'event'
 type ProjectStatus = 'NotStarted' | 'InProgress' | 'Paused' | 'Completed'
 type ProjectSemanticStatus = 'not_started' | 'in_progress' | 'paused' | 'completed'
 
-const todayKey = () => new Date().toISOString().slice(0, 10)
+const todayKey = () => {
+  const now = new Date()
+  const year = now.getFullYear()
+  const month = String(now.getMonth() + 1).padStart(2, '0')
+  const day = String(now.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
 
 export const ExpandedSidebar = () => {
   const { user, signOut } = useAuthContext()
   const { setState } = useSidebar()
+  const api = useApi()
   const fullName = (user?.user_metadata?.full_name as string | undefined)?.trim() ?? ''
   const firstName = fullName ? fullName.split(' ')[0] : (user?.email?.split('@')[0] ?? 'User')
 
@@ -65,12 +73,15 @@ export const ExpandedSidebar = () => {
   const [eventStartTime, setEventStartTime] = useState('09:00')
   const [eventEndTime, setEventEndTime] = useState('10:00')
   const [workspaceId, setWorkspaceId] = useState<string | null>(null)
+  const todayBucketRef = useRef(todayKey())
   const [projects, setProjects] = useState<Array<{ id: string; name: string; status: ProjectStatus | string; completeness: number }>>([])
+  const [isLoadingProjects, setIsLoadingProjects] = useState(true)
   const [expandedProjectId, setExpandedProjectId] = useState<string | null>(null)
   const [projectUpdating, setProjectUpdating] = useState<string | null>(null)
   const [newProjectName, setNewProjectName] = useState('')
   const [isCreatingProject, setIsCreatingProject] = useState(false)
   const [upcomingItems, setUpcomingItems] = useState<Array<{ id: string; title: string; type: 'event' | 'task'; dueDate: string; time?: string; rawDate: string }>>([])
+  const [isLoadingUpcoming, setIsLoadingUpcoming] = useState(true)
   const [expandedUpcomingId, setExpandedUpcomingId] = useState<string | null>(null)
   const [contextMenu, setContextMenu] = useState<{ type: 'project' | 'upcoming'; id: string; x: number; y: number } | null>(null)
   const taskCaptureRef = useRef<HTMLInputElement | null>(null)
@@ -124,72 +135,45 @@ export const ExpandedSidebar = () => {
       setIsLoadingDaily(true)
       setSaveError(null)
 
-      const workspaceResult: any = await supabase
-        .from('workspaces' as never)
-        .select('id')
-        .eq('owner_id', user.id)
-        .eq('is_personal', true)
-        .maybeSingle()
+      try {
+        const data = await api.getDailyAccountability()
 
-      let currentWorkspaceId: string | null =
-        workspaceResult.error || !workspaceResult.data
-          ? null
-          : (workspaceResult.data as { id: string }).id
+        if (cancelled) return
 
-      if (!currentWorkspaceId) {
-        const membershipResult: any = await supabase
-          .from('workspace_members' as never)
-          .select('workspace_id')
-          .eq('user_id', user.id)
-          .limit(1)
-          .maybeSingle()
+        const row = data as {
+          focus_items?: FocusItem[] | null
+          checkin_finished?: string | null
+          checkin_blocked?: string | null
+          checkin_first_task_tomorrow?: string | null
+        } | null
 
-        if (!membershipResult.error && membershipResult.data) {
-          currentWorkspaceId = (membershipResult.data as { workspace_id: string }).workspace_id
+        setFocusItems(Array.isArray(row?.focus_items) ? row!.focus_items : [])
+        setCheckin({
+          finished: row?.checkin_finished ?? '',
+          blocked: row?.checkin_blocked ?? '',
+          firstTaskTomorrow: row?.checkin_first_task_tomorrow ?? '',
+        })
+
+        setCheckinSaved(
+          Boolean(
+            (row?.checkin_finished ?? '').trim() ||
+              (row?.checkin_blocked ?? '').trim() ||
+              (row?.checkin_first_task_tomorrow ?? '').trim()
+          )
+        )
+      } catch (error) {
+        if (!cancelled) {
+          console.error('Failed to load daily accountability:', error)
+          setFocusItems([])
+          setCheckin({ finished: '', blocked: '', firstTaskTomorrow: '' })
+          setCheckinSaved(false)
+        }
+      } finally {
+        if (!cancelled) {
+          setWorkspaceId(user.id)
+          setIsLoadingDaily(false)
         }
       }
-
-      const { data, error } = await supabase
-        .from('daily_accountability' as never)
-        .select('focus_items, checkin_finished, checkin_blocked, checkin_first_task_tomorrow')
-        .eq('user_id', user.id)
-        .eq('entry_date', todayKey())
-        .maybeSingle()
-
-      if (cancelled) return
-
-      if (error) {
-        setSaveError('Could not load today data.')
-        setFocusItems([])
-        setCheckin({ finished: '', blocked: '', firstTaskTomorrow: '' })
-        setCheckinSaved(false)
-        setIsLoadingDaily(false)
-        return
-      }
-
-      const row = data as {
-        focus_items?: FocusItem[] | null
-        checkin_finished?: string | null
-        checkin_blocked?: string | null
-        checkin_first_task_tomorrow?: string | null
-      } | null
-
-      setFocusItems(Array.isArray(row?.focus_items) ? row!.focus_items : [])
-      setCheckin({
-        finished: row?.checkin_finished ?? '',
-        blocked: row?.checkin_blocked ?? '',
-        firstTaskTomorrow: row?.checkin_first_task_tomorrow ?? '',
-      })
-
-      setCheckinSaved(
-        Boolean(
-          (row?.checkin_finished ?? '').trim() ||
-            (row?.checkin_blocked ?? '').trim() ||
-            (row?.checkin_first_task_tomorrow ?? '').trim()
-        )
-      )
-      setWorkspaceId(currentWorkspaceId)
-      setIsLoadingDaily(false)
     }
 
     loadDaily()
@@ -203,35 +187,30 @@ export const ExpandedSidebar = () => {
     let cancelled = false
 
     const loadQuickNotes = async () => {
-      if (!user || !workspaceId) {
+      if (!user) {
         setQuickNotes([])
         return
       }
 
-      const { data, error } = await supabase
-        .from('notes' as never)
-        .select('id, title, content, created_at')
-        .eq('user_id', user.id)
-        .eq('workspace_id', workspaceId)
-        .order('created_at', { ascending: false })
-        .limit(24)
+      try {
+        const data = await api.getNotes()
 
-      if (cancelled) return
+        if (cancelled) return
 
-      if (error) {
-        setSaveError('Could not load notes.')
-        setQuickNotes([])
-        return
+        const mapped = ((data ?? []) as Array<{ id: string; title: string; content: string; created_at: string }>).map((row) => ({
+          id: row.id,
+          title: row.title,
+          body: row.content,
+          createdAt: row.created_at,
+        }))
+
+        setQuickNotes(mapped)
+      } catch (error) {
+        if (!cancelled) {
+          console.error('Failed to load notes:', error)
+          setQuickNotes([])
+        }
       }
-
-      const mapped = ((data ?? []) as Array<{ id: string; title: string; content: string; created_at: string }>).map((row) => ({
-        id: row.id,
-        title: row.title,
-        body: row.content,
-        createdAt: row.created_at,
-      }))
-
-      setQuickNotes(mapped)
     }
 
     void loadQuickNotes()
@@ -242,91 +221,118 @@ export const ExpandedSidebar = () => {
   }, [user?.id, workspaceId])
 
   useEffect(() => {
-    if (!user || !workspaceId) return
+    if (!user) {
+      setIsLoadingProjects(false)
+      setProjects([])
+      return
+    }
+
+    if (!workspaceId) {
+      setIsLoadingProjects(false)
+      return
+    }
 
     let cancelled = false
 
     const loadProjects = async () => {
-      const { data, error } = await supabase
-        .from('projects' as never)
-        .select('id, name, status, completeness')
-        .eq('workspace_id', workspaceId)
-        .limit(5)
-
-      if (!cancelled && !error && data) {
-        const projects = (data as Array<{ id: string; name: string; status: string; completeness: number }>)
-          .filter((project) => normalizeProjectStatus(project.status) !== 'completed')
-          .map((project) => ({
-            ...project,
-            status: normalizeProjectStatus(project.status),
-          }))
-        setProjects(projects)
+      try {
+        setIsLoadingProjects(true)
+        const data = await api.getProjects()
+        if (!cancelled) {
+          const projects = (data as Array<{ id: string; name: string; status: string; completeness: number }>)
+            .filter((project) => normalizeProjectStatus(project.status) !== 'completed')
+            .map((project) => ({
+              ...project,
+              status: normalizeProjectStatus(project.status),
+            }))
+          setProjects(projects)
+        }
+      } catch (error) {
+        console.error('Failed to load projects:', error)
+      } finally {
+        if (!cancelled) setIsLoadingProjects(false)
       }
     }
 
     void loadProjects()
 
+    const refreshTimer = window.setInterval(() => {
+      void loadProjects()
+    }, 45_000)
+
     return () => {
       cancelled = true
+      window.clearInterval(refreshTimer)
     }
   }, [user?.id, workspaceId])
 
   useEffect(() => {
-    if (!user || !workspaceId) return
+    if (!user) {
+      setIsLoadingUpcoming(false)
+      setUpcomingItems([])
+      return
+    }
+
+    if (!workspaceId) {
+      setIsLoadingUpcoming(false)
+      return
+    }
 
     let cancelled = false
 
     const loadUpcoming = async () => {
-      const today = new Date()
-      today.setHours(0, 0, 0, 0)
-      const todayISO = today.toISOString().slice(0, 10)
-      const tomorrow = new Date(today)
-      tomorrow.setDate(tomorrow.getDate() + 1)
-      const tomorrowISO = tomorrow.toISOString().slice(0, 10)
-      const endDate = new Date(today)
-      endDate.setDate(endDate.getDate() + 30)
+      try {
+        setIsLoadingUpcoming(true)
+        const events = await api.getUpcomingEvents()
+        const today = new Date()
+        today.setHours(0, 0, 0, 0)
+        const todayISO = today.toISOString().slice(0, 10)
+        const tomorrow = new Date(today)
+        tomorrow.setDate(tomorrow.getDate() + 1)
+        const tomorrowISO = tomorrow.toISOString().slice(0, 10)
 
-      // Fetch upcoming events
-      const { data: events } = await supabase
-        .from('events' as never)
-        .select('id, title, start_at')
-        .eq('workspace_id', workspaceId)
-        .gte('start_at', todayISO)
-        .lte('start_at', endDate.toISOString().slice(0, 10))
-        .limit(10)
+        const eventItems = (events || []).map((e: any) => {
+          const startDate = new Date(e.start_at)
+          const eventDateISO = startDate.toISOString().slice(0, 10)
+          let dateDisplay = ''
 
-      const eventItems = (events || []).map((e: any) => {
-        const startDate = new Date(e.start_at)
-        const eventDateISO = startDate.toISOString().slice(0, 10)
-        let dateDisplay = ''
+          if (eventDateISO === todayISO) {
+            dateDisplay = 'Today'
+          } else if (eventDateISO === tomorrowISO) {
+            dateDisplay = 'Tomorrow'
+          } else {
+            dateDisplay = startDate.toLocaleDateString([], { month: 'short', day: 'numeric' })
+          }
 
-        if (eventDateISO === todayISO) {
-          dateDisplay = 'Today'
-        } else if (eventDateISO === tomorrowISO) {
-          dateDisplay = 'Tomorrow'
-        } else {
-          dateDisplay = startDate.toLocaleDateString([], { month: 'short', day: 'numeric' })
+          return {
+            id: e.id,
+            title: e.title,
+            type: 'event' as const,
+            dueDate: dateDisplay,
+            rawDate: eventDateISO,
+            time: startDate.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
+          }
+        })
+
+        if (!cancelled) {
+          setUpcomingItems(eventItems.slice(0, 5))
         }
-
-        return {
-          id: e.id,
-          title: e.title,
-          type: 'event' as const,
-          dueDate: dateDisplay,
-          rawDate: eventDateISO,
-          time: startDate.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
-        }
-      })
-
-      if (!cancelled) {
-        setUpcomingItems(eventItems.slice(0, 5))
+      } catch (error) {
+        console.error('Failed to load upcoming:', error)
+      } finally {
+        if (!cancelled) setIsLoadingUpcoming(false)
       }
     }
 
     void loadUpcoming()
 
+    const refreshTimer = window.setInterval(() => {
+      void loadUpcoming()
+    }, 60_000)
+
     return () => {
       cancelled = true
+      window.clearInterval(refreshTimer)
     }
   }, [user?.id, workspaceId])
 
@@ -339,6 +345,53 @@ export const ExpandedSidebar = () => {
     return () => window.clearTimeout(t)
   }, [quickCaptureMode])
 
+  useEffect(() => {
+    const syncToNextDay = () => {
+      const currentDay = todayKey()
+      if (todayBucketRef.current === currentDay) return
+
+      todayBucketRef.current = currentDay
+      setFocusItems([])
+      setCheckin({ finished: '', blocked: '', firstTaskTomorrow: '' })
+      setCheckinSaved(false)
+      setIsLoadingDaily(true)
+
+      void (async () => {
+        try {
+          const data = await api.getDailyAccountability()
+          const row = data as {
+            focus_items?: FocusItem[] | null
+            checkin_finished?: string | null
+            checkin_blocked?: string | null
+            checkin_first_task_tomorrow?: string | null
+          } | null
+
+          setFocusItems(Array.isArray(row?.focus_items) ? row!.focus_items : [])
+          setCheckin({
+            finished: row?.checkin_finished ?? '',
+            blocked: row?.checkin_blocked ?? '',
+            firstTaskTomorrow: row?.checkin_first_task_tomorrow ?? '',
+          })
+          setCheckinSaved(
+            Boolean(
+              (row?.checkin_finished ?? '').trim() ||
+                (row?.checkin_blocked ?? '').trim() ||
+                (row?.checkin_first_task_tomorrow ?? '').trim()
+            )
+          )
+        } catch (error) {
+          console.error('Failed to refresh daily accountability on day rollover:', error)
+        } finally {
+          setIsLoadingDaily(false)
+        }
+      })()
+    }
+
+    syncToNextDay()
+    const timer = window.setInterval(syncToNextDay, 60_000)
+    return () => window.clearInterval(timer)
+  }, [api])
+
   const saveDaily = async (next: {
     focusItems?: FocusItem[]
     checkin?: { finished: string; blocked: string; firstTaskTomorrow: string }
@@ -348,22 +401,14 @@ export const ExpandedSidebar = () => {
     const nextFocus = next.focusItems ?? focusItems
     const nextCheckin = next.checkin ?? checkin
 
-    const { error } = await supabase
-      .from('daily_accountability' as never)
-      .upsert(
-        {
-          user_id: user.id,
-          entry_date: todayKey(),
-          focus_items: nextFocus,
-          checkin_finished: nextCheckin.finished.trim(),
-          checkin_blocked: nextCheckin.blocked.trim(),
-          checkin_first_task_tomorrow: nextCheckin.firstTaskTomorrow.trim(),
-          updated_at: new Date().toISOString(),
-        } as never,
-        { onConflict: 'user_id,entry_date' }
-      )
+    const data = await api.saveDailyAccountability({
+      focus_items: nextFocus,
+      finished: nextCheckin.finished.trim(),
+      blocked: nextCheckin.blocked.trim(),
+      first_task_tomorrow: nextCheckin.firstTaskTomorrow.trim(),
+    })
 
-    if (error) {
+    if (!data) {
       setSaveError('Could not save. Try again.')
       return false
     }
@@ -417,22 +462,9 @@ export const ExpandedSidebar = () => {
     const firstLine = text.split('\n').find((line) => line.trim())?.trim() ?? 'Untitled note'
     const title = firstLine.replace(/^#\s*/, '').slice(0, 72)
 
-    const nowIso = new Date().toISOString()
-    const { data, error } = await supabase
-      .from('notes' as never)
-      .insert({
-        workspace_id: workspaceId,
-        user_id: user.id,
-        title,
-        content: text,
-        date: todayKey(),
-        tags: [] as string[],
-        is_public: false,
-      } as never)
-      .select('id, title, content, created_at')
-      .single()
+    const data = await api.createNote(title, text)
 
-    if (error || !data) {
+    if (!data) {
       setSaveError('Could not save note.')
       return
     }
@@ -442,7 +474,7 @@ export const ExpandedSidebar = () => {
       id: row.id,
       title: row.title,
       body: row.content,
-      createdAt: row.created_at ?? nowIso,
+      createdAt: row.created_at ?? new Date().toISOString(),
     }
 
     setQuickNotes((prev) => [note, ...prev].slice(0, 24))
@@ -476,59 +508,22 @@ export const ExpandedSidebar = () => {
 
   const saveQuickEvent = async () => {
     const title = eventDraft.trim()
-    if (!title || !user || !workspaceId) return
-
-    // Get or create default calendar for workspace
-    const calendarResult: any = await supabase
-      .from('calendars' as never)
-      .select('id')
-      .eq('workspace_id', workspaceId)
-      .eq('is_default', true)
-      .maybeSingle()
-
-    let calendarId: string | null = calendarResult.data?.id ?? null
-
-    if (!calendarId) {
-      const createCalResult: any = await supabase
-        .from('calendars' as never)
-        .insert({
-          workspace_id: workspaceId,
-          owner_id: user.id,
-          name: 'Personal',
-          color: '#3B82F6',
-          is_default: true,
-          is_personal: true,
-        } as never)
-        .select('id')
-        .single()
-
-      if (createCalResult.error) {
-        setSaveError('Could not create calendar.')
-        return
-      }
-
-      calendarId = createCalResult.data?.id
-    }
+    if (!title || !user) return
 
     // Combine date and time for start/end times
     const startDateTime = new Date(`${eventDate}T${eventStartTime}:00`)
     const endDateTime = new Date(`${eventDate}T${eventEndTime}:00`)
 
-    const { error } = await supabase
-      .from('events' as never)
-      .insert({
-        calendar_id: calendarId,
-        workspace_id: workspaceId,
-        created_by: user.id,
-        title,
-        notes: '',
-        start_at: startDateTime.toISOString(),
-        end_at: endDateTime.toISOString(),
-        all_day: false,
-        status: 'planned',
-      } as never)
+    const data = await api.createEvent({
+      title,
+      start_at: startDateTime.toISOString(),
+      end_at: endDateTime.toISOString(),
+      notes: '',
+      all_day: false,
+      status: 'planned',
+    })
 
-    if (error) {
+    if (!data) {
       setSaveError('Could not save event.')
       return
     }
@@ -543,45 +538,26 @@ export const ExpandedSidebar = () => {
   const updateProjectStatus = async (projectId: string, newStatus: ProjectStatus) => {
     setProjectUpdating(projectId)
     const semantic = normalizeProjectStatus(newStatus)
-    let resolvedStatus: string | null = null
-    let lastMessage = ''
-
-    for (const candidate of projectStatusCandidates[semantic]) {
-      const { error } = await supabase
-        .from('projects' as never)
-        .update({ status: candidate } as never)
-        .eq('id', projectId)
-
-      if (!error) {
-        resolvedStatus = candidate
-        break
-      }
-
-      lastMessage = error.message
-    }
-
-    if (resolvedStatus) {
+    const resolvedStatus = projectStatusCandidates[semantic][0]
+    try {
+      await api.updateProject(projectId, { status: resolvedStatus })
       setProjects((prev) =>
         prev.map((p) => (p.id === projectId ? { ...p, status: normalizeProjectStatus(resolvedStatus!) } : p))
       )
-    } else {
-      setSaveError(lastMessage ? `Could not update project status. ${lastMessage}` : 'Could not update project status.')
+    } catch (error) {
+      setSaveError('Could not update project status.')
     }
     setProjectUpdating(null)
   }
 
   const updateProjectCompleteness = async (projectId: string, completeness: number) => {
     completeness = Math.max(0, Math.min(100, completeness))
-    const { error } = await supabase
-      .from('projects' as never)
-      .update({ completeness } as never)
-      .eq('id', projectId)
-
-    if (!error) {
+    try {
+      await api.updateProject(projectId, { completeness })
       setProjects((prev) =>
         prev.map((p) => (p.id === projectId ? { ...p, completeness } : p))
       )
-    } else {
+    } catch (error) {
       setSaveError('Could not update progress.')
     }
   }
@@ -594,57 +570,30 @@ export const ExpandedSidebar = () => {
     }
 
     setIsCreatingProject(true)
-    let createdProject: { id: string; name: string; status: ProjectStatus | string; completeness: number } | null = null
-    let lastMessage = ''
-
-    for (const candidate of projectStatusCandidates.not_started) {
-      const { data, error } = await supabase
-        .from('projects' as never)
-        .insert({
-          workspace_id: workspaceId,
-          created_by: user.id,
-          name,
-          status: candidate,
-          completeness: 0,
-          category_id: null,
-        } as never)
-        .select('id, name, status, completeness')
-        .single()
-
-      if (!error && data) {
-        const inserted = data as { id: string; name: string; status: string; completeness: number }
-        createdProject = {
-          ...inserted,
-          status: normalizeProjectStatus(inserted.status),
-        }
-        break
+    try {
+      const data = await api.createProject(name)
+      const createdProject = {
+        ...(data as { id: string; name: string; status: string; completeness: number }),
+        status: normalizeProjectStatus((data as { status: string }).status),
       }
-
-      lastMessage = error?.message || lastMessage
-    }
-
-    if (createdProject) {
-      setProjects((prev) => [createdProject!, ...prev])
+      setProjects((prev) => [createdProject, ...prev])
       setNewProjectName('')
-    } else {
-      console.error('Project creation error:', lastMessage)
-      setSaveError(lastMessage || 'Could not create project.')
+    } catch (error) {
+      console.error('Project creation error:', error)
+      setSaveError(error instanceof Error ? error.message : 'Could not create project.')
+    } finally {
+      setIsCreatingProject(false)
     }
-    setIsCreatingProject(false)
   }
 
   const completedCount = focusItems.filter((item) => item.done).length
 
   const deleteProject = async (projectId: string) => {
-    const { error } = await supabase
-      .from('projects' as never)
-      .delete()
-      .eq('id', projectId)
-
-    if (!error) {
+    try {
+      await api.deleteProject(projectId)
       setProjects((prev) => prev.filter((p) => p.id !== projectId))
       setContextMenu(null)
-    } else {
+    } catch (error) {
       setSaveError('Could not delete project.')
     }
   }
@@ -995,11 +944,9 @@ export const ExpandedSidebar = () => {
                     <button
                       onClick={async (e) => {
                         e.stopPropagation()
-                        const { error } = await supabase
-                          .from('notes' as never)
-                          .delete()
-                          .eq('id', note.id)
-                        if (error) {
+                        try {
+                          await api.deleteNote(note.id)
+                        } catch (error) {
                           setSaveError('Could not delete note.')
                           return
                         }
@@ -1152,7 +1099,9 @@ export const ExpandedSidebar = () => {
           )}
 
           <div className="space-y-2">
-            {projects.length === 0 ? (
+            {isLoadingProjects ? (
+              <SkeletonList count={2} />
+            ) : projects.length === 0 ? (
               <p className="text-xs text-gray-500">No active projects</p>
             ) : (
               projects.map((project) => {
@@ -1240,7 +1189,9 @@ export const ExpandedSidebar = () => {
         <section>
           <h2 className="text-xs font-semibold text-gray-600 uppercase tracking-wider mb-2">Upcoming</h2>
           <div className="space-y-2">
-            {upcomingItems.length === 0 ? (
+            {isLoadingUpcoming ? (
+              <SkeletonList count={2} />
+            ) : upcomingItems.length === 0 ? (
               <p className="text-xs text-gray-500">No upcoming events</p>
             ) : (
               upcomingItems.map((item) => {
