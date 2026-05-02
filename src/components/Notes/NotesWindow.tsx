@@ -10,6 +10,7 @@ import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState }
 import { useAuthContext } from '../../context/AuthContext'
 import { useApi } from '../../hooks/useApi'
 import { SkeletonLoader, SkeletonList } from '../Common/Skeleton'
+import { MindMapEditor } from './MindMapEditor'
 
 type NoteRow = {
   id: string
@@ -18,6 +19,8 @@ type NoteRow = {
   date: string
   mood: string | null
   source: string
+  mode?: 'text' | 'mind_map'
+  mind_map_structure?: unknown
   created_at: string
   updated_at: string
 }
@@ -82,6 +85,8 @@ export const NotesWindow = () => {
   const [isResizingLeftPane, setIsResizingLeftPane] = useState(false)
   const [isResizingRightPane, setIsResizingRightPane] = useState(false)
   const [noteContextMenu, setNoteContextMenu] = useState<NoteContextMenuState | null>(null)
+  const [draftMode, setDraftMode] = useState<'text' | 'mind_map'>('text')
+  const [draftMindMapStructure, setDraftMindMapStructure] = useState<unknown>(null)
 
   const areSidePanelsCollapsed = isLeftPaneCollapsed && isRightPaneCollapsed
 
@@ -105,6 +110,8 @@ export const NotesWindow = () => {
     setDraftContent(note.content)
     setDraftDate(note.date || todayKey())
     setDraftMood(note.mood ?? '')
+    setDraftMode(note.mode || 'text')
+    setDraftMindMapStructure(note.mind_map_structure || null)
     setIsDirty(false)
   }, [])
 
@@ -193,6 +200,8 @@ export const NotesWindow = () => {
         date: noteDate,
         mood: noteMood,
         source: 'workspace',
+        mode: draftMode,
+        mind_map_structure: draftMindMapStructure,
       })
         const updated = data as NoteRow
         setNotes((prev) => prev.map((note) => (note.id === updated.id ? updated : note)))
@@ -210,7 +219,7 @@ export const NotesWindow = () => {
         setShowSavingIndicator(false)
       }
     },
-    [api, draftContent, draftDate, draftMood, draftTitle, selectedNoteId]
+    [api, draftContent, draftDate, draftMood, draftMode, draftMindMapStructure, draftTitle, selectedNoteId]
   )
 
   const openNote = useCallback(
@@ -626,11 +635,26 @@ export const NotesWindow = () => {
                       {selectedNote.title || 'Untitled note'}
                     </h2>
                   </div>
-                  <div className="text-right">
-                    <p className="text-[11px] text-gray-500">{showSavingIndicator ? 'Saving...' : 'Auto-save enabled'}</p>
-                    <p className="text-[10px] text-gray-400">
-                      {lastSavedAtRef.current ? `Last saved ${formatDateTime(lastSavedAtRef.current)}` : 'Auto-save enabled'}
-                    </p>
+                  <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-2">
+                      <select
+                        value={draftMode}
+                        onChange={(e) => {
+                          setDraftMode(e.target.value as 'text' | 'mind_map')
+                          setIsDirty(true)
+                        }}
+                        className="text-xs bg-white border border-gray-200 rounded-lg px-2 py-1 text-gray-700 focus:outline-none focus:ring-1 focus:ring-gray-900"
+                      >
+                        <option value="text">Text</option>
+                        <option value="mind_map">Mind Map</option>
+                      </select>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-[11px] text-gray-500">{showSavingIndicator ? 'Saving...' : 'Auto-save enabled'}</p>
+                      <p className="text-[10px] text-gray-400">
+                        {lastSavedAtRef.current ? `Last saved ${formatDateTime(lastSavedAtRef.current)}` : 'Auto-save enabled'}
+                      </p>
+                    </div>
                   </div>
                 </div>
 
@@ -685,22 +709,35 @@ export const NotesWindow = () => {
                       className="w-full text-4xl font-semibold tracking-tight text-gray-900 placeholder:text-gray-300 focus:outline-none bg-transparent"
                     />
 
-                    <textarea
-                      ref={bodyRef}
-                      value={draftContent}
-                      onChange={(e) => {
-                        setDraftContent(e.target.value)
-                        setIsDirty(true)
-                      }}
-                      onFocus={() => {
-                        isEditingRef.current = true
-                      }}
-                      onBlur={() => {
-                        isEditingRef.current = false
-                      }}
-                      placeholder="Start writing..."
-                      className="w-full min-h-[calc(100vh-330px)] resize-none bg-transparent text-[16px] leading-8 text-gray-800 placeholder:text-gray-300 focus:outline-none"
-                    />
+                    {draftMode === 'text' ? (
+                      <textarea
+                        ref={bodyRef}
+                        value={draftContent}
+                        onChange={(e) => {
+                          setDraftContent(e.target.value)
+                          setIsDirty(true)
+                        }}
+                        onFocus={() => {
+                          isEditingRef.current = true
+                        }}
+                        onBlur={() => {
+                          isEditingRef.current = false
+                          void flushAutosave()
+                        }}
+                        placeholder="Start writing..."
+                        className="w-full min-h-[calc(100vh-330px)] resize-none bg-transparent text-[16px] leading-8 text-gray-800 placeholder:text-gray-300 focus:outline-none"
+                      />
+                    ) : (
+                      <div className="w-full min-h-[calc(100vh-330px)] mt-4">
+                        <MindMapEditor
+                          structure={draftMindMapStructure}
+                          onChange={(structure) => {
+                            setDraftMindMapStructure(structure)
+                            setIsDirty(true)
+                          }}
+                        />
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>

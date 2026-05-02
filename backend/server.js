@@ -1649,7 +1649,7 @@ app.get('/api/notes', authMiddleware, rateLimit('read'), async (req, res) => {
     const workspaceId = await resolveWorkspaceIdForRequest(req)
     const { data, error } = await supabase
       .from('notes')
-      .select('id, title, content, date, mood, source, created_at, updated_at')
+      .select('id, title, content, date, mood, source, mode, mind_map_structure, created_at, updated_at')
       .eq('workspace_id', workspaceId)
       .order('updated_at', { ascending: false })
       .limit(100)
@@ -1669,6 +1669,8 @@ app.post('/api/notes', authMiddleware, rateLimit('write'), quotaGuard('notes'), 
     const date = String(req.body?.date ?? new Date().toISOString().slice(0, 10)).trim()
     const mood = req.body?.mood ? String(req.body.mood).trim() : null
     const source = req.body?.source ? String(req.body.source).trim() : 'workspace'
+    const mode = ['text', 'mind_map'].includes(req.body?.mode) ? req.body.mode : 'text'
+    const mindMapStructure = mode === 'mind_map' && req.body?.mind_map_structure ? req.body.mind_map_structure : null
 
     const { data, error } = await supabase
       .from('notes')
@@ -1680,8 +1682,10 @@ app.post('/api/notes', authMiddleware, rateLimit('write'), quotaGuard('notes'), 
         date,
         mood,
         source,
+        mode,
+        mind_map_structure: mindMapStructure,
       })
-      .select('id, title, content, date, mood, source, created_at, updated_at')
+      .select('id, title, content, date, mood, source, mode, mind_map_structure, created_at, updated_at')
       .single()
 
     if (error) throw error
@@ -1701,6 +1705,13 @@ app.patch('/api/notes/:id', authMiddleware, rateLimit('write'), async (req, res)
     if (req.body?.date !== undefined) update.date = String(req.body.date ?? new Date().toISOString().slice(0, 10)).trim()
     if (req.body?.mood !== undefined) update.mood = req.body.mood ? String(req.body.mood).trim() : null
     if (req.body?.source !== undefined) update.source = String(req.body.source ?? 'workspace').trim() || 'workspace'
+    if (req.body?.mode !== undefined) {
+      const validMode = ['text', 'mind_map'].includes(req.body.mode) ? req.body.mode : 'text'
+      update.mode = validMode
+    }
+    if (req.body?.mind_map_structure !== undefined) {
+      update.mind_map_structure = req.body.mind_map_structure
+    }
 
     update.updated_at = new Date().toISOString()
 
@@ -1709,7 +1720,7 @@ app.patch('/api/notes/:id', authMiddleware, rateLimit('write'), async (req, res)
       .update(update)
       .eq('id', req.params.id)
       .eq('workspace_id', workspaceId)
-      .select('id, title, content, date, mood, source, created_at, updated_at')
+      .select('id, title, content, date, mood, source, mode, mind_map_structure, created_at, updated_at')
       .single()
 
     if (error) throw error

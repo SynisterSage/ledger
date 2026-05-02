@@ -1,9 +1,9 @@
 // @see - https://www.electron.build/configuration/configuration
 {
   "$schema": "https://raw.githubusercontent.com/electron-userland/electron-builder/master/packages/app-builder-lib/scheme.json",
-  "appId": "YourAppID",
+  "appId": "com.ledger.app",
   "asar": true,
-  "productName": "YourAppName",
+  "productName": "Ledger",
   "directories": {
     "output": "release/${version}"
   },
@@ -15,6 +15,7 @@
     "target": [
       "dmg"
     ],
+    "icon": "build/icon.icns",
     "artifactName": "${productName}-Mac-${version}-Installer.${ext}"
   },
   "win": {
