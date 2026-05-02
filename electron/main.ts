@@ -13,7 +13,7 @@ process.env.VITE_PUBLIC = VITE_DEV_SERVER_URL
   : RENDERER_DIST
 
 type SidebarWindowMode = 'auth' | 'minimized' | 'expanded' | 'fullscreen'
-type ModuleWindowKind = 'calendar'
+type ModuleWindowKind = 'calendar' | 'notes'
 type ModuleFocusPayload = {
   kind: ModuleWindowKind
   focusDate?: string | null

@@ -1,7 +1,7 @@
 /// <reference types="vite/client" />
 
 type SidebarWindowMode = 'auth' | 'minimized' | 'expanded' | 'fullscreen'
-type ModuleWindowKind = 'calendar'
+type ModuleWindowKind = 'calendar' | 'notes'
 
 interface ImportMetaEnv {
   readonly VITE_ICAL_SERVICE_URL?: string

@@ -1,4 +1,4 @@
-import { CheckCircle2, Clock, Folder, Plus, ChevronLeft, ChevronRight } from 'lucide-react'
+import { ArrowRight, CheckCircle2, Clock, Folder, Loader2, Plus, ChevronLeft, ChevronRight } from 'lucide-react'
 import { useEffect, useState, type CSSProperties } from 'react'
 import { useAuthContext } from './context/AuthContext'
 import { useWorkspaceInit } from './hooks/useWorkspaceInit'
@@ -7,13 +7,32 @@ import { useSidebar } from './context/SidebarContext'
 import { MainLayout } from './components/Common/MainLayout'
 import LoginForm from './components/Common/LoginForm'
 import CalendarWindow from './components/Calendar/CalendarWindow'
+import NotesWindow from './components/Notes/NotesWindow'
 
 type PostAuthStage = 'idle' | 'loading' | 'onboarding' | 'welcome' | 'ready'
-type ModuleKind = 'calendar' | null
+type ModuleKind = 'calendar' | 'notes' | null
 
 const windowParams = new URLSearchParams(window.location.search)
 const isModuleWindow = windowParams.get('window') === 'module'
 const moduleKind = (windowParams.get('module') as ModuleKind) ?? null
+
+function AuthStatusScreen({ title, subtitle }: { title: string; subtitle: string }) {
+  return (
+    <div className='relative min-h-screen overflow-hidden bg-gray-50 px-4 py-6 text-gray-900'>
+      <div className='absolute inset-0 -z-10 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.9),rgba(248,250,252,1)_55%)]' />
+
+      <div className='flex min-h-[calc(100vh-3rem)] items-center justify-center'>
+        <div className='w-full max-w-sm rounded-[24px] border border-gray-200 bg-white p-7 text-center shadow-sm'>
+          <div className='mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl border border-gray-200 bg-white shadow-sm'>
+            <Loader2 size={18} className='animate-spin text-gray-900' />
+          </div>
+          <h2 className='text-2xl font-semibold tracking-tight text-gray-900'>{title}</h2>
+          <p className='mt-2 text-sm leading-6 text-gray-600'>{subtitle}</p>
+        </div>
+      </div>
+    </div>
+  )
+}
 
 // Dashboard content component
 function DashboardContent() {
@@ -138,29 +157,19 @@ function App() {
 
   if (isModuleWindow) {
     if (isLoading) {
-      return (
-        <div className='flex h-screen items-center justify-center bg-white'>
-          <div className='text-center'>
-            <div className='w-10 h-10 border-2 border-gray-200 border-t-gray-900 rounded-full animate-spin mx-auto mb-3'></div>
-            <p className='text-sm text-gray-600'>Loading module...</p>
-          </div>
-        </div>
-      )
+      return <AuthStatusScreen title='Loading module' subtitle='Bringing your workspace into view.' />
     }
 
     if (!user) {
-      return (
-        <div className='flex h-screen items-center justify-center bg-white p-6'>
-          <div className='max-w-sm text-center'>
-            <h2 className='text-lg font-semibold text-gray-900 mb-2'>Sign in required</h2>
-            <p className='text-sm text-gray-600'>Please sign in from the Ledger sidebar window first.</p>
-          </div>
-        </div>
-      )
+      return <AuthStatusScreen title='Sign in required' subtitle='Please sign in from the Ledger sidebar window first.' />
     }
 
     if (moduleKind === 'calendar') {
       return <CalendarWindow />
+    }
+
+    if (moduleKind === 'notes') {
+      return <NotesWindow />
     }
 
     return (
@@ -263,26 +272,12 @@ function App() {
   }, [isLoading, state, uiMode, postAuthStage])
 
   if (isLoading) {
-    return (
-      <div className='flex h-screen items-center justify-center bg-white'>
-        <div className='text-center'>
-          <div className='w-12 h-12 border-2 border-gray-200 border-t-gray-900 rounded-full animate-spin mx-auto mb-4'></div>
-          <p className='text-gray-600 text-sm'>Loading...</p>
-        </div>
-      </div>
-    )
+    return <AuthStatusScreen title='Loading' subtitle='Preparing Ledger.' />
   }
 
   // Show login if not authenticated
   if (uiMode === 'auth' && user) {
-    return (
-      <div className='flex h-screen items-center justify-center bg-white'>
-        <div className='text-center'>
-          <div className='w-10 h-10 border-2 border-gray-200 border-t-gray-900 rounded-full animate-spin mx-auto mb-3'></div>
-          <p className='text-sm text-gray-600'>Restoring your session...</p>
-        </div>
-      </div>
-    )
+    return <AuthStatusScreen title='Restoring your session' subtitle='Picking up your workspace state.' />
   }
 
   if (uiMode === 'auth') {
@@ -300,65 +295,67 @@ function App() {
   }
 
   if (postAuthStage === 'loading') {
-    return (
-      <div className='flex h-screen items-center justify-center bg-white'>
-        <div className='text-center'>
-          <div className='w-10 h-10 border-2 border-gray-200 border-t-gray-900 rounded-full animate-spin mx-auto mb-3'></div>
-          <p className='text-sm text-gray-600'>Preparing your workspace...</p>
-        </div>
-      </div>
-    )
+    return <AuthStatusScreen title='Preparing your workspace' subtitle='Loading your account and workspace context.' />
   }
 
   if (postAuthStage === 'onboarding') {
     return (
-      <div className='flex h-screen items-center justify-center bg-white p-6'>
-        <div className='w-full max-w-lg border border-gray-200 rounded-2xl p-8 shadow-sm'>
-          <h2 className='text-2xl font-semibold text-gray-900 mb-2'>Welcome to Ledger</h2>
-          <p className='text-sm text-gray-600 mb-6'>Quick setup for your first workspace and team flow.</p>
-          <div className='space-y-3 mb-8'>
-            <div className='flex items-start gap-3'>
-              <CheckCircle2 size={18} className='text-green-600 mt-0.5' />
-              <p className='text-sm text-gray-700'>Your personal workspace is ready.</p>
+      <div className='relative min-h-screen overflow-hidden bg-gray-50 px-4 py-6 text-gray-900'>
+        <div className='absolute inset-0 -z-10 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.9),rgba(248,250,252,1)_55%)]' />
+        <div className='flex min-h-[calc(100vh-3rem)] items-center justify-center px-4'>
+          <div className='w-full max-w-md rounded-[24px] border border-gray-200 bg-white p-7 shadow-sm'>
+            <div className='mb-5 inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-gray-200 bg-white shadow-sm'>
+              <span className='text-base font-semibold text-gray-900'>L</span>
             </div>
-            <div className='flex items-start gap-3'>
-              <CheckCircle2 size={18} className='text-green-600 mt-0.5' />
-              <p className='text-sm text-gray-700'>Invite teammates later from the dashboard.</p>
+            <h2 className='text-2xl font-semibold tracking-tight text-gray-900 mb-2'>Welcome to Ledger</h2>
+            <p className='text-sm leading-6 text-gray-600 mb-5'>Quick setup for your first workspace and team flow.</p>
+            <div className='space-y-3 mb-7'>
+              <div className='flex items-start gap-3'>
+                <CheckCircle2 size={18} className='text-green-600 mt-0.5' />
+                <p className='text-sm text-gray-700'>Your personal workspace is ready.</p>
+              </div>
+              <div className='flex items-start gap-3'>
+                <CheckCircle2 size={18} className='text-green-600 mt-0.5' />
+                <p className='text-sm text-gray-700'>Invite teammates later from the dashboard.</p>
+              </div>
+              <div className='flex items-start gap-3'>
+                <CheckCircle2 size={18} className='text-green-600 mt-0.5' />
+                <p className='text-sm text-gray-700'>Use the sidebar widget to quickly track tasks and time.</p>
+              </div>
             </div>
-            <div className='flex items-start gap-3'>
-              <CheckCircle2 size={18} className='text-green-600 mt-0.5' />
-              <p className='text-sm text-gray-700'>Use the sidebar widget to quickly track tasks and time.</p>
-            </div>
+            <button
+              disabled={isSavingOnboarding}
+              onClick={async () => {
+                if (!user || isSavingOnboarding) return
+                setIsSavingOnboarding(true)
+
+                await api.completeOnboarding()
+
+                setIsSavingOnboarding(false)
+                setPostAuthStage('welcome')
+              }}
+              className='w-full inline-flex items-center justify-center gap-2 rounded-2xl bg-gray-900 px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-gray-800 disabled:opacity-60'
+            >
+              {isSavingOnboarding ? (
+                <>
+                  <Loader2 size={18} className='animate-spin' />
+                  Saving...
+                </>
+              ) : (
+                <>
+                  Continue to Ledger
+                  <ArrowRight size={16} />
+                </>
+              )}
+            </button>
           </div>
-          <button
-            disabled={isSavingOnboarding}
-            onClick={async () => {
-              if (!user || isSavingOnboarding) return
-              setIsSavingOnboarding(true)
-
-              await api.completeOnboarding()
-
-              setIsSavingOnboarding(false)
-              setPostAuthStage('welcome')
-            }}
-            className='w-full py-3 bg-gray-900 hover:bg-gray-800 disabled:opacity-60 text-white font-medium rounded-lg transition-colors'
-          >
-            {isSavingOnboarding ? 'Saving...' : 'Continue to Ledger'}
-          </button>
         </div>
       </div>
     )
   }
 
   if (postAuthStage === 'welcome') {
-    return (
-      <div className='flex h-screen items-center justify-center bg-white'>
-        <div className='text-center animate-pulse'>
-          <h2 className='text-2xl font-semibold text-gray-900 mb-2'>Welcome back</h2>
-          <p className='text-sm text-gray-600'>Opening your sidebar...</p>
-        </div>
-      </div>
-    )
+    return <AuthStatusScreen title='Welcome back' subtitle='Opening your sidebar.' />
   }
 
   // Authenticated view - Dashboard with sidebar

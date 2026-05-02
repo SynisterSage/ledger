@@ -117,6 +117,22 @@ export const ExpandedSidebar = () => {
     completed: ['Completed', 'completed'],
   }
 
+  const updateProjectStatusWithFallback = async (projectId: string, semantic: ProjectSemanticStatus) => {
+    const candidates = projectStatusCandidates[semantic]
+    let lastError: unknown = null
+
+    for (const candidate of candidates) {
+      try {
+        await api.updateProject(projectId, { status: candidate })
+        return candidate
+      } catch (error) {
+        lastError = error
+      }
+    }
+
+    throw lastError instanceof Error ? lastError : new Error('Could not update project status.')
+  }
+
   useEffect(() => {
     let cancelled = false
 
@@ -228,7 +244,6 @@ export const ExpandedSidebar = () => {
     }
 
     if (!workspaceId) {
-      setIsLoadingProjects(false)
       return
     }
 
@@ -274,7 +289,6 @@ export const ExpandedSidebar = () => {
     }
 
     if (!workspaceId) {
-      setIsLoadingUpcoming(false)
       return
     }
 
@@ -538,13 +552,13 @@ export const ExpandedSidebar = () => {
   const updateProjectStatus = async (projectId: string, newStatus: ProjectStatus) => {
     setProjectUpdating(projectId)
     const semantic = normalizeProjectStatus(newStatus)
-    const resolvedStatus = projectStatusCandidates[semantic][0]
     try {
-      await api.updateProject(projectId, { status: resolvedStatus })
+      const resolvedStatus = await updateProjectStatusWithFallback(projectId, semantic)
       setProjects((prev) =>
         prev.map((p) => (p.id === projectId ? { ...p, status: normalizeProjectStatus(resolvedStatus!) } : p))
       )
     } catch (error) {
+      console.error('Project status update error:', error)
       setSaveError('Could not update project status.')
     }
     setProjectUpdating(null)
@@ -620,16 +634,41 @@ export const ExpandedSidebar = () => {
           </button>
         </div>
 
-        <div className="bg-white rounded-lg p-3 border border-gray-200 flex items-start justify-between">
-          <div>
-            <p className="text-sm font-semibold text-gray-900">{firstName}</p>
-            <p className="text-xs text-gray-700 truncate">{user?.email}</p>
-          </div>
+      <div className="bg-white rounded-lg p-3 border border-gray-200 flex items-start justify-between">
+        <div>
+          <p className="text-sm font-semibold text-gray-900">{firstName}</p>
+          <p className="text-xs text-gray-700 truncate">{user?.email}</p>
+        </div>
           <button
             className="p-1.5 hover:bg-gray-100 rounded-md transition text-gray-600 hover:text-gray-900 shrink-0"
             title="Settings"
           >
             <Settings size={16} />
+          </button>
+        </div>
+      </div>
+
+      <div className="px-6 pt-4">
+        <div className="grid grid-cols-3 gap-2">
+          <button
+            onClick={() => setState('fullscreen')}
+            className="h-9 rounded-lg border border-gray-200 bg-white text-xs font-medium text-gray-700 hover:bg-gray-50 transition"
+          >
+            Dashboard
+          </button>
+          <button
+            onClick={() => window.desktopWindow?.toggleModule('notes')}
+            className="h-9 rounded-lg border border-gray-200 bg-white text-xs font-medium text-gray-700 hover:bg-gray-50 transition flex items-center justify-center gap-1.5"
+          >
+            <StickyNote size={13} />
+            Notes
+          </button>
+          <button
+            onClick={() => window.desktopWindow?.toggleModule('calendar')}
+            className="h-9 rounded-lg border border-gray-200 bg-white text-xs font-medium text-gray-700 hover:bg-gray-50 transition flex items-center justify-center gap-1.5"
+          >
+            <CalendarDays size={13} />
+            Calendar
           </button>
         </div>
       </div>

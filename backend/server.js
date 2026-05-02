@@ -22,6 +22,8 @@ const TIER_LIMITS = {
   pro: { projects: Infinity, events: Infinity, notes: Infinity, reminders: Infinity },
 }
 
+const REMINDER_TABLES = ['reminders', 'calendar_reminders']
+
 const WINDOW_MS = 60_000
 const RATE_LIMITS = {
   auth: { max: 60 },
@@ -90,6 +92,21 @@ const getUserTier = (user) => {
 }
 
 const isCompletedProjectStatus = (status) => String(status ?? '').toLowerCase().includes('complete')
+
+const projectStatusAliases = {
+  not_started: ['NotStarted', 'not_started', 'active', 'todo'],
+  in_progress: ['InProgress', 'in_progress', 'inprogress', 'doing'],
+  paused: ['Paused', 'paused', 'archived', 'hold'],
+  completed: ['Completed', 'completed', 'done'],
+}
+
+const normalizeProjectSemanticStatus = (status) => {
+  const value = String(status ?? '').toLowerCase()
+  if (value.includes('complete')) return 'completed'
+  if (value.includes('pause') || value.includes('archiv') || value.includes('hold')) return 'paused'
+  if (value.includes('progress') || value.includes('doing') || value.includes('in_')) return 'in_progress'
+  return 'not_started'
+}
 
 const resolveWorkspaceId = async (userId) => {
   const personalWorkspace = await supabase
@@ -164,6 +181,29 @@ const ensureWorkspaceResource = async (table, id, workspaceId) => {
   return Boolean(result.data?.id)
 }
 
+const isMissingTableError = (error) => {
+  const message = String(error?.message ?? '').toLowerCase()
+  return message.includes('relation') && message.includes('does not exist')
+}
+
+const withReminderTable = async (queryFactory) => {
+  let lastError = null
+
+  for (const table of REMINDER_TABLES) {
+    const result = await queryFactory(table)
+    if (!result?.error) {
+      return result
+    }
+
+    lastError = result.error
+    if (!isMissingTableError(result.error)) {
+      return result
+    }
+  }
+
+  return { data: null, error: lastError ?? new Error('Reminder table lookup failed') }
+}
+
 const getLimitCount = async (resource, workspaceId) => {
   const tableMap = {
     projects: 'projects',
@@ -173,10 +213,21 @@ const getLimitCount = async (resource, workspaceId) => {
   }
 
   const selectColumns = resource === 'projects' ? 'status' : 'id'
-  const { data, error } = await supabase
-    .from(tableMap[resource])
-    .select(selectColumns)
-    .eq('workspace_id', workspaceId)
+  const reminderCount = resource === 'reminders'
+    ? await withReminderTable((table) =>
+        supabase
+          .from(table)
+          .select(selectColumns)
+          .eq('workspace_id', workspaceId)
+      )
+    : null
+
+  const { data, error } = resource === 'reminders'
+    ? reminderCount
+    : await supabase
+        .from(tableMap[resource])
+        .select(selectColumns)
+        .eq('workspace_id', workspaceId)
 
   if (error) {
     throw error
@@ -288,26 +339,62 @@ app.post('/api/projects', authMiddleware, rateLimit('write'), quotaGuard('projec
 
 app.patch('/api/projects/:id', authMiddleware, rateLimit('write'), async (req, res) => {
   try {
-    const allowed = await ensureWorkspaceResource('projects', req.params.id, await resolveWorkspaceId(req.authUser.id))
+    const workspaceId = await resolveWorkspaceId(req.authUser.id)
+    const allowed = await ensureWorkspaceResource('projects', req.params.id, workspaceId)
     if (!allowed) {
       return res.status(404).json({ error: 'Project not found' })
     }
 
     const update = {}
-    if (req.body?.status) update.status = req.body.status
+    if (req.body?.status) {
+      const semantic = normalizeProjectSemanticStatus(req.body.status)
+      update.status = projectStatusAliases[semantic][0]
+    }
     if (req.body?.completeness !== undefined) {
       update.completeness = Math.max(0, Math.min(100, Number(req.body.completeness)))
     }
 
-    const { data, error } = await supabase
-      .from('projects')
-      .update(update)
-      .eq('id', req.params.id)
-      .select('id, name, status, completeness, created_at')
-      .single()
+    let lastError = null
+    let updatedRow = null
 
-    if (error) throw error
-    res.json(data)
+    if (update.status) {
+      const semantic = normalizeProjectSemanticStatus(update.status)
+      const candidates = projectStatusAliases[semantic]
+
+      for (const candidate of candidates) {
+        const { data, error } = await supabase
+          .from('projects')
+          .update({ ...update, status: candidate })
+          .eq('id', req.params.id)
+          .eq('workspace_id', workspaceId)
+          .select('id, name, status, completeness, created_at')
+          .single()
+
+        if (!error) {
+          updatedRow = data
+          break
+        }
+
+        lastError = error
+      }
+    } else {
+      const { data, error } = await supabase
+        .from('projects')
+        .update(update)
+        .eq('id', req.params.id)
+        .eq('workspace_id', workspaceId)
+        .select('id, name, status, completeness, created_at')
+        .single()
+
+      if (error) {
+        lastError = error
+      } else {
+        updatedRow = data
+      }
+    }
+
+    if (!updatedRow) throw lastError ?? new Error('Project update failed')
+    res.json(updatedRow)
   } catch (error) {
     res.status(500).json({ error: error.message })
   }
@@ -515,11 +602,13 @@ app.delete('/api/events/:id', authMiddleware, rateLimit('write'), async (req, re
 app.get('/api/reminders', authMiddleware, rateLimit('read'), async (req, res) => {
   try {
     const workspaceId = await resolveWorkspaceId(req.authUser.id)
-    const { data, error } = await supabase
-      .from('calendar_reminders')
-      .select('id, title, remind_at, calendar_id, color, is_done')
-      .eq('workspace_id', workspaceId)
-      .order('remind_at', { ascending: true })
+    const { data, error } = await withReminderTable((table) =>
+      supabase
+        .from(table)
+        .select('id, title, remind_at, calendar_id, color, is_done')
+        .eq('workspace_id', workspaceId)
+        .order('remind_at', { ascending: true })
+    )
 
     if (error) throw error
     res.json(data ?? [])
@@ -533,19 +622,23 @@ app.post('/api/reminders', authMiddleware, rateLimit('write'), quotaGuard('remin
     const workspaceId = req.workspaceId
     const calendarId = req.body?.calendar_id || (await getCalendarId(workspaceId, req.authUser.id))
 
-    const { data, error } = await supabase
-      .from('calendar_reminders')
-      .insert({
-        workspace_id: workspaceId,
-        calendar_id: calendarId,
-        created_by: req.authUser.id,
-        title: String(req.body?.title ?? 'Reminder').trim() || 'Reminder',
-        remind_at: req.body?.remind_at,
-        color: req.body?.color || null,
-        is_done: Boolean(req.body?.is_done ?? false),
-      })
-      .select('id, title, remind_at, calendar_id, color, is_done')
-      .single()
+    const insertPayload = {
+      workspace_id: workspaceId,
+      calendar_id: calendarId,
+      created_by: req.authUser.id,
+      title: String(req.body?.title ?? 'Reminder').trim() || 'Reminder',
+      remind_at: req.body?.remind_at,
+      color: req.body?.color || null,
+      is_done: Boolean(req.body?.is_done ?? false),
+    }
+
+    const { data, error } = await withReminderTable((table) =>
+      supabase
+        .from(table)
+        .insert(insertPayload)
+        .select('id, title, remind_at, calendar_id, color, is_done')
+        .single()
+    )
 
     if (error) throw error
     res.json(data)
@@ -557,8 +650,10 @@ app.post('/api/reminders', authMiddleware, rateLimit('write'), quotaGuard('remin
 app.patch('/api/reminders/:id', authMiddleware, rateLimit('write'), async (req, res) => {
   try {
     const workspaceId = await resolveWorkspaceId(req.authUser.id)
-    const allowed = await ensureWorkspaceResource('calendar_reminders', req.params.id, workspaceId)
-    if (!allowed) {
+    const allowedResult = await withReminderTable((table) =>
+      supabase.from(table).select('id').eq('id', req.params.id).eq('workspace_id', workspaceId).maybeSingle()
+    )
+    if (!allowedResult?.data?.id) {
       return res.status(404).json({ error: 'Reminder not found' })
     }
 
@@ -567,12 +662,14 @@ app.patch('/api/reminders/:id', authMiddleware, rateLimit('write'), async (req, 
       if (req.body?.[key] !== undefined) update[key] = req.body[key]
     }
 
-    const { data, error } = await supabase
-      .from('calendar_reminders')
-      .update(update)
-      .eq('id', req.params.id)
-      .select('id, title, remind_at, calendar_id, color, is_done')
-      .single()
+    const { data, error } = await withReminderTable((table) =>
+      supabase
+        .from(table)
+        .update(update)
+        .eq('id', req.params.id)
+        .select('id, title, remind_at, calendar_id, color, is_done')
+        .single()
+    )
 
     if (error) throw error
     res.json(data)
@@ -584,11 +681,13 @@ app.patch('/api/reminders/:id', authMiddleware, rateLimit('write'), async (req, 
 app.delete('/api/reminders/:id', authMiddleware, rateLimit('write'), async (req, res) => {
   try {
     const workspaceId = await resolveWorkspaceId(req.authUser.id)
-    const { error } = await supabase
-      .from('calendar_reminders')
-      .delete()
-      .eq('id', req.params.id)
-      .eq('workspace_id', workspaceId)
+    const { error } = await withReminderTable((table) =>
+      supabase
+        .from(table)
+        .delete()
+        .eq('id', req.params.id)
+        .eq('workspace_id', workspaceId)
+    )
 
     if (error) throw error
     res.json({ success: true })
@@ -602,10 +701,10 @@ app.get('/api/notes', authMiddleware, rateLimit('read'), async (req, res) => {
     const workspaceId = await resolveWorkspaceId(req.authUser.id)
     const { data, error } = await supabase
       .from('notes')
-      .select('id, title, content, created_at')
+      .select('id, title, content, date, mood, created_at, updated_at')
       .eq('workspace_id', workspaceId)
-      .order('created_at', { ascending: false })
-      .limit(24)
+      .order('updated_at', { ascending: false })
+      .limit(100)
 
     if (error) throw error
     res.json(data ?? [])
@@ -619,6 +718,8 @@ app.post('/api/notes', authMiddleware, rateLimit('write'), quotaGuard('notes'), 
     const workspaceId = req.workspaceId
     const title = String(req.body?.title ?? 'Untitled').trim() || 'Untitled'
     const content = String(req.body?.content ?? '').trim()
+    const date = String(req.body?.date ?? new Date().toISOString().slice(0, 10)).trim()
+    const mood = req.body?.mood ? String(req.body.mood).trim() : null
 
     const { data, error } = await supabase
       .from('notes')
@@ -627,8 +728,37 @@ app.post('/api/notes', authMiddleware, rateLimit('write'), quotaGuard('notes'), 
         user_id: req.authUser.id,
         title,
         content,
+        date,
+        mood,
       })
-      .select('id, title, content, created_at')
+      .select('id, title, content, date, mood, created_at, updated_at')
+      .single()
+
+    if (error) throw error
+    res.json(data)
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
+app.patch('/api/notes/:id', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceId(req.authUser.id)
+    const update = {}
+
+    if (req.body?.title !== undefined) update.title = String(req.body.title ?? '').trim() || 'Untitled'
+    if (req.body?.content !== undefined) update.content = String(req.body.content ?? '')
+    if (req.body?.date !== undefined) update.date = String(req.body.date ?? new Date().toISOString().slice(0, 10)).trim()
+    if (req.body?.mood !== undefined) update.mood = req.body.mood ? String(req.body.mood).trim() : null
+
+    update.updated_at = new Date().toISOString()
+
+    const { data, error } = await supabase
+      .from('notes')
+      .update(update)
+      .eq('id', req.params.id)
+      .eq('workspace_id', workspaceId)
+      .select('id, title, content, date, mood, created_at, updated_at')
       .single()
 
     if (error) throw error
