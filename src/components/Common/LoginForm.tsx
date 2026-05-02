@@ -4,9 +4,10 @@ import { useAuth } from '../../hooks/useAuth'
 
 interface LoginProps {
   onSuccess?: () => void
+  notice?: string | null
 }
 
-export const LoginForm: React.FC<LoginProps> = ({ onSuccess }) => {
+export const LoginForm: React.FC<LoginProps> = ({ onSuccess, notice }) => {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [isSignUp, setIsSignUp] = useState(false)
@@ -43,6 +44,12 @@ export const LoginForm: React.FC<LoginProps> = ({ onSuccess }) => {
         </div>
 
         <form onSubmit={handleSubmit} className='space-y-5'>
+          {notice && (
+            <div className='p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800'>
+              {notice}
+            </div>
+          )}
+
           {isSignUp && (
             <div>
               <label className='block text-sm font-medium text-gray-700 mb-2'>Full Name</label>

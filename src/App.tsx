@@ -10,6 +10,7 @@ import {
 } from 'lucide-react'
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { useAuthContext } from './context/AuthContext'
+import { useWorkspaceContext } from './context/WorkspaceContext'
 import { useWorkspaceInit } from './hooks/useWorkspaceInit'
 import { useApi } from './hooks/useApi'
 import { useSidebar } from './context/SidebarContext'
@@ -604,12 +605,20 @@ function DashboardContent() {
 // Main app component
 function App() {
   const { user, isLoading } = useAuthContext()
+  const { refreshWorkspaces } = useWorkspaceContext()
   const api = useApi()
   const { state, setState } = useSidebar()
   const [uiMode, setUiMode] = useState<'auth' | 'app'>(user ? 'app' : 'auth')
   const [isAuthExiting, setIsAuthExiting] = useState(false)
   const [postAuthStage, setPostAuthStage] = useState<PostAuthStage>('idle')
   const [isSavingOnboarding, setIsSavingOnboarding] = useState(false)
+  const [pendingInviteToken, setPendingInviteToken] = useState<string | null>(() => {
+    const token = new URLSearchParams(window.location.search).get('token')?.trim()
+    return token || null
+  })
+  const [inviteFlowStatus, setInviteFlowStatus] = useState<'idle' | 'awaiting-auth' | 'processing' | 'error'>('idle')
+  const [inviteFlowError, setInviteFlowError] = useState<string | null>(null)
+  const handledInviteTokenRef = useRef<string | null>(null)
   
   // Initialize workspace for authenticated users
   useWorkspaceInit()
@@ -669,6 +678,59 @@ function App() {
       setPostAuthStage('idle')
     }
   }, [user, isLoading, uiMode])
+
+  useEffect(() => {
+    if (!pendingInviteToken) {
+      setInviteFlowStatus((current) => (current === 'error' ? current : 'idle'))
+      return
+    }
+
+    if (isLoading) return
+
+    if (!user) {
+      setInviteFlowStatus('awaiting-auth')
+      return
+    }
+
+    if (handledInviteTokenRef.current === pendingInviteToken) {
+      return
+    }
+
+    handledInviteTokenRef.current = pendingInviteToken
+
+    let cancelled = false
+
+    const acceptInvitation = async () => {
+      try {
+        setInviteFlowStatus('processing')
+        setInviteFlowError(null)
+
+        await api.acceptWorkspaceInvitation(pendingInviteToken)
+        await refreshWorkspaces()
+
+        if (cancelled) return
+        setInviteFlowStatus('idle')
+      } catch (error) {
+        if (cancelled) return
+        setInviteFlowStatus('error')
+        setInviteFlowError(error instanceof Error ? error.message : 'Could not accept invitation.')
+      } finally {
+        if (cancelled) return
+
+        const params = new URLSearchParams(window.location.search)
+        params.delete('token')
+        const query = params.toString()
+        window.history.replaceState({}, '', `${window.location.pathname}${query ? `?${query}` : ''}${window.location.hash}`)
+        setPendingInviteToken(null)
+      }
+    }
+
+    void acceptInvitation()
+
+    return () => {
+      cancelled = true
+    }
+  }, [pendingInviteToken, isLoading, user, api, refreshWorkspaces])
 
   useEffect(() => {
     if (isLoading || !user || uiMode !== 'app' || postAuthStage !== 'idle') return
@@ -746,6 +808,10 @@ function App() {
     return <AuthStatusScreen title='Loading' subtitle='Preparing Ledger.' />
   }
 
+  if (inviteFlowStatus === 'processing') {
+    return <AuthStatusScreen title='Accepting invitation' subtitle='Joining your workspace and syncing access.' />
+  }
+
   // Show login if not authenticated
   if (uiMode === 'auth' && user) {
     return <AuthStatusScreen title='Restoring your session' subtitle='Picking up your workspace state.' />
@@ -759,7 +825,7 @@ function App() {
             isAuthExiting ? 'opacity-0 scale-95 translate-y-2' : 'opacity-100 scale-100 translate-y-0'
           }`}
         >
-          <LoginForm />
+          <LoginForm notice={pendingInviteToken ? 'Sign in to accept your workspace invitation.' : null} />
         </div>
       </div>
     )
@@ -831,9 +897,16 @@ function App() {
 
   // Authenticated view - Dashboard with sidebar
   return (
-    <MainLayout>
-      <DashboardContent />
-    </MainLayout>
+    <>
+      {inviteFlowStatus === 'error' && inviteFlowError && (
+        <div className='mx-auto mt-4 w-full max-w-3xl rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700'>
+          {inviteFlowError}
+        </div>
+      )}
+      <MainLayout>
+        <DashboardContent />
+      </MainLayout>
+    </>
   )
 }
 

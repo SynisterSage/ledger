@@ -403,6 +403,40 @@ const withReminderTable = async (queryFactory) => {
   return { data: null, error: lastError ?? new Error('Reminder table lookup failed') }
 }
 
+const writeWorkspaceAuditLog = async ({
+  workspaceId,
+  actorUserId,
+  action,
+  targetType = null,
+  targetId = null,
+  metadata = null,
+}) => {
+  try {
+    const payload = {
+      workspace_id: workspaceId,
+      actor_user_id: actorUserId,
+      action: String(action ?? '').trim(),
+      target_type: targetType,
+      target_id: targetId,
+      metadata: metadata ?? null,
+    }
+
+    if (!payload.workspace_id || !payload.actor_user_id || !payload.action) {
+      return
+    }
+
+    const { error } = await supabase
+      .from('workspace_audit_logs')
+      .insert(payload)
+
+    if (error && !isMissingTableError(error)) {
+      console.error('Failed to write workspace audit log:', error.message)
+    }
+  } catch (error) {
+    console.error('Unexpected audit log failure:', error?.message ?? error)
+  }
+}
+
 const getLimitCount = async (resource, workspaceId) => {
   const tableMap = {
     projects: 'projects',
@@ -673,7 +707,7 @@ app.patch('/api/workspaces/:workspaceId/members/:userId', authMiddleware, rateLi
 
     const existing = await supabase
       .from('workspace_members')
-      .select('user_id')
+      .select('user_id, role')
       .eq('workspace_id', workspaceId)
       .eq('user_id', targetUserId)
       .maybeSingle()
@@ -681,6 +715,16 @@ app.patch('/api/workspaces/:workspaceId/members/:userId', authMiddleware, rateLi
     if (existing.error) throw existing.error
     if (!existing.data?.user_id) {
       return res.status(404).json({ error: 'Member not found' })
+    }
+
+    const currentRole = String(existing.data.role ?? '').toLowerCase()
+    if (access.role !== 'owner') {
+      if (role === 'admin') {
+        return res.status(403).json({ error: 'Only owners can assign admin role' })
+      }
+      if (currentRole === 'admin') {
+        return res.status(403).json({ error: 'Only owners can modify admin members' })
+      }
     }
 
     const updated = await supabase
@@ -692,6 +736,18 @@ app.patch('/api/workspaces/:workspaceId/members/:userId', authMiddleware, rateLi
       .single()
 
     if (updated.error) throw updated.error
+    await writeWorkspaceAuditLog({
+      workspaceId,
+      actorUserId: req.authUser.id,
+      action: 'member.role_updated',
+      targetType: 'workspace_member',
+      targetId: targetUserId,
+      metadata: {
+        previous_role: currentRole,
+        next_role: role,
+        actor_role: access.role,
+      },
+    })
     res.json(updated.data)
   } catch (error) {
     res.status(error.statusCode || 500).json({ error: error.message })
@@ -714,7 +770,7 @@ app.delete('/api/workspaces/:workspaceId/members/:userId', authMiddleware, rateL
 
     const existing = await supabase
       .from('workspace_members')
-      .select('user_id')
+      .select('user_id, role')
       .eq('workspace_id', workspaceId)
       .eq('user_id', targetUserId)
       .maybeSingle()
@@ -724,6 +780,11 @@ app.delete('/api/workspaces/:workspaceId/members/:userId', authMiddleware, rateL
       return res.status(404).json({ error: 'Member not found' })
     }
 
+    const currentRole = String(existing.data.role ?? '').toLowerCase()
+    if (access.role !== 'owner' && currentRole === 'admin') {
+      return res.status(403).json({ error: 'Only owners can remove admin members' })
+    }
+
     const removed = await supabase
       .from('workspace_members')
       .delete()
@@ -731,6 +792,17 @@ app.delete('/api/workspaces/:workspaceId/members/:userId', authMiddleware, rateL
       .eq('user_id', targetUserId)
 
     if (removed.error) throw removed.error
+    await writeWorkspaceAuditLog({
+      workspaceId,
+      actorUserId: req.authUser.id,
+      action: 'member.removed',
+      targetType: 'workspace_member',
+      targetId: targetUserId,
+      metadata: {
+        removed_role: currentRole,
+        actor_role: access.role,
+      },
+    })
     res.json({ success: true })
   } catch (error) {
     res.status(error.statusCode || 500).json({ error: error.message })
@@ -773,6 +845,10 @@ app.post('/api/workspaces/:workspaceId/invitations', authMiddleware, rateLimit('
 
     if (!isValidWorkspaceMemberRole(role)) {
       return res.status(400).json({ error: 'Invalid invitation role' })
+    }
+
+    if (access.role !== 'owner' && role === 'admin') {
+      return res.status(403).json({ error: 'Only owners can invite admins' })
     }
 
     const ownerEmailResult = await supabase
@@ -841,6 +917,18 @@ app.post('/api/workspaces/:workspaceId/invitations', authMiddleware, rateLimit('
 
     if (insertResult.error) throw insertResult.error
 
+    await writeWorkspaceAuditLog({
+      workspaceId,
+      actorUserId: req.authUser.id,
+      action: 'invitation.created',
+      targetType: 'workspace_invitation',
+      targetId: insertResult.data.id,
+      metadata: {
+        invited_email: invitedEmail,
+        role,
+      },
+    })
+
     const appUrl = process.env.APP_URL || process.env.VITE_APP_URL || 'http://localhost:5173'
     const inviteUrl = `${appUrl.replace(/\/$/, '')}/invite?token=${encodeURIComponent(token)}`
 
@@ -863,7 +951,7 @@ app.delete('/api/workspaces/:workspaceId/invitations/:invitationId', authMiddlew
 
     const existing = await supabase
       .from('workspace_invitations')
-      .select('id, status')
+      .select('id, status, role, invited_email')
       .eq('id', invitationId)
       .eq('workspace_id', workspaceId)
       .maybeSingle()
@@ -877,13 +965,37 @@ app.delete('/api/workspaces/:workspaceId/invitations/:invitationId', authMiddlew
       return res.status(400).json({ error: 'Only pending invitations can be revoked' })
     }
 
+    const existingRole = String(existing.data.role ?? '').toLowerCase()
+    if (access.role !== 'owner' && existingRole === 'admin') {
+      return res.status(403).json({ error: 'Only owners can revoke admin invitations' })
+    }
+
     const updated = await supabase
       .from('workspace_invitations')
       .update({ status: 'revoked', updated_at: new Date().toISOString() })
       .eq('id', invitationId)
       .eq('workspace_id', workspaceId)
+      .eq('status', 'pending')
+      .select('id')
+      .maybeSingle()
 
     if (updated.error) throw updated.error
+    if (!updated.data?.id) {
+      return res.status(409).json({ error: 'Invitation state changed. Refresh and try again.' })
+    }
+
+    await writeWorkspaceAuditLog({
+      workspaceId,
+      actorUserId: req.authUser.id,
+      action: 'invitation.revoked',
+      targetType: 'workspace_invitation',
+      targetId: invitationId,
+      metadata: {
+        invited_email: existing.data.invited_email,
+        role: existingRole,
+      },
+    })
+
     res.json({ success: true })
   } catch (error) {
     res.status(error.statusCode || 500).json({ error: error.message })
@@ -898,35 +1010,60 @@ app.post('/api/invitations/accept', authMiddleware, rateLimit('write'), async (r
     }
 
     const tokenHash = crypto.createHash('sha256').update(token).digest('hex')
-    const invitationResult = await supabase
+    const nowIso = new Date().toISOString()
+    const authEmail = normalizeEmail(req.authUser.email)
+
+    const claimedInviteResult = await supabase
       .from('workspace_invitations')
-      .select('id, workspace_id, invited_email, role, status, expires_at')
+      .update({
+        status: 'accepted',
+        accepted_by: req.authUser.id,
+        accepted_at: nowIso,
+        updated_at: nowIso,
+      })
       .eq('token_hash', tokenHash)
+      .eq('status', 'pending')
+      .eq('invited_email', authEmail)
+      .gt('expires_at', nowIso)
+      .select('id, workspace_id, invited_email, role, status, expires_at')
       .maybeSingle()
 
-    if (invitationResult.error) throw invitationResult.error
-    const invitation = invitationResult.data
+    if (claimedInviteResult.error) throw claimedInviteResult.error
+    let invitation = claimedInviteResult.data
+
     if (!invitation?.id) {
-      return res.status(404).json({ error: 'Invitation not found' })
-    }
-
-    if (invitation.status !== 'pending') {
-      return res.status(400).json({ error: 'Invitation is no longer active' })
-    }
-
-    const nowIso = new Date().toISOString()
-    if (String(invitation.expires_at) < nowIso) {
-      await supabase
+      const existingInviteResult = await supabase
         .from('workspace_invitations')
-        .update({ status: 'expired', updated_at: nowIso })
-        .eq('id', invitation.id)
+        .select('id, workspace_id, invited_email, role, status, expires_at')
+        .eq('token_hash', tokenHash)
+        .maybeSingle()
 
-      return res.status(400).json({ error: 'Invitation has expired' })
-    }
+      if (existingInviteResult.error) throw existingInviteResult.error
+      const existingInvite = existingInviteResult.data
 
-    const authEmail = normalizeEmail(req.authUser.email)
-    if (authEmail !== normalizeEmail(invitation.invited_email)) {
-      return res.status(403).json({ error: 'Invitation email does not match your account' })
+      if (!existingInvite?.id) {
+        return res.status(404).json({ error: 'Invitation not found' })
+      }
+
+      if (String(existingInvite.expires_at) <= nowIso && existingInvite.status === 'pending') {
+        await supabase
+          .from('workspace_invitations')
+          .update({ status: 'expired', updated_at: nowIso })
+          .eq('id', existingInvite.id)
+          .eq('status', 'pending')
+
+        return res.status(400).json({ error: 'Invitation has expired' })
+      }
+
+      if (normalizeEmail(existingInvite.invited_email) !== authEmail) {
+        return res.status(403).json({ error: 'Invitation email does not match your account' })
+      }
+
+      if (existingInvite.status !== 'pending') {
+        return res.status(400).json({ error: 'Invitation is no longer active' })
+      }
+
+      return res.status(409).json({ error: 'Invitation state changed. Please retry.' })
     }
 
     const upsertMembership = await supabase
@@ -939,19 +1076,19 @@ app.post('/api/invitations/accept', authMiddleware, rateLimit('write'), async (r
 
     if (upsertMembership.error) throw upsertMembership.error
 
-    const invitationUpdate = await supabase
-      .from('workspace_invitations')
-      .update({
-        status: 'accepted',
-        accepted_by: req.authUser.id,
-        accepted_at: nowIso,
-        updated_at: nowIso,
-      })
-      .eq('id', invitation.id)
-
-    if (invitationUpdate.error) throw invitationUpdate.error
-
     await setUserActiveWorkspaceId(req.authUser.id, invitation.workspace_id)
+
+    await writeWorkspaceAuditLog({
+      workspaceId: invitation.workspace_id,
+      actorUserId: req.authUser.id,
+      action: 'invitation.accepted',
+      targetType: 'workspace_invitation',
+      targetId: invitation.id,
+      metadata: {
+        invited_email: invitation.invited_email,
+        role: String(invitation.role).toLowerCase(),
+      },
+    })
 
     res.json({
       success: true,
