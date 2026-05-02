@@ -14,7 +14,7 @@ interface ImportMeta {
 interface Window {
   desktopWindow?: {
     setMode: (mode: SidebarWindowMode) => Promise<void>
-    toggleModule: (kind: ModuleWindowKind) => Promise<void>
+    toggleModule: (kind: ModuleWindowKind, focusDate?: string | null) => Promise<void>
     openExternal: (url: string) => Promise<void>
   }
 }

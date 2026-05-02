@@ -1,5 +1,4 @@
 import {
-  AlertCircle,
   CalendarDays,
   Check,
   CheckCircle2,
@@ -32,6 +31,8 @@ type QuickNote = {
   createdAt: string
 }
 type QuickCaptureMode = 'none' | 'task' | 'note' | 'event'
+type ProjectStatus = 'NotStarted' | 'InProgress' | 'Paused' | 'Completed'
+type ProjectSemanticStatus = 'not_started' | 'in_progress' | 'paused' | 'completed'
 
 const todayKey = () => new Date().toISOString().slice(0, 10)
 
@@ -64,16 +65,46 @@ export const ExpandedSidebar = () => {
   const [eventStartTime, setEventStartTime] = useState('09:00')
   const [eventEndTime, setEventEndTime] = useState('10:00')
   const [workspaceId, setWorkspaceId] = useState<string | null>(null)
-  const [projects, setProjects] = useState<Array<{ id: string; name: string; status: string; completeness: number }>>([])
+  const [projects, setProjects] = useState<Array<{ id: string; name: string; status: ProjectStatus | string; completeness: number }>>([])
   const [expandedProjectId, setExpandedProjectId] = useState<string | null>(null)
   const [projectUpdating, setProjectUpdating] = useState<string | null>(null)
   const [newProjectName, setNewProjectName] = useState('')
   const [isCreatingProject, setIsCreatingProject] = useState(false)
   const [upcomingItems, setUpcomingItems] = useState<Array<{ id: string; title: string; type: 'event' | 'task'; dueDate: string; time?: string; rawDate: string }>>([])
   const [expandedUpcomingId, setExpandedUpcomingId] = useState<string | null>(null)
+  const [contextMenu, setContextMenu] = useState<{ type: 'project' | 'upcoming'; id: string; x: number; y: number } | null>(null)
   const taskCaptureRef = useRef<HTMLInputElement | null>(null)
   const noteCaptureRef = useRef<HTMLTextAreaElement | null>(null)
   const eventCaptureRef = useRef<HTMLInputElement | null>(null)
+
+  const normalizeProjectStatus = (status: string): ProjectSemanticStatus => {
+    const value = status.toLowerCase()
+    if (value.includes('complete')) return 'completed'
+    if (value.includes('pause') || value.includes('archiv')) return 'paused'
+    if (value.includes('progress') || value.includes('in_')) return 'in_progress'
+    return 'not_started'
+  }
+
+  const projectStatusLabels: Record<ProjectSemanticStatus, string> = {
+    not_started: 'Not Started',
+    in_progress: 'In Progress',
+    paused: 'Paused',
+    completed: 'Completed',
+  }
+
+  const projectStatusStyles: Record<ProjectSemanticStatus, string> = {
+    not_started: 'text-blue-700 bg-blue-50',
+    in_progress: 'text-amber-700 bg-amber-50',
+    paused: 'text-gray-700 bg-gray-100',
+    completed: 'text-green-700 bg-green-50',
+  }
+
+  const projectStatusCandidates: Record<ProjectSemanticStatus, string[]> = {
+    not_started: ['NotStarted', 'active', 'not_started'],
+    in_progress: ['InProgress', 'in_progress'],
+    paused: ['Paused', 'archived', 'paused'],
+    completed: ['Completed', 'completed'],
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -220,11 +251,15 @@ export const ExpandedSidebar = () => {
         .from('projects' as never)
         .select('id, name, status, completeness')
         .eq('workspace_id', workspaceId)
-        .neq('status', 'Completed')
         .limit(5)
 
       if (!cancelled && !error && data) {
-        const projects = data as Array<{ id: string; name: string; status: string; completeness: number }>
+        const projects = (data as Array<{ id: string; name: string; status: string; completeness: number }>)
+          .filter((project) => normalizeProjectStatus(project.status) !== 'completed')
+          .map((project) => ({
+            ...project,
+            status: normalizeProjectStatus(project.status),
+          }))
         setProjects(projects)
       }
     }
@@ -505,19 +540,32 @@ export const ExpandedSidebar = () => {
     setQuickCaptureMode('none')
   }
 
-  const updateProjectStatus = async (projectId: string, newStatus: string) => {
+  const updateProjectStatus = async (projectId: string, newStatus: ProjectStatus) => {
     setProjectUpdating(projectId)
-    const { error } = await supabase
-      .from('projects' as never)
-      .update({ status: newStatus } as never)
-      .eq('id', projectId)
+    const semantic = normalizeProjectStatus(newStatus)
+    let resolvedStatus: string | null = null
+    let lastMessage = ''
 
-    if (!error) {
+    for (const candidate of projectStatusCandidates[semantic]) {
+      const { error } = await supabase
+        .from('projects' as never)
+        .update({ status: candidate } as never)
+        .eq('id', projectId)
+
+      if (!error) {
+        resolvedStatus = candidate
+        break
+      }
+
+      lastMessage = error.message
+    }
+
+    if (resolvedStatus) {
       setProjects((prev) =>
-        prev.map((p) => (p.id === projectId ? { ...p, status: newStatus } : p))
+        prev.map((p) => (p.id === projectId ? { ...p, status: normalizeProjectStatus(resolvedStatus!) } : p))
       )
     } else {
-      setSaveError('Could not update project status.')
+      setSaveError(lastMessage ? `Could not update project status. ${lastMessage}` : 'Could not update project status.')
     }
     setProjectUpdating(null)
   }
@@ -546,32 +594,68 @@ export const ExpandedSidebar = () => {
     }
 
     setIsCreatingProject(true)
-    const { data, error } = await supabase
-      .from('projects' as never)
-      .insert({
-        workspace_id: workspaceId,
-        created_by: user.id,
-        name,
-        status: 'NotStarted',
-        completeness: 0,
-        category_id: null,
-      } as never)
-      .select('id, name, status, completeness')
-      .single()
+    let createdProject: { id: string; name: string; status: ProjectStatus | string; completeness: number } | null = null
+    let lastMessage = ''
 
-    if (!error && data) {
-      const newProject = data as { id: string; name: string; status: string; completeness: number }
-      setProjects((prev) => [newProject, ...prev])
-      setNewProjectName('')
-      setIsCreatingProject(false)
-    } else {
-      console.error('Project creation error:', error)
-      setSaveError(error?.message || 'Could not create project.')
-      setIsCreatingProject(false)
+    for (const candidate of projectStatusCandidates.not_started) {
+      const { data, error } = await supabase
+        .from('projects' as never)
+        .insert({
+          workspace_id: workspaceId,
+          created_by: user.id,
+          name,
+          status: candidate,
+          completeness: 0,
+          category_id: null,
+        } as never)
+        .select('id, name, status, completeness')
+        .single()
+
+      if (!error && data) {
+        const inserted = data as { id: string; name: string; status: string; completeness: number }
+        createdProject = {
+          ...inserted,
+          status: normalizeProjectStatus(inserted.status),
+        }
+        break
+      }
+
+      lastMessage = error?.message || lastMessage
     }
+
+    if (createdProject) {
+      setProjects((prev) => [createdProject!, ...prev])
+      setNewProjectName('')
+    } else {
+      console.error('Project creation error:', lastMessage)
+      setSaveError(lastMessage || 'Could not create project.')
+    }
+    setIsCreatingProject(false)
   }
 
   const completedCount = focusItems.filter((item) => item.done).length
+
+  const deleteProject = async (projectId: string) => {
+    const { error } = await supabase
+      .from('projects' as never)
+      .delete()
+      .eq('id', projectId)
+
+    if (!error) {
+      setProjects((prev) => prev.filter((p) => p.id !== projectId))
+      setContextMenu(null)
+    } else {
+      setSaveError('Could not delete project.')
+    }
+  }
+
+  useEffect(() => {
+    const handleClickOutside = () => {
+      if (contextMenu) setContextMenu(null)
+    }
+    document.addEventListener('click', handleClickOutside)
+    return () => document.removeEventListener('click', handleClickOutside)
+  }, [contextMenu])
 
   return (
     <div className="w-80 h-screen bg-white border-r border-gray-200 flex flex-col py-6">
@@ -1073,14 +1157,9 @@ export const ExpandedSidebar = () => {
             ) : (
               projects.map((project) => {
                 const isExpanded = expandedProjectId === project.id
-                const statusColors = {
-                  'NotStarted': 'text-gray-700 bg-gray-50',
-                  'InProgress': 'text-blue-700 bg-blue-50',
-                  'Completed': 'text-green-700 bg-green-50',
-                  'Paused': 'text-yellow-700 bg-yellow-50',
-                }
-                const statusLabel = project.status
-                const statusColor = statusColors[project.status as keyof typeof statusColors] || 'text-gray-700 bg-gray-50'
+                const statusKey = normalizeProjectStatus(String(project.status))
+                const statusLabel = projectStatusLabels[statusKey]
+                const statusColor = projectStatusStyles[statusKey]
 
                 const handleProgressClick = (e: React.MouseEvent<HTMLDivElement>) => {
                   const rect = e.currentTarget.getBoundingClientRect()
@@ -1089,7 +1168,14 @@ export const ExpandedSidebar = () => {
                 }
 
                 return (
-                  <div key={project.id} className="bg-white rounded-lg border border-gray-200">
+                  <div
+                    key={project.id}
+                    className="bg-white rounded-lg border border-gray-200"
+                    onContextMenu={(e) => {
+                      e.preventDefault()
+                      setContextMenu({ type: 'project', id: project.id, x: e.clientX, y: e.clientY })
+                    }}
+                  >
                     <button
                       onClick={() => setExpandedProjectId(isExpanded ? null : project.id)}
                       className="w-full text-left p-3 flex items-start justify-between hover:bg-gray-50 transition"
@@ -1117,7 +1203,7 @@ export const ExpandedSidebar = () => {
                       </div>
                       <ChevronDown
                         size={14}
-                        className={`text-gray-400 transition-transform flex-shrink-0 ml-2 ${isExpanded ? 'rotate-180' : ''}`}
+                        className={`text-gray-400 transition-transform shrink-0 ml-2 ${isExpanded ? 'rotate-180' : ''}`}
                       />
                     </button>
 
@@ -1126,18 +1212,18 @@ export const ExpandedSidebar = () => {
                         <div>
                           <label className="text-[10px] font-semibold uppercase text-gray-600">Project Status</label>
                           <div className="mt-1.5 flex gap-1 flex-wrap">
-                            {['NotStarted', 'InProgress', 'Paused', 'Completed'].map((status) => (
+                            {(['NotStarted', 'InProgress', 'Paused', 'Completed'] as ProjectStatus[]).map((status) => (
                               <button
                                 key={status}
                                 onClick={() => updateProjectStatus(project.id, status)}
                                 disabled={projectUpdating === project.id}
                                 className={`text-[10px] font-medium px-2 py-1 rounded transition ${
-                                  project.status === status
+                                  normalizeProjectStatus(String(project.status)) === normalizeProjectStatus(status)
                                     ? 'bg-blue-500 text-white'
                                     : 'bg-white border border-gray-200 text-gray-700 hover:border-gray-300'
                                 }`}
                               >
-                                {status}
+                                {projectStatusLabels[normalizeProjectStatus(status)]}
                               </button>
                             ))}
                           </div>
@@ -1163,10 +1249,14 @@ export const ExpandedSidebar = () => {
                   <button
                     key={item.id}
                     onClick={() => setExpandedUpcomingId(isExpanded ? null : item.id)}
+                    onContextMenu={(e) => {
+                      e.preventDefault()
+                      setContextMenu({ type: 'upcoming', id: item.id, x: e.clientX, y: e.clientY })
+                    }}
                     className="w-full text-left bg-white rounded-lg p-2.5 border border-gray-200 hover:bg-gray-50 transition"
                   >
                     <div className="flex items-start gap-2">
-                      <div className="flex-shrink-0 mt-0.5">
+                      <div className="shrink-0 mt-0.5">
                         {item.type === 'event' ? (
                           <CalendarDays size={12} className="text-blue-600" />
                         ) : (
@@ -1182,7 +1272,7 @@ export const ExpandedSidebar = () => {
                           {item.time && ` · ${item.time}`}
                         </p>
                       </div>
-                      <div className="flex-shrink-0 mt-0.5">
+                      <div className="shrink-0 mt-0.5">
                         {isExpanded ? (
                           <ChevronUp size={12} className="text-gray-400" />
                         ) : (
@@ -1199,6 +1289,73 @@ export const ExpandedSidebar = () => {
 
         {saveError && <p className="text-[11px] text-red-600">{saveError}</p>}
       </div>
+
+      {contextMenu && (
+        <div
+          className="fixed z-50 bg-white border border-gray-200 rounded-lg shadow-lg py-1 min-w-max"
+          style={{
+            left: `${contextMenu.x}px`,
+            top: `${contextMenu.y}px`,
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {contextMenu.type === 'project' && (
+            <>
+              <button
+                onClick={() => {
+                  const project = projects.find((p) => p.id === contextMenu.id)
+                  if (project) {
+                    setExpandedProjectId(contextMenu.id)
+                    setContextMenu(null)
+                  }
+                }}
+                className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition flex items-center gap-2"
+              >
+                <ChevronDown size={14} />
+                Expand
+              </button>
+              <button
+                onClick={() => {
+                  void deleteProject(contextMenu.id)
+                }}
+                className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition flex items-center gap-2"
+              >
+                <Trash2 size={14} />
+                Delete
+              </button>
+            </>
+          )}
+
+          {contextMenu.type === 'upcoming' && (
+            <>
+              <button
+                onClick={() => {
+                  setExpandedUpcomingId(contextMenu.id)
+                  setContextMenu(null)
+                }}
+                className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition flex items-center gap-2"
+              >
+                <ChevronDown size={14} />
+                Expand
+              </button>
+              <button
+                onClick={() => {
+                  const event = upcomingItems.find((e) => e.id === contextMenu.id)
+                  if (event) {
+                    setState('expanded')
+                    void window.desktopWindow?.toggleModule('calendar', event.rawDate)
+                    setContextMenu(null)
+                  }
+                }}
+                className="w-full text-left px-4 py-2 text-sm text-blue-600 hover:bg-blue-50 transition flex items-center gap-2"
+              >
+                <CalendarDays size={14} />
+                Open in Calendar
+              </button>
+            </>
+          )}
+        </div>
+      )}
 
       <div className="px-6 space-y-3 border-t border-white/20 pt-4">
         <button

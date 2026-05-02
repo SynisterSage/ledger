@@ -253,8 +253,16 @@ const parseIcsEvents = (rawIcs: string): ParsedIcsEvent[] => {
 
 export const CalendarWindow = () => {
   const { user } = useAuthContext()
+  const initialFocusDate = new URLSearchParams(window.location.search).get('focusDate')
   const [viewMode, setViewMode] = useState<CalendarViewMode>('week')
-  const [viewAnchor, setViewAnchor] = useState(() => new Date())
+  const [viewAnchor, setViewAnchor] = useState(() => {
+    if (initialFocusDate) {
+      const date = new Date(initialFocusDate)
+      date.setHours(0, 0, 0, 0)
+      return date
+    }
+    return new Date()
+  })
   const [calendars, setCalendars] = useState<CalendarRow[]>([])
   const [events, setEvents] = useState<EventRow[]>([])
   const [reminders, setReminders] = useState<ReminderRow[]>([])
@@ -301,6 +309,30 @@ export const CalendarWindow = () => {
   const [sidebarWidth, setSidebarWidth] = useState(256)
   const [isResizingSidebar, setIsResizingSidebar] = useState(false)
   const [overflowDayKey, setOverflowDayKey] = useState<string | null>(null)
+
+  useEffect(() => {
+    const applyFocusDate = (focusDate: string) => {
+      const date = new Date(focusDate)
+      date.setHours(0, 0, 0, 0)
+      setViewAnchor(date)
+    }
+
+    if (initialFocusDate) {
+      applyFocusDate(initialFocusDate)
+    }
+
+    const focusDateListener = (_event: unknown, payload: { kind?: string; focusDate?: string | null }) => {
+      if (payload?.kind === 'calendar' && payload.focusDate) {
+        applyFocusDate(payload.focusDate)
+      }
+    }
+
+    window.ipcRenderer?.on('module:focus-date', focusDateListener)
+
+    return () => {
+      window.ipcRenderer?.off('module:focus-date', focusDateListener)
+    }
+  }, [initialFocusDate])
 
   const viewConfig = useMemo(() => {
     if (viewMode === 'day') {
@@ -1173,6 +1205,15 @@ export const CalendarWindow = () => {
         style={{ WebkitAppRegion: 'drag' } as CSSProperties}
       >
         <div className="flex items-center gap-3">
+          <button
+            onClick={() => {
+              void window.desktopWindow?.toggleModule('calendar')
+            }}
+            className="p-1 hover:bg-gray-100 rounded-lg transition"
+            title="Close Calendar"
+          >
+            <ChevronLeft size={20} className="text-gray-600" />
+          </button>
           <div className="h-9 w-9 rounded-lg bg-blue-50 border border-blue-100 flex items-center justify-center">
             <CalendarDays size={18} className="text-blue-600" />
           </div>

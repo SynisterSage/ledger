@@ -76,7 +76,7 @@ export type Database = {
           category_id: string
           name: string
           description: string | null
-          status: 'active' | 'archived' | 'completed'
+          status: 'NotStarted' | 'InProgress' | 'Paused' | 'Completed'
           start_date: string | null
           end_date: string | null
           color: string

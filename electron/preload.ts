@@ -30,8 +30,8 @@ contextBridge.exposeInMainWorld('desktopWindow', {
   setMode(mode: SidebarWindowMode) {
     return ipcRenderer.invoke('window:set-mode', mode)
   },
-  toggleModule(kind: ModuleWindowKind) {
-    return ipcRenderer.invoke('window:toggle-module', kind)
+  toggleModule(kind: ModuleWindowKind, focusDate?: string | null) {
+    return ipcRenderer.invoke('window:toggle-module', { kind, focusDate })
   },
   openExternal(url: string) {
     return ipcRenderer.invoke('window:open-external', url)

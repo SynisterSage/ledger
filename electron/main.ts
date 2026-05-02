@@ -14,6 +14,10 @@ process.env.VITE_PUBLIC = VITE_DEV_SERVER_URL
 
 type SidebarWindowMode = 'auth' | 'minimized' | 'expanded' | 'fullscreen'
 type ModuleWindowKind = 'calendar'
+type ModuleFocusPayload = {
+  kind: ModuleWindowKind
+  focusDate?: string | null
+}
 
 let sidebarWin: BrowserWindow | null = null
 const moduleWins = new Map<ModuleWindowKind, BrowserWindow>()
@@ -159,11 +163,20 @@ function createSidebarWindow() {
   }
 }
 
-function openModuleWindow(kind: ModuleWindowKind) {
+function sendModuleFocusDate(kind: ModuleWindowKind, focusDate?: string | null) {
+  if (!focusDate) return
+  const existing = moduleWins.get(kind)
+  if (existing && !existing.isDestroyed()) {
+    existing.webContents.send('module:focus-date', { kind, focusDate })
+  }
+}
+
+function openModuleWindow(kind: ModuleWindowKind, focusDate?: string | null) {
   const existing = moduleWins.get(kind)
   if (existing && !existing.isDestroyed()) {
     existing.show()
     existing.focus()
+    sendModuleFocusDate(kind, focusDate)
     return
   }
 
@@ -206,7 +219,9 @@ function openModuleWindow(kind: ModuleWindowKind) {
     moduleWins.delete(kind)
   })
 
-  moduleWin.loadURL(getRendererUrl(`?window=module&module=${kind}`))
+  const focusDateQuery = focusDate ? `&focusDate=${encodeURIComponent(focusDate)}` : ''
+  moduleWin.webContents.once('did-finish-load', () => sendModuleFocusDate(kind, focusDate))
+  moduleWin.loadURL(getRendererUrl(`?window=module&module=${kind}${focusDateQuery}`))
 }
 
 app.on('window-all-closed', () => {
@@ -225,10 +240,22 @@ ipcMain.handle('window:set-mode', (_event, mode: SidebarWindowMode) => {
   applySidebarWindowMode(mode)
 })
 
-ipcMain.handle('window:toggle-module', (_event, kind: ModuleWindowKind) => {
+ipcMain.handle('window:toggle-module', (_event, payload: ModuleWindowKind | ModuleFocusPayload) => {
+  const kind = typeof payload === 'string' ? payload : payload.kind
+  const focusDate = typeof payload === 'string' ? undefined : payload.focusDate
   const existing = moduleWins.get(kind)
 
   if (existing && !existing.isDestroyed()) {
+    if (focusDate) {
+      if (existing.isMinimized()) {
+        existing.restore()
+      }
+      existing.show()
+      existing.focus()
+      sendModuleFocusDate(kind, focusDate)
+      return
+    }
+
     if (existing.isMinimized()) {
       existing.restore()
       existing.focus()
@@ -245,7 +272,7 @@ ipcMain.handle('window:toggle-module', (_event, kind: ModuleWindowKind) => {
     return
   }
 
-  openModuleWindow(kind)
+  openModuleWindow(kind, focusDate)
 })
 
 ipcMain.handle('window:open-external', async (_event, url: string) => {
