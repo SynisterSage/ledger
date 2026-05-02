@@ -4,6 +4,7 @@ import {
   Plus,
   Search,
   StickyNote,
+  Trash2,
 } from 'lucide-react'
 import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useAuthContext } from '../../context/AuthContext'
@@ -20,8 +21,16 @@ type NoteRow = {
   updated_at: string
 }
 
-const AUTOSAVE_DELAY_MS = 700
 const POLL_INTERVAL_MS = 15000
+const LEFT_PANE_MIN_WIDTH = 260
+const LEFT_PANE_MAX_WIDTH = 380
+const RIGHT_PANE_MIN_WIDTH = 250
+const RIGHT_PANE_MAX_WIDTH = 360
+type NoteContextMenuState = {
+  x: number
+  y: number
+  noteId: string
+}
 
 const todayKey = () => new Date().toISOString().slice(0, 10)
 
@@ -46,7 +55,10 @@ export const NotesWindow = () => {
   const titleRef = useRef<HTMLInputElement | null>(null)
   const bodyRef = useRef<HTMLTextAreaElement | null>(null)
   const autosaveTimerRef = useRef<number | null>(null)
+  const savingIndicatorTimerRef = useRef<number | null>(null)
   const lastSavedAtRef = useRef<string | null>(null)
+  const isEditingRef = useRef(false)
+  const isDirtyRef = useRef(false)
 
   const [notes, setNotes] = useState<NoteRow[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -59,11 +71,18 @@ export const NotesWindow = () => {
   const [draftDate, setDraftDate] = useState(todayKey())
   const [draftMood, setDraftMood] = useState('')
   const [isDirty, setIsDirty] = useState(false)
-  const [isSaving, setIsSaving] = useState(false)
+  const [showSavingIndicator, setShowSavingIndicator] = useState(false)
   const [isCreating, setIsCreating] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
-  const [saveMessage, setSaveMessage] = useState<string | null>(null)
-  const [saveMessageVisible, setSaveMessageVisible] = useState(false)
+  const [leftPaneWidth, setLeftPaneWidth] = useState(320)
+  const [rightPaneWidth, setRightPaneWidth] = useState(292)
+  const [isLeftPaneCollapsed, setIsLeftPaneCollapsed] = useState(false)
+  const [isRightPaneCollapsed, setIsRightPaneCollapsed] = useState(false)
+  const [isResizingLeftPane, setIsResizingLeftPane] = useState(false)
+  const [isResizingRightPane, setIsResizingRightPane] = useState(false)
+  const [noteContextMenu, setNoteContextMenu] = useState<NoteContextMenuState | null>(null)
+
+  const areSidePanelsCollapsed = isLeftPaneCollapsed && isRightPaneCollapsed
 
   const selectedNote = useMemo(
     () => notes.find((note) => note.id === selectedNoteId) ?? null,
@@ -88,6 +107,10 @@ export const NotesWindow = () => {
     setIsDirty(false)
   }, [])
 
+  useEffect(() => {
+    isDirtyRef.current = isDirty
+  }, [isDirty])
+
   const loadNotes = useCallback(
     async (opts?: { silent?: boolean }) => {
       if (!user) return
@@ -109,22 +132,21 @@ export const NotesWindow = () => {
           const currentSelected = currentId ? rows.find((note) => note.id === currentId) ?? null : null
 
           if (currentSelected) {
-            if (!isDirty) {
-              syncDraftFromNote(currentSelected)
-            }
             return currentSelected.id
           }
 
           if (rows.length > 0) {
             const next = rows[0]
-            syncDraftFromNote(next)
+            if (!isEditingRef.current && !isDirtyRef.current) {
+              syncDraftFromNote(next)
+            }
             return next.id
           }
 
           return null
         })
 
-        if (rows.length === 0) {
+        if (rows.length === 0 && !isEditingRef.current && !isDirtyRef.current) {
           setDraftTitle('')
           setDraftContent('')
           setDraftDate(todayKey())
@@ -138,7 +160,7 @@ export const NotesWindow = () => {
         setIsRefreshing(false)
       }
     },
-    [api, isDirty, syncDraftFromNote, user]
+    [api, syncDraftFromNote, user]
   )
 
   const flushAutosave = useCallback(
@@ -149,8 +171,18 @@ export const NotesWindow = () => {
       const noteContent = override?.content ?? draftContent
       const noteDate = (override?.date ?? draftDate).trim() || todayKey()
       const noteMood = (override?.mood ?? draftMood).trim() || null
+      const meaningfulLength = `${noteTitle}${noteContent}`.replace(/\s/g, '').length
 
-      setIsSaving(true)
+      if (meaningfulLength < 2) {
+        return null
+      }
+
+      if (savingIndicatorTimerRef.current) {
+        window.clearTimeout(savingIndicatorTimerRef.current)
+      }
+      savingIndicatorTimerRef.current = window.setTimeout(() => {
+        setShowSavingIndicator(true)
+      }, 350)
       setError(null)
 
       try {
@@ -162,22 +194,18 @@ export const NotesWindow = () => {
         })
         const updated = data as NoteRow
         setNotes((prev) => prev.map((note) => (note.id === updated.id ? updated : note)))
-        setDraftTitle(updated.title)
-        setDraftContent(updated.content)
-        setDraftDate(updated.date || todayKey())
-        setDraftMood(updated.mood ?? '')
         setIsDirty(false)
         lastSavedAtRef.current = updated.updated_at
-        setSaveMessage('Saved')
-        setSaveMessageVisible(true)
-        window.setTimeout(() => setSaveMessageVisible(false), 1200)
-        window.setTimeout(() => setSaveMessage(null), 1600)
         return updated
       } catch (saveError) {
         setError(saveError instanceof Error ? saveError.message : 'Could not save note.')
         return null
       } finally {
-        setIsSaving(false)
+        if (savingIndicatorTimerRef.current) {
+          window.clearTimeout(savingIndicatorTimerRef.current)
+          savingIndicatorTimerRef.current = null
+        }
+        setShowSavingIndicator(false)
       }
     },
     [api, draftContent, draftDate, draftMood, draftTitle, selectedNoteId]
@@ -261,9 +289,50 @@ export const NotesWindow = () => {
     }
   }, [api, selectedNote, syncDraftFromNote])
 
+  const deleteNoteById = useCallback(
+    async (noteId: string) => {
+      if (autosaveTimerRef.current) {
+        window.clearTimeout(autosaveTimerRef.current)
+        autosaveTimerRef.current = null
+      }
+
+      const target = notes.find((note) => note.id === noteId)
+      if (!target) return
+
+      setIsDeleting(true)
+      setError(null)
+
+      try {
+        await api.deleteNote(noteId)
+        setNotes((prev) => {
+          const next = prev.filter((note) => note.id !== noteId)
+          const fallback = next[0] ?? null
+          if (fallback) {
+            setSelectedNoteId(fallback.id)
+            syncDraftFromNote(fallback)
+          } else {
+            setSelectedNoteId(null)
+            setDraftTitle('')
+            setDraftContent('')
+            setDraftDate(todayKey())
+            setDraftMood('')
+            setIsDirty(false)
+          }
+          return next
+        })
+      } catch (deleteError) {
+        setError(deleteError instanceof Error ? deleteError.message : 'Could not delete note.')
+      } finally {
+        setIsDeleting(false)
+      }
+    },
+    [api, notes, syncDraftFromNote]
+  )
+
   useEffect(() => {
     void loadNotes()
     const poll = window.setInterval(() => {
+      if (isEditingRef.current || isDirty) return
       void loadNotes({ silent: true })
     }, POLL_INTERVAL_MS)
 
@@ -272,16 +341,19 @@ export const NotesWindow = () => {
       if (autosaveTimerRef.current) {
         window.clearTimeout(autosaveTimerRef.current)
       }
+      if (savingIndicatorTimerRef.current) {
+        window.clearTimeout(savingIndicatorTimerRef.current)
+      }
     }
   }, [loadNotes])
 
   useEffect(() => {
-    if (!selectedNote || isDirty) return
-    syncDraftFromNote(selectedNote)
-  }, [isDirty, selectedNote, syncDraftFromNote])
-
-  useEffect(() => {
     if (!selectedNoteId || !isDirty) return
+
+    const noteTitle = draftTitle.trim() || 'Untitled note'
+    const noteContent = draftContent
+    const meaningfulLength = `${noteTitle}${noteContent}`.replace(/\s/g, '').length
+    if (meaningfulLength < 2) return
 
     if (autosaveTimerRef.current) {
       window.clearTimeout(autosaveTimerRef.current)
@@ -289,7 +361,7 @@ export const NotesWindow = () => {
 
     autosaveTimerRef.current = window.setTimeout(() => {
       void flushAutosave()
-    }, AUTOSAVE_DELAY_MS)
+    }, 1200)
 
     return () => {
       if (autosaveTimerRef.current) {
@@ -299,15 +371,64 @@ export const NotesWindow = () => {
   }, [draftContent, draftDate, draftMood, draftTitle, flushAutosave, isDirty, selectedNoteId])
 
   useEffect(() => {
-    if (!saveMessage) return
-    setSaveMessageVisible(true)
-    const hideTimer = window.setTimeout(() => setSaveMessageVisible(false), 1200)
-    const clearTimer = window.setTimeout(() => setSaveMessage(null), 1600)
-    return () => {
-      window.clearTimeout(hideTimer)
-      window.clearTimeout(clearTimer)
+    if (!isResizingLeftPane) return
+
+    const handleMove = (event: MouseEvent) => {
+      const next = Math.max(LEFT_PANE_MIN_WIDTH, Math.min(LEFT_PANE_MAX_WIDTH, event.clientX))
+      setLeftPaneWidth(next)
     }
-  }, [saveMessage])
+
+    const handleUp = () => setIsResizingLeftPane(false)
+
+    window.addEventListener('mousemove', handleMove)
+    window.addEventListener('mouseup', handleUp)
+
+    return () => {
+      window.removeEventListener('mousemove', handleMove)
+      window.removeEventListener('mouseup', handleUp)
+    }
+  }, [isResizingLeftPane])
+
+  useEffect(() => {
+    if (!isResizingRightPane) return
+
+    const handleMove = (event: MouseEvent) => {
+      const next = window.innerWidth - event.clientX
+      const clamped = Math.max(RIGHT_PANE_MIN_WIDTH, Math.min(RIGHT_PANE_MAX_WIDTH, next))
+      setRightPaneWidth(clamped)
+    }
+
+    const handleUp = () => setIsResizingRightPane(false)
+
+    window.addEventListener('mousemove', handleMove)
+    window.addEventListener('mouseup', handleUp)
+
+    return () => {
+      window.removeEventListener('mousemove', handleMove)
+      window.removeEventListener('mouseup', handleUp)
+    }
+  }, [isResizingRightPane])
+
+  useEffect(() => {
+    if (!noteContextMenu) return
+
+    const closeMenu = () => setNoteContextMenu(null)
+    const onEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') closeMenu()
+    }
+
+    window.addEventListener('mousedown', closeMenu)
+    window.addEventListener('scroll', closeMenu, true)
+    window.addEventListener('resize', closeMenu)
+    window.addEventListener('keydown', onEscape)
+
+    return () => {
+      window.removeEventListener('mousedown', closeMenu)
+      window.removeEventListener('scroll', closeMenu, true)
+      window.removeEventListener('resize', closeMenu)
+      window.removeEventListener('keydown', onEscape)
+    }
+  }, [noteContextMenu])
 
   return (
     <div className="h-screen bg-[#f5f7fb] flex flex-col">
@@ -319,7 +440,11 @@ export const NotesWindow = () => {
       >
         <div className="flex items-center gap-3" style={{ WebkitAppRegion: 'no-drag' } as CSSProperties}>
           <button
-            onClick={() => void window.desktopWindow?.toggleModule('notes')}
+            onClick={() => {
+              void flushAutosave().finally(() => {
+                void window.desktopWindow?.toggleModule('notes')
+              })
+            }}
             className="p-1 hover:bg-gray-100 rounded-lg transition"
             title="Close Notes"
           >
@@ -330,12 +455,27 @@ export const NotesWindow = () => {
           </div>
           <div>
             <h1 className="text-[26px] leading-none font-semibold tracking-tight text-gray-900">Notes</h1>
-            <p className="text-xs text-gray-500 mt-1">A simple, Notion-style note workspace</p>
+            <p className="text-xs text-gray-500 mt-1">Your simple note workspace</p>
           </div>
         </div>
 
         <div className="flex items-center gap-2" style={{ WebkitAppRegion: 'no-drag' } as CSSProperties}>
           <div className="flex items-center gap-1 rounded-full border border-gray-200 bg-gray-50 p-1 shadow-sm">
+            <button
+              onClick={() => {
+                if (areSidePanelsCollapsed) {
+                  setIsLeftPaneCollapsed(false)
+                  setIsRightPaneCollapsed(false)
+                } else {
+                  setIsLeftPaneCollapsed(true)
+                  setIsRightPaneCollapsed(true)
+                }
+              }}
+              className="h-8 px-3 rounded-full bg-white border border-gray-200 hover:bg-gray-100 text-gray-700 text-xs font-semibold inline-flex items-center justify-center leading-none"
+              title={areSidePanelsCollapsed ? 'Show panels' : 'Hide panels'}
+            >
+              {areSidePanelsCollapsed ? 'Show panels' : 'Hide panels'}
+            </button>
             <button
               onClick={() => void loadNotes({ silent: true })}
               className="h-8 w-8 rounded-full hover:bg-white text-gray-600 flex items-center justify-center"
@@ -358,18 +498,13 @@ export const NotesWindow = () => {
       {error && (
         <div className="px-5 py-2 text-xs text-red-700 bg-red-50 border-b border-red-100">{error}</div>
       )}
-      {saveMessage && (
-        <div
-          className={`px-5 py-2 text-xs text-green-700 bg-green-50 border-b border-green-100 transition-opacity duration-300 ${
-            saveMessageVisible ? 'opacity-100' : 'opacity-0'
-          }`}
-        >
-          {saveMessage}
-        </div>
-      )}
-
       <div className="flex-1 flex overflow-hidden">
-        <aside className="w-[320px] border-r border-gray-200 bg-white flex flex-col overflow-hidden">
+        {!isLeftPaneCollapsed && (
+          <>
+            <aside
+              className="border-r border-gray-200 bg-white flex flex-col overflow-hidden shrink-0"
+              style={{ width: `${leftPaneWidth}px` }}
+            >
           <div className="p-4 border-b border-gray-100">
             <div className="flex items-center justify-between mb-3">
               <div>
@@ -413,18 +548,22 @@ export const NotesWindow = () => {
                   <button
                     key={note.id}
                     onClick={() => void openNote(note)}
-                    className={`w-full rounded-2xl border p-3 text-left transition ${
+                    onContextMenu={(event) => {
+                      event.preventDefault()
+                      setNoteContextMenu({ x: event.clientX, y: event.clientY, noteId: note.id })
+                    }}
+                    className={`w-full rounded-2xl border p-3 text-left transition shadow-sm ${
                       active
-                        ? 'border-gray-900 bg-gray-900 text-white'
-                        : 'border-gray-200 bg-white hover:bg-gray-50'
+                        ? 'border-gray-300 bg-gray-50 ring-1 ring-gray-200'
+                        : 'border-gray-200 bg-white hover:bg-gray-50 hover:border-gray-300'
                     }`}
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
-                        <p className={`text-sm font-semibold truncate ${active ? 'text-white' : 'text-gray-900'}`}>
+                        <p className="text-sm font-semibold truncate text-gray-900">
                           {note.title || 'Untitled note'}
                         </p>
-                        <p className={`mt-1 text-[11px] truncate ${active ? 'text-white/70' : 'text-gray-500'}`}>
+                        <p className={`mt-1 text-[11px] truncate ${active ? 'text-gray-600' : 'text-gray-500'}`}>
                           {preview}
                         </p>
                       </div>
@@ -432,18 +571,18 @@ export const NotesWindow = () => {
                         {note.mood && (
                           <span
                             className={`text-[10px] px-1.5 py-0.5 rounded-full ${
-                              active ? 'bg-white/15 text-white' : 'bg-gray-100 text-gray-700'
+                              active ? 'bg-white text-gray-700 border border-gray-200' : 'bg-gray-100 text-gray-700'
                             }`}
                           >
                             {note.mood}
                           </span>
                         )}
-                        <span className={`text-[10px] ${active ? 'text-white/70' : 'text-gray-500'}`}>
+                        <span className="text-[10px] text-gray-500">
                           {new Date(note.updated_at).toLocaleDateString([], { month: 'short', day: 'numeric' })}
                         </span>
                       </div>
                     </div>
-                    <div className={`mt-2 flex items-center justify-between text-[10px] ${active ? 'text-white/70' : 'text-gray-500'}`}>
+                    <div className="mt-2 flex items-center justify-between text-[10px] text-gray-500">
                       <span>{formatDateTime(note.updated_at)}</span>
                       <span>{wordCount(note.content)} words</span>
                     </div>
@@ -452,9 +591,19 @@ export const NotesWindow = () => {
               })
             )}
           </div>
-        </aside>
+            </aside>
 
-        <section className="flex-1 min-w-0 p-2.5">
+            <div
+              role="separator"
+              aria-orientation="vertical"
+              onMouseDown={() => setIsResizingLeftPane(true)}
+              className="w-1.5 cursor-col-resize bg-transparent hover:bg-gray-200/70 transition"
+              title="Resize panels"
+            />
+          </>
+        )}
+
+        <section className={`flex-1 min-w-0 ${areSidePanelsCollapsed ? 'p-4' : 'p-2.5'}`}>
           <div className="h-full rounded-3xl border border-gray-200 bg-white shadow-sm overflow-hidden flex flex-col">
             {isLoading ? (
               <div className="flex-1 p-5 space-y-4">
@@ -475,9 +624,7 @@ export const NotesWindow = () => {
                     </h2>
                   </div>
                   <div className="text-right">
-                    <p className="text-[11px] text-gray-500">
-                      {isSaving ? 'Saving...' : isDirty ? 'Unsaved changes' : 'Saved'}
-                    </p>
+                    <p className="text-[11px] text-gray-500">{showSavingIndicator ? 'Saving...' : 'Auto-save enabled'}</p>
                     <p className="text-[10px] text-gray-400">
                       {lastSavedAtRef.current ? `Last saved ${formatDateTime(lastSavedAtRef.current)}` : 'Auto-save enabled'}
                     </p>
@@ -491,25 +638,26 @@ export const NotesWindow = () => {
                         <p className="text-[10px] uppercase tracking-wide text-gray-500">Date</p>
                         <input
                           value={draftDate}
-                          onChange={(e) => {
-                            setDraftDate(e.target.value)
-                            setIsDirty(true)
-                          }}
-                          className="mt-1 w-full bg-transparent text-sm font-medium text-gray-900 focus:outline-none"
-                          placeholder="YYYY-MM-DD"
-                        />
+                        onChange={(e) => {
+                          setDraftDate(e.target.value)
+                          setIsDirty(true)
+                        }}
+                        className="mt-1 w-full bg-transparent text-sm font-medium text-gray-900 focus:outline-none"
+                        placeholder="YYYY-MM-DD"
+                      />
                       </div>
                       <div className="rounded-2xl border border-gray-200 bg-gray-50 p-3">
                         <p className="text-[10px] uppercase tracking-wide text-gray-500">Mood</p>
+                        <p className="mt-0.5 text-[10px] text-gray-400">Optional</p>
                         <input
                           value={draftMood}
-                          onChange={(e) => {
-                            setDraftMood(e.target.value)
-                            setIsDirty(true)
-                          }}
-                          className="mt-1 w-full bg-transparent text-sm font-medium text-gray-900 focus:outline-none"
-                          placeholder="Calm, focused, etc."
-                        />
+                        onChange={(e) => {
+                          setDraftMood(e.target.value)
+                          setIsDirty(true)
+                        }}
+                        className="mt-1 w-full bg-transparent text-sm font-medium text-gray-700 placeholder:text-gray-400 focus:outline-none"
+                        placeholder="How it felt"
+                      />
                       </div>
                       <div className="rounded-2xl border border-gray-200 bg-gray-50 p-3">
                         <p className="text-[10px] uppercase tracking-wide text-gray-500">Words</p>
@@ -524,6 +672,12 @@ export const NotesWindow = () => {
                         setDraftTitle(e.target.value)
                         setIsDirty(true)
                       }}
+                      onFocus={() => {
+                        isEditingRef.current = true
+                      }}
+                      onBlur={() => {
+                        isEditingRef.current = false
+                      }}
                       placeholder="Untitled note"
                       className="w-full text-4xl font-semibold tracking-tight text-gray-900 placeholder:text-gray-300 focus:outline-none bg-transparent"
                     />
@@ -534,6 +688,12 @@ export const NotesWindow = () => {
                       onChange={(e) => {
                         setDraftContent(e.target.value)
                         setIsDirty(true)
+                      }}
+                      onFocus={() => {
+                        isEditingRef.current = true
+                      }}
+                      onBlur={() => {
+                        isEditingRef.current = false
                       }}
                       placeholder="Start writing..."
                       className="w-full min-h-[calc(100vh-330px)] resize-none bg-transparent text-[16px] leading-8 text-gray-800 placeholder:text-gray-300 focus:outline-none"
@@ -563,7 +723,20 @@ export const NotesWindow = () => {
           </div>
         </section>
 
-        <aside className="w-[292px] border-l border-gray-200 bg-[#fbfcfe] overflow-auto p-4 space-y-4">
+        {!isRightPaneCollapsed && (
+          <>
+            <div
+              role="separator"
+              aria-orientation="vertical"
+              onMouseDown={() => setIsResizingRightPane(true)}
+              className="w-1.5 cursor-col-resize bg-transparent hover:bg-gray-200/70 transition"
+              title="Resize panels"
+            />
+
+            <aside
+              className="border-l border-gray-200 bg-[#fbfcfe] overflow-auto p-4 space-y-4 shrink-0"
+              style={{ width: `${rightPaneWidth}px` }}
+            >
           <section className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
             <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">At a glance</p>
             <h2 className="mt-1 text-sm font-semibold text-gray-900">Notes workspace</h2>
@@ -610,7 +783,7 @@ export const NotesWindow = () => {
                   </div>
                   <div className="rounded-xl border border-gray-200 bg-gray-50 p-3">
                     <p className="text-[10px] uppercase tracking-wide text-gray-500">Mood</p>
-                    <p className="mt-1 text-sm font-medium text-gray-900">{selectedNote.mood || 'Not set'}</p>
+                    <p className="mt-1 text-sm font-medium text-gray-700">{selectedNote.mood || 'Not set'}</p>
                   </div>
                 </div>
                 <div className="rounded-xl border border-gray-200 bg-gray-50 p-3">
@@ -646,8 +819,50 @@ export const NotesWindow = () => {
               ))}
             </div>
           </section>
-        </aside>
+            </aside>
+          </>
+        )}
       </div>
+
+      {noteContextMenu && (
+        <div
+          className="fixed z-210 min-w-38 rounded-xl border border-white/20 bg-[#1f2530]/95 text-white shadow-2xl backdrop-blur-md p-1.5"
+          style={{
+            left: Math.max(8, Math.min(noteContextMenu.x, window.innerWidth - 168)),
+            top: Math.max(8, Math.min(noteContextMenu.y, window.innerHeight - 74)),
+          }}
+          onClick={(e) => e.stopPropagation()}
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          <button
+            onClick={() => {
+              const note = notes.find((item) => item.id === noteContextMenu.noteId)
+              if (note) void openNote(note)
+              setNoteContextMenu(null)
+            }}
+            className="w-full h-8 px-2 rounded-lg text-left hover:bg-white/10 flex items-center gap-2"
+          >
+            <StickyNote size={13} className="text-gray-200" />
+            <span className="text-[20px] leading-none text-gray-200" aria-hidden>
+              ·
+            </span>
+            <span className="text-[14px] font-medium tracking-tight">Open Note</span>
+          </button>
+          <button
+            onClick={() => {
+              void deleteNoteById(noteContextMenu.noteId)
+              setNoteContextMenu(null)
+            }}
+            className="w-full h-8 px-2 rounded-lg text-left hover:bg-white/10 flex items-center gap-2 text-red-300"
+          >
+            <Trash2 size={13} />
+            <span className="text-[20px] leading-none" aria-hidden>
+              ·
+            </span>
+            <span className="text-[14px] font-medium tracking-tight">Delete Note</span>
+          </button>
+        </div>
+      )}
     </div>
   )
 }

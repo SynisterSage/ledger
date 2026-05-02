@@ -621,9 +621,9 @@ export const ExpandedSidebar = () => {
   }, [contextMenu])
 
   return (
-    <div className="w-80 h-screen bg-white border-r border-gray-200 flex flex-col py-6">
-      <div className="px-6 pb-6 border-b border-white/20">
-        <div className="flex items-center justify-between mb-4">
+    <div className="w-80 h-screen bg-white border-r border-gray-200 flex flex-col py-5">
+      <div className="px-6 pb-4 border-b border-white/20">
+        <div className="flex items-center justify-between mb-3">
           <h1 className="text-2xl font-bold text-gray-900">Ledger</h1>
           <button
             onClick={() => setState('minimized')}
@@ -634,11 +634,11 @@ export const ExpandedSidebar = () => {
           </button>
         </div>
 
-      <div className="bg-white rounded-lg p-3 border border-gray-200 flex items-start justify-between">
-        <div>
-          <p className="text-sm font-semibold text-gray-900">{firstName}</p>
-          <p className="text-xs text-gray-700 truncate">{user?.email}</p>
-        </div>
+        <div className="bg-white rounded-lg p-3 border border-gray-200 flex items-start justify-between">
+          <div>
+            <p className="text-sm font-semibold text-gray-900">{firstName}</p>
+            <p className="text-xs text-gray-700 truncate">{user?.email}</p>
+          </div>
           <button
             className="p-1.5 hover:bg-gray-100 rounded-md transition text-gray-600 hover:text-gray-900 shrink-0"
             title="Settings"
@@ -648,7 +648,7 @@ export const ExpandedSidebar = () => {
         </div>
       </div>
 
-      <div className="px-6 pt-4">
+      <div className="px-6 pt-2">
         <div className="grid grid-cols-3 gap-2">
           <button
             onClick={() => setState('fullscreen')}
