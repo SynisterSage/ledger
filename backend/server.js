@@ -146,6 +146,41 @@ const normalizeEmail = (value) => String(value ?? '').trim().toLowerCase()
 
 const isValidWorkspaceMemberRole = (role) => workspaceMemberRoles.includes(String(role ?? '').toLowerCase())
 
+const userPreferencesDefaults = {
+  weekStartsOn: 'monday',
+  timeFormat: '12h',
+  defaultEventMinutes: 30,
+  reminderLeadMinutes: 15,
+  openDashboardByDefault: true,
+  reduceMotion: false,
+  highContrast: false,
+  compactDensity: false,
+}
+
+const normalizeUserPreferences = (value) => {
+  const raw = value && typeof value === 'object' ? value : {}
+  const merged = { ...userPreferencesDefaults, ...raw }
+
+  const defaultEventMinutes = [30, 45, 60].includes(Number(merged.defaultEventMinutes))
+    ? Number(merged.defaultEventMinutes)
+    : userPreferencesDefaults.defaultEventMinutes
+
+  const reminderLeadMinutes = [5, 10, 15, 30].includes(Number(merged.reminderLeadMinutes))
+    ? Number(merged.reminderLeadMinutes)
+    : userPreferencesDefaults.reminderLeadMinutes
+
+  return {
+    weekStartsOn: String(merged.weekStartsOn).toLowerCase() === 'sunday' ? 'sunday' : 'monday',
+    timeFormat: String(merged.timeFormat).toLowerCase() === '24h' ? '24h' : '12h',
+    defaultEventMinutes,
+    reminderLeadMinutes,
+    openDashboardByDefault: Boolean(merged.openDashboardByDefault),
+    reduceMotion: Boolean(merged.reduceMotion),
+    highContrast: Boolean(merged.highContrast),
+    compactDensity: Boolean(merged.compactDensity),
+  }
+}
+
 const roleAtLeast = (role, minimumRole) => {
   const currentRank = workspaceRoleRank[String(role ?? '').toLowerCase()] ?? 0
   const minimumRank = workspaceRoleRank[String(minimumRole ?? '').toLowerCase()] ?? 0
@@ -524,6 +559,87 @@ app.patch('/api/user/onboarding', authMiddleware, rateLimit('write'), async (req
 
     if (error) throw error
     res.json(data)
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
+app.get('/api/user/settings', authMiddleware, rateLimit('read'), async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('users')
+      .select('id, email, full_name, active_workspace_id, onboarding_completed, preferences, updated_at')
+      .eq('id', req.authUser.id)
+      .maybeSingle()
+
+    if (error) throw error
+    if (!data?.id) {
+      return res.status(404).json({ error: 'User not found' })
+    }
+
+    res.json({
+      full_name: data.full_name ?? null,
+      email: data.email ?? null,
+      active_workspace_id: data.active_workspace_id ?? null,
+      onboarding_completed: Boolean(data.onboarding_completed),
+      preferences: normalizeUserPreferences(safeJson(data.preferences, {})),
+      updated_at: data.updated_at ?? null,
+    })
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
+app.patch('/api/user/settings', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const fullNameInput = req.body?.full_name
+    const preferencesInput = req.body?.preferences
+
+    const updatePayload = {}
+
+    if (fullNameInput !== undefined) {
+      const normalizedFullName = normalizeNullableText(fullNameInput)
+      updatePayload.full_name = normalizedFullName
+
+      try {
+        await supabase.auth.admin.updateUserById(req.authUser.id, {
+          user_metadata: {
+            ...(req.authUser.user_metadata ?? {}),
+            full_name: normalizedFullName ?? '',
+          },
+        })
+      } catch (authError) {
+        console.error('Failed to sync auth metadata for user settings', authError)
+      }
+    }
+
+    if (preferencesInput !== undefined) {
+      updatePayload.preferences = normalizeUserPreferences(preferencesInput)
+    }
+
+    if (Object.keys(updatePayload).length === 0) {
+      return res.status(400).json({ error: 'No settings updates provided' })
+    }
+
+    updatePayload.updated_at = new Date().toISOString()
+
+    const { data, error } = await supabase
+      .from('users')
+      .update(updatePayload)
+      .eq('id', req.authUser.id)
+      .select('id, email, full_name, active_workspace_id, onboarding_completed, preferences, updated_at')
+      .single()
+
+    if (error) throw error
+
+    res.json({
+      full_name: data.full_name ?? null,
+      email: data.email ?? null,
+      active_workspace_id: data.active_workspace_id ?? null,
+      onboarding_completed: Boolean(data.onboarding_completed),
+      preferences: normalizeUserPreferences(safeJson(data.preferences, {})),
+      updated_at: data.updated_at ?? null,
+    })
   } catch (error) {
     res.status(500).json({ error: error.message })
   }

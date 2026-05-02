@@ -64,7 +64,7 @@ const defaultPrefs: UserPreferences = {
   compactDensity: false,
 }
 
-const loadPreferences = (): UserPreferences => {
+const loadCachedPreferences = (): UserPreferences => {
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY)
     if (!raw) return defaultPrefs
@@ -78,8 +78,16 @@ const loadPreferences = (): UserPreferences => {
   }
 }
 
-const savePreferences = (prefs: UserPreferences) => {
+const saveCachedPreferences = (prefs: UserPreferences) => {
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(prefs))
+}
+
+const selectChevronStyle: CSSProperties = {
+  backgroundImage:
+    "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E\")",
+  backgroundRepeat: 'no-repeat',
+  backgroundPosition: 'right 0.8rem center',
+  backgroundSize: '14px 14px',
 }
 
 const ToggleField = ({
@@ -127,11 +135,12 @@ export const SettingsWindow = () => {
   const [activeSection, setActiveSection] = useState<SettingsSectionId>('account')
 
   const [preferences, setPreferences] = useState<UserPreferences>(defaultPrefs)
-  const [hasLoadedPrefs, setHasLoadedPrefs] = useState(false)
+  const [isLoadingSettings, setIsLoadingSettings] = useState(true)
   const [isSavingPrefs, setIsSavingPrefs] = useState(false)
   const [saveStatus, setSaveStatus] = useState<string | null>(null)
 
   const [fullName, setFullName] = useState('')
+  const [initialFullName, setInitialFullName] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [isUpdatingPassword, setIsUpdatingPassword] = useState(false)
@@ -153,18 +162,58 @@ export const SettingsWindow = () => {
   const [isSendingInvite, setIsSendingInvite] = useState(false)
 
   useEffect(() => {
-    setPreferences(loadPreferences())
-    setHasLoadedPrefs(true)
-  }, [])
+    const cachedPrefs = loadCachedPreferences()
+    setPreferences(cachedPrefs)
 
-  useEffect(() => {
-    const seedName = String(user?.user_metadata?.full_name ?? '').trim()
-    if (seedName) {
-      setFullName(seedName)
-      return
+    let cancelled = false
+
+    const loadSettings = async () => {
+      try {
+        const payload = await api.getUserSettings() as {
+          full_name?: string | null
+          preferences?: Partial<UserPreferences> | null
+        }
+
+        if (cancelled) return
+
+        const nextFullName = String(payload?.full_name ?? '').trim()
+        const nextPreferences = {
+          ...defaultPrefs,
+          ...(payload?.preferences ?? {}),
+        }
+
+        setPreferences(nextPreferences)
+        setFullName(nextFullName || (user?.user_metadata?.full_name as string | undefined)?.trim() || user?.email?.split('@')[0] || '')
+        setInitialFullName(nextFullName || (user?.user_metadata?.full_name as string | undefined)?.trim() || user?.email?.split('@')[0] || '')
+        saveCachedPreferences(nextPreferences)
+
+        const cachedLooksReal = JSON.stringify(cachedPrefs) !== JSON.stringify(defaultPrefs)
+        const serverLooksUnset = !payload?.preferences || Object.keys(payload.preferences).length === 0
+        if (cachedLooksReal && serverLooksUnset) {
+          await api.updateUserSettings({
+            full_name: nextFullName || null,
+            preferences: cachedPrefs,
+          })
+        }
+      } catch {
+        if (cancelled) return
+        setPreferences(cachedPrefs)
+        const seedName = String(user?.user_metadata?.full_name ?? '').trim() || user?.email?.split('@')[0] || ''
+        setFullName(seedName)
+        setInitialFullName(seedName)
+      } finally {
+        if (!cancelled) {
+          setIsLoadingSettings(false)
+        }
+      }
     }
-    setFullName(user?.email?.split('@')[0] ?? '')
-  }, [user?.email, user?.user_metadata?.full_name])
+
+    void loadSettings()
+
+    return () => {
+      cancelled = true
+    }
+  }, [api, user?.email, user?.user_metadata?.full_name])
 
   const firstName = useMemo(() => {
     const candidate = fullName.trim()
@@ -177,10 +226,29 @@ export const SettingsWindow = () => {
     setSaveStatus(null)
 
     try {
-      savePreferences(preferences)
-      setSaveStatus('Preferences saved.')
+      const nextFullName = fullName.trim() || null
+      const nextPreferences = {
+        ...preferences,
+      }
+
+      await api.updateUserSettings({
+        full_name: nextFullName,
+        preferences: nextPreferences,
+      })
+
+      if (String(nextFullName ?? '') !== initialFullName) {
+        try {
+          await authService.updateProfile(nextFullName)
+        } catch (authError) {
+          console.warn('Profile metadata sync failed', authError)
+        }
+      }
+
+      saveCachedPreferences(nextPreferences)
+      setInitialFullName(nextFullName ?? '')
+      setSaveStatus('Settings saved.')
     } catch {
-      setSaveStatus('Could not save preferences.')
+      setSaveStatus('Could not save settings.')
     } finally {
       setIsSavingPrefs(false)
     }
@@ -394,7 +462,7 @@ export const SettingsWindow = () => {
           </div>
           <div>
             <h1 className="text-[26px] leading-none font-semibold tracking-tight text-gray-900">Settings</h1>
-            <p className="text-xs text-gray-500 mt-1">Minimal defaults, accessible controls</p>
+            <p className="text-xs text-gray-500 mt-1">Defaults, accessible controls</p>
           </div>
         </div>
 
@@ -447,7 +515,7 @@ export const SettingsWindow = () => {
 
                   <div className="mt-5 space-y-4">
                     <div>
-                      <label htmlFor="settings-full-name" className="block text-sm font-medium text-gray-700 mb-2">Full name</label>
+                      <label htmlFor="settings-full-name" className="block text-sm font-medium text-gray-700 mb-2">Display name</label>
                       <input
                         id="settings-full-name"
                         value={fullName}
@@ -455,7 +523,7 @@ export const SettingsWindow = () => {
                         className="h-10 w-full rounded-xl border border-gray-200 bg-gray-50 px-3 text-sm text-gray-900 outline-none focus:border-gray-300 focus:ring-4 focus:ring-gray-100"
                         aria-describedby="settings-full-name-help"
                       />
-                      <p id="settings-full-name-help" className="mt-1 text-xs text-gray-500">Profile editing endpoint can be connected next.</p>
+                      <p id="settings-full-name-help" className="mt-1 text-xs text-gray-500">Used across the app in the header and sidebar.</p>
                     </div>
 
                     <div>
@@ -542,7 +610,8 @@ export const SettingsWindow = () => {
                         value={activeWorkspaceId ?? ''}
                         onChange={(e) => void handleSwitchWorkspace(e.target.value)}
                         disabled={isLoadingWorkspaces || isSwitchingWorkspace || workspaces.length === 0}
-                        className="h-10 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm text-gray-900 outline-none focus:border-gray-300 focus:ring-4 focus:ring-gray-100 disabled:opacity-60"
+                        className="h-10 w-full appearance-none rounded-xl border border-gray-200 bg-white px-3 pr-9 text-sm text-gray-900 outline-none focus:border-gray-300 focus:ring-4 focus:ring-gray-100 disabled:opacity-60"
+                        style={selectChevronStyle}
                       >
                         {workspaces.length === 0 && <option value="">No workspaces available</option>}
                         {workspaces.map((workspace) => (
@@ -590,7 +659,8 @@ export const SettingsWindow = () => {
                                 value={member.is_owner ? 'owner' : member.role}
                                 onChange={(e) => void handleUpdateMemberRole(member.user_id, e.target.value as 'admin' | 'member' | 'viewer')}
                                 disabled={!canEditRole || memberActionId === member.user_id}
-                                className="h-8 rounded-lg border border-gray-200 bg-white px-2 text-xs text-gray-800 outline-none disabled:opacity-60"
+                                className="h-8 appearance-none rounded-lg border border-gray-200 bg-white px-2 pr-8 text-xs text-gray-800 outline-none disabled:opacity-60"
+                                style={selectChevronStyle}
                                 aria-label={`Update ${displayName} role`}
                               >
                                 {member.is_owner ? (
@@ -634,7 +704,8 @@ export const SettingsWindow = () => {
                         value={inviteRole}
                         onChange={(e) => setInviteRole(e.target.value as 'admin' | 'member' | 'viewer')}
                         disabled={!canManageWorkspace || isSendingInvite}
-                        className="h-9 rounded-lg border border-gray-200 bg-gray-50 px-2 text-sm text-gray-900 outline-none focus:border-gray-300 focus:ring-4 focus:ring-gray-100 disabled:opacity-60"
+                        className="h-9 appearance-none rounded-lg border border-gray-200 bg-gray-50 px-2 pr-8 text-sm text-gray-900 outline-none focus:border-gray-300 focus:ring-4 focus:ring-gray-100 disabled:opacity-60"
+                        style={selectChevronStyle}
                         aria-label="Invite role"
                       >
                         <option value="member">member</option>
@@ -695,7 +766,8 @@ export const SettingsWindow = () => {
                         id="settings-week-start"
                         value={preferences.weekStartsOn}
                         onChange={(e) => setPreferences((prev) => ({ ...prev, weekStartsOn: e.target.value as 'sunday' | 'monday' }))}
-                        className="h-10 w-full rounded-xl border border-gray-200 bg-gray-50 px-3 text-sm text-gray-900 outline-none focus:border-gray-300 focus:ring-4 focus:ring-gray-100"
+                        className="h-10 w-full appearance-none rounded-xl border border-gray-200 bg-gray-50 px-3 pr-9 text-sm text-gray-900 outline-none focus:border-gray-300 focus:ring-4 focus:ring-gray-100"
+                        style={selectChevronStyle}
                       >
                         <option value="monday">Monday</option>
                         <option value="sunday">Sunday</option>
@@ -708,7 +780,8 @@ export const SettingsWindow = () => {
                         id="settings-time-format"
                         value={preferences.timeFormat}
                         onChange={(e) => setPreferences((prev) => ({ ...prev, timeFormat: e.target.value as '12h' | '24h' }))}
-                        className="h-10 w-full rounded-xl border border-gray-200 bg-gray-50 px-3 text-sm text-gray-900 outline-none focus:border-gray-300 focus:ring-4 focus:ring-gray-100"
+                        className="h-10 w-full appearance-none rounded-xl border border-gray-200 bg-gray-50 px-3 pr-9 text-sm text-gray-900 outline-none focus:border-gray-300 focus:ring-4 focus:ring-gray-100"
+                        style={selectChevronStyle}
                       >
                         <option value="12h">12-hour (2:00 PM)</option>
                         <option value="24h">24-hour (14:00)</option>
@@ -733,7 +806,8 @@ export const SettingsWindow = () => {
                           ...prev,
                           defaultEventMinutes: Number(e.target.value) as 30 | 45 | 60,
                         }))}
-                        className="h-10 w-full rounded-xl border border-gray-200 bg-gray-50 px-3 text-sm text-gray-900 outline-none focus:border-gray-300 focus:ring-4 focus:ring-gray-100"
+                        className="h-10 w-full appearance-none rounded-xl border border-gray-200 bg-gray-50 px-3 pr-9 text-sm text-gray-900 outline-none focus:border-gray-300 focus:ring-4 focus:ring-gray-100"
+                        style={selectChevronStyle}
                       >
                         <option value="30">30 minutes</option>
                         <option value="45">45 minutes</option>
@@ -750,7 +824,8 @@ export const SettingsWindow = () => {
                           ...prev,
                           reminderLeadMinutes: Number(e.target.value) as 5 | 10 | 15 | 30,
                         }))}
-                        className="h-10 w-full rounded-xl border border-gray-200 bg-gray-50 px-3 text-sm text-gray-900 outline-none focus:border-gray-300 focus:ring-4 focus:ring-gray-100"
+                        className="h-10 w-full appearance-none rounded-xl border border-gray-200 bg-gray-50 px-3 pr-9 text-sm text-gray-900 outline-none focus:border-gray-300 focus:ring-4 focus:ring-gray-100"
+                        style={selectChevronStyle}
                       >
                         <option value="5">5 minutes before</option>
                         <option value="10">10 minutes before</option>
@@ -800,20 +875,20 @@ export const SettingsWindow = () => {
                 </section>
               )}
 
-              <section className="rounded-2xl border border-gray-200 bg-white p-5">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <h2 className="text-sm font-semibold text-gray-900">Save settings</h2>
-                    <p className="mt-1 text-xs text-gray-600">Preferences are saved locally for now.</p>
+                <section className="rounded-2xl border border-gray-200 bg-white p-5">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <h2 className="text-sm font-semibold text-gray-900">Save settings</h2>
+                      <p className="mt-1 text-xs text-gray-600">Changes sync to your account and workspace defaults.</p>
+                    </div>
+                    <button
+                      onClick={() => void handleSavePrefs()}
+                      disabled={isLoadingSettings || isSavingPrefs}
+                      className="h-9 rounded-xl bg-gray-900 px-4 text-sm font-medium text-white transition hover:bg-gray-800 disabled:opacity-60"
+                    >
+                      {isSavingPrefs ? 'Saving...' : 'Save settings'}
+                    </button>
                   </div>
-                  <button
-                    onClick={() => void handleSavePrefs()}
-                    disabled={!hasLoadedPrefs || isSavingPrefs}
-                    className="h-9 rounded-xl bg-gray-900 px-4 text-sm font-medium text-white transition hover:bg-gray-800 disabled:opacity-60"
-                  >
-                    {isSavingPrefs ? 'Saving...' : 'Save preferences'}
-                  </button>
-                </div>
                 {saveStatus && (
                   <p className="mt-3 text-xs text-gray-700" role="status">{saveStatus}</p>
                 )}

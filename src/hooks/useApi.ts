@@ -82,6 +82,11 @@ export const useApi = () => {
     // User
     getOnboardingStatus: () => request('/api/user/onboarding'),
     completeOnboarding: () => request('/api/user/onboarding', { method: 'PATCH' }),
+    getUserSettings: () => request('/api/user/settings'),
+    updateUserSettings: (payload: { full_name?: string | null; preferences?: Record<string, unknown> }) => request('/api/user/settings', {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    }),
 
     // Workspaces
     getWorkspaces: () => request('/api/workspaces'),

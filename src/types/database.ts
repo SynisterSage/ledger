@@ -13,6 +13,7 @@ export type Database = {
           active_workspace_id: string | null
           onboarding_completed: boolean
           onboarding_completed_at: string | null
+          preferences: Record<string, unknown>
           created_at: string
           updated_at: string
         }
@@ -24,6 +25,7 @@ export type Database = {
           active_workspace_id?: string | null
           onboarding_completed?: boolean
           onboarding_completed_at?: string | null
+          preferences?: Record<string, unknown>
           created_at?: string
           updated_at?: string
         }
@@ -35,6 +37,7 @@ export type Database = {
           active_workspace_id?: string | null
           onboarding_completed?: boolean
           onboarding_completed_at?: string | null
+          preferences?: Record<string, unknown>
           updated_at?: string
         }
       }
