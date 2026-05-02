@@ -354,47 +354,16 @@ app.patch('/api/projects/:id', authMiddleware, rateLimit('write'), async (req, r
       update.completeness = Math.max(0, Math.min(100, Number(req.body.completeness)))
     }
 
-    let lastError = null
-    let updatedRow = null
+    const { data, error } = await supabase
+      .from('projects')
+      .update(update)
+      .eq('id', req.params.id)
+      .eq('workspace_id', workspaceId)
+      .select('id, name, status, completeness, created_at')
+      .single()
 
-    if (update.status) {
-      const semantic = normalizeProjectSemanticStatus(update.status)
-      const candidates = projectStatusAliases[semantic]
-
-      for (const candidate of candidates) {
-        const { data, error } = await supabase
-          .from('projects')
-          .update({ ...update, status: candidate })
-          .eq('id', req.params.id)
-          .eq('workspace_id', workspaceId)
-          .select('id, name, status, completeness, created_at')
-          .single()
-
-        if (!error) {
-          updatedRow = data
-          break
-        }
-
-        lastError = error
-      }
-    } else {
-      const { data, error } = await supabase
-        .from('projects')
-        .update(update)
-        .eq('id', req.params.id)
-        .eq('workspace_id', workspaceId)
-        .select('id, name, status, completeness, created_at')
-        .single()
-
-      if (error) {
-        lastError = error
-      } else {
-        updatedRow = data
-      }
-    }
-
-    if (!updatedRow) throw lastError ?? new Error('Project update failed')
-    res.json(updatedRow)
+    if (error) throw error
+    res.json(data)
   } catch (error) {
     res.status(500).json({ error: error.message })
   }

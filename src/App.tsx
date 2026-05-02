@@ -266,23 +266,8 @@ function DashboardContent() {
               <p className='text-xs uppercase tracking-[0.2em] text-gray-500'>Dashboard</p>
               <h2 className='mt-2 text-3xl font-semibold tracking-tight text-gray-900'>Good to see you, {firstName}</h2>
               <p className='mt-2 max-w-2xl text-sm leading-6 text-gray-600'>
-                {todayLabel}. Use Ledger to keep your day visible, your tasks honest, and your follow-through measurable.
+                {todayLabel}. What awaits you today?
               </p>
-            </div>
-            <div className='flex gap-2'>
-              <button
-                onClick={() => setState('expanded')}
-                className='rounded-full border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50'
-              >
-                Expand sidebar
-              </button>
-              <button
-                onClick={() => window.desktopWindow?.toggleModule('calendar')}
-                className='rounded-full bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800 inline-flex items-center gap-2'
-              >
-                Open calendar
-                <ArrowRight size={15} />
-              </button>
             </div>
           </div>
 
