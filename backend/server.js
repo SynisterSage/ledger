@@ -712,20 +712,6 @@ app.post('/api/workspaces', authMiddleware, rateLimit('write'), async (req, res)
       return res.status(400).json({ error: 'Workspace name is required' })
     }
 
-    if (isPersonal) {
-      const existingPersonal = await supabase
-        .from('workspaces')
-        .select('id')
-        .eq('owner_id', userId)
-        .eq('is_personal', true)
-        .maybeSingle()
-
-      if (existingPersonal.error) throw existingPersonal.error
-      if (existingPersonal.data?.id) {
-        return res.status(409).json({ error: 'Personal workspace already exists' })
-      }
-    }
-
     const insertResult = await supabase
       .from('workspaces')
       .insert({
@@ -758,6 +744,84 @@ app.post('/api/workspaces', authMiddleware, rateLimit('write'), async (req, res)
       workspace: insertResult.data,
       current_user_role: 'owner',
     })
+  } catch (error) {
+    res.status(error.statusCode || 500).json({ error: error.message })
+  }
+})
+
+app.patch('/api/workspaces/:workspaceId', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = String(req.params.workspaceId)
+    const access = await requireWorkspaceAccess(req.authUser.id, workspaceId, 'admin')
+    const name = String(req.body?.name ?? '').trim()
+    const description = String(req.body?.description ?? '').trim()
+
+    if (!name) {
+      return res.status(400).json({ error: 'Workspace name is required' })
+    }
+
+    const updated = await supabase
+      .from('workspaces')
+      .update({
+        name,
+        description: description || null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', workspaceId)
+      .select('id, name, description, is_personal, color, owner_id, created_at, updated_at')
+      .single()
+
+    if (updated.error) throw updated.error
+
+    await writeWorkspaceAuditLog({
+      workspaceId,
+      actorUserId: req.authUser.id,
+      action: 'workspace.updated',
+      targetType: 'workspace',
+      targetId: workspaceId,
+      metadata: {
+        name,
+        description: description || null,
+        actor_role: access.role,
+      },
+    })
+
+    res.json({
+      workspace_id: workspaceId,
+      workspace: updated.data,
+      current_user_role: access.role,
+    })
+  } catch (error) {
+    res.status(error.statusCode || 500).json({ error: error.message })
+  }
+})
+
+app.delete('/api/workspaces/:workspaceId', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = String(req.params.workspaceId)
+    const access = await requireWorkspaceAccess(req.authUser.id, workspaceId, 'owner')
+    const deletedWorkspace = access.workspace
+
+    const deleted = await supabase
+      .from('workspaces')
+      .delete()
+      .eq('id', workspaceId)
+
+    if (deleted.error) throw deleted.error
+
+    await writeWorkspaceAuditLog({
+      workspaceId,
+      actorUserId: req.authUser.id,
+      action: 'workspace.deleted',
+      targetType: 'workspace',
+      targetId: workspaceId,
+      metadata: {
+        name: deletedWorkspace.name,
+        is_personal: deletedWorkspace.is_personal,
+      },
+    })
+
+    res.json({ deleted_workspace_id: workspaceId })
   } catch (error) {
     res.status(error.statusCode || 500).json({ error: error.message })
   }

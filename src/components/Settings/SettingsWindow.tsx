@@ -153,6 +153,16 @@ export const SettingsWindow = () => {
   const [workspaceCreateType, setWorkspaceCreateType] = useState<'team' | 'personal'>('team')
   const [isCreatingWorkspace, setIsCreatingWorkspace] = useState(false)
   const [workspaceCreateStatus, setWorkspaceCreateStatus] = useState<string | null>(null)
+  const [isWorkspaceManageOpen, setIsWorkspaceManageOpen] = useState(false)
+  const [workspaceEditName, setWorkspaceEditName] = useState('')
+  const [workspaceEditDescription, setWorkspaceEditDescription] = useState('')
+  const [workspaceEditStatus, setWorkspaceEditStatus] = useState<string | null>(null)
+  const [workspaceEditError, setWorkspaceEditError] = useState<string | null>(null)
+  const [isSavingWorkspace, setIsSavingWorkspace] = useState(false)
+  const [workspaceDeleteConfirm, setWorkspaceDeleteConfirm] = useState('')
+  const [workspaceDeleteStatus, setWorkspaceDeleteStatus] = useState<string | null>(null)
+  const [workspaceDeleteError, setWorkspaceDeleteError] = useState<string | null>(null)
+  const [isDeletingWorkspace, setIsDeletingWorkspace] = useState(false)
   const [workspaceMembers, setWorkspaceMembers] = useState<WorkspaceMember[]>([])
   const [workspaceInvitations, setWorkspaceInvitations] = useState<WorkspaceInvitation[]>([])
   const [workspaceUserRole, setWorkspaceUserRole] = useState<WorkspaceRole>('member')
@@ -341,6 +351,72 @@ export const SettingsWindow = () => {
   }
 
   const canManageWorkspace = workspaceUserRole === 'owner' || workspaceUserRole === 'admin'
+
+  useEffect(() => {
+    if (!activeWorkspace) {
+      setWorkspaceEditName('')
+      setWorkspaceEditDescription('')
+      setWorkspaceDeleteConfirm('')
+      setIsWorkspaceManageOpen(false)
+      return
+    }
+
+    setWorkspaceEditName(activeWorkspace.name)
+    setWorkspaceEditDescription(activeWorkspace.description ?? '')
+    setWorkspaceDeleteConfirm('')
+    setIsWorkspaceManageOpen(false)
+  }, [activeWorkspace])
+
+  const handleUpdateWorkspace = async () => {
+    if (!activeWorkspaceId) return
+
+    const name = workspaceEditName.trim()
+    if (!name) {
+      setWorkspaceEditError('Workspace name is required')
+      return
+    }
+
+    setWorkspaceEditError(null)
+    setWorkspaceEditStatus(null)
+    setIsSavingWorkspace(true)
+
+    try {
+      await api.updateWorkspace(activeWorkspaceId, {
+        name,
+        description: workspaceEditDescription.trim() || null,
+      })
+      await refreshWorkspaces()
+      setWorkspaceEditStatus('Workspace details saved.')
+    } catch (err) {
+      setWorkspaceEditError(err instanceof Error ? err.message : 'Could not save workspace')
+    } finally {
+      setIsSavingWorkspace(false)
+    }
+  }
+
+  const handleDeleteWorkspace = async () => {
+    if (!activeWorkspaceId || !activeWorkspace) return
+
+    if (workspaceDeleteConfirm.trim() !== activeWorkspace.name.trim()) {
+      setWorkspaceDeleteError('Type the workspace name to confirm deletion.')
+      return
+    }
+
+    setWorkspaceDeleteError(null)
+    setWorkspaceDeleteStatus(null)
+    setIsDeletingWorkspace(true)
+
+    try {
+      await api.deleteWorkspace(activeWorkspaceId)
+      setWorkspaceDeleteStatus('Workspace deleted.')
+      setWorkspaceDeleteConfirm('')
+      await refreshWorkspaces()
+    } catch (err) {
+      setWorkspaceDeleteError(err instanceof Error ? err.message : 'Could not delete workspace')
+    } finally {
+      setIsDeletingWorkspace(false)
+    }
+  }
 
   useEffect(() => {
     if (activeSection !== 'workspace' || !activeWorkspaceId) return
@@ -564,7 +640,6 @@ export const SettingsWindow = () => {
                         className="h-10 w-full rounded-xl border border-gray-200 bg-gray-50 px-3 text-sm text-gray-900 outline-none focus:border-gray-300 focus:ring-4 focus:ring-gray-100"
                         aria-describedby="settings-full-name-help"
                       />
-                      <p id="settings-full-name-help" className="mt-1 text-xs text-gray-500">Used across the app in the header and sidebar.</p>
                     </div>
 
                     <div>
@@ -634,7 +709,7 @@ export const SettingsWindow = () => {
                         <p className="text-xs uppercase tracking-wider text-gray-500">Create workspace</p>
                         <h3 className="mt-1 text-sm font-semibold text-gray-900">Start a new place for Ledger data</h3>
                         <p className="mt-1 text-xs text-gray-600">
-                          Team workspaces can be shared with invites. Personal workspaces stay private to you.
+                          Team workspaces can be shared with invites. Personal workspaces stay private to you, and you can create more than one.
                         </p>
                       </div>
                       <span className="rounded-full border border-gray-200 bg-gray-50 px-2.5 py-1 text-[11px] font-medium text-gray-700">
@@ -675,7 +750,7 @@ export const SettingsWindow = () => {
                     <div className="mt-3 flex items-center justify-between gap-3">
                       <p className="text-xs text-gray-500">
                         {workspaceCreateType === 'personal'
-                          ? 'Use this for solo notes and private planning.'
+                          ? 'Use this for solo notes and private planning. You can create multiple personal workspaces.'
                           : 'Use this for shared projects, invites, and collaboration.'}
                       </p>
                       <button
@@ -709,14 +784,112 @@ export const SettingsWindow = () => {
                           This workspace keeps your dashboard, projects, calendar, notes, and settings separated from other teams.
                         </p>
                       </div>
-                      <button
-                        onClick={() => void refreshWorkspaces()}
-                        disabled={isLoadingWorkspaces || isSwitchingWorkspace}
-                        className="h-9 rounded-xl border border-gray-200 bg-white px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-100 disabled:opacity-60"
-                      >
-                        Refresh
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => void refreshWorkspaces()}
+                          disabled={isLoadingWorkspaces || isSwitchingWorkspace}
+                          className="h-9 rounded-xl border border-gray-200 bg-white px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-100 disabled:opacity-60"
+                        >
+                          Refresh
+                        </button>
+                        {canManageWorkspace ? (
+                          <button
+                            onClick={() => setIsWorkspaceManageOpen((prev) => !prev)}
+                            className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-gray-200 bg-white px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-100"
+                          >
+                            <Settings size={13} />
+                            {isWorkspaceManageOpen ? 'Close' : 'Manage'}
+                          </button>
+                        ) : (
+                          <span className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs font-medium text-gray-500">
+                            Managed by owner
+                          </span>
+                        )}
+                      </div>
                     </div>
+
+                    {isWorkspaceManageOpen && canManageWorkspace && (
+                      <div className="mt-3 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+                        <div className="flex items-center justify-between gap-3">
+                          <div>
+                            <p className="text-xs uppercase tracking-wider text-gray-500">Workspace management</p>
+                            <h3 className="mt-1 text-sm font-semibold text-gray-900">Edit details or delete</h3>
+                          </div>
+                          <button
+                            onClick={() => setIsWorkspaceManageOpen(false)}
+                            className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-1.5 text-xs font-medium text-gray-600 transition hover:bg-gray-100"
+                          >
+                            Done
+                          </button>
+                        </div>
+
+                        <div className="mt-3 grid gap-3 md:grid-cols-2">
+                          <div className="rounded-2xl border border-gray-200 bg-gray-50 p-3">
+                            <p className="text-xs font-medium uppercase tracking-wider text-gray-500">Details</p>
+                            <div className="mt-2 space-y-2">
+                              <input
+                                value={workspaceEditName}
+                                onChange={(e) => setWorkspaceEditName(e.target.value)}
+                                disabled={!canManageWorkspace || isSavingWorkspace}
+                                placeholder="Workspace name"
+                                className="h-10 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm text-gray-900 outline-none focus:border-gray-300 focus:ring-4 focus:ring-gray-100 disabled:opacity-60"
+                                aria-label="Edit workspace name"
+                              />
+                              <textarea
+                                value={workspaceEditDescription}
+                                onChange={(e) => setWorkspaceEditDescription(e.target.value)}
+                                disabled={!canManageWorkspace || isSavingWorkspace}
+                                placeholder="Optional description"
+                                className="min-h-20 w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 outline-none focus:border-gray-300 focus:ring-4 focus:ring-gray-100 disabled:opacity-60"
+                                aria-label="Edit workspace description"
+                              />
+                            </div>
+
+                            <div className="mt-3 flex items-center gap-2">
+                              <button
+                                onClick={() => void handleUpdateWorkspace()}
+                                disabled={!canManageWorkspace || isSavingWorkspace}
+                                className="h-9 rounded-xl bg-[#FF5F40] px-3 text-sm font-medium text-white transition hover:bg-[#ea5336] disabled:opacity-60"
+                              >
+                                {isSavingWorkspace ? 'Saving...' : 'Save'}
+                              </button>
+                              {workspaceEditStatus && <p className="text-xs text-green-700">{workspaceEditStatus}</p>}
+                            </div>
+
+                            {workspaceEditError && <p className="mt-2 text-xs text-red-700">{workspaceEditError}</p>}
+                          </div>
+
+                          <div className="rounded-2xl border border-gray-200 bg-gray-50 p-3">
+                            <p className="text-xs font-medium uppercase tracking-wider text-red-600">Delete</p>
+                            <p className="mt-2 text-xs leading-5 text-gray-600">
+                              Remove this workspace and everything inside it.
+                            </p>
+
+                            <input
+                              value={workspaceDeleteConfirm}
+                              onChange={(e) => setWorkspaceDeleteConfirm(e.target.value)}
+                              disabled={workspaceUserRole !== 'owner' || isDeletingWorkspace}
+                              placeholder={activeWorkspace?.name ?? 'Workspace name'}
+                              className="mt-3 h-10 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm text-gray-900 outline-none focus:border-gray-300 focus:ring-4 focus:ring-gray-100 disabled:opacity-60"
+                              aria-label="Confirm workspace deletion"
+                            />
+
+                            <div className="mt-3 flex items-center gap-2">
+                              <button
+                                onClick={() => void handleDeleteWorkspace()}
+                                disabled={workspaceUserRole !== 'owner' || isDeletingWorkspace || workspaceDeleteConfirm.trim() !== activeWorkspace?.name?.trim()}
+                                className="h-9 rounded-xl bg-red-600 px-3 text-sm font-medium text-white transition hover:bg-red-700 disabled:opacity-60"
+                              >
+                                {isDeletingWorkspace ? 'Deleting...' : 'Delete'}
+                              </button>
+                              {workspaceDeleteStatus && <p className="text-xs text-green-700">{workspaceDeleteStatus}</p>}
+                            </div>
+
+                            {workspaceDeleteError && <p className="mt-2 text-xs text-red-700">{workspaceDeleteError}</p>}
+                          </div>
+                        </div>
+                      </div>
+                    )}
 
                     <div className="mt-3">
                       <label htmlFor="settings-active-workspace" className="mb-2 block text-sm font-medium text-gray-700">Switch workspace</label>
@@ -742,15 +915,6 @@ export const SettingsWindow = () => {
                         {workspaceStatus || workspaceError}
                       </p>
                     )}
-
-                    <div className="mt-3 rounded-xl border border-dashed border-gray-200 bg-white p-3">
-                      <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">What changes when you switch</p>
-                      <ul className="mt-2 space-y-1 text-xs leading-5 text-gray-600">
-                        <li>• You see that workspace's notes, projects, events, reminders, tasks, and categories.</li>
-                        <li>• Members and invitations are scoped to the selected workspace.</li>
-                        <li>• There are no nested folders or sub-workspaces yet, so workspace is the top-level boundary.</li>
-                      </ul>
-                    </div>
                   </div>
 
                   <div className="mt-4 rounded-2xl border border-gray-200 bg-white p-4">

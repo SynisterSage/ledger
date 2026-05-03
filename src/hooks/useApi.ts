@@ -109,6 +109,13 @@ export const useApi = () => {
       method: 'POST',
       body: JSON.stringify(payload),
     }),
+    updateWorkspace: (workspaceId: string, payload: { name?: string; description?: string | null }) => request(`/api/workspaces/${workspaceId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    }),
+    deleteWorkspace: (workspaceId: string) => request(`/api/workspaces/${workspaceId}`, {
+      method: 'DELETE',
+    }),
     createWorkspaceInvitation: (workspaceId: string, payload: { email: string; role?: 'admin' | 'member' | 'viewer' }) => request(`/api/workspaces/${workspaceId}/invitations`, {
       method: 'POST',
       body: JSON.stringify(payload),
