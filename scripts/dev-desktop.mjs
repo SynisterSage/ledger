@@ -1,12 +1,9 @@
 import { spawn } from 'node:child_process'
-import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url))
-const nodeCommand = process.execPath
-const launcherPath = path.join(__dirname, 'dev-web.mjs')
+const viteEntry = path.join(process.cwd(), 'node_modules', 'vite', 'bin', 'vite.js')
 
-const child = spawn(nodeCommand, [launcherPath], {
+const child = spawn(process.execPath, [viteEntry, '--host', '127.0.0.1', '--port', '5173'], {
   stdio: 'inherit',
   env: {
     ...process.env,
@@ -25,7 +22,7 @@ process.on('SIGINT', () => exit(0))
 process.on('SIGTERM', () => exit(0))
 
 child.on('error', (error) => {
-  console.error('[dev:desktop] Failed to start launcher:', error)
+  console.error('[dev:desktop] Failed to start Vite:', error)
   exit(1)
 })
 

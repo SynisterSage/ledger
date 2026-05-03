@@ -1,16 +1,13 @@
 import { spawn } from 'node:child_process'
-import { createRequire } from 'node:module'
 import path from 'node:path'
 
-const require = createRequire(import.meta.url)
-const viteEntry = path.join(path.dirname(require.resolve('vite')), 'bin', 'vite.js')
-const launchElectron = process.env.VITE_LAUNCH_ELECTRON ?? '0'
+const viteEntry = path.join(process.cwd(), 'node_modules', 'vite', 'bin', 'vite.js')
 
 const child = spawn(process.execPath, [viteEntry, '--host', '127.0.0.1', '--port', '5173'], {
   stdio: 'inherit',
   env: {
     ...process.env,
-    VITE_LAUNCH_ELECTRON: launchElectron,
+    VITE_LAUNCH_ELECTRON: '0',
   },
 })
 
