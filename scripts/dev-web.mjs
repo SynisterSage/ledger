@@ -1,15 +1,13 @@
 import { spawn } from 'node:child_process'
-import { createRequire } from 'node:module'
 
-const devServerUrl = process.env.VITE_DEV_SERVER_URL || 'http://127.0.0.1:5173/'
-const require = createRequire(import.meta.url)
-const electronBinary = require('electron')
+const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm'
+const launchElectron = process.env.VITE_LAUNCH_ELECTRON ?? '0'
 
-const child = spawn(electronBinary, ['.'], {
+const child = spawn(npmCommand, ['exec', 'vite', '--', '--host', '127.0.0.1', '--port', '5173'], {
   stdio: 'inherit',
   env: {
     ...process.env,
-    VITE_DEV_SERVER_URL: devServerUrl,
+    VITE_LAUNCH_ELECTRON: launchElectron,
   },
 })
 
@@ -24,7 +22,7 @@ process.on('SIGINT', () => exit(0))
 process.on('SIGTERM', () => exit(0))
 
 child.on('error', (error) => {
-  console.error('[dev:electron] Failed to start Electron:', error)
+  console.error('[dev:web] Failed to start Vite:', error)
   exit(1)
 })
 

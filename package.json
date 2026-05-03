@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "npm run dev:desktop",
-    "dev:web": "vite --host 127.0.0.1 --port 5173",
+    "dev:web": "node scripts/dev-web.mjs",
     "dev:electron": "node scripts/dev-electron.mjs",
     "dev:desktop": "node scripts/dev-desktop.mjs",
     "build": "tsc && vite build && electron-builder",
