@@ -2,7 +2,7 @@ import { useMemo } from 'react'
 import { useAuthContext } from '../context/AuthContext'
 import { useWorkspaceContext } from '../context/WorkspaceContext'
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000'
+const API_URL = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? 'https://ledger-backend-buq8.onrender.com' : 'http://localhost:3000')
 
 type ApiRequestOptions = RequestInit & {
   skipJson?: boolean
