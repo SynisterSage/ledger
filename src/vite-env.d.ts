@@ -17,6 +17,11 @@ interface ImportMeta {
 }
 
 interface Window {
+  __LEDGER_RUNTIME__?: {
+    apiUrl?: string
+    supabaseUrl?: string
+    supabasePublishableKey?: string
+  }
   desktopWindow?: {
     setMode: (mode: SidebarWindowMode) => Promise<void>
     toggleModule: (kind: ModuleWindowKind, focus?: string | ModuleFocusPayload) => Promise<void>

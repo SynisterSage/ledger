@@ -1,5 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import { useAuthContext } from './AuthContext'
+import { DEFAULT_API_URL } from '../config/runtime'
 
 type WorkspaceRole = 'owner' | 'admin' | 'member' | 'viewer'
 
@@ -27,7 +28,7 @@ type WorkspaceContextType = {
 
 const WorkspaceContext = createContext<WorkspaceContextType | undefined>(undefined)
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000'
+const API_URL = import.meta.env.VITE_API_URL?.trim() || DEFAULT_API_URL
 const WORKSPACE_STORAGE_KEY = 'ledger:active-workspace-id'
 
 export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {

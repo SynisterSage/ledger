@@ -58,6 +58,16 @@ function lockWindowZoom(win: BrowserWindow) {
   })
 }
 
+function setWindowButtonVisibility(win: BrowserWindow, visible: boolean) {
+  const setter = (win as BrowserWindow & {
+    setWindowButtonVisibility?: (visible: boolean) => void
+  }).setWindowButtonVisibility
+
+  if (typeof setter === 'function') {
+    setter.call(win, visible)
+  }
+}
+
 function getDockedBounds(width: number) {
   const { x, y, width: workWidth, height: workHeight } = screen.getPrimaryDisplay().workArea
   return {
@@ -108,7 +118,7 @@ function applySidebarWindowMode(mode: SidebarWindowMode) {
     const bounds = getCenteredBounds(DASHBOARD_WIDTH, DASHBOARD_HEIGHT)
     sidebarWin.setAlwaysOnTop(false)
     sidebarWin.setResizable(true)
-    sidebarWin.setWindowButtonVisibility(true)
+    setWindowButtonVisibility(sidebarWin, true)
     sidebarWin.setBounds(bounds, false)
     return
   }
@@ -117,7 +127,7 @@ function applySidebarWindowMode(mode: SidebarWindowMode) {
     const bounds = getCenteredBounds(AUTH_WIDTH, AUTH_HEIGHT)
     sidebarWin.setAlwaysOnTop(false)
     sidebarWin.setResizable(false)
-    sidebarWin.setWindowButtonVisibility(true)
+    setWindowButtonVisibility(sidebarWin, true)
     sidebarWin.setBounds(bounds, false)
     return
   }
@@ -126,7 +136,7 @@ function applySidebarWindowMode(mode: SidebarWindowMode) {
   const bounds = getDockedBounds(width)
   sidebarWin.setAlwaysOnTop(true, 'screen-saver')
   sidebarWin.setResizable(false)
-  sidebarWin.setWindowButtonVisibility(false)
+  setWindowButtonVisibility(sidebarWin, false)
   sidebarWin.setBounds(bounds, false)
 }
 
@@ -173,9 +183,6 @@ function createSidebarWindow() {
     const rendererUrl = VITE_DEV_SERVER_URL
       ? VITE_DEV_SERVER_URL
       : `file://${path.join(RENDERER_DIST, 'index.html')}`
-    console.log('[electron] Sidebar will load renderer URL:', rendererUrl)
-    console.log('[electron] env VITE_API_URL:', process.env.VITE_API_URL)
-    console.log('[electron] env NODE_ENV:', process.env.NODE_ENV)
     if (VITE_DEV_SERVER_URL) {
       // In dev, open DevTools automatically to capture renderer console logs
       void sidebarWin.webContents.openDevTools({ mode: 'detach' })

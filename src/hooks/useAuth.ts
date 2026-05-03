@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import type { User, Session } from '@supabase/supabase-js'
 import { authService } from '../services/auth'
+import { supabaseConfigError } from '../services/supabase'
 
 export interface UseAuthReturn {
   user: User | null
@@ -23,8 +24,8 @@ export const useAuth = (): UseAuthReturn => {
   useEffect(() => {
     let isMounted = true
 
-    if (!authService.isConfigured) {
-      setError(new Error('Missing Supabase credentials. Please check your environment configuration.'))
+    if (!authService.isConfigured || supabaseConfigError) {
+      setError(supabaseConfigError || new Error('Missing Supabase credentials. Please check your environment configuration.'))
       setIsLoading(false)
       return () => {
         isMounted = false
