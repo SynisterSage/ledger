@@ -178,14 +178,11 @@ function createSidebarWindow() {
     applySidebarWindowMode('minimized')
   })
 
-  // Log renderer URL and important env vars for debugging (helps on Windows)
   try {
     const rendererUrl = VITE_DEV_SERVER_URL
       ? VITE_DEV_SERVER_URL
       : `file://${path.join(RENDERER_DIST, 'index.html')}`
     if (VITE_DEV_SERVER_URL) {
-      // In dev, open DevTools automatically to capture renderer console logs
-      void sidebarWin.webContents.openDevTools({ mode: 'detach' })
       sidebarWin.loadURL(rendererUrl)
     } else {
       sidebarWin.loadFile(path.join(RENDERER_DIST, 'index.html'))
@@ -260,10 +257,6 @@ function openModuleWindow(kind: ModuleWindowKind, focusDate?: string | null, foc
   moduleWin.webContents.once('did-finish-load', () => sendModuleFocus(kind, focusDate, focusProjectId))
   try {
     const moduleUrl = getRendererUrl(`?window=module&module=${kind}${focusDateQuery}${focusProjectQuery}`)
-    console.log('[electron] Module window loading URL:', moduleUrl)
-    if (VITE_DEV_SERVER_URL) {
-      void moduleWin.webContents.openDevTools({ mode: 'detach' })
-    }
     moduleWin.loadURL(moduleUrl)
   } catch (err) {
     console.error('[electron] Error while loading module renderer:', err)

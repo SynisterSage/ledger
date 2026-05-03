@@ -53,6 +53,7 @@ function AuthStatusScreen({ title, subtitle }: { title: string; subtitle: string
 // Dashboard content component
 function DashboardContent() {
   const { user } = useAuthContext()
+  const { activeWorkspace } = useWorkspaceContext()
   const api = useApi()
   const { state, setState } = useSidebar()
   const todayTasksRef = useRef<HTMLElement | null>(null)
@@ -272,7 +273,16 @@ function DashboardContent() {
                 </div>
                 <div>
                   <p className='text-xs text-gray-500'>Workspace</p>
-                  <h1 className='text-lg font-semibold text-gray-900 mt-0.5'>My Work</h1>
+                  <div className='mt-0.5 flex items-center gap-2'>
+                    <h1 className='text-lg font-semibold text-gray-900'>
+                      {activeWorkspace?.name ?? 'My Work'}
+                    </h1>
+                    {activeWorkspace && (
+                      <span className='rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.18em] text-gray-500'>
+                        {activeWorkspace.is_personal ? 'Personal' : activeWorkspace.role}
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
             </>

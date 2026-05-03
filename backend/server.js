@@ -700,6 +700,69 @@ app.get('/api/workspaces', authMiddleware, rateLimit('read'), async (req, res) =
   }
 })
 
+app.post('/api/workspaces', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const userId = req.authUser.id
+    const name = String(req.body?.name ?? '').trim()
+    const description = String(req.body?.description ?? '').trim()
+    const isPersonal = Boolean(req.body?.is_personal)
+    const color = String(req.body?.color ?? '').trim() || '#007AFF'
+
+    if (!name) {
+      return res.status(400).json({ error: 'Workspace name is required' })
+    }
+
+    if (isPersonal) {
+      const existingPersonal = await supabase
+        .from('workspaces')
+        .select('id')
+        .eq('owner_id', userId)
+        .eq('is_personal', true)
+        .maybeSingle()
+
+      if (existingPersonal.error) throw existingPersonal.error
+      if (existingPersonal.data?.id) {
+        return res.status(409).json({ error: 'Personal workspace already exists' })
+      }
+    }
+
+    const insertResult = await supabase
+      .from('workspaces')
+      .insert({
+        owner_id: userId,
+        name,
+        description: description || null,
+        is_personal: isPersonal,
+        color,
+      })
+      .select('id, name, description, is_personal, color, owner_id, created_at, updated_at')
+      .single()
+
+    if (insertResult.error) throw insertResult.error
+
+    await setUserActiveWorkspaceId(userId, insertResult.data.id)
+    await writeWorkspaceAuditLog({
+      workspaceId: insertResult.data.id,
+      actorUserId: userId,
+      action: 'workspace.created',
+      targetType: 'workspace',
+      targetId: insertResult.data.id,
+      metadata: {
+        name,
+        is_personal: isPersonal,
+      },
+    })
+
+    res.status(201).json({
+      workspace_id: insertResult.data.id,
+      workspace: insertResult.data,
+      current_user_role: 'owner',
+    })
+  } catch (error) {
+    res.status(error.statusCode || 500).json({ error: error.message })
+  }
+})
+
 app.get('/api/workspaces/active', authMiddleware, rateLimit('read'), async (req, res) => {
   try {
     const activeWorkspaceId = await resolveWorkspaceIdForRequest(req)

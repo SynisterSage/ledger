@@ -1,4 +1,4 @@
-import { Plus, Trash2, Copy } from 'lucide-react'
+import { Plus, Trash2, Copy, Maximize2, Minimize2 } from 'lucide-react'
 import { useState, useCallback, useMemo, useEffect, useRef } from 'react'
 
 type MindMapNode = {
@@ -20,6 +20,8 @@ type MindMapStructure = {
 interface MindMapEditorProps {
   structure: unknown
   onChange: (structure: MindMapStructure) => void
+  isFullscreen?: boolean
+  onToggleFullscreen?: () => void
 }
 
 const defaultStructure: MindMapStructure = {
@@ -35,7 +37,7 @@ const defaultStructure: MindMapStructure = {
   rootId: 'root-1',
 }
 
-export const MindMapEditor: React.FC<MindMapEditorProps> = ({ structure, onChange }) => {
+export const MindMapEditor: React.FC<MindMapEditorProps> = ({ structure, onChange, isFullscreen, onToggleFullscreen }) => {
   const initialStructure = useMemo(() => {
     if (structure && typeof structure === 'object' && 'nodes' in structure) {
       return structure as MindMapStructure
@@ -56,6 +58,7 @@ export const MindMapEditor: React.FC<MindMapEditorProps> = ({ structure, onChang
   const [menuOpen, setMenuOpen] = useState(false)
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; nodeId: string | null } | null>(null)
   const containerRef = useRef<HTMLDivElement | null>(null)
+  const mapViewportRef = useRef<HTMLDivElement | null>(null)
   const contextMenuRef = useRef<HTMLDivElement | null>(null)
   const svgRef = useRef<SVGSVGElement | null>(null)
   const panStateRef = useRef<{
@@ -68,10 +71,30 @@ export const MindMapEditor: React.FC<MindMapEditorProps> = ({ structure, onChang
   const menuRef = useRef<HTMLDivElement | null>(null)
   const [toastMessage, setToastMessage] = useState<string | null>(null)
   const toastTimerRef = useRef<number | null>(null)
-  const canvasWidth = 800
-  const canvasHeight = 500
-  const centerX = canvasWidth / 2
-  const centerY = canvasHeight / 2
+  const [viewportSize, setViewportSize] = useState({ width: 0, height: 0 })
+  const sceneWidth = viewportSize.width > 0 ? viewportSize.width : 800
+  const sceneHeight = viewportSize.height > 0 ? viewportSize.height : 500
+  const isTiny = sceneWidth > 0 && sceneWidth < 560
+  const isCompact = sceneWidth > 0 && sceneWidth < 760
+  const centerX = sceneWidth / 2
+  const centerY = sceneHeight / 2
+
+  useEffect(() => {
+    const element = mapViewportRef.current
+    if (!element) return
+
+    const updateViewportSize = () => setViewportSize({ width: element.clientWidth, height: element.clientHeight })
+    updateViewportSize()
+
+    if (typeof ResizeObserver === 'undefined') {
+      return
+    }
+
+    const observer = new ResizeObserver(() => updateViewportSize())
+    observer.observe(element)
+
+    return () => observer.disconnect()
+  }, [])
 
   const updateStructure = useCallback(
     (newNodes: typeof nodes) => {
@@ -111,8 +134,8 @@ export const MindMapEditor: React.FC<MindMapEditorProps> = ({ structure, onChang
       const node = sourceNodes[nodeId]
       if (!node) return
 
-      const baseRadius = 110
-      const ringGap = 92
+      const baseRadius = isTiny ? 74 : isCompact ? 92 : 112
+      const ringGap = isTiny ? 58 : isCompact ? 76 : 92
       const radius = depth === 0 ? 0 : baseRadius + (depth - 1) * ringGap
       nextNodes[nodeId] = {
         ...nextNodes[nodeId],
@@ -148,7 +171,8 @@ export const MindMapEditor: React.FC<MindMapEditorProps> = ({ structure, onChang
 
     setPosition(rootId, 0, -Math.PI / 2, Math.PI * 2)
 
-    const maxRadius = Math.min(canvasWidth, canvasHeight) / 2 - 110
+    const fitPadding = isTiny ? 70 : isCompact ? 88 : 110
+    const maxRadius = Math.max(80, Math.min(sceneWidth, sceneHeight) / 2 - fitPadding)
     const currentMax = Math.max(...Object.values(nextNodes).map((node) => Math.hypot(node.x, node.y)), 1)
     const scale = Math.min(1, maxRadius / currentMax)
 
@@ -173,13 +197,13 @@ export const MindMapEditor: React.FC<MindMapEditorProps> = ({ structure, onChang
     const parentId = nodeId ?? selectedNodeId
     if (!parentId) return
 
-    const newNodeId = `node-${Date.now()}`
-    const parent = nodes[parentId]
-    if (!parent) return
+      const newNodeId = `node-${Date.now()}`
+      const parent = nodes[parentId]
+      if (!parent) return
 
     const angleOptions = [0, -Math.PI / 4, Math.PI / 4, Math.PI / 2, -Math.PI / 2, (3 * Math.PI) / 4, (-3 * Math.PI) / 4, Math.PI]
     const angle = angleOptions[parent.children.length % angleOptions.length]
-    const distance = parentId === rootId ? 200 : 160
+    const distance = Math.max(120, Math.min(sceneWidth, sceneHeight) * (parentId === rootId ? 0.26 : 0.2))
     const newNode: MindMapNode = {
       id: newNodeId,
       label: 'New Idea',
@@ -194,7 +218,7 @@ export const MindMapEditor: React.FC<MindMapEditorProps> = ({ structure, onChang
     const nextNodes = { ...nodes, [newNodeId]: newNode, [parentId]: updatedParent }
     updateStructure(nextNodes)
     setSelectedNodeId(newNodeId)
-  }, [selectedNodeId, nodes, rootId, updateStructure])
+  }, [selectedNodeId, nodes, rootId, updateStructure, sceneWidth, sceneHeight])
 
   const handleAddSibling = useCallback(
     (nodeId?: string) => {
@@ -210,7 +234,7 @@ export const MindMapEditor: React.FC<MindMapEditorProps> = ({ structure, onChang
 
       const newNodeId = `node-${Date.now()}`
       const siblingIndex = parent.children.indexOf(targetId)
-      const spacing = 88
+      const spacing = Math.max(72, Math.min(sceneWidth, sceneHeight) * 0.14)
       const newNode: MindMapNode = {
         id: newNodeId,
         label: 'New Sibling',
@@ -232,7 +256,7 @@ export const MindMapEditor: React.FC<MindMapEditorProps> = ({ structure, onChang
       setContextMenu(null)
       showToast('Sibling added')
     },
-    [selectedNodeId, rootId, nodes, getParentId, updateStructure, showToast]
+    [selectedNodeId, rootId, nodes, getParentId, updateStructure, showToast, sceneWidth, sceneHeight]
   )
 
   const handleDuplicateBranch = useCallback(
@@ -456,8 +480,9 @@ export const MindMapEditor: React.FC<MindMapEditorProps> = ({ structure, onChang
       const node = nodes[draggingNodeId]
       if (!node) return
 
-      const dx = event.movementX / zoom
-      const dy = event.movementY / zoom
+      const layoutScale = zoom
+      const dx = event.movementX / layoutScale
+      const dy = event.movementY / layoutScale
       handleNodeDrag(draggingNodeId, dx, dy)
     }
 
@@ -576,6 +601,8 @@ export const MindMapEditor: React.FC<MindMapEditorProps> = ({ structure, onChang
     showToast('Mind map reset')
   }, [rootId, updateStructure, showToast])
 
+  const canToggleFullscreen = typeof onToggleFullscreen === 'function'
+
   useEffect(() => {
     const handleOutsideClick = (e: MouseEvent) => {
       const target = e.target as Node
@@ -598,8 +625,11 @@ export const MindMapEditor: React.FC<MindMapEditorProps> = ({ structure, onChang
     const isSelected = selectedNodeId === nodeId
     const isEditing = editingNodeId === nodeId
     const isRoot = nodeId === rootId
-    const nodeWidth = Math.max(isRoot ? 120 : 104, Math.min(162, 44 + node.label.length * 6))
-    const nodeHeight = isRoot ? 54 : 46
+    const nodeWidth = Math.max(
+      isRoot ? 120 : isTiny ? 96 : 104,
+      Math.min(isTiny ? 144 : 162, 42 + node.label.length * (isTiny ? 5 : 6))
+    )
+    const nodeHeight = isRoot ? 54 : isTiny ? 42 : 46
     const fill = isSelected ? '#FF5F40' : node.color || (isRoot ? '#fff4ef' : '#ffffff')
     const stroke = isSelected ? '#ea5336' : isRoot ? '#ffc8bc' : '#d1d5db'
 
@@ -732,125 +762,263 @@ export const MindMapEditor: React.FC<MindMapEditorProps> = ({ structure, onChang
   }
 
   return (
-    <div ref={containerRef} className="relative w-full h-full flex flex-col bg-gray-50 rounded-lg border border-gray-200">
-      <div className="flex items-center gap-2 px-4 py-3 border-b border-gray-200 bg-white">
-        <button
-          onClick={() => handleAddChild()}
-          disabled={!selectedNodeId}
-          className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium bg-[#FF5F40] text-white rounded-lg hover:bg-[#ea5336] disabled:opacity-50 disabled:cursor-not-allowed transition"
-          title="Ctrl+N"
-        >
-          <Plus size={14} />
-          Add
-        </button>
-        <button
-          onClick={() => handleDeleteNode()}
-          disabled={!selectedNodeId || selectedNodeId === rootId}
-          className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium bg-red-50 text-red-700 rounded-lg hover:bg-red-100 disabled:opacity-50 disabled:cursor-not-allowed transition"
-          title="Delete"
-        >
-          <Trash2 size={14} />
-        </button>
-
-        <button
-          onClick={reflowLayout}
-          className="px-3 py-1.5 text-xs font-medium bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition"
-          title="Arrange nodes"
-        >
-          Arrange
-        </button>
-
-        {selectedNodeId && (
-          <div className="flex items-center gap-1">
-            <div className="flex gap-1">
-              {nodeColors.map((color, idx) => (
-                <button
-                  key={color}
-                  onClick={() => handleChangeNodeColor(selectedNodeId, color)}
-                  className="w-5 h-5 rounded border-2 hover:shadow-md transition"
-                  style={{
-                    backgroundColor: color,
-                    borderColor:
-                      nodes[selectedNodeId]?.color === color ? '#FF5F40' : '#d1d5db',
-                  }}
-                  title={nodeColorLabels[idx]}
-                />
-              ))}
+    <div ref={containerRef} className="relative flex h-full min-h-0 w-full flex-col overflow-hidden rounded-lg border border-gray-200 bg-gray-50">
+      {isCompact ? (
+        <div className="border-b border-gray-200 bg-white px-3 py-2">
+          <div className="flex items-center gap-2">
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
+              <button
+                onClick={() => handleAddChild()}
+                disabled={!selectedNodeId}
+                className="flex items-center gap-1 rounded-lg bg-[#FF5F40] px-2.5 py-1.5 text-xs font-medium text-white transition hover:bg-[#ea5336] disabled:cursor-not-allowed disabled:opacity-50"
+                title="Ctrl+N"
+              >
+                <Plus size={14} />
+                <span>Add</span>
+              </button>
+              <button
+                onClick={() => handleDeleteNode()}
+                disabled={!selectedNodeId || selectedNodeId === rootId}
+                className="flex items-center gap-1 rounded-lg bg-red-50 px-2.5 py-1.5 text-xs font-medium text-red-700 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
+                title="Delete"
+              >
+                <Trash2 size={14} />
+              </button>
+              <button
+                onClick={reflowLayout}
+                className="rounded-lg bg-gray-100 px-2.5 py-1.5 text-xs font-medium text-gray-700 transition hover:bg-gray-200"
+                title="Arrange nodes"
+              >
+                Arrange
+              </button>
             </div>
-            <select
-              value={nodes[selectedNodeId]?.group ?? 'Ungrouped'}
-              onChange={(e) => handleAssignGroup(e.target.value)}
-              className="ml-2 px-2 py-1 text-xs border border-gray-200 rounded bg-white text-gray-700"
-            >
-              {availableGroups.map((group) => (
-                <option key={group} value={group}>
-                  {group}
-                </option>
-              ))}
-            </select>
-          </div>
-        )}
 
-        <div className="ml-auto flex items-center gap-2">
-          <button
-            onClick={() => setZoom(Math.max(0.5, zoom - 0.1))}
-            className="px-2 py-1 text-xs font-medium bg-gray-100 text-gray-700 rounded hover:bg-gray-200"
-          >
-            −
-          </button>
-          <span className="text-xs font-medium text-gray-600 w-12 text-center">{Math.round(zoom * 100)}%</span>
-          <button
-            onClick={() => setZoom(Math.min(2, zoom + 0.1))}
-            className="px-2 py-1 text-xs font-medium bg-gray-100 text-gray-700 rounded hover:bg-gray-200"
-          >
-            +
-          </button>
-
-          <div className="relative" ref={menuRef}>
-            <button
-              onClick={() => {
-                setContextMenu(null)
-                setMenuOpen((s) => !s)
-              }}
-              className="px-2 py-1 text-xs font-medium bg-gray-100 text-gray-700 rounded hover:bg-gray-200"
-              aria-expanded={menuOpen}
-              aria-haspopup="true"
-            >
-              ⋯
-            </button>
-            {menuOpen && (
-              <div className="absolute right-0 mt-1 w-40 bg-white border border-gray-200 rounded-lg shadow-lg transition z-10">
+            <div className="ml-auto flex items-center gap-1 shrink-0">
+              <button
+                onClick={() => setZoom(Math.max(0.5, zoom - 0.1))}
+                className="h-8 w-8 rounded bg-gray-100 text-xs font-medium text-gray-700 hover:bg-gray-200"
+              >
+                −
+              </button>
+              <span className="w-11 text-center text-xs font-medium text-gray-600">{Math.round(zoom * 100)}%</span>
+              <button
+                onClick={() => setZoom(Math.min(2, zoom + 0.1))}
+                className="h-8 w-8 rounded bg-gray-100 text-xs font-medium text-gray-700 hover:bg-gray-200"
+              >
+                +
+              </button>
+              <div className="relative" ref={menuRef}>
                 <button
-                  onClick={resetMindMap}
-                  className="w-full text-left px-3 py-2 text-xs hover:bg-gray-50 first:rounded-t-lg text-red-600"
+                  onClick={() => {
+                    setContextMenu(null)
+                    setMenuOpen((s) => !s)
+                  }}
+                  className="h-8 w-8 rounded bg-gray-100 text-xs font-medium text-gray-700 hover:bg-gray-200"
+                  aria-expanded={menuOpen}
+                  aria-haspopup="true"
                 >
-                  Reset mind map
+                  ⋯
                 </button>
-                <div className="border-t border-gray-100" />
-                <button
-                  onClick={exportAsJSON}
-                  className="w-full text-left px-3 py-2 text-xs hover:bg-gray-50"
-                >
-                  Export as JSON
-                </button>
-                <button
-                  onClick={exportAsMarkdown}
-                  className="w-full text-left px-3 py-2 text-xs hover:bg-gray-50"
-                >
-                  Export as Markdown
-                </button>
-                <button
-                  onClick={copyAsMarkdown}
-                  className="w-full text-left px-3 py-2 text-xs hover:bg-gray-50 last:rounded-b-lg flex items-center gap-1"
-                >
-                  <Copy size={12} />
-                  Copy as Markdown
-                </button>
+                {menuOpen && (
+                  <div className="absolute right-0 mt-1 w-40 bg-white border border-gray-200 rounded-lg shadow-lg transition z-10">
+                    {canToggleFullscreen && (
+                      <>
+                        <button
+                          onClick={() => {
+                            onToggleFullscreen?.()
+                            setMenuOpen(false)
+                          }}
+                          className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs hover:bg-gray-50 first:rounded-t-lg"
+                        >
+                          {isFullscreen ? <Minimize2 size={12} /> : <Maximize2 size={12} />}
+                          {isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
+                        </button>
+                        <div className="border-t border-gray-100" />
+                      </>
+                    )}
+                    <button
+                      onClick={resetMindMap}
+                      className="w-full text-left px-3 py-2 text-xs hover:bg-gray-50 first:rounded-t-lg text-red-600"
+                    >
+                      Reset mind map
+                    </button>
+                    <div className="border-t border-gray-100" />
+                    <button
+                      onClick={exportAsJSON}
+                      className="w-full text-left px-3 py-2 text-xs hover:bg-gray-50"
+                    >
+                      Export as JSON
+                    </button>
+                    <button
+                      onClick={exportAsMarkdown}
+                      className="w-full text-left px-3 py-2 text-xs hover:bg-gray-50"
+                    >
+                      Export as Markdown
+                    </button>
+                    <button
+                      onClick={copyAsMarkdown}
+                      className="last:rounded-b-lg flex w-full items-center gap-1 px-3 py-2 text-left text-xs hover:bg-gray-50"
+                    >
+                      <Copy size={12} />
+                      Copy as Markdown
+                    </button>
+                  </div>
+                )}
               </div>
-            )}
+            </div>
+          </div>
+
+          {selectedNodeId && (
+            <div className="mt-2 flex items-center gap-2">
+              <div className="flex flex-wrap gap-1">
+                {nodeColors.map((color, idx) => (
+                  <button
+                    key={color}
+                    onClick={() => handleChangeNodeColor(selectedNodeId, color)}
+                    className="h-5 w-5 rounded border-2 transition hover:shadow-md"
+                    style={{
+                      backgroundColor: color,
+                      borderColor:
+                        nodes[selectedNodeId]?.color === color ? '#FF5F40' : '#d1d5db',
+                    }}
+                    title={nodeColorLabels[idx]}
+                  />
+                ))}
+              </div>
+              <select
+                value={nodes[selectedNodeId]?.group ?? 'Ungrouped'}
+                onChange={(e) => handleAssignGroup(e.target.value)}
+                className="min-w-0 flex-1 rounded border border-gray-200 bg-white px-2 py-1 text-xs text-gray-700"
+              >
+                {availableGroups.map((group) => (
+                  <option key={group} value={group}>
+                    {group}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="flex flex-wrap items-center gap-2 border-b border-gray-200 bg-white px-4 py-3">
+          <button
+            onClick={() => handleAddChild()}
+            disabled={!selectedNodeId}
+            className="flex items-center gap-1 rounded-lg bg-[#FF5F40] px-3 py-1.5 text-xs font-medium text-white transition hover:bg-[#ea5336] disabled:cursor-not-allowed disabled:opacity-50"
+            title="Ctrl+N"
+          >
+            <Plus size={14} />
+            <span>Add</span>
+          </button>
+          <button
+            onClick={() => handleDeleteNode()}
+            disabled={!selectedNodeId || selectedNodeId === rootId}
+            className="flex items-center gap-1 rounded-lg bg-red-50 px-3 py-1.5 text-xs font-medium text-red-700 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
+            title="Delete"
+          >
+            <Trash2 size={14} />
+          </button>
+
+          <button
+            onClick={reflowLayout}
+            className="rounded-lg bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-700 transition hover:bg-gray-200"
+            title="Arrange nodes"
+          >
+            Arrange
+          </button>
+
+          {selectedNodeId && (
+            <div className="flex items-center gap-1">
+              <div className="flex flex-wrap gap-1">
+                {nodeColors.map((color, idx) => (
+                  <button
+                    key={color}
+                    onClick={() => handleChangeNodeColor(selectedNodeId, color)}
+                    className="h-5 w-5 rounded border-2 transition hover:shadow-md"
+                    style={{
+                      backgroundColor: color,
+                      borderColor:
+                        nodes[selectedNodeId]?.color === color ? '#FF5F40' : '#d1d5db',
+                    }}
+                    title={nodeColorLabels[idx]}
+                  />
+                ))}
+              </div>
+              <select
+                value={nodes[selectedNodeId]?.group ?? 'Ungrouped'}
+                onChange={(e) => handleAssignGroup(e.target.value)}
+                className="ml-2 rounded border border-gray-200 bg-white px-2 py-1 text-xs text-gray-700"
+              >
+                {availableGroups.map((group) => (
+                  <option key={group} value={group}>
+                    {group}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          <div className="ml-auto flex items-center gap-1.5">
+            <button
+              onClick={() => setZoom(Math.max(0.5, zoom - 0.1))}
+              className="rounded bg-gray-100 px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-200"
+            >
+              −
+            </button>
+            <span className="min-w-12 text-center text-xs font-medium text-gray-600">{Math.round(zoom * 100)}%</span>
+            <button
+              onClick={() => setZoom(Math.min(2, zoom + 0.1))}
+              className="rounded bg-gray-100 px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-200"
+            >
+              +
+            </button>
+
+            <div className="relative" ref={menuRef}>
+              <button
+                onClick={() => {
+                  setContextMenu(null)
+                  setMenuOpen((s) => !s)
+                }}
+                className="rounded bg-gray-100 px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-200"
+                aria-expanded={menuOpen}
+                aria-haspopup="true"
+              >
+                ⋯
+              </button>
+              {menuOpen && (
+                <div className="absolute right-0 mt-1 w-40 bg-white border border-gray-200 rounded-lg shadow-lg transition z-10">
+                  <button
+                    onClick={resetMindMap}
+                    className="w-full text-left px-3 py-2 text-xs hover:bg-gray-50 first:rounded-t-lg text-red-600"
+                  >
+                    Reset mind map
+                  </button>
+                  <div className="border-t border-gray-100" />
+                  <button
+                    onClick={exportAsJSON}
+                    className="w-full text-left px-3 py-2 text-xs hover:bg-gray-50"
+                  >
+                    Export as JSON
+                  </button>
+                  <button
+                    onClick={exportAsMarkdown}
+                    className="w-full text-left px-3 py-2 text-xs hover:bg-gray-50"
+                  >
+                    Export as Markdown
+                  </button>
+                  <button
+                    onClick={copyAsMarkdown}
+                    className="w-full text-left px-3 py-2 text-xs hover:bg-gray-50 last:rounded-b-lg flex items-center gap-1"
+                  >
+                    <Copy size={12} />
+                    Copy as Markdown
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       {toastMessage && (
         <div className="pointer-events-none absolute bottom-16 left-4 z-20">
@@ -962,12 +1130,16 @@ export const MindMapEditor: React.FC<MindMapEditorProps> = ({ structure, onChang
         </div>
       )}
 
-      <div className="flex-1 overflow-hidden bg-white overscroll-contain" onWheelCapture={handleViewportWheelCapture}>
+      <div
+        ref={mapViewportRef}
+        className="flex-1 overflow-hidden bg-white overscroll-contain"
+        onWheelCapture={handleViewportWheelCapture}
+      >
         <svg
           ref={svgRef}
           width="100%"
           height="100%"
-          viewBox={`0 0 ${canvasWidth} ${canvasHeight}`}
+          viewBox={`0 0 ${sceneWidth} ${sceneHeight}`}
           preserveAspectRatio="xMidYMid meet"
           className={`w-full h-full bg-white ${isPanning ? 'cursor-grabbing' : 'cursor-grab'}`}
           onWheel={handleWheel}
@@ -1033,7 +1205,7 @@ export const MindMapEditor: React.FC<MindMapEditorProps> = ({ structure, onChang
           }}
         >
           <defs>
-            <pattern id="mindmap-grid" width="28" height="28" patternUnits="userSpaceOnUse">
+            <pattern id="mindmap-grid" width={isTiny ? '24' : '28'} height={isTiny ? '24' : '28'} patternUnits="userSpaceOnUse">
               <path d="M 28 0 L 0 0 0 28" fill="none" stroke="#eef2f7" strokeWidth="1" />
             </pattern>
           </defs>
@@ -1042,12 +1214,15 @@ export const MindMapEditor: React.FC<MindMapEditorProps> = ({ structure, onChang
         </svg>
       </div>
 
-      <div className="px-4 py-2 border-t border-gray-200 bg-white text-xs text-gray-600">
-        <p>
-          {selectedNodeId ? `Selected: "${nodes[selectedNodeId]?.label}"` : 'Click a node to select'} •{' '}
-          {Object.keys(nodes).length} nodes • Press <kbd className="bg-gray-100 px-1 rounded">Ctrl+N</kbd> to add,{' '}
-          <kbd className="bg-gray-100 px-1 rounded">Delete</kbd> to remove
-        </p>
+      <div className={`border-t border-gray-200 bg-white text-xs text-gray-600 ${isCompact ? 'px-3 py-2' : 'px-4 py-2'}`}>
+        <div className={`flex gap-1 ${isCompact ? 'flex-col' : 'items-center justify-between'}`}>
+          <p className="min-w-0 truncate">
+            {selectedNodeId ? `Selected: "${nodes[selectedNodeId]?.label}"` : 'Click a node to select'} • {Object.keys(nodes).length} nodes
+          </p>
+          <p className="shrink-0">
+            <kbd className="rounded bg-gray-100 px-1">Ctrl+N</kbd> add · <kbd className="rounded bg-gray-100 px-1">Delete</kbd> remove
+          </p>
+        </div>
       </div>
     </div>
   )

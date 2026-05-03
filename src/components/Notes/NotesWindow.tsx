@@ -87,6 +87,7 @@ export const NotesWindow = () => {
   const [noteContextMenu, setNoteContextMenu] = useState<NoteContextMenuState | null>(null)
   const [draftMode, setDraftMode] = useState<'text' | 'mind_map'>('text')
   const [draftMindMapStructure, setDraftMindMapStructure] = useState<unknown>(null)
+  const [isMindMapFullscreen, setIsMindMapFullscreen] = useState(false)
 
   const areSidePanelsCollapsed = isLeftPaneCollapsed && isRightPaneCollapsed
 
@@ -442,6 +443,12 @@ export const NotesWindow = () => {
     }
   }, [noteContextMenu])
 
+  useEffect(() => {
+    if (draftMode !== 'mind_map') {
+      setIsMindMapFullscreen(false)
+    }
+  }, [draftMode, selectedNoteId])
+
   return (
     <div className="h-screen bg-[#f5f7fb] flex flex-col">
       <div className="h-8 bg-white border-b border-gray-100" style={{ WebkitAppRegion: 'drag' } as CSSProperties} />
@@ -628,27 +635,25 @@ export const NotesWindow = () => {
               </div>
             ) : selectedNote ? (
               <div className="flex-1 flex flex-col min-h-0">
-                <div className="border-b border-gray-100 px-6 py-4 flex items-center justify-between">
-                  <div>
+                <div className="border-b border-gray-100 px-6 py-4 flex items-start justify-between gap-4">
+                  <div className="flex min-w-0 flex-wrap items-center gap-3">
                     <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Editing</p>
-                    <h2 className="text-sm font-semibold text-gray-900">
+                    <h2 className="text-sm font-semibold text-gray-900 truncate">
                       {selectedNote.title || 'Untitled note'}
                     </h2>
+                    <select
+                      value={draftMode}
+                      onChange={(e) => {
+                        setDraftMode(e.target.value as 'text' | 'mind_map')
+                        setIsDirty(true)
+                      }}
+                      className="min-w-27 rounded-lg border border-gray-200 bg-white px-2.5 py-1 text-xs text-gray-700 focus:outline-none focus:ring-1 focus:ring-gray-900"
+                    >
+                      <option value="text">Text</option>
+                      <option value="mind_map">Mind Map</option>
+                    </select>
                   </div>
                   <div className="flex items-center gap-4">
-                    <div className="flex items-center gap-2">
-                      <select
-                        value={draftMode}
-                        onChange={(e) => {
-                          setDraftMode(e.target.value as 'text' | 'mind_map')
-                          setIsDirty(true)
-                        }}
-                        className="text-xs bg-white border border-gray-200 rounded-lg px-2 py-1 text-gray-700 focus:outline-none focus:ring-1 focus:ring-gray-900"
-                      >
-                        <option value="text">Text</option>
-                        <option value="mind_map">Mind Map</option>
-                      </select>
-                    </div>
                     <div className="text-right">
                       <p className="text-[11px] text-gray-500">{showSavingIndicator ? 'Saving...' : 'Auto-save enabled'}</p>
                       <p className="text-[10px] text-gray-400">
@@ -735,6 +740,8 @@ export const NotesWindow = () => {
                             setDraftMindMapStructure(structure)
                             setIsDirty(true)
                           }}
+                          isFullscreen={isMindMapFullscreen}
+                          onToggleFullscreen={() => setIsMindMapFullscreen((current) => !current)}
                         />
                       </div>
                     )}
@@ -863,6 +870,36 @@ export const NotesWindow = () => {
           </>
         )}
       </div>
+
+      {draftMode === 'mind_map' && isMindMapFullscreen && (
+        <div className="fixed inset-0 z-80 bg-[#f5f7fb]">
+          <div className="flex h-full w-full flex-col">
+            <div className="flex items-center justify-between border-b border-gray-200 bg-white px-5 py-4 shadow-sm">
+              <div className="min-w-0">
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Mind map fullscreen</p>
+                <h2 className="truncate text-sm font-semibold text-gray-900">{draftTitle || 'Untitled note'}</h2>
+              </div>
+              <button
+                onClick={() => setIsMindMapFullscreen(false)}
+                className="rounded-full border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
+              >
+                Exit fullscreen
+              </button>
+            </div>
+            <div className="flex-1 min-h-0 p-4">
+              <MindMapEditor
+                structure={draftMindMapStructure}
+                onChange={(structure) => {
+                  setDraftMindMapStructure(structure)
+                  setIsDirty(true)
+                }}
+                isFullscreen
+                onToggleFullscreen={() => setIsMindMapFullscreen(false)}
+              />
+            </div>
+          </div>
+        </div>
+      )}
 
       {noteContextMenu && (
         <div

@@ -4,7 +4,7 @@ import {
   Loader2,
   Settings,
 } from 'lucide-react'
-import { type CSSProperties, useEffect, useMemo, useState } from 'react'
+import { type CSSProperties, useEffect, useMemo, useRef, useState } from 'react'
 import { useAuthContext } from '../../context/AuthContext'
 import { useWorkspaceContext } from '../../context/WorkspaceContext'
 import { useApi } from '../../hooks/useApi'
@@ -148,6 +148,11 @@ export const SettingsWindow = () => {
   const [passwordError, setPasswordError] = useState<string | null>(null)
   const [isSwitchingWorkspace, setIsSwitchingWorkspace] = useState(false)
   const [workspaceStatus, setWorkspaceStatus] = useState<string | null>(null)
+  const [workspaceCreateName, setWorkspaceCreateName] = useState('')
+  const [workspaceCreateDescription, setWorkspaceCreateDescription] = useState('')
+  const [workspaceCreateType, setWorkspaceCreateType] = useState<'team' | 'personal'>('team')
+  const [isCreatingWorkspace, setIsCreatingWorkspace] = useState(false)
+  const [workspaceCreateStatus, setWorkspaceCreateStatus] = useState<string | null>(null)
   const [workspaceMembers, setWorkspaceMembers] = useState<WorkspaceMember[]>([])
   const [workspaceInvitations, setWorkspaceInvitations] = useState<WorkspaceInvitation[]>([])
   const [workspaceUserRole, setWorkspaceUserRole] = useState<WorkspaceRole>('member')
@@ -160,6 +165,7 @@ export const SettingsWindow = () => {
   const [inviteLink, setInviteLink] = useState<string | null>(null)
   const [inviteToken, setInviteToken] = useState<string | null>(null)
   const [isSendingInvite, setIsSendingInvite] = useState(false)
+  const inviteEmailRef = useRef<HTMLInputElement | null>(null)
 
   useEffect(() => {
     const cachedPrefs = loadCachedPreferences()
@@ -296,6 +302,41 @@ export const SettingsWindow = () => {
       setWorkspaceStatus(err instanceof Error ? err.message : 'Could not switch workspace.')
     } finally {
       setIsSwitchingWorkspace(false)
+    }
+  }
+
+  const handleCreateWorkspace = async () => {
+    const name = workspaceCreateName.trim()
+    if (!name) {
+      setWorkspaceAdminError('Workspace name is required')
+      return
+    }
+
+    setWorkspaceAdminError(null)
+    setWorkspaceStatus(null)
+    setWorkspaceCreateStatus(null)
+    setIsCreatingWorkspace(true)
+
+    try {
+      await api.createWorkspace({
+        name,
+        description: workspaceCreateDescription.trim() || null,
+        is_personal: workspaceCreateType === 'personal',
+      })
+
+      setWorkspaceCreateName('')
+      setWorkspaceCreateDescription('')
+      setWorkspaceCreateType('team')
+
+      await refreshWorkspaces()
+      setWorkspaceCreateStatus('Workspace created and activated. Next step: invite teammates.')
+      window.setTimeout(() => {
+        inviteEmailRef.current?.focus()
+      }, 0)
+    } catch (err) {
+      setWorkspaceAdminError(err instanceof Error ? err.message : 'Could not create workspace')
+    } finally {
+      setIsCreatingWorkspace(false)
     }
   }
 
@@ -587,12 +628,86 @@ export const SettingsWindow = () => {
                   <h2 id="settings-workspace" className="text-lg font-semibold text-gray-900">Workspace</h2>
                   <p className="mt-1 text-sm text-gray-600">Defaults used across dashboard and modules.</p>
 
+                  <div className="mt-4 rounded-2xl border border-gray-200 bg-white p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-xs uppercase tracking-wider text-gray-500">Create workspace</p>
+                        <h3 className="mt-1 text-sm font-semibold text-gray-900">Start a new place for Ledger data</h3>
+                        <p className="mt-1 text-xs text-gray-600">
+                          Team workspaces can be shared with invites. Personal workspaces stay private to you.
+                        </p>
+                      </div>
+                      <span className="rounded-full border border-gray-200 bg-gray-50 px-2.5 py-1 text-[11px] font-medium text-gray-700">
+                        {workspaceCreateType === 'personal' ? 'Personal' : 'Team'}
+                      </span>
+                    </div>
+
+                    <div className="mt-3 grid gap-2 md:grid-cols-[1fr_auto]">
+                      <input
+                        value={workspaceCreateName}
+                        onChange={(e) => setWorkspaceCreateName(e.target.value)}
+                        placeholder="Workspace name"
+                        className="h-10 rounded-xl border border-gray-200 bg-gray-50 px-3 text-sm text-gray-900 outline-none focus:border-gray-300 focus:ring-4 focus:ring-gray-100"
+                        aria-label="Workspace name"
+                      />
+                      <select
+                        value={workspaceCreateType}
+                        onChange={(e) => setWorkspaceCreateType(e.target.value as 'team' | 'personal')}
+                        className="h-10 appearance-none rounded-xl border border-gray-200 bg-gray-50 px-3 pr-8 text-sm text-gray-900 outline-none focus:border-gray-300 focus:ring-4 focus:ring-gray-100"
+                        style={selectChevronStyle}
+                        aria-label="Workspace type"
+                      >
+                        <option value="team">Team workspace</option>
+                        <option value="personal">Personal workspace</option>
+                      </select>
+                    </div>
+
+                    <div className="mt-2">
+                      <textarea
+                        value={workspaceCreateDescription}
+                        onChange={(e) => setWorkspaceCreateDescription(e.target.value)}
+                        placeholder="Optional description"
+                        className="min-h-24 w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-900 outline-none focus:border-gray-300 focus:ring-4 focus:ring-gray-100"
+                        aria-label="Workspace description"
+                      />
+                    </div>
+
+                    <div className="mt-3 flex items-center justify-between gap-3">
+                      <p className="text-xs text-gray-500">
+                        {workspaceCreateType === 'personal'
+                          ? 'Use this for solo notes and private planning.'
+                          : 'Use this for shared projects, invites, and collaboration.'}
+                      </p>
+                      <button
+                        onClick={() => void handleCreateWorkspace()}
+                        disabled={isCreatingWorkspace || !workspaceCreateName.trim()}
+                        className="h-10 rounded-xl bg-[#FF5F40] px-4 text-sm font-medium text-white transition hover:bg-[#ea5336] disabled:opacity-60"
+                      >
+                        {isCreatingWorkspace ? 'Creating...' : 'Create workspace'}
+                      </button>
+                    </div>
+
+                    {workspaceCreateStatus && (
+                      <div className="mt-3 rounded-xl border border-green-200 bg-green-50 px-3 py-2">
+                        <p className="text-xs font-medium text-green-800">{workspaceCreateStatus}</p>
+                        <button
+                          onClick={() => inviteEmailRef.current?.focus()}
+                          className="mt-2 text-xs font-medium text-green-700 hover:text-green-800"
+                        >
+                          Jump to invite email
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
                   <div className="mt-4 rounded-2xl border border-gray-200 bg-gray-50 p-4">
                     <div className="flex items-center justify-between gap-3">
                       <div>
                         <p className="text-xs uppercase tracking-wider text-gray-500">Active workspace</p>
                         <p className="mt-1 text-sm font-semibold text-gray-900">{activeWorkspace?.name ?? 'No workspace selected'}</p>
-                        <p className="mt-1 text-xs text-gray-600">This workspace is used by dashboard, projects, calendar, and notes.</p>
+                        <p className="mt-1 text-xs text-gray-600">
+                          This workspace keeps your dashboard, projects, calendar, notes, and settings separated from other teams.
+                        </p>
                       </div>
                       <button
                         onClick={() => void refreshWorkspaces()}
@@ -627,13 +742,22 @@ export const SettingsWindow = () => {
                         {workspaceStatus || workspaceError}
                       </p>
                     )}
+
+                    <div className="mt-3 rounded-xl border border-dashed border-gray-200 bg-white p-3">
+                      <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">What changes when you switch</p>
+                      <ul className="mt-2 space-y-1 text-xs leading-5 text-gray-600">
+                        <li>• You see that workspace's notes, projects, events, reminders, tasks, and categories.</li>
+                        <li>• Members and invitations are scoped to the selected workspace.</li>
+                        <li>• There are no nested folders or sub-workspaces yet, so workspace is the top-level boundary.</li>
+                      </ul>
+                    </div>
                   </div>
 
                   <div className="mt-4 rounded-2xl border border-gray-200 bg-white p-4">
                     <div className="flex items-center justify-between gap-3">
                       <div>
                         <h3 className="text-sm font-semibold text-gray-900">Members</h3>
-                        <p className="mt-1 text-xs text-gray-600">Manage role access for this workspace.</p>
+                        <p className="mt-1 text-xs text-gray-600">Manage access for the selected workspace. Owners and admins can add or remove people.</p>
                       </div>
                       <span className="rounded-full border border-gray-200 bg-gray-50 px-2.5 py-1 text-[11px] font-medium text-gray-700">
                         You are {workspaceUserRole}
@@ -693,6 +817,7 @@ export const SettingsWindow = () => {
 
                     <div className="mt-3 grid gap-2 md:grid-cols-[1fr_140px_auto]">
                       <input
+                        ref={inviteEmailRef}
                         value={inviteEmail}
                         onChange={(e) => setInviteEmail(e.target.value)}
                         placeholder="name@company.com"

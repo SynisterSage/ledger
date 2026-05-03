@@ -259,6 +259,8 @@ export const ProjectsWindow = () => {
     return { active, completed, total: selectedProjectTasks.length }
   }, [selectedProjectTasks])
 
+  const isCompactRightPane = rightPaneWidth < 320
+
   const syncDraftFromProject = useCallback((project: ProjectRow) => {
     setProjectDraft({
       name: project.name,
@@ -1004,19 +1006,19 @@ export const ProjectsWindow = () => {
                         placeholder="Add a next action"
                         className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-900 outline-none transition focus:border-gray-300 focus:ring-4 focus:ring-gray-100"
                       />
-                      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-[minmax(0,1fr)_minmax(0,150px)_minmax(0,150px)_auto]">
-                        <div className="relative">
+                      <div className={`grid gap-2 ${isCompactRightPane ? 'grid-cols-1' : 'sm:grid-cols-2 lg:grid-cols-[minmax(0,1fr)_minmax(0,150px)_minmax(0,150px)_auto]'}`}>
+                        <div className="relative min-w-0">
                           <select
                             value={newTaskPriority}
                             onChange={(e) => setNewTaskPriority(e.target.value as typeof newTaskPriority)}
-                            className="w-full min-w-0 appearance-none rounded-xl border border-gray-200 bg-white py-2 pl-3 pr-10 text-sm text-gray-700 outline-none"
+                            className={`w-full min-w-0 appearance-none rounded-xl border border-gray-200 bg-white text-sm text-gray-700 outline-none ${isCompactRightPane ? 'py-2 pl-3 pr-9' : 'py-2 pl-3 pr-10'}`}
                           >
                             {Object.entries(taskPriorityLabels).map(([key, label]) => (
                               <option key={key} value={key}>{label}</option>
                             ))}
                           </select>
                           <ChevronDown
-                            size={14}
+                            size={isCompactRightPane ? 12 : 14}
                             className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-gray-500"
                           />
                         </div>
@@ -1024,18 +1026,18 @@ export const ProjectsWindow = () => {
                           type="date"
                           value={newTaskDueDate}
                           onChange={(e) => setNewTaskDueDate(e.target.value)}
-                          className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 outline-none"
+                          className="w-full min-w-0 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 outline-none"
                         />
                         <input
                           type="time"
                           value={newTaskDueTime}
                           onChange={(e) => setNewTaskDueTime(e.target.value)}
-                          className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 outline-none"
+                          className="w-full min-w-0 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 outline-none"
                         />
                         <button
                           onClick={() => void createTask()}
                           disabled={!newTaskTitle.trim() || isCreatingTask}
-                          className="w-full rounded-xl bg-gray-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-gray-800 disabled:opacity-60 sm:col-span-2 lg:col-span-1"
+                          className={`w-full rounded-xl bg-gray-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-gray-800 disabled:opacity-60 ${isCompactRightPane ? '' : 'sm:col-span-2 lg:col-span-1'}`}
                         >
                           {isCreatingTask ? 'Adding...' : 'Add'}
                         </button>
@@ -1127,25 +1129,28 @@ export const ProjectsWindow = () => {
               }}
             />
 
-            <aside className="border-l border-gray-200 bg-white flex flex-col overflow-hidden shrink-0" style={{ width: `${rightPaneWidth}px` }}>
-              <div className="p-4 border-b border-gray-100">
-                <div className="flex items-center justify-between mb-3">
+            <aside className="flex shrink-0 flex-col overflow-hidden border-l border-gray-200 bg-white" style={{ width: `${rightPaneWidth}px` }}>
+              <div className={`${isCompactRightPane ? 'p-3' : 'p-4'} border-b border-gray-100`}>
+                <div className="mb-3 flex items-center justify-between gap-3">
                   <div>
                     <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Pulse</p>
-                    <h2 className="text-sm font-semibold text-gray-900">Execution view</h2>
+                    <h2 className={`${isCompactRightPane ? 'text-xs' : 'text-sm'} font-semibold text-gray-900`}>Execution view</h2>
                   </div>
-                  <span className="text-[10px] text-gray-500">{projectCounts.active} open</span>
+                  <div className="flex flex-col items-end gap-1 text-[10px] text-gray-500">
+                    <span>{projectCounts.active} open</span>
+                    <span>{taskCounts.completed} done</span>
+                  </div>
                 </div>
                 {selectedProject ? (
-                  <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4 space-y-2">
+                  <div className="space-y-2 rounded-2xl border border-gray-200 bg-gray-50 p-3">
                     <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <p className="text-sm font-medium text-gray-900">{selectedProject.name}</p>
+                      <div className="min-w-0">
+                        <p className={`${isCompactRightPane ? 'text-xs' : 'text-sm'} truncate font-medium text-gray-900`}>{selectedProject.name}</p>
                         <p className="text-[11px] text-gray-500">Updated {formatShortDate(selectedProject.updated_at)}</p>
                       </div>
                       <div className="h-3 w-3 rounded-full shrink-0" style={{ backgroundColor: projectDraft.color }} />
                     </div>
-                    <div className="grid grid-cols-3 gap-2 text-center">
+                    <div className={`grid gap-2 text-center ${isCompactRightPane ? 'grid-cols-1' : 'grid-cols-3'}`}>
                       <div className="rounded-xl bg-white border border-gray-200 px-2 py-2">
                         <p className="text-[10px] uppercase tracking-wide text-gray-500">Progress</p>
                         <p className="mt-1 text-sm font-semibold text-gray-900">{projectDraft.completeness}%</p>
@@ -1168,9 +1173,9 @@ export const ProjectsWindow = () => {
                 )}
               </div>
 
-              <div className="flex-1 overflow-auto p-4 space-y-4">
+              <div className={`flex-1 overflow-auto ${isCompactRightPane ? 'p-3' : 'p-4'} space-y-3`}>
                 <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
-                  <div className="flex items-center justify-between mb-3">
+                  <div className="mb-3 flex items-center justify-between gap-2">
                     <h3 className="text-sm font-semibold text-gray-900">Project context</h3>
                     {selectedProject && (
                       <button
@@ -1201,7 +1206,7 @@ export const ProjectsWindow = () => {
                 </div>
 
                 <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
-                  <div className="flex items-center justify-between mb-3">
+                  <div className="mb-3 flex items-center justify-between gap-2">
                     <h3 className="text-sm font-semibold text-gray-900">Next actions</h3>
                     <span className="text-xs text-gray-500">{selectedProjectTasks.length} items</span>
                   </div>
@@ -1224,7 +1229,7 @@ export const ProjectsWindow = () => {
                               e.preventDefault()
                               setTaskContextMenu({ x: e.clientX, y: e.clientY, taskId: task.id })
                             }}
-                            className="rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3"
+                            className={`rounded-2xl border border-gray-200 bg-gray-50 ${isCompactRightPane ? 'px-3 py-2.5' : 'px-4 py-3'}`}
                           >
                             <button
                               onClick={() => void updateTaskStatus(task, completed ? 'todo' : 'completed')}
@@ -1234,9 +1239,9 @@ export const ProjectsWindow = () => {
                                 {completed && <CheckCircle2 size={12} className="text-white" />}
                               </span>
                               <div className="min-w-0 flex-1">
-                                <div className="flex items-start justify-between gap-2">
-                                  <p className={`text-sm font-medium ${completed ? 'text-gray-400 line-through' : 'text-gray-900'}`}>{task.title}</p>
-                                  <span className={`rounded-full px-2 py-1 text-[10px] font-medium ${taskPriorityTone[String(task.priority)] ?? 'bg-gray-100 text-gray-700'}`}>
+                                <div className={`flex gap-2 ${isCompactRightPane ? 'flex-col' : 'items-start justify-between'}`}>
+                                  <p className={`min-w-0 text-sm font-medium ${completed ? 'text-gray-400 line-through' : 'text-gray-900'}`}>{task.title}</p>
+                                  <span className={`self-start rounded-full px-2 py-1 text-[10px] font-medium ${taskPriorityTone[String(task.priority)] ?? 'bg-gray-100 text-gray-700'}`}>
                                     {taskPriorityLabels[String(task.priority)] ?? 'Medium'}
                                   </span>
                                 </div>

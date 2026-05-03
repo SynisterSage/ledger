@@ -1,28 +1,27 @@
 import { useEffect } from 'react'
 import { useAuthContext } from '../context/AuthContext'
-import { useApi } from './useApi'
+import { useWorkspaceContext } from '../context/WorkspaceContext'
 
 /**
- * Hook to initialize workspace for authenticated users
- * Creates a personal workspace if one doesn't exist
+ * Ensure workspace state is loaded for authenticated users.
  */
 export const useWorkspaceInit = () => {
   const { user } = useAuthContext()
-  const api = useApi()
+  const { refreshWorkspaces } = useWorkspaceContext()
 
   useEffect(() => {
     if (!user) return
 
     const initializeWorkspace = async () => {
       try {
-        await api.getCalendars()
+        await refreshWorkspaces()
       } catch (err) {
         console.error('Failed to initialize workspace:', err)
       }
     }
 
     initializeWorkspace()
-  }, [api, user])
+  }, [refreshWorkspaces, user])
 }
 
 export default useWorkspaceInit
