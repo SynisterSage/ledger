@@ -9,8 +9,10 @@ import {
 import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useAuthContext } from '../../context/AuthContext'
 import { useApi } from '../../hooks/useApi'
+import { useWorkspaceContext } from '../../context/WorkspaceContext'
 import { SkeletonLoader, SkeletonList } from '../Common/Skeleton'
 import { MindMapEditor } from './MindMapEditor'
+import { RichTextEditor } from './RichTextEditor'
 
 type NoteRow = {
   id: string
@@ -38,8 +40,23 @@ type NoteContextMenuState = {
 
 const todayKey = () => new Date().toISOString().slice(0, 10)
 
+const htmlToPlainText = (value: string) =>
+  String(value ?? '')
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+
+const normalizeEditorHtml = (value: string) => {
+  const trimmed = String(value ?? '').trim().toLowerCase()
+  if (!trimmed || trimmed === '<p><br></p>' || trimmed === '<p></p>') {
+    return '<p></p>'
+  }
+  return String(value ?? '')
+}
+
 const wordCount = (text: string) =>
-  text
+  htmlToPlainText(text)
     .trim()
     .split(/\s+/)
     .filter(Boolean).length
@@ -55,9 +72,9 @@ const formatDateTime = (value: string) =>
 
 export const NotesWindow = () => {
   const { user } = useAuthContext()
+  const { activeWorkspaceId } = useWorkspaceContext()
   const api = useApi()
   const titleRef = useRef<HTMLInputElement | null>(null)
-  const bodyRef = useRef<HTMLTextAreaElement | null>(null)
   const autosaveTimerRef = useRef<number | null>(null)
   const savingIndicatorTimerRef = useRef<number | null>(null)
   const lastSavedAtRef = useRef<string | null>(null)
@@ -96,19 +113,23 @@ export const NotesWindow = () => {
     [notes, selectedNoteId]
   )
 
+  const exitMindMapFullscreen = useCallback(() => {
+    setIsMindMapFullscreen(false)
+  }, [])
+
   const visibleNotes = useMemo(() => {
     const term = search.trim().toLowerCase()
     if (!term) return notes
 
     return notes.filter((note) => {
-      const haystack = [note.title, note.content, note.mood ?? '', note.date].join(' ').toLowerCase()
+      const haystack = [note.title, htmlToPlainText(note.content), note.mood ?? '', note.date].join(' ').toLowerCase()
       return haystack.includes(term)
     })
   }, [notes, search])
 
   const syncDraftFromNote = useCallback((note: NoteRow) => {
     setDraftTitle(note.title)
-    setDraftContent(note.content)
+    setDraftContent(normalizeEditorHtml(note.content))
     setDraftDate(note.date || todayKey())
     setDraftMood(note.mood ?? '')
     setDraftMode(note.mode || 'text')
@@ -122,7 +143,18 @@ export const NotesWindow = () => {
 
   const loadNotes = useCallback(
     async (opts?: { silent?: boolean }) => {
-      if (!user) return
+      if (!user || !activeWorkspaceId) {
+        setNotes([])
+        setSelectedNoteId(null)
+        setDraftTitle('')
+        setDraftContent('')
+        setDraftDate(todayKey())
+        setDraftMood('')
+        setIsDirty(false)
+        setIsLoading(false)
+        setIsRefreshing(false)
+        return
+      }
 
       if (opts?.silent) {
         setIsRefreshing(true)
@@ -169,7 +201,7 @@ export const NotesWindow = () => {
         setIsRefreshing(false)
       }
     },
-    [api, syncDraftFromNote, user]
+    [api, activeWorkspaceId, syncDraftFromNote, user]
   )
 
   const flushAutosave = useCallback(
@@ -177,10 +209,10 @@ export const NotesWindow = () => {
       if (!selectedNoteId) return null
 
       const noteTitle = (override?.title ?? draftTitle).trim() || 'Untitled note'
-      const noteContent = override?.content ?? draftContent
+      const noteContent = normalizeEditorHtml(override?.content ?? draftContent)
       const noteDate = (override?.date ?? draftDate).trim() || todayKey()
       const noteMood = (override?.mood ?? draftMood).trim() || null
-      const meaningfulLength = `${noteTitle}${noteContent}`.replace(/\s/g, '').length
+      const meaningfulLength = `${noteTitle}${htmlToPlainText(noteContent)}`.replace(/\s/g, '').length
 
       if (meaningfulLength < 2) {
         return null
@@ -197,7 +229,7 @@ export const NotesWindow = () => {
       try {
       const data = await api.updateNote(selectedNoteId, {
         title: noteTitle,
-        content: noteContent,
+        content_html: noteContent,
         date: noteDate,
         mood: noteMood,
         source: 'workspace',
@@ -249,6 +281,7 @@ export const NotesWindow = () => {
 
     try {
       const data = await api.createNote('Untitled note', '', {
+        content_html: '<p></p>',
         date: todayKey(),
         mood: null,
         source: 'workspace',
@@ -358,14 +391,14 @@ export const NotesWindow = () => {
         window.clearTimeout(savingIndicatorTimerRef.current)
       }
     }
-  }, [loadNotes])
+  }, [loadNotes, activeWorkspaceId])
 
   useEffect(() => {
     if (!selectedNoteId || !isDirty) return
 
     const noteTitle = draftTitle.trim() || 'Untitled note'
-    const noteContent = draftContent
-    const meaningfulLength = `${noteTitle}${noteContent}`.replace(/\s/g, '').length
+    const noteContent = normalizeEditorHtml(draftContent)
+    const meaningfulLength = `${noteTitle}${htmlToPlainText(noteContent)}`.replace(/\s/g, '').length
     if (meaningfulLength < 2) return
 
     if (autosaveTimerRef.current) {
@@ -448,6 +481,20 @@ export const NotesWindow = () => {
       setIsMindMapFullscreen(false)
     }
   }, [draftMode, selectedNoteId])
+
+  useEffect(() => {
+    if (!isMindMapFullscreen) return
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        exitMindMapFullscreen()
+      }
+    }
+
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [exitMindMapFullscreen, isMindMapFullscreen])
 
   return (
     <div className="h-screen bg-[#f5f7fb] flex flex-col">
@@ -561,7 +608,7 @@ export const NotesWindow = () => {
             ) : (
               visibleNotes.map((note) => {
                 const active = note.id === selectedNoteId
-                const preview = note.content.trim().split('\n').find((line) => line.trim()) ?? 'No content yet'
+                const preview = htmlToPlainText(note.content).slice(0, 120) || 'No content yet'
 
                 return (
                   <button
@@ -715,11 +762,14 @@ export const NotesWindow = () => {
                     />
 
                     {draftMode === 'text' ? (
-                      <textarea
-                        ref={bodyRef}
-                        value={draftContent}
-                        onChange={(e) => {
-                          setDraftContent(e.target.value)
+                      <RichTextEditor
+                        editorKey={selectedNote.id}
+                        initialValue={draftContent}
+                        onChange={(nextHtml) => {
+                          const normalizedNext = normalizeEditorHtml(nextHtml)
+                          const normalizedCurrent = normalizeEditorHtml(draftContent)
+                          if (normalizedNext === normalizedCurrent) return
+                          setDraftContent(normalizedNext)
                           setIsDirty(true)
                         }}
                         onFocus={() => {
@@ -729,8 +779,6 @@ export const NotesWindow = () => {
                           isEditingRef.current = false
                           void flushAutosave()
                         }}
-                        placeholder="Start writing..."
-                        className="w-full min-h-[calc(100vh-330px)] resize-none bg-transparent text-[16px] leading-8 text-gray-800 placeholder:text-gray-300 focus:outline-none"
                       />
                     ) : (
                       <div className="w-full min-h-[calc(100vh-330px)] mt-4">
@@ -874,14 +922,16 @@ export const NotesWindow = () => {
       {draftMode === 'mind_map' && isMindMapFullscreen && (
         <div className="fixed inset-0 z-80 bg-[#f5f7fb]">
           <div className="flex h-full w-full flex-col">
-            <div className="flex items-center justify-between border-b border-gray-200 bg-white px-5 py-4 shadow-sm">
+            <div className="flex items-center justify-between border-b border-gray-200 bg-white py-4 pl-24 pr-5 shadow-sm">
               <div className="min-w-0">
                 <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Mind map fullscreen</p>
                 <h2 className="truncate text-sm font-semibold text-gray-900">{draftTitle || 'Untitled note'}</h2>
               </div>
               <button
-                onClick={() => setIsMindMapFullscreen(false)}
-                className="rounded-full border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                type="button"
+                onMouseDown={(event) => event.stopPropagation()}
+                onClick={exitMindMapFullscreen}
+                className="rounded-full border border-gray-200 bg-gray-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-gray-800"
               >
                 Exit fullscreen
               </button>
@@ -894,7 +944,7 @@ export const NotesWindow = () => {
                   setIsDirty(true)
                 }}
                 isFullscreen
-                onToggleFullscreen={() => setIsMindMapFullscreen(false)}
+                onToggleFullscreen={exitMindMapFullscreen}
               />
             </div>
           </div>

@@ -11,6 +11,7 @@ import {
 import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useAuthContext } from '../../context/AuthContext'
 import { useApi } from '../../hooks/useApi'
+import { useWorkspaceContext } from '../../context/WorkspaceContext'
 import { SkeletonList } from '../Common/Skeleton'
 
 type ProjectRow = {
@@ -164,6 +165,7 @@ type ProjectDraft = {
 
 export const ProjectsWindow = () => {
   const { user } = useAuthContext()
+    const { activeWorkspaceId } = useWorkspaceContext()
   const api = useApi()
   const initialFocusProjectId = new URLSearchParams(window.location.search).get('focusProjectId')
   const titleRef = useRef<HTMLInputElement | null>(null)
@@ -275,7 +277,22 @@ export const ProjectsWindow = () => {
   }, [])
 
   const loadProjects = useCallback(async () => {
-    if (!user) return
+    if (!user || !activeWorkspaceId) {
+      setProjects([])
+      setSelectedProjectId(null)
+      setProjectDraft({
+        name: '',
+        description: '',
+        status: 'not_started',
+        completeness: 0,
+        color: '#007AFF',
+        startDate: '',
+        endDate: '',
+      })
+      setIsLoadingProjects(false)
+      setError(null)
+      return
+    }
     setIsLoadingProjects(true)
     setError(null)
 
@@ -314,10 +331,10 @@ export const ProjectsWindow = () => {
     } finally {
       setIsLoadingProjects(false)
     }
-  }, [api, syncDraftFromProject, user])
+  }, [api, activeWorkspaceId, syncDraftFromProject, user])
 
   const loadTasks = useCallback(async () => {
-    if (!user || !selectedProjectId) {
+    if (!user || !activeWorkspaceId || !selectedProjectId) {
       setTasks([])
       setIsLoadingTasks(false)
       return
@@ -338,7 +355,7 @@ export const ProjectsWindow = () => {
     } finally {
       setIsLoadingTasks(false)
     }
-  }, [api, selectedProjectId, user])
+  }, [api, activeWorkspaceId, selectedProjectId, user])
 
   const flushProjectDraft = useCallback(async () => {
     if (!selectedProject) return null

@@ -49,7 +49,7 @@ const todayKey = () => {
 
 export const ExpandedSidebar = () => {
   const { user, signOut } = useAuthContext()
-  const { activeWorkspace } = useWorkspaceContext()
+  const { activeWorkspace, activeWorkspaceId } = useWorkspaceContext()
   const { setState } = useSidebar()
   const api = useApi()
   const fullName = (user?.user_metadata?.full_name as string | undefined)?.trim() ?? ''
@@ -141,6 +141,20 @@ export const ExpandedSidebar = () => {
   }
 
   useEffect(() => {
+    if (!activeWorkspaceId) {
+      setWorkspaceId(null)
+      setIsLoadingProjects(false)
+      setIsLoadingUpcoming(false)
+      setQuickNotes([])
+      setProjects([])
+      setUpcomingItems([])
+      return
+    }
+
+    setWorkspaceId(activeWorkspaceId)
+  }, [activeWorkspaceId])
+
+  useEffect(() => {
     let cancelled = false
 
     const loadDaily = async () => {
@@ -204,13 +218,13 @@ export const ExpandedSidebar = () => {
     return () => {
       cancelled = true
     }
-  }, [user?.id])
+  }, [user?.id, activeWorkspaceId])
 
   useEffect(() => {
     let cancelled = false
 
     const loadQuickNotes = async () => {
-      if (!user) {
+      if (!user || !activeWorkspaceId) {
         setQuickNotes([])
         return
       }
@@ -243,7 +257,7 @@ export const ExpandedSidebar = () => {
     return () => {
       cancelled = true
     }
-  }, [user?.id, workspaceId])
+  }, [user?.id, activeWorkspaceId])
 
   useEffect(() => {
     if (!user) {
@@ -252,7 +266,9 @@ export const ExpandedSidebar = () => {
       return
     }
 
-    if (!workspaceId) {
+    if (!activeWorkspaceId) {
+      setProjects([])
+      setIsLoadingProjects(false)
       return
     }
 
@@ -289,7 +305,7 @@ export const ExpandedSidebar = () => {
       cancelled = true
       window.clearInterval(refreshTimer)
     }
-  }, [user?.id, workspaceId])
+  }, [user?.id, activeWorkspaceId])
 
   useEffect(() => {
     if (!user) {
@@ -298,7 +314,9 @@ export const ExpandedSidebar = () => {
       return
     }
 
-    if (!workspaceId) {
+    if (!activeWorkspaceId) {
+      setUpcomingItems([])
+      setIsLoadingUpcoming(false)
       return
     }
 
@@ -366,7 +384,7 @@ export const ExpandedSidebar = () => {
       cancelled = true
       window.clearInterval(refreshTimer)
     }
-  }, [user?.id, workspaceId])
+  }, [user?.id, activeWorkspaceId])
 
   useEffect(() => {
     if (quickCaptureMode === 'none') return

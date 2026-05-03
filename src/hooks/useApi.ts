@@ -277,11 +277,11 @@ export const useApi = () => {
 
     // Notes
     getNotes: () => request('/api/notes'),
-    createNote: (title: string, content: string, options?: { date?: string; mood?: string | null; source?: string; mode?: 'text' | 'mind_map'; mind_map_structure?: unknown }) => request('/api/notes', {
+    createNote: (title: string, content: string, options?: { date?: string; mood?: string | null; source?: string; mode?: 'text' | 'mind_map'; mind_map_structure?: unknown; content_html?: string }) => request('/api/notes', {
       method: 'POST',
       body: JSON.stringify({ title, content, ...options }),
     }),
-    updateNote: (id: string, update: { title?: string; content?: string; date?: string; mood?: string | null; source?: string; mode?: 'text' | 'mind_map'; mind_map_structure?: unknown }) => request(`/api/notes/${id}`, {
+    updateNote: (id: string, update: { title?: string; content?: string; content_html?: string; date?: string; mood?: string | null; source?: string; mode?: 'text' | 'mind_map'; mind_map_structure?: unknown }) => request(`/api/notes/${id}`, {
       method: 'PATCH',
       body: JSON.stringify(update),
     }),

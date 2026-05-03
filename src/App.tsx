@@ -53,7 +53,7 @@ function AuthStatusScreen({ title, subtitle }: { title: string; subtitle: string
 // Dashboard content component
 function DashboardContent() {
   const { user } = useAuthContext()
-  const { activeWorkspace } = useWorkspaceContext()
+  const { activeWorkspace, activeWorkspaceId } = useWorkspaceContext()
   const api = useApi()
   const { state, setState } = useSidebar()
   const todayTasksRef = useRef<HTMLElement | null>(null)
@@ -98,7 +98,20 @@ function DashboardContent() {
   }, [setState])
 
   useEffect(() => {
-    if (!user) return
+    if (!user || !activeWorkspaceId) {
+      setIsLoadingDashboard(false)
+      setDashboardError(null)
+      setDaily({
+        focusItems: [],
+        finished: '',
+        blocked: '',
+        firstTaskTomorrow: '',
+      })
+      setProjects([])
+      setUpcoming([])
+      setNotes([])
+      return
+    }
 
     let cancelled = false
 
@@ -160,7 +173,7 @@ function DashboardContent() {
       cancelled = true
       window.clearInterval(timer)
     }
-  }, [api, user])
+  }, [activeWorkspaceId, api, user])
 
   const saveDailyAccountability = async (next: {
     focusItems?: Array<{ id: string; text: string; done: boolean }>
@@ -322,6 +335,14 @@ function DashboardContent() {
               <p className='mt-2 max-w-2xl text-sm leading-6 text-gray-600'>
                 {todayLabel}. What awaits you today?
               </p>
+              {activeWorkspace && (
+                <p className='mt-2 text-xs text-gray-500'>
+                  Active workspace: <span className='text-gray-800'>{activeWorkspace.name}</span>
+                  <span className='ml-2 rounded-full bg-gray-100 px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] text-gray-500'>
+                    {activeWorkspace.is_personal ? 'Personal' : activeWorkspace.role}
+                  </span>
+                </p>
+              )}
             </div>
           </div>
 

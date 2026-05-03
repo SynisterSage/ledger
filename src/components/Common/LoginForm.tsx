@@ -32,8 +32,8 @@ export const LoginForm: React.FC<LoginProps> = ({ onSuccess, notice }) => {
   }
 
   return (
-    <div className='flex items-center justify-center min-h-screen bg-white p-4'>
-      <div className='w-full max-w-md'>
+    <div className='w-full p-4'>
+      <div className='w-full max-w-md mx-auto'>
         {/* Header */}
         <div className='mb-12'>
           <div className='inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-white border border-gray-200 shadow-sm mb-6'>

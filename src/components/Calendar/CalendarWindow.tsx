@@ -1494,7 +1494,7 @@ export const CalendarWindow = () => {
           <div className="w-10 shrink-0 border-r border-gray-200 bg-white flex items-start justify-center pt-4">
             <button
               onClick={() => setIsLeftPaneCollapsed(false)}
-              className="h-8 w-8 rounded-md border border-gray-200 bg-white text-gray-500 hover:bg-gray-100 flex items-center justify-center"
+              className="h-8 w-8 rounded-full border border-gray-200 bg-white text-gray-500 hover:bg-gray-100 flex items-center justify-center shadow-sm"
               title="Show left panel"
             >
               <ChevronRight size={14} />

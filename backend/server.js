@@ -144,6 +144,33 @@ const normalizeNullableDate = (value, fieldName) => {
 
 const normalizeEmail = (value) => String(value ?? '').trim().toLowerCase()
 
+const normalizeNoteHtml = (value) => {
+  const raw = String(value ?? '').trim()
+  if (!raw || raw === '<p><br></p>' || raw === '<p></p>') return '<p></p>'
+  return raw
+}
+
+const plainTextToParagraphHtml = (value) => {
+  const plain = String(value ?? '')
+  if (!plain.trim()) return '<p></p>'
+  return `<p>${plain.replace(/\n/g, '</p><p>')}</p>`
+}
+
+const htmlToPlainText = (value) =>
+  String(value ?? '')
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+
+const mapNoteResponse = (row) => {
+  if (!row) return row
+  return {
+    ...row,
+    content: row.content_html || plainTextToParagraphHtml(row.content ?? ''),
+  }
+}
+
 const isValidWorkspaceMemberRole = (role) => workspaceMemberRoles.includes(String(role ?? '').toLowerCase())
 
 const userPreferencesDefaults = {
@@ -842,13 +869,9 @@ app.delete('/api/workspaces/:workspaceId([0-9a-fA-F-]{36})', authMiddleware, rat
     const access = await requireWorkspaceAccess(req.authUser.id, workspaceId, 'owner')
     const deletedWorkspace = access.workspace
 
-    const deleted = await supabase
-      .from('workspaces')
-      .delete()
-      .eq('id', workspaceId)
-
-    if (deleted.error) throw deleted.error
-
+    // Write an audit entry before deleting the workspace so the
+    // foreign key to workspaces(id) remains valid. Inserting the
+    // audit log after deletion can violate the FK constraint.
     await writeWorkspaceAuditLog({
       workspaceId,
       actorUserId: req.authUser.id,
@@ -860,6 +883,13 @@ app.delete('/api/workspaces/:workspaceId([0-9a-fA-F-]{36})', authMiddleware, rat
         is_personal: deletedWorkspace.is_personal,
       },
     })
+
+    const deleted = await supabase
+      .from('workspaces')
+      .delete()
+      .eq('id', workspaceId)
+
+    if (deleted.error) throw deleted.error
 
     res.json({ deleted_workspace_id: workspaceId })
   } catch (error) {
@@ -1888,13 +1918,15 @@ app.get('/api/notes', authMiddleware, rateLimit('read'), async (req, res) => {
     const workspaceId = await resolveWorkspaceIdForRequest(req)
     const { data, error } = await supabase
       .from('notes')
-      .select('id, title, content, date, mood, source, mode, mind_map_structure, created_at, updated_at')
+      .select('id, title, content, content_html, date, mood, source, mode, mind_map_structure, created_at, updated_at')
       .eq('workspace_id', workspaceId)
       .order('updated_at', { ascending: false })
       .limit(100)
 
     if (error) throw error
-    res.json(data ?? [])
+    // Return `content` as HTML rendering field when available, falling back to legacy plain text
+    const mapped = (data ?? []).map((row) => mapNoteResponse(row))
+    res.json(mapped)
   } catch (error) {
     res.status(500).json({ error: error.message })
   }
@@ -1904,12 +1936,16 @@ app.post('/api/notes', authMiddleware, rateLimit('write'), quotaGuard('notes'), 
   try {
     const workspaceId = req.workspaceId ?? await resolveWorkspaceIdForRequest(req)
     const title = String(req.body?.title ?? 'Untitled').trim() || 'Untitled'
-    const content = String(req.body?.content ?? '').trim()
+    const rawContentHtml = req.body?.content_html !== undefined ? String(req.body.content_html ?? '').trim() : null
+    const incomingContent = req.body?.content !== undefined ? String(req.body.content ?? '').trim() : null
     const date = String(req.body?.date ?? new Date().toISOString().slice(0, 10)).trim()
     const mood = req.body?.mood ? String(req.body.mood).trim() : null
     const source = req.body?.source ? String(req.body.source).trim() : 'workspace'
     const mode = ['text', 'mind_map'].includes(req.body?.mode) ? req.body.mode : 'text'
     const mindMapStructure = mode === 'mind_map' && req.body?.mind_map_structure ? req.body.mind_map_structure : null
+    // Determine HTML and plain text values
+    const content_html = normalizeNoteHtml(rawContentHtml ?? plainTextToParagraphHtml(incomingContent ?? ''))
+    const content_plain = htmlToPlainText(content_html)
 
     const { data, error } = await supabase
       .from('notes')
@@ -1917,18 +1953,19 @@ app.post('/api/notes', authMiddleware, rateLimit('write'), quotaGuard('notes'), 
         workspace_id: workspaceId,
         user_id: req.authUser.id,
         title,
-        content,
+        content: content_plain,
+        content_html,
         date,
         mood,
         source,
         mode,
         mind_map_structure: mindMapStructure,
       })
-      .select('id, title, content, date, mood, source, mode, mind_map_structure, created_at, updated_at')
+      .select('id, title, content, content_html, date, mood, source, mode, mind_map_structure, created_at, updated_at')
       .single()
 
     if (error) throw error
-    res.json(data)
+    res.json(mapNoteResponse(data))
   } catch (error) {
     res.status(500).json({ error: error.message })
   }
@@ -1940,7 +1977,17 @@ app.patch('/api/notes/:id', authMiddleware, rateLimit('write'), async (req, res)
     const update = {}
 
     if (req.body?.title !== undefined) update.title = String(req.body.title ?? '').trim() || 'Untitled'
-    if (req.body?.content !== undefined) update.content = String(req.body.content ?? '')
+    // Support rich HTML content via `content_html`, but remain backward-compatible with `content` as plain text
+    if (req.body?.content_html !== undefined) {
+      const html = normalizeNoteHtml(req.body.content_html)
+      update.content_html = html
+      update.content = htmlToPlainText(html)
+    } else if (req.body?.content !== undefined) {
+      // legacy plain text update
+      const plain = String(req.body.content ?? '')
+      update.content = plain
+      update.content_html = normalizeNoteHtml(plainTextToParagraphHtml(plain))
+    }
     if (req.body?.date !== undefined) update.date = String(req.body.date ?? new Date().toISOString().slice(0, 10)).trim()
     if (req.body?.mood !== undefined) update.mood = req.body.mood ? String(req.body.mood).trim() : null
     if (req.body?.source !== undefined) update.source = String(req.body.source ?? 'workspace').trim() || 'workspace'
@@ -1959,11 +2006,11 @@ app.patch('/api/notes/:id', authMiddleware, rateLimit('write'), async (req, res)
       .update(update)
       .eq('id', req.params.id)
       .eq('workspace_id', workspaceId)
-      .select('id, title, content, date, mood, source, mode, mind_map_structure, created_at, updated_at')
+      .select('id, title, content, content_html, date, mood, source, mode, mind_map_structure, created_at, updated_at')
       .single()
 
     if (error) throw error
-    res.json(data)
+    res.json(mapNoteResponse(data))
   } catch (error) {
     res.status(500).json({ error: error.message })
   }
