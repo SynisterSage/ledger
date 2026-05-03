@@ -4,7 +4,10 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "npm run dev:desktop",
+    "dev:web": "vite --host 127.0.0.1 --port 5173",
+    "dev:electron": "node scripts/dev-electron.mjs",
+    "dev:desktop": "node scripts/dev-desktop.mjs",
     "build": "tsc && vite build && electron-builder",
     "preview": "vite preview"
   },
