@@ -168,10 +168,23 @@ function createSidebarWindow() {
     applySidebarWindowMode('minimized')
   })
 
-  if (VITE_DEV_SERVER_URL) {
-    sidebarWin.loadURL(VITE_DEV_SERVER_URL)
-  } else {
-    sidebarWin.loadFile(path.join(RENDERER_DIST, 'index.html'))
+  // Log renderer URL and important env vars for debugging (helps on Windows)
+  try {
+    const rendererUrl = VITE_DEV_SERVER_URL
+      ? VITE_DEV_SERVER_URL
+      : `file://${path.join(RENDERER_DIST, 'index.html')}`
+    console.log('[electron] Sidebar will load renderer URL:', rendererUrl)
+    console.log('[electron] env VITE_API_URL:', process.env.VITE_API_URL)
+    console.log('[electron] env NODE_ENV:', process.env.NODE_ENV)
+    if (VITE_DEV_SERVER_URL) {
+      // In dev, open DevTools automatically to capture renderer console logs
+      void sidebarWin.webContents.openDevTools({ mode: 'detach' })
+      sidebarWin.loadURL(rendererUrl)
+    } else {
+      sidebarWin.loadFile(path.join(RENDERER_DIST, 'index.html'))
+    }
+  } catch (err) {
+    console.error('[electron] Error while loading sidebar renderer:', err)
   }
 }
 
@@ -238,7 +251,16 @@ function openModuleWindow(kind: ModuleWindowKind, focusDate?: string | null, foc
   const focusDateQuery = focusDate ? `&focusDate=${encodeURIComponent(focusDate)}` : ''
   const focusProjectQuery = focusProjectId ? `&focusProjectId=${encodeURIComponent(focusProjectId)}` : ''
   moduleWin.webContents.once('did-finish-load', () => sendModuleFocus(kind, focusDate, focusProjectId))
-  moduleWin.loadURL(getRendererUrl(`?window=module&module=${kind}${focusDateQuery}${focusProjectQuery}`))
+  try {
+    const moduleUrl = getRendererUrl(`?window=module&module=${kind}${focusDateQuery}${focusProjectQuery}`)
+    console.log('[electron] Module window loading URL:', moduleUrl)
+    if (VITE_DEV_SERVER_URL) {
+      void moduleWin.webContents.openDevTools({ mode: 'detach' })
+    }
+    moduleWin.loadURL(moduleUrl)
+  } catch (err) {
+    console.error('[electron] Error while loading module renderer:', err)
+  }
 }
 
 app.on('window-all-closed', () => {
