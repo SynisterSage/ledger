@@ -18,6 +18,8 @@ type ModuleFocusPayload = {
   kind: ModuleWindowKind
   focusDate?: string | null
   focusProjectId?: string | null
+  focusNoteId?: string | null
+  focusTaskId?: string | null
 }
 
 let sidebarWin: BrowserWindow | null = null
@@ -192,7 +194,13 @@ function createSidebarWindow() {
   }
 }
 
-function sendModuleFocus(kind: ModuleWindowKind, focusDate?: string | null, focusProjectId?: string | null) {
+function sendModuleFocus(
+  kind: ModuleWindowKind,
+  focusDate?: string | null,
+  focusProjectId?: string | null,
+  focusNoteId?: string | null,
+  focusTaskId?: string | null
+) {
   const existing = moduleWins.get(kind)
   if (existing && !existing.isDestroyed()) {
     if (focusDate) {
@@ -201,15 +209,27 @@ function sendModuleFocus(kind: ModuleWindowKind, focusDate?: string | null, focu
     if (focusProjectId) {
       existing.webContents.send('module:focus-project', { kind, focusProjectId })
     }
+    if (focusNoteId) {
+      existing.webContents.send('module:focus-note', { kind, focusNoteId })
+    }
+    if (focusTaskId) {
+      existing.webContents.send('module:focus-task', { kind, focusTaskId })
+    }
   }
 }
 
-function openModuleWindow(kind: ModuleWindowKind, focusDate?: string | null, focusProjectId?: string | null) {
+function openModuleWindow(
+  kind: ModuleWindowKind,
+  focusDate?: string | null,
+  focusProjectId?: string | null,
+  focusNoteId?: string | null,
+  focusTaskId?: string | null
+) {
   const existing = moduleWins.get(kind)
   if (existing && !existing.isDestroyed()) {
     existing.show()
     existing.focus()
-    sendModuleFocus(kind, focusDate, focusProjectId)
+    sendModuleFocus(kind, focusDate, focusProjectId, focusNoteId, focusTaskId)
     return
   }
 
@@ -254,9 +274,11 @@ function openModuleWindow(kind: ModuleWindowKind, focusDate?: string | null, foc
 
   const focusDateQuery = focusDate ? `&focusDate=${encodeURIComponent(focusDate)}` : ''
   const focusProjectQuery = focusProjectId ? `&focusProjectId=${encodeURIComponent(focusProjectId)}` : ''
-  moduleWin.webContents.once('did-finish-load', () => sendModuleFocus(kind, focusDate, focusProjectId))
+  const focusNoteQuery = focusNoteId ? `&focusNoteId=${encodeURIComponent(focusNoteId)}` : ''
+  const focusTaskQuery = focusTaskId ? `&focusTaskId=${encodeURIComponent(focusTaskId)}` : ''
+  moduleWin.webContents.once('did-finish-load', () => sendModuleFocus(kind, focusDate, focusProjectId, focusNoteId, focusTaskId))
   try {
-    const moduleUrl = getRendererUrl(`?window=module&module=${kind}${focusDateQuery}${focusProjectQuery}`)
+    const moduleUrl = getRendererUrl(`?window=module&module=${kind}${focusDateQuery}${focusProjectQuery}${focusNoteQuery}${focusTaskQuery}`)
     moduleWin.loadURL(moduleUrl)
   } catch (err) {
     console.error('[electron] Error while loading module renderer:', err)
@@ -283,16 +305,18 @@ ipcMain.handle('window:toggle-module', (_event, payload: ModuleWindowKind | Modu
   const kind = typeof payload === 'string' ? payload : payload.kind
   const focusDate = typeof payload === 'string' ? undefined : payload.focusDate
   const focusProjectId = typeof payload === 'string' ? undefined : payload.focusProjectId
+  const focusNoteId = typeof payload === 'string' ? undefined : payload.focusNoteId
+  const focusTaskId = typeof payload === 'string' ? undefined : payload.focusTaskId
   const existing = moduleWins.get(kind)
 
   if (existing && !existing.isDestroyed()) {
-    if (focusDate || focusProjectId) {
+    if (focusDate || focusProjectId || focusNoteId || focusTaskId) {
       if (existing.isMinimized()) {
         existing.restore()
       }
       existing.show()
       existing.focus()
-      sendModuleFocus(kind, focusDate, focusProjectId)
+      sendModuleFocus(kind, focusDate, focusProjectId, focusNoteId, focusTaskId)
       return
     }
 
@@ -312,7 +336,7 @@ ipcMain.handle('window:toggle-module', (_event, payload: ModuleWindowKind | Modu
     return
   }
 
-  openModuleWindow(kind, focusDate, focusProjectId)
+  openModuleWindow(kind, focusDate, focusProjectId, focusNoteId, focusTaskId)
 })
 
 ipcMain.handle('window:open-external', async (_event, url: string) => {

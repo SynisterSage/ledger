@@ -29,6 +29,8 @@ type ModuleFocusPayload = {
   kind: ModuleWindowKind
   focusDate?: string | null
   focusProjectId?: string | null
+  focusNoteId?: string | null
+  focusTaskId?: string | null
 }
 
 contextBridge.exposeInMainWorld('desktopWindow', {

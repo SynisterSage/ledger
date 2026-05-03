@@ -275,6 +275,11 @@ export const useApi = () => {
       body: JSON.stringify(data),
     }),
 
+    // Search
+    searchWorkspace: (workspaceId: string, query: string) => request(`/api/workspaces/${workspaceId}/search?q=${encodeURIComponent(query)}`, {
+      method: 'POST',
+    }),
+
     // Notes
     getNotes: () => request('/api/notes'),
     createNote: (title: string, content: string, options?: { date?: string; mood?: string | null; source?: string; mode?: 'text' | 'mind_map'; mind_map_structure?: unknown; content_html?: string }) => request('/api/notes', {

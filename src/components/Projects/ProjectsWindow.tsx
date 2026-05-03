@@ -168,6 +168,7 @@ export const ProjectsWindow = () => {
     const { activeWorkspaceId } = useWorkspaceContext()
   const api = useApi()
   const initialFocusProjectId = new URLSearchParams(window.location.search).get('focusProjectId')
+  const initialFocusTaskId = new URLSearchParams(window.location.search).get('focusTaskId')
   const titleRef = useRef<HTMLInputElement | null>(null)
   const descriptionRef = useRef<HTMLTextAreaElement | null>(null)
   const autosaveTimerRef = useRef<number | null>(null)
@@ -595,6 +596,33 @@ export const ProjectsWindow = () => {
       window.ipcRenderer?.off('module:focus-project', focusProjectListener)
     }
   }, [focusProjectById])
+
+  useEffect(() => {
+    if (!initialFocusTaskId) return
+    if (!tasks.length) return
+    const task = tasks.find((item) => item.id === initialFocusTaskId)
+    if (!task) return
+    setSelectedTaskId(task.id)
+    const element = document.getElementById(`task-row-${task.id}`)
+    element?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  }, [initialFocusTaskId, tasks])
+
+  useEffect(() => {
+    const focusTaskListener = (_event: unknown, payload: { kind?: string; focusTaskId?: string | null }) => {
+      if (payload?.kind !== 'projects' || !payload.focusTaskId) return
+      const task = tasks.find((item) => item.id === payload.focusTaskId)
+      if (!task) return
+      setSelectedTaskId(task.id)
+      const element = document.getElementById(`task-row-${task.id}`)
+      element?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }
+
+    window.ipcRenderer?.on('module:focus-task', focusTaskListener)
+
+    return () => {
+      window.ipcRenderer?.off('module:focus-task', focusTaskListener)
+    }
+  }, [tasks])
 
   useEffect(() => {
     if (!isResizingLeftPane) return
@@ -1074,15 +1102,24 @@ export const ProjectsWindow = () => {
                       ) : (
                         selectedProjectTasks.map((task) => {
                           const completed = task.status === 'completed'
+                          const activeTask = selectedTaskId === task.id
                           return (
                             <button
+                              id={`task-row-${task.id}`}
                               key={task.id}
-                              onClick={() => void updateTaskStatus(task, completed ? 'todo' : 'completed')}
+                              onClick={() => {
+                                setSelectedTaskId(task.id)
+                                void updateTaskStatus(task, completed ? 'todo' : 'completed')
+                              }}
                               onContextMenu={(e) => {
                                 e.preventDefault()
                                 setTaskContextMenu({ x: e.clientX, y: e.clientY, taskId: task.id })
                               }}
-                              className="w-full rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3 text-left transition hover:bg-white"
+                              className={`w-full rounded-2xl border px-4 py-3 text-left transition ${
+                                activeTask
+                                  ? 'border-[#FF5F40] bg-[#FFF0EB]'
+                                  : 'border-gray-200 bg-gray-50 hover:bg-white'
+                              }`}
                             >
                               <div className="flex items-start gap-3">
                                 <span className={`mt-0.5 flex h-5 w-5 items-center justify-center rounded-full border transition ${completed ? 'border-green-500 bg-green-500' : 'border-gray-300 bg-white'}`}>
@@ -1239,17 +1276,26 @@ export const ProjectsWindow = () => {
                     ) : (
                       selectedProjectTasks.map((task) => {
                         const completed = task.status === 'completed'
+                          const activeTask = selectedTaskId === task.id
                         return (
                           <div
+                              id={`task-row-${task.id}`}
                             key={task.id}
                             onContextMenu={(e) => {
                               e.preventDefault()
                               setTaskContextMenu({ x: e.clientX, y: e.clientY, taskId: task.id })
                             }}
-                            className={`rounded-2xl border border-gray-200 bg-gray-50 ${isCompactRightPane ? 'px-3 py-2.5' : 'px-4 py-3'}`}
+                              className={`rounded-2xl border ${
+                                activeTask
+                                  ? 'border-[#FF5F40] bg-[#FFF0EB]'
+                                  : 'border-gray-200 bg-gray-50'
+                              } ${isCompactRightPane ? 'px-3 py-2.5' : 'px-4 py-3'}`}
                           >
                             <button
-                              onClick={() => void updateTaskStatus(task, completed ? 'todo' : 'completed')}
+                                onClick={() => {
+                                  setSelectedTaskId(task.id)
+                                  void updateTaskStatus(task, completed ? 'todo' : 'completed')
+                                }}
                               className="flex w-full items-start gap-3 text-left"
                             >
                               <span className={`mt-0.5 flex h-5 w-5 items-center justify-center rounded-full border transition ${completed ? 'border-green-500 bg-green-500' : 'border-gray-300 bg-white'}`}>

@@ -171,6 +171,29 @@ const mapNoteResponse = (row) => {
   }
 }
 
+const normalizeSearchTerm = (value) => String(value ?? '').trim().toLowerCase()
+
+const truncatePreview = (value, length = 80) => {
+  const text = String(value ?? '').trim().replace(/\s+/g, ' ')
+  if (!text) return ''
+  if (text.length <= length) return text
+  return `${text.slice(0, length - 1).trimEnd()}…`
+}
+
+const scoreSearchResult = (title, query, preview = '', contentMatched = false) => {
+  const normalizedTitle = normalizeSearchTerm(title)
+  const normalizedPreview = normalizeSearchTerm(preview)
+  const normalizedQuery = normalizeSearchTerm(query)
+
+  if (!normalizedQuery) return Number.MAX_SAFE_INTEGER
+  if (normalizedTitle === normalizedQuery) return 0
+  if (normalizedTitle.startsWith(normalizedQuery)) return 1
+  if (normalizedTitle.includes(normalizedQuery)) return 2
+  if (contentMatched) return 3
+  if (normalizedPreview.includes(normalizedQuery)) return 4
+  return 5
+}
+
 const isValidWorkspaceMemberRole = (role) => workspaceMemberRoles.includes(String(role ?? '').toLowerCase())
 
 const userPreferencesDefaults = {
@@ -1811,6 +1834,140 @@ app.delete('/api/events/:id', authMiddleware, rateLimit('write'), async (req, re
     const { error } = await supabase.from('events').delete().eq('id', req.params.id).eq('workspace_id', workspaceId)
     if (error) throw error
     res.json({ success: true })
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
+app.post('/api/workspaces/:workspaceId/search', authMiddleware, rateLimit('read'), async (req, res) => {
+  try {
+    const workspaceId = String(req.params.workspaceId ?? '').trim()
+    if (!workspaceId) {
+      return res.status(400).json({ error: 'Workspace id required' })
+    }
+
+    const allowed = await isWorkspaceAccessibleToUser(req.authUser.id, workspaceId)
+    if (!allowed) {
+      return res.status(404).json({ error: 'Workspace not found' })
+    }
+
+    const rawQuery = String(req.query?.q ?? req.body?.q ?? '').trim()
+    if (rawQuery.length < 2) {
+      return res.status(400).json({ error: 'Search query must be at least 2 characters' })
+    }
+
+    await setUserActiveWorkspaceId(req.authUser.id, workspaceId)
+
+    const like = `%${rawQuery}%`
+
+    const [notesResult, projectsResult, tasksResult, eventsResult] = await Promise.all([
+      supabase
+        .from('notes')
+        .select('id, title, content, content_html, mode, updated_at, created_at')
+        .eq('workspace_id', workspaceId)
+        .or(`title.ilike.${like},content.ilike.${like}`)
+        .order('updated_at', { ascending: false })
+        .limit(25),
+      supabase
+        .from('projects')
+        .select('id, name, description, status, completeness, start_date, end_date, created_at, updated_at')
+        .eq('workspace_id', workspaceId)
+        .or(`name.ilike.${like},description.ilike.${like}`)
+        .order('updated_at', { ascending: false })
+        .limit(25),
+      supabase
+        .from('tasks')
+        .select('id, project_id, title, description, due_date, due_time, status, priority, created_at, updated_at')
+        .eq('workspace_id', workspaceId)
+        .or(`title.ilike.${like},description.ilike.${like}`)
+        .order('updated_at', { ascending: false })
+        .limit(25),
+      supabase
+        .from('events')
+        .select('id, title, start_at, end_at, status, color, created_at, updated_at')
+        .eq('workspace_id', workspaceId)
+        .or(`title.ilike.${like}`)
+        .order('start_at', { ascending: true })
+        .limit(25),
+    ])
+
+    if (notesResult.error) throw notesResult.error
+    if (projectsResult.error) throw projectsResult.error
+    if (tasksResult.error) throw tasksResult.error
+    if (eventsResult.error) throw eventsResult.error
+
+    const normalizedQuery = normalizeSearchTerm(rawQuery)
+
+    const notes = (notesResult.data ?? []).map((row) => {
+      const preview = truncatePreview(htmlToPlainText(row.content_html || row.content || ''), 80)
+      return {
+        type: 'note',
+        id: row.id,
+        title: row.title,
+        preview,
+        icon: 'FileText',
+        score: scoreSearchResult(row.title, normalizedQuery, preview, normalizeSearchTerm(row.content || row.content_html || '').includes(normalizedQuery)),
+      }
+    })
+
+    const projects = (projectsResult.data ?? []).map((row) => {
+      const preview = truncatePreview(
+        `Status: ${String(row.status ?? 'Not started')} · ${Math.max(0, Math.min(100, Number(row.completeness) || 0))}% complete`,
+        80
+      )
+      return {
+        type: 'project',
+        id: row.id,
+        title: row.name,
+        preview,
+        icon: 'Briefcase',
+        score: scoreSearchResult(row.name, normalizedQuery, preview, false),
+      }
+    })
+
+    const tasks = (tasksResult.data ?? []).map((row) => {
+      const preview = truncatePreview(
+        row.description?.trim() || `Due ${row.due_date ?? 'not set'}${row.due_time ? ` · ${row.due_time}` : ''}`,
+        80
+      )
+      return {
+        type: 'task',
+        id: row.id,
+        title: row.title,
+        preview,
+        icon: 'Check',
+        project_id: row.project_id,
+        score: scoreSearchResult(row.title, normalizedQuery, preview, normalizeSearchTerm(row.description ?? '').includes(normalizedQuery)),
+      }
+    })
+
+    const events = (eventsResult.data ?? []).map((row) => {
+      const startDate = row.start_at ? new Date(row.start_at) : null
+      const preview = truncatePreview(
+        startDate && !Number.isNaN(startDate.getTime())
+          ? startDate.toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+          : 'No date set',
+        80
+      )
+      return {
+        type: 'event',
+        id: row.id,
+        title: row.title,
+        preview,
+        icon: 'Calendar',
+        focusDate: row.start_at ? String(row.start_at).slice(0, 10) : null,
+        score: scoreSearchResult(row.title, normalizedQuery, preview, false),
+      }
+    })
+
+    const combined = [...notes, ...projects, ...tasks, ...events]
+      .sort((left, right) => {
+        if (left.score !== right.score) return left.score - right.score
+        return String(left.title).localeCompare(String(right.title))
+      })
+      .slice(0, 20)
+
+    res.json(combined)
   } catch (error) {
     res.status(500).json({ error: error.message })
   }

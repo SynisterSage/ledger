@@ -20,7 +20,10 @@ import CalendarWindow from './components/Calendar/CalendarWindow'
 import NotesWindow from './components/Notes/NotesWindow'
 import ProjectsWindow from './components/Projects/ProjectsWindow'
 import SettingsWindow from './components/Settings/SettingsWindow'
+import { SearchModal } from './components/Search/SearchModal'
+import { SearchProvider } from './context/SearchContext'
 import { SkeletonList } from './components/Common/Skeleton'
+import { useSearch } from './context/SearchContext'
 
 type PostAuthStage = 'idle' | 'loading' | 'onboarding' | 'welcome' | 'ready'
 type ModuleKind = 'calendar' | 'notes' | 'projects' | 'dashboard' | 'settings' | null
@@ -49,6 +52,13 @@ function AuthStatusScreen({ title, subtitle }: { title: string; subtitle: string
     </div>
   )
 }
+
+const htmlToPlainText = (value: string) =>
+  String(value ?? '')
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
 
 // Dashboard content component
 function DashboardContent() {
@@ -508,7 +518,7 @@ function DashboardContent() {
                           <div className='min-w-0'>
                             <p className='text-sm font-medium text-gray-900 truncate'>{note.title}</p>
                             <p className='mt-1 line-clamp-2 text-sm text-gray-600'>
-                              {note.content.trim() || 'No content yet'}
+                              {htmlToPlainText(note.content) || 'No content yet'}
                             </p>
                           </div>
                           <p className='shrink-0 text-[11px] text-gray-500'>
@@ -634,11 +644,12 @@ function DashboardContent() {
 }
 
 // Main app component
-function App() {
+function AppShell() {
   const { user, isLoading, error: authError } = useAuthContext()
   const { refreshWorkspaces } = useWorkspaceContext()
   const api = useApi()
   const { state, setState } = useSidebar()
+  const { openSearch } = useSearch()
   const [uiMode, setUiMode] = useState<'auth' | 'app'>(user ? 'app' : 'auth')
   const [isAuthExiting, setIsAuthExiting] = useState(false)
   const [postAuthStage, setPostAuthStage] = useState<PostAuthStage>('idle')
@@ -653,6 +664,29 @@ function App() {
   
   // Initialize workspace for authenticated users
   useWorkspaceInit()
+
+  useEffect(() => {
+    const handleSearchShortcut = (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey)) return
+      if (event.key.toLowerCase() !== 'k') return
+
+      event.preventDefault()
+      if (!user || isLoading) return
+
+      if (state === 'minimized') {
+        setState('expanded')
+        window.setTimeout(() => {
+          openSearch()
+        }, 220)
+        return
+      }
+
+      openSearch()
+    }
+
+    window.addEventListener('keydown', handleSearchShortcut)
+    return () => window.removeEventListener('keydown', handleSearchShortcut)
+  }, [isLoading, openSearch, setState, state, user])
 
   if (isModuleWindow) {
     if (isLoading) {
@@ -942,6 +976,15 @@ function App() {
         <DashboardContent />
       </MainLayout>
     </>
+  )
+}
+
+function App() {
+  return (
+    <SearchProvider>
+      <AppShell />
+      <SearchModal />
+    </SearchProvider>
   )
 }
 

@@ -13,11 +13,13 @@ import {
   StickyNote,
   Trash2,
   CircleHelp,
+  Search,
 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useAuthContext } from '../../context/AuthContext'
 import { useWorkspaceContext } from '../../context/WorkspaceContext'
 import { useSidebar } from '../../context/SidebarContext'
+import { useSearch } from '../../context/SearchContext'
 import { useApi } from '../../hooks/useApi'
 import { SkeletonList } from '../Common/Skeleton'
 
@@ -51,6 +53,7 @@ export const ExpandedSidebar = () => {
   const { user, signOut } = useAuthContext()
   const { activeWorkspace, activeWorkspaceId } = useWorkspaceContext()
   const { setState } = useSidebar()
+  const { openSearch } = useSearch()
   const api = useApi()
   const fullName = (user?.user_metadata?.full_name as string | undefined)?.trim() ?? ''
   const firstName = fullName ? fullName.split(' ')[0] : (user?.email?.split('@')[0] ?? 'User')
@@ -731,6 +734,20 @@ export const ExpandedSidebar = () => {
       </div>
 
       <div className="px-6 pt-2 pb-2">
+        <button
+          type="button"
+          onClick={openSearch}
+          className="mb-3 flex h-10 w-full items-center justify-between gap-3 rounded-2xl border border-gray-200 bg-white px-3 text-left shadow-sm transition hover:border-gray-300 hover:bg-gray-50"
+        >
+          <span className="flex min-w-0 items-center gap-2 text-sm text-gray-500">
+            <Search size={15} className="shrink-0 text-gray-400" />
+            <span className="truncate">Search everything...</span>
+          </span>
+          <span className="shrink-0 rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.16em] text-gray-500">
+            ⌘K
+          </span>
+        </button>
+
         <div className="grid grid-cols-2 gap-2">
           <button
             onClick={() => setState('fullscreen')}

@@ -74,6 +74,7 @@ export const NotesWindow = () => {
   const { user } = useAuthContext()
   const { activeWorkspaceId } = useWorkspaceContext()
   const api = useApi()
+  const initialFocusNoteId = new URLSearchParams(window.location.search).get('focusNoteId')
   const titleRef = useRef<HTMLInputElement | null>(null)
   const autosaveTimerRef = useRef<number | null>(null)
   const savingIndicatorTimerRef = useRef<number | null>(null)
@@ -495,6 +496,31 @@ export const NotesWindow = () => {
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [exitMindMapFullscreen, isMindMapFullscreen])
+
+  useEffect(() => {
+    if (!initialFocusNoteId) return
+    if (!notes.length) return
+    if (selectedNoteId === initialFocusNoteId) return
+
+    const target = notes.find((note) => note.id === initialFocusNoteId)
+    if (!target) return
+    void openNote(target)
+  }, [initialFocusNoteId, notes, openNote, selectedNoteId])
+
+  useEffect(() => {
+    const focusNoteListener = (_event: unknown, payload: { kind?: string; focusNoteId?: string | null }) => {
+      if (payload?.kind !== 'notes' || !payload.focusNoteId) return
+      const target = notes.find((note) => note.id === payload.focusNoteId)
+      if (!target) return
+      void openNote(target)
+    }
+
+    window.ipcRenderer?.on('module:focus-note', focusNoteListener)
+
+    return () => {
+      window.ipcRenderer?.off('module:focus-note', focusNoteListener)
+    }
+  }, [notes, openNote])
 
   return (
     <div className="h-screen bg-[#f5f7fb] flex flex-col">

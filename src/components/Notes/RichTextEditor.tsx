@@ -5,6 +5,8 @@ import { ContentEditable } from '@lexical/react/LexicalContentEditable'
 import { HistoryPlugin } from '@lexical/react/LexicalHistoryPlugin'
 import { OnChangePlugin } from '@lexical/react/LexicalOnChangePlugin'
 import { LinkPlugin } from '@lexical/react/LexicalLinkPlugin'
+import { MarkdownShortcutPlugin } from '@lexical/react/LexicalMarkdownShortcutPlugin'
+import { TabIndentationPlugin } from '@lexical/react/LexicalTabIndentationPlugin'
 import { ListPlugin } from '@lexical/react/LexicalListPlugin'
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext'
 import { Bold, Italic, Underline, List, ListOrdered, Link2, Code2, ChevronDown } from 'lucide-react'
@@ -13,10 +15,11 @@ import { TOGGLE_LINK_COMMAND } from '@lexical/link'
 import { ListItemNode, ListNode } from '@lexical/list'
 import { INSERT_ORDERED_LIST_COMMAND, INSERT_UNORDERED_LIST_COMMAND } from '@lexical/list'
 import { CodeHighlightNode, CodeNode } from '@lexical/code'
-import { HeadingNode, QuoteNode } from '@lexical/rich-text'
+import { HorizontalRuleNode } from '@lexical/react/LexicalHorizontalRuleNode'
+import { HeadingNode, QuoteNode, registerRichText } from '@lexical/rich-text'
 import { $generateHtmlFromNodes } from '@lexical/html'
 import { $generateNodesFromDOM } from '@lexical/html'
-import { $getRoot, $insertNodes, EditorState, FORMAT_TEXT_COMMAND, $getSelection, $isRangeSelection, $createParagraphNode } from 'lexical'
+import { $getRoot, $insertNodes, EditorState, FORMAT_TEXT_COMMAND, $getPreviousSelection, $getSelection, $isRangeSelection, $createParagraphNode } from 'lexical'
 import { $setBlocksType } from '@lexical/selection'
 import { $createHeadingNode, $createQuoteNode } from '@lexical/rich-text'
 
@@ -30,13 +33,19 @@ type Props = {
 
 const editorConfig = {
   namespace: 'ledger-notes',
-  nodes: [HeadingNode, QuoteNode, ListNode, ListItemNode, LinkNode, AutoLinkNode, CodeNode, CodeHighlightNode],
+  nodes: [HeadingNode, QuoteNode, HorizontalRuleNode, ListNode, ListItemNode, LinkNode, AutoLinkNode, CodeNode, CodeHighlightNode],
   theme: {
     text: {
       bold: 'font-bold',
       italic: 'italic',
       underline: 'underline',
     },
+    heading: {
+      h1: 'mb-4 text-4xl font-semibold tracking-tight text-gray-900',
+      h2: 'mb-3 text-3xl font-semibold tracking-tight text-gray-900',
+      h3: 'mb-2 text-2xl font-semibold tracking-tight text-gray-900',
+    },
+    quote: 'my-4 border-l-4 border-gray-300 pl-4 italic text-gray-600',
     paragraph: 'mb-4',
     list: {
       nested: {
@@ -84,6 +93,14 @@ const LoadHtmlPlugin = ({ html, editorKey }: { html?: string | null; editorKey?:
   return null
 }
 
+const RichTextBehaviorPlugin = () => {
+  const [editor] = useLexicalComposerContext()
+
+  useEffect(() => registerRichText(editor), [editor])
+
+  return null
+}
+
 const ToolbarButton = ({
   onClick,
   title,
@@ -115,11 +132,24 @@ const ToolbarPlugin = () => {
   const [editor] = useLexicalComposerContext()
   const [blockType, setBlockType] = useState<BlockType>('paragraph')
   const [isDropdownOpen, setIsDropdownOpen] = useState(false)
+  const [activeFormats, setActiveFormats] = useState({
+    bold: false,
+    italic: false,
+    underline: false,
+    code: false,
+  })
 
   const updateToolbar = useCallback(() => {
     editor.update(() => {
       const selection = $getSelection()
       if ($isRangeSelection(selection)) {
+        setActiveFormats({
+          bold: selection.hasFormat('bold'),
+          italic: selection.hasFormat('italic'),
+          underline: selection.hasFormat('underline'),
+          code: selection.hasFormat('code'),
+        })
+
         const anchorNode = selection.anchor.getNode()
         let element = anchorNode
         if (anchorNode.getKey() === 'root') {
@@ -143,9 +173,10 @@ const ToolbarPlugin = () => {
 
   const changeBlockType = useCallback(
     (type: BlockType) => {
+      editor.focus()
       editor.update(() => {
-        const selection = $getSelection()
-        if ($isRangeSelection(selection)) {
+        const selection = $getSelection() || $getPreviousSelection()
+        if (selection && $isRangeSelection(selection)) {
           if (type === 'h1') $setBlocksType(selection, () => $createHeadingNode('h1'))
           else if (type === 'h2') $setBlocksType(selection, () => $createHeadingNode('h2'))
           else if (type === 'h3') $setBlocksType(selection, () => $createHeadingNode('h3'))
@@ -206,15 +237,24 @@ const ToolbarPlugin = () => {
 
       <div className="mx-1 h-5 w-px bg-gray-200" />
 
-      <ToolbarButton title="Bold (Ctrl+B)" onClick={() => editor.dispatchCommand(FORMAT_TEXT_COMMAND, 'bold')}>
+      <ToolbarButton
+        title="Bold (Ctrl+B)"
+        onClick={() => editor.dispatchCommand(FORMAT_TEXT_COMMAND, 'bold')}
+        isActive={activeFormats.bold}
+      >
         <Bold size={14} />
       </ToolbarButton>
-      <ToolbarButton title="Italic (Ctrl+I)" onClick={() => editor.dispatchCommand(FORMAT_TEXT_COMMAND, 'italic')}>
+      <ToolbarButton
+        title="Italic (Ctrl+I)"
+        onClick={() => editor.dispatchCommand(FORMAT_TEXT_COMMAND, 'italic')}
+        isActive={activeFormats.italic}
+      >
         <Italic size={14} />
       </ToolbarButton>
       <ToolbarButton
         title="Underline (Ctrl+U)"
         onClick={() => editor.dispatchCommand(FORMAT_TEXT_COMMAND, 'underline')}
+        isActive={activeFormats.underline}
       >
         <Underline size={14} />
       </ToolbarButton>
@@ -230,7 +270,11 @@ const ToolbarPlugin = () => {
       >
         <ListOrdered size={14} />
       </ToolbarButton>
-      <ToolbarButton title="Inline Code" onClick={() => editor.dispatchCommand(FORMAT_TEXT_COMMAND, 'code')}>
+      <ToolbarButton
+        title="Inline Code"
+        onClick={() => editor.dispatchCommand(FORMAT_TEXT_COMMAND, 'code')}
+        isActive={activeFormats.code}
+      >
         <Code2 size={14} />
       </ToolbarButton>
 
@@ -304,6 +348,7 @@ export function RichTextEditor({ initialValue, editorKey, onChange, onFocus, onB
       <div>
         <ToolbarPlugin />
         <div className="relative mt-3">
+          <RichTextBehaviorPlugin />
           <RichTextPlugin
             contentEditable={
               <ContentEditable
@@ -322,6 +367,8 @@ export function RichTextEditor({ initialValue, editorKey, onChange, onFocus, onB
           <LoadHtmlPlugin html={initialValue} editorKey={editorKey} />
           <HistoryPlugin />
           <LinkPlugin />
+          <MarkdownShortcutPlugin />
+          <TabIndentationPlugin />
           <ListPlugin />
           <OnChangePlugin onChange={handleChange} />
         </div>

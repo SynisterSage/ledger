@@ -1,10 +1,12 @@
-import { BarChart3, CheckCircle2, Clock3, CalendarDays, LogOut, ChevronRight, StickyNote, Folder } from 'lucide-react'
+import { BarChart3, CalendarDays, LogOut, ChevronRight, StickyNote, Folder, Search } from 'lucide-react'
 import { useAuthContext } from '../../context/AuthContext'
 import { useSidebar } from '../../context/SidebarContext'
+import { useSearch } from '../../context/SearchContext'
 
 export const MinimizedSidebar = () => {
   const { signOut } = useAuthContext()
-  const { toggleExpand } = useSidebar()
+  const { toggleExpand, setState } = useSidebar()
+  const { openSearch } = useSearch()
   const iconBase =
     'w-10 h-10 rounded-lg border transition-all duration-150 flex items-center justify-center active:scale-95'
   const neutralIcon = `${iconBase} bg-white/30 border-white/30 hover:bg-white/55 hover:border-white/50 text-gray-700`
@@ -22,6 +24,19 @@ export const MinimizedSidebar = () => {
       {/* Navigation Icons */}
       <div className="flex flex-col gap-4">
         <button
+          title="Search (Cmd/Ctrl+K)"
+          aria-label="Open search"
+          onClick={() => {
+            setState('expanded')
+            window.setTimeout(() => {
+              openSearch()
+            }, 220)
+          }}
+          className={accentIcon}
+        >
+          <Search size={18} />
+        </button>
+        <button
           title="Dashboard"
           aria-label="Open dashboard"
           onClick={() => {
@@ -30,20 +45,6 @@ export const MinimizedSidebar = () => {
           className={neutralIcon}
         >
           <BarChart3 size={18} />
-        </button>
-        <button
-          title="Tasks"
-          aria-label="Open tasks"
-          className={neutralIcon}
-        >
-          <CheckCircle2 size={18} />
-        </button>
-        <button
-          title="Time Tracking"
-          aria-label="Open time tracking"
-          className={neutralIcon}
-        >
-          <Clock3 size={18} />
         </button>
         <button
           title="Calendar"
