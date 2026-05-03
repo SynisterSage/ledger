@@ -23,6 +23,14 @@ export const useAuth = (): UseAuthReturn => {
   useEffect(() => {
     let isMounted = true
 
+    if (!authService.isConfigured) {
+      setError(new Error('Missing Supabase credentials. Please check your environment configuration.'))
+      setIsLoading(false)
+      return () => {
+        isMounted = false
+      }
+    }
+
     const subscription = authService.onAuthStateChange((event, newSession) => {
       if (!isMounted) return
 

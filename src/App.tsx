@@ -604,7 +604,7 @@ function DashboardContent() {
 
 // Main app component
 function App() {
-  const { user, isLoading } = useAuthContext()
+  const { user, isLoading, error: authError } = useAuthContext()
   const { refreshWorkspaces } = useWorkspaceContext()
   const api = useApi()
   const { state, setState } = useSidebar()
@@ -806,6 +806,15 @@ function App() {
 
   if (isLoading) {
     return <AuthStatusScreen title='Loading' subtitle='Preparing Ledger.' />
+  }
+
+  if (authError) {
+    return (
+      <AuthStatusScreen
+        title='Configuration issue'
+        subtitle={authError.message}
+      />
+    )
   }
 
   if (inviteFlowStatus === 'processing') {
