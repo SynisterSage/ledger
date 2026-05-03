@@ -1,9 +1,11 @@
 import { spawn } from 'node:child_process'
+import { createRequire } from 'node:module'
 
-const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm'
+const require = createRequire(import.meta.url)
+const viteEntry = require.resolve('vite/bin/vite.js')
 const launchElectron = process.env.VITE_LAUNCH_ELECTRON ?? '0'
 
-const child = spawn(npmCommand, ['exec', 'vite', '--', '--host', '127.0.0.1', '--port', '5173'], {
+const child = spawn(process.execPath, [viteEntry, '--host', '127.0.0.1', '--port', '5173'], {
   stdio: 'inherit',
   env: {
     ...process.env,
