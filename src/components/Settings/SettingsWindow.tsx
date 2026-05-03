@@ -802,7 +802,7 @@ export const SettingsWindow = () => {
                           </button>
                         ) : (
                           <span className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs font-medium text-gray-500">
-                            Managed by owner
+                            Owner only
                           </span>
                         )}
                       </div>
@@ -924,7 +924,7 @@ export const SettingsWindow = () => {
                         <p className="mt-1 text-xs text-gray-600">Manage access for the selected workspace. Owners and admins can add or remove people.</p>
                       </div>
                       <span className="rounded-full border border-gray-200 bg-gray-50 px-2.5 py-1 text-[11px] font-medium text-gray-700">
-                        You are {workspaceUserRole}
+                          Role: {workspaceUserRole}
                       </span>
                     </div>
 

@@ -16,6 +16,7 @@ import {
 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useAuthContext } from '../../context/AuthContext'
+import { useWorkspaceContext } from '../../context/WorkspaceContext'
 import { useSidebar } from '../../context/SidebarContext'
 import { useApi } from '../../hooks/useApi'
 import { SkeletonList } from '../Common/Skeleton'
@@ -48,6 +49,7 @@ const todayKey = () => {
 
 export const ExpandedSidebar = () => {
   const { user, signOut } = useAuthContext()
+  const { activeWorkspace } = useWorkspaceContext()
   const { setState } = useSidebar()
   const api = useApi()
   const fullName = (user?.user_metadata?.full_name as string | undefined)?.trim() ?? ''
@@ -256,9 +258,10 @@ export const ExpandedSidebar = () => {
 
     let cancelled = false
 
+    setIsLoadingProjects(true)
+
     const loadProjects = async () => {
       try {
-        setIsLoadingProjects(true)
         const data = await api.getProjects()
         if (!cancelled) {
           const projects = (data as Array<{ id: string; name: string; status: string; completeness: number }>)
@@ -301,9 +304,10 @@ export const ExpandedSidebar = () => {
 
     let cancelled = false
 
+    setIsLoadingUpcoming(true)
+
     const loadUpcoming = async () => {
       try {
-        setIsLoadingUpcoming(true)
         const events = await api.getUpcomingEvents()
         const today = new Date()
         today.setHours(0, 0, 0, 0)
@@ -692,6 +696,9 @@ export const ExpandedSidebar = () => {
         <div className="bg-white rounded-lg p-3 border border-gray-200 flex items-start justify-between">
           <div>
             <p className="text-sm font-semibold text-gray-900">{firstName}</p>
+            <p className="mt-0.5 text-[11px] font-medium text-gray-500 truncate">
+              {activeWorkspace ? `Workspace: ${activeWorkspace.name}` : 'No workspace selected'}
+            </p>
             <p className="text-xs text-gray-700 truncate">{user?.email}</p>
           </div>
           <button

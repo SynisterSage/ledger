@@ -749,7 +749,47 @@ app.post('/api/workspaces', authMiddleware, rateLimit('write'), async (req, res)
   }
 })
 
-app.patch('/api/workspaces/:workspaceId', authMiddleware, rateLimit('write'), async (req, res) => {
+app.get('/api/workspaces/active', authMiddleware, rateLimit('read'), async (req, res) => {
+  try {
+    const activeWorkspaceId = await resolveWorkspaceIdForRequest(req)
+    const { data, error } = await supabase
+      .from('workspaces')
+      .select('id, name, description, is_personal, color, owner_id, created_at, updated_at')
+      .eq('id', activeWorkspaceId)
+      .maybeSingle()
+
+    if (error) throw error
+    res.json({ workspace_id: activeWorkspaceId, workspace: data ?? null })
+  } catch (error) {
+    res.status(error.statusCode || 500).json({ error: error.message })
+  }
+})
+
+app.patch('/api/workspaces/active', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = String(req.body?.workspace_id ?? '').trim()
+    if (!workspaceId) {
+      return res.status(400).json({ error: 'Workspace id is required' })
+    }
+
+    const access = await getWorkspaceAccess(req.authUser.id, workspaceId)
+    if (!access) {
+      return res.status(403).json({ error: 'Workspace access denied' })
+    }
+
+    await setUserActiveWorkspaceId(req.authUser.id, workspaceId)
+
+    res.json({
+      workspace_id: workspaceId,
+      workspace: access.workspace,
+      current_user_role: access.role,
+    })
+  } catch (error) {
+    res.status(error.statusCode || 500).json({ error: error.message })
+  }
+})
+
+app.patch('/api/workspaces/:workspaceId([0-9a-fA-F-]{36})', authMiddleware, rateLimit('write'), async (req, res) => {
   try {
     const workspaceId = String(req.params.workspaceId)
     const access = await requireWorkspaceAccess(req.authUser.id, workspaceId, 'admin')
@@ -796,7 +836,7 @@ app.patch('/api/workspaces/:workspaceId', authMiddleware, rateLimit('write'), as
   }
 })
 
-app.delete('/api/workspaces/:workspaceId', authMiddleware, rateLimit('write'), async (req, res) => {
+app.delete('/api/workspaces/:workspaceId([0-9a-fA-F-]{36})', authMiddleware, rateLimit('write'), async (req, res) => {
   try {
     const workspaceId = String(req.params.workspaceId)
     const access = await requireWorkspaceAccess(req.authUser.id, workspaceId, 'owner')
@@ -822,50 +862,6 @@ app.delete('/api/workspaces/:workspaceId', authMiddleware, rateLimit('write'), a
     })
 
     res.json({ deleted_workspace_id: workspaceId })
-  } catch (error) {
-    res.status(error.statusCode || 500).json({ error: error.message })
-  }
-})
-
-app.get('/api/workspaces/active', authMiddleware, rateLimit('read'), async (req, res) => {
-  try {
-    const activeWorkspaceId = await resolveWorkspaceIdForRequest(req)
-    const { data, error } = await supabase
-      .from('workspaces')
-      .select('id, name, description, is_personal, color, owner_id, created_at, updated_at')
-      .eq('id', activeWorkspaceId)
-      .maybeSingle()
-
-    if (error) throw error
-    res.json({ workspace_id: activeWorkspaceId, workspace: data ?? null })
-  } catch (error) {
-    res.status(error.statusCode || 500).json({ error: error.message })
-  }
-})
-
-app.patch('/api/workspaces/active', authMiddleware, rateLimit('write'), async (req, res) => {
-  try {
-    const workspaceId = String(req.body?.workspace_id ?? '').trim()
-    if (!workspaceId) {
-      return res.status(400).json({ error: 'workspace_id is required' })
-    }
-
-    const allowed = await isWorkspaceAccessibleToUser(req.authUser.id, workspaceId)
-    if (!allowed) {
-      return res.status(403).json({ error: 'Workspace access denied' })
-    }
-
-    await setUserActiveWorkspaceId(req.authUser.id, workspaceId)
-    const activeWorkspaceId = workspaceId
-    const { data, error } = await supabase
-      .from('workspaces')
-      .select('id, name, description, is_personal, color, owner_id, created_at, updated_at')
-      .eq('id', activeWorkspaceId)
-      .maybeSingle()
-
-    if (error) throw error
-
-    res.json({ workspace_id: activeWorkspaceId, workspace: data ?? null })
   } catch (error) {
     res.status(error.statusCode || 500).json({ error: error.message })
   }

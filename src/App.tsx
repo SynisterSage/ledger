@@ -784,17 +784,12 @@ function App() {
   useEffect(() => {
     if (postAuthStage !== 'welcome') return
 
-    const openTimer = window.setTimeout(() => {
-      setState('expanded')
-    }, 80)
-
     const closeTimer = window.setTimeout(() => {
       setState('minimized')
       setPostAuthStage('ready')
-    }, 680)
+    }, 80)
 
     return () => {
-      window.clearTimeout(openTimer)
       window.clearTimeout(closeTimer)
     }
   }, [postAuthStage, setState])
@@ -838,7 +833,7 @@ function App() {
 
   if (uiMode === 'auth') {
     return (
-      <div className='flex h-screen items-center justify-center bg-white'>
+      <div className='flex h-screen items-center justify-center bg-[#f6f7fb]'>
         <div
           className={`transform transition-all duration-250 ease-out ${
             isAuthExiting ? 'opacity-0 scale-95 translate-y-2' : 'opacity-100 scale-100 translate-y-0'
