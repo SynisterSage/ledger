@@ -918,13 +918,13 @@ export const SettingsWindow = () => {
                   </div>
 
                   <div className="mt-4 rounded-2xl border border-gray-200 bg-white p-4">
-                    <div className="flex items-center justify-between gap-3">
-                      <div>
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="min-w-0">
                         <h3 className="text-sm font-semibold text-gray-900">Members</h3>
                         <p className="mt-1 text-xs text-gray-600">Manage access for the selected workspace. Owners and admins can add or remove people.</p>
                       </div>
-                      <span className="rounded-full border border-gray-200 bg-gray-50 px-2.5 py-1 text-[11px] font-medium text-gray-700">
-                          Role: {workspaceUserRole}
+                      <span className="inline-flex self-start rounded-full border border-gray-200 bg-gray-50 px-2.5 py-1 text-[11px] font-medium text-gray-700">
+                        {workspaceUserRole === 'owner' ? 'Owner' : `Role: ${workspaceUserRole}`}
                       </span>
                     </div>
 
@@ -938,8 +938,8 @@ export const SettingsWindow = () => {
                           const displayName = member.full_name || member.email || member.user_id
                           const canEditRole = canManageWorkspace && !member.is_owner && member.user_id !== user?.id
                           return (
-                            <div key={member.user_id} className="grid grid-cols-[1fr_auto_auto] items-center gap-2 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2">
-                              <div className="min-w-0">
+                            <div key={member.user_id} className="flex flex-col gap-2 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 lg:grid lg:grid-cols-[minmax(0,1fr)_auto_auto] lg:items-center">
+                              <div className="min-w-0 lg:min-w-0">
                                 <p className="truncate text-sm font-medium text-gray-900">{displayName}</p>
                                 <p className="truncate text-xs text-gray-600">{member.email || 'No email'}{member.is_owner ? ' · Owner' : ''}</p>
                               </div>
@@ -947,7 +947,7 @@ export const SettingsWindow = () => {
                                 value={member.is_owner ? 'owner' : member.role}
                                 onChange={(e) => void handleUpdateMemberRole(member.user_id, e.target.value as 'admin' | 'member' | 'viewer')}
                                 disabled={!canEditRole || memberActionId === member.user_id}
-                                className="h-8 appearance-none rounded-lg border border-gray-200 bg-white px-2 pr-8 text-xs text-gray-800 outline-none disabled:opacity-60"
+                                className="h-8 w-full appearance-none rounded-lg border border-gray-200 bg-white px-2 pr-8 text-xs text-gray-800 outline-none disabled:opacity-60 lg:w-auto"
                                 style={selectChevronStyle}
                                 aria-label={`Update ${displayName} role`}
                               >
@@ -964,7 +964,7 @@ export const SettingsWindow = () => {
                               <button
                                 onClick={() => void handleRemoveMember(member.user_id)}
                                 disabled={!canManageWorkspace || member.is_owner || member.user_id === user?.id || memberActionId === member.user_id}
-                                className="h-8 rounded-lg border border-gray-200 bg-white px-2 text-xs font-medium text-gray-700 transition hover:bg-gray-100 disabled:opacity-50"
+                                className="h-8 w-full rounded-lg border border-gray-200 bg-white px-2 text-xs font-medium text-gray-700 transition hover:bg-gray-100 disabled:opacity-50 lg:w-auto"
                               >
                                 Remove
                               </button>

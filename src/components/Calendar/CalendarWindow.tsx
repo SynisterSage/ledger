@@ -1,6 +1,7 @@
 import { CalendarDays, ChevronLeft, ChevronRight, ChevronDown, X, BellRing, ClipboardPaste, CalendarPlus, Trash2 } from 'lucide-react'
 import { Fragment, type CSSProperties, useEffect, useMemo, useRef, useState } from 'react'
 import { useAuthContext } from '../../context/AuthContext'
+import { useWorkspaceContext } from '../../context/WorkspaceContext'
 import { useApi } from '../../hooks/useApi'
 
 type CalendarRow = {
@@ -253,6 +254,7 @@ const parseIcsEvents = (rawIcs: string): ParsedIcsEvent[] => {
 
 export const CalendarWindow = () => {
   const { user } = useAuthContext()
+  const { activeWorkspaceId } = useWorkspaceContext()
   const api = useApi()
   const centerScrollRef = useRef<HTMLDivElement | null>(null)
   const hasLoadedDataRef = useRef(false)
@@ -538,7 +540,17 @@ export const CalendarWindow = () => {
     let cancelled = false
 
     const loadCalendarData = async () => {
-      if (!user) return
+      if (!user || !activeWorkspaceId) {
+        if (!cancelled) {
+          setCalendars([])
+          setEvents([])
+          setReminders([])
+          setHasLoadedData(false)
+          setIsLoading(false)
+          setIsRefreshing(false)
+        }
+        return
+      }
 
       const isInitialLoad = !hasLoadedDataRef.current
       if (isInitialLoad) {
@@ -616,7 +628,7 @@ export const CalendarWindow = () => {
       cancelled = true
       window.clearInterval(refreshTimer)
     }
-  }, [user?.id, viewConfig.start.toISOString(), viewConfig.end.toISOString()])
+  }, [user?.id, activeWorkspaceId, viewConfig.start.toISOString(), viewConfig.end.toISOString(), api])
 
   useEffect(() => {
     if (!appleSyncMessage) return
