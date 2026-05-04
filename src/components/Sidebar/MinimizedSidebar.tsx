@@ -5,27 +5,31 @@ import { useSearch } from '../../context/SearchContext'
 
 export const MinimizedSidebar = () => {
   const { signOut } = useAuthContext()
-  const { toggleExpand, setState } = useSidebar()
+  const { toggleExpand, setState, position } = useSidebar()
   const { openSearch } = useSearch()
-  const iconBase =
-    'w-10 h-10 rounded-lg border transition-all duration-150 flex items-center justify-center active:scale-95'
+  const isHorizontal = position === 'top' || position === 'bottom'
+  const iconBase = 'w-10 h-10 rounded-lg border transition-all duration-150 flex items-center justify-center active:scale-95'
   const neutralIcon = `${iconBase} bg-white/30 border-white/30 hover:bg-white/55 hover:border-white/50 text-gray-700`
   const accentIcon = neutralIcon
   const actionIcon = `${iconBase} bg-gray-900/60 border-gray-900/10 hover:bg-gray-900/80 hover:border-gray-900/20 text-white`
   const dangerIcon = `${iconBase} bg-red-400/30 border-red-400/20 hover:bg-red-400/45 hover:border-red-400/30 text-red-700`
 
   return (
-    <div className="w-16 h-screen bg-white border-r border-gray-200 flex flex-col items-center justify-between py-6">
-      {/* Logo */}
-      <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-gray-200 bg-white shadow-sm">
-        <img src="/logo-color.svg" alt="Ledger" className="h-7 w-7" />
-      </div>
+    <div className={`bg-white border-gray-200 flex ${isHorizontal ? 'h-16 w-full flex-row items-center justify-between border-b px-4' : 'h-screen w-16 flex-col items-center justify-between border-r py-6'}`}>
+      <button
+        type='button'
+        onClick={toggleExpand}
+        title='Collapse to icon'
+        aria-label='Collapse sidebar'
+        className='flex h-11 w-11 items-center justify-center rounded-2xl border border-gray-200 bg-white shadow-sm transition-transform duration-150 hover:scale-[1.02]'
+      >
+        <img src='/logo-color.svg' alt='Ledger' className='h-7 w-7' />
+      </button>
 
-      {/* Navigation Icons */}
-      <div className="flex flex-col gap-4">
+      <div className={`flex ${isHorizontal ? 'flex-row gap-3' : 'flex-col gap-4'}`}>
         <button
-          title="Search (Cmd/Ctrl+K)"
-          aria-label="Open search"
+          title='Search (Cmd/Ctrl+K)'
+          aria-label='Open search'
           onClick={() => {
             setState('expanded')
             window.setTimeout(() => {
@@ -37,8 +41,8 @@ export const MinimizedSidebar = () => {
           <Search size={18} />
         </button>
         <button
-          title="Dashboard"
-          aria-label="Open dashboard"
+          title='Dashboard'
+          aria-label='Open dashboard'
           onClick={() => {
             window.desktopWindow?.toggleModule('dashboard')
           }}
@@ -47,24 +51,24 @@ export const MinimizedSidebar = () => {
           <BarChart3 size={18} />
         </button>
         <button
-          title="Calendar"
-          aria-label="Open calendar"
+          title='Calendar'
+          aria-label='Open calendar'
           onClick={() => window.desktopWindow?.toggleModule('calendar')}
           className={accentIcon}
         >
           <CalendarDays size={18} />
         </button>
         <button
-          title="Projects"
-          aria-label="Open projects"
+          title='Projects'
+          aria-label='Open projects'
           onClick={() => window.desktopWindow?.toggleModule('projects')}
           className={accentIcon}
         >
           <Folder size={18} />
         </button>
         <button
-          title="Notes"
-          aria-label="Open notes"
+          title='Notes'
+          aria-label='Open notes'
           onClick={() => window.desktopWindow?.toggleModule('notes')}
           className={accentIcon}
         >
@@ -72,21 +76,18 @@ export const MinimizedSidebar = () => {
         </button>
       </div>
 
-      {/* Bottom Actions */}
-      <div className="flex flex-col gap-3 items-center">
-        {/* User Avatar / Expand Button */}
+      <div className={`flex items-center ${isHorizontal ? 'flex-row gap-3' : 'flex-col gap-3'}`}>
         <button
-          onClick={toggleExpand}
-          title="Expand"
+          onClick={() => setState('expanded')}
+          title='Expand'
           className={actionIcon}
         >
-          <ChevronRight size={20} className="text-white" />
+          <ChevronRight size={20} className='text-white' />
         </button>
 
-        {/* Sign Out */}
         <button
           onClick={signOut}
-          title="Sign Out"
+          title='Sign Out'
           className={dangerIcon}
         >
           <LogOut size={18} />

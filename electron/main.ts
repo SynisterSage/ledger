@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, screen, shell } from 'electron'
+import { app, BrowserWindow, ipcMain, screen, shell, globalShortcut } from 'electron'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 
@@ -12,7 +12,7 @@ process.env.VITE_PUBLIC = VITE_DEV_SERVER_URL
   ? path.join(process.env.APP_ROOT, 'public')
   : RENDERER_DIST
 
-type SidebarWindowMode = 'auth' | 'minimized' | 'expanded' | 'fullscreen'
+type SidebarWindowMode = 'auth' | 'minimized' | 'compact' | 'expanded' | 'fullscreen'
 type ModuleWindowKind = 'calendar' | 'notes' | 'projects' | 'dashboard' | 'settings'
 type ModuleFocusPayload = {
   kind: ModuleWindowKind
@@ -25,9 +25,11 @@ type ModuleFocusPayload = {
 let sidebarWin: BrowserWindow | null = null
 const moduleWins = new Map<ModuleWindowKind, BrowserWindow>()
 let currentSidebarMode: SidebarWindowMode = 'auth'
+let sidebarIsVisible = true
 
 const WINDOW_MARGIN = 16
-const MINIMIZED_WIDTH = 64
+const RAIL_SIZE = 64
+const COLLAPSED_SIZE = 64
 const EXPANDED_WIDTH = 320
 const DASHBOARD_WIDTH = 1280
 const DASHBOARD_HEIGHT = 860
@@ -80,6 +82,18 @@ function getDockedBounds(width: number) {
   }
 }
 
+function getCollapsedBounds(size: number) {
+  const { x, y, width: workWidth, height: workHeight } = screen.getPrimaryDisplay().workArea
+  const safeSize = Math.min(size, workWidth - WINDOW_MARGIN * 2, workHeight - WINDOW_MARGIN * 2)
+
+  return {
+    x: x + workWidth - safeSize - WINDOW_MARGIN,
+    y: y + WINDOW_MARGIN,
+    width: safeSize,
+    height: safeSize,
+  }
+}
+
 function getCenteredBounds(width: number, height: number) {
   const { x, y, width: workWidth, height: workHeight } = screen.getPrimaryDisplay().workArea
   const safeWidth = Math.min(width, workWidth - WINDOW_MARGIN * 2)
@@ -93,7 +107,7 @@ function getCenteredBounds(width: number, height: number) {
 }
 
 function getModuleBoundsNextToSidebar() {
-  const sidebarBounds = sidebarWin?.getBounds() ?? getDockedBounds(MINIMIZED_WIDTH)
+  const sidebarBounds = sidebarWin?.getBounds() ?? getDockedBounds(RAIL_SIZE)
   const { x, y, width: workWidth, height: workHeight } = screen.getPrimaryDisplay().workArea
 
   const width = Math.min(MODULE_WIDTH, workWidth - WINDOW_MARGIN * 2)
@@ -134,12 +148,32 @@ function applySidebarWindowMode(mode: SidebarWindowMode) {
     return
   }
 
-  const width = mode === 'minimized' ? MINIMIZED_WIDTH : EXPANDED_WIDTH
-  const bounds = getDockedBounds(width)
+  const bounds =
+    mode === 'compact'
+      ? getCollapsedBounds(COLLAPSED_SIZE)
+      : mode === 'minimized'
+        ? getDockedBounds(RAIL_SIZE)
+        : getDockedBounds(EXPANDED_WIDTH)
   sidebarWin.setAlwaysOnTop(true, 'screen-saver')
   sidebarWin.setResizable(false)
   setWindowButtonVisibility(sidebarWin, false)
   sidebarWin.setBounds(bounds, false)
+}
+
+function applySidebarVisibility(isVisible: boolean) {
+  if (!sidebarWin || sidebarWin.isDestroyed()) return
+
+  sidebarIsVisible = isVisible
+
+  if (!isVisible) {
+    sidebarWin.hide()
+    sidebarWin.webContents.send('sidebar:visibility-changed', { isVisible: false })
+    return
+  }
+
+  sidebarWin.show()
+  applySidebarWindowMode(currentSidebarMode)
+  sidebarWin.webContents.send('sidebar:visibility-changed', { isVisible: true })
 }
 
 function getRendererUrl(search: string) {
@@ -291,14 +325,29 @@ app.on('window-all-closed', () => {
   }
 })
 
+app.on('will-quit', () => {
+  globalShortcut.unregisterAll()
+})
+
 app.on('activate', () => {
-  if (BrowserWindow.getAllWindows().length === 0) {
+  if (!sidebarWin || sidebarWin.isDestroyed()) {
     createSidebarWindow()
+    return
   }
+
+  if (sidebarWin.isVisible()) return
+
+  sidebarWin.show()
+  applySidebarWindowMode(currentSidebarMode)
+  sidebarWin.webContents.send('sidebar:visibility-changed', { isVisible: true })
 })
 
 ipcMain.handle('window:set-mode', (_event, mode: SidebarWindowMode) => {
   applySidebarWindowMode(mode)
+})
+
+ipcMain.handle('window:set-visible', (_event, isVisible: boolean) => {
+  applySidebarVisibility(isVisible)
 })
 
 ipcMain.handle('window:toggle-module', (_event, payload: ModuleWindowKind | ModuleFocusPayload) => {
@@ -346,4 +395,15 @@ ipcMain.handle('window:open-external', async (_event, url: string) => {
   await shell.openExternal(url)
 })
 
-app.whenReady().then(createSidebarWindow)
+app.whenReady().then(() => {
+  createSidebarWindow()
+
+  const toggleSidebarShortcut = process.platform === 'darwin' ? 'Cmd+Shift+B' : 'Ctrl+Shift+B'
+  const registered = globalShortcut.register(toggleSidebarShortcut, () => {
+    applySidebarVisibility(!sidebarIsVisible)
+  })
+
+  if (!registered) {
+    console.warn(`[electron] Failed to register sidebar shortcut: ${toggleSidebarShortcut}`)
+  }
+})

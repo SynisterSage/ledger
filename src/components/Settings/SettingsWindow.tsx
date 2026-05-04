@@ -6,11 +6,11 @@ import {
 } from 'lucide-react'
 import { type CSSProperties, useEffect, useMemo, useRef, useState } from 'react'
 import { useAuthContext } from '../../context/AuthContext'
+import { useSidebar } from '../../context/SidebarContext'
+import { type SidebarPosition } from '../../config/sidebarPreferences'
 import { useWorkspaceContext } from '../../context/WorkspaceContext'
 import { useApi } from '../../hooks/useApi'
 import authService from '../../services/auth'
-
-type SettingsSectionId = 'account' | 'workspace' | 'calendar' | 'accessibility'
 
 type UserPreferences = {
   weekStartsOn: 'sunday' | 'monday'
@@ -44,10 +44,12 @@ type WorkspaceInvitation = {
   created_at: string
 }
 
+type SettingsSectionId = 'account' | 'workspace' | 'calendar' | 'sidebar' | 'accessibility'
 const sectionOrder: Array<{ id: SettingsSectionId; label: string; description: string }> = [
   { id: 'account', label: 'Account', description: 'Identity and security' },
   { id: 'workspace', label: 'Workspace', description: 'Display and behavior defaults' },
   { id: 'calendar', label: 'Calendar', description: 'Event and reminder defaults' },
+  { id: 'sidebar', label: 'Sidebar', description: 'Docking, visibility, and placement' },
   { id: 'accessibility', label: 'Accessibility', description: 'Comfort and readability options' },
 ]
 
@@ -122,6 +124,7 @@ const ToggleField = ({
 
 export const SettingsWindow = () => {
   const { user, signOut } = useAuthContext()
+  const { position, isVisible, setPosition, setIsVisible, floatingPosition, setFloatingPosition } = useSidebar()
   const api = useApi()
   const {
     workspaces,
@@ -176,6 +179,14 @@ export const SettingsWindow = () => {
   const [inviteToken, setInviteToken] = useState<string | null>(null)
   const [isSendingInvite, setIsSendingInvite] = useState(false)
   const inviteEmailRef = useRef<HTMLInputElement | null>(null)
+
+  const sidebarPositionOptions: Array<{ value: SidebarPosition; label: string; description: string }> = [
+    { value: 'right', label: 'Right', description: 'Keep the sidebar docked on the right edge.' },
+    { value: 'left', label: 'Left', description: 'Move the sidebar to the left edge.' },
+    { value: 'top', label: 'Top', description: 'Stack the sidebar above the main content.' },
+    { value: 'bottom', label: 'Bottom', description: 'Anchor the sidebar below the main content.' },
+    { value: 'floating', label: 'Floating', description: 'Keep the sidebar in a detached floating panel.' },
+  ]
 
   useEffect(() => {
     const cachedPrefs = loadCachedPreferences()
@@ -1122,6 +1133,95 @@ export const SettingsWindow = () => {
                         <option value="30">30 minutes before</option>
                       </select>
                     </div>
+                  </div>
+                </section>
+              )}
+              {activeSection === 'sidebar' && (
+                <section className="rounded-2xl border border-gray-200 bg-white p-5" aria-labelledby="settings-sidebar">
+                  <h2 id="settings-sidebar" className="text-lg font-semibold text-gray-900">Sidebar</h2>
+                  <p className="mt-1 text-sm text-gray-600">Control where the sidebar docks, whether it stays visible, and where a floating sidebar opens.</p>
+
+                  <div className="mt-5 space-y-4">
+                    <div className="flex items-start gap-3 rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3">
+                      <input
+                        id="settings-sidebar-visible"
+                        type="checkbox"
+                        checked={isVisible}
+                        onChange={(event) => setIsVisible(event.target.checked)}
+                        className="mt-1 h-4 w-4 rounded border-gray-300 text-[#FF5F40] focus:ring-2 focus:ring-[#ffd9d0]"
+                      />
+                      <label htmlFor="settings-sidebar-visible" className="cursor-pointer">
+                        <span className="block text-sm font-medium text-gray-900">Show sidebar</span>
+                        <span className="mt-1 block text-xs text-gray-600">Use Cmd+Shift+B to toggle quickly.</span>
+                      </label>
+                    </div>
+
+                    <div>
+                      <p className="text-sm font-medium text-gray-900">Position</p>
+                      <p className="mt-1 text-xs text-gray-600">Choose where the sidebar appears relative to the main workspace.</p>
+                      <div className="mt-3 grid gap-3">
+                        {sidebarPositionOptions.map((option) => (
+                          <label
+                            key={option.value}
+                            className={`flex cursor-pointer items-start gap-3 rounded-2xl border px-4 py-3 transition ${
+                              position === option.value
+                                ? 'border-gray-300 bg-gray-100'
+                                : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'
+                            }`}
+                          >
+                            <input
+                              type="radio"
+                              name="sidebar-position"
+                              value={option.value}
+                              checked={position === option.value}
+                              onChange={() => setPosition(option.value)}
+                              className="mt-1 h-4 w-4 border-gray-300 text-[#FF5F40] focus:ring-2 focus:ring-[#ffd9d0]"
+                            />
+                            <span>
+                              <span className="block text-sm font-medium text-gray-900">{option.label}</span>
+                              <span className="mt-1 block text-xs text-gray-600">{option.description}</span>
+                            </span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+
+                    {position === 'floating' && (
+                      <div>
+                        <p className="text-sm font-medium text-gray-900">Floating position</p>
+                        <p className="mt-1 text-xs text-gray-600">Set the default floating window offset when the sidebar opens in floating mode.</p>
+                        <div className="mt-3 grid grid-cols-2 gap-3">
+                          <label className="block">
+                            <span className="mb-1 block text-xs font-medium text-gray-700">X</span>
+                            <input
+                              type="number"
+                              value={floatingPosition.x}
+                              onChange={(event) =>
+                                setFloatingPosition({
+                                  x: Number(event.target.value) || 0,
+                                  y: floatingPosition.y,
+                                })
+                              }
+                              className="h-10 w-full rounded-xl border border-gray-200 bg-gray-50 px-3 text-sm text-gray-900 outline-none focus:border-gray-300 focus:ring-4 focus:ring-gray-100"
+                            />
+                          </label>
+                          <label className="block">
+                            <span className="mb-1 block text-xs font-medium text-gray-700">Y</span>
+                            <input
+                              type="number"
+                              value={floatingPosition.y}
+                              onChange={(event) =>
+                                setFloatingPosition({
+                                  x: floatingPosition.x,
+                                  y: Number(event.target.value) || 0,
+                                })
+                              }
+                              className="h-10 w-full rounded-xl border border-gray-200 bg-gray-50 px-3 text-sm text-gray-900 outline-none focus:border-gray-300 focus:ring-4 focus:ring-gray-100"
+                            />
+                          </label>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </section>
               )}

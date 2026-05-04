@@ -37,6 +37,9 @@ contextBridge.exposeInMainWorld('desktopWindow', {
   setMode(mode: SidebarWindowMode) {
     return ipcRenderer.invoke('window:set-mode', mode)
   },
+  setVisible(isVisible: boolean) {
+    return ipcRenderer.invoke('window:set-visible', isVisible)
+  },
   toggleModule(kind: ModuleWindowKind, focus?: string | ModuleFocusPayload) {
     const payload = typeof focus === 'string'
       ? { kind, focusDate: focus }

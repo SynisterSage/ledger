@@ -52,9 +52,10 @@ const todayKey = () => {
 export const ExpandedSidebar = () => {
   const { user, signOut } = useAuthContext()
   const { activeWorkspace, activeWorkspaceId } = useWorkspaceContext()
-  const { setState } = useSidebar()
+  const { setState, position } = useSidebar()
   const { openSearch } = useSearch()
   const api = useApi()
+  const isHorizontal = position === 'top' || position === 'bottom'
   const fullName = (user?.user_metadata?.full_name as string | undefined)?.trim() ?? ''
   const firstName = fullName ? fullName.split(' ')[0] : (user?.email?.split('@')[0] ?? 'User')
 
@@ -701,14 +702,29 @@ export const ExpandedSidebar = () => {
   }, [draggingProjectId, projects])
 
   return (
-    <div className="w-80 h-screen bg-white border-r border-gray-200 flex flex-col py-5">
+    <div
+      className={`flex h-full min-h-0 w-full bg-white border-gray-200 ${
+        isHorizontal
+          ? 'flex-col border-b py-5'
+          : 'flex-col border-r py-5'
+      }`}
+    >
       <div className="px-6 pb-2 border-b border-white/20">
         <div className="flex items-center justify-between mb-3">
-          <h1 className="text-2xl font-bold text-gray-900">Ledger</h1>
+          <button
+            type="button"
+            onClick={() => setState('minimized')}
+            className="flex items-center gap-3 rounded-2xl px-2 py-1 text-left transition hover:bg-gray-50 focus:outline-none focus:ring-4 focus:ring-[#ffd9d0]"
+            title="Click to collapse"
+            aria-label="Collapse sidebar"
+          >
+            <img src="/logo-color.svg" alt="Ledger" className="h-8 w-8" />
+            <h1 className="text-2xl font-bold text-gray-900">Ledger</h1>
+          </button>
           <button
             onClick={() => setState('minimized')}
             className="p-1 hover:bg-white/30 rounded-lg transition"
-            title="Collapse"
+            title="Collapse sidebar"
           >
             <ChevronLeft size={20} className="text-gray-700" />
           </button>
@@ -750,7 +766,7 @@ export const ExpandedSidebar = () => {
 
         <div className="grid grid-cols-2 gap-2">
           <button
-            onClick={() => setState('fullscreen')}
+            onClick={() => window.desktopWindow?.toggleModule('dashboard')}
             className="h-10 rounded-lg border border-gray-200 bg-white text-xs font-medium text-gray-700 hover:bg-gray-50 transition flex items-center justify-center"
           >
             Dashboard
@@ -779,7 +795,7 @@ export const ExpandedSidebar = () => {
         </div>
       </div>
 
-      <div className="px-6 py-4 space-y-5 flex-1 overflow-auto">
+      <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4 space-y-5">
         <section>
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-1.5">
@@ -1475,7 +1491,7 @@ export const ExpandedSidebar = () => {
 
       <div className="px-6 space-y-3 border-t border-white/20 pt-4">
         <button
-          onClick={() => setState('fullscreen')}
+          onClick={() => window.desktopWindow?.toggleModule('dashboard')}
           className="w-full px-3 py-2 text-sm font-medium text-white bg-[#FF5F40] hover:bg-[#ea5336] rounded-lg transition"
         >
           Open Dashboard

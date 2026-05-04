@@ -65,7 +65,7 @@ function DashboardContent() {
   const { user } = useAuthContext()
   const { activeWorkspace, activeWorkspaceId } = useWorkspaceContext()
   const api = useApi()
-  const { state, setState } = useSidebar()
+  const { state, setState, toggleVisibility } = useSidebar()
   const todayTasksRef = useRef<HTMLElement | null>(null)
   const notesRef = useRef<HTMLElement | null>(null)
   const projectsRef = useRef<HTMLElement | null>(null)
@@ -327,11 +327,11 @@ function DashboardContent() {
             Notes
           </button>
           <button
-            onClick={() => setState('expanded')}
+            onClick={toggleVisibility}
             className='px-4 py-2 bg-[#FF5F40] hover:bg-[#ea5336] text-white rounded-lg flex items-center gap-2 transition-colors text-sm font-medium'
           >
             <Plus size={16} />
-            Collapse
+            Toggle sidebar
           </button>
         </div>
       </div>
@@ -648,7 +648,7 @@ function AppShell() {
   const { user, isLoading, error: authError } = useAuthContext()
   const { refreshWorkspaces } = useWorkspaceContext()
   const api = useApi()
-  const { state, setState } = useSidebar()
+  const { state, setState, isExpanded, setIsExpanded, isVisible, setIsVisible, toggleVisibility } = useSidebar()
   const { openSearch } = useSearch()
   const [uiMode, setUiMode] = useState<'auth' | 'app'>(user ? 'app' : 'auth')
   const [isAuthExiting, setIsAuthExiting] = useState(false)
@@ -673,7 +673,7 @@ function AppShell() {
       event.preventDefault()
       if (!user || isLoading) return
 
-      if (state === 'minimized') {
+      if (state !== 'expanded') {
         setState('expanded')
         window.setTimeout(() => {
           openSearch()
@@ -687,6 +687,85 @@ function AppShell() {
     window.addEventListener('keydown', handleSearchShortcut)
     return () => window.removeEventListener('keydown', handleSearchShortcut)
   }, [isLoading, openSearch, setState, state, user])
+
+  useEffect(() => {
+    const handleSidebarToggleShortcut = (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey)) return
+      if (!event.shiftKey) return
+      if (event.key.toLowerCase() !== 'b') return
+
+      event.preventDefault()
+      if (!user || isLoading) return
+
+      toggleVisibility()
+    }
+
+    window.addEventListener('keydown', handleSidebarToggleShortcut)
+    return () => window.removeEventListener('keydown', handleSidebarToggleShortcut)
+  }, [isLoading, toggleVisibility, user])
+
+  useEffect(() => {
+    const handleSidebarExpandShortcut = (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey)) return
+      if (!event.shiftKey) return
+      if (event.key.toLowerCase() !== 'e') return
+
+      event.preventDefault()
+      if (!user || isLoading || !isVisible) return
+
+      if (state === 'expanded') {
+        setState('minimized')
+        setIsExpanded(true)
+        return
+      }
+
+      setState('expanded')
+      setIsExpanded(true)
+    }
+
+    const handleSidebarCollapseShortcut = (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey)) return
+      if (!event.shiftKey) return
+      if (event.key.toLowerCase() !== 'c') return
+
+      event.preventDefault()
+      if (!user || isLoading || !isVisible) return
+
+      if (state === 'expanded') {
+        setState('minimized')
+        setIsExpanded(false)
+        return
+      }
+
+      setIsExpanded(!isExpanded)
+    }
+
+    window.addEventListener('keydown', handleSidebarExpandShortcut)
+    window.addEventListener('keydown', handleSidebarCollapseShortcut)
+    return () => {
+      window.removeEventListener('keydown', handleSidebarExpandShortcut)
+      window.removeEventListener('keydown', handleSidebarCollapseShortcut)
+    }
+  }, [isExpanded, isLoading, isVisible, setIsExpanded, setState, state, user])
+
+  useEffect(() => {
+    const handleSidebarVisibilityChanged = (_event: unknown, payload: { isVisible?: boolean }) => {
+      if (typeof payload?.isVisible !== 'boolean') return
+      setIsVisible(payload.isVisible)
+    }
+
+    window.ipcRenderer?.on('sidebar:visibility-changed', handleSidebarVisibilityChanged)
+    return () => {
+      window.ipcRenderer?.off('sidebar:visibility-changed', handleSidebarVisibilityChanged)
+    }
+  }, [setIsVisible])
+
+  useEffect(() => {
+    if (isLoading) return
+    window.desktopWindow?.setVisible(isVisible).catch(() => {
+      // No-op outside Electron (browser dev mode)
+    })
+  }, [isLoading, isVisible])
 
   if (isModuleWindow) {
     if (isLoading) {
@@ -858,11 +937,11 @@ function AppShell() {
       postAuthStage === 'onboarding' ||
       postAuthStage === 'welcome'
 
-    const mode = isCenteredFlow ? 'auth' : state
+    const mode = isCenteredFlow ? 'auth' : state === 'expanded' ? 'expanded' : isExpanded ? 'minimized' : 'compact'
     window.desktopWindow?.setMode(mode).catch(() => {
       // No-op outside Electron (browser dev mode)
     })
-  }, [isLoading, state, uiMode, postAuthStage])
+  }, [isExpanded, isLoading, state, uiMode, postAuthStage])
 
   if (isLoading) {
     return <AuthStatusScreen title='Loading' subtitle='Preparing Ledger.' />

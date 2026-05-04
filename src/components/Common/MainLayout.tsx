@@ -7,21 +7,35 @@ interface MainLayoutProps {
 }
 
 export const MainLayout = ({ children }: MainLayoutProps) => {
-  const { state } = useSidebar()
+  const { state, isVisible, position } = useSidebar()
+  const isHorizontal = position === 'top' || position === 'bottom'
+  const isFloating = position === 'floating'
+  const shouldShowSidebar = state !== 'fullscreen' && isVisible
+  const sidebarNode = shouldShowSidebar ? (
+    <div className={isHorizontal ? 'w-full shrink-0 self-stretch' : 'shrink-0 self-stretch'}>
+      <SidebarContainer />
+    </div>
+  ) : null
 
   return (
-    <div className="flex h-screen bg-gray-50 overflow-hidden">
-      {/* Sidebar - Hidden in fullscreen */}
-      {state !== 'fullscreen' && (
-        <div>
-          <SidebarContainer />
+    <div className={`relative h-screen overflow-hidden bg-gray-50 ${isHorizontal ? 'flex flex-col' : 'flex items-stretch'}`}>
+      {shouldShowSidebar && !isFloating && (
+        position === 'top' ? sidebarNode : null
+      )}
+
+      {state === 'fullscreen' && (
+        <div className="flex-1 flex flex-col overflow-hidden bg-white">
+          {children}
         </div>
       )}
 
-      {/* Main Content Area */}
-      <div className={`flex-1 flex flex-col overflow-hidden ${state === 'fullscreen' ? 'bg-white' : ''}`}>
-        {children}
-      </div>
+      {shouldShowSidebar && !isFloating && position !== 'top' && (
+        sidebarNode
+      )}
+
+      {shouldShowSidebar && isFloating && (
+        <SidebarContainer />
+      )}
     </div>
   )
 }
