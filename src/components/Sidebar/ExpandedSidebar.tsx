@@ -59,7 +59,7 @@ export const ExpandedSidebar = ({
 }) => {
   const { user, signOut } = useAuthContext()
   const { activeWorkspace, activeWorkspaceId } = useWorkspaceContext()
-  const { setState, setIsExpanded, position } = useSidebar()
+  const { collapseToRail, position } = useSidebar()
   const { openSearch } = useSearch()
   const api = useApi()
   const isHorizontal = position === 'top' || position === 'bottom'
@@ -727,8 +727,7 @@ export const ExpandedSidebar = ({
             onMouseDown={(e) => e.stopPropagation()}
             onClick={() => {
               onCollapseRequest?.()
-              setState('minimized')
-              setIsExpanded(true)
+              collapseToRail()
             }}
             className="p-1 hover:bg-white/30 rounded-lg transition"
             title="Collapse sidebar"

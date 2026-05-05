@@ -9,7 +9,7 @@ export const MinimizedSidebar = ({
   onDragHandleMouseDown?: (e: React.MouseEvent<HTMLDivElement>) => void
 }) => {
   const { signOut } = useAuthContext()
-  const { setState, setIsExpanded, position } = useSidebar()
+  const { collapseSidebar, setState, position } = useSidebar()
   const { openSearch } = useSearch()
   const isHorizontal = position === 'top' || position === 'bottom'
   const iconBase = 'w-10 h-10 rounded-lg border transition-all duration-150 flex items-center justify-center active:scale-95'
@@ -27,8 +27,7 @@ export const MinimizedSidebar = ({
       <button
         type='button'
         onClick={() => {
-          setState('minimized')
-          setIsExpanded(false)
+          collapseSidebar()
         }}
         onMouseDown={(e) => e.stopPropagation()}
         title='Collapse to icon'

@@ -8,6 +8,7 @@
 html,
 body {
   color: rgb(17 24 39);
+  background-color: transparent;
 }
 
 #root {

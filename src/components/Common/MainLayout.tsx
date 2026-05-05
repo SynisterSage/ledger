@@ -14,7 +14,7 @@ export const MainLayout = ({ children }: MainLayoutProps) => {
 
   const childrenNode = (
     <div
-      className={`flex-1 flex flex-col overflow-hidden bg-white ${
+      className={`flex-1 flex flex-col overflow-hidden bg-transparent ${
         position === 'left' || position === 'top' ? 'order-2' : 'order-1'
       }`}
     >
@@ -25,7 +25,7 @@ export const MainLayout = ({ children }: MainLayoutProps) => {
   // Fullscreen mode: no sidebar
   if (state === 'fullscreen') {
     return (
-      <div className="relative h-screen overflow-hidden bg-gray-50">
+      <div className="relative h-screen overflow-hidden bg-transparent">
         {childrenNode}
       </div>
     )
@@ -50,7 +50,7 @@ export const MainLayout = ({ children }: MainLayoutProps) => {
   if (isHorizontal) {
     // Top or bottom position (horizontal layout)
     return (
-      <div className="relative h-screen overflow-hidden bg-gray-50 flex flex-col">
+      <div className="relative h-screen overflow-hidden bg-transparent flex flex-col">
         {sidebarNode}
         {childrenNode}
       </div>
@@ -58,7 +58,7 @@ export const MainLayout = ({ children }: MainLayoutProps) => {
   } else {
     // Left or right position (vertical layout)
     return (
-      <div className="relative h-screen overflow-hidden bg-gray-50 flex items-stretch">
+      <div className="relative h-screen overflow-hidden bg-transparent flex items-stretch">
         {sidebarNode}
         {childrenNode}
       </div>

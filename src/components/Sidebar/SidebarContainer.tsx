@@ -5,7 +5,7 @@ import { ExpandedSidebar } from './ExpandedSidebar'
 import { CollapsedSidebar } from './CollapsedSidebar'
 
 export const SidebarContainer = () => {
-  const { state, isVisible, isExpanded, position, opacity, blur, autoHide, setState, setIsExpanded, floatingPosition, setFloatingPosition: saveFloatingPosition, isHydrated } = useSidebar()
+  const { state, isVisible, isExpanded, position, opacity, autoHide, collapseSidebar, restoreSidebarView, floatingPosition, setFloatingPosition: saveFloatingPosition, isHydrated } = useSidebar()
   const [isHovered, setIsHovered] = useState(false)
   const suppressAutoHideExpandRef = useRef(false)
   const suppressAutoHideResetTimerRef = useRef<number | null>(null)
@@ -18,6 +18,39 @@ export const SidebarContainer = () => {
   useEffect(() => {
     if (!autoHide) {
       setIsHovered(false)
+      if (suppressAutoHideResetTimerRef.current !== null) {
+        window.clearTimeout(suppressAutoHideResetTimerRef.current)
+        suppressAutoHideResetTimerRef.current = null
+      }
+      if (autoHideFadeTimerRef.current !== null) {
+        window.clearTimeout(autoHideFadeTimerRef.current)
+        autoHideFadeTimerRef.current = null
+      }
+      if (autoHideCollapseTimerRef.current !== null) {
+        window.clearTimeout(autoHideCollapseTimerRef.current)
+        autoHideCollapseTimerRef.current = null
+      }
+      setIsAutoHideFading(false)
+      return
+    }
+
+    if (!isHovered && state !== 'fullscreen') {
+      if (autoHideFadeTimerRef.current !== null) {
+        window.clearTimeout(autoHideFadeTimerRef.current)
+      }
+      if (autoHideCollapseTimerRef.current !== null) {
+        window.clearTimeout(autoHideCollapseTimerRef.current)
+      }
+      setIsAutoHideFading(false)
+      autoHideFadeTimerRef.current = window.setTimeout(() => {
+        setIsAutoHideFading(true)
+        autoHideFadeTimerRef.current = null
+        autoHideCollapseTimerRef.current = window.setTimeout(() => {
+          collapseSidebar()
+          setIsAutoHideFading(false)
+          autoHideCollapseTimerRef.current = null
+        }, AUTO_HIDE_FADE_MS)
+      }, AUTO_HIDE_DELAY_MS)
     }
   }, [autoHide])
 
@@ -46,13 +79,33 @@ export const SidebarContainer = () => {
     : 'w-16 h-16'
 
   const shellStyle: React.CSSProperties = {
-    opacity: autoHide && !isHovered && isAutoHideFading ? 0 : opacity,
-    backgroundColor: blur ? 'rgba(255, 255, 255, 0.6)' : 'rgba(255, 255, 255, 1)',
-    backdropFilter: blur ? 'blur(12px)' : 'none',
-    WebkitBackdropFilter: blur ? 'blur(12px)' : 'none',
+    opacity: autoHide && !isHovered && isAutoHideFading ? 0 : 1,
+    backgroundColor: `rgba(255, 255, 255, ${Math.max(0.7, Math.min(0.95, opacity))})`,
+    backdropFilter: 'saturate(180%) blur(12px)',
+    WebkitBackdropFilter: 'saturate(180%) blur(12px)',
     transitionProperty: 'opacity, background-color, backdrop-filter, -webkit-backdrop-filter, box-shadow',
     transitionDuration: '300ms',
     transitionTimingFunction: 'ease-out',
+  }
+
+  const scheduleAutoHideHide = () => {
+    if (!autoHide) return
+    if (autoHideFadeTimerRef.current !== null) {
+      window.clearTimeout(autoHideFadeTimerRef.current)
+    }
+    if (autoHideCollapseTimerRef.current !== null) {
+      window.clearTimeout(autoHideCollapseTimerRef.current)
+    }
+    setIsAutoHideFading(false)
+    autoHideFadeTimerRef.current = window.setTimeout(() => {
+      setIsAutoHideFading(true)
+      autoHideFadeTimerRef.current = null
+      autoHideCollapseTimerRef.current = window.setTimeout(() => {
+        collapseSidebar()
+        setIsAutoHideFading(false)
+        autoHideCollapseTimerRef.current = null
+      }, AUTO_HIDE_FADE_MS)
+    }, AUTO_HIDE_DELAY_MS)
   }
 
   const handleMouseEnter = () => {
@@ -71,20 +124,12 @@ export const SidebarContainer = () => {
       suppressAutoHideResetTimerRef.current = null
     }
     if (autoHide && state !== 'expanded' && !suppressAutoHideExpandRef.current) {
-      setState('minimized')
-      setIsExpanded(true)
+      restoreSidebarView()
     }
   }
 
   const handleMouseLeave = () => {
     setIsHovered(false)
-    if (autoHideFadeTimerRef.current !== null) {
-      window.clearTimeout(autoHideFadeTimerRef.current)
-    }
-    if (autoHideCollapseTimerRef.current !== null) {
-      window.clearTimeout(autoHideCollapseTimerRef.current)
-    }
-    setIsAutoHideFading(false)
     if (suppressAutoHideResetTimerRef.current !== null) {
       window.clearTimeout(suppressAutoHideResetTimerRef.current)
     }
@@ -92,17 +137,7 @@ export const SidebarContainer = () => {
       suppressAutoHideExpandRef.current = false
       suppressAutoHideResetTimerRef.current = null
     }, AUTO_HIDE_DELAY_MS)
-    if (autoHide) {
-      autoHideFadeTimerRef.current = window.setTimeout(() => {
-        setIsAutoHideFading(true)
-        autoHideFadeTimerRef.current = null
-        autoHideCollapseTimerRef.current = window.setTimeout(() => {
-          setState('minimized')
-          setIsAutoHideFading(false)
-          autoHideCollapseTimerRef.current = null
-        }, AUTO_HIDE_FADE_MS)
-      }, AUTO_HIDE_DELAY_MS)
-    }
+    scheduleAutoHideHide()
   }
 
   const handleCollapseRequest = () => {
@@ -210,28 +245,30 @@ export const SidebarContainer = () => {
       style={shellStyle}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
-      className={`relative overflow-hidden ${shellSizeClasses} transition-[width,height,opacity] duration-180 ease-out ${autoHide && !isHovered ? 'shadow-sm' : ''} ${hydrationClass}`}
+      className={`relative overflow-hidden border border-white/40 shadow-[0_18px_60px_rgba(15,23,42,0.14)] ${shellSizeClasses} transition-[width,height,opacity] duration-180 ease-out ${autoHide && !isHovered ? 'shadow-sm' : ''} ${hydrationClass}`}
     >
-      {state === 'expanded' && (
-        <div className='h-full min-h-0 w-full'>
-          <ExpandedSidebar
-            onDragHandleMouseDown={isFloating ? handleDragHandleStart : undefined}
-            onCollapseRequest={handleCollapseRequest}
-          />
-        </div>
-      )}
+      <div className="relative h-full w-full">
+        {state === 'expanded' && (
+          <div className='h-full min-h-0 w-full'>
+            <ExpandedSidebar
+              onDragHandleMouseDown={isFloating ? handleDragHandleStart : undefined}
+              onCollapseRequest={handleCollapseRequest}
+            />
+          </div>
+        )}
 
-      {state === 'minimized' && isExpanded && (
-        <div className='h-full w-full'>
-          <MinimizedSidebar onDragHandleMouseDown={isFloating ? handleDragHandleStart : undefined} />
-        </div>
-      )}
+        {state === 'minimized' && isExpanded && (
+          <div className='h-full w-full'>
+            <MinimizedSidebar onDragHandleMouseDown={isFloating ? handleDragHandleStart : undefined} />
+          </div>
+        )}
 
-      {state === 'minimized' && !isExpanded && (
-        <div className='h-full w-full'>
-          <CollapsedSidebar onDragHandleMouseDown={isFloating ? handleDragHandleStart : undefined} />
-        </div>
-      )}
+        {state === 'minimized' && !isExpanded && (
+          <div className='h-full w-full'>
+            <CollapsedSidebar onDragHandleMouseDown={isFloating ? handleDragHandleStart : undefined} />
+          </div>
+        )}
+      </div>
     </div>
   )
 }

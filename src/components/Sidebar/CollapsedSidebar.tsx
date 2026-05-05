@@ -5,11 +5,10 @@ export const CollapsedSidebar = ({
 }: {
   onDragHandleMouseDown?: (e: React.MouseEvent<HTMLDivElement>) => void
 }) => {
-  const { setState, setIsExpanded, collapsedRestoreIsExpanded } = useSidebar()
+  const { restoreSidebarView } = useSidebar()
 
   const handleClick = () => {
-    setState('minimized')
-    setIsExpanded(collapsedRestoreIsExpanded)
+    restoreSidebarView()
   }
 
   return (

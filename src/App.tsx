@@ -648,7 +648,7 @@ function AppShell() {
   const { user, isLoading, error: authError } = useAuthContext()
   const { refreshWorkspaces } = useWorkspaceContext()
   const api = useApi()
-  const { state, setState, isExpanded, setIsExpanded, isVisible, setIsVisible, toggleVisibility, sidebarPreferences } = useSidebar()
+  const { state, setState, isExpanded, setIsExpanded, isVisible, setIsVisible, toggleVisibility, sidebarPreferences, collapseSidebar, collapseToRail } = useSidebar()
   const { openSearch } = useSearch()
   const [uiMode, setUiMode] = useState<'auth' | 'app'>(user ? 'app' : 'auth')
   const [isAuthExiting, setIsAuthExiting] = useState(false)
@@ -714,8 +714,7 @@ function AppShell() {
       if (!user || isLoading || !isVisible) return
 
       if (state === 'expanded') {
-        setState('minimized')
-        setIsExpanded(true)
+        collapseToRail()
         return
       }
 
@@ -732,12 +731,15 @@ function AppShell() {
       if (!user || isLoading || !isVisible) return
 
       if (state === 'expanded') {
-        setState('minimized')
-        setIsExpanded(false)
+        collapseToRail()
         return
       }
 
-      setIsExpanded(!isExpanded)
+      if (!isExpanded) {
+        setIsExpanded(true)
+      } else {
+        collapseSidebar()
+      }
     }
 
     window.addEventListener('keydown', handleSidebarExpandShortcut)

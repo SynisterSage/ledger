@@ -224,7 +224,7 @@ function applySidebarWindowMode(mode: SidebarWindowMode) {
         : mode === 'minimized'
           ? getDockedBounds(RAIL_SIZE)
           : getDockedBounds(EXPANDED_WIDTH)
-  sidebarWin.setAlwaysOnTop(currentSidebarPosition === 'floating' ? true : sidebarAlwaysOnTop, 'screen-saver')
+  sidebarWin.setAlwaysOnTop(sidebarAlwaysOnTop, 'screen-saver')
   sidebarWin.setResizable(false)
   setWindowButtonVisibility(sidebarWin, false)
   sidebarWin.setBounds(bounds, false)
@@ -239,7 +239,12 @@ function applySidebarAlwaysOnTop(alwaysOnTop: boolean) {
     return
   }
 
-  sidebarWin.setAlwaysOnTop(currentSidebarPosition === 'floating' ? true : alwaysOnTop, 'screen-saver')
+  sidebarWin.setAlwaysOnTop(alwaysOnTop, 'screen-saver')
+}
+
+function applySidebarOpacity(_opacity: number) {
+  if (!sidebarWin || sidebarWin.isDestroyed()) return
+  if (currentSidebarMode === 'auth' || currentSidebarMode === 'fullscreen') return
 }
 
 function applySidebarVisibility(isVisible: boolean) {
@@ -269,6 +274,8 @@ function createSidebarWindow() {
   sidebarWin = new BrowserWindow({
     ...getCenteredBounds(AUTH_WIDTH, AUTH_HEIGHT),
     icon: path.join(process.env.VITE_PUBLIC, 'electron-vite.svg'),
+    transparent: true,
+    backgroundColor: '#00000000',
     resizable: false,
     alwaysOnTop: false,
     titleBarStyle: 'hiddenInset',
@@ -278,6 +285,8 @@ function createSidebarWindow() {
   })
 
   lockWindowZoom(sidebarWin)
+
+  // Keep the sidebar rendering path purely CSS-based for consistent frosted glass.
 
   sidebarWin.on('closed', () => {
     sidebarWin = null
@@ -442,6 +451,9 @@ ipcMain.handle('window:apply-sidebar-preferences', (_event, preferences: Sidebar
     currentSidebarPosition = preferences.position
   } else if (preferences.position === 'floating') {
     currentSidebarPosition = 'floating'
+  }
+  if (typeof preferences.opacity === 'number') {
+    applySidebarOpacity(preferences.opacity)
   }
   if (preferences.floatingPosition) {
     currentFloatingPosition = {

@@ -128,20 +128,16 @@ export const SettingsWindow = () => {
     sidebarPreferences,
     position,
     opacity,
-    blur,
     defaultState,
     alwaysOnTop,
     autoHide,
     isVisible,
     setPosition,
     setOpacity,
-    setBlur,
     setDefaultState,
     setAlwaysOnTop,
     setAutoHide,
     setIsVisible,
-    floatingPosition,
-    setFloatingPosition,
   } = useSidebar()
   const api = useApi()
   const {
@@ -1222,7 +1218,7 @@ export const SettingsWindow = () => {
                       <div className="flex items-center justify-between gap-3">
                         <div>
                           <p className="text-sm font-medium text-gray-900">Opacity</p>
-                          <p className="mt-1 text-xs text-gray-600">Adjust the sidebar transparency between 70% and 100%.</p>
+                          <p className="mt-1 text-xs text-gray-600">Adjust the sidebar transparency between 70% and 95%.</p>
                         </div>
                         <span className="shrink-0 rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.16em] text-gray-500">
                           {Math.round(opacity * 100)}%
@@ -1231,21 +1227,13 @@ export const SettingsWindow = () => {
                       <input
                         type="range"
                         min="0.7"
-                        max="1"
+                        max="0.95"
                         step="0.01"
                         value={opacity}
                         onChange={(event) => setOpacity(Number(event.target.value))}
                         className="mt-4 w-full accent-[#FF5F40]"
                       />
                     </div>
-
-                    <ToggleField
-                      id="settings-sidebar-blur"
-                      label="Blur / glass effect"
-                      help="Apply a soft backdrop blur to the sidebar background."
-                      checked={blur}
-                      onChange={(checked) => setBlur(checked)}
-                    />
 
                     <div>
                       <p className="text-sm font-medium text-gray-900">Default state</p>
@@ -1280,42 +1268,6 @@ export const SettingsWindow = () => {
                       onChange={(checked) => setAutoHide(checked)}
                     />
 
-                    {position === 'floating' && (
-                      <div>
-                        <p className="text-sm font-medium text-gray-900">Floating position</p>
-                        <p className="mt-1 text-xs text-gray-600">Set the default floating window offset when the sidebar opens in floating mode.</p>
-                        <div className="mt-3 grid grid-cols-2 gap-3">
-                          <label className="block">
-                            <span className="mb-1 block text-xs font-medium text-gray-700">X</span>
-                            <input
-                              type="number"
-                              value={floatingPosition.x}
-                              onChange={(event) =>
-                                setFloatingPosition({
-                                  x: Number(event.target.value) || 0,
-                                  y: floatingPosition.y,
-                                })
-                              }
-                              className="h-10 w-full rounded-xl border border-gray-200 bg-gray-50 px-3 text-sm text-gray-900 outline-none focus:border-gray-300 focus:ring-4 focus:ring-gray-100"
-                            />
-                          </label>
-                          <label className="block">
-                            <span className="mb-1 block text-xs font-medium text-gray-700">Y</span>
-                            <input
-                              type="number"
-                              value={floatingPosition.y}
-                              onChange={(event) =>
-                                setFloatingPosition({
-                                  x: floatingPosition.x,
-                                  y: Number(event.target.value) || 0,
-                                })
-                              }
-                              className="h-10 w-full rounded-xl border border-gray-200 bg-gray-50 px-3 text-sm text-gray-900 outline-none focus:border-gray-300 focus:ring-4 focus:ring-gray-100"
-                            />
-                          </label>
-                        </div>
-                      </div>
-                    )}
                   </div>
                 </section>
               )}

@@ -37,6 +37,9 @@ interface SidebarContextType {
   setAlwaysOnTop: (alwaysOnTop: boolean) => void
   autoHide: boolean
   setAutoHide: (autoHide: boolean) => void
+  collapseSidebar: () => void
+  collapseToRail: () => void
+  restoreSidebarView: () => void
   floatingPosition: SidebarFloatingPosition
   setFloatingPosition: (position: SidebarFloatingPosition) => void
   sidebarPreferences: SidebarPreferences
@@ -134,6 +137,52 @@ export const SidebarProvider = ({ children }: { children: ReactNode }) => {
     }))
   }
 
+  const collapseSidebar = () => {
+    const nextRestoreView: SidebarPreferences['collapsedRestoreView'] =
+      state === 'expanded' ? 'expanded' : sidebarPreferences.isExpanded ? 'rail' : 'collapsed'
+    setSidebarState('minimized')
+    setSidebarPreferences((current) => ({
+      ...current,
+      collapsedRestoreIsExpanded: current.isExpanded,
+      collapsedRestoreView: nextRestoreView,
+      isExpanded: false,
+      lastState: 'collapsed',
+    }))
+  }
+
+  const collapseToRail = () => {
+    setSidebarState('minimized')
+    setSidebarPreferences((current) => ({
+      ...current,
+      collapsedRestoreIsExpanded: true,
+      collapsedRestoreView: 'expanded',
+      isExpanded: true,
+      lastState: 'collapsed',
+    }))
+  }
+
+  const restoreSidebarView = () => {
+    const restoreView = sidebarPreferences.collapsedRestoreView
+
+    if (restoreView === 'expanded') {
+      setSidebarState('expanded')
+      setSidebarPreferences((current) => ({
+        ...current,
+        isExpanded: true,
+        lastState: 'expanded',
+      }))
+      return
+    }
+
+    setSidebarState('minimized')
+    setSidebarPreferences((current) => ({
+      ...current,
+      collapsedRestoreIsExpanded: restoreView === 'rail',
+      isExpanded: restoreView === 'rail',
+      lastState: 'collapsed',
+    }))
+  }
+
   const setIsHidden = (isHidden: boolean) => {
     setSidebarPreferences((current) => ({
       ...current,
@@ -164,9 +213,10 @@ export const SidebarProvider = ({ children }: { children: ReactNode }) => {
   }
 
   const setOpacity = (opacity: number) => {
+    const clampedOpacity = Math.max(0.7, Math.min(0.95, opacity))
     setSidebarPreferences((current) => ({
       ...current,
-      opacity,
+      opacity: clampedOpacity,
     }))
   }
 
@@ -232,6 +282,9 @@ export const SidebarProvider = ({ children }: { children: ReactNode }) => {
         setAlwaysOnTop,
         autoHide: sidebarPreferences.autoHide,
         setAutoHide,
+        collapseSidebar,
+        collapseToRail,
+        restoreSidebarView,
         floatingPosition: sidebarPreferences.floatingPosition,
         setFloatingPosition,
         sidebarPreferences,
