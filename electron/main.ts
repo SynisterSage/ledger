@@ -13,6 +13,18 @@ process.env.VITE_PUBLIC = VITE_DEV_SERVER_URL
   : RENDERER_DIST
 
 type SidebarWindowMode = 'auth' | 'minimized' | 'compact' | 'expanded' | 'fullscreen'
+type SidebarPreferencesPayload = {
+  position?: 'right' | 'left' | 'top' | 'bottom' | 'floating'
+  opacity?: number
+  blur?: boolean
+  defaultState?: 'expanded' | 'collapsed' | 'remember'
+  autoHide?: boolean
+  isExpanded?: boolean
+  collapsedRestoreIsExpanded?: boolean
+  isHidden?: boolean
+  floatingPosition?: { x: number; y: number }
+  lastState?: 'expanded' | 'collapsed'
+}
 type ModuleWindowKind = 'calendar' | 'notes' | 'projects' | 'dashboard' | 'settings'
 type ModuleFocusPayload = {
   kind: ModuleWindowKind
@@ -25,7 +37,9 @@ type ModuleFocusPayload = {
 let sidebarWin: BrowserWindow | null = null
 const moduleWins = new Map<ModuleWindowKind, BrowserWindow>()
 let currentSidebarMode: SidebarWindowMode = 'auth'
+let currentSidebarPosition: 'left' | 'right' = 'right'
 let sidebarIsVisible = true
+let sidebarAlwaysOnTop = true
 
 const WINDOW_MARGIN = 16
 const RAIL_SIZE = 64
@@ -72,8 +86,18 @@ function setWindowButtonVisibility(win: BrowserWindow, visible: boolean) {
   }
 }
 
-function getDockedBounds(width: number) {
+function getDockedBounds(width: number, position: 'left' | 'right' = currentSidebarPosition) {
   const { x, y, width: workWidth, height: workHeight } = screen.getPrimaryDisplay().workArea
+
+  if (position === 'left') {
+    return {
+      x: x + WINDOW_MARGIN,
+      y: y + WINDOW_MARGIN,
+      width,
+      height: workHeight - WINDOW_MARGIN * 2,
+    }
+  }
+
   return {
     x: x + workWidth - width - WINDOW_MARGIN,
     y: y + WINDOW_MARGIN,
@@ -82,9 +106,18 @@ function getDockedBounds(width: number) {
   }
 }
 
-function getCollapsedBounds(size: number) {
+function getCollapsedBounds(size: number, position: 'left' | 'right' = currentSidebarPosition) {
   const { x, y, width: workWidth, height: workHeight } = screen.getPrimaryDisplay().workArea
   const safeSize = Math.min(size, workWidth - WINDOW_MARGIN * 2, workHeight - WINDOW_MARGIN * 2)
+
+  if (position === 'left') {
+    return {
+      x: x + WINDOW_MARGIN,
+      y: y + WINDOW_MARGIN,
+      width: safeSize,
+      height: safeSize,
+    }
+  }
 
   return {
     x: x + workWidth - safeSize - WINDOW_MARGIN,
@@ -113,9 +146,18 @@ function getModuleBoundsNextToSidebar() {
   const width = Math.min(MODULE_WIDTH, workWidth - WINDOW_MARGIN * 2)
   const height = Math.min(MODULE_HEIGHT, workHeight - WINDOW_MARGIN * 2)
 
-  let moduleX = sidebarBounds.x - width - MODULE_GAP
-  if (moduleX < x + WINDOW_MARGIN) {
-    moduleX = x + WINDOW_MARGIN
+  let moduleX
+  if (currentSidebarPosition === 'left') {
+    moduleX = sidebarBounds.x + sidebarBounds.width + MODULE_GAP
+    const maxX = x + workWidth - width - WINDOW_MARGIN
+    if (moduleX > maxX) {
+      moduleX = maxX
+    }
+  } else {
+    moduleX = sidebarBounds.x - width - MODULE_GAP
+    if (moduleX < x + WINDOW_MARGIN) {
+      moduleX = x + WINDOW_MARGIN
+    }
   }
 
   let moduleY = sidebarBounds.y
@@ -154,10 +196,22 @@ function applySidebarWindowMode(mode: SidebarWindowMode) {
       : mode === 'minimized'
         ? getDockedBounds(RAIL_SIZE)
         : getDockedBounds(EXPANDED_WIDTH)
-  sidebarWin.setAlwaysOnTop(true, 'screen-saver')
+  sidebarWin.setAlwaysOnTop(sidebarAlwaysOnTop, sidebarAlwaysOnTop ? 'screen-saver' : undefined)
   sidebarWin.setResizable(false)
   setWindowButtonVisibility(sidebarWin, false)
   sidebarWin.setBounds(bounds, false)
+}
+
+function applySidebarAlwaysOnTop(alwaysOnTop: boolean) {
+  sidebarAlwaysOnTop = alwaysOnTop
+  if (!sidebarWin || sidebarWin.isDestroyed()) return
+
+  if (currentSidebarMode === 'auth' || currentSidebarMode === 'fullscreen') {
+    sidebarWin.setAlwaysOnTop(false)
+    return
+  }
+
+  sidebarWin.setAlwaysOnTop(alwaysOnTop, alwaysOnTop ? 'screen-saver' : undefined)
 }
 
 function applySidebarVisibility(isVisible: boolean) {
@@ -348,6 +402,21 @@ ipcMain.handle('window:set-mode', (_event, mode: SidebarWindowMode) => {
 
 ipcMain.handle('window:set-visible', (_event, isVisible: boolean) => {
   applySidebarVisibility(isVisible)
+})
+
+ipcMain.handle('window:set-always-on-top', (_event, alwaysOnTop: boolean) => {
+  applySidebarAlwaysOnTop(alwaysOnTop)
+})
+
+ipcMain.handle('window:apply-sidebar-preferences', (_event, preferences: SidebarPreferencesPayload) => {
+  if (!sidebarWin || sidebarWin.isDestroyed()) return
+  if (preferences.position === 'left' || preferences.position === 'right') {
+    currentSidebarPosition = preferences.position
+  }
+  sidebarWin.webContents.send('sidebar:preferences-updated', preferences)
+  if (currentSidebarMode !== 'auth' && currentSidebarMode !== 'fullscreen') {
+    applySidebarWindowMode(currentSidebarMode)
+  }
 })
 
 ipcMain.handle('window:toggle-module', (_event, payload: ModuleWindowKind | ModuleFocusPayload) => {

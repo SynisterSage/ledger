@@ -7,7 +7,7 @@ import {
 import { type CSSProperties, useEffect, useMemo, useRef, useState } from 'react'
 import { useAuthContext } from '../../context/AuthContext'
 import { useSidebar } from '../../context/SidebarContext'
-import { type SidebarPosition } from '../../config/sidebarPreferences'
+import { type SidebarDefaultState, type SidebarPosition } from '../../config/sidebarPreferences'
 import { useWorkspaceContext } from '../../context/WorkspaceContext'
 import { useApi } from '../../hooks/useApi'
 import authService from '../../services/auth'
@@ -124,7 +124,25 @@ const ToggleField = ({
 
 export const SettingsWindow = () => {
   const { user, signOut } = useAuthContext()
-  const { position, isVisible, setPosition, setIsVisible, floatingPosition, setFloatingPosition } = useSidebar()
+  const {
+    sidebarPreferences,
+    position,
+    opacity,
+    blur,
+    defaultState,
+    alwaysOnTop,
+    autoHide,
+    isVisible,
+    setPosition,
+    setOpacity,
+    setBlur,
+    setDefaultState,
+    setAlwaysOnTop,
+    setAutoHide,
+    setIsVisible,
+    floatingPosition,
+    setFloatingPosition,
+  } = useSidebar()
   const api = useApi()
   const {
     workspaces,
@@ -183,9 +201,15 @@ export const SettingsWindow = () => {
   const sidebarPositionOptions: Array<{ value: SidebarPosition; label: string; description: string }> = [
     { value: 'right', label: 'Right', description: 'Keep the sidebar docked on the right edge.' },
     { value: 'left', label: 'Left', description: 'Move the sidebar to the left edge.' },
-    { value: 'top', label: 'Top', description: 'Stack the sidebar above the main content.' },
-    { value: 'bottom', label: 'Bottom', description: 'Anchor the sidebar below the main content.' },
+    { value: 'top', label: 'Top', description: 'Horizontal layout at the top (experimental).' },
+    { value: 'bottom', label: 'Bottom', description: 'Horizontal layout at the bottom (experimental).' },
     { value: 'floating', label: 'Floating', description: 'Keep the sidebar in a detached floating panel.' },
+  ]
+
+  const sidebarDefaultStateOptions: Array<{ value: SidebarDefaultState; label: string; description: string }> = [
+    { value: 'expanded', label: 'Expanded', description: 'Always open the full sidebar on launch.' },
+    { value: 'collapsed', label: 'Collapsed', description: 'Start in the compact sidebar state.' },
+    { value: 'remember', label: 'Remember last state', description: 'Restore the last open or collapsed state.' },
   ]
 
   useEffect(() => {
@@ -242,6 +266,19 @@ export const SettingsWindow = () => {
     }
   }, [api, user?.email, user?.user_metadata?.full_name])
 
+  useEffect(() => {
+    void window.desktopWindow?.setAlwaysOnTop(alwaysOnTop).catch(() => {
+      // No-op outside Electron (browser dev mode)
+    })
+  }, [alwaysOnTop])
+
+  // Sync sidebar preferences to sidebar window whenever they change
+  useEffect(() => {
+    void window.desktopWindow?.applySidebarPreferences(sidebarPreferences).catch(() => {
+      // No-op outside Electron (browser dev mode)
+    })
+  }, [sidebarPreferences])
+
   const firstName = useMemo(() => {
     const candidate = fullName.trim()
     if (!candidate) return 'there'
@@ -272,6 +309,7 @@ export const SettingsWindow = () => {
       }
 
       saveCachedPreferences(nextPreferences)
+      await window.desktopWindow?.applySidebarPreferences(sidebarPreferences)
       setInitialFullName(nextFullName ?? '')
       setSaveStatus('Settings saved.')
     } catch {
@@ -1139,22 +1177,16 @@ export const SettingsWindow = () => {
               {activeSection === 'sidebar' && (
                 <section className="rounded-2xl border border-gray-200 bg-white p-5" aria-labelledby="settings-sidebar">
                   <h2 id="settings-sidebar" className="text-lg font-semibold text-gray-900">Sidebar</h2>
-                  <p className="mt-1 text-sm text-gray-600">Control where the sidebar docks, whether it stays visible, and where a floating sidebar opens.</p>
+                  <p className="mt-1 text-sm text-gray-600">Basic controls for sidebar placement, appearance, and window behavior.</p>
 
                   <div className="mt-5 space-y-4">
-                    <div className="flex items-start gap-3 rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3">
-                      <input
-                        id="settings-sidebar-visible"
-                        type="checkbox"
-                        checked={isVisible}
-                        onChange={(event) => setIsVisible(event.target.checked)}
-                        className="mt-1 h-4 w-4 rounded border-gray-300 text-[#FF5F40] focus:ring-2 focus:ring-[#ffd9d0]"
-                      />
-                      <label htmlFor="settings-sidebar-visible" className="cursor-pointer">
-                        <span className="block text-sm font-medium text-gray-900">Show sidebar</span>
-                        <span className="mt-1 block text-xs text-gray-600">Use Cmd+Shift+B to toggle quickly.</span>
-                      </label>
-                    </div>
+                    <ToggleField
+                      id="settings-sidebar-visible"
+                      label="Show sidebar"
+                      help="Use Cmd+Shift+B to toggle quickly."
+                      checked={isVisible}
+                      onChange={(checked) => setIsVisible(checked)}
+                    />
 
                     <div>
                       <p className="text-sm font-medium text-gray-900">Position</p>
@@ -1185,6 +1217,68 @@ export const SettingsWindow = () => {
                         ))}
                       </div>
                     </div>
+
+                    <div className="rounded-2xl border border-gray-200 bg-white px-4 py-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-medium text-gray-900">Opacity</p>
+                          <p className="mt-1 text-xs text-gray-600">Adjust the sidebar transparency between 70% and 100%.</p>
+                        </div>
+                        <span className="shrink-0 rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.16em] text-gray-500">
+                          {Math.round(opacity * 100)}%
+                        </span>
+                      </div>
+                      <input
+                        type="range"
+                        min="0.7"
+                        max="1"
+                        step="0.01"
+                        value={opacity}
+                        onChange={(event) => setOpacity(Number(event.target.value))}
+                        className="mt-4 w-full accent-[#FF5F40]"
+                      />
+                    </div>
+
+                    <ToggleField
+                      id="settings-sidebar-blur"
+                      label="Blur / glass effect"
+                      help="Apply a soft backdrop blur to the sidebar background."
+                      checked={blur}
+                      onChange={(checked) => setBlur(checked)}
+                    />
+
+                    <div>
+                      <p className="text-sm font-medium text-gray-900">Default state</p>
+                      <p className="mt-1 text-xs text-gray-600">Choose how the sidebar opens when the app loads.</p>
+                      <select
+                        value={defaultState}
+                        onChange={(event) => setDefaultState(event.target.value as SidebarDefaultState)}
+                        className="mt-3 h-10 w-full appearance-none rounded-xl border border-gray-200 bg-gray-50 px-3 pr-9 text-sm text-gray-900 outline-none focus:border-gray-300 focus:ring-4 focus:ring-gray-100"
+                        style={selectChevronStyle}
+                      >
+                        {sidebarDefaultStateOptions.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <ToggleField
+                      id="settings-sidebar-always-on-top"
+                      label="Always on top"
+                      help="Keep the sidebar above other windows in docked mode."
+                      checked={alwaysOnTop}
+                      onChange={(checked) => setAlwaysOnTop(checked)}
+                    />
+
+                    <ToggleField
+                      id="settings-sidebar-auto-hide"
+                      label="Auto hide"
+                      help="Collapse the sidebar when the pointer leaves the panel."
+                      checked={autoHide}
+                      onChange={(checked) => setAutoHide(checked)}
+                    />
 
                     {position === 'floating' && (
                       <div>

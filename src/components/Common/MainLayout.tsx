@@ -11,31 +11,60 @@ export const MainLayout = ({ children }: MainLayoutProps) => {
   const isHorizontal = position === 'top' || position === 'bottom'
   const isFloating = position === 'floating'
   const shouldShowSidebar = state !== 'fullscreen' && isVisible
+
+  const childrenNode = (
+    <div
+      className={`flex-1 flex flex-col overflow-hidden bg-white ${
+        position === 'left' || position === 'top' ? 'order-2' : 'order-1'
+      }`}
+    >
+      {children}
+    </div>
+  )
+
+  // Fullscreen mode: no sidebar
+  if (state === 'fullscreen') {
+    return (
+      <div className="relative h-screen overflow-hidden bg-gray-50">
+        {childrenNode}
+      </div>
+    )
+  }
+
+  // Floating mode: sidebar floats above everything
+  if (isFloating) {
+    return (
+      <div className="relative h-screen overflow-hidden bg-gray-50">
+        <div className="flex h-full flex-col overflow-hidden bg-white">
+          {children}
+        </div>
+        {shouldShowSidebar && <SidebarContainer />}
+      </div>
+    )
+  }
+
   const sidebarNode = shouldShowSidebar ? (
-    <div className={isHorizontal ? 'w-full shrink-0 self-stretch' : 'shrink-0 self-stretch'}>
+    <div className={`${isHorizontal ? 'w-full' : ''} shrink-0 self-stretch ${position === 'left' || position === 'top' ? 'order-1' : 'order-2'}`}>
       <SidebarContainer />
     </div>
   ) : null
 
-  return (
-    <div className={`relative h-screen overflow-hidden bg-gray-50 ${isHorizontal ? 'flex flex-col' : 'flex items-stretch'}`}>
-      {shouldShowSidebar && !isFloating && (
-        position === 'top' ? sidebarNode : null
-      )}
-
-      {state === 'fullscreen' && (
-        <div className="flex-1 flex flex-col overflow-hidden bg-white">
-          {children}
-        </div>
-      )}
-
-      {shouldShowSidebar && !isFloating && position !== 'top' && (
-        sidebarNode
-      )}
-
-      {shouldShowSidebar && isFloating && (
-        <SidebarContainer />
-      )}
-    </div>
-  )
+  // Docked positions
+  if (isHorizontal) {
+    // Top or bottom position (horizontal layout)
+    return (
+      <div className="relative h-screen overflow-hidden bg-gray-50 flex flex-col">
+        {sidebarNode}
+        {childrenNode}
+      </div>
+    )
+  } else {
+    // Left or right position (vertical layout)
+    return (
+      <div className="relative h-screen overflow-hidden bg-gray-50 flex items-stretch">
+        {sidebarNode}
+        {childrenNode}
+      </div>
+    )
+  }
 }

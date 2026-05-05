@@ -1,5 +1,7 @@
 export type SidebarPosition = 'right' | 'left' | 'top' | 'bottom' | 'floating'
 
+export type SidebarDefaultState = 'expanded' | 'collapsed' | 'remember'
+
 export type SidebarFloatingPosition = {
   x: number
   y: number
@@ -7,18 +9,32 @@ export type SidebarFloatingPosition = {
 
 export type SidebarPreferences = {
   position: SidebarPosition
+  opacity: number
+  blur: boolean
+  defaultState: SidebarDefaultState
+  alwaysOnTop: boolean
+  autoHide: boolean
   isExpanded: boolean
+  collapsedRestoreIsExpanded: boolean
   isHidden: boolean
   floatingPosition: SidebarFloatingPosition
+  lastState: 'expanded' | 'collapsed'
 }
 
 export const SIDEBAR_PREFERENCES_STORAGE_KEY = 'ledger:sidebar:v1'
 
 export const defaultSidebarPreferences: SidebarPreferences = {
   position: 'right',
+  opacity: 0.95,
+  blur: false,
+  defaultState: 'remember',
+  alwaysOnTop: true,
+  autoHide: false,
   isExpanded: true,
+  collapsedRestoreIsExpanded: true,
   isHidden: false,
   floatingPosition: { x: 100, y: 200 },
+  lastState: 'expanded',
 }
 
 export const loadSidebarPreferences = (): SidebarPreferences => {
@@ -27,15 +43,32 @@ export const loadSidebarPreferences = (): SidebarPreferences => {
     if (!raw) return defaultSidebarPreferences
 
     const parsed = JSON.parse(raw) as Partial<SidebarPreferences> | null
+    
+    // ExpandedSidebar only supports vertical positions (left/right/floating)
+    // Reset to default if horizontal position is stored
+    if (parsed?.position === 'top' || parsed?.position === 'bottom') {
+      window.localStorage.removeItem(SIDEBAR_PREFERENCES_STORAGE_KEY)
+      return defaultSidebarPreferences
+    }
+    
     const legacyVisible = (parsed as { isVisible?: boolean } | null)?.isVisible
+    const legacyExpanded = (parsed as { isExpanded?: boolean } | null)?.isExpanded
     return {
       position: parsed?.position ?? defaultSidebarPreferences.position,
-      isExpanded: parsed?.isExpanded ?? true,
+      opacity: typeof parsed?.opacity === 'number' ? parsed.opacity : defaultSidebarPreferences.opacity,
+      blur: parsed?.blur ?? defaultSidebarPreferences.blur,
+      defaultState: parsed?.defaultState ?? defaultSidebarPreferences.defaultState,
+      alwaysOnTop: parsed?.alwaysOnTop ?? defaultSidebarPreferences.alwaysOnTop,
+      autoHide: parsed?.autoHide ?? defaultSidebarPreferences.autoHide,
+      isExpanded: parsed?.isExpanded ?? legacyExpanded ?? true,
+      collapsedRestoreIsExpanded:
+        parsed?.collapsedRestoreIsExpanded ?? (legacyExpanded ?? true),
       isHidden: parsed?.isHidden ?? legacyVisible === false,
       floatingPosition: {
         x: parsed?.floatingPosition?.x ?? defaultSidebarPreferences.floatingPosition.x,
         y: parsed?.floatingPosition?.y ?? defaultSidebarPreferences.floatingPosition.y,
       },
+      lastState: parsed?.lastState ?? (legacyExpanded === false ? 'collapsed' : 'expanded'),
     }
   } catch {
     return defaultSidebarPreferences

@@ -919,14 +919,13 @@ function AppShell() {
     if (postAuthStage !== 'welcome') return
 
     const closeTimer = window.setTimeout(() => {
-      setState('minimized')
       setPostAuthStage('ready')
     }, 80)
 
     return () => {
       window.clearTimeout(closeTimer)
     }
-  }, [postAuthStage, setState])
+  }, [postAuthStage])
 
   useEffect(() => {
     if (isLoading) return
@@ -1043,7 +1042,7 @@ function AppShell() {
     return <AuthStatusScreen title='Welcome back' subtitle='Opening your sidebar.' />
   }
 
-  // Authenticated view - Dashboard with sidebar
+  // Authenticated view - sidebar shell
   return (
     <>
       {inviteFlowStatus === 'error' && inviteFlowError && (
@@ -1052,7 +1051,7 @@ function AppShell() {
         </div>
       )}
       <MainLayout>
-        <DashboardContent />
+        <div className='flex-1 min-w-0 bg-transparent' />
       </MainLayout>
     </>
   )

@@ -1,8 +1,10 @@
 import React, { createContext, useContext, ReactNode, useEffect, useState } from 'react'
 import {
+  SIDEBAR_PREFERENCES_STORAGE_KEY,
   loadSidebarPreferences,
   saveSidebarPreferences,
   type SidebarFloatingPosition,
+  type SidebarDefaultState,
   type SidebarPosition,
   type SidebarPreferences,
 } from '../config/sidebarPreferences'
@@ -16,6 +18,7 @@ interface SidebarContextType {
   toggleExpand: () => void
   isExpanded: boolean
   setIsExpanded: (isExpanded: boolean) => void
+  collapsedRestoreIsExpanded: boolean
   isHidden: boolean
   setIsHidden: (isHidden: boolean) => void
   toggleHidden: () => void
@@ -24,6 +27,16 @@ interface SidebarContextType {
   toggleVisibility: () => void
   position: SidebarPosition
   setPosition: (position: SidebarPosition) => void
+  opacity: number
+  setOpacity: (opacity: number) => void
+  blur: boolean
+  setBlur: (blur: boolean) => void
+  defaultState: SidebarDefaultState
+  setDefaultState: (defaultState: SidebarDefaultState) => void
+  alwaysOnTop: boolean
+  setAlwaysOnTop: (alwaysOnTop: boolean) => void
+  autoHide: boolean
+  setAutoHide: (autoHide: boolean) => void
   floatingPosition: SidebarFloatingPosition
   setFloatingPosition: (position: SidebarFloatingPosition) => void
   sidebarPreferences: SidebarPreferences
@@ -37,7 +50,12 @@ const SidebarContext = createContext<SidebarContextType | undefined>(undefined)
 
 export const SidebarProvider = ({ children }: { children: ReactNode }) => {
   const [sidebarPreferences, setSidebarPreferences] = useState<SidebarPreferences>(() => loadSidebarPreferences())
-  const [state, setSidebarState] = React.useState<SidebarState>('minimized')
+  const [state, setSidebarState] = React.useState<SidebarState>(() => {
+    const prefs = loadSidebarPreferences()
+    if (prefs.defaultState === 'expanded') return 'expanded'
+    if (prefs.defaultState === 'collapsed') return 'minimized'
+    return prefs.lastState === 'collapsed' ? 'minimized' : 'expanded'
+  })
   const [moduleView, setModuleView] = React.useState<ModuleView>('dashboard')
   const [focusDate, setFocusDate] = React.useState<string | null>(null)
 
@@ -45,8 +63,52 @@ export const SidebarProvider = ({ children }: { children: ReactNode }) => {
     saveSidebarPreferences(sidebarPreferences)
   }, [sidebarPreferences])
 
+  useEffect(() => {
+    const handlePreferenceSync = (_event: unknown, nextPreferences: Partial<SidebarPreferences>) => {
+      let didChange = false
+
+      setSidebarPreferences((current) => {
+        const mergedPreferences = {
+          ...current,
+          ...nextPreferences,
+        }
+
+        didChange = JSON.stringify(mergedPreferences) !== JSON.stringify(current)
+
+        return didChange ? mergedPreferences : current
+      })
+
+      if (!didChange) return
+
+      if (typeof nextPreferences.isExpanded === 'boolean' && state !== 'fullscreen') {
+        setSidebarState(nextPreferences.isExpanded ? 'expanded' : 'minimized')
+      }
+    }
+
+    window.ipcRenderer?.on('sidebar:preferences-updated', handlePreferenceSync)
+    return () => {
+      window.ipcRenderer?.off('sidebar:preferences-updated', handlePreferenceSync)
+    }
+  }, [state])
+
+  useEffect(() => {
+    const handleStorageChange = (event: StorageEvent) => {
+      if (event.key !== SIDEBAR_PREFERENCES_STORAGE_KEY) return
+
+      const nextPreferences = loadSidebarPreferences()
+      setSidebarPreferences(nextPreferences)
+
+      if (state !== 'fullscreen') {
+        setSidebarState(nextPreferences.lastState === 'collapsed' ? 'minimized' : 'expanded')
+      }
+    }
+
+    window.addEventListener('storage', handleStorageChange)
+    return () => window.removeEventListener('storage', handleStorageChange)
+  }, [state])
+
   const toggleExpand = () => {
-    setIsExpanded(!sidebarPreferences.isExpanded)
+    setState(state === 'expanded' ? 'minimized' : 'expanded')
   }
 
   const setState = (nextState: SidebarState) => {
@@ -55,13 +117,15 @@ export const SidebarProvider = ({ children }: { children: ReactNode }) => {
 
     setSidebarPreferences((current) => ({
       ...current,
-      isExpanded: true,
+      isExpanded: nextState === 'expanded',
+      lastState: nextState === 'expanded' ? 'expanded' : 'collapsed',
     }))
   }
 
   const setIsExpanded = (isExpanded: boolean) => {
     setSidebarPreferences((current) => ({
       ...current,
+      collapsedRestoreIsExpanded: isExpanded ? current.collapsedRestoreIsExpanded : current.isExpanded,
       isExpanded,
     }))
   }
@@ -95,6 +159,41 @@ export const SidebarProvider = ({ children }: { children: ReactNode }) => {
     }))
   }
 
+  const setOpacity = (opacity: number) => {
+    setSidebarPreferences((current) => ({
+      ...current,
+      opacity,
+    }))
+  }
+
+  const setBlur = (blur: boolean) => {
+    setSidebarPreferences((current) => ({
+      ...current,
+      blur,
+    }))
+  }
+
+  const setDefaultState = (defaultState: SidebarDefaultState) => {
+    setSidebarPreferences((current) => ({
+      ...current,
+      defaultState,
+    }))
+  }
+
+  const setAlwaysOnTop = (alwaysOnTop: boolean) => {
+    setSidebarPreferences((current) => ({
+      ...current,
+      alwaysOnTop,
+    }))
+  }
+
+  const setAutoHide = (autoHide: boolean) => {
+    setSidebarPreferences((current) => ({
+      ...current,
+      autoHide,
+    }))
+  }
+
   const setFloatingPosition = (floatingPosition: SidebarFloatingPosition) => {
     setSidebarPreferences((current) => ({
       ...current,
@@ -110,6 +209,7 @@ export const SidebarProvider = ({ children }: { children: ReactNode }) => {
         toggleExpand,
         isExpanded: sidebarPreferences.isExpanded,
         setIsExpanded,
+        collapsedRestoreIsExpanded: sidebarPreferences.collapsedRestoreIsExpanded,
         isHidden: sidebarPreferences.isHidden,
         setIsHidden,
         toggleHidden,
@@ -118,6 +218,16 @@ export const SidebarProvider = ({ children }: { children: ReactNode }) => {
         toggleVisibility,
         position: sidebarPreferences.position,
         setPosition,
+        opacity: sidebarPreferences.opacity,
+        setOpacity,
+        blur: sidebarPreferences.blur,
+        setBlur,
+        defaultState: sidebarPreferences.defaultState,
+        setDefaultState,
+        alwaysOnTop: sidebarPreferences.alwaysOnTop,
+        setAlwaysOnTop,
+        autoHide: sidebarPreferences.autoHide,
+        setAutoHide,
         floatingPosition: sidebarPreferences.floatingPosition,
         setFloatingPosition,
         sidebarPreferences,

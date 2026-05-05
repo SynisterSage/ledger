@@ -23,7 +23,7 @@ contextBridge.exposeInMainWorld('ipcRenderer', {
   // ...
 })
 
-type SidebarWindowMode = 'auth' | 'minimized' | 'expanded' | 'fullscreen'
+type SidebarWindowMode = 'auth' | 'minimized' | 'compact' | 'expanded' | 'fullscreen'
 type ModuleWindowKind = 'calendar' | 'notes' | 'projects' | 'dashboard' | 'settings'
 type ModuleFocusPayload = {
   kind: ModuleWindowKind
@@ -39,6 +39,23 @@ contextBridge.exposeInMainWorld('desktopWindow', {
   },
   setVisible(isVisible: boolean) {
     return ipcRenderer.invoke('window:set-visible', isVisible)
+  },
+  setAlwaysOnTop(alwaysOnTop: boolean) {
+    return ipcRenderer.invoke('window:set-always-on-top', alwaysOnTop)
+  },
+    applySidebarPreferences(preferences: {
+      position?: 'right' | 'left' | 'top' | 'bottom' | 'floating'
+      opacity?: number
+      blur?: boolean
+      defaultState?: 'expanded' | 'collapsed' | 'remember'
+      autoHide?: boolean
+      isExpanded?: boolean
+      collapsedRestoreIsExpanded?: boolean
+      isHidden?: boolean
+      floatingPosition?: { x: number; y: number }
+      lastState?: 'expanded' | 'collapsed'
+    }) {
+    return ipcRenderer.invoke('window:apply-sidebar-preferences', preferences)
   },
   toggleModule(kind: ModuleWindowKind, focus?: string | ModuleFocusPayload) {
     const payload = typeof focus === 'string'

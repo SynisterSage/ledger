@@ -5,7 +5,7 @@ import { useSearch } from '../../context/SearchContext'
 
 export const MinimizedSidebar = () => {
   const { signOut } = useAuthContext()
-  const { toggleExpand, setState, position } = useSidebar()
+  const { setState, setIsExpanded, position } = useSidebar()
   const { openSearch } = useSearch()
   const isHorizontal = position === 'top' || position === 'bottom'
   const iconBase = 'w-10 h-10 rounded-lg border transition-all duration-150 flex items-center justify-center active:scale-95'
@@ -15,10 +15,14 @@ export const MinimizedSidebar = () => {
   const dangerIcon = `${iconBase} bg-red-400/30 border-red-400/20 hover:bg-red-400/45 hover:border-red-400/30 text-red-700`
 
   return (
-    <div className={`bg-white border-gray-200 flex ${isHorizontal ? 'h-16 w-full flex-row items-center justify-between border-b px-4' : 'h-screen w-16 flex-col items-center justify-between border-r py-6'}`}>
+    <div className={`bg-transparent border-gray-200 flex ${isHorizontal ? 'h-16 w-full flex-row items-center justify-between border-b px-4' : 'h-screen w-16 flex-col items-center justify-between border-r py-6'}`}>
       <button
         type='button'
-        onClick={toggleExpand}
+        onClick={() => {
+          setState('minimized')
+          setIsExpanded(false)
+        }}
+        onMouseDown={(e) => e.stopPropagation()}
         title='Collapse to icon'
         aria-label='Collapse sidebar'
         className='flex h-11 w-11 items-center justify-center rounded-2xl border border-gray-200 bg-white shadow-sm transition-transform duration-150 hover:scale-[1.02]'
@@ -36,6 +40,7 @@ export const MinimizedSidebar = () => {
               openSearch()
             }, 220)
           }}
+          onMouseDown={(e) => e.stopPropagation()}
           className={accentIcon}
         >
           <Search size={18} />
@@ -46,6 +51,7 @@ export const MinimizedSidebar = () => {
           onClick={() => {
             window.desktopWindow?.toggleModule('dashboard')
           }}
+          onMouseDown={(e) => e.stopPropagation()}
           className={neutralIcon}
         >
           <BarChart3 size={18} />
@@ -54,6 +60,7 @@ export const MinimizedSidebar = () => {
           title='Calendar'
           aria-label='Open calendar'
           onClick={() => window.desktopWindow?.toggleModule('calendar')}
+          onMouseDown={(e) => e.stopPropagation()}
           className={accentIcon}
         >
           <CalendarDays size={18} />
@@ -62,6 +69,7 @@ export const MinimizedSidebar = () => {
           title='Projects'
           aria-label='Open projects'
           onClick={() => window.desktopWindow?.toggleModule('projects')}
+          onMouseDown={(e) => e.stopPropagation()}
           className={accentIcon}
         >
           <Folder size={18} />
@@ -70,6 +78,7 @@ export const MinimizedSidebar = () => {
           title='Notes'
           aria-label='Open notes'
           onClick={() => window.desktopWindow?.toggleModule('notes')}
+          onMouseDown={(e) => e.stopPropagation()}
           className={accentIcon}
         >
           <StickyNote size={18} />
@@ -79,6 +88,7 @@ export const MinimizedSidebar = () => {
       <div className={`flex items-center ${isHorizontal ? 'flex-row gap-3' : 'flex-col gap-3'}`}>
         <button
           onClick={() => setState('expanded')}
+          onMouseDown={(e) => e.stopPropagation()}
           title='Expand'
           className={actionIcon}
         >
@@ -87,6 +97,7 @@ export const MinimizedSidebar = () => {
 
         <button
           onClick={signOut}
+          onMouseDown={(e) => e.stopPropagation()}
           title='Sign Out'
           className={dangerIcon}
         >

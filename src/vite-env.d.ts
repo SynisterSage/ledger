@@ -27,6 +27,19 @@ interface Window {
   desktopWindow?: {
     setMode: (mode: SidebarWindowMode) => Promise<void>
     setVisible: (isVisible: boolean) => Promise<void>
+    setAlwaysOnTop: (alwaysOnTop: boolean) => Promise<void>
+    applySidebarPreferences: (preferences: {
+      position?: 'right' | 'left' | 'top' | 'bottom' | 'floating'
+      opacity?: number
+      blur?: boolean
+      defaultState?: 'expanded' | 'collapsed' | 'remember'
+      autoHide?: boolean
+      isExpanded?: boolean
+      collapsedRestoreIsExpanded?: boolean
+      isHidden?: boolean
+      floatingPosition?: { x: number; y: number }
+      lastState?: 'expanded' | 'collapsed'
+    }) => Promise<void>
     toggleModule: (kind: ModuleWindowKind, focus?: string | ModuleFocusPayload) => Promise<void>
     openExternal: (url: string) => Promise<void>
   }

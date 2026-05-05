@@ -16,6 +16,7 @@ import {
   Search,
 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useAuthContext } from '../../context/AuthContext'
 import { useWorkspaceContext } from '../../context/WorkspaceContext'
 import { useSidebar } from '../../context/SidebarContext'
@@ -49,10 +50,16 @@ const todayKey = () => {
   return `${year}-${month}-${day}`
 }
 
-export const ExpandedSidebar = () => {
+export const ExpandedSidebar = ({
+  onDragHandleMouseDown,
+  onCollapseRequest,
+}: {
+  onDragHandleMouseDown?: (e: React.MouseEvent<HTMLDivElement>) => void
+  onCollapseRequest?: () => void
+}) => {
   const { user, signOut } = useAuthContext()
   const { activeWorkspace, activeWorkspaceId } = useWorkspaceContext()
-  const { setState, position } = useSidebar()
+  const { setState, setIsExpanded, position } = useSidebar()
   const { openSearch } = useSearch()
   const api = useApi()
   const isHorizontal = position === 'top' || position === 'bottom'
@@ -703,26 +710,24 @@ export const ExpandedSidebar = () => {
 
   return (
     <div
-      className={`flex h-full min-h-0 w-full bg-white border-gray-200 ${
+      className={`flex h-full min-h-0 w-full bg-transparent border-gray-200 ${
         isHorizontal
           ? 'flex-col border-b py-5'
           : 'flex-col border-r py-5'
       }`}
     >
-      <div className="px-6 pb-2 border-b border-white/20">
+      <div className="px-6 pb-2 border-b border-white/20" onMouseDown={onDragHandleMouseDown} style={{ cursor: onDragHandleMouseDown ? 'grab' : 'auto' }}>
         <div className="flex items-center justify-between mb-3">
-          <button
-            type="button"
-            onClick={() => setState('minimized')}
-            className="flex items-center gap-3 rounded-2xl px-2 py-1 text-left transition hover:bg-gray-50 focus:outline-none focus:ring-4 focus:ring-[#ffd9d0]"
-            title="Click to collapse"
-            aria-label="Collapse sidebar"
-          >
+          <div className="flex items-center gap-3 rounded-2xl px-2 py-1 text-left">
             <img src="/logo-color.svg" alt="Ledger" className="h-8 w-8" />
             <h1 className="text-2xl font-bold text-gray-900">Ledger</h1>
-          </button>
+          </div>
           <button
-            onClick={() => setState('minimized')}
+            onClick={() => {
+              onCollapseRequest?.()
+              setState('minimized')
+              setIsExpanded(true)
+            }}
             className="p-1 hover:bg-white/30 rounded-lg transition"
             title="Collapse sidebar"
           >
@@ -1407,7 +1412,7 @@ export const ExpandedSidebar = () => {
         {saveError && <p className="text-[11px] text-red-600">{saveError}</p>}
       </div>
 
-      {contextMenu && (
+      {contextMenu && createPortal(
         <div
           className="fixed z-50 bg-white border border-gray-200 rounded-lg shadow-lg py-1 min-w-max"
           style={{
@@ -1486,7 +1491,8 @@ export const ExpandedSidebar = () => {
               </button>
             </>
           )}
-        </div>
+        </div>,
+        document.body,
       )}
 
       <div className="px-6 space-y-3 border-t border-white/20 pt-4">
