@@ -44,12 +44,14 @@ interface SidebarContextType {
   setModuleView: (view: ModuleView) => void
   focusDate: string | null
   setFocusDate: (date: string | null) => void
+  isHydrated: boolean
 }
 
 const SidebarContext = createContext<SidebarContextType | undefined>(undefined)
 
 export const SidebarProvider = ({ children }: { children: ReactNode }) => {
   const [sidebarPreferences, setSidebarPreferences] = useState<SidebarPreferences>(() => loadSidebarPreferences())
+  const [isHydrated, setIsHydrated] = React.useState(false)
   const [state, setSidebarState] = React.useState<SidebarState>(() => {
     const prefs = loadSidebarPreferences()
     if (prefs.defaultState === 'expanded') return 'expanded'
@@ -61,6 +63,8 @@ export const SidebarProvider = ({ children }: { children: ReactNode }) => {
 
   useEffect(() => {
     saveSidebarPreferences(sidebarPreferences)
+    // preferences saved; mark hydrated after initial preferences write
+    if (!isHydrated) setIsHydrated(true)
   }, [sidebarPreferences])
 
   useEffect(() => {
@@ -235,6 +239,7 @@ export const SidebarProvider = ({ children }: { children: ReactNode }) => {
         setModuleView,
         focusDate,
         setFocusDate,
+        isHydrated,
       }}
     >
       {children}

@@ -5,7 +5,7 @@ import { ExpandedSidebar } from './ExpandedSidebar'
 import { CollapsedSidebar } from './CollapsedSidebar'
 
 export const SidebarContainer = () => {
-  const { state, isVisible, isExpanded, position, opacity, blur, autoHide, setState, setIsExpanded, floatingPosition, setFloatingPosition } = useSidebar()
+  const { state, isVisible, isExpanded, position, opacity, blur, autoHide, setState, setIsExpanded, floatingPosition, setFloatingPosition: saveFloatingPosition, isHydrated } = useSidebar()
   const [isHovered, setIsHovered] = useState(false)
   const suppressAutoHideExpandRef = useRef(false)
   const suppressAutoHideResetTimerRef = useRef<number | null>(null)
@@ -45,17 +45,7 @@ export const SidebarContainer = () => {
       : 'w-80 h-full'
     : 'w-16 h-16'
 
-  const wrapperStyle: React.CSSProperties = isFloating
-    ? {
-        position: 'fixed',
-        left: floatingPosition.x,
-        top: floatingPosition.y,
-        zIndex: 30,
-      }
-    : {}
-
   const shellStyle: React.CSSProperties = {
-    ...wrapperStyle,
     opacity: autoHide && !isHovered && isAutoHideFading ? 0 : opacity,
     backgroundColor: blur ? 'rgba(255, 255, 255, 0.6)' : 'rgba(255, 255, 255, 1)',
     backdropFilter: blur ? 'blur(12px)' : 'none',
@@ -71,6 +61,10 @@ export const SidebarContainer = () => {
     if (autoHideFadeTimerRef.current !== null) {
       window.clearTimeout(autoHideFadeTimerRef.current)
       autoHideFadeTimerRef.current = null
+    }
+    if (autoHideCollapseTimerRef.current !== null) {
+      window.clearTimeout(autoHideCollapseTimerRef.current)
+      autoHideCollapseTimerRef.current = null
     }
     if (suppressAutoHideResetTimerRef.current !== null) {
       window.clearTimeout(suppressAutoHideResetTimerRef.current)
@@ -132,7 +126,18 @@ export const SidebarContainer = () => {
 
   // Floating mode drag handling - ONLY for ExpandedSidebar header
   const [isDragging, setIsDragging] = useState(false)
-  const dragStateRef = useRef<{ startX: number; startY: number; startLeft: number; startTop: number } | null>(null)
+  const dragStateRef = useRef<{
+    startScreenX: number
+    startScreenY: number
+    startLeft: number
+    startTop: number
+    currentPosition: { x: number; y: number }
+  } | null>(null)
+  const moveFloatingWindow = (nextPosition: { x: number; y: number }) => {
+    void window.desktopWindow?.setFloatingPosition(nextPosition).catch(() => {
+      // No-op outside Electron
+    })
+  }
 
   // Reset dragging state when floating mode is disabled
   useEffect(() => {
@@ -145,12 +150,17 @@ export const SidebarContainer = () => {
   const handleDragHandleStart = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!isFloating || e.button !== 0) return
     e.preventDefault()
+    e.stopPropagation()
     setIsDragging(true)
     dragStateRef.current = {
-      startX: e.clientX,
-      startY: e.clientY,
+      startScreenX: e.screenX,
+      startScreenY: e.screenY,
       startLeft: floatingPosition.x,
       startTop: floatingPosition.y,
+      currentPosition: {
+        x: floatingPosition.x,
+        y: floatingPosition.y,
+      },
     }
   }
 
@@ -161,16 +171,24 @@ export const SidebarContainer = () => {
       const state = dragStateRef.current
       if (!state) return
 
-      const dx = moveEvent.clientX - state.startX
-      const dy = moveEvent.clientY - state.startY
+      const dx = moveEvent.screenX - state.startScreenX
+      const dy = moveEvent.screenY - state.startScreenY
 
-      setFloatingPosition({
-        x: Math.max(0, state.startLeft + dx),
-        y: Math.max(0, state.startTop + dy),
-      })
+      const nextPosition = {
+        x: state.startLeft + dx,
+        y: state.startTop + dy,
+      }
+
+      state.currentPosition = nextPosition
+
+      moveFloatingWindow(nextPosition)
     }
 
     const handleUp = () => {
+      const finalPosition = dragStateRef.current?.currentPosition
+      if (finalPosition) {
+        saveFloatingPosition(finalPosition)
+      }
       setIsDragging(false)
       dragStateRef.current = null
     }
@@ -182,14 +200,17 @@ export const SidebarContainer = () => {
       window.removeEventListener('mousemove', handleMove)
       window.removeEventListener('mouseup', handleUp)
     }
-  }, [isDragging, isFloating, setFloatingPosition])
+  }, [isDragging, isFloating])
+
+  // keep layout width/height but hide visually until hydration completes to avoid flashes
+  const hydrationClass = isHydrated ? '' : 'opacity-0 pointer-events-none'
 
   return (
     <div
       style={shellStyle}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
-      className={`relative overflow-hidden ${shellSizeClasses} transition-[width,height] duration-180 ease-out ${autoHide && !isHovered ? 'shadow-sm' : ''}`}
+      className={`relative overflow-hidden ${shellSizeClasses} transition-[width,height,opacity] duration-180 ease-out ${autoHide && !isHovered ? 'shadow-sm' : ''} ${hydrationClass}`}
     >
       {state === 'expanded' && (
         <div className='h-full min-h-0 w-full'>
@@ -202,13 +223,13 @@ export const SidebarContainer = () => {
 
       {state === 'minimized' && isExpanded && (
         <div className='h-full w-full'>
-          <MinimizedSidebar />
+          <MinimizedSidebar onDragHandleMouseDown={isFloating ? handleDragHandleStart : undefined} />
         </div>
       )}
 
       {state === 'minimized' && !isExpanded && (
         <div className='h-full w-full'>
-          <CollapsedSidebar />
+          <CollapsedSidebar onDragHandleMouseDown={isFloating ? handleDragHandleStart : undefined} />
         </div>
       )}
     </div>

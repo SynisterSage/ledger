@@ -1,6 +1,10 @@
 import { useSidebar } from '../../context/SidebarContext'
 
-export const CollapsedSidebar = () => {
+export const CollapsedSidebar = ({
+  onDragHandleMouseDown,
+}: {
+  onDragHandleMouseDown?: (e: React.MouseEvent<HTMLDivElement>) => void
+}) => {
   const { setState, setIsExpanded, collapsedRestoreIsExpanded } = useSidebar()
 
   const handleClick = () => {
@@ -9,7 +13,11 @@ export const CollapsedSidebar = () => {
   }
 
   return (
-    <div className='flex h-full w-full items-center justify-center rounded-xl border border-gray-200 bg-white shadow-sm'>
+    <div
+      className='flex h-full w-full items-center justify-center rounded-xl border border-gray-200 bg-white shadow-sm'
+      onMouseDown={onDragHandleMouseDown}
+      style={{ cursor: onDragHandleMouseDown ? 'grab' : 'auto' }}
+    >
       <button
         type='button'
         onClick={handleClick}

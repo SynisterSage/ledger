@@ -43,6 +43,9 @@ contextBridge.exposeInMainWorld('desktopWindow', {
   setAlwaysOnTop(alwaysOnTop: boolean) {
     return ipcRenderer.invoke('window:set-always-on-top', alwaysOnTop)
   },
+  setFloatingPosition(position: { x: number; y: number }) {
+    return ipcRenderer.invoke('window:set-floating-position', position)
+  },
     applySidebarPreferences(preferences: {
       position?: 'right' | 'left' | 'top' | 'bottom' | 'floating'
       opacity?: number

@@ -1,6 +1,7 @@
 import { app, BrowserWindow, ipcMain, screen, shell, globalShortcut } from 'electron'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
+import { defaultSidebarPreferences } from '../src/config/sidebarPreferences'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -37,7 +38,8 @@ type ModuleFocusPayload = {
 let sidebarWin: BrowserWindow | null = null
 const moduleWins = new Map<ModuleWindowKind, BrowserWindow>()
 let currentSidebarMode: SidebarWindowMode = 'auth'
-let currentSidebarPosition: 'left' | 'right' = 'right'
+let currentSidebarPosition: 'left' | 'right' | 'floating' = 'right'
+let currentFloatingPosition = { ...defaultSidebarPreferences.floatingPosition }
 let sidebarIsVisible = true
 let sidebarAlwaysOnTop = true
 
@@ -86,7 +88,7 @@ function setWindowButtonVisibility(win: BrowserWindow, visible: boolean) {
   }
 }
 
-function getDockedBounds(width: number, position: 'left' | 'right' = currentSidebarPosition) {
+function getDockedBounds(width: number, position: 'left' | 'right' | 'floating' = currentSidebarPosition) {
   const { x, y, width: workWidth, height: workHeight } = screen.getPrimaryDisplay().workArea
 
   if (position === 'left') {
@@ -106,7 +108,7 @@ function getDockedBounds(width: number, position: 'left' | 'right' = currentSide
   }
 }
 
-function getCollapsedBounds(size: number, position: 'left' | 'right' = currentSidebarPosition) {
+function getCollapsedBounds(size: number, position: 'left' | 'right' | 'floating' = currentSidebarPosition) {
   const { x, y, width: workWidth, height: workHeight } = screen.getPrimaryDisplay().workArea
   const safeSize = Math.min(size, workWidth - WINDOW_MARGIN * 2, workHeight - WINDOW_MARGIN * 2)
 
@@ -124,6 +126,30 @@ function getCollapsedBounds(size: number, position: 'left' | 'right' = currentSi
     y: y + WINDOW_MARGIN,
     width: safeSize,
     height: safeSize,
+  }
+}
+
+function getFloatingBounds(mode: SidebarWindowMode) {
+  const { width: workWidth, height: workHeight } = screen.getPrimaryDisplay().workArea
+
+  if (mode === 'compact') {
+    const size = Math.min(COLLAPSED_SIZE, workWidth - WINDOW_MARGIN * 2, workHeight - WINDOW_MARGIN * 2)
+    return {
+      x: currentFloatingPosition.x,
+      y: currentFloatingPosition.y,
+      width: size,
+      height: size,
+    }
+  }
+
+  const width = Math.min(mode === 'minimized' ? RAIL_SIZE : EXPANDED_WIDTH, workWidth - WINDOW_MARGIN * 2)
+  const height = Math.min(workHeight - WINDOW_MARGIN * 2, workHeight - WINDOW_MARGIN * 2)
+
+  return {
+    x: currentFloatingPosition.x,
+    y: currentFloatingPosition.y,
+    width,
+    height,
   }
 }
 
@@ -191,12 +217,14 @@ function applySidebarWindowMode(mode: SidebarWindowMode) {
   }
 
   const bounds =
-    mode === 'compact'
-      ? getCollapsedBounds(COLLAPSED_SIZE)
-      : mode === 'minimized'
-        ? getDockedBounds(RAIL_SIZE)
-        : getDockedBounds(EXPANDED_WIDTH)
-  sidebarWin.setAlwaysOnTop(sidebarAlwaysOnTop, sidebarAlwaysOnTop ? 'screen-saver' : undefined)
+    currentSidebarPosition === 'floating'
+      ? getFloatingBounds(mode)
+      : mode === 'compact'
+        ? getCollapsedBounds(COLLAPSED_SIZE)
+        : mode === 'minimized'
+          ? getDockedBounds(RAIL_SIZE)
+          : getDockedBounds(EXPANDED_WIDTH)
+  sidebarWin.setAlwaysOnTop(currentSidebarPosition === 'floating' ? true : sidebarAlwaysOnTop, 'screen-saver')
   sidebarWin.setResizable(false)
   setWindowButtonVisibility(sidebarWin, false)
   sidebarWin.setBounds(bounds, false)
@@ -211,7 +239,7 @@ function applySidebarAlwaysOnTop(alwaysOnTop: boolean) {
     return
   }
 
-  sidebarWin.setAlwaysOnTop(alwaysOnTop, alwaysOnTop ? 'screen-saver' : undefined)
+  sidebarWin.setAlwaysOnTop(currentSidebarPosition === 'floating' ? true : alwaysOnTop, 'screen-saver')
 }
 
 function applySidebarVisibility(isVisible: boolean) {
@@ -412,11 +440,32 @@ ipcMain.handle('window:apply-sidebar-preferences', (_event, preferences: Sidebar
   if (!sidebarWin || sidebarWin.isDestroyed()) return
   if (preferences.position === 'left' || preferences.position === 'right') {
     currentSidebarPosition = preferences.position
+  } else if (preferences.position === 'floating') {
+    currentSidebarPosition = 'floating'
+  }
+  if (preferences.floatingPosition) {
+    currentFloatingPosition = {
+      x: preferences.floatingPosition.x,
+      y: preferences.floatingPosition.y,
+    }
   }
   sidebarWin.webContents.send('sidebar:preferences-updated', preferences)
   if (currentSidebarMode !== 'auth' && currentSidebarMode !== 'fullscreen') {
     applySidebarWindowMode(currentSidebarMode)
   }
+})
+
+ipcMain.handle('window:set-floating-position', (_event, floatingPosition: { x: number; y: number }) => {
+  currentFloatingPosition = {
+    x: floatingPosition.x,
+    y: floatingPosition.y,
+  }
+
+  if (!sidebarWin || sidebarWin.isDestroyed()) return
+  if (currentSidebarPosition !== 'floating') return
+  if (currentSidebarMode === 'auth' || currentSidebarMode === 'fullscreen') return
+
+  sidebarWin.setPosition(floatingPosition.x, floatingPosition.y, false)
 })
 
 ipcMain.handle('window:toggle-module', (_event, payload: ModuleWindowKind | ModuleFocusPayload) => {

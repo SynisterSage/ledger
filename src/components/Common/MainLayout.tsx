@@ -34,10 +34,7 @@ export const MainLayout = ({ children }: MainLayoutProps) => {
   // Floating mode: sidebar floats above everything
   if (isFloating) {
     return (
-      <div className="relative h-screen overflow-hidden bg-gray-50">
-        <div className="flex h-full flex-col overflow-hidden bg-white">
-          {children}
-        </div>
+      <div className="relative h-screen overflow-hidden bg-transparent">
         {shouldShowSidebar && <SidebarContainer />}
       </div>
     )

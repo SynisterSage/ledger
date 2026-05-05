@@ -28,6 +28,7 @@ interface Window {
     setMode: (mode: SidebarWindowMode) => Promise<void>
     setVisible: (isVisible: boolean) => Promise<void>
     setAlwaysOnTop: (alwaysOnTop: boolean) => Promise<void>
+    setFloatingPosition: (position: { x: number; y: number }) => Promise<void>
     applySidebarPreferences: (preferences: {
       position?: 'right' | 'left' | 'top' | 'bottom' | 'floating'
       opacity?: number

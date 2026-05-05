@@ -723,6 +723,8 @@ export const ExpandedSidebar = ({
             <h1 className="text-2xl font-bold text-gray-900">Ledger</h1>
           </div>
           <button
+            type="button"
+            onMouseDown={(e) => e.stopPropagation()}
             onClick={() => {
               onCollapseRequest?.()
               setState('minimized')

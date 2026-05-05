@@ -3,7 +3,11 @@ import { useAuthContext } from '../../context/AuthContext'
 import { useSidebar } from '../../context/SidebarContext'
 import { useSearch } from '../../context/SearchContext'
 
-export const MinimizedSidebar = () => {
+export const MinimizedSidebar = ({
+  onDragHandleMouseDown,
+}: {
+  onDragHandleMouseDown?: (e: React.MouseEvent<HTMLDivElement>) => void
+}) => {
   const { signOut } = useAuthContext()
   const { setState, setIsExpanded, position } = useSidebar()
   const { openSearch } = useSearch()
@@ -15,7 +19,11 @@ export const MinimizedSidebar = () => {
   const dangerIcon = `${iconBase} bg-red-400/30 border-red-400/20 hover:bg-red-400/45 hover:border-red-400/30 text-red-700`
 
   return (
-    <div className={`bg-transparent border-gray-200 flex ${isHorizontal ? 'h-16 w-full flex-row items-center justify-between border-b px-4' : 'h-screen w-16 flex-col items-center justify-between border-r py-6'}`}>
+    <div
+      className={`bg-transparent border-gray-200 flex ${isHorizontal ? 'h-16 w-full flex-row items-center justify-between border-b px-4' : 'h-screen w-16 flex-col items-center justify-between border-r py-6'}`}
+      onMouseDown={onDragHandleMouseDown}
+      style={{ cursor: onDragHandleMouseDown ? 'grab' : 'auto' }}
+    >
       <button
         type='button'
         onClick={() => {

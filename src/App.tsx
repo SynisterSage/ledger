@@ -648,7 +648,7 @@ function AppShell() {
   const { user, isLoading, error: authError } = useAuthContext()
   const { refreshWorkspaces } = useWorkspaceContext()
   const api = useApi()
-  const { state, setState, isExpanded, setIsExpanded, isVisible, setIsVisible, toggleVisibility } = useSidebar()
+  const { state, setState, isExpanded, setIsExpanded, isVisible, setIsVisible, toggleVisibility, sidebarPreferences } = useSidebar()
   const { openSearch } = useSearch()
   const [uiMode, setUiMode] = useState<'auth' | 'app'>(user ? 'app' : 'auth')
   const [isAuthExiting, setIsAuthExiting] = useState(false)
@@ -926,6 +926,14 @@ function AppShell() {
       window.clearTimeout(closeTimer)
     }
   }, [postAuthStage])
+
+  useEffect(() => {
+    if (isLoading) return
+
+    void window.desktopWindow?.applySidebarPreferences(sidebarPreferences).catch(() => {
+      // No-op outside Electron (browser dev mode)
+    })
+  }, [isLoading, sidebarPreferences])
 
   useEffect(() => {
     if (isLoading) return
