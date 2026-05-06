@@ -131,6 +131,8 @@ export const SettingsWindow = () => {
     defaultState,
     alwaysOnTop,
     autoHide,
+    setFloatingDockEnabled,
+    setFloatingDockThreshold,
     isVisible,
     setPosition,
     setOpacity,
@@ -199,7 +201,7 @@ export const SettingsWindow = () => {
     { value: 'left', label: 'Left', description: 'Move the sidebar to the left edge.' },
     { value: 'top', label: 'Top', description: 'Horizontal layout at the top (experimental).' },
     { value: 'bottom', label: 'Bottom', description: 'Horizontal layout at the bottom (experimental).' },
-    { value: 'floating', label: 'Floating', description: 'Keep the sidebar in a detached floating panel.' },
+    { value: 'floating', label: 'Floating', description: 'Detach the sidebar into a floating panel with optional app docking.' },
   ]
 
   const sidebarDefaultStateOptions: Array<{ value: SidebarDefaultState; label: string; description: string }> = [
@@ -605,7 +607,7 @@ export const SettingsWindow = () => {
   }
 
   return (
-    <div className="h-screen bg-[#f5f7fb] text-gray-900 flex flex-col">
+    <div className="h-screen overflow-hidden rounded-[28px] border border-gray-200 bg-[#f5f7fb] text-gray-900 flex flex-col shadow-[0_24px_80px_rgba(15,23,42,0.08)]" style={{ scrollbarGutter: 'stable' }}>
       <ModuleWindowHeader
         title="Settings"
         subtitle="Defaults, accessible controls"
@@ -1220,6 +1222,39 @@ export const SettingsWindow = () => {
                         className="mt-4 w-full accent-[#FF5F40]"
                       />
                     </div>
+
+                    {position === 'floating' && (
+                      <>
+                        <ToggleField
+                          id="settings-sidebar-dock-enabled"
+                          label="Dock to app windows"
+                          help="When floating, attach the sidebar to the app window you drop onto and keep following it while that app moves or resizes."
+                          checked={sidebarPreferences.floatingDockEnabled}
+                          onChange={(checked) => setFloatingDockEnabled(checked)}
+                        />
+
+                        <div className="rounded-2xl border border-gray-200 bg-white px-4 py-3">
+                          <div className="flex items-center justify-between gap-3">
+                            <div>
+                              <p className="text-sm font-medium text-gray-900">Dock threshold</p>
+                              <p className="mt-1 text-xs text-gray-600">How close the sidebar must be to a window edge before it attaches.</p>
+                            </div>
+                            <span className="shrink-0 rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.16em] text-gray-500">
+                              {sidebarPreferences.floatingDockThreshold}px
+                            </span>
+                          </div>
+                          <input
+                            type="range"
+                            min="8"
+                            max="80"
+                            step="1"
+                            value={sidebarPreferences.floatingDockThreshold}
+                            onChange={(event) => setFloatingDockThreshold(Number(event.target.value))}
+                            className="mt-4 w-full accent-[#FF5F40]"
+                          />
+                        </div>
+                      </>
+                    )}
 
                     <div>
                       <p className="text-sm font-medium text-gray-900">Default state</p>

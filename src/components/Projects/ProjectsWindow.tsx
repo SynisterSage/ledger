@@ -526,12 +526,18 @@ export const ProjectsWindow = () => {
 
   const updateTaskStatus = useCallback(
     async (task: TaskRow, status: string) => {
+      const previousTask = task
+      const nextTask = { ...task, status }
+
+      setTasks((prev) => prev.map((row) => (row.id === task.id ? nextTask : row)))
+
       try {
         const data = await api.updateTask(task.id, { status })
         const updated = data as TaskRow
         setTasks((prev) => prev.map((row) => (row.id === updated.id ? updated : row)))
       } catch (updateError) {
         setTaskError(updateError instanceof Error ? updateError.message : 'Could not update task.')
+        setTasks((prev) => prev.map((row) => (row.id === task.id ? previousTask : row)))
       }
     },
     [api]
@@ -718,7 +724,7 @@ export const ProjectsWindow = () => {
   }, [taskContextMenu])
 
   return (
-    <div className="h-screen bg-[#f5f7fb] flex flex-col text-gray-900">
+    <div className="h-screen overflow-hidden rounded-[28px] border border-gray-200 bg-[#f5f7fb] flex flex-col text-gray-900 shadow-[0_24px_80px_rgba(15,23,42,0.08)]" style={{ scrollbarGutter: 'stable' }}>
       <ModuleWindowHeader
         title="Projects"
         subtitle="Simple outcomes, clear next steps"

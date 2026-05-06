@@ -1,9 +1,12 @@
 import { app, BrowserWindow, ipcMain, screen, shell, globalShortcut } from 'electron'
+import { execFile, spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
+import { promisify } from 'node:util'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import { defaultSidebarPreferences } from '../src/config/sidebarPreferences'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
+const execFileAsync = promisify(execFile)
 
 process.env.APP_ROOT = path.join(__dirname, '..')
 export const VITE_DEV_SERVER_URL = process.env['VITE_DEV_SERVER_URL']
@@ -24,6 +27,8 @@ type SidebarPreferencesPayload = {
   collapsedRestoreIsExpanded?: boolean
   isHidden?: boolean
   floatingPosition?: { x: number; y: number }
+  floatingDockEnabled?: boolean
+  floatingDockThreshold?: number
   lastState?: 'expanded' | 'collapsed'
 }
 type ModuleWindowKind = 'calendar' | 'notes' | 'projects' | 'dashboard' | 'settings'
@@ -34,12 +39,27 @@ type ModuleFocusPayload = {
   focusNoteId?: string | null
   focusTaskId?: string | null
 }
+type Rect = { x: number; y: number; width: number; height: number }
+type DockSide = 'left' | 'right'
+type FloatingDockTarget = {
+  platform: 'win32' | 'darwin'
+  id: string
+  side: DockSide
+}
 
 let sidebarWin: BrowserWindow | null = null
 const moduleWins = new Map<ModuleWindowKind, BrowserWindow>()
 let currentSidebarMode: SidebarWindowMode = 'auth'
 let currentSidebarPosition: 'left' | 'right' | 'floating' = 'right'
 let currentFloatingPosition = { ...defaultSidebarPreferences.floatingPosition }
+let currentSidebarPreferences = { ...defaultSidebarPreferences }
+let currentFloatingDockTarget: FloatingDockTarget | null = null
+let currentFloatingDockBounds: Rect | null = null
+let currentFloatingDockMisses = 0
+let floatingDockDragActive = false
+let floatingDockTrackingTimer: NodeJS.Timeout | null = null
+let floatingDockNativeTracker: ChildProcessWithoutNullStreams | null = null
+let floatingDockNativeBuffer = ''
 let sidebarIsVisible = true
 let sidebarAlwaysOnTop = true
 
@@ -153,6 +173,10 @@ function getCollapsedBounds(size: number, position: 'left' | 'right' | 'floating
 function getFloatingBounds(mode: SidebarWindowMode) {
   const { width: workWidth, height: workHeight } = screen.getPrimaryDisplay().workArea
 
+  if (currentFloatingDockTarget && currentFloatingDockBounds) {
+    return getDockedBoundsForTarget(currentFloatingDockBounds, currentFloatingDockTarget.side, mode)
+  }
+
   if (mode === 'compact') {
     const size = Math.min(COLLAPSED_SIZE, workWidth - WINDOW_MARGIN * 2, workHeight - WINDOW_MARGIN * 2)
     return {
@@ -184,6 +208,572 @@ function getCenteredBounds(width: number, height: number) {
     width: safeWidth,
     height: safeHeight,
   }
+}
+
+function clampRectToWorkArea(rect: Rect, workArea: Electron.Rectangle) {
+  const maxX = workArea.x + workArea.width - rect.width
+  const maxY = workArea.y + workArea.height - rect.height
+  return {
+    x: Math.max(workArea.x, Math.min(rect.x, maxX)),
+    y: Math.max(workArea.y, Math.min(rect.y, maxY)),
+    width: rect.width,
+    height: rect.height,
+  }
+}
+
+function getDockSide(currentBounds: Rect, targetBounds: Rect): DockSide {
+  const leftDistance = Math.abs(currentBounds.x - (targetBounds.x - currentBounds.width))
+  const rightDistance = Math.abs(currentBounds.x - (targetBounds.x + targetBounds.width))
+  return leftDistance <= rightDistance ? 'left' : 'right'
+}
+
+function getDockedBoundsForTarget(targetBounds: Rect, side: DockSide, mode: SidebarWindowMode) {
+  const { width: workWidth, height: workHeight } = screen.getDisplayMatching(targetBounds).workArea
+  const width =
+    mode === 'compact'
+      ? Math.min(COLLAPSED_SIZE, workWidth - WINDOW_MARGIN * 2)
+      : mode === 'minimized'
+        ? Math.min(RAIL_SIZE, workWidth - WINDOW_MARGIN * 2)
+        : Math.min(EXPANDED_WIDTH, workWidth - WINDOW_MARGIN * 2)
+  const height = Math.min(targetBounds.height, workHeight - WINDOW_MARGIN * 2)
+  const x = side === 'left' ? targetBounds.x - width : targetBounds.x + targetBounds.width
+  const y = targetBounds.y
+  return clampRectToWorkArea({ x, y, width, height }, screen.getDisplayMatching(targetBounds).workArea)
+}
+
+function setCurrentFloatingDockTarget(target: FloatingDockTarget | null, bounds: Rect | null) {
+  currentFloatingDockTarget = target
+  currentFloatingDockBounds = bounds
+  currentFloatingDockMisses = 0
+}
+
+function clearCurrentFloatingDockTarget() {
+  stopFloatingDockNativeTracker()
+  currentFloatingDockTarget = null
+  currentFloatingDockBounds = null
+  currentFloatingDockMisses = 0
+}
+
+function stopFloatingDockTracking() {
+  if (floatingDockTrackingTimer !== null) {
+    clearInterval(floatingDockTrackingTimer)
+    floatingDockTrackingTimer = null
+  }
+}
+
+function stopFloatingDockNativeTracker() {
+  if (floatingDockNativeTracker !== null) {
+    floatingDockNativeTracker.kill()
+    floatingDockNativeTracker = null
+  }
+  floatingDockNativeBuffer = ''
+}
+
+function applyFloatingDockTargetBounds(targetBounds: Rect, side: DockSide) {
+  if (!sidebarWin || sidebarWin.isDestroyed()) return
+  if (currentSidebarPosition !== 'floating') return
+  if (currentSidebarMode === 'auth' || currentSidebarMode === 'fullscreen') return
+
+  currentFloatingDockBounds = targetBounds
+  currentFloatingDockMisses = 0
+  const nextBounds = getDockedBoundsForTarget(targetBounds, side, currentSidebarMode)
+  sidebarWin.setBounds(nextBounds, false)
+  currentFloatingPosition = { x: nextBounds.x, y: nextBounds.y }
+}
+
+function handleNativeDockTrackerLine(line: string, side: DockSide) {
+  const [kind, x, y, width, height] = line.trim().split('|')
+  if (kind !== 'bounds') return
+  const parsed = [x, y, width, height].map((value) => Number(value))
+  if (parsed.some((value) => Number.isNaN(value) || value <= 0)) return
+  const dipRect = screen.screenToDipRect(null, {
+    x: parsed[0],
+    y: parsed[1],
+    width: parsed[2],
+    height: parsed[3],
+  })
+  applyFloatingDockTargetBounds(
+    { x: dipRect.x, y: dipRect.y, width: dipRect.width, height: dipRect.height },
+    side,
+  )
+}
+
+function startFloatingDockNativeTracker(target: FloatingDockTarget) {
+  stopFloatingDockNativeTracker()
+
+  if (target.platform !== 'win32') return false
+  if (!/^\d+$/.test(target.id)) return false
+
+  const script = `
+$ErrorActionPreference = 'Stop'
+Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+
+public static class LedgerDockTracker {
+  private const uint EVENT_OBJECT_LOCATIONCHANGE = 0x800B;
+  private const uint WINEVENT_OUTOFCONTEXT = 0;
+  private static IntPtr targetHwnd;
+  private static WinEventDelegate callbackRef = Callback;
+
+  public delegate void WinEventDelegate(
+    IntPtr hWinEventHook,
+    uint eventType,
+    IntPtr hwnd,
+    int idObject,
+    int idChild,
+    uint dwEventThread,
+    uint dwmsEventTime
+  );
+
+  [StructLayout(LayoutKind.Sequential)]
+  public struct RECT {
+    public int Left;
+    public int Top;
+    public int Right;
+    public int Bottom;
+  }
+
+  [StructLayout(LayoutKind.Sequential)]
+  public struct MSG {
+    public IntPtr hwnd;
+    public uint message;
+    public UIntPtr wParam;
+    public IntPtr lParam;
+    public uint time;
+    public int ptX;
+    public int ptY;
+  }
+
+  [DllImport("user32.dll")]
+  private static extern IntPtr SetWinEventHook(
+    uint eventMin,
+    uint eventMax,
+    IntPtr hmodWinEventProc,
+    WinEventDelegate lpfnWinEventProc,
+    uint idProcess,
+    uint idThread,
+    uint dwFlags
+  );
+
+  [DllImport("user32.dll")]
+  private static extern bool UnhookWinEvent(IntPtr hWinEventHook);
+
+  [DllImport("user32.dll")]
+  private static extern sbyte GetMessage(out MSG lpMsg, IntPtr hWnd, uint wMsgFilterMin, uint wMsgFilterMax);
+
+  [DllImport("user32.dll")]
+  private static extern bool GetWindowRect(IntPtr hWnd, out RECT rect);
+
+  [DllImport("user32.dll")]
+  private static extern bool IsWindow(IntPtr hWnd);
+
+  public static void Start(long hwndValue) {
+    targetHwnd = new IntPtr(hwndValue);
+    EmitBounds();
+    IntPtr hook = SetWinEventHook(
+      EVENT_OBJECT_LOCATIONCHANGE,
+      EVENT_OBJECT_LOCATIONCHANGE,
+      IntPtr.Zero,
+      callbackRef,
+      0,
+      0,
+      WINEVENT_OUTOFCONTEXT
+    );
+    MSG msg;
+    while (IsWindow(targetHwnd) && GetMessage(out msg, IntPtr.Zero, 0, 0) > 0) {}
+    if (hook != IntPtr.Zero) UnhookWinEvent(hook);
+  }
+
+  private static void Callback(
+    IntPtr hWinEventHook,
+    uint eventType,
+    IntPtr hwnd,
+    int idObject,
+    int idChild,
+    uint dwEventThread,
+    uint dwmsEventTime
+  ) {
+    if (hwnd != targetHwnd) return;
+    EmitBounds();
+  }
+
+  private static void EmitBounds() {
+    RECT rect;
+    if (!GetWindowRect(targetHwnd, out rect)) return;
+    Console.Out.WriteLine("bounds|" + rect.Left + "|" + rect.Top + "|" + (rect.Right - rect.Left) + "|" + (rect.Bottom - rect.Top));
+    Console.Out.Flush();
+  }
+}
+"@
+[LedgerDockTracker]::Start([Int64]${target.id})
+`
+
+  const tracker = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script], {
+    windowsHide: true,
+  })
+  floatingDockNativeTracker = tracker
+
+  tracker.stdout.on('data', (chunk) => {
+    floatingDockNativeBuffer += chunk.toString()
+    const lines = floatingDockNativeBuffer.split(/\r?\n/)
+    floatingDockNativeBuffer = lines.pop() ?? ''
+    for (const line of lines) {
+      handleNativeDockTrackerLine(line, target.side)
+    }
+  })
+
+  tracker.stderr.on('data', (chunk) => {
+    console.warn('[electron] Floating dock tracker:', chunk.toString().trim())
+  })
+
+  tracker.on('exit', () => {
+    if (floatingDockNativeTracker === tracker) {
+      floatingDockNativeTracker = null
+      floatingDockNativeBuffer = ''
+    }
+  })
+
+  return true
+}
+
+function startFloatingDockTracking() {
+  if (floatingDockTrackingTimer !== null) return
+  floatingDockTrackingTimer = setInterval(() => {
+    void refreshFloatingDockTarget()
+  }, 48)
+}
+
+async function refreshFloatingDockTarget() {
+  if (!sidebarWin || sidebarWin.isDestroyed()) return
+  if (currentSidebarPosition !== 'floating') return
+  if (currentSidebarMode === 'auth' || currentSidebarMode === 'fullscreen') return
+  if (floatingDockDragActive) return
+  if (!currentSidebarPreferences.floatingDockEnabled) return
+  if (!currentFloatingDockTarget) return
+
+  const sidebarBounds = sidebarWin.getBounds()
+  const target = await getFloatingDockTargetAtEdge(sidebarBounds, currentFloatingDockTarget.side)
+
+  if (!target) {
+    currentFloatingDockMisses += 1
+    if (currentFloatingDockMisses <= 12 && currentFloatingDockBounds) {
+      const fallbackBounds = getDockedBoundsForTarget(
+        currentFloatingDockBounds,
+        currentFloatingDockTarget.side,
+        currentSidebarMode,
+      )
+      sidebarWin.setBounds(fallbackBounds, false)
+      currentFloatingPosition = { x: fallbackBounds.x, y: fallbackBounds.y }
+      return
+    }
+    clearCurrentFloatingDockTarget()
+    stopFloatingDockTracking()
+    return
+  }
+
+  currentFloatingDockMisses = 0
+  currentFloatingDockTarget = target.target
+  currentFloatingDockBounds = target.bounds
+  const nextBounds = getDockedBoundsForTarget(target.bounds, currentFloatingDockTarget.side, currentSidebarMode)
+  sidebarWin.setBounds(nextBounds, false)
+  currentFloatingPosition = { x: nextBounds.x, y: nextBounds.y }
+}
+
+async function getFloatingDockTargetAtCursor(): Promise<{ target: FloatingDockTarget; bounds: Rect } | null> {
+  try {
+    const sidebarBounds = sidebarWin?.getBounds()
+    if (!sidebarBounds) return null
+
+    const probePoints = [
+      { side: 'left' as DockSide, x: sidebarBounds.x - 8, y: sidebarBounds.y + Math.floor(sidebarBounds.height / 2) },
+      { side: 'right' as DockSide, x: sidebarBounds.x + sidebarBounds.width + 8, y: sidebarBounds.y + Math.floor(sidebarBounds.height / 2) },
+    ]
+
+    if (process.platform === 'win32') {
+      const script = (probeX: number, probeY: number) => `
+Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+public class Win32 {
+  [DllImport("user32.dll")]
+  public static extern bool GetCursorPos(out POINT lpPoint);
+  [DllImport("user32.dll")]
+  public static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
+  [DllImport("user32.dll")]
+  public static extern bool IsWindowVisible(IntPtr hWnd);
+  [DllImport("user32.dll")]
+  public static extern bool GetWindowRect(IntPtr hWnd, out RECT rect);
+  [DllImport("user32.dll")]
+  public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out int lpdwProcessId);
+  public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
+  [StructLayout(LayoutKind.Sequential)]
+  public struct RECT {
+    public int Left;
+    public int Top;
+    public int Right;
+    public int Bottom;
+  }
+  [StructLayout(LayoutKind.Sequential)]
+  public struct POINT {
+    public int X;
+    public int Y;
+  }
+}
+"@
+$ledgerPid = ${process.pid}
+$cursor = [Win32+POINT]::new()
+$cursor.X = ${Math.floor(probeX)}
+$cursor.Y = ${Math.floor(probeY)}
+$script:result = $null
+[Win32]::EnumWindows({
+  param([IntPtr]$hWnd, [IntPtr]$lParam)
+  if (-not [Win32]::IsWindowVisible($hWnd)) { return $true }
+  $pid = 0
+  [Win32]::GetWindowThreadProcessId($hWnd, [ref]$pid) | Out-Null
+  if ($pid -eq $ledgerPid) { return $true }
+  $rect = [Win32+RECT]::new()
+  if (-not [Win32]::GetWindowRect($hWnd, [ref]$rect)) { return $true }
+  if ($cursor.X -ge $rect.Left -and $cursor.X -le $rect.Right -and $cursor.Y -ge $rect.Top -and $cursor.Y -le $rect.Bottom) {
+    $script:result = "$($hWnd.ToInt64())|$($rect.Left)|$($rect.Top)|$($rect.Right - $rect.Left)|$($rect.Bottom - $rect.Top)"
+    return $false
+  }
+  return $true
+}, [IntPtr]::Zero) | Out-Null
+
+if ($script:result) { Write-Output $script:result }
+`
+
+      for (const probe of probePoints) {
+        const { stdout } = await execFileAsync('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script(probe.x, probe.y)], {
+          windowsHide: true,
+          timeout: 1200,
+        })
+        const [id, x, y, width, height] = String(stdout).trim().split('|')
+        const parsed = [x, y, width, height].map((value) => Number(value))
+        if (parsed.some((value) => Number.isNaN(value) || value <= 0) || !id) continue
+        return {
+          target: {
+            platform: 'win32',
+            id,
+            side: probe.side,
+          },
+          bounds: { x: parsed[0], y: parsed[1], width: parsed[2], height: parsed[3] },
+        }
+      }
+      return null
+    }
+
+    if (process.platform === 'darwin') {
+      const script = (probeX: number, probeY: number) => `
+(() => {
+  ObjC.import('CoreGraphics')
+  var ledgerPid = ${process.pid}
+  var windows = $.CGWindowListCopyWindowInfo($.kCGWindowListOptionOnScreenOnly, $.kCGNullWindowID)
+  for (var i = 0; i < windows.count; i++) {
+    var window = windows.objectAtIndex(i)
+    var ownerPid = ObjC.unwrap(window.objectForKey('kCGWindowOwnerPID'))
+    if (ownerPid === ledgerPid) continue
+    var windowNumber = Number(ObjC.unwrap(window.objectForKey('kCGWindowNumber')))
+    var bounds = ObjC.deepUnwrap(window.objectForKey('kCGWindowBounds'))
+    if (!bounds) continue
+    if (${Math.floor(probeX)} >= bounds.X && ${Math.floor(probeX)} <= bounds.X + bounds.Width && ${Math.floor(probeY)} >= bounds.Y && ${Math.floor(probeY)} <= bounds.Y + bounds.Height) {
+      return [windowNumber, bounds.X, bounds.Y, bounds.Width, bounds.Height].join('|')
+    }
+  }
+  return ''
+})()
+`
+
+      for (const probe of probePoints) {
+        const { stdout } = await execFileAsync('osascript', ['-e', script(probe.x, probe.y)], {
+          windowsHide: true,
+          timeout: 1200,
+        })
+        const text = String(stdout).trim()
+        if (!text) continue
+        const [id, x, y, width, height] = text.split('|')
+        const parsed = [x, y, width, height].map((value) => Number(value))
+        if (parsed.some((value) => Number.isNaN(value) || value <= 0) || !id) continue
+        return {
+          target: {
+            platform: 'darwin',
+            id,
+            side: probe.side,
+          },
+          bounds: { x: parsed[0], y: parsed[1], width: parsed[2], height: parsed[3] },
+        }
+      }
+      return null
+    }
+  } catch (error) {
+    console.warn('[electron] Could not determine foreground app bounds:', error)
+  }
+
+  return null
+}
+
+async function getFloatingDockTargetAtEdge(
+  sidebarBounds: Electron.Rectangle,
+  side: DockSide,
+): Promise<{ target: FloatingDockTarget; bounds: Rect } | null> {
+  const probePoints =
+    side === 'left'
+      ? [{ side: 'left' as DockSide, x: sidebarBounds.x - 8, y: sidebarBounds.y + Math.floor(sidebarBounds.height / 2) }]
+      : [{ side: 'right' as DockSide, x: sidebarBounds.x + sidebarBounds.width + 8, y: sidebarBounds.y + Math.floor(sidebarBounds.height / 2) }]
+
+  if (process.platform === 'win32') {
+    const script = (probeX: number, probeY: number) => `
+Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+public class Win32 {
+  [DllImport("user32.dll")]
+  public static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
+  [DllImport("user32.dll")]
+  public static extern bool IsWindowVisible(IntPtr hWnd);
+  [DllImport("user32.dll")]
+  public static extern bool GetWindowRect(IntPtr hWnd, out RECT rect);
+  [DllImport("user32.dll")]
+  public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out int lpdwProcessId);
+  public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
+  [StructLayout(LayoutKind.Sequential)]
+  public struct RECT {
+    public int Left;
+    public int Top;
+    public int Right;
+    public int Bottom;
+  }
+  [StructLayout(LayoutKind.Sequential)]
+  public struct POINT {
+    public int X;
+    public int Y;
+  }
+}
+"@
+$ledgerPid = ${process.pid}
+$cursor = [Win32+POINT]::new()
+$cursor.X = ${Math.floor(probeX)}
+$cursor.Y = ${Math.floor(probeY)}
+$script:result = $null
+[Win32]::EnumWindows({
+  param([IntPtr]$hWnd, [IntPtr]$lParam)
+  if (-not [Win32]::IsWindowVisible($hWnd)) { return $true }
+  $pid = 0
+  [Win32]::GetWindowThreadProcessId($hWnd, [ref]$pid) | Out-Null
+  if ($pid -eq $ledgerPid) { return $true }
+  $rect = [Win32+RECT]::new()
+  if (-not [Win32]::GetWindowRect($hWnd, [ref]$rect)) { return $true }
+  if ($cursor.X -ge $rect.Left -and $cursor.X -le $rect.Right -and $cursor.Y -ge $rect.Top -and $cursor.Y -le $rect.Bottom) {
+    $script:result = "$($hWnd.ToInt64())|$($rect.Left)|$($rect.Top)|$($rect.Right - $rect.Left)|$($rect.Bottom - $rect.Top)"
+    return $false
+  }
+  return $true
+}, [IntPtr]::Zero) | Out-Null
+
+if ($script:result) { Write-Output $script:result }
+`
+    for (const probe of probePoints) {
+      const { stdout } = await execFileAsync('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script(probe.x, probe.y)], {
+        windowsHide: true,
+        timeout: 1200,
+      })
+      const [id, x, y, width, height] = String(stdout).trim().split('|')
+      const parsed = [x, y, width, height].map((value) => Number(value))
+      if (parsed.some((value) => Number.isNaN(value) || value <= 0) || !id) continue
+      return {
+        target: {
+          platform: 'win32',
+          id,
+          side: probe.side,
+        },
+        bounds: { x: parsed[0], y: parsed[1], width: parsed[2], height: parsed[3] },
+      }
+    }
+    return null
+  }
+
+  if (process.platform === 'darwin') {
+    const script = (probeX: number, probeY: number) => `
+(() => {
+  ObjC.import('CoreGraphics')
+  var ledgerPid = ${process.pid}
+  var windows = $.CGWindowListCopyWindowInfo($.kCGWindowListOptionOnScreenOnly, $.kCGNullWindowID)
+  for (var i = 0; i < windows.count; i++) {
+    var window = windows.objectAtIndex(i)
+    var ownerPid = ObjC.unwrap(window.objectForKey('kCGWindowOwnerPID'))
+    if (ownerPid === ledgerPid) continue
+    var windowNumber = Number(ObjC.unwrap(window.objectForKey('kCGWindowNumber')))
+    var bounds = ObjC.deepUnwrap(window.objectForKey('kCGWindowBounds'))
+    if (!bounds) continue
+    if (${Math.floor(probeX)} >= bounds.X && ${Math.floor(probeX)} <= bounds.X + bounds.Width && ${Math.floor(probeY)} >= bounds.Y && ${Math.floor(probeY)} <= bounds.Y + bounds.Height) {
+      return [windowNumber, bounds.X, bounds.Y, bounds.Width, bounds.Height].join('|')
+    }
+  }
+  return ''
+})()
+`
+    for (const probe of probePoints) {
+      const { stdout } = await execFileAsync('osascript', ['-e', script(probe.x, probe.y)], {
+        windowsHide: true,
+        timeout: 1200,
+      })
+      const text = String(stdout).trim()
+      if (!text) continue
+      const [id, x, y, width, height] = text.split('|')
+      const parsed = [x, y, width, height].map((value) => Number(value))
+      if (parsed.some((value) => Number.isNaN(value) || value <= 0) || !id) continue
+      return {
+        target: {
+          platform: 'darwin',
+          id,
+          side: probe.side,
+        },
+        bounds: { x: parsed[0], y: parsed[1], width: parsed[2], height: parsed[3] },
+      }
+    }
+  }
+
+  return null
+}
+
+async function dockFloatingSidebarToTarget() {
+  if (!sidebarWin || sidebarWin.isDestroyed()) return null
+  if (currentSidebarPosition !== 'floating') return null
+  if (currentSidebarMode === 'auth' || currentSidebarMode === 'fullscreen') return null
+  if (!currentSidebarPreferences.floatingDockEnabled) return null
+
+  const target = await getFloatingDockTargetAtCursor()
+  floatingDockDragActive = false
+
+  if (!target) {
+    clearCurrentFloatingDockTarget()
+    stopFloatingDockTracking()
+    return null
+  }
+
+  const currentBounds = sidebarWin.getBounds()
+  const threshold = currentSidebarPreferences.floatingDockThreshold
+  const leftDistance = Math.abs(currentBounds.x - (target.bounds.x - currentBounds.width))
+  const rightDistance = Math.abs(currentBounds.x - (target.bounds.x + target.bounds.width))
+  const nearestDistance = Math.min(leftDistance, rightDistance)
+  if (nearestDistance > threshold) {
+    clearCurrentFloatingDockTarget()
+    stopFloatingDockTracking()
+    return null
+  }
+
+  const side = getDockSide(currentBounds, target.bounds)
+  const dockBounds = getDockedBoundsForTarget(target.bounds, side, currentSidebarMode)
+  const clamped = clampRectToWorkArea(dockBounds, screen.getDisplayMatching(target.bounds).workArea)
+
+  setCurrentFloatingDockTarget({ ...target.target, side }, target.bounds)
+  sidebarWin.setBounds(clamped, false)
+  currentFloatingPosition = { x: clamped.x, y: clamped.y }
+  if (!startFloatingDockNativeTracker({ ...target.target, side })) {
+    startFloatingDockTracking()
+  }
+  return clamped
 }
 
 function getModuleBoundsNextToSidebar() {
@@ -220,6 +810,9 @@ function applySidebarWindowMode(mode: SidebarWindowMode) {
   currentSidebarMode = mode
 
   if (mode === 'fullscreen') {
+    floatingDockDragActive = false
+    clearCurrentFloatingDockTarget()
+    stopFloatingDockTracking()
     const bounds = getCenteredBounds(DASHBOARD_WIDTH, DASHBOARD_HEIGHT)
     sidebarWin.setAlwaysOnTop(false)
     sidebarWin.setResizable(true)
@@ -229,6 +822,9 @@ function applySidebarWindowMode(mode: SidebarWindowMode) {
   }
 
   if (mode === 'auth') {
+    floatingDockDragActive = false
+    clearCurrentFloatingDockTarget()
+    stopFloatingDockTracking()
     const bounds = getCenteredBounds(AUTH_WIDTH, AUTH_HEIGHT)
     sidebarWin.setAlwaysOnTop(false)
     sidebarWin.setResizable(false)
@@ -313,6 +909,8 @@ function createSidebarWindow() {
   // Keep the sidebar rendering path purely CSS-based for consistent frosted glass.
 
   sidebarWin.on('closed', () => {
+    stopFloatingDockTracking()
+    clearCurrentFloatingDockTarget()
     sidebarWin = null
     for (const [kind, moduleWin] of moduleWins.entries()) {
       if (!moduleWin.isDestroyed()) moduleWin.close()
@@ -476,8 +1074,13 @@ ipcMain.handle('window:apply-sidebar-preferences', (_event, preferences: Sidebar
   if (!sidebarWin || sidebarWin.isDestroyed()) return
   if (preferences.position === 'left' || preferences.position === 'right') {
     currentSidebarPosition = preferences.position
+    clearCurrentFloatingDockTarget()
+    stopFloatingDockTracking()
   } else if (preferences.position === 'floating') {
     currentSidebarPosition = 'floating'
+  } else {
+    clearCurrentFloatingDockTarget()
+    stopFloatingDockTracking()
   }
   if (typeof preferences.opacity === 'number') {
     applySidebarOpacity(preferences.opacity)
@@ -488,9 +1091,22 @@ ipcMain.handle('window:apply-sidebar-preferences', (_event, preferences: Sidebar
       y: preferences.floatingPosition.y,
     }
   }
+  if (preferences.floatingDockEnabled === false) {
+    clearCurrentFloatingDockTarget()
+    stopFloatingDockTracking()
+  }
+  currentSidebarPreferences = {
+    ...currentSidebarPreferences,
+    ...preferences,
+  }
   sidebarWin.webContents.send('sidebar:preferences-updated', preferences)
   if (currentSidebarMode !== 'auth' && currentSidebarMode !== 'fullscreen') {
     applySidebarWindowMode(currentSidebarMode)
+    if (currentSidebarPosition === 'floating' && currentFloatingDockTarget) {
+      if (!floatingDockNativeTracker && !startFloatingDockNativeTracker(currentFloatingDockTarget)) {
+        startFloatingDockTracking()
+      }
+    }
   }
 })
 
@@ -505,6 +1121,23 @@ ipcMain.handle('window:set-floating-position', (_event, floatingPosition: { x: n
   if (currentSidebarMode === 'auth' || currentSidebarMode === 'fullscreen') return
 
   sidebarWin.setPosition(floatingPosition.x, floatingPosition.y, false)
+})
+
+ipcMain.handle('window:begin-floating-drag', () => {
+  floatingDockDragActive = true
+  clearCurrentFloatingDockTarget()
+  stopFloatingDockTracking()
+})
+
+ipcMain.handle('window:dock-floating-window', async () => {
+  return dockFloatingSidebarToTarget()
+})
+
+ipcMain.handle('window:detach-floating-window', () => {
+  floatingDockDragActive = false
+  clearCurrentFloatingDockTarget()
+  stopFloatingDockTracking()
+  return null
 })
 
 ipcMain.handle('window:toggle-module', (_event, payload: ModuleWindowKind | ModuleFocusPayload) => {

@@ -1207,7 +1207,7 @@ export const CalendarWindow = () => {
   )
 
   return (
-    <div className="h-screen bg-[#f5f7fb] flex flex-col">
+    <div className="h-screen overflow-hidden rounded-[28px] border border-gray-200 bg-[#f5f7fb] flex flex-col shadow-[0_24px_80px_rgba(15,23,42,0.08)]" style={{ scrollbarGutter: 'stable' }}>
       <ModuleWindowHeader
         title="Calendar"
         subtitle={viewConfig.label}

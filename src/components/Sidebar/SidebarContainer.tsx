@@ -72,17 +72,22 @@ export const SidebarContainer = () => {
 
   const isFloating = position === 'floating'
   const isHorizontal = position === 'top' || position === 'bottom'
-  const shellSizeClasses = isExpanded
+  const shellSizeClasses = state === 'expanded'
     ? isHorizontal
       ? 'w-full h-16'
       : 'w-80 h-full'
-    : 'w-16 h-16'
+    : isExpanded
+      ? isHorizontal
+        ? 'w-full h-16'
+        : 'w-16 h-full'
+      : 'w-16 h-16'
 
   const shellStyle: React.CSSProperties = {
     opacity: autoHide && !isHovered && isAutoHideFading ? 0 : 1,
     backgroundColor: `rgba(255, 255, 255, ${Math.max(0.7, Math.min(0.95, opacity))})`,
     backdropFilter: 'saturate(180%) blur(12px)',
     WebkitBackdropFilter: 'saturate(180%) blur(12px)',
+    scrollbarGutter: 'stable',
     transitionProperty: 'opacity, background-color, backdrop-filter, -webkit-backdrop-filter, box-shadow',
     transitionDuration: '300ms',
     transitionTimingFunction: 'ease-out',
@@ -186,6 +191,9 @@ export const SidebarContainer = () => {
     if (!isFloating || e.button !== 0) return
     e.preventDefault()
     e.stopPropagation()
+    void window.desktopWindow?.beginFloatingDrag().catch(() => {
+      // No-op outside Electron
+    })
     setIsDragging(true)
     dragStateRef.current = {
       startScreenX: e.screenX,
@@ -219,9 +227,12 @@ export const SidebarContainer = () => {
       moveFloatingWindow(nextPosition)
     }
 
-    const handleUp = () => {
+    const handleUp = async () => {
       const finalPosition = dragStateRef.current?.currentPosition
-      if (finalPosition) {
+      const docked = window.desktopWindow ? await window.desktopWindow.dockFloatingWindow().catch(() => null) : null
+      if (docked) {
+        saveFloatingPosition({ x: docked.x, y: docked.y })
+      } else if (finalPosition) {
         saveFloatingPosition(finalPosition)
       }
       setIsDragging(false)
@@ -245,7 +256,7 @@ export const SidebarContainer = () => {
       style={shellStyle}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
-      className={`relative overflow-hidden border border-white/40 shadow-[0_18px_60px_rgba(15,23,42,0.14)] ${shellSizeClasses} transition-[width,height,opacity] duration-180 ease-out ${autoHide && !isHovered ? 'shadow-sm' : ''} ${hydrationClass}`}
+      className={`relative overflow-hidden rounded-[28px] border border-white/40 shadow-[0_18px_60px_rgba(15,23,42,0.14)] ${shellSizeClasses} transition-[width,height,opacity] duration-180 ease-out ${autoHide && !isHovered ? 'shadow-sm' : ''} ${hydrationClass}`}
     >
       <div className="relative h-full w-full">
         {state === 'expanded' && (

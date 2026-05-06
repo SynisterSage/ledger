@@ -29,6 +29,7 @@ interface Window {
     setVisible: (isVisible: boolean) => Promise<void>
     setAlwaysOnTop: (alwaysOnTop: boolean) => Promise<void>
     setFloatingPosition: (position: { x: number; y: number }) => Promise<void>
+    beginFloatingDrag: () => Promise<void>
     applySidebarPreferences: (preferences: {
       position?: 'right' | 'left' | 'top' | 'bottom' | 'floating'
       opacity?: number
@@ -39,8 +40,12 @@ interface Window {
       collapsedRestoreIsExpanded?: boolean
       isHidden?: boolean
       floatingPosition?: { x: number; y: number }
+      floatingDockEnabled?: boolean
+      floatingDockThreshold?: number
       lastState?: 'expanded' | 'collapsed'
     }) => Promise<void>
+    dockFloatingWindow: () => Promise<{ x: number; y: number; width: number; height: number } | null>
+    detachFloatingWindow: () => Promise<void>
     toggleModule: (kind: ModuleWindowKind, focus?: string | ModuleFocusPayload) => Promise<void>
     openExternal: (url: string) => Promise<void>
   }

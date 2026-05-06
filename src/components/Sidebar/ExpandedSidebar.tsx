@@ -105,6 +105,8 @@ export const ExpandedSidebar = ({
   const noteCaptureRef = useRef<HTMLTextAreaElement | null>(null)
   const eventCaptureRef = useRef<HTMLInputElement | null>(null)
   const projectDragRef = useRef<{ projectId: string; rectLeft: number; rectWidth: number; pointerId: number } | null>(null)
+  const sidebarContextMenuWidth = 188
+  const sidebarContextMenuHeight = 132
 
   const normalizeProjectStatus = (status: string): ProjectSemanticStatus => {
     const value = status.toLowerCase()
@@ -716,7 +718,15 @@ export const ExpandedSidebar = ({
           : 'flex-col border-r py-5'
       }`}
     >
-      <div className="px-6 pb-2 border-b border-white/20" onMouseDown={onDragHandleMouseDown} style={{ cursor: onDragHandleMouseDown ? 'grab' : 'auto' }}>
+      <div
+        className="px-6 pb-2 border-b border-white/20"
+        onMouseDown={(e) => {
+          if (!onDragHandleMouseDown) return
+          if ((e.target as HTMLElement).closest('button, a, input, select, textarea, [role="button"]')) return
+          onDragHandleMouseDown(e)
+        }}
+        style={{ cursor: onDragHandleMouseDown ? 'grab' : 'auto' }}
+      >
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-3 rounded-2xl px-2 py-1 text-left">
             <img src="/logo-color.svg" alt="Ledger" className="h-8 w-8" />
@@ -746,6 +756,7 @@ export const ExpandedSidebar = ({
           </div>
           <button
             onClick={() => window.desktopWindow?.toggleModule('settings')}
+            onMouseDown={(e) => e.stopPropagation()}
             className="p-1.5 hover:bg-gray-100 rounded-md transition text-gray-600 hover:text-gray-900 shrink-0"
             title="Settings"
             aria-label="Open settings"
@@ -1417,10 +1428,11 @@ export const ExpandedSidebar = ({
         <div
           className="fixed z-50 bg-white border border-gray-200 rounded-lg shadow-lg py-1 min-w-max"
           style={{
-            left: `${contextMenu.x}px`,
-            top: `${contextMenu.y}px`,
+            left: `${Math.max(8, Math.min(contextMenu.x, window.innerWidth - sidebarContextMenuWidth - 8))}px`,
+            top: `${Math.max(8, Math.min(contextMenu.y, window.innerHeight - sidebarContextMenuHeight - 8))}px`,
           }}
           onClick={(e) => e.stopPropagation()}
+          onMouseDown={(e) => e.stopPropagation()}
         >
           {contextMenu.type === 'project' && (
             <>
@@ -1436,6 +1448,16 @@ export const ExpandedSidebar = ({
               >
                 <ChevronDown size={14} />
                 Expand
+              </button>
+              <button
+                onClick={() => {
+                  setExpandedProjectId(null)
+                  setContextMenu(null)
+                }}
+                className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition flex items-center gap-2"
+              >
+                <ChevronUp size={14} />
+                Collapse
               </button>
               <button
                 onClick={() => {

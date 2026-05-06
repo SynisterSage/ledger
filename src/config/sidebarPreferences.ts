@@ -19,6 +19,8 @@ export type SidebarPreferences = {
   collapsedRestoreView: 'expanded' | 'rail' | 'collapsed'
   isHidden: boolean
   floatingPosition: SidebarFloatingPosition
+  floatingDockEnabled: boolean
+  floatingDockThreshold: number
   lastState: 'expanded' | 'collapsed'
 }
 
@@ -37,6 +39,8 @@ export const defaultSidebarPreferences: SidebarPreferences = {
   collapsedRestoreView: 'expanded',
   isHidden: false,
   floatingPosition: { x: 100, y: 200 },
+  floatingDockEnabled: true,
+  floatingDockThreshold: 28,
   lastState: 'expanded',
 }
 
@@ -45,7 +49,10 @@ export const loadSidebarPreferences = (): SidebarPreferences => {
     const raw = window.localStorage.getItem(SIDEBAR_PREFERENCES_STORAGE_KEY)
     if (!raw) return defaultSidebarPreferences
 
-    const parsed = JSON.parse(raw) as Partial<SidebarPreferences> | null
+    const parsed = JSON.parse(raw) as (Partial<SidebarPreferences> & {
+      floatingSnapEnabled?: boolean
+      floatingSnapThreshold?: number
+    }) | null
     
     // ExpandedSidebar only supports vertical positions (left/right/floating)
     // Reset to default if horizontal position is stored
@@ -82,6 +89,14 @@ export const loadSidebarPreferences = (): SidebarPreferences => {
         x: parsed?.floatingPosition?.x ?? defaultSidebarPreferences.floatingPosition.x,
         y: parsed?.floatingPosition?.y ?? defaultSidebarPreferences.floatingPosition.y,
       },
+      floatingDockEnabled:
+        parsed?.floatingDockEnabled ?? parsed?.floatingSnapEnabled ?? defaultSidebarPreferences.floatingDockEnabled,
+      floatingDockThreshold:
+        typeof parsed?.floatingDockThreshold === 'number'
+          ? Math.max(8, Math.min(80, parsed.floatingDockThreshold))
+          : typeof parsed?.floatingSnapThreshold === 'number'
+            ? Math.max(8, Math.min(80, parsed.floatingSnapThreshold))
+            : defaultSidebarPreferences.floatingDockThreshold,
       lastState: parsed?.lastState ?? (legacyExpanded === false ? 'collapsed' : 'expanded'),
     }
   } catch {
@@ -95,6 +110,9 @@ export const saveSidebarPreferences = (preferences: SidebarPreferences) => {
     JSON.stringify({
       ...preferences,
       opacity: clampSidebarOpacity(preferences.opacity),
+      floatingDockThreshold: Math.max(8, Math.min(80, preferences.floatingDockThreshold)),
+      floatingSnapEnabled: preferences.floatingDockEnabled,
+      floatingSnapThreshold: Math.max(8, Math.min(80, preferences.floatingDockThreshold)),
     }),
   )
 }

@@ -20,96 +20,98 @@ export const MinimizedSidebar = ({
 
   return (
     <div
-      className={`bg-transparent border-gray-200 flex ${isHorizontal ? 'h-16 w-full flex-row items-center justify-between border-b px-4' : 'h-screen w-16 flex-col items-center justify-between border-r py-6'}`}
+      className={`border-gray-200 flex ${isHorizontal ? 'h-16 w-full flex-row items-center justify-between px-4 bg-transparent' : 'h-full w-full flex-col items-center justify-between bg-transparent py-6'}`}
       onMouseDown={onDragHandleMouseDown}
       style={{ cursor: onDragHandleMouseDown ? 'grab' : 'auto' }}
     >
-      <button
-        type='button'
-        onClick={() => {
-          collapseSidebar()
-        }}
-        onMouseDown={(e) => e.stopPropagation()}
-        title='Collapse to icon'
-        aria-label='Collapse sidebar'
-        className='flex h-11 w-11 items-center justify-center rounded-2xl border border-gray-200 bg-white shadow-sm transition-transform duration-150 hover:scale-[1.02]'
-      >
-        <img src='/logo-color.svg' alt='Ledger' className='h-7 w-7' />
-      </button>
-
-      <div className={`flex ${isHorizontal ? 'flex-row gap-3' : 'flex-col gap-4'}`}>
+      <div className={`${isHorizontal ? 'flex w-full flex-row items-center justify-between' : 'flex h-full w-full flex-col items-center justify-between translate-x-0.5'} shrink-0`}>
         <button
-          title='Search (Cmd/Ctrl+K)'
-          aria-label='Open search'
+          type='button'
           onClick={() => {
-            setState('expanded')
-            window.setTimeout(() => {
-              openSearch()
-            }, 220)
+            collapseSidebar()
           }}
           onMouseDown={(e) => e.stopPropagation()}
-          className={accentIcon}
+          title='Collapse to icon'
+          aria-label='Collapse sidebar'
+          className={`flex h-11 w-11 items-center justify-center rounded-xl border border-gray-200 bg-white shadow-sm transition-transform duration-150 hover:scale-[1.02] ${isHorizontal ? '' : 'mx-auto'}`}
         >
-          <Search size={18} />
-        </button>
-        <button
-          title='Dashboard'
-          aria-label='Open dashboard'
-          onClick={() => {
-            window.desktopWindow?.toggleModule('dashboard')
-          }}
-          onMouseDown={(e) => e.stopPropagation()}
-          className={neutralIcon}
-        >
-          <BarChart3 size={18} />
-        </button>
-        <button
-          title='Calendar'
-          aria-label='Open calendar'
-          onClick={() => window.desktopWindow?.toggleModule('calendar')}
-          onMouseDown={(e) => e.stopPropagation()}
-          className={accentIcon}
-        >
-          <CalendarDays size={18} />
-        </button>
-        <button
-          title='Projects'
-          aria-label='Open projects'
-          onClick={() => window.desktopWindow?.toggleModule('projects')}
-          onMouseDown={(e) => e.stopPropagation()}
-          className={accentIcon}
-        >
-          <Folder size={18} />
-        </button>
-        <button
-          title='Notes'
-          aria-label='Open notes'
-          onClick={() => window.desktopWindow?.toggleModule('notes')}
-          onMouseDown={(e) => e.stopPropagation()}
-          className={accentIcon}
-        >
-          <StickyNote size={18} />
-        </button>
-      </div>
-
-      <div className={`flex items-center ${isHorizontal ? 'flex-row gap-3' : 'flex-col gap-3'}`}>
-        <button
-          onClick={() => setState('expanded')}
-          onMouseDown={(e) => e.stopPropagation()}
-          title='Expand'
-          className={actionIcon}
-        >
-          <ChevronRight size={20} className='text-white' />
+          <img src='/logo-color.svg' alt='Ledger' className='h-7 w-7' />
         </button>
 
-        <button
-          onClick={signOut}
-          onMouseDown={(e) => e.stopPropagation()}
-          title='Sign Out'
-          className={dangerIcon}
-        >
-          <LogOut size={18} />
-        </button>
+        <div className={`flex ${isHorizontal ? 'flex-row gap-3' : 'flex-col gap-4 self-center'}`}>
+          <button
+            title='Search (Cmd/Ctrl+K)'
+            aria-label='Open search'
+            onClick={() => {
+              setState('expanded')
+              window.setTimeout(() => {
+                openSearch()
+              }, 220)
+            }}
+            onMouseDown={(e) => e.stopPropagation()}
+            className={accentIcon}
+          >
+            <Search size={18} />
+          </button>
+          <button
+            title='Dashboard'
+            aria-label='Open dashboard'
+            onClick={() => {
+              window.desktopWindow?.toggleModule('dashboard')
+            }}
+            onMouseDown={(e) => e.stopPropagation()}
+            className={neutralIcon}
+          >
+            <BarChart3 size={18} />
+          </button>
+          <button
+            title='Calendar'
+            aria-label='Open calendar'
+            onClick={() => window.desktopWindow?.toggleModule('calendar')}
+            onMouseDown={(e) => e.stopPropagation()}
+            className={accentIcon}
+          >
+            <CalendarDays size={18} />
+          </button>
+          <button
+            title='Projects'
+            aria-label='Open projects'
+            onClick={() => window.desktopWindow?.toggleModule('projects')}
+            onMouseDown={(e) => e.stopPropagation()}
+            className={accentIcon}
+          >
+            <Folder size={18} />
+          </button>
+          <button
+            title='Notes'
+            aria-label='Open notes'
+            onClick={() => window.desktopWindow?.toggleModule('notes')}
+            onMouseDown={(e) => e.stopPropagation()}
+            className={accentIcon}
+          >
+            <StickyNote size={18} />
+          </button>
+        </div>
+
+        <div className={`flex items-center ${isHorizontal ? 'flex-row gap-3' : 'flex-col gap-3'}`}>
+          <button
+            onClick={() => setState('expanded')}
+            onMouseDown={(e) => e.stopPropagation()}
+            title='Expand'
+            className={`${actionIcon} ${isHorizontal ? '' : 'mx-auto'}`}
+          >
+            <ChevronRight size={20} className='text-white' />
+          </button>
+
+          <button
+            onClick={signOut}
+            onMouseDown={(e) => e.stopPropagation()}
+            title='Sign Out'
+            className={`${dangerIcon} ${isHorizontal ? '' : 'mx-auto'}`}
+          >
+            <LogOut size={18} />
+          </button>
+        </div>
       </div>
     </div>
   )

@@ -536,7 +536,7 @@ export const NotesWindow = () => {
   }, [notes, openNote])
 
   return (
-    <div className="h-screen bg-[#f5f7fb] flex flex-col">
+    <div className="h-screen overflow-hidden rounded-[28px] border border-gray-200 bg-[#f5f7fb] flex flex-col shadow-[0_24px_80px_rgba(15,23,42,0.08)]" style={{ scrollbarGutter: 'stable' }}>
       <ModuleWindowHeader
         title="Notes"
         subtitle="Your simple note workspace"
@@ -946,7 +946,7 @@ export const NotesWindow = () => {
       {draftMode === 'mind_map' && isMindMapFullscreen && (
         <div className="fixed inset-0 z-80 bg-[#f5f7fb]">
           <div className="flex h-full w-full flex-col">
-            <div className="flex items-center justify-between border-b border-gray-200 bg-white py-4 pl-24 pr-5 shadow-sm">
+            <div className="flex items-center justify-between border-b border-gray-200 bg-white px-5 py-4 shadow-sm">
               <div className="min-w-0">
                 <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Mind map fullscreen</p>
                 <h2 className="truncate text-sm font-semibold text-gray-900">{draftTitle || 'Untitled note'}</h2>

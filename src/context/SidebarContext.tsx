@@ -37,6 +37,8 @@ interface SidebarContextType {
   setAlwaysOnTop: (alwaysOnTop: boolean) => void
   autoHide: boolean
   setAutoHide: (autoHide: boolean) => void
+  setFloatingDockEnabled: (enabled: boolean) => void
+  setFloatingDockThreshold: (threshold: number) => void
   collapseSidebar: () => void
   collapseToRail: () => void
   restoreSidebarView: () => void
@@ -248,6 +250,21 @@ export const SidebarProvider = ({ children }: { children: ReactNode }) => {
     }))
   }
 
+  const setFloatingDockEnabled = (floatingDockEnabled: boolean) => {
+    setSidebarPreferences((current) => ({
+      ...current,
+      floatingDockEnabled,
+    }))
+  }
+
+  const setFloatingDockThreshold = (floatingDockThreshold: number) => {
+    const clamped = Math.max(8, Math.min(80, floatingDockThreshold))
+    setSidebarPreferences((current) => ({
+      ...current,
+      floatingDockThreshold: clamped,
+    }))
+  }
+
   const setFloatingPosition = (floatingPosition: SidebarFloatingPosition) => {
     setSidebarPreferences((current) => ({
       ...current,
@@ -282,6 +299,8 @@ export const SidebarProvider = ({ children }: { children: ReactNode }) => {
         setAlwaysOnTop,
         autoHide: sidebarPreferences.autoHide,
         setAutoHide,
+        setFloatingDockEnabled,
+        setFloatingDockThreshold,
         collapseSidebar,
         collapseToRail,
         restoreSidebarView,

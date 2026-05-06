@@ -46,7 +46,10 @@ contextBridge.exposeInMainWorld('desktopWindow', {
   setFloatingPosition(position: { x: number; y: number }) {
     return ipcRenderer.invoke('window:set-floating-position', position)
   },
-    applySidebarPreferences(preferences: {
+  beginFloatingDrag() {
+    return ipcRenderer.invoke('window:begin-floating-drag')
+  },
+  applySidebarPreferences(preferences: {
       position?: 'right' | 'left' | 'top' | 'bottom' | 'floating'
       opacity?: number
       blur?: boolean
@@ -56,9 +59,17 @@ contextBridge.exposeInMainWorld('desktopWindow', {
       collapsedRestoreIsExpanded?: boolean
       isHidden?: boolean
       floatingPosition?: { x: number; y: number }
+      floatingDockEnabled?: boolean
+      floatingDockThreshold?: number
       lastState?: 'expanded' | 'collapsed'
     }) {
     return ipcRenderer.invoke('window:apply-sidebar-preferences', preferences)
+  },
+  dockFloatingWindow() {
+    return ipcRenderer.invoke('window:dock-floating-window')
+  },
+  detachFloatingWindow() {
+    return ipcRenderer.invoke('window:detach-floating-window')
   },
   toggleModule(kind: ModuleWindowKind, focus?: string | ModuleFocusPayload) {
     const payload = typeof focus === 'string'

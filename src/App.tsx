@@ -271,7 +271,7 @@ function DashboardContent() {
   }
 
   return (
-    <div className="flex h-full flex-col bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.9),rgba(245,247,251,1)_45%)]">
+    <div className="flex h-screen flex-col overflow-hidden rounded-[28px] border border-gray-200 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.9),rgba(245,247,251,1)_45%)] shadow-[0_24px_80px_rgba(15,23,42,0.08)]" style={{ scrollbarGutter: 'stable' }}>
       <ModuleWindowHeader
         eyebrow="Workspace"
         title={activeWorkspace?.name ?? 'My Work'}
@@ -314,7 +314,7 @@ function DashboardContent() {
         }
       />
 
-      <div className='flex-1 overflow-auto p-8'>
+      <div className='flex-1 min-h-0 overflow-auto p-8' style={{ scrollbarGutter: 'stable' }}>
         <div className='mx-auto max-w-7xl space-y-8'>
           <div className='flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between'>
             <div>
