@@ -1,18 +1,20 @@
 import {
-  ChevronLeft,
   Clock3,
   Plus,
   Search,
   StickyNote,
   Trash2,
 } from 'lucide-react'
-import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useAuthContext } from '../../context/AuthContext'
+import { modulePaneSizing, clampPaneWidth, getPaneWidthForViewport } from '../../config/modulePaneSizes'
 import { useApi } from '../../hooks/useApi'
 import { useWorkspaceContext } from '../../context/WorkspaceContext'
+import { ModuleWindowHeader } from '../Common/ModuleWindowHeader'
 import { SkeletonLoader, SkeletonList } from '../Common/Skeleton'
 import { MindMapEditor } from './MindMapEditor'
 import { RichTextEditor } from './RichTextEditor'
+import { useViewportWidth } from '../../hooks/useViewportWidth'
 
 type NoteRow = {
   id: string
@@ -74,6 +76,7 @@ export const NotesWindow = () => {
   const { user } = useAuthContext()
   const { activeWorkspaceId } = useWorkspaceContext()
   const api = useApi()
+  const viewportWidth = useViewportWidth()
   const initialFocusNoteId = new URLSearchParams(window.location.search).get('focusNoteId')
   const titleRef = useRef<HTMLInputElement | null>(null)
   const autosaveTimerRef = useRef<number | null>(null)
@@ -96,8 +99,12 @@ export const NotesWindow = () => {
   const [showSavingIndicator, setShowSavingIndicator] = useState(false)
   const [isCreating, setIsCreating] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
-  const [leftPaneWidth, setLeftPaneWidth] = useState(320)
-  const [rightPaneWidth, setRightPaneWidth] = useState(292)
+  const [leftPaneWidth, setLeftPaneWidth] = useState(() =>
+    getPaneWidthForViewport(viewportWidth, modulePaneSizing.notes.left)
+  )
+  const [rightPaneWidth, setRightPaneWidth] = useState(() =>
+    getPaneWidthForViewport(viewportWidth, modulePaneSizing.notes.right)
+  )
   const [isLeftPaneCollapsed, setIsLeftPaneCollapsed] = useState(false)
   const [isRightPaneCollapsed, setIsRightPaneCollapsed] = useState(false)
   const [isResizingLeftPane, setIsResizingLeftPane] = useState(false)
@@ -108,6 +115,7 @@ export const NotesWindow = () => {
   const [isMindMapFullscreen, setIsMindMapFullscreen] = useState(false)
 
   const areSidePanelsCollapsed = isLeftPaneCollapsed && isRightPaneCollapsed
+  const isCompactLayout = viewportWidth < modulePaneSizing.notes.left.compactBreakpoint
 
   const selectedNote = useMemo(
     () => notes.find((note) => note.id === selectedNoteId) ?? null,
@@ -395,6 +403,11 @@ export const NotesWindow = () => {
   }, [loadNotes, activeWorkspaceId])
 
   useEffect(() => {
+    setLeftPaneWidth((current) => clampPaneWidth(current, viewportWidth, modulePaneSizing.notes.left))
+    setRightPaneWidth((current) => clampPaneWidth(current, viewportWidth, modulePaneSizing.notes.right))
+  }, [viewportWidth])
+
+  useEffect(() => {
     if (!selectedNoteId || !isDirty) return
 
     const noteTitle = draftTitle.trim() || 'Untitled note'
@@ -524,68 +537,53 @@ export const NotesWindow = () => {
 
   return (
     <div className="h-screen bg-[#f5f7fb] flex flex-col">
-      <div className="h-8 bg-white border-b border-gray-100" style={{ WebkitAppRegion: 'drag' } as CSSProperties} />
-
-      <header
-        className="h-16 border-b border-gray-200 px-5 flex items-center justify-between bg-white"
-        style={{ WebkitAppRegion: 'drag' } as CSSProperties}
-      >
-        <div className="flex items-center gap-3" style={{ WebkitAppRegion: 'no-drag' } as CSSProperties}>
-          <button
-            onClick={() => {
-              void flushAutosave().finally(() => {
-                void window.desktopWindow?.toggleModule('notes')
-              })
-            }}
-            className="p-1 hover:bg-gray-100 rounded-lg transition"
-            title="Close Notes"
-          >
-            <ChevronLeft size={20} className="text-gray-600" />
-          </button>
-          <div className="h-9 w-9 rounded-lg bg-amber-50 border border-amber-100 flex items-center justify-center">
-            <StickyNote size={18} className="text-amber-600" />
-          </div>
-          <div>
-            <h1 className="text-[26px] leading-none font-semibold tracking-tight text-gray-900">Notes</h1>
-            <p className="text-xs text-gray-500 mt-1">Your simple note workspace</p>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2" style={{ WebkitAppRegion: 'no-drag' } as CSSProperties}>
-          <div className="flex items-center gap-1 rounded-full border border-gray-200 bg-gray-50 p-1 shadow-sm">
-            <button
-              onClick={() => {
-                if (areSidePanelsCollapsed) {
-                  setIsLeftPaneCollapsed(false)
-                  setIsRightPaneCollapsed(false)
-                } else {
-                  setIsLeftPaneCollapsed(true)
-                  setIsRightPaneCollapsed(true)
-                }
-              }}
-              className="h-8 px-3 rounded-full bg-white border border-gray-200 hover:bg-gray-100 text-gray-700 text-xs font-semibold inline-flex items-center justify-center leading-none"
-              title={areSidePanelsCollapsed ? 'Show panels' : 'Hide panels'}
-            >
-              {areSidePanelsCollapsed ? 'Show panels' : 'Hide panels'}
-            </button>
-            <button
-              onClick={() => void loadNotes({ silent: true })}
-              className="h-8 w-8 rounded-full hover:bg-white text-gray-600 flex items-center justify-center"
-              title="Refresh notes"
-            >
-              <Clock3 size={15} />
-            </button>
-            <button
-              onClick={() => void createNewNote()}
-              disabled={isCreating}
-              className="h-8 px-3 rounded-full bg-white border border-gray-200 hover:bg-gray-100 text-gray-700 text-xs font-semibold inline-flex items-center justify-center leading-none disabled:opacity-60"
-            >
-              <Plus size={13} />
-              {isCreating ? 'Creating...' : 'New note'}
-            </button>
-          </div>
-        </div>
-      </header>
+      <ModuleWindowHeader
+        title="Notes"
+        subtitle="Your simple note workspace"
+        icon={<StickyNote size={18} className="text-amber-600" />}
+        closeLabel="Close notes"
+        onClose={() => {
+          void flushAutosave().finally(() => {
+            void window.desktopWindow?.toggleModule('notes')
+          })
+        }}
+        actions={
+          <>
+            <div className="flex items-center gap-1 rounded-full border border-gray-200 bg-gray-50 p-1 shadow-sm">
+              <button
+                onClick={() => {
+                  if (areSidePanelsCollapsed) {
+                    setIsLeftPaneCollapsed(false)
+                    setIsRightPaneCollapsed(false)
+                  } else {
+                    setIsLeftPaneCollapsed(true)
+                    setIsRightPaneCollapsed(true)
+                  }
+                }}
+                className="h-8 px-3 rounded-full bg-white border border-gray-200 hover:bg-gray-100 text-gray-700 text-xs font-semibold inline-flex items-center justify-center leading-none"
+                title={areSidePanelsCollapsed ? 'Show panels' : 'Hide panels'}
+              >
+                {areSidePanelsCollapsed ? 'Show panels' : 'Hide panels'}
+              </button>
+              <button
+                onClick={() => void loadNotes({ silent: true })}
+                className="h-8 w-8 rounded-full hover:bg-white text-gray-600 flex items-center justify-center"
+                title="Refresh notes"
+              >
+                <Clock3 size={15} />
+              </button>
+              <button
+                onClick={() => void createNewNote()}
+                disabled={isCreating}
+                className="h-8 px-3 rounded-full bg-white border border-gray-200 hover:bg-gray-100 text-gray-700 text-xs font-semibold inline-flex items-center justify-center leading-none disabled:opacity-60"
+              >
+                <Plus size={13} />
+                {isCreating ? 'Creating...' : 'New note'}
+              </button>
+            </div>
+          </>
+        }
+      />
 
       {error && (
         <div className="px-5 py-2 text-xs text-red-700 bg-red-50 border-b border-red-100">{error}</div>
@@ -594,10 +592,10 @@ export const NotesWindow = () => {
         {!isLeftPaneCollapsed && (
           <>
             <aside
-              className="border-r border-gray-200 bg-white flex flex-col overflow-hidden shrink-0"
+              className={`border-r border-gray-200 bg-white flex flex-col overflow-hidden shrink-0 ${isCompactLayout ? 'text-sm' : ''}`}
               style={{ width: `${leftPaneWidth}px` }}
             >
-          <div className="p-4 border-b border-gray-100">
+          <div className={`${isCompactLayout ? 'p-3' : 'p-4'} border-b border-gray-100`}>
             <div className="flex items-center justify-between mb-3">
               <div>
                 <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Notebook</p>
@@ -619,7 +617,7 @@ export const NotesWindow = () => {
             </div>
           </div>
 
-          <div className="flex-1 overflow-auto p-3 space-y-2">
+          <div className={`flex-1 overflow-auto ${isCompactLayout ? 'p-2.5' : 'p-3'} space-y-2`}>
             {isLoading ? (
               <SkeletonList count={4} />
             ) : visibleNotes.length === 0 ? (
@@ -695,7 +693,7 @@ export const NotesWindow = () => {
           </>
         )}
 
-        <section className={`flex-1 min-w-0 ${areSidePanelsCollapsed ? 'p-4' : 'p-2.5'}`}>
+        <section className={`flex-1 min-w-0 ${areSidePanelsCollapsed ? 'p-4' : isCompactLayout ? 'p-2' : 'p-2.5'}`}>
           <div className="h-full rounded-3xl border border-gray-200 bg-white shadow-sm overflow-hidden flex flex-col">
             {isLoading ? (
               <div className="flex-1 p-5 space-y-4">
@@ -855,7 +853,7 @@ export const NotesWindow = () => {
             />
 
             <aside
-              className="border-l border-gray-200 bg-[#fbfcfe] overflow-auto p-4 space-y-4 shrink-0"
+              className={`border-l border-gray-200 bg-[#fbfcfe] overflow-auto ${isCompactLayout ? 'p-3 space-y-3' : 'p-4 space-y-4'} shrink-0`}
               style={{ width: `${rightPaneWidth}px` }}
             >
           <section className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">

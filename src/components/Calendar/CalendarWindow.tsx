@@ -1,8 +1,11 @@
 import { CalendarDays, ChevronLeft, ChevronRight, ChevronDown, X, BellRing, ClipboardPaste, CalendarPlus, Trash2 } from 'lucide-react'
-import { Fragment, type CSSProperties, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { useAuthContext } from '../../context/AuthContext'
+import { modulePaneSizing, clampPaneWidth, getPaneWidthForViewport } from '../../config/modulePaneSizes'
 import { useWorkspaceContext } from '../../context/WorkspaceContext'
 import { useApi } from '../../hooks/useApi'
+import { ModuleWindowHeader } from '../Common/ModuleWindowHeader'
+import { useViewportWidth } from '../../hooks/useViewportWidth'
 
 type CalendarRow = {
   id: string
@@ -256,6 +259,7 @@ export const CalendarWindow = () => {
   const { user } = useAuthContext()
   const { activeWorkspaceId } = useWorkspaceContext()
   const api = useApi()
+  const viewportWidth = useViewportWidth()
   const centerScrollRef = useRef<HTMLDivElement | null>(null)
   const hasLoadedDataRef = useRef(false)
   const initialFocusDate = new URLSearchParams(window.location.search).get('focusDate')
@@ -314,9 +318,13 @@ export const CalendarWindow = () => {
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [calendarColorDrafts, setCalendarColorDrafts] = useState<Record<string, string>>({})
   const [isSavingColorId, setIsSavingColorId] = useState<string | null>(null)
-  const [sidebarWidth, setSidebarWidth] = useState(256)
+  const [leftPaneWidth, setLeftPaneWidth] = useState(() =>
+    getPaneWidthForViewport(viewportWidth, modulePaneSizing.calendar.left)
+  )
   const [isResizingSidebar, setIsResizingSidebar] = useState(false)
-  const [rightPaneWidth, setRightPaneWidth] = useState(320)
+  const [rightPaneWidth, setRightPaneWidth] = useState(() =>
+    getPaneWidthForViewport(viewportWidth, modulePaneSizing.calendar.right)
+  )
   const [isResizingRightPane, setIsResizingRightPane] = useState(false)
   const [isLeftPaneCollapsed, setIsLeftPaneCollapsed] = useState(false)
   const [isRightPaneCollapsed, setIsRightPaneCollapsed] = useState(false)
@@ -400,6 +408,11 @@ export const CalendarWindow = () => {
       window.ipcRenderer?.off('module:focus-date', focusDateListener)
     }
   }, [initialFocusDate])
+
+  useEffect(() => {
+    setLeftPaneWidth((current) => clampPaneWidth(current, viewportWidth, modulePaneSizing.calendar.left))
+    setRightPaneWidth((current) => clampPaneWidth(current, viewportWidth, modulePaneSizing.calendar.right))
+  }, [viewportWidth])
 
   const viewConfig = useMemo(() => {
     if (viewMode === 'day') {
@@ -713,7 +726,7 @@ export const CalendarWindow = () => {
 
     const handleMove = (event: MouseEvent) => {
       const next = Math.max(SIDEBAR_MIN_WIDTH, Math.min(SIDEBAR_MAX_WIDTH, event.clientX))
-      setSidebarWidth(next)
+      setLeftPaneWidth(next)
     }
 
     const handleUp = () => {
@@ -1195,98 +1208,82 @@ export const CalendarWindow = () => {
 
   return (
     <div className="h-screen bg-[#f5f7fb] flex flex-col">
-      <div
-        className="h-8 bg-white border-b border-gray-100"
-        style={{ WebkitAppRegion: 'drag' } as CSSProperties}
-      />
-      <header
-        className="h-16 border-b border-gray-200 px-5 flex items-center justify-between bg-white"
-        style={{ WebkitAppRegion: 'drag' } as CSSProperties}
-      >
-        <div className="flex items-center gap-3" style={{ WebkitAppRegion: 'no-drag' } as CSSProperties}>
-          <button
-            onClick={() => {
-              void window.desktopWindow?.toggleModule('calendar')
-            }}
-            className="p-1 hover:bg-gray-100 rounded-lg transition"
-            title="Close Calendar"
-          >
-            <ChevronLeft size={20} className="text-gray-600" />
-          </button>
-          <button
-            onClick={() => {
-              if (areSidePanelsCollapsed) {
-                setIsLeftPaneCollapsed(false)
-                setIsRightPaneCollapsed(false)
-              } else {
-                setIsLeftPaneCollapsed(true)
-                setIsRightPaneCollapsed(true)
-              }
-            }}
-            className="h-8 px-3 rounded-full border border-gray-200 bg-gray-50 text-xs font-medium text-gray-700 hover:bg-gray-100 transition"
-            title={areSidePanelsCollapsed ? 'Show panels' : 'Hide panels'}
-          >
-            {areSidePanelsCollapsed ? 'Show panels' : 'Hide panels'}
-          </button>
-          <div className="h-9 w-9 rounded-lg bg-blue-50 border border-blue-100 flex items-center justify-center">
-            <CalendarDays size={18} className="text-blue-600" />
-          </div>
-          <div>
-            <h1 className="text-[26px] leading-none font-semibold tracking-tight text-gray-900">Calendar</h1>
-            <p className="text-xs text-gray-500 mt-1">{viewConfig.label}</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2" style={{ WebkitAppRegion: 'no-drag' } as CSSProperties}>
-          {isRefreshing && !isInitialLoading && (
-            <span className="text-[11px] text-gray-500 mr-1">Syncing...</span>
-          )}
-          <div className="flex items-center gap-1 rounded-full border border-gray-200 bg-gray-50 p-1 shadow-sm">
+      <ModuleWindowHeader
+        title="Calendar"
+        subtitle={viewConfig.label}
+        icon={<CalendarDays size={18} className="text-blue-600" />}
+        closeLabel="Close calendar"
+        onClose={() => {
+          void window.desktopWindow?.toggleModule('calendar')
+        }}
+        actions={
+          <>
+            {isRefreshing && !isInitialLoading && (
+              <span className="text-[11px] text-gray-500 mr-1">Syncing...</span>
+            )}
             <button
-              onClick={() => moveView(-1)}
-              className="h-8 w-8 rounded-full hover:bg-white text-gray-600 flex items-center justify-center"
-              title="Previous period"
+              onClick={() => {
+                if (areSidePanelsCollapsed) {
+                  setIsLeftPaneCollapsed(false)
+                  setIsRightPaneCollapsed(false)
+                } else {
+                  setIsLeftPaneCollapsed(true)
+                  setIsRightPaneCollapsed(true)
+                }
+              }}
+              className="h-8 px-3 rounded-full border border-gray-200 bg-gray-50 text-xs font-medium text-gray-700 hover:bg-gray-100 transition"
+              title={areSidePanelsCollapsed ? 'Show panels' : 'Hide panels'}
             >
-              <ChevronLeft size={15} />
+              {areSidePanelsCollapsed ? 'Show panels' : 'Hide panels'}
             </button>
-            <button
-              onClick={() => jumpToToday()}
-              className="h-8 px-3 rounded-full bg-white border border-gray-200 hover:bg-gray-100 text-gray-700 text-xs font-semibold inline-flex items-center justify-center leading-none"
-            >
-              Today
-            </button>
-            <button
-              onClick={() => moveView(1)}
-              className="h-8 w-8 rounded-full hover:bg-white text-gray-600 flex items-center justify-center"
-              title="Next period"
-            >
-              <ChevronRight size={15} />
-            </button>
-          </div>
-          <div className="flex items-center rounded-full border border-gray-200 bg-gray-50 p-0.5 shadow-sm">
-            {(['day', 'week', 'month'] as CalendarViewMode[]).map((mode) => (
+            <div className="flex items-center gap-1 rounded-full border border-gray-200 bg-gray-50 p-1 shadow-sm">
               <button
-                key={mode}
-                onClick={() => setViewMode(mode)}
-                className={`px-3 py-1.5 rounded-full text-xs font-medium capitalize transition-colors ${
-                  viewMode === mode ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600 hover:text-gray-900'
-                }`}
+                onClick={() => moveView(-1)}
+                className="h-8 w-8 rounded-full hover:bg-white text-gray-600 flex items-center justify-center"
+                title="Previous period"
               >
-                {mode}
+                <ChevronLeft size={15} />
               </button>
-            ))}
-          </div>
-          <input
-            ref={importInputRef}
-            type="file"
-            accept=".ics,text/calendar"
-            className="hidden"
-            onChange={(e) => {
-              const file = e.target.files?.[0]
-              if (file) void importIcsFile(file)
-            }}
-          />
-        </div>
-      </header>
+              <button
+                onClick={() => jumpToToday()}
+                className="h-8 px-3 rounded-full bg-white border border-gray-200 hover:bg-gray-100 text-gray-700 text-xs font-semibold inline-flex items-center justify-center leading-none"
+              >
+                Today
+              </button>
+              <button
+                onClick={() => moveView(1)}
+                className="h-8 w-8 rounded-full hover:bg-white text-gray-600 flex items-center justify-center"
+                title="Next period"
+              >
+                <ChevronRight size={15} />
+              </button>
+            </div>
+            <div className="flex items-center rounded-full border border-gray-200 bg-gray-50 p-0.5 shadow-sm">
+              {(['day', 'week', 'month'] as CalendarViewMode[]).map((mode) => (
+                <button
+                  key={mode}
+                  onClick={() => setViewMode(mode)}
+                  className={`px-3 py-1.5 rounded-full text-xs font-medium capitalize transition-colors ${
+                    viewMode === mode ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600 hover:text-gray-900'
+                  }`}
+                >
+                  {mode}
+                </button>
+              ))}
+            </div>
+            <input
+              ref={importInputRef}
+              type="file"
+              accept=".ics,text/calendar"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0]
+                if (file) void importIcsFile(file)
+              }}
+            />
+          </>
+        }
+      />
 
       {appleSyncMessage && (
         <div
@@ -1312,7 +1309,7 @@ export const CalendarWindow = () => {
           <>
             <aside
               className="border-r border-gray-200 p-4 overflow-auto shrink-0 bg-white"
-              style={{ width: `${sidebarWidth}px` }}
+              style={{ width: `${leftPaneWidth}px` }}
             >
           <div className="flex items-center justify-between mb-3">
             <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Workspace</p>

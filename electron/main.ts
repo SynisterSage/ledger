@@ -88,6 +88,27 @@ function setWindowButtonVisibility(win: BrowserWindow, visible: boolean) {
   }
 }
 
+function getWindowChromeOptions() {
+  if (process.platform === 'win32') {
+    return {
+      frame: false,
+      autoHideMenuBar: true,
+    }
+  }
+
+  return {
+    titleBarStyle: 'hiddenInset' as const,
+    autoHideMenuBar: true,
+  }
+}
+
+function getModuleWindowChromeOptions() {
+  return {
+    frame: false,
+    autoHideMenuBar: true,
+  }
+}
+
 function getDockedBounds(width: number, position: 'left' | 'right' | 'floating' = currentSidebarPosition) {
   const { x, y, width: workWidth, height: workHeight } = screen.getPrimaryDisplay().workArea
 
@@ -278,11 +299,14 @@ function createSidebarWindow() {
     backgroundColor: '#00000000',
     resizable: false,
     alwaysOnTop: false,
-    titleBarStyle: 'hiddenInset',
+    ...getWindowChromeOptions(),
     webPreferences: {
       preload: path.join(__dirname, 'preload.mjs'),
     },
   })
+
+  sidebarWin.setMenuBarVisibility(false)
+  sidebarWin.setMenu(null)
 
   lockWindowZoom(sidebarWin)
 
@@ -361,7 +385,7 @@ function openModuleWindow(
   const moduleWin = new BrowserWindow({
     ...getModuleBoundsNextToSidebar(),
     transparent: true,
-    titleBarStyle: 'hiddenInset',
+    ...getModuleWindowChromeOptions(),
     minWidth: 1080,
     minHeight: 680,
     resizable: true,
@@ -371,6 +395,9 @@ function openModuleWindow(
       preload: path.join(__dirname, 'preload.mjs'),
     },
   })
+
+  moduleWin.setMenuBarVisibility(false)
+  moduleWin.setMenu(null)
 
   // Apply subtle vibrancy to module windows
   if (process.platform === 'darwin') {

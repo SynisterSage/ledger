@@ -8,13 +8,14 @@ import {
   StickyNote,
   Trash2,
 } from 'lucide-react'
-import { useEffect, useRef, useState, type CSSProperties } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useAuthContext } from './context/AuthContext'
 import { useWorkspaceContext } from './context/WorkspaceContext'
 import { useWorkspaceInit } from './hooks/useWorkspaceInit'
 import { useApi } from './hooks/useApi'
 import { useSidebar } from './context/SidebarContext'
 import { MainLayout } from './components/Common/MainLayout'
+import { ModuleWindowHeader } from './components/Common/ModuleWindowHeader'
 import LoginForm from './components/Common/LoginForm'
 import CalendarWindow from './components/Calendar/CalendarWindow'
 import NotesWindow from './components/Notes/NotesWindow'
@@ -65,7 +66,7 @@ function DashboardContent() {
   const { user } = useAuthContext()
   const { activeWorkspace, activeWorkspaceId } = useWorkspaceContext()
   const api = useApi()
-  const { state, setState, toggleVisibility } = useSidebar()
+  const { setState, toggleVisibility } = useSidebar()
   const todayTasksRef = useRef<HTMLElement | null>(null)
   const notesRef = useRef<HTMLElement | null>(null)
   const projectsRef = useRef<HTMLElement | null>(null)
@@ -271,70 +272,47 @@ function DashboardContent() {
 
   return (
     <div className="flex h-full flex-col bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.9),rgba(245,247,251,1)_45%)]">
-      <div
-        className='h-8 bg-white border-b border-gray-100'
-        style={{ WebkitAppRegion: 'drag' } as CSSProperties}
+      <ModuleWindowHeader
+        eyebrow="Workspace"
+        title={activeWorkspace?.name ?? 'My Work'}
+        subtitle={
+          activeWorkspace
+            ? activeWorkspace.is_personal
+              ? 'Personal workspace'
+              : activeWorkspace.role
+            : 'Dashboard overview'
+        }
+        icon={<img src="/logo-color.svg" alt="" className="h-5 w-5" />}
+        closeLabel="Close dashboard"
+        onClose={() => {
+          void window.desktopWindow?.toggleModule('dashboard')
+        }}
+        actions={
+          <>
+            <button
+              onClick={() => window.desktopWindow?.toggleModule('calendar')}
+              className='px-3 py-2 bg-white hover:bg-gray-50 text-gray-800 border border-gray-200 rounded-lg flex items-center gap-2 transition-colors text-sm font-medium'
+            >
+              <CalendarDays size={15} />
+              Calendar
+            </button>
+            <button
+              onClick={() => window.desktopWindow?.toggleModule('notes')}
+              className='px-3 py-2 bg-white hover:bg-gray-50 text-gray-800 border border-gray-200 rounded-lg flex items-center gap-2 transition-colors text-sm font-medium'
+            >
+              <StickyNote size={15} />
+              Notes
+            </button>
+            <button
+              onClick={toggleVisibility}
+              className='px-4 py-2 bg-[#FF5F40] hover:bg-[#ea5336] text-white rounded-lg flex items-center gap-2 transition-colors text-sm font-medium'
+            >
+              <Plus size={16} />
+              Toggle sidebar
+            </button>
+          </>
+        }
       />
-      <div
-        className='h-16 border-b border-gray-200 flex items-center justify-between px-8 bg-white'
-        style={{ WebkitAppRegion: 'drag' } as CSSProperties}
-      >
-        <div>
-          {state === 'fullscreen' && (
-            <div className='flex items-center gap-3'>
-              <div className='flex h-9 w-9 items-center justify-center rounded-2xl border border-gray-200 bg-white shadow-sm'>
-                <img src="/logo-color.svg" alt="Ledger" className="h-5 w-5" />
-              </div>
-              <h1 className='text-lg font-semibold text-gray-900'>Ledger</h1>
-            </div>
-          )}
-          {state !== 'fullscreen' && (
-            <>
-              <div className='flex items-center gap-2'>
-                <div className='flex h-8 w-8 items-center justify-center rounded-2xl border border-gray-200 bg-white shadow-sm'>
-                  <img src="/logo-color.svg" alt="Ledger" className="h-4 w-4" />
-                </div>
-                <div>
-                  <p className='text-xs text-gray-500'>Workspace</p>
-                  <div className='mt-0.5 flex items-center gap-2'>
-                    <h1 className='text-lg font-semibold text-gray-900'>
-                      {activeWorkspace?.name ?? 'My Work'}
-                    </h1>
-                    {activeWorkspace && (
-                      <span className='rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.18em] text-gray-500'>
-                        {activeWorkspace.is_personal ? 'Personal' : activeWorkspace.role}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </>
-          )}
-        </div>
-        <div className="flex items-center gap-2" style={{ WebkitAppRegion: 'no-drag' } as CSSProperties}>
-          <button
-            onClick={() => window.desktopWindow?.toggleModule('calendar')}
-            className='px-3 py-2 bg-white hover:bg-gray-50 text-gray-800 border border-gray-200 rounded-lg flex items-center gap-2 transition-colors text-sm font-medium'
-          >
-            <CalendarDays size={15} />
-            Calendar
-          </button>
-          <button
-            onClick={() => window.desktopWindow?.toggleModule('notes')}
-            className='px-3 py-2 bg-white hover:bg-gray-50 text-gray-800 border border-gray-200 rounded-lg flex items-center gap-2 transition-colors text-sm font-medium'
-          >
-            <StickyNote size={15} />
-            Notes
-          </button>
-          <button
-            onClick={toggleVisibility}
-            className='px-4 py-2 bg-[#FF5F40] hover:bg-[#ea5336] text-white rounded-lg flex items-center gap-2 transition-colors text-sm font-medium'
-          >
-            <Plus size={16} />
-            Toggle sidebar
-          </button>
-        </div>
-      </div>
 
       <div className='flex-1 overflow-auto p-8'>
         <div className='mx-auto max-w-7xl space-y-8'>

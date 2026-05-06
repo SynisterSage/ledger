@@ -1,5 +1,4 @@
 import {
-  ChevronLeft,
   CircleAlert,
   Loader2,
   Settings,
@@ -10,6 +9,7 @@ import { useSidebar } from '../../context/SidebarContext'
 import { type SidebarDefaultState, type SidebarPosition } from '../../config/sidebarPreferences'
 import { useWorkspaceContext } from '../../context/WorkspaceContext'
 import { useApi } from '../../hooks/useApi'
+import { ModuleWindowHeader } from '../Common/ModuleWindowHeader'
 import authService from '../../services/auth'
 
 type UserPreferences = {
@@ -606,29 +606,15 @@ export const SettingsWindow = () => {
 
   return (
     <div className="h-screen bg-[#f5f7fb] text-gray-900 flex flex-col">
-      <div className="h-8 bg-white border-b border-gray-100" style={{ WebkitAppRegion: 'drag' } as CSSProperties} />
-
-      <header className="h-16 border-b border-gray-200 px-5 flex items-center justify-between bg-white" style={{ WebkitAppRegion: 'drag' } as CSSProperties}>
-        <div className="flex items-center gap-3" style={{ WebkitAppRegion: 'no-drag' } as CSSProperties}>
-          <button
-            onClick={() => {
-              void window.desktopWindow?.toggleModule('settings')
-            }}
-            className="p-1 hover:bg-gray-100 rounded-lg transition"
-            title="Close Settings"
-          >
-            <ChevronLeft size={20} className="text-gray-600" />
-          </button>
-          <div className="h-9 w-9 rounded-lg bg-gray-100 border border-gray-200 flex items-center justify-center">
-            <Settings size={18} className="text-gray-700" />
-          </div>
-          <div>
-            <h1 className="text-[26px] leading-none font-semibold tracking-tight text-gray-900">Settings</h1>
-            <p className="text-xs text-gray-500 mt-1">Defaults, accessible controls</p>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2" style={{ WebkitAppRegion: 'no-drag' } as CSSProperties}>
+      <ModuleWindowHeader
+        title="Settings"
+        subtitle="Defaults, accessible controls"
+        icon={<Settings size={18} className="text-gray-700" />}
+        closeLabel="Close settings"
+        onClose={() => {
+          void window.desktopWindow?.toggleModule('settings')
+        }}
+        actions={
           <button
             onClick={() => {
               void signOut()
@@ -637,8 +623,8 @@ export const SettingsWindow = () => {
           >
             Sign out
           </button>
-        </div>
-      </header>
+        }
+      />
 
       <div className="flex-1 overflow-hidden">
         <div className="h-full grid grid-cols-[260px_1fr]">

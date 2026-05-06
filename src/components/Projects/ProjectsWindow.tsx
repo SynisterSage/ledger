@@ -1,6 +1,5 @@
 import {
   ChevronDown,
-  ChevronLeft,
   Clock3,
   Folder,
   Plus,
@@ -8,11 +7,14 @@ import {
   CheckCircle2,
   Trash2,
 } from 'lucide-react'
-import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useAuthContext } from '../../context/AuthContext'
+import { modulePaneSizing, clampPaneWidth, getPaneWidthForViewport } from '../../config/modulePaneSizes'
 import { useApi } from '../../hooks/useApi'
 import { useWorkspaceContext } from '../../context/WorkspaceContext'
+import { ModuleWindowHeader } from '../Common/ModuleWindowHeader'
 import { SkeletonList } from '../Common/Skeleton'
+import { useViewportWidth } from '../../hooks/useViewportWidth'
 
 type ProjectRow = {
   id: string
@@ -167,6 +169,7 @@ export const ProjectsWindow = () => {
   const { user } = useAuthContext()
     const { activeWorkspaceId } = useWorkspaceContext()
   const api = useApi()
+  const viewportWidth = useViewportWidth()
   const initialFocusProjectId = new URLSearchParams(window.location.search).get('focusProjectId')
   const initialFocusTaskId = new URLSearchParams(window.location.search).get('focusTaskId')
   const titleRef = useRef<HTMLInputElement | null>(null)
@@ -186,8 +189,12 @@ export const ProjectsWindow = () => {
   const [taskError, setTaskError] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<ProjectStatusFilter>('active')
-  const [leftPaneWidth, setLeftPaneWidth] = useState(320)
-  const [rightPaneWidth, setRightPaneWidth] = useState(340)
+  const [leftPaneWidth, setLeftPaneWidth] = useState(() =>
+    getPaneWidthForViewport(viewportWidth, modulePaneSizing.projects.left)
+  )
+  const [rightPaneWidth, setRightPaneWidth] = useState(() =>
+    getPaneWidthForViewport(viewportWidth, modulePaneSizing.projects.right)
+  )
   const [isLeftPaneCollapsed, setIsLeftPaneCollapsed] = useState(false)
   const [isRightPaneCollapsed, setIsRightPaneCollapsed] = useState(false)
   const [isResizingLeftPane, setIsResizingLeftPane] = useState(false)
@@ -262,7 +269,7 @@ export const ProjectsWindow = () => {
     return { active, completed, total: selectedProjectTasks.length }
   }, [selectedProjectTasks])
 
-  const isCompactRightPane = rightPaneWidth < 320
+  const isCompactRightPane = viewportWidth < modulePaneSizing.projects.right.compactBreakpoint
 
   const syncDraftFromProject = useCallback((project: ProjectRow) => {
     setProjectDraft({
@@ -550,6 +557,11 @@ export const ProjectsWindow = () => {
   }, [loadProjects])
 
   useEffect(() => {
+    setLeftPaneWidth((current) => clampPaneWidth(current, viewportWidth, modulePaneSizing.projects.left))
+    setRightPaneWidth((current) => clampPaneWidth(current, viewportWidth, modulePaneSizing.projects.right))
+  }, [viewportWidth])
+
+  useEffect(() => {
     void loadTasks()
   }, [loadTasks])
 
@@ -707,29 +719,15 @@ export const ProjectsWindow = () => {
 
   return (
     <div className="h-screen bg-[#f5f7fb] flex flex-col text-gray-900">
-      <div className="h-8 bg-white border-b border-gray-100" style={{ WebkitAppRegion: 'drag' } as CSSProperties} />
-
-      <header className="h-16 border-b border-gray-200 px-5 flex items-center justify-between bg-white" style={{ WebkitAppRegion: 'drag' } as CSSProperties}>
-        <div className="flex items-center gap-3" style={{ WebkitAppRegion: 'no-drag' } as CSSProperties}>
-          <button
-            onClick={() => {
-              void window.desktopWindow?.toggleModule('projects')
-            }}
-            className="p-1 hover:bg-gray-100 rounded-lg transition"
-            title="Close Projects"
-          >
-            <ChevronLeft size={20} className="text-gray-600" />
-          </button>
-          <div className="h-9 w-9 rounded-lg bg-blue-50 border border-blue-100 flex items-center justify-center">
-            <Folder size={18} className="text-blue-600" />
-          </div>
-          <div>
-            <h1 className="text-[26px] leading-none font-semibold tracking-tight text-gray-900">Projects</h1>
-            <p className="text-xs text-gray-500 mt-1">Simple outcomes, clear next steps</p>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2" style={{ WebkitAppRegion: 'no-drag' } as CSSProperties}>
+      <ModuleWindowHeader
+        title="Projects"
+        subtitle="Simple outcomes, clear next steps"
+        icon={<Folder size={18} className="text-blue-600" />}
+        closeLabel="Close projects"
+        onClose={() => {
+          void window.desktopWindow?.toggleModule('projects')
+        }}
+        actions={
           <div className="flex items-center gap-1 rounded-full border border-gray-200 bg-gray-50 p-1 shadow-sm">
             <button
               onClick={() => {
@@ -761,8 +759,8 @@ export const ProjectsWindow = () => {
               {isCreatingProject ? 'Cancel' : 'New project'}
             </button>
           </div>
-        </div>
-      </header>
+        }
+      />
 
       {error && <div className="px-5 py-2 text-xs text-red-700 bg-red-50 border-b border-red-100">{error}</div>}
 
@@ -770,7 +768,7 @@ export const ProjectsWindow = () => {
         {!isLeftPaneCollapsed && (
           <>
             <aside className="border-r border-gray-200 bg-white flex flex-col overflow-hidden shrink-0" style={{ width: `${leftPaneWidth}px` }}>
-              <div className="p-4 border-b border-gray-100">
+              <div className={`${isCompactRightPane ? 'p-3' : 'p-4'} border-b border-gray-100`}>
                 <div className="flex items-center justify-between mb-3">
                   <div>
                     <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Library</p>
@@ -831,7 +829,7 @@ export const ProjectsWindow = () => {
                 )}
               </div>
 
-              <div className="flex-1 overflow-auto p-3 space-y-2">
+              <div className={`flex-1 overflow-auto ${isCompactRightPane ? 'p-2.5' : 'p-3'} space-y-2`}>
                 {isLoadingProjects ? (
                   <SkeletonList count={3} />
                 ) : visibleProjects.length === 0 ? (
@@ -892,7 +890,7 @@ export const ProjectsWindow = () => {
         )}
 
         <main className="flex-1 overflow-hidden bg-[#f5f7fb]">
-          <div className="h-full overflow-auto p-5">
+          <div className={`h-full overflow-auto ${isCompactRightPane ? 'p-4' : 'p-5'}`}>
             {selectedProject ? (
               <div className="mx-auto max-w-7xl grid gap-5 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)]">
                 <section className="min-w-0 overflow-hidden rounded-3xl border border-gray-200 bg-white shadow-sm">
