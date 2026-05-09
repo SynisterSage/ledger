@@ -33,11 +33,11 @@ export const LoginForm: React.FC<LoginProps> = ({ onSuccess, notice }) => {
 
   return (
     <div className='w-full px-8'>
-      <div className='relative mx-auto w-full max-w-[390px]'>
+      <div className='relative mx-auto w-full max-w-97.5'>
         {/* Header */}
         <div className='mb-7 text-center'>
           <div className='mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-[18px] border border-black/5 bg-white/80 shadow-[0_8px_24px_rgba(15,23,42,0.08)]'>
-            <img src="/logo-color.svg" alt="Ledger" className="h-8 w-8" />
+            <img src="./logo-color.svg" alt="Ledger" className="h-8 w-8" />
           </div>
           <h1 className='text-[28px] font-semibold leading-tight text-gray-950'>Ledger</h1>
           <p className='mt-1 text-sm text-gray-500'>{isSignUp ? 'Create your account' : 'Sign in to continue'}</p>

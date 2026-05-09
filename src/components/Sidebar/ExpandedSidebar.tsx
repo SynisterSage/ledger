@@ -729,7 +729,7 @@ export const ExpandedSidebar = ({
       >
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-3 rounded-2xl px-2 py-1 text-left">
-            <img src="/logo-color.svg" alt="Ledger" className="h-8 w-8" />
+            <img src="./logo-color.svg" alt="Ledger" className="h-8 w-8" />
             <h1 className="text-2xl font-bold text-gray-900">Ledger</h1>
           </div>
           <button

@@ -3,10 +3,199 @@ import { execFile, spawn, type ChildProcessWithoutNullStreams } from 'node:child
 import { promisify } from 'node:util'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
+import fs from 'node:fs'
 import { defaultSidebarPreferences } from '../src/config/sidebarPreferences'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const execFileAsync = promisify(execFile)
+
+// File-based logging for dock debugging (disabled unless LEDGER_DOCK_DEBUG=1)
+const logFile = path.join(app.getPath('userData'), 'dock-debug.log')
+const dockDebugEnabled = process.env.LEDGER_DOCK_DEBUG === '1'
+const dockLog = (message: string) => {
+  if (!dockDebugEnabled) return
+  try {
+    const timestamp = new Date().toISOString()
+    fs.appendFileSync(logFile, `[${timestamp}] ${message}\n`)
+  } catch {}
+}
+
+type DockTargetResult = {
+  target: FloatingDockTarget
+  bounds: Rect
+}
+
+type MacDockHelperMessage =
+  | { kind: 'response'; requestId: number; target: FloatingDockTarget | null; bounds: Rect | null }
+  | { kind: 'bounds'; target: FloatingDockTarget; bounds: Rect }
+  | { kind: 'missing'; target: FloatingDockTarget }
+  | { kind: 'debug'; message: string }
+  | { kind: 'error'; requestId?: number; message: string }
+
+type MacDockHelperRequest = {
+  resolve: (value: DockTargetResult | null) => void
+  reject: (error: Error) => void
+  timeout: NodeJS.Timeout
+}
+
+let macDockHelper: ChildProcessWithoutNullStreams | null = null
+let macDockHelperBuffer = ''
+let macDockHelperRequestId = 0
+const macDockHelperRequests = new Map<number, MacDockHelperRequest>()
+
+const macDockHelperScript = `
+const { windowManager } = require('node-window-manager')
+const readline = require('node:readline')
+
+const ledgerPid = Number(process.env.LEDGER_DOCK_PARENT_PID || 0)
+let tracking = null
+let trackingTimer = null
+
+const send = (message) => {
+  try {
+    process.stdout.write(JSON.stringify(message) + '\\n')
+  } catch {}
+}
+
+const toInfo = (window) => {
+  try {
+    if (!window.isWindow() || !window.isVisible()) return null
+    const pid = Number(window.processId || 0)
+    if (pid === ledgerPid) return null
+    const bounds = window.getBounds && window.getBounds()
+    if (!bounds) return null
+    const x = Number(bounds.x)
+    const y = Number(bounds.y)
+    const width = Number(bounds.width)
+    const height = Number(bounds.height)
+    if (![x, y, width, height].every(Number.isFinite)) return null
+    if (width < 80 || height < 80) return null
+    return { id: String(window.id), x, y, width, height }
+  } catch {
+    return null
+  }
+}
+
+const getWindows = () => {
+  const out = []
+  for (const window of windowManager.getWindows()) {
+    const info = toInfo(window)
+    if (info) out.push(info)
+  }
+  return out
+}
+
+const findById = (id) => getWindows().find((window) => window.id === id) || null
+
+const scoreDockTarget = ({ sidebar, threshold }) => {
+  const sidebarLeft = Math.floor(sidebar.x)
+  const sidebarTop = Math.floor(sidebar.y)
+  const sidebarRight = Math.floor(sidebar.x + sidebar.width)
+  const sidebarBottom = Math.floor(sidebar.y + sidebar.height)
+  const sidebarHeight = Math.floor(sidebar.height)
+  const dockThreshold = Math.floor(threshold)
+  const minimumOverlap = Math.min(96, Math.max(32, Math.floor(sidebarHeight * 0.18)))
+  let bestScore = Infinity
+  let best = null
+
+  for (const window of getWindows()) {
+    const rectLeft = window.x
+    const rectTop = window.y
+    const rectRight = window.x + window.width
+    const rectBottom = window.y + window.height
+    const verticalOverlap = Math.max(0, Math.min(sidebarBottom, rectBottom) - Math.max(sidebarTop, rectTop))
+    let verticalGap = 0
+    if (sidebarBottom < rectTop) verticalGap = rectTop - sidebarBottom
+    else if (sidebarTop > rectBottom) verticalGap = sidebarTop - rectBottom
+    if (verticalOverlap < minimumOverlap && verticalGap > dockThreshold * 2) continue
+
+    const dockLeftDistance = Math.abs(sidebarRight - rectLeft)
+    const dockRightDistance = Math.abs(sidebarLeft - rectRight)
+    const side = dockLeftDistance <= dockRightDistance ? 'left' : 'right'
+    const edgeDistance = Math.min(dockLeftDistance, dockRightDistance)
+    if (edgeDistance > dockThreshold * 2) continue
+
+    const verticalPenalty = verticalOverlap > 0 ? 0 : verticalGap
+    const score = edgeDistance + verticalPenalty * 0.5 - verticalOverlap * 0.01
+    if (score < bestScore) {
+      bestScore = score
+      best = { window, side }
+    }
+  }
+
+  return best
+}
+
+const findAtEdge = ({ probes }) => {
+  const windows = getWindows()
+  for (const probe of probes) {
+    const probeX = Math.floor(probe.x)
+    const probeY = Math.floor(probe.y)
+    for (const window of windows) {
+      const rectRight = window.x + window.width
+      const rectBottom = window.y + window.height
+      if (probeX >= window.x && probeX <= rectRight && probeY >= window.y && probeY <= rectBottom) {
+        return { window, side: probe.side }
+      }
+    }
+  }
+  return null
+}
+
+const toResponse = (requestId, result) => {
+  if (!result) {
+    send({ kind: 'response', requestId, target: null, bounds: null })
+    return
+  }
+  send({
+    kind: 'response',
+    requestId,
+    target: { platform: 'darwin', id: result.window.id, side: result.side },
+    bounds: { x: result.window.x, y: result.window.y, width: result.window.width, height: result.window.height },
+  })
+}
+
+const stopTracking = () => {
+  if (trackingTimer) clearInterval(trackingTimer)
+  trackingTimer = null
+  tracking = null
+}
+
+const startTracking = ({ target, intervalMs }) => {
+  stopTracking()
+  tracking = target
+  trackingTimer = setInterval(() => {
+    const window = findById(target.id)
+    if (!window) {
+      send({ kind: 'missing', target })
+      return
+    }
+    send({
+      kind: 'bounds',
+      target,
+      bounds: { x: window.x, y: window.y, width: window.width, height: window.height },
+    })
+  }, Math.max(8, Number(intervalMs) || 16))
+}
+
+readline.createInterface({ input: process.stdin }).on('line', (line) => {
+  try {
+    const message = JSON.parse(line)
+    if (message.kind === 'dockAtCursor') toResponse(message.requestId, scoreDockTarget(message))
+    else if (message.kind === 'dockAtEdge') toResponse(message.requestId, findAtEdge(message))
+    else if (message.kind === 'track') startTracking(message)
+    else if (message.kind === 'stop') stopTracking()
+  } catch (error) {
+    send({ kind: 'error', message: String(error) })
+  }
+})
+
+process.on('disconnect', stopTracking)
+process.on('SIGTERM', () => {
+  stopTracking()
+  process.exit(0)
+})
+`
 
 process.env.APP_ROOT = path.join(__dirname, '..')
 export const VITE_DEV_SERVER_URL = process.env['VITE_DEV_SERVER_URL']
@@ -125,6 +314,7 @@ function getWindowChromeOptions() {
 
   return {
     titleBarStyle: 'hiddenInset' as const,
+    trafficLightPosition: { x: 22, y: 26 },
     autoHideMenuBar: true,
   }
 }
@@ -312,19 +502,30 @@ function getDockedBoundsForTarget(targetBounds: Rect, side: DockSide, mode: Side
   return clampRectToWorkArea({ x, y, width, height }, screen.getDisplayMatching(targetBounds).workArea)
 }
 
+function sendFloatingDockChanged(isDocked: boolean) {
+  try {
+    if (sidebarWin && !sidebarWin.isDestroyed() && !sidebarWin.webContents.isDestroyed()) {
+      sidebarWin.webContents.send('sidebar:floating-dock-changed', { isDocked })
+    }
+  } catch {
+    // The window can be torn down between the destroyed check and the send.
+  }
+}
+
 function setCurrentFloatingDockTarget(target: FloatingDockTarget | null, bounds: Rect | null) {
   currentFloatingDockTarget = target
   currentFloatingDockBounds = bounds
   currentFloatingDockMisses = 0
-  sidebarWin?.webContents.send('sidebar:floating-dock-changed', { isDocked: Boolean(target && bounds) })
+  sendFloatingDockChanged(Boolean(target && bounds))
 }
 
 function clearCurrentFloatingDockTarget() {
   stopFloatingDockNativeTracker()
+  stopMacDockHelperTracking()
   currentFloatingDockTarget = null
   currentFloatingDockBounds = null
   currentFloatingDockMisses = 0
-  sidebarWin?.webContents.send('sidebar:floating-dock-changed', { isDocked: false })
+  sendFloatingDockChanged(false)
 }
 
 function stopFloatingDockTracking() {
@@ -336,10 +537,180 @@ function stopFloatingDockTracking() {
 
 function stopFloatingDockNativeTracker() {
   if (floatingDockNativeTracker !== null) {
-    floatingDockNativeTracker.kill()
+    try {
+      floatingDockNativeTracker.kill()
+    } catch (err) {
+      // ignore if already killed/destroyed
+      console.warn('floatingDockNativeTracker.kill() failed:', err)
+    }
     floatingDockNativeTracker = null
   }
   floatingDockNativeBuffer = ''
+}
+
+function resolveMacDockHelperRequestsAsMissing() {
+  for (const request of macDockHelperRequests.values()) {
+    clearTimeout(request.timeout)
+    request.resolve(null)
+  }
+  macDockHelperRequests.clear()
+}
+
+function handleMacDockHelperMessage(message: MacDockHelperMessage) {
+  if (message.kind === 'response') {
+    const request = macDockHelperRequests.get(message.requestId)
+    if (!request) return
+    clearTimeout(request.timeout)
+    macDockHelperRequests.delete(message.requestId)
+    if (!message.target || !message.bounds) {
+      request.resolve(null)
+      return
+    }
+    request.resolve({ target: message.target, bounds: message.bounds })
+    return
+  }
+
+  if (message.kind === 'bounds') {
+    if (!currentFloatingDockTarget || currentFloatingDockTarget.id !== message.target.id) return
+    applyFloatingDockTargetBounds(message.bounds, message.target.side)
+    return
+  }
+
+  if (message.kind === 'missing') {
+    if (!currentFloatingDockTarget || currentFloatingDockTarget.id !== message.target.id) return
+    currentFloatingDockMisses += 1
+    if (currentFloatingDockMisses > 24) {
+      clearCurrentFloatingDockTarget()
+      stopFloatingDockTracking()
+      applySidebarWindowMode(currentSidebarMode)
+    }
+    return
+  }
+
+  if (message.kind === 'debug') {
+    dockLog(message.message)
+    return
+  }
+
+  if (message.kind === 'error') {
+    dockLog(`[dock-debug] mac helper error: ${message.message}`)
+    if (typeof message.requestId === 'number') {
+      const request = macDockHelperRequests.get(message.requestId)
+      if (request) {
+        clearTimeout(request.timeout)
+        macDockHelperRequests.delete(message.requestId)
+        request.resolve(null)
+      }
+    }
+  }
+}
+
+function ensureMacDockHelper() {
+  if (process.platform !== 'darwin') return null
+  if (macDockHelper && !macDockHelper.killed) return macDockHelper
+
+  const helper = spawn(process.execPath, ['-e', macDockHelperScript], {
+    cwd: process.env.APP_ROOT,
+    env: {
+      ...process.env,
+      ELECTRON_RUN_AS_NODE: '1',
+      LEDGER_DOCK_PARENT_PID: String(process.pid),
+    },
+    stdio: ['pipe', 'pipe', 'pipe'],
+  })
+
+  macDockHelper = helper
+  macDockHelperBuffer = ''
+
+  helper.stdout.on('data', (chunk) => {
+    macDockHelperBuffer += chunk.toString()
+    const lines = macDockHelperBuffer.split(/\r?\n/)
+    macDockHelperBuffer = lines.pop() ?? ''
+    for (const line of lines) {
+      if (!line.trim()) continue
+      try {
+        handleMacDockHelperMessage(JSON.parse(line) as MacDockHelperMessage)
+      } catch (error) {
+        dockLog(`[dock-debug] mac helper parse error: ${String(error)}`)
+      }
+    }
+  })
+
+  helper.stderr.on('data', (chunk) => {
+    dockLog(`[dock-debug] mac helper stderr: ${chunk.toString().trim()}`)
+  })
+
+  helper.on('exit', () => {
+    if (macDockHelper === helper) {
+      macDockHelper = null
+      macDockHelperBuffer = ''
+    }
+    resolveMacDockHelperRequestsAsMissing()
+    if (currentFloatingDockTarget?.platform === 'darwin') {
+      currentFloatingDockTarget = null
+      currentFloatingDockBounds = null
+      currentFloatingDockMisses = 0
+      sendFloatingDockChanged(false)
+    }
+  })
+
+  return helper
+}
+
+function stopMacDockHelperTracking() {
+  if (!macDockHelper || macDockHelper.killed) return
+  try {
+    macDockHelper.stdin.write(JSON.stringify({ kind: 'stop' }) + '\n')
+  } catch {}
+}
+
+function stopMacDockHelper() {
+  stopMacDockHelperTracking()
+  if (macDockHelper && !macDockHelper.killed) {
+    try {
+      macDockHelper.kill()
+    } catch {}
+  }
+  macDockHelper = null
+  macDockHelperBuffer = ''
+  resolveMacDockHelperRequestsAsMissing()
+}
+
+function requestMacDockHelper(payload: Record<string, unknown>, timeoutMs = 700): Promise<DockTargetResult | null> {
+  const helper = ensureMacDockHelper()
+  if (!helper || helper.killed) return Promise.resolve(null)
+
+  const requestId = ++macDockHelperRequestId
+  const message = { ...payload, requestId }
+
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      macDockHelperRequests.delete(requestId)
+      resolve(null)
+    }, timeoutMs)
+
+    macDockHelperRequests.set(requestId, { resolve, reject, timeout })
+
+    try {
+      helper.stdin.write(JSON.stringify(message) + '\n')
+    } catch (error) {
+      clearTimeout(timeout)
+      macDockHelperRequests.delete(requestId)
+      resolve(null)
+    }
+  })
+}
+
+function startMacDockNativeTracker(target: FloatingDockTarget) {
+  const helper = ensureMacDockHelper()
+  if (!helper || helper.killed) return false
+
+  try {
+    helper.stdin.write(JSON.stringify({ kind: 'track', target, intervalMs: 16 }) + '\n')
+    return true
+  } catch {
+    return false
+  }
 }
 
 function applyFloatingDockTargetBounds(targetBounds: Rect, side: DockSide) {
@@ -351,8 +722,23 @@ function applyFloatingDockTargetBounds(targetBounds: Rect, side: DockSide) {
   currentFloatingDockBounds = targetBounds
   currentFloatingDockMisses = 0
   const nextBounds = getDockedBoundsForTarget(targetBounds, side, currentSidebarMode)
-  sidebarWin.setBounds(nextBounds, false)
+  if (rectsMatch(sidebarWin.getBounds(), nextBounds)) return
+  if (!setSidebarBounds(nextBounds)) return
   currentFloatingPosition = { x: nextBounds.x, y: nextBounds.y }
+}
+
+function rectsMatch(a: Rect, b: Rect) {
+  return a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height
+}
+
+function setSidebarBounds(bounds: Rect, animate = false) {
+  try {
+    if (!sidebarWin || sidebarWin.isDestroyed()) return false
+    sidebarWin.setBounds(bounds, animate)
+    return true
+  } catch {
+    return false
+  }
 }
 
 function handleNativeDockTrackerLine(line: string, side: DockSide) {
@@ -375,6 +761,7 @@ function handleNativeDockTrackerLine(line: string, side: DockSide) {
 function startFloatingDockNativeTracker(target: FloatingDockTarget) {
   stopFloatingDockNativeTracker()
 
+  if (target.platform === 'darwin') return startMacDockNativeTracker(target)
   if (target.platform !== 'win32') return false
   if (!/^\d+$/.test(target.id)) return false
 
@@ -513,9 +900,35 @@ public static class LedgerDockTracker {
 
 function startFloatingDockTracking() {
   if (floatingDockTrackingTimer !== null) return
+  const pollIntervalMs = process.platform === 'darwin' ? 16 : 48
   floatingDockTrackingTimer = setInterval(() => {
     void refreshFloatingDockTarget()
-  }, 48)
+  }, pollIntervalMs)
+}
+
+async function getMacAccessibilityDockTargetAtCursor(
+  sidebarBounds: Electron.Rectangle,
+  threshold: number,
+): Promise<DockTargetResult | null> {
+  return requestMacDockHelper({
+    kind: 'dockAtCursor',
+    sidebar: {
+      x: sidebarBounds.x,
+      y: sidebarBounds.y,
+      width: sidebarBounds.width,
+      height: sidebarBounds.height,
+    },
+    threshold,
+  })
+}
+
+async function getMacAccessibilityDockTargetAtEdge(
+  probe: { side: DockSide; x: number; y: number },
+): Promise<DockTargetResult | null> {
+  return requestMacDockHelper({
+    kind: 'dockAtEdge',
+    probes: [probe],
+  })
 }
 
 async function refreshFloatingDockTarget() {
@@ -527,17 +940,22 @@ async function refreshFloatingDockTarget() {
   if (!currentFloatingDockTarget) return
 
   const sidebarBounds = sidebarWin.getBounds()
-  const target = await getFloatingDockTargetAtEdge(sidebarBounds, currentFloatingDockTarget.side)
+  const dockTarget = currentFloatingDockTarget
+  const target = await getFloatingDockTargetAtEdge(sidebarBounds, dockTarget.side)
+
+  if (!sidebarWin || sidebarWin.isDestroyed()) return
 
   if (!target) {
     currentFloatingDockMisses += 1
-    if (currentFloatingDockMisses <= 12 && currentFloatingDockBounds) {
+    if (currentFloatingDockMisses <= 24 && currentFloatingDockBounds) {
       const fallbackBounds = getDockedBoundsForTarget(
         currentFloatingDockBounds,
         currentFloatingDockTarget.side,
         currentSidebarMode,
       )
-      sidebarWin.setBounds(fallbackBounds, false)
+      if (!sidebarWin || sidebarWin.isDestroyed()) return
+      if (rectsMatch(sidebarWin.getBounds(), fallbackBounds)) return
+      if (!setSidebarBounds(fallbackBounds)) return
       currentFloatingPosition = { x: fallbackBounds.x, y: fallbackBounds.y }
       return
     }
@@ -552,11 +970,13 @@ async function refreshFloatingDockTarget() {
   currentFloatingDockTarget = target.target
   currentFloatingDockBounds = target.bounds
   const nextBounds = getDockedBoundsForTarget(target.bounds, currentFloatingDockTarget.side, currentSidebarMode)
-  sidebarWin.setBounds(nextBounds, false)
+  if (!sidebarWin || sidebarWin.isDestroyed()) return
+  if (rectsMatch(sidebarWin.getBounds(), nextBounds)) return
+  if (!setSidebarBounds(nextBounds)) return
   currentFloatingPosition = { x: nextBounds.x, y: nextBounds.y }
 }
 
-async function getFloatingDockTargetAtCursor(): Promise<{ target: FloatingDockTarget; bounds: Rect } | null> {
+async function getFloatingDockTargetAtCursor(): Promise<DockTargetResult | null> {
   try {
     const sidebarBounds = sidebarWin?.getBounds()
     if (!sidebarBounds) return null
@@ -659,79 +1079,7 @@ if ($script:result) { Write-Output $script:result }
     }
 
     if (process.platform === 'darwin') {
-      const script = `
-(() => {
-  ObjC.import('CoreGraphics')
-  var ledgerPid = ${process.pid}
-  var sidebarLeft = ${Math.floor(sidebarBounds.x)}
-  var sidebarTop = ${Math.floor(sidebarBounds.y)}
-  var sidebarRight = ${Math.floor(sidebarBounds.x + sidebarBounds.width)}
-  var sidebarBottom = ${Math.floor(sidebarBounds.y + sidebarBounds.height)}
-  var sidebarHeight = ${Math.floor(sidebarBounds.height)}
-  var threshold = ${Math.floor(threshold)}
-  var result = ''
-  var bestScore = Infinity
-  var windows = $.CGWindowListCopyWindowInfo($.kCGWindowListOptionOnScreenOnly, $.kCGNullWindowID)
-  for (var i = 0; i < windows.count; i++) {
-    var window = windows.objectAtIndex(i)
-    var ownerPid = ObjC.unwrap(window.objectForKey('kCGWindowOwnerPID'))
-    if (ownerPid === ledgerPid) continue
-    var windowNumber = Number(ObjC.unwrap(window.objectForKey('kCGWindowNumber')))
-    var bounds = ObjC.deepUnwrap(window.objectForKey('kCGWindowBounds'))
-    if (!bounds) continue
-    if (bounds.Width < 80 || bounds.Height < 80) continue
-
-    var rectLeft = bounds.X
-    var rectTop = bounds.Y
-    var rectRight = bounds.X + bounds.Width
-    var rectBottom = bounds.Y + bounds.Height
-    var verticalOverlap = Math.max(0, Math.min(sidebarBottom, rectBottom) - Math.max(sidebarTop, rectTop))
-    var verticalGap = 0
-    if (sidebarBottom < rectTop) verticalGap = rectTop - sidebarBottom
-    else if (sidebarTop > rectBottom) verticalGap = sidebarTop - rectBottom
-
-    var minimumOverlap = Math.min(96, Math.max(32, Math.floor(sidebarHeight * 0.18)))
-    if (verticalOverlap < minimumOverlap && verticalGap > threshold * 2) continue
-
-    var dockLeftDistance = Math.abs(sidebarRight - rectLeft)
-    var dockRightDistance = Math.abs(sidebarLeft - rectRight)
-    var side = 'left'
-    var edgeDistance = dockLeftDistance
-    if (dockRightDistance < dockLeftDistance) {
-      side = 'right'
-      edgeDistance = dockRightDistance
-    }
-    if (edgeDistance > threshold * 2) continue
-
-    var verticalPenalty = verticalOverlap > 0 ? 0 : verticalGap
-    var score = edgeDistance + verticalPenalty * 0.5 - verticalOverlap * 0.01
-    if (score < bestScore) {
-      bestScore = score
-      result = [side, windowNumber, bounds.X, bounds.Y, bounds.Width, bounds.Height].join('|')
-    }
-  }
-  return result
-})()
-`
-      const { stdout } = await execFileAsync('osascript', ['-e', script], {
-        windowsHide: true,
-        timeout: 1200,
-      })
-      const text = String(stdout).trim()
-      if (!text) return null
-      const [side, id, x, y, width, height] = text.split('|')
-      const parsed = [x, y, width, height].map((value) => Number(value))
-      if (parsed.some((value) => Number.isNaN(value) || value <= 0) || !id || (side !== 'left' && side !== 'right')) {
-        return null
-      }
-      return {
-        target: {
-          platform: 'darwin',
-          id,
-          side,
-        },
-        bounds: { x: parsed[0], y: parsed[1], width: parsed[2], height: parsed[3] },
-      }
+      return getMacAccessibilityDockTargetAtCursor(sidebarBounds, threshold)
     }
   } catch (error) {
     console.warn('[electron] Could not determine foreground app bounds:', error)
@@ -743,11 +1091,29 @@ if ($script:result) { Write-Output $script:result }
 async function getFloatingDockTargetAtEdge(
   sidebarBounds: Electron.Rectangle,
   side: DockSide,
-): Promise<{ target: FloatingDockTarget; bounds: Rect } | null> {
-  const probePoints =
-    side === 'left'
-      ? [{ side: 'left' as DockSide, x: sidebarBounds.x - 8, y: sidebarBounds.y + Math.floor(sidebarBounds.height / 2) }]
-      : [{ side: 'right' as DockSide, x: sidebarBounds.x + sidebarBounds.width + 8, y: sidebarBounds.y + Math.floor(sidebarBounds.height / 2) }]
+): Promise<DockTargetResult | null> {
+  const centerY = sidebarBounds.y + Math.floor(sidebarBounds.height / 2)
+  const xOffsets = [16, 48, 96, 160]
+  const yOffsets = [0, -48, 48]
+  const probePoints: Array<{ side: DockSide; x: number; y: number }> = []
+
+  for (const xOffset of xOffsets) {
+    for (const yOffset of yOffsets) {
+      probePoints.push(
+        side === 'left'
+          ? {
+              side: 'left' as DockSide,
+              x: sidebarBounds.x + sidebarBounds.width + xOffset,
+              y: centerY + yOffset,
+            }
+          : {
+              side: 'right' as DockSide,
+              x: sidebarBounds.x - xOffset,
+              y: centerY + yOffset,
+            },
+      )
+    }
+  }
 
   if (process.platform === 'win32') {
     const script = (probeX: number, probeY: number) => `
@@ -821,44 +1187,11 @@ if ($script:result) { Write-Output $script:result }
   }
 
   if (process.platform === 'darwin') {
-    const script = (probeX: number, probeY: number) => `
-(() => {
-  ObjC.import('CoreGraphics')
-  var ledgerPid = ${process.pid}
-  var windows = $.CGWindowListCopyWindowInfo($.kCGWindowListOptionOnScreenOnly, $.kCGNullWindowID)
-  for (var i = 0; i < windows.count; i++) {
-    var window = windows.objectAtIndex(i)
-    var ownerPid = ObjC.unwrap(window.objectForKey('kCGWindowOwnerPID'))
-    if (ownerPid === ledgerPid) continue
-    var windowNumber = Number(ObjC.unwrap(window.objectForKey('kCGWindowNumber')))
-    var bounds = ObjC.deepUnwrap(window.objectForKey('kCGWindowBounds'))
-    if (!bounds) continue
-    if (${Math.floor(probeX)} >= bounds.X && ${Math.floor(probeX)} <= bounds.X + bounds.Width && ${Math.floor(probeY)} >= bounds.Y && ${Math.floor(probeY)} <= bounds.Y + bounds.Height) {
-      return [windowNumber, bounds.X, bounds.Y, bounds.Width, bounds.Height].join('|')
-    }
-  }
-  return ''
-})()
-`
     for (const probe of probePoints) {
-      const { stdout } = await execFileAsync('osascript', ['-e', script(probe.x, probe.y)], {
-        windowsHide: true,
-        timeout: 1200,
-      })
-      const text = String(stdout).trim()
-      if (!text) continue
-      const [id, x, y, width, height] = text.split('|')
-      const parsed = [x, y, width, height].map((value) => Number(value))
-      if (parsed.some((value) => Number.isNaN(value) || value <= 0) || !id) continue
-      return {
-        target: {
-          platform: 'darwin',
-          id,
-          side: probe.side,
-        },
-        bounds: { x: parsed[0], y: parsed[1], width: parsed[2], height: parsed[3] },
-      }
+      const target = await getMacAccessibilityDockTargetAtEdge(probe)
+      if (target) return target
     }
+    return null
   }
 
   return null
@@ -873,7 +1206,7 @@ async function dockFloatingSidebarToTarget() {
   floatingDockDragActive = false
 
   // Use the cached dock target if available, otherwise query for a new one
-  let target = currentFloatingDockTarget && currentFloatingDockBounds
+  let target: DockTargetResult | null = currentFloatingDockTarget && currentFloatingDockBounds
     ? { target: currentFloatingDockTarget, bounds: currentFloatingDockBounds }
     : await getFloatingDockTargetAtCursor()
 
@@ -899,7 +1232,7 @@ async function dockFloatingSidebarToTarget() {
   const clamped = clampRectToWorkArea(dockBounds, screen.getDisplayMatching(target.bounds).workArea)
 
   setCurrentFloatingDockTarget({ ...target.target, side }, target.bounds)
-  sidebarWin.setBounds(clamped, false)
+  if (!setSidebarBounds(clamped)) return null
   currentFloatingPosition = { x: clamped.x, y: clamped.y }
   if (!startFloatingDockNativeTracker({ ...target.target, side })) {
     startFloatingDockTracking()
@@ -948,7 +1281,7 @@ function applySidebarWindowMode(mode: SidebarWindowMode) {
     sidebarWin.setAlwaysOnTop(false)
     sidebarWin.setResizable(true)
     setWindowButtonVisibility(sidebarWin, true)
-    sidebarWin.setBounds(bounds, false)
+    setSidebarBounds(bounds)
     return
   }
 
@@ -960,7 +1293,7 @@ function applySidebarWindowMode(mode: SidebarWindowMode) {
     sidebarWin.setAlwaysOnTop(false)
     sidebarWin.setResizable(false)
     setWindowButtonVisibility(sidebarWin, true)
-    sidebarWin.setBounds(bounds, false)
+    setSidebarBounds(bounds)
     return
   }
 
@@ -975,7 +1308,7 @@ function applySidebarWindowMode(mode: SidebarWindowMode) {
   sidebarWin.setAlwaysOnTop(sidebarAlwaysOnTop, 'screen-saver')
   sidebarWin.setResizable(false)
   setWindowButtonVisibility(sidebarWin, false)
-  sidebarWin.setBounds(bounds, false)
+  setSidebarBounds(bounds)
 }
 
 function applySidebarAlwaysOnTop(alwaysOnTop: boolean) {
@@ -1042,6 +1375,7 @@ function createSidebarWindow() {
   sidebarWin.on('closed', () => {
     stopFloatingDockTracking()
     clearCurrentFloatingDockTarget()
+    stopMacDockHelper()
     sidebarWin = null
     for (const [kind, moduleWin] of moduleWins.entries()) {
       if (!moduleWin.isDestroyed()) moduleWin.close()
@@ -1114,6 +1448,7 @@ function openModuleWindow(
   const moduleWin = new BrowserWindow({
     ...getModuleBoundsNextToSidebar(),
     transparent: true,
+    backgroundColor: '#00000000',
     ...getModuleWindowChromeOptions(),
     minWidth: 1080,
     minHeight: 680,
@@ -1128,9 +1463,10 @@ function openModuleWindow(
   moduleWin.setMenuBarVisibility(false)
   moduleWin.setMenu(null)
 
-  // Apply subtle vibrancy to module windows
+  // Rounded module shells rely on transparent corner cutouts; vibrancy can
+  // render dark artifacts in those cutouts on macOS.
   if (process.platform === 'darwin') {
-    moduleWin.setVibrancy('content')
+    moduleWin.setVibrancy(null)
   }
 
   if (process.platform === 'win32') {

@@ -35,7 +35,7 @@ export const MinimizedSidebar = ({
           aria-label='Collapse sidebar'
           className="flex h-11 w-11 items-center justify-center rounded-xl bg-transparent transition-colors duration-150 hover:bg-white/45"
         >
-          <img src='/logo-color.svg' alt='Ledger' className='h-7 w-7' />
+          <img src='./logo-color.svg' alt='Ledger' className='h-7 w-7' />
         </button>
 
         <div className={`flex ${isHorizontal ? 'flex-row gap-3' : 'flex-col gap-4 self-center'}`}>

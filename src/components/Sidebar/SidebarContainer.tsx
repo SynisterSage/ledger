@@ -227,16 +227,20 @@ export const SidebarContainer = () => {
       const finalPosition = dragStateRef.current?.currentPosition
       setIsDragging(false)
       dragStateRef.current = null
-      
-      // Fire-and-forget: don't await docking, let Electron handle it in the background
+
       if (window.desktopWindow) {
-        window.desktopWindow.dockFloatingWindow().catch(() => {
-          // Fallback: if docking fails, at least save the last position
-          if (finalPosition) {
-            saveFloatingPosition(finalPosition)
+        try {
+          const dockedBounds = await window.desktopWindow.dockFloatingWindow()
+          if (dockedBounds && typeof dockedBounds.x === 'number' && typeof dockedBounds.y === 'number') {
+            saveFloatingPosition({ x: dockedBounds.x, y: dockedBounds.y })
+            return
           }
-        })
-      } else if (finalPosition) {
+        } catch {
+          // If docking fails, fall back to the last dragged position.
+        }
+      }
+
+      if (finalPosition) {
         saveFloatingPosition(finalPosition)
       }
     }

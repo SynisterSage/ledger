@@ -46,14 +46,14 @@ function AuthStatusScreen({ title, subtitle }: { title: string; subtitle: string
             void window.desktopWindow?.hideTemporary()
           }}
           aria-label="Close"
-          className="absolute right-6 top-6 z-20 inline-flex h-8 w-8 items-center justify-center rounded-full border border-black/5 bg-white/60 text-gray-500 transition hover:bg-white/90 hover:text-gray-900"
+          className="absolute right-6 top-7 z-20 inline-flex h-8 w-8 items-center justify-center rounded-full border border-black/5 bg-white/60 text-gray-500 transition hover:bg-white/90 hover:text-gray-900"
         >
           <X size={16} />
         </button>
       )}
       <div className="relative z-10 flex min-h-[calc(100vh-1.5rem)] items-center justify-center px-8">
-        <div className="flex w-full max-w-[360px] flex-col items-center text-center">
-          <img src="/logo-color.svg" alt="Ledger" className="mb-5 h-12 w-12" />
+        <div className="flex w-full max-w-90 flex-col items-center text-center">
+          <img src="./logo-color.svg" alt="Ledger" className="mb-5 h-12 w-12" />
           <h2 className="text-[26px] font-semibold leading-tight text-gray-950">{title}</h2>
           <p className="mt-2 max-w-xs text-sm leading-6 text-gray-500">{subtitle}</p>
           <div className="mt-6 flex items-center gap-2 text-gray-500">
@@ -294,7 +294,7 @@ function DashboardContent() {
               : activeWorkspace.role
             : 'Dashboard overview'
         }
-        icon={<img src="/logo-color.svg" alt="" className="h-5 w-5" />}
+        icon={<img src="./logo-color.svg" alt="" className="h-5 w-5" />}
         closeLabel="Close dashboard"
         onClose={() => {
           void window.desktopWindow?.toggleModule('dashboard')
@@ -983,7 +983,7 @@ function AppShell() {
               void window.desktopWindow?.hideTemporary()
             }}
             aria-label='Close'
-            className='absolute right-6 top-6 z-20 inline-flex h-8 w-8 items-center justify-center rounded-full border border-black/5 bg-white/60 text-gray-500 transition hover:bg-white/90 hover:text-gray-900'
+            className='absolute right-6 top-7 z-20 inline-flex h-8 w-8 items-center justify-center rounded-full border border-black/5 bg-white/60 text-gray-500 transition hover:bg-white/90 hover:text-gray-900'
           >
             <X size={16} />
           </button>
@@ -1014,15 +1014,15 @@ function AppShell() {
               void window.desktopWindow?.hideTemporary()
             }}
             aria-label='Close'
-            className='absolute right-6 top-6 z-20 inline-flex h-8 w-8 items-center justify-center rounded-full border border-black/5 bg-white/60 text-gray-500 transition hover:bg-white/90 hover:text-gray-900'
+            className='absolute right-6 top-7 z-20 inline-flex h-8 w-8 items-center justify-center rounded-full border border-black/5 bg-white/60 text-gray-500 transition hover:bg-white/90 hover:text-gray-900'
           >
             <X size={16} />
           </button>
         )}
         <div className='relative z-10 flex min-h-[calc(100vh-1.5rem)] items-center justify-center px-8'>
-          <div className='w-full max-w-[390px]'>
+          <div className='w-full max-w-97.5'>
             <div className='mb-7 text-center'>
-              <img src="/logo-color.svg" alt="Ledger" className="mx-auto mb-4 h-12 w-12" />
+              <img src="./logo-color.svg" alt="Ledger" className="mx-auto mb-4 h-12 w-12" />
               <h2 className='text-[28px] font-semibold leading-tight text-gray-950'>Welcome to Ledger</h2>
               <p className='mt-2 text-sm leading-6 text-gray-500'>Quick setup for your first workspace and team flow.</p>
             </div>
