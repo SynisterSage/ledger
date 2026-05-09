@@ -12,19 +12,19 @@ export const MinimizedSidebar = ({
   const { collapseSidebar, setState, position } = useSidebar()
   const { openSearch } = useSearch()
   const isHorizontal = position === 'top' || position === 'bottom'
-  const iconBase = 'w-10 h-10 rounded-lg border transition-all duration-150 flex items-center justify-center active:scale-95'
-  const neutralIcon = `${iconBase} bg-white/30 border-white/30 hover:bg-white/55 hover:border-white/50 text-gray-700`
+  const iconBase = 'w-10 h-10 rounded-xl transition-colors duration-150 flex items-center justify-center active:scale-95'
+  const neutralIcon = `${iconBase} bg-transparent hover:bg-white/45 text-gray-700`
   const accentIcon = neutralIcon
-  const actionIcon = `${iconBase} bg-gray-900/60 border-gray-900/10 hover:bg-gray-900/80 hover:border-gray-900/20 text-white`
-  const dangerIcon = `${iconBase} bg-red-400/30 border-red-400/20 hover:bg-red-400/45 hover:border-red-400/30 text-red-700`
+  const actionIcon = `${iconBase} bg-transparent hover:bg-white/45 text-gray-700`
+  const dangerIcon = `${iconBase} bg-transparent hover:bg-red-50 text-red-600`
 
   return (
     <div
-      className={`border-gray-200 flex ${isHorizontal ? 'h-16 w-full flex-row items-center justify-between px-4 bg-transparent' : 'h-full w-full flex-col items-center justify-between bg-transparent py-6'}`}
+      className={`border-gray-200 flex ${isHorizontal ? 'h-16 w-full flex-row items-center justify-between px-4 bg-transparent' : 'h-full w-full flex-col items-center justify-between bg-transparent px-0 py-4'}`}
       onMouseDown={onDragHandleMouseDown}
       style={{ cursor: onDragHandleMouseDown ? 'grab' : 'auto' }}
     >
-      <div className={`${isHorizontal ? 'flex w-full flex-row items-center justify-between' : 'flex h-full w-full flex-col items-center justify-between translate-x-0.5'} shrink-0`}>
+      <div className={`${isHorizontal ? 'flex w-full flex-row items-center justify-between' : 'mx-auto flex h-full w-11 flex-col items-center justify-between'} shrink-0`}>
         <button
           type='button'
           onClick={() => {
@@ -33,7 +33,7 @@ export const MinimizedSidebar = ({
           onMouseDown={(e) => e.stopPropagation()}
           title='Collapse to icon'
           aria-label='Collapse sidebar'
-          className={`flex h-11 w-11 items-center justify-center rounded-xl border border-gray-200 bg-white shadow-sm transition-transform duration-150 hover:scale-[1.02] ${isHorizontal ? '' : 'mx-auto'}`}
+          className="flex h-11 w-11 items-center justify-center rounded-xl bg-transparent transition-colors duration-150 hover:bg-white/45"
         >
           <img src='/logo-color.svg' alt='Ledger' className='h-7 w-7' />
         </button>
@@ -98,16 +98,16 @@ export const MinimizedSidebar = ({
             onClick={() => setState('expanded')}
             onMouseDown={(e) => e.stopPropagation()}
             title='Expand'
-            className={`${actionIcon} ${isHorizontal ? '' : 'mx-auto'}`}
+            className={actionIcon}
           >
-            <ChevronRight size={20} className='text-white' />
+            <ChevronRight size={20} />
           </button>
 
           <button
             onClick={signOut}
             onMouseDown={(e) => e.stopPropagation()}
             title='Sign Out'
-            className={`${dangerIcon} ${isHorizontal ? '' : 'mx-auto'}`}
+            className={dangerIcon}
           >
             <LogOut size={18} />
           </button>

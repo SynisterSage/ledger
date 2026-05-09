@@ -67,10 +67,17 @@ const WINDOW_MARGIN = 16
 const RAIL_SIZE = 64
 const COLLAPSED_SIZE = 64
 const EXPANDED_WIDTH = 320
+const FLOATING_EXPANDED_HEIGHT = 760
+const FLOATING_RAIL_HEIGHT = 520
+const MIN_DOCK_HEIGHT = {
+  expanded: 640,
+  compact: 480,
+  minimized: 480,
+} as const
 const DASHBOARD_WIDTH = 1280
 const DASHBOARD_HEIGHT = 860
-const AUTH_WIDTH = 520
-const AUTH_HEIGHT = 700
+const AUTH_WIDTH = 540
+const AUTH_HEIGHT = 560
 const MODULE_WIDTH = 980
 const MODULE_HEIGHT = 760
 const MODULE_GAP = 12
@@ -131,13 +138,16 @@ function getModuleWindowChromeOptions() {
 
 function getDockedBounds(width: number, position: 'left' | 'right' | 'floating' = currentSidebarPosition) {
   const { x, y, width: workWidth, height: workHeight } = screen.getPrimaryDisplay().workArea
+  const minHeight = Math.min(MIN_DOCK_HEIGHT.expanded, workHeight - WINDOW_MARGIN * 2)
+  const maxHeight = workHeight - WINDOW_MARGIN * 2
+  const height = Math.max(minHeight, Math.min(maxHeight, maxHeight))
 
   if (position === 'left') {
     return {
       x: x + WINDOW_MARGIN,
       y: y + WINDOW_MARGIN,
       width,
-      height: workHeight - WINDOW_MARGIN * 2,
+      height,
     }
   }
 
@@ -145,7 +155,7 @@ function getDockedBounds(width: number, position: 'left' | 'right' | 'floating' 
     x: x + workWidth - width - WINDOW_MARGIN,
     y: y + WINDOW_MARGIN,
     width,
-    height: workHeight - WINDOW_MARGIN * 2,
+    height,
   }
 }
 
@@ -171,31 +181,38 @@ function getCollapsedBounds(size: number, position: 'left' | 'right' | 'floating
 }
 
 function getFloatingBounds(mode: SidebarWindowMode) {
-  const { width: workWidth, height: workHeight } = screen.getPrimaryDisplay().workArea
-
   if (currentFloatingDockTarget && currentFloatingDockBounds) {
     return getDockedBoundsForTarget(currentFloatingDockBounds, currentFloatingDockTarget.side, mode)
   }
 
-  if (mode === 'compact') {
-    const size = Math.min(COLLAPSED_SIZE, workWidth - WINDOW_MARGIN * 2, workHeight - WINDOW_MARGIN * 2)
-    return {
+  const display = screen.getDisplayNearestPoint(currentFloatingPosition)
+  const { width: workWidth, height: workHeight } = display.workArea
+  const maxWidth = workWidth - WINDOW_MARGIN * 2
+  const maxHeight = workHeight - WINDOW_MARGIN * 2
+
+  const width =
+    mode === 'compact'
+      ? Math.min(COLLAPSED_SIZE, maxWidth)
+      : mode === 'minimized'
+        ? Math.min(RAIL_SIZE, maxWidth)
+        : Math.min(EXPANDED_WIDTH, maxWidth)
+
+  const height =
+    mode === 'compact'
+      ? Math.min(FLOATING_RAIL_HEIGHT, maxHeight)
+      : mode === 'minimized'
+        ? Math.min(FLOATING_RAIL_HEIGHT, maxHeight)
+        : Math.min(FLOATING_EXPANDED_HEIGHT, maxHeight)
+
+  return clampRectToWorkArea(
+    {
       x: currentFloatingPosition.x,
       y: currentFloatingPosition.y,
-      width: size,
-      height: size,
-    }
-  }
-
-  const width = Math.min(mode === 'minimized' ? RAIL_SIZE : EXPANDED_WIDTH, workWidth - WINDOW_MARGIN * 2)
-  const height = Math.min(workHeight - WINDOW_MARGIN * 2, workHeight - WINDOW_MARGIN * 2)
-
-  return {
-    x: currentFloatingPosition.x,
-    y: currentFloatingPosition.y,
-    width,
-    height,
-  }
+      width,
+      height,
+    },
+    display.workArea,
+  )
 }
 
 function getCenteredBounds(width: number, height: number) {
@@ -221,6 +238,52 @@ function clampRectToWorkArea(rect: Rect, workArea: Electron.Rectangle) {
   }
 }
 
+function getDisplayMatchingNativeRect(rect: Rect) {
+  const displays = screen.getAllDisplays()
+  if (displays.length === 0) return screen.getPrimaryDisplay()
+
+  let bestDisplay = displays[0]
+  let bestOverlap = -1
+
+  for (const display of displays) {
+    const physicalBounds = {
+      x: display.bounds.x * display.scaleFactor,
+      y: display.bounds.y * display.scaleFactor,
+      width: display.bounds.width * display.scaleFactor,
+      height: display.bounds.height * display.scaleFactor,
+    }
+
+    const overlapWidth = Math.max(
+      0,
+      Math.min(rect.x + rect.width, physicalBounds.x + physicalBounds.width) -
+        Math.max(rect.x, physicalBounds.x),
+    )
+    const overlapHeight = Math.max(
+      0,
+      Math.min(rect.y + rect.height, physicalBounds.y + physicalBounds.height) -
+        Math.max(rect.y, physicalBounds.y),
+    )
+    const overlapArea = overlapWidth * overlapHeight
+
+    if (overlapArea > bestOverlap) {
+      bestOverlap = overlapArea
+      bestDisplay = display
+    }
+  }
+
+  return bestDisplay
+}
+
+function nativeRectToDipRect(rect: Rect) {
+  const display = getDisplayMatchingNativeRect(rect)
+  return {
+    x: Math.round(rect.x / display.scaleFactor),
+    y: Math.round(rect.y / display.scaleFactor),
+    width: Math.max(1, Math.round(rect.width / display.scaleFactor)),
+    height: Math.max(1, Math.round(rect.height / display.scaleFactor)),
+  }
+}
+
 function getDockSide(currentBounds: Rect, targetBounds: Rect): DockSide {
   const leftDistance = Math.abs(currentBounds.x - (targetBounds.x - currentBounds.width))
   const rightDistance = Math.abs(currentBounds.x - (targetBounds.x + targetBounds.width))
@@ -235,7 +298,15 @@ function getDockedBoundsForTarget(targetBounds: Rect, side: DockSide, mode: Side
       : mode === 'minimized'
         ? Math.min(RAIL_SIZE, workWidth - WINDOW_MARGIN * 2)
         : Math.min(EXPANDED_WIDTH, workWidth - WINDOW_MARGIN * 2)
-  const height = Math.min(targetBounds.height, workHeight - WINDOW_MARGIN * 2)
+  const maxHeight = Math.max(1, workHeight - WINDOW_MARGIN * 2)
+  const baseMinHeight =
+    mode === 'compact'
+      ? MIN_DOCK_HEIGHT.compact
+      : mode === 'minimized'
+        ? MIN_DOCK_HEIGHT.minimized
+        : MIN_DOCK_HEIGHT.expanded
+  const minHeight = Math.min(baseMinHeight, maxHeight)
+  const height = Math.max(minHeight, Math.min(targetBounds.height, maxHeight))
   const x = side === 'left' ? targetBounds.x - width : targetBounds.x + targetBounds.width
   const y = targetBounds.y
   return clampRectToWorkArea({ x, y, width, height }, screen.getDisplayMatching(targetBounds).workArea)
@@ -245,6 +316,7 @@ function setCurrentFloatingDockTarget(target: FloatingDockTarget | null, bounds:
   currentFloatingDockTarget = target
   currentFloatingDockBounds = bounds
   currentFloatingDockMisses = 0
+  sidebarWin?.webContents.send('sidebar:floating-dock-changed', { isDocked: Boolean(target && bounds) })
 }
 
 function clearCurrentFloatingDockTarget() {
@@ -252,6 +324,7 @@ function clearCurrentFloatingDockTarget() {
   currentFloatingDockTarget = null
   currentFloatingDockBounds = null
   currentFloatingDockMisses = 0
+  sidebarWin?.webContents.send('sidebar:floating-dock-changed', { isDocked: false })
 }
 
 function stopFloatingDockTracking() {
@@ -273,6 +346,7 @@ function applyFloatingDockTargetBounds(targetBounds: Rect, side: DockSide) {
   if (!sidebarWin || sidebarWin.isDestroyed()) return
   if (currentSidebarPosition !== 'floating') return
   if (currentSidebarMode === 'auth' || currentSidebarMode === 'fullscreen') return
+  if (floatingDockDragActive) return
 
   currentFloatingDockBounds = targetBounds
   currentFloatingDockMisses = 0
@@ -286,7 +360,7 @@ function handleNativeDockTrackerLine(line: string, side: DockSide) {
   if (kind !== 'bounds') return
   const parsed = [x, y, width, height].map((value) => Number(value))
   if (parsed.some((value) => Number.isNaN(value) || value <= 0)) return
-  const dipRect = screen.screenToDipRect(null, {
+  const dipRect = nativeRectToDipRect({
     x: parsed[0],
     y: parsed[1],
     width: parsed[2],
@@ -469,6 +543,8 @@ async function refreshFloatingDockTarget() {
     }
     clearCurrentFloatingDockTarget()
     stopFloatingDockTracking()
+    // Reflow to normal floating geometry once dock target is gone.
+    applySidebarWindowMode(currentSidebarMode)
     return
   }
 
@@ -484,20 +560,14 @@ async function getFloatingDockTargetAtCursor(): Promise<{ target: FloatingDockTa
   try {
     const sidebarBounds = sidebarWin?.getBounds()
     if (!sidebarBounds) return null
-
-    const probePoints = [
-      { side: 'left' as DockSide, x: sidebarBounds.x - 8, y: sidebarBounds.y + Math.floor(sidebarBounds.height / 2) },
-      { side: 'right' as DockSide, x: sidebarBounds.x + sidebarBounds.width + 8, y: sidebarBounds.y + Math.floor(sidebarBounds.height / 2) },
-    ]
+    const threshold = currentSidebarPreferences.floatingDockThreshold
 
     if (process.platform === 'win32') {
-      const script = (probeX: number, probeY: number) => `
+      const script = `
 Add-Type @"
 using System;
 using System.Runtime.InteropServices;
 public class Win32 {
-  [DllImport("user32.dll")]
-  public static extern bool GetCursorPos(out POINT lpPoint);
   [DllImport("user32.dll")]
   public static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
   [DllImport("user32.dll")]
@@ -514,18 +584,17 @@ public class Win32 {
     public int Right;
     public int Bottom;
   }
-  [StructLayout(LayoutKind.Sequential)]
-  public struct POINT {
-    public int X;
-    public int Y;
-  }
 }
 "@
 $ledgerPid = ${process.pid}
-$cursor = [Win32+POINT]::new()
-$cursor.X = ${Math.floor(probeX)}
-$cursor.Y = ${Math.floor(probeY)}
+$sidebarLeft = ${Math.floor(sidebarBounds.x)}
+$sidebarTop = ${Math.floor(sidebarBounds.y)}
+$sidebarRight = ${Math.floor(sidebarBounds.x + sidebarBounds.width)}
+$sidebarBottom = ${Math.floor(sidebarBounds.y + sidebarBounds.height)}
+$sidebarHeight = ${Math.floor(sidebarBounds.height)}
+$threshold = ${Math.floor(threshold)}
 $script:result = $null
+$script:bestScore = [Double]::PositiveInfinity
 [Win32]::EnumWindows({
   param([IntPtr]$hWnd, [IntPtr]$lParam)
   if (-not [Win32]::IsWindowVisible($hWnd)) { return $true }
@@ -534,41 +603,74 @@ $script:result = $null
   if ($pid -eq $ledgerPid) { return $true }
   $rect = [Win32+RECT]::new()
   if (-not [Win32]::GetWindowRect($hWnd, [ref]$rect)) { return $true }
-  if ($cursor.X -ge $rect.Left -and $cursor.X -le $rect.Right -and $cursor.Y -ge $rect.Top -and $cursor.Y -le $rect.Bottom) {
-    $script:result = "$($hWnd.ToInt64())|$($rect.Left)|$($rect.Top)|$($rect.Right - $rect.Left)|$($rect.Bottom - $rect.Top)"
-    return $false
+  $width = $rect.Right - $rect.Left
+  $height = $rect.Bottom - $rect.Top
+  if ($width -lt 80 -or $height -lt 80) { return $true }
+
+  $overlapTop = [Math]::Max($sidebarTop, $rect.Top)
+  $overlapBottom = [Math]::Min($sidebarBottom, $rect.Bottom)
+  $verticalOverlap = [Math]::Max(0, $overlapBottom - $overlapTop)
+  $verticalGap = 0
+  if ($sidebarBottom -lt $rect.Top) { $verticalGap = $rect.Top - $sidebarBottom }
+  elseif ($sidebarTop -gt $rect.Bottom) { $verticalGap = $sidebarTop - $rect.Bottom }
+
+  $minimumOverlap = [Math]::Min(96, [Math]::Max(32, [Math]::Floor($sidebarHeight * 0.18)))
+  if ($verticalOverlap -lt $minimumOverlap -and $verticalGap -gt ($threshold * 2)) { return $true }
+
+  $dockLeftDistance = [Math]::Abs($sidebarRight - $rect.Left)
+  $dockRightDistance = [Math]::Abs($sidebarLeft - $rect.Right)
+  $side = "left"
+  $edgeDistance = $dockLeftDistance
+  if ($dockRightDistance -lt $dockLeftDistance) {
+    $side = "right"
+    $edgeDistance = $dockRightDistance
+  }
+  if ($edgeDistance -gt ($threshold * 2)) { return $true }
+
+  $verticalPenalty = if ($verticalOverlap -gt 0) { 0 } else { $verticalGap }
+  $score = $edgeDistance + ($verticalPenalty * 0.5) - ($verticalOverlap * 0.01)
+  if ($score -lt $script:bestScore) {
+    $script:bestScore = $score
+    $script:result = "$side|$($hWnd.ToInt64())|$($rect.Left)|$($rect.Top)|$width|$height"
   }
   return $true
 }, [IntPtr]::Zero) | Out-Null
 
 if ($script:result) { Write-Output $script:result }
 `
-
-      for (const probe of probePoints) {
-        const { stdout } = await execFileAsync('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script(probe.x, probe.y)], {
-          windowsHide: true,
-          timeout: 1200,
-        })
-        const [id, x, y, width, height] = String(stdout).trim().split('|')
-        const parsed = [x, y, width, height].map((value) => Number(value))
-        if (parsed.some((value) => Number.isNaN(value) || value <= 0) || !id) continue
-        return {
-          target: {
-            platform: 'win32',
-            id,
-            side: probe.side,
-          },
-          bounds: { x: parsed[0], y: parsed[1], width: parsed[2], height: parsed[3] },
-        }
+      const { stdout } = await execFileAsync('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script], {
+        windowsHide: true,
+        timeout: 1200,
+      })
+      const [side, id, x, y, width, height] = String(stdout).trim().split('|')
+      const parsed = [x, y, width, height].map((value) => Number(value))
+      if (parsed.some((value) => Number.isNaN(value) || value <= 0) || !id || (side !== 'left' && side !== 'right')) {
+        return null
       }
-      return null
+      const bounds = nativeRectToDipRect({ x: parsed[0], y: parsed[1], width: parsed[2], height: parsed[3] })
+      return {
+        target: {
+          platform: 'win32',
+          id,
+          side,
+        },
+        bounds,
+      }
     }
 
     if (process.platform === 'darwin') {
-      const script = (probeX: number, probeY: number) => `
+      const script = `
 (() => {
   ObjC.import('CoreGraphics')
   var ledgerPid = ${process.pid}
+  var sidebarLeft = ${Math.floor(sidebarBounds.x)}
+  var sidebarTop = ${Math.floor(sidebarBounds.y)}
+  var sidebarRight = ${Math.floor(sidebarBounds.x + sidebarBounds.width)}
+  var sidebarBottom = ${Math.floor(sidebarBounds.y + sidebarBounds.height)}
+  var sidebarHeight = ${Math.floor(sidebarBounds.height)}
+  var threshold = ${Math.floor(threshold)}
+  var result = ''
+  var bestScore = Infinity
   var windows = $.CGWindowListCopyWindowInfo($.kCGWindowListOptionOnScreenOnly, $.kCGNullWindowID)
   for (var i = 0; i < windows.count; i++) {
     var window = windows.objectAtIndex(i)
@@ -577,34 +679,59 @@ if ($script:result) { Write-Output $script:result }
     var windowNumber = Number(ObjC.unwrap(window.objectForKey('kCGWindowNumber')))
     var bounds = ObjC.deepUnwrap(window.objectForKey('kCGWindowBounds'))
     if (!bounds) continue
-    if (${Math.floor(probeX)} >= bounds.X && ${Math.floor(probeX)} <= bounds.X + bounds.Width && ${Math.floor(probeY)} >= bounds.Y && ${Math.floor(probeY)} <= bounds.Y + bounds.Height) {
-      return [windowNumber, bounds.X, bounds.Y, bounds.Width, bounds.Height].join('|')
+    if (bounds.Width < 80 || bounds.Height < 80) continue
+
+    var rectLeft = bounds.X
+    var rectTop = bounds.Y
+    var rectRight = bounds.X + bounds.Width
+    var rectBottom = bounds.Y + bounds.Height
+    var verticalOverlap = Math.max(0, Math.min(sidebarBottom, rectBottom) - Math.max(sidebarTop, rectTop))
+    var verticalGap = 0
+    if (sidebarBottom < rectTop) verticalGap = rectTop - sidebarBottom
+    else if (sidebarTop > rectBottom) verticalGap = sidebarTop - rectBottom
+
+    var minimumOverlap = Math.min(96, Math.max(32, Math.floor(sidebarHeight * 0.18)))
+    if (verticalOverlap < minimumOverlap && verticalGap > threshold * 2) continue
+
+    var dockLeftDistance = Math.abs(sidebarRight - rectLeft)
+    var dockRightDistance = Math.abs(sidebarLeft - rectRight)
+    var side = 'left'
+    var edgeDistance = dockLeftDistance
+    if (dockRightDistance < dockLeftDistance) {
+      side = 'right'
+      edgeDistance = dockRightDistance
+    }
+    if (edgeDistance > threshold * 2) continue
+
+    var verticalPenalty = verticalOverlap > 0 ? 0 : verticalGap
+    var score = edgeDistance + verticalPenalty * 0.5 - verticalOverlap * 0.01
+    if (score < bestScore) {
+      bestScore = score
+      result = [side, windowNumber, bounds.X, bounds.Y, bounds.Width, bounds.Height].join('|')
     }
   }
-  return ''
+  return result
 })()
 `
-
-      for (const probe of probePoints) {
-        const { stdout } = await execFileAsync('osascript', ['-e', script(probe.x, probe.y)], {
-          windowsHide: true,
-          timeout: 1200,
-        })
-        const text = String(stdout).trim()
-        if (!text) continue
-        const [id, x, y, width, height] = text.split('|')
-        const parsed = [x, y, width, height].map((value) => Number(value))
-        if (parsed.some((value) => Number.isNaN(value) || value <= 0) || !id) continue
-        return {
-          target: {
-            platform: 'darwin',
-            id,
-            side: probe.side,
-          },
-          bounds: { x: parsed[0], y: parsed[1], width: parsed[2], height: parsed[3] },
-        }
+      const { stdout } = await execFileAsync('osascript', ['-e', script], {
+        windowsHide: true,
+        timeout: 1200,
+      })
+      const text = String(stdout).trim()
+      if (!text) return null
+      const [side, id, x, y, width, height] = text.split('|')
+      const parsed = [x, y, width, height].map((value) => Number(value))
+      if (parsed.some((value) => Number.isNaN(value) || value <= 0) || !id || (side !== 'left' && side !== 'right')) {
+        return null
       }
-      return null
+      return {
+        target: {
+          platform: 'darwin',
+          id,
+          side,
+        },
+        bounds: { x: parsed[0], y: parsed[1], width: parsed[2], height: parsed[3] },
+      }
     }
   } catch (error) {
     console.warn('[electron] Could not determine foreground app bounds:', error)
@@ -743,8 +870,12 @@ async function dockFloatingSidebarToTarget() {
   if (currentSidebarMode === 'auth' || currentSidebarMode === 'fullscreen') return null
   if (!currentSidebarPreferences.floatingDockEnabled) return null
 
-  const target = await getFloatingDockTargetAtCursor()
   floatingDockDragActive = false
+
+  // Use the cached dock target if available, otherwise query for a new one
+  let target = currentFloatingDockTarget && currentFloatingDockBounds
+    ? { target: currentFloatingDockTarget, bounds: currentFloatingDockBounds }
+    : await getFloatingDockTargetAtCursor()
 
   if (!target) {
     clearCurrentFloatingDockTarget()
@@ -757,7 +888,7 @@ async function dockFloatingSidebarToTarget() {
   const leftDistance = Math.abs(currentBounds.x - (target.bounds.x - currentBounds.width))
   const rightDistance = Math.abs(currentBounds.x - (target.bounds.x + target.bounds.width))
   const nearestDistance = Math.min(leftDistance, rightDistance)
-  if (nearestDistance > threshold) {
+  if (nearestDistance > threshold * 2) {
     clearCurrentFloatingDockTarget()
     stopFloatingDockTracking()
     return null
@@ -1066,18 +1197,29 @@ ipcMain.handle('window:set-visible', (_event, isVisible: boolean) => {
   applySidebarVisibility(isVisible)
 })
 
+ipcMain.handle('window:hide-temporary', () => {
+  if (!sidebarWin || sidebarWin.isDestroyed()) return
+  sidebarWin.hide()
+})
+
 ipcMain.handle('window:set-always-on-top', (_event, alwaysOnTop: boolean) => {
   applySidebarAlwaysOnTop(alwaysOnTop)
 })
 
 ipcMain.handle('window:apply-sidebar-preferences', (_event, preferences: SidebarPreferencesPayload) => {
   if (!sidebarWin || sidebarWin.isDestroyed()) return
+  const previousSidebarPosition = currentSidebarPosition
+
   if (preferences.position === 'left' || preferences.position === 'right') {
     currentSidebarPosition = preferences.position
     clearCurrentFloatingDockTarget()
     stopFloatingDockTracking()
   } else if (preferences.position === 'floating') {
     currentSidebarPosition = 'floating'
+    if (previousSidebarPosition !== 'floating') {
+      clearCurrentFloatingDockTarget()
+      stopFloatingDockTracking()
+    }
   } else {
     clearCurrentFloatingDockTarget()
     stopFloatingDockTracking()
@@ -1094,6 +1236,8 @@ ipcMain.handle('window:apply-sidebar-preferences', (_event, preferences: Sidebar
   if (preferences.floatingDockEnabled === false) {
     clearCurrentFloatingDockTarget()
     stopFloatingDockTracking()
+    // Ensure we don't keep stale dock-shaped bounds after dock is disabled.
+    applySidebarWindowMode(currentSidebarMode)
   }
   currentSidebarPreferences = {
     ...currentSidebarPreferences,
@@ -1102,7 +1246,11 @@ ipcMain.handle('window:apply-sidebar-preferences', (_event, preferences: Sidebar
   sidebarWin.webContents.send('sidebar:preferences-updated', preferences)
   if (currentSidebarMode !== 'auth' && currentSidebarMode !== 'fullscreen') {
     applySidebarWindowMode(currentSidebarMode)
-    if (currentSidebarPosition === 'floating' && currentFloatingDockTarget) {
+    if (
+      currentSidebarPosition === 'floating' &&
+      currentFloatingDockTarget &&
+      currentSidebarPreferences.floatingDockEnabled !== false
+    ) {
       if (!floatingDockNativeTracker && !startFloatingDockNativeTracker(currentFloatingDockTarget)) {
         startFloatingDockTracking()
       }
@@ -1127,6 +1275,11 @@ ipcMain.handle('window:begin-floating-drag', () => {
   floatingDockDragActive = true
   clearCurrentFloatingDockTarget()
   stopFloatingDockTracking()
+
+  // Return the actual current bounds so React can calculate delta correctly
+  if (!sidebarWin || sidebarWin.isDestroyed()) return { x: 0, y: 0 }
+  const bounds = sidebarWin.getBounds()
+  return { x: bounds.x, y: bounds.y }
 })
 
 ipcMain.handle('window:dock-floating-window', async () => {

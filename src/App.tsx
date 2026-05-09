@@ -7,6 +7,7 @@ import {
   Plus,
   StickyNote,
   Trash2,
+  X,
 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useAuthContext } from './context/AuthContext'
@@ -32,21 +33,32 @@ type ModuleKind = 'calendar' | 'notes' | 'projects' | 'dashboard' | 'settings' |
 const windowParams = new URLSearchParams(window.location.search)
 const isModuleWindow = windowParams.get('window') === 'module'
 const moduleKind = (windowParams.get('module') as ModuleKind) ?? null
+const isMacPlatform = navigator.platform.toUpperCase().includes('MAC')
 
 function AuthStatusScreen({ title, subtitle }: { title: string; subtitle: string }) {
   return (
-    <div className="relative min-h-screen overflow-hidden bg-[#f6f7fb] text-gray-900">
-      <div className="absolute inset-0 -z-10 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.95),rgba(246,247,251,1)_45%)]" />
-      <div className="flex min-h-screen items-center justify-center px-6">
-        <div className="flex flex-col items-center text-center">
-          <div className="mb-5 flex h-20 w-20 items-center justify-center rounded-[28px] border border-white/70 bg-white/80 shadow-[0_20px_60px_rgba(17,24,39,0.08)] backdrop-blur-sm">
-            <img src="/logo-color.svg" alt="Ledger" className="h-11 w-11" />
-          </div>
-          <h2 className="text-2xl font-semibold tracking-tight text-gray-900">{title}</h2>
-          <p className="mt-2 max-w-sm text-sm leading-6 text-gray-600">{subtitle}</p>
-          <div className="mt-5 flex items-center gap-2 text-gray-500">
-            <Loader2 size={16} className="animate-spin" />
-            <span className="text-xs uppercase tracking-[0.22em]">Loading</span>
+    <div className="relative min-h-screen overflow-hidden bg-transparent p-3 text-gray-900">
+      <div className="absolute inset-3 rounded-[28px] border border-white/60 bg-[#f5f5f7] shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]" />
+      {!isMacPlatform && (
+        <button
+          type="button"
+          onClick={() => {
+            void window.desktopWindow?.hideTemporary()
+          }}
+          aria-label="Close"
+          className="absolute right-6 top-6 z-20 inline-flex h-8 w-8 items-center justify-center rounded-full border border-black/5 bg-white/60 text-gray-500 transition hover:bg-white/90 hover:text-gray-900"
+        >
+          <X size={16} />
+        </button>
+      )}
+      <div className="relative z-10 flex min-h-[calc(100vh-1.5rem)] items-center justify-center px-8">
+        <div className="flex w-full max-w-[360px] flex-col items-center text-center">
+          <img src="/logo-color.svg" alt="Ledger" className="mb-5 h-12 w-12" />
+          <h2 className="text-[26px] font-semibold leading-tight text-gray-950">{title}</h2>
+          <p className="mt-2 max-w-xs text-sm leading-6 text-gray-500">{subtitle}</p>
+          <div className="mt-6 flex items-center gap-2 text-gray-500">
+            <Loader2 size={15} className="animate-spin" />
+            <span className="text-xs font-medium">Loading</span>
           </div>
         </div>
       </div>
@@ -747,6 +759,14 @@ function AppShell() {
     })
   }, [isLoading, isVisible])
 
+  useEffect(() => {
+    if (isLoading) return
+    if (uiMode !== 'auth') return
+    if (isVisible) return
+
+    setIsVisible(true)
+  }, [isLoading, isVisible, setIsVisible, uiMode])
+
   if (isModuleWindow) {
     if (isLoading) {
       return <AuthStatusScreen title='Loading module' subtitle='Bringing your workspace into view.' />
@@ -954,9 +974,22 @@ function AppShell() {
 
   if (uiMode === 'auth') {
     return (
-      <div className='flex h-screen items-center justify-center bg-[#f6f7fb]'>
+      <div className='relative flex h-screen items-center justify-center bg-transparent p-3'>
+        <div className='absolute inset-3 rounded-[28px] border border-white/60 bg-[#f5f5f7] shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]' />
+        {!isMacPlatform && (
+          <button
+            type='button'
+            onClick={() => {
+              void window.desktopWindow?.hideTemporary()
+            }}
+            aria-label='Close'
+            className='absolute right-6 top-6 z-20 inline-flex h-8 w-8 items-center justify-center rounded-full border border-black/5 bg-white/60 text-gray-500 transition hover:bg-white/90 hover:text-gray-900'
+          >
+            <X size={16} />
+          </button>
+        )}
         <div
-          className={`transform transition-all duration-250 ease-out ${
+          className={`relative z-10 transform transition-all duration-250 ease-out ${
             isAuthExiting ? 'opacity-0 scale-95 translate-y-2' : 'opacity-100 scale-100 translate-y-0'
           }`}
         >
@@ -972,16 +1005,28 @@ function AppShell() {
 
   if (postAuthStage === 'onboarding') {
     return (
-      <div className='relative min-h-screen overflow-hidden bg-gray-50 px-4 py-6 text-gray-900'>
-        <div className='absolute inset-0 -z-10 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.9),rgba(248,250,252,1)_55%)]' />
-        <div className='flex min-h-[calc(100vh-3rem)] items-center justify-center px-4'>
-          <div className='w-full max-w-md rounded-3xl border border-gray-200 bg-white p-7 shadow-sm'>
-            <div className='mb-5 inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-gray-200 bg-white shadow-sm'>
-              <img src="/logo-color.svg" alt="Ledger" className="h-6 w-6" />
+      <div className='relative min-h-screen overflow-hidden bg-transparent p-3 text-gray-900'>
+        <div className='absolute inset-3 rounded-[28px] border border-white/60 bg-[#f5f5f7] shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]' />
+        {!isMacPlatform && (
+          <button
+            type='button'
+            onClick={() => {
+              void window.desktopWindow?.hideTemporary()
+            }}
+            aria-label='Close'
+            className='absolute right-6 top-6 z-20 inline-flex h-8 w-8 items-center justify-center rounded-full border border-black/5 bg-white/60 text-gray-500 transition hover:bg-white/90 hover:text-gray-900'
+          >
+            <X size={16} />
+          </button>
+        )}
+        <div className='relative z-10 flex min-h-[calc(100vh-1.5rem)] items-center justify-center px-8'>
+          <div className='w-full max-w-[390px]'>
+            <div className='mb-7 text-center'>
+              <img src="/logo-color.svg" alt="Ledger" className="mx-auto mb-4 h-12 w-12" />
+              <h2 className='text-[28px] font-semibold leading-tight text-gray-950'>Welcome to Ledger</h2>
+              <p className='mt-2 text-sm leading-6 text-gray-500'>Quick setup for your first workspace and team flow.</p>
             </div>
-            <h2 className='text-2xl font-semibold tracking-tight text-gray-900 mb-2'>Welcome to Ledger</h2>
-            <p className='text-sm leading-6 text-gray-600 mb-5'>Quick setup for your first workspace and team flow.</p>
-            <div className='space-y-3 mb-7'>
+            <div className='mb-7 space-y-3.5'>
               <div className='flex items-start gap-3'>
                 <CheckCircle2 size={18} className='text-green-600 mt-0.5' />
                 <p className='text-sm text-gray-700'>Your personal workspace is ready.</p>
@@ -1006,7 +1051,7 @@ function AppShell() {
                 setIsSavingOnboarding(false)
                 setPostAuthStage('welcome')
               }}
-              className='w-full inline-flex items-center justify-center gap-2 rounded-2xl bg-[#FF5F40] px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-[#ea5336] disabled:opacity-60'
+              className='inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-[#FF5F40] px-4 py-3 text-sm font-semibold text-white shadow-[0_10px_24px_rgba(255,95,64,0.24)] transition-colors hover:bg-[#ea5336] disabled:opacity-60'
             >
               {isSavingOnboarding ? (
                 <>

@@ -40,6 +40,9 @@ contextBridge.exposeInMainWorld('desktopWindow', {
   setVisible(isVisible: boolean) {
     return ipcRenderer.invoke('window:set-visible', isVisible)
   },
+  hideTemporary() {
+    return ipcRenderer.invoke('window:hide-temporary')
+  },
   setAlwaysOnTop(alwaysOnTop: boolean) {
     return ipcRenderer.invoke('window:set-always-on-top', alwaysOnTop)
   },
@@ -47,7 +50,7 @@ contextBridge.exposeInMainWorld('desktopWindow', {
     return ipcRenderer.invoke('window:set-floating-position', position)
   },
   beginFloatingDrag() {
-    return ipcRenderer.invoke('window:begin-floating-drag')
+    return ipcRenderer.invoke('window:begin-floating-drag') as Promise<{ x: number; y: number }>
   },
   applySidebarPreferences(preferences: {
       position?: 'right' | 'left' | 'top' | 'bottom' | 'floating'

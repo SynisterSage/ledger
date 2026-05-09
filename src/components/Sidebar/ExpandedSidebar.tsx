@@ -712,14 +712,14 @@ export const ExpandedSidebar = ({
 
   return (
     <div
-      className={`flex h-full min-h-0 w-full bg-transparent border-gray-200 ${
+      className={`flex h-full min-h-0 w-full bg-transparent ${
         isHorizontal
-          ? 'flex-col border-b py-5'
-          : 'flex-col border-r py-5'
+          ? 'flex-col border-b border-gray-200 py-5'
+          : 'flex-col py-5'
       }`}
     >
       <div
-        className="px-6 pb-2 border-b border-white/20"
+        className="px-5 pb-2 border-b border-white/20"
         onMouseDown={(e) => {
           if (!onDragHandleMouseDown) return
           if ((e.target as HTMLElement).closest('button, a, input, select, textarea, [role="button"]')) return
@@ -766,7 +766,7 @@ export const ExpandedSidebar = ({
         </div>
       </div>
 
-      <div className="px-6 pt-2 pb-2">
+      <div className="px-5 pt-2 pb-2">
         <button
           type="button"
           onClick={openSearch}
@@ -812,7 +812,7 @@ export const ExpandedSidebar = ({
         </div>
       </div>
 
-      <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4 space-y-5">
+      <div className="flex-1 min-h-0 overflow-y-auto px-5 py-4 space-y-5">
         <section>
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-1.5">
@@ -824,7 +824,7 @@ export const ExpandedSidebar = ({
                 >
                   <CircleHelp size={12} />
                 </button>
-                <div className="pointer-events-none absolute left-1/2 top-5 -translate-x-1/2 w-48 rounded-md bg-gray-900 text-white text-[10px] leading-4 px-2 py-1.5 opacity-0 group-hover:opacity-100 transition-opacity z-20 shadow-lg">
+                <div className="pointer-events-none absolute left-1/2 top-5 -translate-x-1/2 w-48 rounded-md bg-white border border-gray-200 text-gray-700 text-[10px] leading-4 px-2 py-1.5 opacity-0 group-hover:opacity-100 transition-opacity z-20 shadow-lg">
                   Add your tasks for today. Items save to your profile and reset daily.
                 </div>
               </div>
@@ -1518,7 +1518,7 @@ export const ExpandedSidebar = ({
         document.body,
       )}
 
-      <div className="px-6 space-y-3 border-t border-white/20 pt-4">
+      <div className="px-5 space-y-3 border-t border-white/20 pt-4">
         <button
           onClick={() => window.desktopWindow?.toggleModule('dashboard')}
           className="w-full px-3 py-2 text-sm font-medium text-white bg-[#FF5F40] hover:bg-[#ea5336] rounded-lg transition"

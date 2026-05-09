@@ -14,7 +14,7 @@ export const MainLayout = ({ children }: MainLayoutProps) => {
 
   const childrenNode = (
     <div
-      className={`flex-1 flex flex-col overflow-hidden bg-transparent ${
+      className={`flex-1 flex flex-col overflow-hidden bg-transparent min-w-0 ${
         position === 'left' || position === 'top' ? 'order-2' : 'order-1'
       }`}
     >
@@ -41,7 +41,7 @@ export const MainLayout = ({ children }: MainLayoutProps) => {
   }
 
   const sidebarNode = shouldShowSidebar ? (
-    <div className={`${isHorizontal ? 'w-full' : ''} shrink-0 self-stretch ${position === 'left' || position === 'top' ? 'order-1' : 'order-2'}`}>
+    <div className={`${isHorizontal ? 'w-full' : ''} shrink-0 ${position === 'left' || position === 'top' ? 'order-1' : 'order-2'}`}>
       <SidebarContainer />
     </div>
   ) : null
@@ -50,7 +50,7 @@ export const MainLayout = ({ children }: MainLayoutProps) => {
   if (isHorizontal) {
     // Top or bottom position (horizontal layout)
     return (
-      <div className="relative h-screen overflow-hidden bg-transparent flex flex-col">
+      <div className="relative h-screen overflow-auto bg-transparent flex flex-col">
         {sidebarNode}
         {childrenNode}
       </div>
@@ -58,7 +58,7 @@ export const MainLayout = ({ children }: MainLayoutProps) => {
   } else {
     // Left or right position (vertical layout)
     return (
-      <div className="relative h-screen overflow-hidden bg-transparent flex items-stretch">
+      <div className="relative h-screen overflow-auto bg-transparent flex">
         {sidebarNode}
         {childrenNode}
       </div>

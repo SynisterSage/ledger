@@ -1,9 +1,9 @@
 /// <reference types="vite/client" />
 
-  type SidebarWindowMode = 'auth' | 'minimized' | 'compact' | 'expanded' | 'fullscreen'
+type SidebarWindowMode = 'auth' | 'minimized' | 'compact' | 'expanded' | 'fullscreen'
 type ModuleWindowKind = 'calendar' | 'notes' | 'projects' | 'dashboard' | 'settings'
 type ModuleFocusPayload = {
-  kind: ModuleWindowKind
+  kind?: ModuleWindowKind
   focusDate?: string | null
   focusProjectId?: string | null
   focusNoteId?: string | null
@@ -27,9 +27,10 @@ interface Window {
   desktopWindow?: {
     setMode: (mode: SidebarWindowMode) => Promise<void>
     setVisible: (isVisible: boolean) => Promise<void>
+    hideTemporary: () => Promise<void>
     setAlwaysOnTop: (alwaysOnTop: boolean) => Promise<void>
     setFloatingPosition: (position: { x: number; y: number }) => Promise<void>
-    beginFloatingDrag: () => Promise<void>
+    beginFloatingDrag: () => Promise<{ x: number; y: number }>
     applySidebarPreferences: (preferences: {
       position?: 'right' | 'left' | 'top' | 'bottom' | 'floating'
       opacity?: number

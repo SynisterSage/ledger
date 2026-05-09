@@ -5,7 +5,7 @@ import { ExpandedSidebar } from './ExpandedSidebar'
 import { CollapsedSidebar } from './CollapsedSidebar'
 
 export const SidebarContainer = () => {
-  const { state, isVisible, isExpanded, position, opacity, autoHide, collapseSidebar, restoreSidebarView, floatingPosition, setFloatingPosition: saveFloatingPosition, isHydrated } = useSidebar()
+  const { state, isVisible, isExpanded, position, opacity, autoHide, collapseSidebar, restoreSidebarView, setFloatingPosition: saveFloatingPosition, isHydrated } = useSidebar()
   const [isHovered, setIsHovered] = useState(false)
   const suppressAutoHideExpandRef = useRef(false)
   const suppressAutoHideResetTimerRef = useRef<number | null>(null)
@@ -81,17 +81,6 @@ export const SidebarContainer = () => {
         ? 'w-full h-16'
         : 'w-16 h-full'
       : 'w-16 h-16'
-
-  const shellStyle: React.CSSProperties = {
-    opacity: autoHide && !isHovered && isAutoHideFading ? 0 : 1,
-    backgroundColor: `rgba(255, 255, 255, ${Math.max(0.7, Math.min(0.95, opacity))})`,
-    backdropFilter: 'saturate(180%) blur(12px)',
-    WebkitBackdropFilter: 'saturate(180%) blur(12px)',
-    scrollbarGutter: 'stable',
-    transitionProperty: 'opacity, background-color, backdrop-filter, -webkit-backdrop-filter, box-shadow',
-    transitionDuration: '300ms',
-    transitionTimingFunction: 'ease-out',
-  }
 
   const scheduleAutoHideHide = () => {
     if (!autoHide) return
@@ -187,24 +176,31 @@ export const SidebarContainer = () => {
     }
   }, [isFloating])
 
-  const handleDragHandleStart = (e: React.MouseEvent<HTMLDivElement>) => {
+  const handleDragHandleStart = async (e: React.MouseEvent<HTMLDivElement>) => {
     if (!isFloating || e.button !== 0) return
     e.preventDefault()
     e.stopPropagation()
-    void window.desktopWindow?.beginFloatingDrag().catch(() => {
-      // No-op outside Electron
-    })
-    setIsDragging(true)
+    
+    // Get actual position from Electron to avoid drift
+    const actualPos = await window.desktopWindow?.beginFloatingDrag().catch(() => null)
+    
+    if (!actualPos || !('x' in actualPos) || !('y' in actualPos)) {
+      setIsDragging(false)
+      return
+    }
+    
     dragStateRef.current = {
       startScreenX: e.screenX,
       startScreenY: e.screenY,
-      startLeft: floatingPosition.x,
-      startTop: floatingPosition.y,
+      startLeft: (actualPos as { x: number; y: number }).x,
+      startTop: (actualPos as { x: number; y: number }).y,
       currentPosition: {
-        x: floatingPosition.x,
-        y: floatingPosition.y,
+        x: (actualPos as { x: number; y: number }).x,
+        y: (actualPos as { x: number; y: number }).y,
       },
     }
+    
+    setIsDragging(true)
   }
 
   useEffect(() => {
@@ -229,14 +225,20 @@ export const SidebarContainer = () => {
 
     const handleUp = async () => {
       const finalPosition = dragStateRef.current?.currentPosition
-      const docked = window.desktopWindow ? await window.desktopWindow.dockFloatingWindow().catch(() => null) : null
-      if (docked) {
-        saveFloatingPosition({ x: docked.x, y: docked.y })
+      setIsDragging(false)
+      dragStateRef.current = null
+      
+      // Fire-and-forget: don't await docking, let Electron handle it in the background
+      if (window.desktopWindow) {
+        window.desktopWindow.dockFloatingWindow().catch(() => {
+          // Fallback: if docking fails, at least save the last position
+          if (finalPosition) {
+            saveFloatingPosition(finalPosition)
+          }
+        })
       } else if (finalPosition) {
         saveFloatingPosition(finalPosition)
       }
-      setIsDragging(false)
-      dragStateRef.current = null
     }
 
     window.addEventListener('mousemove', handleMove)
@@ -251,12 +253,24 @@ export const SidebarContainer = () => {
   // keep layout width/height but hide visually until hydration completes to avoid flashes
   const hydrationClass = isHydrated ? '' : 'opacity-0 pointer-events-none'
 
+  const shellStyle: React.CSSProperties = {
+    opacity: autoHide && !isHovered && isAutoHideFading ? 0 : 1,
+    backgroundColor: `rgba(255, 255, 255, ${Math.max(0.7, Math.min(0.95, opacity))})`,
+    backdropFilter: state === 'expanded' ? 'saturate(180%) blur(12px)' : undefined,
+    WebkitBackdropFilter: state === 'expanded' ? 'saturate(180%) blur(12px)' : undefined,
+    clipPath: 'inset(0 round 28px)',
+    contain: 'paint',
+    transitionProperty: isDragging && isFloating ? 'opacity' : 'opacity, background-color, backdrop-filter, -webkit-backdrop-filter, box-shadow, border-color',
+    transitionDuration: isDragging && isFloating ? '0ms' : '300ms',
+    transitionTimingFunction: 'ease-out',
+  }
+
   return (
     <div
       style={shellStyle}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
-      className={`relative overflow-hidden rounded-[28px] border border-white/40 shadow-[0_18px_60px_rgba(15,23,42,0.14)] ${shellSizeClasses} transition-[width,height,opacity] duration-180 ease-out ${autoHide && !isHovered ? 'shadow-sm' : ''} ${hydrationClass}`}
+      className={`relative overflow-hidden rounded-[28px] border border-white/40 shadow-[0_18px_60px_rgba(15,23,42,0.14)] ${shellSizeClasses} transition-[width,height,opacity,border-color,box-shadow] duration-180 ease-out ${autoHide && !isHovered && !isDragging ? 'shadow-sm' : ''} ${hydrationClass}`}
     >
       <div className="relative h-full w-full">
         {state === 'expanded' && (

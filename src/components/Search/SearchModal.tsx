@@ -281,7 +281,7 @@ export const SearchModal = () => {
                     </span>
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-semibold text-gray-900">{result.title}</p>
-                      <p className="mt-0.5 line-clamp-2 text-xs leading-5 text-gray-500">{result.preview || 'No preview available'}</p>
+                      <p className="mt-0.5 line-clamp-2 text-xs leading-5 text-gray-500">{truncatePreview(result.preview) || 'No preview available'}</p>
                     </div>
                   </button>
                 )

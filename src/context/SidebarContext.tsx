@@ -44,6 +44,7 @@ interface SidebarContextType {
   restoreSidebarView: () => void
   floatingPosition: SidebarFloatingPosition
   setFloatingPosition: (position: SidebarFloatingPosition) => void
+  isFloatingDocked: boolean
   sidebarPreferences: SidebarPreferences
   moduleView: ModuleView
   setModuleView: (view: ModuleView) => void
@@ -57,6 +58,9 @@ const SidebarContext = createContext<SidebarContextType | undefined>(undefined)
 export const SidebarProvider = ({ children }: { children: ReactNode }) => {
   const [sidebarPreferences, setSidebarPreferences] = useState<SidebarPreferences>(() => loadSidebarPreferences())
   const [isHydrated, setIsHydrated] = React.useState(false)
+  const didNormalizeFloatingStartupRef = React.useRef(false)
+  const wasFloatingDockedRef = React.useRef(false)
+  const [isFloatingDocked, setIsFloatingDocked] = React.useState(false)
   const [state, setSidebarState] = React.useState<SidebarState>(() => {
     const prefs = loadSidebarPreferences()
     if (prefs.defaultState === 'expanded') return 'expanded'
@@ -115,6 +119,51 @@ export const SidebarProvider = ({ children }: { children: ReactNode }) => {
     window.addEventListener('storage', handleStorageChange)
     return () => window.removeEventListener('storage', handleStorageChange)
   }, [state])
+
+  useEffect(() => {
+    if (didNormalizeFloatingStartupRef.current) return
+    if (!isHydrated) return
+    if (sidebarPreferences.position !== 'floating') return
+    if (state !== 'minimized' && sidebarPreferences.lastState !== 'collapsed') {
+      didNormalizeFloatingStartupRef.current = true
+      return
+    }
+
+    didNormalizeFloatingStartupRef.current = true
+    setSidebarState('minimized')
+    setSidebarPreferences((current) => ({
+      ...current,
+      collapsedRestoreIsExpanded: true,
+      collapsedRestoreView: 'expanded',
+      isExpanded: true,
+      lastState: 'collapsed',
+    }))
+  }, [isHydrated, sidebarPreferences.lastState, sidebarPreferences.position, state])
+
+  useEffect(() => {
+    const handleFloatingDockChanged = (_event: unknown, payload: { isDocked?: boolean }) => {
+      const nextIsDocked = Boolean(payload?.isDocked)
+      const wasDocked = wasFloatingDockedRef.current
+
+      wasFloatingDockedRef.current = nextIsDocked
+      setIsFloatingDocked(nextIsDocked)
+
+      if (wasDocked && !nextIsDocked && sidebarPreferences.position === 'floating' && state === 'minimized') {
+        setSidebarPreferences((current) => ({
+          ...current,
+          collapsedRestoreIsExpanded: true,
+          collapsedRestoreView: 'expanded',
+          isExpanded: true,
+          lastState: 'collapsed',
+        }))
+      }
+    }
+
+    window.ipcRenderer?.on('sidebar:floating-dock-changed', handleFloatingDockChanged)
+    return () => {
+      window.ipcRenderer?.off('sidebar:floating-dock-changed', handleFloatingDockChanged)
+    }
+  }, [sidebarPreferences.position, state])
 
   const toggleExpand = () => {
     setState(state === 'expanded' ? 'minimized' : 'expanded')
@@ -306,6 +355,7 @@ export const SidebarProvider = ({ children }: { children: ReactNode }) => {
         restoreSidebarView,
         floatingPosition: sidebarPreferences.floatingPosition,
         setFloatingPosition,
+        isFloatingDocked,
         sidebarPreferences,
         moduleView,
         setModuleView,
