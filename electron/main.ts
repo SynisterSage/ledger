@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, screen, shell, globalShortcut } from 'electron'
+import { app, BrowserWindow, ipcMain, screen, shell, globalShortcut, systemPreferences } from 'electron'
 import { execFile, spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { promisify } from 'node:util'
 import { fileURLToPath } from 'node:url'
@@ -44,7 +44,8 @@ let macDockHelperRequestId = 0
 const macDockHelperRequests = new Map<number, MacDockHelperRequest>()
 
 const macDockHelperScript = `
-const { windowManager } = require('node-window-manager')
+const modulePath = process.env.LEDGER_NWM_PATH || 'node-window-manager'
+const { windowManager } = require(modulePath)
 const readline = require('node:readline')
 
 const ledgerPid = Number(process.env.LEDGER_DOCK_PARENT_PID || 0)
@@ -55,6 +56,15 @@ const send = (message) => {
   try {
     process.stdout.write(JSON.stringify(message) + '\\n')
   } catch {}
+}
+
+try {
+  const trusted = typeof windowManager.requestAccessibility === 'function'
+    ? windowManager.requestAccessibility()
+    : true
+  send({ kind: 'debug', message: 'mac helper accessibility trusted=' + trusted })
+} catch (error) {
+  send({ kind: 'debug', message: 'mac helper accessibility check failed: ' + String(error) })
 }
 
 const toInfo = (window) => {
@@ -251,6 +261,7 @@ let floatingDockNativeTracker: ChildProcessWithoutNullStreams | null = null
 let floatingDockNativeBuffer = ''
 let sidebarIsVisible = true
 let sidebarAlwaysOnTop = true
+let macAccessibilityPrompted = false
 
 const WINDOW_MARGIN = 16
 const RAIL_SIZE = 64
@@ -556,6 +567,22 @@ function resolveMacDockHelperRequestsAsMissing() {
   macDockHelperRequests.clear()
 }
 
+function requestMacAccessibilityIfNeeded() {
+  if (process.platform !== 'darwin') return true
+  try {
+    const trusted = systemPreferences.isTrustedAccessibilityClient(false)
+    if (!trusted && !macAccessibilityPrompted) {
+      macAccessibilityPrompted = true
+      systemPreferences.isTrustedAccessibilityClient(true)
+      dockLog('[dock-debug] requested mac accessibility permission')
+    }
+    return trusted
+  } catch (error) {
+    dockLog(`[dock-debug] mac accessibility check failed: ${String(error)}`)
+    return true
+  }
+}
+
 function handleMacDockHelperMessage(message: MacDockHelperMessage) {
   if (message.kind === 'response') {
     const request = macDockHelperRequests.get(message.requestId)
@@ -609,12 +636,23 @@ function ensureMacDockHelper() {
   if (process.platform !== 'darwin') return null
   if (macDockHelper && !macDockHelper.killed) return macDockHelper
 
+  requestMacAccessibilityIfNeeded()
+
+  const nodeWindowManagerPath = app.isPackaged
+    ? path.join(process.resourcesPath, 'app.asar.unpacked', 'node_modules', 'node-window-manager')
+    : path.join(process.env.APP_ROOT ?? '', 'node_modules', 'node-window-manager')
+  const helperCwd = app.isPackaged ? process.resourcesPath : process.env.APP_ROOT
+
   const helper = spawn(process.execPath, ['-e', macDockHelperScript], {
-    cwd: process.env.APP_ROOT,
+    cwd: helperCwd,
     env: {
       ...process.env,
       ELECTRON_RUN_AS_NODE: '1',
       LEDGER_DOCK_PARENT_PID: String(process.pid),
+      LEDGER_NWM_PATH: nodeWindowManagerPath,
+      NODE_PATH: app.isPackaged
+        ? path.join(process.resourcesPath, 'app.asar.unpacked', 'node_modules')
+        : path.join(process.env.APP_ROOT ?? '', 'node_modules'),
     },
     stdio: ['pipe', 'pipe', 'pipe'],
   })
@@ -652,6 +690,15 @@ function ensureMacDockHelper() {
       currentFloatingDockMisses = 0
       sendFloatingDockChanged(false)
     }
+  })
+
+  helper.on('error', (error) => {
+    dockLog(`[dock-debug] mac helper spawn error: ${String(error)}`)
+    if (macDockHelper === helper) {
+      macDockHelper = null
+      macDockHelperBuffer = ''
+    }
+    resolveMacDockHelperRequestsAsMissing()
   })
 
   return helper
