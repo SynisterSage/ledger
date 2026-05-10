@@ -69,6 +69,7 @@ const shortcutSections: Array<{
     title: 'Sidebar',
     shortcuts: [
       { keys: '⌘ + ⇧ + B', description: 'hide / show sidebar' },
+      { keys: '⌘/Ctrl + ⇧ + L', description: 'hide / show all Ledger windows' },
       { keys: '⌘ + B', description: 'collapse / expand' },
     ],
   },

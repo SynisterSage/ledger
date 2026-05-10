@@ -1,5 +1,5 @@
 import { createPortal } from 'react-dom'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Briefcase, CalendarDays, Check, FileText, Maximize2, Minimize2, Search, X } from 'lucide-react'
 import { useAuthContext } from '../../context/AuthContext'
 import { useWorkspaceContext } from '../../context/WorkspaceContext'
@@ -40,12 +40,23 @@ export const SearchModal = () => {
   const inputRef = useRef<HTMLInputElement | null>(null)
   const itemRefs = useRef<Array<HTMLButtonElement | null>>([])
   const searchIdRef = useRef(0)
+  const resultsRef = useRef<SearchResult[]>([])
+  const selectedIndexRef = useRef(0)
 
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<SearchResult[]>([])
   const [selectedIndex, setSelectedIndex] = useState(0)
   const [isLoading, setIsLoading] = useState(false)
   const [isFullscreen, setIsFullscreen] = useState(false)
+
+  // Keep refs in sync with state
+  useEffect(() => {
+    resultsRef.current = results
+  }, [results])
+
+  useEffect(() => {
+    selectedIndexRef.current = selectedIndex
+  }, [selectedIndex])
 
   const trimmedQuery = query.trim()
 
@@ -126,42 +137,7 @@ export const SearchModal = () => {
     }
   }, [isSearchOpen])
 
-  useEffect(() => {
-    if (!isSearchOpen) return
-
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        event.preventDefault()
-        closeSearch()
-        return
-      }
-
-      if (event.key === 'ArrowDown') {
-        if (results.length === 0) return
-        event.preventDefault()
-        setSelectedIndex((current) => Math.min(current + 1, results.length - 1))
-        return
-      }
-
-      if (event.key === 'ArrowUp') {
-        if (results.length === 0) return
-        event.preventDefault()
-        setSelectedIndex((current) => Math.max(current - 1, 0))
-        return
-      }
-
-      if (event.key === 'Enter') {
-        if (!activeResult) return
-        event.preventDefault()
-        jumpToResult(activeResult)
-      }
-    }
-
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [activeResult, closeSearch, isSearchOpen, results.length])
-
-  const jumpToResult = (result: SearchResult) => {
+  const jumpToResult = useCallback((result: SearchResult) => {
     if (result.type === 'note') {
       void window.desktopWindow?.toggleModule('notes', { focusNoteId: result.id })
     } else if (result.type === 'project') {
@@ -174,7 +150,43 @@ export const SearchModal = () => {
     }
 
     closeSearch()
-  }
+  }, [closeSearch])
+
+  const onKeyDown = useCallback((event: KeyboardEvent) => {
+    if (event.key === 'Escape') {
+      event.preventDefault()
+      closeSearch()
+      return
+    }
+
+    if (event.key === 'ArrowDown') {
+      if (resultsRef.current.length === 0) return
+      event.preventDefault()
+      setSelectedIndex((current) => Math.min(current + 1, resultsRef.current.length - 1))
+      return
+    }
+
+    if (event.key === 'ArrowUp') {
+      if (resultsRef.current.length === 0) return
+      event.preventDefault()
+      setSelectedIndex((current) => Math.max(current - 1, 0))
+      return
+    }
+
+    if (event.key === 'Enter') {
+      const activeResult = resultsRef.current[selectedIndexRef.current]
+      if (!activeResult) return
+      event.preventDefault()
+      jumpToResult(activeResult)
+    }
+  }, [closeSearch, jumpToResult])
+
+  useEffect(() => {
+    if (!isSearchOpen) return
+
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [isSearchOpen, onKeyDown])
 
   if (!isSearchOpen || typeof document === 'undefined' || !user || !activeWorkspaceId) {
     return null

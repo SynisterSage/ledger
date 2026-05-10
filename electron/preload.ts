@@ -24,7 +24,7 @@ contextBridge.exposeInMainWorld('ipcRenderer', {
 })
 
 type SidebarWindowMode = 'auth' | 'minimized' | 'compact' | 'expanded' | 'fullscreen'
-type ModuleWindowKind = 'calendar' | 'notes' | 'projects' | 'dashboard' | 'settings'
+type ModuleWindowKind = 'calendar' | 'notes' | 'projects' | 'dashboard' | 'settings' | 'quick-task' | 'quick-note' | 'quick-event'
 type ModuleFocusPayload = {
   kind: ModuleWindowKind
   focusDate?: string | null
@@ -42,6 +42,9 @@ contextBridge.exposeInMainWorld('desktopWindow', {
   },
   hideTemporary() {
     return ipcRenderer.invoke('window:hide-temporary')
+  },
+  quitApp() {
+    return ipcRenderer.invoke('window:quit-app')
   },
   setAlwaysOnTop(alwaysOnTop: boolean) {
     return ipcRenderer.invoke('window:set-always-on-top', alwaysOnTop)

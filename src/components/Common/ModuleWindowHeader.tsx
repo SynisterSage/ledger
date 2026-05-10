@@ -38,10 +38,16 @@ export const ModuleWindowHeader = ({
   const controlClassName =
     'flex h-6 w-6 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-600 transition hover:bg-gray-100 hover:text-gray-900'
 
+  const handleTitleBarDoubleClick = () => {
+    if (onToggleFullscreen) {
+      onToggleFullscreen()
+    }
+  }
+
   return (
     <div className="border-b border-gray-200 bg-white" style={dragRegionStyle}>
-      <div className="h-10 px-4 py-2 flex items-center bg-gray-50 border-b border-gray-200" style={dragRegionStyle}>
-        <div className="flex items-center gap-4" style={noDragRegionStyle}>
+      <div className="h-10 px-4 py-2 flex items-center bg-gray-50 border-b border-gray-200 cursor-default" style={dragRegionStyle} onDoubleClick={handleTitleBarDoubleClick}>
+        <div className="flex items-center gap-1.5" style={noDragRegionStyle}>
           <button
             type="button"
             onClick={onClose}

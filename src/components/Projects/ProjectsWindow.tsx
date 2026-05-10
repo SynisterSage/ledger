@@ -14,7 +14,7 @@ import { modulePaneSizing, clampPaneWidth, getPaneWidthForViewport } from '../..
 import { useApi } from '../../hooks/useApi'
 import { useWorkspaceContext } from '../../context/WorkspaceContext'
 import { ModuleWindowHeader } from '../Common/ModuleWindowHeader'
-import { SkeletonList } from '../Common/Skeleton'
+import { SkeletonList, SkeletonProjectCard, SkeletonTaskItem } from '../Common/Skeleton'
 import { useViewportWidth } from '../../hooks/useViewportWidth'
 
 type ProjectRow = {
@@ -946,7 +946,11 @@ export const ProjectsWindow = () => {
 
               <div className={`flex-1 overflow-auto ${isCompactLayout ? 'p-2.5' : 'p-3'} space-y-2`}>
                 {isLoadingProjects ? (
-                  <SkeletonList count={3} />
+                  <div className="space-y-2">
+                    {Array.from({ length: 3 }).map((_, i) => (
+                      <SkeletonProjectCard key={i} />
+                    ))}
+                  </div>
                 ) : visibleProjects.length === 0 ? (
                   <div className="rounded-2xl border border-dashed border-gray-200 bg-gray-50 p-5">
                     <p className="text-sm font-medium text-gray-800">No matching projects.</p>
@@ -1190,7 +1194,11 @@ export const ProjectsWindow = () => {
 
                     <div className="space-y-3">
                       {isLoadingTasks ? (
-                        <SkeletonList count={3} />
+                        <div className="space-y-2">
+                          {Array.from({ length: 3 }).map((_, i) => (
+                            <SkeletonTaskItem key={i} />
+                          ))}
+                        </div>
                       ) : selectedProjectTasks.length === 0 ? (
                         <div className="rounded-2xl border border-dashed border-gray-200 bg-gray-50 p-5">
                           <p className="text-sm font-medium text-gray-800">No tasks yet.</p>

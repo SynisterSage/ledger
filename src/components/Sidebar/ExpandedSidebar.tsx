@@ -920,8 +920,8 @@ export const ExpandedSidebar = ({
               onClick={() => setQuickCaptureMode((prev) => (prev === 'task' ? 'none' : 'task'))}
               className={`px-2.5 py-2 text-xs font-medium rounded-lg transition flex items-center justify-center gap-1.5 ${
                 quickCaptureMode === 'task'
-                  ? 'text-gray-900 bg-gray-100 border border-gray-200'
-                  : 'text-gray-700 bg-gray-50 hover:bg-gray-100'
+                  ? 'text-gray-900 bg-white border border-gray-300'
+                  : 'text-gray-700 bg-white hover:bg-gray-50'
               }`}
             >
               <Plus size={13} />
@@ -931,8 +931,8 @@ export const ExpandedSidebar = ({
               onClick={() => setQuickCaptureMode((prev) => (prev === 'note' ? 'none' : 'note'))}
               className={`px-2.5 py-2 text-xs font-medium rounded-lg transition flex items-center justify-center gap-1.5 ${
                 quickCaptureMode === 'note'
-                  ? 'text-gray-900 bg-gray-100 border border-gray-200'
-                  : 'text-gray-700 bg-gray-50 hover:bg-gray-100'
+                  ? 'text-gray-900 bg-white border border-gray-300'
+                  : 'text-gray-700 bg-white hover:bg-gray-50'
               }`}
             >
               <StickyNote size={13} />
@@ -940,10 +940,10 @@ export const ExpandedSidebar = ({
             </button>
             <button
               onClick={() => setQuickCaptureMode((prev) => (prev === 'event' ? 'none' : 'event'))}
-              className={`px-2.5 py-2 text-xs font-medium text-gray-700 bg-gray-50 hover:bg-gray-100 rounded-lg transition flex items-center justify-center gap-1.5 ${
+              className={`px-2.5 py-2 text-xs font-medium rounded-lg transition flex items-center justify-center gap-1.5 ${
                 quickCaptureMode === 'event'
-                  ? 'text-gray-900 bg-gray-100 border border-gray-200'
-                  : 'text-gray-700 bg-gray-50 hover:bg-gray-100'
+                  ? 'text-gray-900 bg-white border border-gray-300'
+                  : 'text-gray-700 bg-white hover:bg-gray-50'
               }`}
             >
               <CalendarDays size={13} />

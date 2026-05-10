@@ -28,6 +28,7 @@ interface Window {
     setMode: (mode: SidebarWindowMode) => Promise<void>
     setVisible: (isVisible: boolean) => Promise<void>
     hideTemporary: () => Promise<void>
+    quitApp: () => Promise<void>
     setAlwaysOnTop: (alwaysOnTop: boolean) => Promise<void>
     setFloatingPosition: (position: { x: number; y: number }) => Promise<void>
     beginFloatingDrag: () => Promise<{ x: number; y: number }>

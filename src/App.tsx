@@ -24,33 +24,30 @@ import ProjectsWindow from './components/Projects/ProjectsWindow'
 import SettingsWindow from './components/Settings/SettingsWindow'
 import { SearchModal } from './components/Search/SearchModal'
 import { SearchProvider } from './context/SearchContext'
-import { SkeletonList } from './components/Common/Skeleton'
+import { SkeletonList, SkeletonStatCards, SkeletonProjectCard, SkeletonNoteCard, SkeletonTaskItem } from './components/Common/Skeleton'
 import { useSearch } from './context/SearchContext'
+import { QuickCaptureWindow } from './components/Common/QuickCaptureWindow'
 
 type PostAuthStage = 'idle' | 'loading' | 'onboarding' | 'ready'
-type ModuleKind = 'calendar' | 'notes' | 'projects' | 'dashboard' | 'settings' | null
+type ModuleKind = 'calendar' | 'notes' | 'projects' | 'dashboard' | 'settings' | 'quick-task' | 'quick-note' | 'quick-event' | null
 
 const windowParams = new URLSearchParams(window.location.search)
 const isModuleWindow = windowParams.get('window') === 'module'
 const moduleKind = (windowParams.get('module') as ModuleKind) ?? null
-const isMacPlatform = navigator.platform.toUpperCase().includes('MAC')
-
 function AuthStatusScreen({ title, subtitle }: { title: string; subtitle: string }) {
   return (
     <div className="relative min-h-screen overflow-hidden bg-transparent p-3 text-gray-900">
       <div className="absolute inset-3 rounded-[28px] border border-white/60 bg-[#f5f5f7] shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]" />
-      {!isMacPlatform && (
-        <button
-          type="button"
-          onClick={() => {
-            void window.desktopWindow?.hideTemporary()
-          }}
-          aria-label="Close"
-          className="absolute right-6 top-7 z-20 inline-flex h-8 w-8 items-center justify-center rounded-full border border-black/5 bg-white/60 text-gray-500 transition hover:bg-white/90 hover:text-gray-900"
-        >
-          <X size={16} />
-        </button>
-      )}
+      <button
+        type="button"
+        onClick={() => {
+          void window.desktopWindow?.quitApp()
+        }}
+        aria-label="Close"
+        className="absolute right-6 top-7 z-20 inline-flex h-8 w-8 items-center justify-center rounded-full border border-black/5 bg-white/60 text-gray-500 transition hover:bg-white/90 hover:text-gray-900"
+      >
+        <X size={16} />
+      </button>
       <div className="relative z-10 flex min-h-[calc(100vh-1.5rem)] items-center justify-center px-8">
         <div className="flex w-full max-w-90 flex-col items-center text-center">
           <img src="./logo-color.svg" alt="Ledger" className="mb-5 h-12 w-12" />
@@ -352,30 +349,34 @@ function DashboardContent() {
             </div>
           )}
 
-          <div className='grid gap-4 md:grid-cols-2 xl:grid-cols-4'>
-            {[
-              { label: 'Today focus', value: `${completedFocus}/${daily.focusItems.length}`, note: daily.focusItems.length ? 'From your daily checklist' : 'No items set yet', icon: CheckCircle2, action: () => scrollToSection(todayTasksRef), actionLabel: 'Jump to tasks' },
-              { label: 'Active projects', value: String(activeProjects), note: 'Project Tracker items in progress', icon: Folder, action: () => openModule('projects'), actionLabel: 'Open projects' },
-              { label: 'Upcoming items', value: String(upcoming.length), note: 'Events from your calendar', icon: CalendarDays, action: () => openModule('calendar'), actionLabel: 'Open calendar' },
-              { label: 'Recent notes', value: String(recentNotes.length), note: 'Fresh ideas and captures', icon: StickyNote, action: () => openModule('notes'), actionLabel: 'Open notes' },
-            ].map(({ label, value, note, icon: Icon, action, actionLabel }) => (
-              <button
-                key={label}
-                onClick={action}
-                className='group rounded-3xl border border-gray-200 bg-white p-5 shadow-sm text-left transition-transform hover:-translate-y-0.5 hover:shadow-md'
-              >
-                <div className='flex items-center justify-between'>
-                  <p className='text-sm font-medium text-gray-600'>{label}</p>
-                  <div className='flex items-center gap-2 text-gray-400'>
-                    <span className='text-[11px] font-medium opacity-0 transition-opacity group-hover:opacity-100'>{actionLabel}</span>
-                    <Icon size={18} className='text-gray-400' />
+          {isLoadingDashboard ? (
+            <SkeletonStatCards count={4} />
+          ) : (
+            <div className='grid gap-4 md:grid-cols-2 xl:grid-cols-4'>
+              {[
+                { label: 'Today focus', value: `${completedFocus}/${daily.focusItems.length}`, note: daily.focusItems.length ? 'From your daily checklist' : 'No items set yet', icon: CheckCircle2, action: () => scrollToSection(todayTasksRef), actionLabel: 'Jump to tasks' },
+                { label: 'Active projects', value: String(activeProjects), note: 'Project Tracker items in progress', icon: Folder, action: () => openModule('projects'), actionLabel: 'Open projects' },
+                { label: 'Upcoming items', value: String(upcoming.length), note: 'Events from your calendar', icon: CalendarDays, action: () => openModule('calendar'), actionLabel: 'Open calendar' },
+                { label: 'Recent notes', value: String(recentNotes.length), note: 'Fresh ideas and captures', icon: StickyNote, action: () => openModule('notes'), actionLabel: 'Open notes' },
+              ].map(({ label, value, note, icon: Icon, action, actionLabel }) => (
+                <button
+                  key={label}
+                  onClick={action}
+                  className='group rounded-3xl border border-gray-200 bg-white p-5 shadow-sm text-left transition-transform hover:-translate-y-0.5 hover:shadow-md'
+                >
+                  <div className='flex items-center justify-between'>
+                    <p className='text-sm font-medium text-gray-600'>{label}</p>
+                    <div className='flex items-center gap-2 text-gray-400'>
+                      <span className='text-[11px] font-medium opacity-0 transition-opacity group-hover:opacity-100'>{actionLabel}</span>
+                      <Icon size={18} className='text-gray-400' />
+                    </div>
                   </div>
-                </div>
-                <p className='mt-4 text-3xl font-semibold tracking-tight text-gray-900'>{value}</p>
-                <p className='mt-1 text-xs text-gray-500'>{note}</p>
-              </button>
-            ))}
-          </div>
+                  <p className='mt-4 text-3xl font-semibold tracking-tight text-gray-900'>{value}</p>
+                  <p className='mt-1 text-xs text-gray-500'>{note}</p>
+                </button>
+              ))}
+            </div>
+          )}
 
           <div className='grid gap-6 xl:grid-cols-[1.25fr_0.75fr]'>
             <div className='space-y-6'>
@@ -394,8 +395,10 @@ function DashboardContent() {
                 </div>
 
                 {isLoadingDashboard ? (
-                  <div className='mt-5'>
-                    <SkeletonList count={3} />
+                  <div className='mt-5 space-y-3'>
+                    {Array.from({ length: 3 }).map((_, i) => (
+                      <SkeletonTaskItem key={i} />
+                    ))}
                   </div>
                 ) : (
                   <>
@@ -491,7 +494,9 @@ function DashboardContent() {
 
                 <div className='mt-5 grid gap-3'>
                   {isLoadingDashboard ? (
-                    <SkeletonList count={2} />
+                    Array.from({ length: 2 }).map((_, i) => (
+                      <SkeletonNoteCard key={i} />
+                    ))
                   ) : recentNotes.length === 0 ? (
                     <div className='rounded-2xl border border-dashed border-gray-200 bg-gray-50 p-5'>
                       <p className='text-sm font-medium text-gray-800'>No notes yet.</p>
@@ -539,7 +544,9 @@ function DashboardContent() {
 
                 <div className='mt-5 space-y-3'>
                   {isLoadingDashboard ? (
-                    <SkeletonList count={3} />
+                    Array.from({ length: 3 }).map((_, i) => (
+                      <SkeletonProjectCard key={i} />
+                    ))
                   ) : projects.length === 0 ? (
                     <div className='rounded-2xl border border-dashed border-gray-200 bg-gray-50 p-5'>
                       <p className='text-sm font-medium text-gray-800'>No projects yet.</p>
@@ -598,7 +605,9 @@ function DashboardContent() {
 
                 <div className='mt-5 space-y-3'>
                   {isLoadingDashboard ? (
-                    <SkeletonList count={3} />
+                    Array.from({ length: 3 }).map((_, i) => (
+                      <SkeletonNoteCard key={i} />
+                    ))
                   ) : upcoming.length === 0 ? (
                     <div className='rounded-2xl border border-dashed border-gray-200 bg-gray-50 p-5'>
                       <p className='text-sm font-medium text-gray-800'>No upcoming items.</p>
@@ -638,7 +647,7 @@ function AppShell() {
   const { user, isLoading, error: authError } = useAuthContext()
   const { activeWorkspace, activeWorkspaceId, refreshWorkspaces } = useWorkspaceContext()
   const api = useApi()
-  const { state, setState, isExpanded, setIsExpanded, isVisible, setIsVisible, toggleVisibility, sidebarPreferences, collapseSidebar, collapseToRail } = useSidebar()
+  const { state, setState, isExpanded, setIsExpanded, isVisible, setIsVisible, sidebarPreferences, collapseSidebar, collapseToRail } = useSidebar()
   const { openSearch } = useSearch()
   const [uiMode, setUiMode] = useState<'auth' | 'app'>(user ? 'app' : 'auth')
   const [isAuthExiting, setIsAuthExiting] = useState(false)
@@ -654,6 +663,7 @@ function AppShell() {
   const [onboardingError, setOnboardingError] = useState<string | null>(null)
   const handledInviteTokenRef = useRef<string | null>(null)
   const postAuthBootstrapUserRef = useRef<string | null>(null)
+  const ensuredVisibleOnBootRef = useRef(false)
   
   // Initialize workspace for authenticated users
   useWorkspaceInit()
@@ -681,22 +691,6 @@ function AppShell() {
     window.addEventListener('keydown', handleSearchShortcut)
     return () => window.removeEventListener('keydown', handleSearchShortcut)
   }, [isLoading, openSearch, setState, state, user])
-
-  useEffect(() => {
-    const handleSidebarToggleShortcut = (event: KeyboardEvent) => {
-      if (!(event.metaKey || event.ctrlKey)) return
-      if (!event.shiftKey) return
-      if (event.key.toLowerCase() !== 'b') return
-
-      event.preventDefault()
-      if (!user || isLoading) return
-
-      toggleVisibility()
-    }
-
-    window.addEventListener('keydown', handleSidebarToggleShortcut)
-    return () => window.removeEventListener('keydown', handleSidebarToggleShortcut)
-  }, [isLoading, toggleVisibility, user])
 
   useEffect(() => {
     const handleSidebarExpandShortcut = (event: KeyboardEvent) => {
@@ -745,6 +739,52 @@ function AppShell() {
   }, [isExpanded, isLoading, isVisible, setIsExpanded, setState, state, user])
 
   useEffect(() => {
+    const handleModuleNavigation = (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey)) return
+      if (event.shiftKey) return
+      if (!user || isLoading) return
+
+      const key = event.key.toLowerCase()
+      
+      // Module navigation: Cmd+1 to Cmd+5
+      if (key === '1') {
+        event.preventDefault()
+        void window.desktopWindow?.toggleModule('dashboard')
+        return
+      }
+      
+      if (key === '2') {
+        event.preventDefault()
+        void window.desktopWindow?.toggleModule('calendar')
+        return
+      }
+      
+      if (key === '3') {
+        event.preventDefault()
+        void window.desktopWindow?.toggleModule('notes')
+        return
+      }
+      
+      if (key === '4') {
+        event.preventDefault()
+        void window.desktopWindow?.toggleModule('projects')
+        return
+      }
+      
+      if (key === '5') {
+        event.preventDefault()
+        void window.desktopWindow?.toggleModule('settings')
+        return
+      }
+    }
+
+    window.addEventListener('keydown', handleModuleNavigation)
+    return () => {
+      window.removeEventListener('keydown', handleModuleNavigation)
+    }
+  }, [isLoading, user])
+
+  useEffect(() => {
     const handleSidebarVisibilityChanged = (_event: unknown, payload: { isVisible?: boolean }) => {
       if (typeof payload?.isVisible !== 'boolean') return
       setIsVisible(payload.isVisible)
@@ -757,6 +797,28 @@ function AppShell() {
   }, [setIsVisible])
 
   useEffect(() => {
+    const handleTouchBarOpenSearch = () => {
+      if (!user || isLoading) return
+
+      if (state !== 'expanded') {
+        setState('expanded')
+        window.setTimeout(() => {
+          openSearch()
+        }, 220)
+        return
+      }
+
+      openSearch()
+    }
+
+    window.ipcRenderer?.on('touchbar:open-search', handleTouchBarOpenSearch)
+    return () => {
+      window.ipcRenderer?.off('touchbar:open-search', handleTouchBarOpenSearch)
+    }
+  }, [isLoading, openSearch, setState, state, user])
+
+  useEffect(() => {
+    if (isModuleWindow) return
     if (isLoading) return
     window.desktopWindow?.setVisible(isVisible).catch(() => {
       // No-op outside Electron (browser dev mode)
@@ -770,6 +832,26 @@ function AppShell() {
 
     setIsVisible(true)
   }, [isLoading, isVisible, setIsVisible, uiMode])
+
+  useEffect(() => {
+    if (isModuleWindow) return
+    if (isLoading) return
+    if (!user) {
+      ensuredVisibleOnBootRef.current = false
+      return
+    }
+    if (effectiveUiMode !== 'app') return
+    if (postAuthStage !== 'ready') return
+    if (ensuredVisibleOnBootRef.current) return
+
+    ensuredVisibleOnBootRef.current = true
+    // Respect explicit hidden preference (e.g. shortcut toggle) instead of
+    // forcing the sidebar visible again during post-auth boot sync.
+    if (sidebarPreferences.isHidden) return
+    if (!isVisible) {
+      setIsVisible(true)
+    }
+  }, [effectiveUiMode, isLoading, isVisible, postAuthStage, setIsVisible, sidebarPreferences.isHidden, user])
 
   if (isModuleWindow) {
     if (isLoading) {
@@ -798,6 +880,10 @@ function AppShell() {
 
     if (moduleKind === 'settings') {
       return <SettingsWindow />
+    }
+
+    if (moduleKind === 'quick-task' || moduleKind === 'quick-note' || moduleKind === 'quick-event') {
+      return <QuickCaptureWindow kind={moduleKind} />
     }
 
     return (
@@ -925,6 +1011,7 @@ function AppShell() {
   }, [effectiveUiMode, isLoading, user?.id])
 
   useEffect(() => {
+    if (isModuleWindow) return
     if (isLoading) return
     const { opacity: _opacity, ...restPreferences } = sidebarPreferences
     void window.desktopWindow?.applySidebarPreferences(restPreferences).catch(() => {
@@ -949,6 +1036,7 @@ function AppShell() {
   ])
 
   useEffect(() => {
+    if (isModuleWindow) return
     if (isLoading) return
     void window.desktopWindow?.applySidebarPreferences({ opacity: sidebarPreferences.opacity }).catch(() => {
       // No-op outside Electron (browser dev mode)
@@ -956,10 +1044,12 @@ function AppShell() {
   }, [isLoading, sidebarPreferences.opacity])
 
   useEffect(() => {
+    if (isModuleWindow) return
     if (isLoading) return
 
     const isCenteredFlow =
       effectiveUiMode === 'auth' ||
+      postAuthStage === 'idle' ||
       postAuthStage === 'loading' ||
       postAuthStage === 'onboarding'
 
@@ -991,18 +1081,16 @@ function AppShell() {
     return (
       <div className='relative flex h-screen items-center justify-center bg-transparent p-3'>
         <div className='absolute inset-3 rounded-[28px] border border-white/60 bg-[#f5f5f7] shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]' />
-        {!isMacPlatform && (
-          <button
-            type='button'
-            onClick={() => {
-              void window.desktopWindow?.hideTemporary()
-            }}
-            aria-label='Close'
-            className='absolute right-6 top-7 z-20 inline-flex h-8 w-8 items-center justify-center rounded-full border border-black/5 bg-white/60 text-gray-500 transition hover:bg-white/90 hover:text-gray-900'
-          >
-            <X size={16} />
-          </button>
-        )}
+        <button
+          type='button'
+          onClick={() => {
+            void window.desktopWindow?.quitApp()
+          }}
+          aria-label='Close'
+          className='absolute right-6 top-7 z-20 inline-flex h-8 w-8 items-center justify-center rounded-full border border-black/5 bg-white/60 text-gray-500 transition hover:bg-white/90 hover:text-gray-900'
+        >
+          <X size={16} />
+        </button>
         <div
           className={`relative z-10 transform transition-all duration-250 ease-out ${
             isAuthExiting ? 'opacity-0 scale-95 translate-y-2' : 'opacity-100 scale-100 translate-y-0'
@@ -1014,7 +1102,7 @@ function AppShell() {
     )
   }
 
-  if (postAuthStage === 'loading') {
+  if (postAuthStage === 'idle' || postAuthStage === 'loading') {
     return <AuthStatusScreen title='Preparing your workspace' subtitle='Loading your account and workspace context.' />
   }
 
@@ -1023,18 +1111,16 @@ function AppShell() {
     return (
       <div className='relative min-h-screen overflow-hidden bg-transparent p-3 text-gray-900'>
         <div className='absolute inset-3 rounded-[28px] border border-white/60 bg-[#f5f5f7] shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]' />
-        {!isMacPlatform && (
-          <button
-            type='button'
-            onClick={() => {
-              void window.desktopWindow?.hideTemporary()
-            }}
-            aria-label='Close'
-            className='absolute right-6 top-7 z-20 inline-flex h-8 w-8 items-center justify-center rounded-full border border-black/5 bg-white/60 text-gray-500 transition hover:bg-white/90 hover:text-gray-900'
-          >
-            <X size={16} />
-          </button>
-        )}
+        <button
+          type='button'
+          onClick={() => {
+            void window.desktopWindow?.quitApp()
+          }}
+          aria-label='Close'
+          className='absolute right-6 top-7 z-20 inline-flex h-8 w-8 items-center justify-center rounded-full border border-black/5 bg-white/60 text-gray-500 transition hover:bg-white/90 hover:text-gray-900'
+        >
+          <X size={16} />
+        </button>
         <div className='relative z-10 flex min-h-[calc(100vh-1.5rem)] items-center justify-center px-8'>
           <div className='w-full max-w-97.5'>
             <div className='mb-7 text-center'>
@@ -1104,6 +1190,10 @@ function AppShell() {
   }
 
   // Authenticated view - sidebar shell
+  if (postAuthStage !== 'ready') {
+    return <AuthStatusScreen title='Preparing your workspace' subtitle='Loading your account and workspace context.' />
+  }
+
   return (
     <>
       {inviteFlowStatus === 'error' && inviteFlowError && (

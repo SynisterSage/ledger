@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, screen, shell, globalShortcut, systemPreferences } from 'electron'
+import { app, BrowserWindow, ipcMain, screen, shell, globalShortcut, systemPreferences, TouchBar } from 'electron'
 import { execFile, spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { promisify } from 'node:util'
 import { fileURLToPath } from 'node:url'
@@ -273,7 +273,7 @@ type SidebarPreferencesPayload = {
   floatingDockThreshold?: number
   lastState?: 'expanded' | 'collapsed'
 }
-type ModuleWindowKind = 'calendar' | 'notes' | 'projects' | 'dashboard' | 'settings'
+type ModuleWindowKind = 'calendar' | 'notes' | 'projects' | 'dashboard' | 'settings' | 'quick-task' | 'quick-note' | 'quick-event'
 type ModuleFocusPayload = {
   kind: ModuleWindowKind
   focusDate?: string | null
@@ -306,6 +306,9 @@ let sidebarIsVisible = true
 let sidebarAlwaysOnTop = true
 let macAccessibilityPrompted = false
 let lastSidebarToggleAt = 0
+let allLedgerWindowsHidden = false
+let sidebarWasVisibleBeforeHideAll = false
+const moduleKindsVisibleBeforeHideAll = new Set<ModuleWindowKind>()
 
 const WINDOW_MARGIN = 16
 const RAIL_SIZE = 64
@@ -324,6 +327,8 @@ const AUTH_WIDTH = 540
 const AUTH_HEIGHT = 560
 const MODULE_WIDTH = 1180
 const MODULE_HEIGHT = 760
+const QUICK_CAPTURE_WIDTH = 400
+const QUICK_CAPTURE_HEIGHT = 320
 const MODULE_GAP = 12
 
 function lockWindowZoom(win: BrowserWindow) {
@@ -360,18 +365,14 @@ function setWindowButtonVisibility(win: BrowserWindow, visible: boolean) {
 }
 
 function getWindowChromeOptions() {
-  if (process.platform === 'win32') {
+  if (process.platform === 'win32' || process.platform === 'darwin') {
     return {
       frame: false,
       autoHideMenuBar: true,
     }
   }
 
-  return {
-    titleBarStyle: 'hiddenInset' as const,
-    trafficLightPosition: { x: 22, y: 26 },
-    autoHideMenuBar: true,
-  }
+  return { autoHideMenuBar: true }
 }
 
 function getModuleWindowChromeOptions() {
@@ -1393,7 +1394,7 @@ function applySidebarWindowMode(mode: SidebarWindowMode) {
     const bounds = getCenteredBounds(AUTH_WIDTH, AUTH_HEIGHT)
     sidebarWin.setAlwaysOnTop(false)
     sidebarWin.setResizable(false)
-    setWindowButtonVisibility(sidebarWin, true)
+    setWindowButtonVisibility(sidebarWin, false)
     setSidebarBounds(bounds)
     return
   }
@@ -1432,6 +1433,11 @@ function applySidebarOpacity(_opacity: number) {
 function applySidebarVisibility(isVisible: boolean) {
   if (!sidebarWin || sidebarWin.isDestroyed()) return
 
+  if (allLedgerWindowsHidden && isVisible) {
+    allLedgerWindowsHidden = false
+    moduleKindsVisibleBeforeHideAll.clear()
+  }
+
   sidebarIsVisible = isVisible
 
   if (!isVisible) {
@@ -1443,6 +1449,56 @@ function applySidebarVisibility(isVisible: boolean) {
   sidebarWin.show()
   applySidebarWindowMode(currentSidebarMode)
   sidebarWin.webContents.send('sidebar:visibility-changed', { isVisible: true })
+}
+
+function hideAllLedgerWindows() {
+  if (allLedgerWindowsHidden) return
+
+  sidebarWasVisibleBeforeHideAll = Boolean(sidebarWin && !sidebarWin.isDestroyed() && sidebarWin.isVisible())
+  moduleKindsVisibleBeforeHideAll.clear()
+
+  for (const [kind, moduleWin] of moduleWins.entries()) {
+    if (moduleWin.isDestroyed()) continue
+    if (moduleWin.isVisible() && !moduleWin.isMinimized()) {
+      moduleKindsVisibleBeforeHideAll.add(kind)
+      moduleWin.hide()
+    }
+  }
+
+  if (sidebarWin && !sidebarWin.isDestroyed() && sidebarWin.isVisible()) {
+    sidebarWin.hide()
+    sidebarWin.webContents.send('sidebar:visibility-changed', { isVisible: false })
+  }
+
+  allLedgerWindowsHidden = true
+}
+
+function restoreAllLedgerWindows() {
+  if (!allLedgerWindowsHidden) return
+
+  if (sidebarWasVisibleBeforeHideAll && sidebarWin && !sidebarWin.isDestroyed()) {
+    sidebarWin.show()
+    applySidebarWindowMode(currentSidebarMode)
+    sidebarWin.webContents.send('sidebar:visibility-changed', { isVisible: true })
+  }
+
+  for (const kind of moduleKindsVisibleBeforeHideAll) {
+    const moduleWin = moduleWins.get(kind)
+    if (!moduleWin || moduleWin.isDestroyed()) continue
+    if (moduleWin.isMinimized()) moduleWin.restore()
+    moduleWin.show()
+  }
+
+  moduleKindsVisibleBeforeHideAll.clear()
+  allLedgerWindowsHidden = false
+}
+
+function toggleAllLedgerWindowsVisibility() {
+  if (allLedgerWindowsHidden) {
+    restoreAllLedgerWindows()
+    return
+  }
+  hideAllLedgerWindows()
 }
 
 function getRendererUrl(search: string) {
@@ -1468,6 +1524,9 @@ function createSidebarWindow() {
 
   sidebarWin.setMenuBarVisibility(false)
   sidebarWin.setMenu(null)
+  // Hide native window buttons immediately to prevent startup flash before
+  // renderer-side mode synchronization runs.
+  setWindowButtonVisibility(sidebarWin, false)
 
   // Keep sidebar translucency pure RGBA/CSS-only to avoid platform compositor blur artifacts.
 
@@ -1504,6 +1563,25 @@ function createSidebarWindow() {
     } else {
       sidebarWin.loadFile(path.join(RENDERER_DIST, 'index.html'))
     }
+    // Diagnostics: listen for renderer load failures and crashes
+    sidebarWin.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL) => {
+      console.error('[electron][sidebar] did-fail-load', { errorCode, errorDescription, validatedURL })
+    })
+
+    sidebarWin.webContents.on('did-finish-load', () => {
+      try {
+        console.log('[electron][sidebar] did-finish-load')
+        if (sidebarWin && !sidebarWin.isDestroyed()) {
+          sidebarWin.webContents.send('app:did-finish-load')
+        }
+      } catch (err) {
+        console.error('[electron][sidebar] did-finish-load handler error', err)
+      }
+    })
+
+    sidebarWin.webContents.on('render-process-gone', (_event, details) => {
+      console.error('[electron][sidebar] render-process-gone', details)
+    })
   } catch (err) {
     console.error('[electron] Error while loading sidebar renderer:', err)
   }
@@ -1548,10 +1626,27 @@ function openModuleWindow(
     return
   }
 
-  const initialBounds = getModuleBoundsNextToSidebar()
+  // Quick capture modules use smaller dimensions
+  const isQuickCapture = kind === 'quick-task' || kind === 'quick-note' || kind === 'quick-event'
+  let initialBounds = getModuleBoundsNextToSidebar()
+  
+  if (isQuickCapture) {
+    const displayForModule = screen.getDisplayMatching(initialBounds).workArea
+    initialBounds = {
+      x: displayForModule.x + displayForModule.width - QUICK_CAPTURE_WIDTH - WINDOW_MARGIN,
+      y: displayForModule.y + displayForModule.height - QUICK_CAPTURE_HEIGHT - WINDOW_MARGIN,
+      width: QUICK_CAPTURE_WIDTH,
+      height: QUICK_CAPTURE_HEIGHT,
+    }
+  }
+
   const displayForModule = screen.getDisplayMatching(initialBounds).workArea
-  const dynamicMinWidth = Math.min(1080, Math.max(860, displayForModule.width - WINDOW_MARGIN * 2))
-  const dynamicMinHeight = Math.min(680, Math.max(620, displayForModule.height - WINDOW_MARGIN * 2))
+  const dynamicMinWidth = isQuickCapture 
+    ? QUICK_CAPTURE_WIDTH 
+    : Math.min(1080, Math.max(860, displayForModule.width - WINDOW_MARGIN * 2))
+  const dynamicMinHeight = isQuickCapture 
+    ? QUICK_CAPTURE_HEIGHT 
+    : Math.min(680, Math.max(620, displayForModule.height - WINDOW_MARGIN * 2))
 
   const moduleWin = new BrowserWindow({
     ...initialBounds,
@@ -1560,9 +1655,9 @@ function openModuleWindow(
     ...getModuleWindowChromeOptions(),
     minWidth: Math.min(dynamicMinWidth, initialBounds.width),
     minHeight: Math.min(dynamicMinHeight, initialBounds.height),
-    resizable: true,
-    minimizable: true,
-    maximizable: true,
+    resizable: !isQuickCapture,
+    minimizable: !isQuickCapture,
+    maximizable: !isQuickCapture,
     webPreferences: {
       preload: path.join(__dirname, 'preload.mjs'),
     },
@@ -1601,7 +1696,11 @@ function openModuleWindow(
   const focusProjectQuery = focusProjectId ? `&focusProjectId=${encodeURIComponent(focusProjectId)}` : ''
   const focusNoteQuery = focusNoteId ? `&focusNoteId=${encodeURIComponent(focusNoteId)}` : ''
   const focusTaskQuery = focusTaskId ? `&focusTaskId=${encodeURIComponent(focusTaskId)}` : ''
-  moduleWin.webContents.once('did-finish-load', () => sendModuleFocus(kind, focusDate, focusProjectId, focusNoteId, focusTaskId))
+  moduleWin.webContents.once('did-finish-load', () => {
+    moduleWin.show()
+    moduleWin.focus()
+    sendModuleFocus(kind, focusDate, focusProjectId, focusNoteId, focusTaskId)
+  })
   try {
     const moduleUrl = getRendererUrl(`?window=module&module=${kind}${focusDateQuery}${focusProjectQuery}${focusNoteQuery}${focusTaskQuery}`)
     moduleWin.loadURL(moduleUrl)
@@ -1621,6 +1720,8 @@ app.on('will-quit', () => {
 })
 
 app.on('activate', () => {
+  if (allLedgerWindowsHidden) return
+
   if (!sidebarWin || sidebarWin.isDestroyed()) {
     createSidebarWindow()
     return
@@ -1646,6 +1747,10 @@ ipcMain.handle('window:set-visible', (_event, isVisible: boolean) => {
 ipcMain.handle('window:hide-temporary', () => {
   if (!sidebarWin || sidebarWin.isDestroyed()) return
   sidebarWin.hide()
+})
+
+ipcMain.handle('window:quit-app', () => {
+  app.quit()
 })
 
 ipcMain.handle('window:set-always-on-top', (_event, alwaysOnTop: boolean) => {
@@ -1827,8 +1932,57 @@ ipcMain.handle('window:open-external', async (_event, url: string) => {
   await shell.openExternal(url)
 })
 
+// Touch Bar setup for macOS
+function setupTouchBar() {
+  if (process.platform !== 'darwin' || !sidebarWin || sidebarWin.isDestroyed()) return
+
+  const { TouchBarButton, TouchBarSpacer } = TouchBar
+
+  const touchBar = new TouchBar({
+    items: [
+      new TouchBarButton({
+        label: '+ Task',
+        backgroundColor: '#FF5F40',
+        click: () => {
+          console.log('[touchbar] Opening quick-task')
+          openModuleWindow('quick-task')
+        },
+      }),
+      new TouchBarButton({
+        label: '+ Note',
+        backgroundColor: '#FF5F40',
+        click: () => {
+          console.log('[touchbar] Opening quick-note')
+          openModuleWindow('quick-note')
+        },
+      }),
+      new TouchBarButton({
+        label: '+ Event',
+        backgroundColor: '#FF5F40',
+        click: () => {
+          console.log('[touchbar] Opening quick-event')
+          openModuleWindow('quick-event')
+        },
+      }),
+      new TouchBarSpacer({ size: 'small' }),
+      new TouchBarButton({
+        label: 'Search',
+        backgroundColor: '#FF5F40',
+        click: () => {
+          sidebarWin?.webContents.send('touchbar:open-search')
+        },
+      }),
+    ],
+  })
+
+  sidebarWin.setTouchBar(touchBar)
+}
+
 app.whenReady().then(() => {
   createSidebarWindow()
+
+  // Setup Touch Bar for macOS
+  setTimeout(() => setupTouchBar(), 500)
 
   const toggleSidebarShortcut = process.platform === 'darwin' ? 'Cmd+Shift+B' : 'Ctrl+Shift+B'
   const registered = globalShortcut.register(toggleSidebarShortcut, () => {
@@ -1841,5 +1995,17 @@ app.whenReady().then(() => {
 
   if (!registered) {
     console.warn(`[electron] Failed to register sidebar shortcut: ${toggleSidebarShortcut}`)
+  }
+
+  const toggleAllWindowsShortcut = process.platform === 'darwin' ? 'Cmd+Shift+L' : 'Ctrl+Shift+L'
+  const allWindowsRegistered = globalShortcut.register(toggleAllWindowsShortcut, () => {
+    const now = Date.now()
+    if (now - lastSidebarToggleAt < 250) return
+    lastSidebarToggleAt = now
+    toggleAllLedgerWindowsVisibility()
+  })
+
+  if (!allWindowsRegistered) {
+    console.warn(`[electron] Failed to register all windows shortcut: ${toggleAllWindowsShortcut}`)
   }
 })

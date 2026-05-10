@@ -11,7 +11,7 @@ import { modulePaneSizing, clampPaneWidth, getPaneWidthForViewport } from '../..
 import { useApi } from '../../hooks/useApi'
 import { useWorkspaceContext } from '../../context/WorkspaceContext'
 import { ModuleWindowHeader } from '../Common/ModuleWindowHeader'
-import { SkeletonLoader, SkeletonList } from '../Common/Skeleton'
+import { SkeletonLoader, SkeletonList, SkeletonNoteCard } from '../Common/Skeleton'
 import { MindMapEditor } from './MindMapEditor'
 import { RichTextEditor } from './RichTextEditor'
 import { useViewportWidth } from '../../hooks/useViewportWidth'
@@ -629,7 +629,11 @@ export const NotesWindow = () => {
 
           <div className={`flex-1 overflow-auto ${isCompactLayout ? 'p-2.5' : 'p-3'} space-y-2`}>
             {isLoading ? (
-              <SkeletonList count={4} />
+              <div className="space-y-2">
+                {Array.from({ length: 4 }).map((_, i) => (
+                  <SkeletonNoteCard key={i} />
+                ))}
+              </div>
             ) : visibleNotes.length === 0 ? (
               <div className="rounded-2xl border border-dashed border-gray-200 bg-gray-50 p-4 text-center">
                 <p className="text-sm font-medium text-gray-800">
