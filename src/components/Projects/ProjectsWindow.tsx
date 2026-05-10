@@ -1,6 +1,7 @@
 import {
   ChevronDown,
   Clock3,
+  FileText,
   Folder,
   Plus,
   Search,
@@ -34,6 +35,7 @@ type TaskRow = {
   project_id: string | null
   title: string
   description: string | null
+  notes: string | null
   due_date: string | null
   due_time: string | null
   status: 'todo' | 'in_progress' | 'completed' | 'cancelled' | string
@@ -43,15 +45,15 @@ type TaskRow = {
   updated_at: string
 }
 
-type ProjectStatusFilter = 'active' | 'all' | 'paused' | 'completed'
+type ProjectStatusFilter = 'active' | 'paused' | 'completed'
 type ProjectSemanticStatus = 'not_started' | 'in_progress' | 'paused' | 'completed'
 type ProjectContextMenuState = { x: number; y: number; projectId: string }
 type TaskContextMenuState = { x: number; y: number; taskId: string }
 
 const LEFT_PANE_MIN_WIDTH = 260
 const LEFT_PANE_MAX_WIDTH = 400
-const RIGHT_PANE_MIN_WIDTH = 290
-const RIGHT_PANE_MAX_WIDTH = 420
+const RIGHT_PANE_MIN_WIDTH = 260
+const RIGHT_PANE_MAX_WIDTH = 340
 const AUTO_SAVE_DELAY_MS = 900
 
 const projectStatusLabels: Record<ProjectSemanticStatus, string> = {
@@ -75,14 +77,7 @@ const projectStatusCandidates: Record<ProjectSemanticStatus, string[]> = {
   completed: ['Completed', 'completed', 'done'],
 }
 
-const statusOrder: ProjectStatusFilter[] = ['active', 'paused', 'completed', 'all']
-
-const taskStatusLabels: Record<string, string> = {
-  todo: 'To do',
-  in_progress: 'Doing',
-  completed: 'Done',
-  cancelled: 'Cancelled',
-}
+const statusOrder: ProjectStatusFilter[] = ['active', 'paused', 'completed']
 
 const taskPriorityLabels: Record<string, string> = {
   low: 'Low',
@@ -98,7 +93,16 @@ const taskPriorityTone: Record<string, string> = {
   urgent: 'bg-red-50 text-red-700',
 }
 
-const colorOptions = ['#007AFF', '#0EA5E9', '#8B5CF6', '#F59E0B', '#EF4444', '#10B981']
+const projectColorOptions = [
+  '#007AFF',
+  '#FF5F40',
+  '#10B981',
+  '#F59E0B',
+  '#8B5CF6',
+  '#EF4444',
+  '#0EA5E9',
+  '#111827',
+]
 
 const normalizeProjectNameKey = (value: unknown) => String(value ?? '').trim().toLowerCase()
 
@@ -130,6 +134,34 @@ const formatLongDate = (value: string | null) => {
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return 'Not set'
   return date.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })
+}
+
+const formatProjectDateRange = (startDate: string | null, endDate: string | null) => {
+  const start = formatLongDate(startDate)
+  const end = formatLongDate(endDate)
+  const hasStart = start !== 'Not set'
+  const hasEnd = end !== 'Not set'
+  if (!hasStart && !hasEnd) return null
+  if (hasStart && hasEnd) return `${start} → ${end}`
+  return hasStart ? start : end
+}
+
+const getProgressStateColor = (value: number) => {
+  const percent = Math.max(0, Math.min(100, value))
+  if (percent < 35) return '#FF5F40'
+  if (percent < 70) return '#F59E0B'
+  return '#22C55E'
+}
+
+const CONTEXT_MENU_GUTTER = 8
+
+const getClampedMenuPosition = (x: number, y: number, width: number, height: number) => {
+  const maxX = Math.max(CONTEXT_MENU_GUTTER, window.innerWidth - width - CONTEXT_MENU_GUTTER)
+  const maxY = Math.max(CONTEXT_MENU_GUTTER, window.innerHeight - height - CONTEXT_MENU_GUTTER)
+  return {
+    x: Math.min(Math.max(x, CONTEXT_MENU_GUTTER), maxX),
+    y: Math.min(Math.max(y, CONTEXT_MENU_GUTTER), maxY),
+  }
 }
 
 const formatTime = (value: string | null) => {
@@ -172,8 +204,6 @@ export const ProjectsWindow = () => {
   const viewportWidth = useViewportWidth()
   const initialFocusProjectId = new URLSearchParams(window.location.search).get('focusProjectId')
   const initialFocusTaskId = new URLSearchParams(window.location.search).get('focusTaskId')
-  const titleRef = useRef<HTMLInputElement | null>(null)
-  const descriptionRef = useRef<HTMLTextAreaElement | null>(null)
   const autosaveTimerRef = useRef<number | null>(null)
   const isDirtyRef = useRef(false)
   const isCompletenessDraggingRef = useRef(false)
@@ -220,6 +250,10 @@ export const ProjectsWindow = () => {
   const [newTaskDueTime, setNewTaskDueTime] = useState('')
   const [isCreatingTask, setIsCreatingTask] = useState(false)
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null)
+  const [isTaskComposerOpen, setIsTaskComposerOpen] = useState(false)
+  const [taskNotesTaskId, setTaskNotesTaskId] = useState<string | null>(null)
+  const [taskNotesDraft, setTaskNotesDraft] = useState('')
+  const [isSavingTaskNotes, setIsSavingTaskNotes] = useState(false)
 
   const selectedProject = useMemo(
     () => projects.find((project) => project.id === selectedProjectId) ?? null,
@@ -239,7 +273,6 @@ export const ProjectsWindow = () => {
           .includes(term)
 
       if (!matchesSearch) return false
-      if (statusFilter === 'all') return true
       if (statusFilter === 'active') return semantic !== 'completed' && semantic !== 'paused'
       return semantic === statusFilter
     })
@@ -256,20 +289,27 @@ export const ProjectsWindow = () => {
       })
   }, [selectedProjectId, tasks])
 
-  const projectCounts = useMemo(() => {
-    const active = projects.filter((project) => parseProjectStatus(String(project.status)) !== 'completed').length
-    const completed = projects.filter((project) => parseProjectStatus(String(project.status)) === 'completed').length
-    const paused = projects.filter((project) => parseProjectStatus(String(project.status)) === 'paused').length
-    return { active, completed, paused }
-  }, [projects])
-
   const taskCounts = useMemo(() => {
     const active = selectedProjectTasks.filter((task) => task.status !== 'completed' && task.status !== 'cancelled').length
     const completed = selectedProjectTasks.filter((task) => task.status === 'completed').length
     return { active, completed, total: selectedProjectTasks.length }
   }, [selectedProjectTasks])
 
-  const isCompactRightPane = viewportWidth < modulePaneSizing.projects.right.compactBreakpoint
+  const projectMenuPosition = useMemo(() => {
+    if (!projectContextMenu) return null
+    return getClampedMenuPosition(projectContextMenu.x, projectContextMenu.y, 208, 304)
+  }, [projectContextMenu])
+
+  const taskMenuPosition = useMemo(() => {
+    if (!taskContextMenu) return null
+    return getClampedMenuPosition(taskContextMenu.x, taskContextMenu.y, 208, 220)
+  }, [taskContextMenu])
+
+  const isCompactLayout = viewportWidth < modulePaneSizing.projects.right.compactBreakpoint
+  const taskNotesTask = useMemo(
+    () => tasks.find((task) => task.id === taskNotesTaskId) ?? null,
+    [taskNotesTaskId, tasks]
+  )
 
   const syncDraftFromProject = useCallback((project: ProjectRow) => {
     setProjectDraft({
@@ -494,6 +534,22 @@ export const ProjectsWindow = () => {
     [api, selectedProjectId, syncDraftFromProject]
   )
 
+  const updateProjectColor = useCallback(
+    async (projectId: string, color: string) => {
+      try {
+        const data = await api.updateProject(projectId, { color })
+        const updated = data as ProjectRow
+        setProjects((prev) => prev.map((project) => (project.id === updated.id ? updated : project)))
+        if (selectedProjectId === projectId) {
+          syncDraftFromProject(updated)
+        }
+      } catch (updateError) {
+        setError(updateError instanceof Error ? updateError.message : 'Could not update project color.')
+      }
+    },
+    [api, selectedProjectId, syncDraftFromProject]
+  )
+
   const createTask = useCallback(async () => {
     if (!selectedProjectId) return
     const title = newTaskTitle.trim()
@@ -557,6 +613,28 @@ export const ProjectsWindow = () => {
     },
     [api, selectedTaskId]
   )
+
+  const openTaskNotes = useCallback((task: TaskRow) => {
+    setTaskNotesTaskId(task.id)
+    setTaskNotesDraft(task.notes ?? '')
+  }, [])
+
+  const saveTaskNotes = useCallback(async () => {
+    if (!taskNotesTaskId) return
+    setIsSavingTaskNotes(true)
+    setTaskError(null)
+    try {
+      const data = await api.updateTask(taskNotesTaskId, { notes: taskNotesDraft.trim() || null })
+      const updated = data as TaskRow
+      setTasks((prev) => prev.map((task) => (task.id === updated.id ? updated : task)))
+      setTaskNotesTaskId(null)
+      setTaskNotesDraft('')
+    } catch (error) {
+      setTaskError(error instanceof Error ? error.message : 'Could not save task notes.')
+    } finally {
+      setIsSavingTaskNotes(false)
+    }
+  }, [api, taskNotesDraft, taskNotesTaskId])
 
   useEffect(() => {
     void loadProjects()
@@ -685,17 +763,21 @@ export const ProjectsWindow = () => {
     if (!projectContextMenu) return
 
     const closeMenu = () => setProjectContextMenu(null)
+    const onPointerDown = (event: MouseEvent) => {
+      if (projectContextRef.current?.contains(event.target as Node)) return
+      closeMenu()
+    }
     const onEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') closeMenu()
     }
 
-    window.addEventListener('mousedown', closeMenu)
+    window.addEventListener('mousedown', onPointerDown)
     window.addEventListener('scroll', closeMenu, true)
     window.addEventListener('resize', closeMenu)
     window.addEventListener('keydown', onEscape)
 
     return () => {
-      window.removeEventListener('mousedown', closeMenu)
+      window.removeEventListener('mousedown', onPointerDown)
       window.removeEventListener('scroll', closeMenu, true)
       window.removeEventListener('resize', closeMenu)
       window.removeEventListener('keydown', onEscape)
@@ -706,17 +788,21 @@ export const ProjectsWindow = () => {
     if (!taskContextMenu) return
 
     const closeMenu = () => setTaskContextMenu(null)
+    const onPointerDown = (event: MouseEvent) => {
+      if (taskContextRef.current?.contains(event.target as Node)) return
+      closeMenu()
+    }
     const onEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') closeMenu()
     }
 
-    window.addEventListener('mousedown', closeMenu)
+    window.addEventListener('mousedown', onPointerDown)
     window.addEventListener('scroll', closeMenu, true)
     window.addEventListener('resize', closeMenu)
     window.addEventListener('keydown', onEscape)
 
     return () => {
-      window.removeEventListener('mousedown', closeMenu)
+      window.removeEventListener('mousedown', onPointerDown)
       window.removeEventListener('scroll', closeMenu, true)
       window.removeEventListener('resize', closeMenu)
       window.removeEventListener('keydown', onEscape)
@@ -730,39 +816,49 @@ export const ProjectsWindow = () => {
         subtitle="Simple outcomes, clear next steps"
         icon={<Folder size={18} className="text-blue-600" />}
         closeLabel="Close projects"
+        minimizeLabel="Minimize projects"
+        onMinimize={() => {
+          void window.desktopWindow?.minimizeModule('projects')
+        }}
+        fullscreenLabel="Fullscreen projects"
+        onToggleFullscreen={() => {
+          void window.desktopWindow?.toggleModuleFullscreen('projects')
+        }}
         onClose={() => {
           void window.desktopWindow?.closeModule('projects')
         }}
         actions={
-          <div className="flex items-center gap-1 rounded-full border border-gray-200 bg-gray-50 p-1 shadow-sm">
-            <button
-              onClick={() => {
-                if (isLeftPaneCollapsed && isRightPaneCollapsed) {
-                  setIsLeftPaneCollapsed(false)
-                  setIsRightPaneCollapsed(false)
-                } else {
-                  setIsLeftPaneCollapsed(true)
-                  setIsRightPaneCollapsed(true)
-                }
-              }}
-              className="h-8 px-3 rounded-full bg-white border border-gray-200 hover:bg-gray-100 text-gray-700 text-xs font-semibold inline-flex items-center justify-center leading-none"
-              title={isLeftPaneCollapsed && isRightPaneCollapsed ? 'Show panels' : 'Hide panels'}
-            >
-              {isLeftPaneCollapsed && isRightPaneCollapsed ? 'Show panels' : 'Hide panels'}
-            </button>
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1 rounded-full border border-gray-200 bg-gray-50 p-1 shadow-sm">
+              <button
+                onClick={() => {
+                  if (isLeftPaneCollapsed && isRightPaneCollapsed) {
+                    setIsLeftPaneCollapsed(false)
+                    setIsRightPaneCollapsed(false)
+                  } else {
+                    setIsLeftPaneCollapsed(true)
+                    setIsRightPaneCollapsed(true)
+                  }
+                }}
+                className="h-8 px-3 rounded-full bg-white border border-gray-200 hover:bg-gray-100 text-gray-700 text-xs font-semibold inline-flex items-center justify-center leading-none"
+                title={isLeftPaneCollapsed && isRightPaneCollapsed ? 'Show panels' : 'Hide panels'}
+              >
+                {isLeftPaneCollapsed && isRightPaneCollapsed ? 'Show panels' : 'Hide panels'}
+              </button>
+              <button
+                onClick={() => setIsCreatingProject(!isCreatingProject)}
+                className="h-8 px-3 rounded-full bg-white border border-gray-200 hover:bg-gray-100 text-gray-700 text-xs font-semibold inline-flex items-center justify-center leading-none"
+              >
+                <Plus size={13} />
+                {isCreatingProject ? 'Cancel' : 'New project'}
+              </button>
+            </div>
             <button
               onClick={() => void loadProjects()}
-              className="h-8 w-8 rounded-full hover:bg-white text-gray-600 flex items-center justify-center"
+              className="h-8 w-8 rounded-full border border-gray-200 bg-white hover:bg-gray-100 text-gray-600 flex items-center justify-center shadow-sm"
               title="Refresh projects"
             >
               <Clock3 size={15} />
-            </button>
-            <button
-              onClick={() => setIsCreatingProject(!isCreatingProject)}
-              className="h-8 px-3 rounded-full bg-white border border-gray-200 hover:bg-gray-100 text-gray-700 text-xs font-semibold inline-flex items-center justify-center leading-none"
-            >
-              <Plus size={13} />
-              {isCreatingProject ? 'Cancel' : 'New project'}
             </button>
           </div>
         }
@@ -774,7 +870,7 @@ export const ProjectsWindow = () => {
         {!isLeftPaneCollapsed && (
           <>
             <aside className="border-r border-gray-200 bg-white flex flex-col overflow-hidden shrink-0" style={{ width: `${leftPaneWidth}px` }}>
-              <div className={`${isCompactRightPane ? 'p-3' : 'p-4'} border-b border-gray-100`}>
+              <div className={`${isCompactLayout ? 'p-3' : 'p-4'} border-b border-gray-100`}>
                 <div className="flex items-center justify-between mb-3">
                   <div>
                     <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Library</p>
@@ -835,7 +931,7 @@ export const ProjectsWindow = () => {
                 )}
               </div>
 
-              <div className={`flex-1 overflow-auto ${isCompactRightPane ? 'p-2.5' : 'p-3'} space-y-2`}>
+              <div className={`flex-1 overflow-auto ${isCompactLayout ? 'p-2.5' : 'p-3'} space-y-2`}>
                 {isLoadingProjects ? (
                   <SkeletonList count={3} />
                 ) : visibleProjects.length === 0 ? (
@@ -847,6 +943,8 @@ export const ProjectsWindow = () => {
                   visibleProjects.map((project) => {
                     const semantic = parseProjectStatus(String(project.status))
                     const active = selectedProjectId === project.id
+                    const projectDateRange = formatProjectDateRange(project.start_date, project.end_date)
+                    const progressColor = getProgressStateColor(project.completeness)
 
                     return (
                       <button
@@ -864,7 +962,13 @@ export const ProjectsWindow = () => {
                       >
                         <div className="flex items-start justify-between gap-3">
                           <div className="min-w-0">
-                            <p className="text-sm font-semibold text-gray-900 truncate">{project.name}</p>
+                            <div className="flex items-center gap-2">
+                              <span
+                                className="h-2 w-2 shrink-0 rounded-full border border-black/5"
+                                style={{ backgroundColor: project.color || '#007AFF' }}
+                              />
+                              <p className="text-sm font-semibold text-gray-900 truncate">{project.name}</p>
+                            </div>
                             <p className="mt-1 text-[11px] text-gray-500">{formatShortDate(project.end_date || project.start_date || project.created_at)}</p>
                           </div>
                           <span className={`shrink-0 rounded-full border px-2 py-1 text-[10px] font-medium ${projectStatusTone[semantic]}`}>
@@ -872,11 +976,11 @@ export const ProjectsWindow = () => {
                           </span>
                         </div>
                         <div className="mt-3 h-2 rounded-full bg-gray-200 overflow-hidden">
-                          <div className="h-full rounded-full" style={{ width: `${Math.max(0, Math.min(100, project.completeness))}%`, backgroundColor: project.color }} />
+                          <div className="h-full rounded-full" style={{ width: `${Math.max(0, Math.min(100, project.completeness))}%`, backgroundColor: progressColor }} />
                         </div>
                         <div className="mt-2 flex items-center justify-between gap-2 text-[10px] text-gray-500">
                           <span>{project.completeness}% complete</span>
-                          <span>{formatLongDate(project.start_date)} → {formatLongDate(project.end_date)}</span>
+                          {projectDateRange ? <span>{projectDateRange}</span> : null}
                         </div>
                       </button>
                     )
@@ -896,135 +1000,91 @@ export const ProjectsWindow = () => {
         )}
 
         <main className="flex-1 overflow-hidden bg-[#f5f7fb]">
-          <div className={`h-full overflow-auto ${isCompactRightPane ? 'p-4' : 'p-5'}`}>
+          <div className={`h-full overflow-auto ${isCompactLayout ? 'p-4' : 'p-5'}`}>
             {selectedProject ? (
-              <div className="mx-auto max-w-7xl grid gap-5 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)]">
-                <section className="min-w-0 overflow-hidden rounded-3xl border border-gray-200 bg-white shadow-sm">
-                  <div className="border-b border-gray-100 px-6 py-5 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+              <div className="mx-auto max-w-4xl space-y-4">
+                <section className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <p className="text-xs uppercase tracking-[0.2em] text-gray-500">Project</p>
-                      <h3 className="mt-1 text-2xl font-semibold tracking-tight text-gray-900">Project detail</h3>
-                      <p className="mt-2 text-sm text-gray-500">Keep the plan lean. Update the brief, target dates, and status in one place.</p>
+                      <div className="flex items-center gap-2">
+                        <h2 className="truncate text-3xl font-semibold tracking-tight text-gray-900">{projectDraft.name}</h2>
+                        <span className={`shrink-0 rounded-full border px-2.5 py-1 text-xs font-medium ${projectStatusTone[projectDraft.status]}`}>
+                          {projectStatusLabels[projectDraft.status]}
+                        </span>
+                      </div>
+                      <p className="mt-1 text-xs text-gray-500">
+                        {isSavingProject ? 'Saving…' : isDirtyRef.current ? 'Unsaved changes' : 'Saved'}
+                      </p>
                     </div>
-                    <div className="flex items-center gap-2 text-xs text-gray-500 shrink-0">
-                      {isSavingProject ? 'Saving...' : isDirtyRef.current ? 'Unsaved changes' : 'Saved'}
+                    <div className="relative shrink-0">
+                      <select
+                        value={projectDraft.status}
+                        onChange={(e) => void updateProjectStatus(selectedProject.id, e.target.value as ProjectSemanticStatus)}
+                        className="h-9 appearance-none rounded-xl border border-gray-200 bg-white py-0 pl-3 pr-8 text-sm font-medium text-gray-800 outline-none focus:border-gray-300"
+                      >
+                        {(Object.keys(projectStatusLabels) as ProjectSemanticStatus[]).map((status) => (
+                          <option key={status} value={status}>{projectStatusLabels[status]}</option>
+                        ))}
+                      </select>
+                      <ChevronDown
+                        size={14}
+                        className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500"
+                      />
                     </div>
                   </div>
-
-                  <div className="grid gap-0 xl:grid-cols-[1fr]">
-                    <div className="min-w-0 p-6 space-y-5">
-                      <div>
-                        <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-2">Project name</label>
-                        <input
-                          ref={titleRef}
-                          value={projectDraft.name}
-                          onChange={(e) => updateProjectDraft({ name: e.target.value })}
-                          placeholder="Project title"
-                          className="w-full rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3 text-lg font-semibold text-gray-900 outline-none transition focus:border-gray-300 focus:ring-4 focus:ring-gray-100"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-2">Project brief</label>
-                        <textarea
-                          ref={descriptionRef}
-                          value={projectDraft.description}
-                          onChange={(e) => updateProjectDraft({ description: e.target.value })}
-                          placeholder="What are you trying to finish? What is the next move?"
-                          className="min-h-32 w-full rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm leading-6 text-gray-900 outline-none transition focus:border-gray-300 focus:ring-4 focus:ring-gray-100"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-2">Status</label>
-                        <div className="flex flex-wrap gap-2">
-                          {(Object.keys(projectStatusLabels) as ProjectSemanticStatus[]).map((status) => (
-                            <button
-                              key={status}
-                              onClick={() => void updateProjectStatus(selectedProject.id, status)}
-                              className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
-                                projectDraft.status === status
-                                  ? 'border-gray-900 bg-gray-900 text-white'
-                                  : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
-                              }`}
-                            >
-                              {projectStatusLabels[status]}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-
-                      <div>
-                        <div className="flex items-center justify-between gap-3 mb-2">
-                          <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500">Progress</label>
-                          <span className="text-xs text-gray-600">{projectDraft.completeness}%</span>
-                        </div>
-                        <input
-                          type="range"
-                          min="0"
-                          max="100"
-                          value={projectDraft.completeness}
-                          onPointerDown={() => {
-                            isCompletenessDraggingRef.current = true
-                            if (autosaveTimerRef.current) {
-                              window.clearTimeout(autosaveTimerRef.current)
-                            }
-                          }}
-                          onChange={(e) => updateProjectDraft({ completeness: Number(e.target.value) })}
-                          onPointerUp={() => {
-                            isCompletenessDraggingRef.current = false
-                            void flushProjectDraft()
-                          }}
-                          onPointerCancel={() => {
-                            isCompletenessDraggingRef.current = false
-                            void flushProjectDraft()
-                          }}
-                          onBlur={() => {
-                            isCompletenessDraggingRef.current = false
-                            void flushProjectDraft()
-                          }}
-                          className="w-full accent-gray-900"
-                        />
-                      </div>
-
-                      <div className="grid gap-4 sm:grid-cols-2">
-                        <div>
-                          <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-2">Start date</label>
-                          <input
-                            type="date"
-                            value={projectDraft.startDate}
-                            onChange={(e) => updateProjectDraft({ startDate: e.target.value })}
-                            className="w-full rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-900 outline-none transition focus:border-gray-300 focus:ring-4 focus:ring-gray-100"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-2">Target date</label>
-                          <input
-                            type="date"
-                            value={projectDraft.endDate}
-                            onChange={(e) => updateProjectDraft({ endDate: e.target.value })}
-                            className="w-full rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-900 outline-none transition focus:border-gray-300 focus:ring-4 focus:ring-gray-100"
-                          />
-                        </div>
-                      </div>
-
-                      <div>
-                        <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-2">Color</label>
-                        <div className="flex flex-wrap gap-2">
-                          {colorOptions.map((color) => (
-                            <button
-                              key={color}
-                              onClick={() => updateProjectDraft({ color })}
-                              className={`h-9 w-9 rounded-full border-2 transition ${
-                                projectDraft.color === color ? 'border-gray-900 scale-105' : 'border-transparent hover:scale-105'
-                              }`}
-                              style={{ backgroundColor: color }}
-                              title={color}
-                            />
-                          ))}
-                        </div>
-                      </div>
+                  <div className="mt-5 space-y-2">
+                    <div className="flex items-center justify-end">
+                      <span className="text-sm font-semibold text-gray-900">{projectDraft.completeness}%</span>
                     </div>
+                    <input
+                      type="range"
+                      min="0"
+                      max="100"
+                      value={projectDraft.completeness}
+                      onPointerDown={() => {
+                        isCompletenessDraggingRef.current = true
+                        if (autosaveTimerRef.current) window.clearTimeout(autosaveTimerRef.current)
+                      }}
+                      onChange={(e) => updateProjectDraft({ completeness: Number(e.target.value) })}
+                      onPointerUp={() => {
+                        isCompletenessDraggingRef.current = false
+                        void flushProjectDraft()
+                      }}
+                      onPointerCancel={() => {
+                        isCompletenessDraggingRef.current = false
+                        void flushProjectDraft()
+                      }}
+                      onBlur={() => {
+                        isCompletenessDraggingRef.current = false
+                        void flushProjectDraft()
+                      }}
+                      style={{ accentColor: getProgressStateColor(projectDraft.completeness) }}
+                      className="w-full"
+                    />
+                  </div>
+                </section>
+
+                <section className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-gray-500">Timeline</p>
+                  <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                    <label className="text-xs text-gray-600">
+                      <span className="mb-1 block">Start</span>
+                      <input
+                        type="date"
+                        value={projectDraft.startDate}
+                        onChange={(e) => updateProjectDraft({ startDate: e.target.value })}
+                        className="h-10 w-full rounded-xl border border-gray-200 bg-gray-50 px-3 text-sm text-gray-900 outline-none focus:border-gray-300"
+                      />
+                    </label>
+                    <label className="text-xs text-gray-600">
+                      <span className="mb-1 block">Due</span>
+                      <input
+                        type="date"
+                        value={projectDraft.endDate}
+                        onChange={(e) => updateProjectDraft({ endDate: e.target.value })}
+                        className="h-10 w-full rounded-xl border border-gray-200 bg-gray-50 px-3 text-sm text-gray-900 outline-none focus:border-gray-300"
+                      />
+                    </label>
                   </div>
                 </section>
 
@@ -1042,56 +1102,60 @@ export const ProjectsWindow = () => {
                   </div>
 
                   <div className="min-w-0 p-6 space-y-4">
-                    <div className="space-y-2 rounded-2xl border border-gray-200 bg-gray-50 p-4">
-                      <input
-                        value={newTaskTitle}
-                        onChange={(e) => setNewTaskTitle(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            e.preventDefault()
-                            void createTask()
-                          }
-                        }}
-                        placeholder="Add a next action"
-                        className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-900 outline-none transition focus:border-gray-300 focus:ring-4 focus:ring-gray-100"
-                      />
-                      <div className={`grid gap-2 ${isCompactRightPane ? 'grid-cols-1' : 'sm:grid-cols-2 lg:grid-cols-[minmax(0,1fr)_minmax(0,150px)_minmax(0,150px)_auto]'}`}>
-                        <div className="relative min-w-0">
-                          <select
-                            value={newTaskPriority}
-                            onChange={(e) => setNewTaskPriority(e.target.value as typeof newTaskPriority)}
-                            className={`w-full min-w-0 appearance-none rounded-xl border border-gray-200 bg-white text-sm text-gray-700 outline-none ${isCompactRightPane ? 'py-2 pl-3 pr-9' : 'py-2 pl-3 pr-10'}`}
-                          >
-                            {Object.entries(taskPriorityLabels).map(([key, label]) => (
-                              <option key={key} value={key}>{label}</option>
-                            ))}
-                          </select>
-                          <ChevronDown
-                            size={isCompactRightPane ? 12 : 14}
-                            className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-gray-500"
+                    <button
+                      onClick={() => setIsTaskComposerOpen((prev) => !prev)}
+                      className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100"
+                    >
+                      <Plus size={14} />
+                      Add next action
+                    </button>
+
+                    {isTaskComposerOpen && (
+                      <div className="space-y-2 rounded-2xl border border-gray-200 bg-gray-50 p-4">
+                        <input
+                          value={newTaskTitle}
+                          onChange={(e) => setNewTaskTitle(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault()
+                              void createTask()
+                            }
+                          }}
+                          placeholder="Add a next action"
+                          className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-900 outline-none transition focus:border-gray-300 focus:ring-4 focus:ring-gray-100"
+                        />
+                        <div className={`grid gap-2 ${isCompactLayout ? 'grid-cols-1' : 'sm:grid-cols-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,150px)_auto]'}`}>
+                          <div className="relative min-w-0">
+                            <select
+                              value={newTaskPriority}
+                              onChange={(e) => setNewTaskPriority(e.target.value as typeof newTaskPriority)}
+                              className={`w-full min-w-0 appearance-none rounded-xl border border-gray-200 bg-white text-sm text-gray-700 outline-none ${isCompactLayout ? 'py-2 pl-3 pr-9' : 'py-2 pl-3 pr-10'}`}
+                            >
+                              {Object.entries(taskPriorityLabels).map(([key, label]) => (
+                                <option key={key} value={key}>{label}</option>
+                              ))}
+                            </select>
+                            <ChevronDown
+                              size={isCompactLayout ? 12 : 14}
+                              className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-gray-500"
+                            />
+                          </div>
+                          <input
+                            type="date"
+                            value={newTaskDueDate}
+                            onChange={(e) => setNewTaskDueDate(e.target.value)}
+                            className="w-full min-w-0 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 outline-none"
                           />
+                          <button
+                            onClick={() => void createTask()}
+                            disabled={!newTaskTitle.trim() || isCreatingTask}
+                            className="w-full rounded-xl bg-gray-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-gray-800 disabled:opacity-60"
+                          >
+                            {isCreatingTask ? 'Adding...' : 'Add'}
+                          </button>
                         </div>
-                        <input
-                          type="date"
-                          value={newTaskDueDate}
-                          onChange={(e) => setNewTaskDueDate(e.target.value)}
-                          className="w-full min-w-0 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 outline-none"
-                        />
-                        <input
-                          type="time"
-                          value={newTaskDueTime}
-                          onChange={(e) => setNewTaskDueTime(e.target.value)}
-                          className="w-full min-w-0 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 outline-none"
-                        />
-                        <button
-                          onClick={() => void createTask()}
-                          disabled={!newTaskTitle.trim() || isCreatingTask}
-                          className={`w-full rounded-xl bg-gray-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-gray-800 disabled:opacity-60 ${isCompactRightPane ? '' : 'sm:col-span-2 lg:col-span-1'}`}
-                        >
-                          {isCreatingTask ? 'Adding...' : 'Add'}
-                        </button>
                       </div>
-                    </div>
+                    )}
 
                     {taskError && <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{taskError}</div>}
 
@@ -1121,18 +1185,18 @@ export const ProjectsWindow = () => {
                               }}
                               className={`w-full rounded-2xl border px-4 py-3 text-left transition ${
                                 activeTask
-                                  ? 'border-[#FF5F40] bg-[#FFF0EB]'
+                                  ? 'border-gray-300 bg-white shadow-sm'
                                   : 'border-gray-200 bg-gray-50 hover:bg-white'
                               }`}
                             >
                               <div className="flex items-start gap-3">
-                                <span className={`mt-0.5 flex h-5 w-5 items-center justify-center rounded-full border transition ${completed ? 'border-green-500 bg-green-500' : 'border-gray-300 bg-white'}`}>
+                                <span className={`mt-0.5 flex h-5 w-5 items-center justify-center rounded-full border transition ${completed ? 'border-green-600 bg-green-600' : 'border-gray-300 bg-white'}`}>
                                   {completed && <CheckCircle2 size={12} className="text-white" />}
                                 </span>
                                 <div className="min-w-0 flex-1">
                                   <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
                                     <div className="min-w-0">
-                                      <p className={`min-w-0 text-sm font-medium ${completed ? 'text-gray-400 line-through' : 'text-gray-900'}`}>{task.title}</p>
+                                      <p className={`min-w-0 text-sm font-medium ${completed ? 'text-gray-500 line-through' : 'text-gray-900'}`}>{task.title}</p>
                                       <p className="mt-1 wrap-break-word text-[11px] text-gray-500">
                                         {formatShortDate(task.due_date)}{formatTime(task.due_time) ? ` · ${formatTime(task.due_time)}` : ''}
                                       </p>
@@ -1188,155 +1252,81 @@ export const ProjectsWindow = () => {
             />
 
             <aside className="flex shrink-0 flex-col overflow-hidden border-l border-gray-200 bg-white" style={{ width: `${rightPaneWidth}px` }}>
-              <div className={`${isCompactRightPane ? 'p-3' : 'p-4'} border-b border-gray-100`}>
-                <div className="mb-3 flex items-center justify-between gap-3">
-                  <div>
-                    <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Pulse</p>
-                    <h2 className={`${isCompactRightPane ? 'text-xs' : 'text-sm'} font-semibold text-gray-900`}>Execution view</h2>
-                  </div>
-                  <div className="flex flex-col items-end gap-1 text-[10px] text-gray-500">
-                    <span>{projectCounts.active} open</span>
-                    <span>{taskCounts.completed} done</span>
-                  </div>
-                </div>
+              <div className="p-4 border-b border-gray-100">
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">At a glance</p>
                 {selectedProject ? (
-                  <div className="space-y-2 rounded-2xl border border-gray-200 bg-gray-50 p-3">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className={`${isCompactRightPane ? 'text-xs' : 'text-sm'} truncate font-medium text-gray-900`}>{selectedProject.name}</p>
-                        <p className="text-[11px] text-gray-500">Updated {formatShortDate(selectedProject.updated_at)}</p>
+                  <div className="mt-3 space-y-3">
+                    <div className="rounded-2xl border border-gray-200 bg-gray-50 p-3">
+                      <p className="truncate text-sm font-medium text-gray-900">{selectedProject.name}</p>
+                      <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
+                        <div className="rounded-lg border border-gray-200 bg-white p-2">
+                          <p className="text-[10px] uppercase tracking-wide text-gray-500">Active</p>
+                          <p className="mt-1 font-semibold text-gray-900">{taskCounts.active}</p>
+                        </div>
+                        <div className="rounded-lg border border-gray-200 bg-white p-2">
+                          <p className="text-[10px] uppercase tracking-wide text-gray-500">Done</p>
+                          <p className="mt-1 font-semibold text-gray-900">{taskCounts.completed}</p>
+                        </div>
                       </div>
-                      <div className="h-3 w-3 rounded-full shrink-0" style={{ backgroundColor: projectDraft.color }} />
-                    </div>
-                    <div className={`grid gap-2 text-center ${isCompactRightPane ? 'grid-cols-1' : 'grid-cols-3'}`}>
-                      <div className="rounded-xl bg-white border border-gray-200 px-2 py-2">
-                        <p className="text-[10px] uppercase tracking-wide text-gray-500">Progress</p>
-                        <p className="mt-1 text-sm font-semibold text-gray-900">{projectDraft.completeness}%</p>
-                      </div>
-                      <div className="rounded-xl bg-white border border-gray-200 px-2 py-2">
-                        <p className="text-[10px] uppercase tracking-wide text-gray-500">Tasks</p>
-                        <p className="mt-1 text-sm font-semibold text-gray-900">{taskCounts.total}</p>
-                      </div>
-                      <div className="rounded-xl bg-white border border-gray-200 px-2 py-2">
-                        <p className="text-[10px] uppercase tracking-wide text-gray-500">Done</p>
-                        <p className="mt-1 text-sm font-semibold text-gray-900">{taskCounts.completed}</p>
+                      <div className="mt-2 rounded-lg border border-gray-200 bg-white p-2 text-[11px] text-gray-600">
+                        Updated {formatShortDate(selectedProject.updated_at)}
                       </div>
                     </div>
                   </div>
                 ) : (
-                  <div className="rounded-2xl border border-dashed border-gray-200 bg-gray-50 p-4">
+                  <div className="mt-3 rounded-2xl border border-dashed border-gray-200 bg-gray-50 p-4">
                     <p className="text-sm font-medium text-gray-800">No project selected.</p>
-                    <p className="mt-1 text-sm text-gray-500">Pick a project on the left or create a new one.</p>
+                    <p className="mt-1 text-sm text-gray-500">Pick a project to view quick stats.</p>
                   </div>
                 )}
-              </div>
-
-              <div className={`flex-1 overflow-auto ${isCompactRightPane ? 'p-3' : 'p-4'} space-y-3`}>
-                <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
-                  <div className="mb-3 flex items-center justify-between gap-2">
-                    <h3 className="text-sm font-semibold text-gray-900">Project context</h3>
-                    {selectedProject && (
-                      <button
-                        onClick={() => void deleteProject(selectedProject.id)}
-                        className="rounded-lg px-2.5 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50"
-                      >
-                        Delete
-                      </button>
-                    )}
-                  </div>
-                  {selectedProject ? (
-                    <div className="space-y-3 text-sm text-gray-700">
-                      <p>{selectedProject.description?.trim() || 'No project brief yet.'}</p>
-                      <div className="grid grid-cols-2 gap-2 text-xs">
-                        <div className="rounded-xl border border-gray-200 bg-gray-50 p-3">
-                          <p className="uppercase tracking-wider text-gray-500">Start</p>
-                          <p className="mt-1 font-medium text-gray-900">{formatLongDate(selectedProject.start_date)}</p>
-                        </div>
-                        <div className="rounded-xl border border-gray-200 bg-gray-50 p-3">
-                          <p className="uppercase tracking-wider text-gray-500">Target</p>
-                          <p className="mt-1 font-medium text-gray-900">{formatLongDate(selectedProject.end_date)}</p>
-                        </div>
-                      </div>
-                    </div>
-                  ) : (
-                    <p className="text-sm text-gray-500">Select a project to see its context and task list.</p>
-                  )}
-                </div>
-
-                <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
-                  <div className="mb-3 flex items-center justify-between gap-2">
-                    <h3 className="text-sm font-semibold text-gray-900">Next actions</h3>
-                    <span className="text-xs text-gray-500">{selectedProjectTasks.length} items</span>
-                  </div>
-                  {taskError && <div className="mb-3 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{taskError}</div>}
-                  <div className="space-y-2">
-                    {isLoadingTasks ? (
-                      <SkeletonList count={2} />
-                    ) : selectedProjectTasks.length === 0 ? (
-                      <div className="rounded-2xl border border-dashed border-gray-200 bg-gray-50 p-4">
-                        <p className="text-sm font-medium text-gray-800">No tasks yet.</p>
-                        <p className="mt-1 text-sm text-gray-500">Add one next action at a time.</p>
-                      </div>
-                    ) : (
-                      selectedProjectTasks.map((task) => {
-                        const completed = task.status === 'completed'
-                          const activeTask = selectedTaskId === task.id
-                        return (
-                          <div
-                              id={`task-row-${task.id}`}
-                            key={task.id}
-                            onContextMenu={(e) => {
-                              e.preventDefault()
-                              setTaskContextMenu({ x: e.clientX, y: e.clientY, taskId: task.id })
-                            }}
-                              className={`rounded-2xl border ${
-                                activeTask
-                                  ? 'border-[#FF5F40] bg-[#FFF0EB]'
-                                  : 'border-gray-200 bg-gray-50'
-                              } ${isCompactRightPane ? 'px-3 py-2.5' : 'px-4 py-3'}`}
-                          >
-                            <button
-                                onClick={() => {
-                                  setSelectedTaskId(task.id)
-                                  void updateTaskStatus(task, completed ? 'todo' : 'completed')
-                                }}
-                              className="flex w-full items-start gap-3 text-left"
-                            >
-                              <span className={`mt-0.5 flex h-5 w-5 items-center justify-center rounded-full border transition ${completed ? 'border-green-500 bg-green-500' : 'border-gray-300 bg-white'}`}>
-                                {completed && <CheckCircle2 size={12} className="text-white" />}
-                              </span>
-                              <div className="min-w-0 flex-1">
-                                <div className={`flex gap-2 ${isCompactRightPane ? 'flex-col' : 'items-start justify-between'}`}>
-                                  <p className={`min-w-0 text-sm font-medium ${completed ? 'text-gray-400 line-through' : 'text-gray-900'}`}>{task.title}</p>
-                                  <span className={`self-start rounded-full px-2 py-1 text-[10px] font-medium ${taskPriorityTone[String(task.priority)] ?? 'bg-gray-100 text-gray-700'}`}>
-                                    {taskPriorityLabels[String(task.priority)] ?? 'Medium'}
-                                  </span>
-                                </div>
-                                <p className="mt-1 text-[11px] text-gray-500">
-                                  {formatShortDate(task.due_date)}{formatTime(task.due_time) ? ` · ${formatTime(task.due_time)}` : ''}
-                                  {' · '}
-                                  {taskStatusLabels[String(task.status)] ?? 'To do'}
-                                </p>
-                                {task.description ? <p className="mt-2 line-clamp-2 text-sm text-gray-600">{task.description}</p> : null}
-                              </div>
-                            </button>
-                          </div>
-                        )
-                      })
-                    )}
-                  </div>
-                </div>
               </div>
             </aside>
           </>
         )}
       </div>
 
-      {projectContextMenu && (
+      {taskNotesTask && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/25 p-4">
+          <div className="w-full max-w-xl rounded-2xl border border-gray-200 bg-white shadow-xl">
+            <div className="border-b border-gray-100 px-5 py-4">
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500">Task notes</p>
+              <p className="mt-1 truncate text-base font-semibold text-gray-900">{taskNotesTask.title}</p>
+            </div>
+            <div className="p-5">
+              <textarea
+                value={taskNotesDraft}
+                onChange={(e) => setTaskNotesDraft(e.target.value)}
+                placeholder="Capture details, links, blockers, or handoff notes for this task."
+                className="h-48 w-full resize-none rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-800 outline-none focus:border-gray-300"
+              />
+              <div className="mt-4 flex items-center justify-end gap-2">
+                <button
+                  onClick={() => {
+                    setTaskNotesTaskId(null)
+                    setTaskNotesDraft('')
+                  }}
+                  className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => void saveTaskNotes()}
+                  disabled={isSavingTaskNotes}
+                  className="rounded-xl bg-gray-900 px-3 py-2 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-60"
+                >
+                  {isSavingTaskNotes ? 'Saving...' : 'Save notes'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {projectContextMenu && projectMenuPosition && (
         <div
           ref={projectContextRef}
           className="fixed z-50 min-w-44 overflow-hidden rounded-xl border border-gray-200 bg-white py-1 shadow-xl"
-          style={{ left: `${projectContextMenu.x}px`, top: `${projectContextMenu.y}px` }}
+          style={{ left: `${projectMenuPosition.x}px`, top: `${projectMenuPosition.y}px` }}
           onClick={(e) => e.stopPropagation()}
         >
           <button
@@ -1364,6 +1354,24 @@ export const ProjectsWindow = () => {
             <CheckCircle2 size={14} />
             Mark complete
           </button>
+          <div className="px-4 py-2">
+            <p className="mb-2 text-[11px] font-medium uppercase tracking-wide text-gray-500">Color</p>
+            <div className="grid grid-cols-8 gap-2">
+              {projectColorOptions.map((color) => (
+                <button
+                  key={color}
+                  type="button"
+                  onClick={() => {
+                    void updateProjectColor(projectContextMenu.projectId, color)
+                    setProjectContextMenu(null)
+                  }}
+                  className="h-4 w-4 rounded-full border border-black/10 transition hover:scale-110"
+                  style={{ backgroundColor: color }}
+                  aria-label={`Set project color ${color}`}
+                />
+              ))}
+            </div>
+          </div>
           <button
             onClick={() => {
               void deleteProject(projectContextMenu.projectId)
@@ -1377,11 +1385,11 @@ export const ProjectsWindow = () => {
         </div>
       )}
 
-      {taskContextMenu && (
+      {taskContextMenu && taskMenuPosition && (
         <div
           ref={taskContextRef}
           className="fixed z-50 min-w-44 overflow-hidden rounded-xl border border-gray-200 bg-white py-1 shadow-xl"
-          style={{ left: `${taskContextMenu.x}px`, top: `${taskContextMenu.y}px` }}
+          style={{ left: `${taskMenuPosition.x}px`, top: `${taskMenuPosition.y}px` }}
           onClick={(e) => e.stopPropagation()}
         >
           <button
@@ -1416,6 +1424,17 @@ export const ProjectsWindow = () => {
           >
             <CheckCircle2 size={14} />
             Mark complete
+          </button>
+          <button
+            onClick={() => {
+              const task = tasks.find((item) => item.id === taskContextMenu.taskId)
+              if (task) openTaskNotes(task)
+              setTaskContextMenu(null)
+            }}
+            className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
+          >
+            <FileText size={14} />
+            Task notes
           </button>
           <button
             onClick={() => {

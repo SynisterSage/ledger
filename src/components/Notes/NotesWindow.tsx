@@ -542,6 +542,16 @@ export const NotesWindow = () => {
         subtitle="Your simple note workspace"
         icon={<StickyNote size={18} className="text-amber-600" />}
         closeLabel="Close notes"
+        minimizeLabel="Minimize notes"
+        onMinimize={() => {
+          void flushAutosave().finally(() => {
+            void window.desktopWindow?.minimizeModule('notes')
+          })
+        }}
+        fullscreenLabel="Fullscreen notes"
+        onToggleFullscreen={() => {
+          void window.desktopWindow?.toggleModuleFullscreen('notes')
+        }}
         onClose={() => {
           void flushAutosave().finally(() => {
             void window.desktopWindow?.closeModule('notes')

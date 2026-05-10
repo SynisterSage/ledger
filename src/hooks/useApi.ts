@@ -187,6 +187,7 @@ export const useApi = () => {
     createTask: (payload: {
       title: string
       description?: string | null
+      notes?: string | null
       due_date?: string | null
       due_time?: string | null
       status?: string

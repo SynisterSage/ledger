@@ -31,7 +31,6 @@ export const MinimizedSidebar = ({
             collapseSidebar()
           }}
           onMouseDown={(e) => e.stopPropagation()}
-          title='Collapse to icon'
           aria-label='Collapse sidebar'
           className="flex h-11 w-11 items-center justify-center rounded-xl bg-transparent transition-colors duration-150 hover:bg-white/45"
         >
@@ -40,7 +39,6 @@ export const MinimizedSidebar = ({
 
         <div className={`flex ${isHorizontal ? 'flex-row gap-3' : 'flex-col gap-4 self-center'}`}>
           <button
-            title='Search (Cmd/Ctrl+K)'
             aria-label='Open search'
             onClick={() => {
               setState('expanded')
@@ -54,7 +52,6 @@ export const MinimizedSidebar = ({
             <Search size={18} />
           </button>
           <button
-            title='Dashboard'
             aria-label='Open dashboard'
             onClick={() => {
               window.desktopWindow?.toggleModule('dashboard')
@@ -65,7 +62,6 @@ export const MinimizedSidebar = ({
             <BarChart3 size={18} />
           </button>
           <button
-            title='Calendar'
             aria-label='Open calendar'
             onClick={() => window.desktopWindow?.toggleModule('calendar')}
             onMouseDown={(e) => e.stopPropagation()}
@@ -74,7 +70,6 @@ export const MinimizedSidebar = ({
             <CalendarDays size={18} />
           </button>
           <button
-            title='Projects'
             aria-label='Open projects'
             onClick={() => window.desktopWindow?.toggleModule('projects')}
             onMouseDown={(e) => e.stopPropagation()}
@@ -83,7 +78,6 @@ export const MinimizedSidebar = ({
             <Folder size={18} />
           </button>
           <button
-            title='Notes'
             aria-label='Open notes'
             onClick={() => window.desktopWindow?.toggleModule('notes')}
             onMouseDown={(e) => e.stopPropagation()}
@@ -97,7 +91,6 @@ export const MinimizedSidebar = ({
           <button
             onClick={() => setState('expanded')}
             onMouseDown={(e) => e.stopPropagation()}
-            title='Expand'
             className={actionIcon}
           >
             <ChevronRight size={20} />
@@ -106,7 +99,6 @@ export const MinimizedSidebar = ({
           <button
             onClick={signOut}
             onMouseDown={(e) => e.stopPropagation()}
-            title='Sign Out'
             className={dangerIcon}
           >
             <LogOut size={18} />

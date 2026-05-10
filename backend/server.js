@@ -102,7 +102,7 @@ const projectStatusAliases = {
 }
 
 const projectSelectColumns = 'id, name, description, status, completeness, color, start_date, end_date, created_at, updated_at'
-const taskSelectColumns = 'id, workspace_id, project_id, title, description, due_date, due_time, status, priority, assigned_to, tags, created_at, updated_at'
+const taskSelectColumns = 'id, workspace_id, project_id, title, description, notes, due_date, due_time, status, priority, assigned_to, tags, created_at, updated_at'
 const workspaceRoleRank = { viewer: 1, member: 2, admin: 3, owner: 4 }
 const workspaceMemberRoles = ['admin', 'member', 'viewer']
 
@@ -1563,6 +1563,7 @@ app.post('/api/tasks', authMiddleware, rateLimit('write'), quotaGuard('tasks'), 
 
     const tags = Array.isArray(req.body?.tags) ? req.body.tags.map((tag) => String(tag).trim()).filter(Boolean) : []
     const description = normalizeNullableText(req.body?.description)
+    const notes = normalizeNullableText(req.body?.notes)
     const dueDate = normalizeNullableDate(req.body?.due_date, 'due date')
     const dueTime = normalizeNullableText(req.body?.due_time)
 
@@ -1573,6 +1574,7 @@ app.post('/api/tasks', authMiddleware, rateLimit('write'), quotaGuard('tasks'), 
         project_id: projectId,
         title,
         description,
+        notes,
         due_date: dueDate,
         due_time: dueTime,
         status: req.body?.status ? String(req.body.status) : 'todo',
@@ -1606,6 +1608,7 @@ app.patch('/api/tasks/:id', authMiddleware, rateLimit('write'), async (req, res)
       update.title = nextTitle
     }
     if (req.body?.description !== undefined) update.description = normalizeNullableText(req.body.description)
+    if (req.body?.notes !== undefined) update.notes = normalizeNullableText(req.body.notes)
     if (req.body?.due_date !== undefined) update.due_date = normalizeNullableDate(req.body.due_date, 'due date')
     if (req.body?.due_time !== undefined) update.due_time = normalizeNullableText(req.body.due_time)
     if (req.body?.status !== undefined) update.status = String(req.body.status)

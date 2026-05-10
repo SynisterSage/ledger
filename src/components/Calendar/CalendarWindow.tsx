@@ -1215,6 +1215,14 @@ export const CalendarWindow = () => {
         subtitle={viewConfig.label}
         icon={<CalendarDays size={18} className="text-blue-600" />}
         closeLabel="Close calendar"
+        minimizeLabel="Minimize calendar"
+        onMinimize={() => {
+          void window.desktopWindow?.minimizeModule('calendar')
+        }}
+        fullscreenLabel="Fullscreen calendar"
+        onToggleFullscreen={() => {
+          void window.desktopWindow?.toggleModuleFullscreen('calendar')
+        }}
         onClose={() => {
           void window.desktopWindow?.closeModule('calendar')
         }}
@@ -2036,13 +2044,16 @@ export const CalendarWindow = () => {
       </div>
 
       {isComposerOpen && (
-        <div className="fixed inset-0 z-100 bg-black/20 flex items-start justify-center pt-20">
-          <div className="w-105 rounded-xl border border-gray-200 bg-white shadow-xl p-4">
+        <div className="fixed inset-0 z-100 bg-black/20 flex items-start justify-center pt-20" onClick={() => setIsComposerOpen(false)}>
+          <div className="w-105 rounded-xl border border-gray-200 bg-white shadow-xl p-4" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-sm font-semibold text-gray-900">
                 {composerMode === 'reminder' ? 'New Reminder' : 'New Event'}
               </h3>
-              <button onClick={() => setIsComposerOpen(false)} className="p-1 rounded hover:bg-gray-100">
+              <button onClick={(e) => {
+                e.preventDefault()
+                setIsComposerOpen(false)
+              }} className="p-1 rounded hover:bg-gray-100">
                 <X size={14} className="text-gray-600" />
               </button>
             </div>

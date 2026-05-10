@@ -97,6 +97,7 @@ export type Database = {
           project_id: string | null
           title: string
           description: string | null
+          notes: string | null
           due_date: string | null
           due_time: string | null
           status: 'todo' | 'in_progress' | 'completed' | 'cancelled'

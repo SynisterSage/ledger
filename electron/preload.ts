@@ -83,6 +83,12 @@ contextBridge.exposeInMainWorld('desktopWindow', {
   closeModule(kind: ModuleWindowKind) {
     return ipcRenderer.invoke('window:close-module', kind)
   },
+  minimizeModule(kind: ModuleWindowKind) {
+    return ipcRenderer.invoke('window:minimize-module', kind)
+  },
+  toggleModuleFullscreen(kind: ModuleWindowKind) {
+    return ipcRenderer.invoke('window:toggle-module-fullscreen', kind)
+  },
   openExternal(url: string) {
     return ipcRenderer.invoke('window:open-external', url)
   },

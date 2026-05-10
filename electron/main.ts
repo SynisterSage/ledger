@@ -314,7 +314,7 @@ const DASHBOARD_WIDTH = 1280
 const DASHBOARD_HEIGHT = 860
 const AUTH_WIDTH = 540
 const AUTH_HEIGHT = 560
-const MODULE_WIDTH = 980
+const MODULE_WIDTH = 1180
 const MODULE_HEIGHT = 760
 const MODULE_GAP = 12
 
@@ -1325,31 +1325,32 @@ async function dockFloatingSidebarToTarget() {
 
 function getModuleBoundsNextToSidebar() {
   const sidebarBounds = sidebarWin?.getBounds() ?? getDockedBounds(RAIL_SIZE)
-  const { x, y, width: workWidth, height: workHeight } = screen.getPrimaryDisplay().workArea
+  const workArea = screen.getDisplayMatching(sidebarBounds).workArea
+  const { x, width: workWidth, height: workHeight } = workArea
 
   const width = Math.min(MODULE_WIDTH, workWidth - WINDOW_MARGIN * 2)
   const height = Math.min(MODULE_HEIGHT, workHeight - WINDOW_MARGIN * 2)
 
-  let moduleX
-  if (currentSidebarPosition === 'left') {
-    moduleX = sidebarBounds.x + sidebarBounds.width + MODULE_GAP
-    const maxX = x + workWidth - width - WINDOW_MARGIN
-    if (moduleX > maxX) {
-      moduleX = maxX
-    }
-  } else {
-    moduleX = sidebarBounds.x - width - MODULE_GAP
-    if (moduleX < x + WINDOW_MARGIN) {
-      moduleX = x + WINDOW_MARGIN
-    }
-  }
+  const leftSpace = sidebarBounds.x - x - MODULE_GAP - WINDOW_MARGIN
+  const rightSpace = x + workWidth - (sidebarBounds.x + sidebarBounds.width) - MODULE_GAP - WINDOW_MARGIN
+
+  const preferredSide = currentSidebarPosition === 'left' ? 'right' : 'left'
+  const canFitPreferred = preferredSide === 'right' ? rightSpace >= width : leftSpace >= width
+  const side: 'left' | 'right' = canFitPreferred
+    ? preferredSide
+    : rightSpace >= leftSpace
+      ? 'right'
+      : 'left'
+
+  let moduleX =
+    side === 'right'
+      ? sidebarBounds.x + sidebarBounds.width + MODULE_GAP
+      : sidebarBounds.x - width - MODULE_GAP
 
   let moduleY = sidebarBounds.y
-  const maxY = y + workHeight - height - WINDOW_MARGIN
-  if (moduleY > maxY) moduleY = maxY
-  if (moduleY < y + WINDOW_MARGIN) moduleY = y + WINDOW_MARGIN
 
-  return { x: moduleX, y: moduleY, width, height }
+  const bounded = clampRectToWorkArea({ x: moduleX, y: moduleY, width, height }, workArea)
+  return bounded
 }
 
 function applySidebarWindowMode(mode: SidebarWindowMode) {
@@ -1530,13 +1531,18 @@ function openModuleWindow(
     return
   }
 
+  const initialBounds = getModuleBoundsNextToSidebar()
+  const displayForModule = screen.getDisplayMatching(initialBounds).workArea
+  const dynamicMinWidth = Math.min(1080, Math.max(860, displayForModule.width - WINDOW_MARGIN * 2))
+  const dynamicMinHeight = Math.min(680, Math.max(620, displayForModule.height - WINDOW_MARGIN * 2))
+
   const moduleWin = new BrowserWindow({
-    ...getModuleBoundsNextToSidebar(),
+    ...initialBounds,
     transparent: true,
     backgroundColor: '#00000000',
     ...getModuleWindowChromeOptions(),
-    minWidth: 1080,
-    minHeight: 680,
+    minWidth: Math.min(dynamicMinWidth, initialBounds.width),
+    minHeight: Math.min(dynamicMinHeight, initialBounds.height),
     resizable: true,
     minimizable: true,
     maximizable: true,
@@ -1772,6 +1778,27 @@ ipcMain.handle('window:close-module', (_event, kind: ModuleWindowKind) => {
   const existing = moduleWins.get(kind)
   if (!existing || existing.isDestroyed()) return
   existing.close()
+})
+
+ipcMain.handle('window:minimize-module', (_event, kind: ModuleWindowKind) => {
+  const existing = moduleWins.get(kind)
+  if (!existing || existing.isDestroyed()) return
+  existing.minimize()
+})
+
+ipcMain.handle('window:toggle-module-fullscreen', (_event, kind: ModuleWindowKind) => {
+  const existing = moduleWins.get(kind)
+  if (!existing || existing.isDestroyed()) return false
+  if (existing.isMinimized()) {
+    existing.restore()
+  }
+  const next = !existing.isFullScreen()
+  existing.setFullScreen(next)
+  if (!next) {
+    existing.show()
+    existing.focus()
+  }
+  return next
 })
 
 ipcMain.handle('window:open-external', async (_event, url: string) => {

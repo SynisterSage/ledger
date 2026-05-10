@@ -1,5 +1,5 @@
 import { type ReactNode, type CSSProperties } from 'react'
-import { X } from 'lucide-react'
+import { Maximize2, Minus, X } from 'lucide-react'
 
 type ModuleWindowHeaderProps = {
   eyebrow?: string
@@ -7,7 +7,11 @@ type ModuleWindowHeaderProps = {
   subtitle?: string
   icon: ReactNode
   onClose: () => void
+  onMinimize?: () => void
+  onToggleFullscreen?: () => void
   closeLabel?: string
+  minimizeLabel?: string
+  fullscreenLabel?: string
   actions?: ReactNode
 }
 
@@ -24,23 +28,56 @@ export const ModuleWindowHeader = ({
   subtitle,
   icon,
   onClose,
+  onMinimize,
+  onToggleFullscreen,
   closeLabel = 'Close window',
+  minimizeLabel = 'Minimize window',
+  fullscreenLabel = 'Toggle fullscreen',
   actions,
 }: ModuleWindowHeaderProps) => {
+  const controlClassName =
+    'flex h-6 w-6 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-600 transition hover:bg-gray-100 hover:text-gray-900'
+
   return (
-    <div className="sticky top-0 z-40 border-b border-gray-200 bg-white/90 shadow-[0_1px_0_rgba(15,23,42,0.04)] backdrop-blur-xl" style={dragRegionStyle}>
-      <div className="flex min-h-20 items-center justify-between gap-4 px-5 py-4">
-        <div className="flex min-w-0 items-center gap-3" style={noDragRegionStyle}>
+    <div className="border-b border-gray-200 bg-white" style={dragRegionStyle}>
+      <div className="h-10 px-4 py-2 flex items-center bg-gray-50 border-b border-gray-200" style={dragRegionStyle}>
+        <div className="flex items-center gap-4" style={noDragRegionStyle}>
           <button
             type="button"
             onClick={onClose}
             title={closeLabel}
             aria-label={closeLabel}
-            className="flex h-8 w-8 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-600 transition hover:bg-gray-100 hover:text-gray-900"
+            className={controlClassName}
           >
-            <X size={16} />
+            <X size={12} />
           </button>
+          {onMinimize && (
+            <button
+              type="button"
+              onClick={onMinimize}
+              title={minimizeLabel}
+              aria-label={minimizeLabel}
+              className={controlClassName}
+            >
+              <Minus size={12} />
+            </button>
+          )}
+          {onToggleFullscreen && (
+            <button
+              type="button"
+              onClick={onToggleFullscreen}
+              title={fullscreenLabel}
+              aria-label={fullscreenLabel}
+              className={controlClassName}
+            >
+              <Maximize2 size={12} />
+            </button>
+          )}
+        </div>
+      </div>
 
+      <div className="flex min-h-20 items-center justify-between gap-4 px-5 py-4">
+        <div className="flex min-w-0 items-center gap-4" style={dragRegionStyle}>
           <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-gray-200 bg-gray-50 shadow-sm">
             {icon}
           </div>

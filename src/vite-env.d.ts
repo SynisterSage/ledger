@@ -49,6 +49,8 @@ interface Window {
     detachFloatingWindow: () => Promise<void>
     toggleModule: (kind: ModuleWindowKind, focus?: string | ModuleFocusPayload) => Promise<void>
     closeModule: (kind: ModuleWindowKind) => Promise<void>
+    minimizeModule: (kind: ModuleWindowKind) => Promise<void>
+    toggleModuleFullscreen: (kind: ModuleWindowKind) => Promise<boolean>
     openExternal: (url: string) => Promise<void>
   }
 }

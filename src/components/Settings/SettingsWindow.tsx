@@ -715,6 +715,14 @@ export const SettingsWindow = () => {
         subtitle="Defaults, accessible controls"
         icon={<Settings size={18} className="text-gray-700" />}
         closeLabel="Close settings"
+        minimizeLabel="Minimize settings"
+        onMinimize={() => {
+          void window.desktopWindow?.minimizeModule('settings')
+        }}
+        fullscreenLabel="Fullscreen settings"
+        onToggleFullscreen={() => {
+          void window.desktopWindow?.toggleModuleFullscreen('settings')
+        }}
         onClose={() => {
           void window.desktopWindow?.closeModule('settings')
         }}

@@ -296,6 +296,14 @@ function DashboardContent() {
         }
         icon={<img src="./logo-color.svg" alt="" className="h-5 w-5" />}
         closeLabel="Close dashboard"
+        minimizeLabel="Minimize dashboard"
+        onMinimize={() => {
+          void window.desktopWindow?.minimizeModule('dashboard')
+        }}
+        fullscreenLabel="Fullscreen dashboard"
+        onToggleFullscreen={() => {
+          void window.desktopWindow?.toggleModuleFullscreen('dashboard')
+        }}
         onClose={() => {
           void window.desktopWindow?.closeModule('dashboard')
         }}
@@ -335,14 +343,6 @@ function DashboardContent() {
               <p className='mt-2 max-w-2xl text-sm leading-6 text-gray-600'>
                 {todayLabel}. What awaits you today?
               </p>
-              {activeWorkspace && (
-                <p className='mt-2 text-xs text-gray-500'>
-                  Active workspace: <span className='text-gray-800'>{activeWorkspace.name}</span>
-                  <span className='ml-2 rounded-full bg-gray-100 px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] text-gray-500'>
-                    {activeWorkspace.is_personal ? 'Personal' : activeWorkspace.role}
-                  </span>
-                </p>
-              )}
             </div>
           </div>
 

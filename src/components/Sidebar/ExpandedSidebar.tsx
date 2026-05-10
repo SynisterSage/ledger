@@ -50,6 +50,13 @@ const todayKey = () => {
   return `${year}-${month}-${day}`
 }
 
+const getProgressStateColor = (value: number) => {
+  const percent = Math.max(0, Math.min(100, value))
+  if (percent < 35) return '#FF5F40'
+  if (percent < 70) return '#F59E0B'
+  return '#22C55E'
+}
+
 export const ExpandedSidebar = ({
   onDragHandleMouseDown,
   onCollapseRequest,
@@ -90,7 +97,7 @@ export const ExpandedSidebar = ({
   const [eventEndTime, setEventEndTime] = useState('10:00')
   const [workspaceId, setWorkspaceId] = useState<string | null>(null)
   const todayBucketRef = useRef(todayKey())
-  const [projects, setProjects] = useState<Array<{ id: string; name: string; status: ProjectStatus | string; completeness: number }>>([])
+  const [projects, setProjects] = useState<Array<{ id: string; name: string; status: ProjectStatus | string; completeness: number; color?: string }>>([])
   const [isLoadingProjects, setIsLoadingProjects] = useState(true)
   const [expandedProjectId, setExpandedProjectId] = useState<string | null>(null)
   const [projectUpdating, setProjectUpdating] = useState<string | null>(null)
@@ -293,7 +300,7 @@ export const ExpandedSidebar = ({
       try {
         const data = await api.getProjects()
         if (!cancelled) {
-          const projects = (data as Array<{ id: string; name: string; status: string; completeness: number }>)
+          const projects = (data as Array<{ id: string; name: string; status: string; completeness: number; color?: string }>)
             .filter((project) => normalizeProjectStatus(project.status) !== 'completed')
             .map((project) => ({
               ...project,
@@ -637,7 +644,7 @@ export const ExpandedSidebar = ({
     try {
       const data = await api.createProject(name)
       const createdProject = {
-        ...(data as { id: string; name: string; status: string; completeness: number }),
+        ...(data as { id: string; name: string; status: string; completeness: number; color?: string }),
         status: normalizeProjectStatus((data as { status: string }).status),
       }
       setProjects((prev) => {
@@ -1287,6 +1294,8 @@ export const ExpandedSidebar = ({
                 const statusKey = normalizeProjectStatus(String(project.status))
                 const statusLabel = projectStatusLabels[statusKey]
                 const statusColor = projectStatusStyles[statusKey]
+                const progressColor = getProgressStateColor(project.completeness)
+                const projectAccent = project.color || '#007AFF'
 
                 return (
                   <div
@@ -1302,7 +1311,13 @@ export const ExpandedSidebar = ({
                       className="w-full text-left p-3 flex items-start justify-between hover:bg-gray-50 transition"
                     >
                       <div className="flex-1 min-w-0">
-                        <p className="text-xs font-semibold text-gray-900 truncate">{project.name}</p>
+                        <div className="flex items-center gap-2">
+                          <span
+                            className="h-2 w-2 shrink-0 rounded-full border border-black/5"
+                            style={{ backgroundColor: projectAccent }}
+                          />
+                          <p className="text-xs font-semibold text-gray-900 truncate">{project.name}</p>
+                        </div>
                         <div
                           onPointerDown={(e) => {
                             e.stopPropagation()
@@ -1322,8 +1337,8 @@ export const ExpandedSidebar = ({
                           className="mt-2 h-2 rounded-full bg-gray-200 overflow-hidden cursor-pointer hover:bg-gray-300 transition touch-none"
                         >
                           <div
-                            className={`h-full bg-[#FF5F40] rounded-full ${draggingProjectId === project.id ? '' : 'transition-all'}`}
-                            style={{ width: `${project.completeness}%` }}
+                            className={`h-full rounded-full ${draggingProjectId === project.id ? '' : 'transition-all'}`}
+                            style={{ width: `${project.completeness}%`, backgroundColor: progressColor }}
                           />
                         </div>
                         <div className="mt-2 flex items-center justify-between gap-2">
