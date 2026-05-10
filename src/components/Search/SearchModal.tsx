@@ -181,8 +181,8 @@ export const SearchModal = () => {
   }
 
   const shellClassName = isFullscreen
-    ? 'fixed inset-0 z-[220] bg-black/20 p-4 sm:p-8'
-    : 'fixed inset-0 z-[220] flex items-start justify-center bg-black/20 px-4 pt-16'
+    ? 'fixed inset-0 z-[220] bg-transparent p-4 sm:p-8'
+    : 'fixed inset-0 z-[220] flex items-start justify-center bg-transparent px-4 pt-16'
 
   const panelClassName = isFullscreen
     ? 'flex h-full w-full flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl'

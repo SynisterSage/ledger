@@ -600,14 +600,35 @@ app.get('/api/user/onboarding', authMiddleware, rateLimit('read'), async (req, r
 
 app.patch('/api/user/onboarding', authMiddleware, rateLimit('write'), async (req, res) => {
   try {
-    const { data, error } = await supabase
+    const nowIso = new Date().toISOString()
+    let { data, error } = await supabase
       .from('users')
-      .update({ onboarding_completed: true, onboarding_completed_at: new Date().toISOString() })
+      .update({ onboarding_completed: true, onboarding_completed_at: nowIso })
       .eq('id', req.authUser.id)
       .select('onboarding_completed')
-      .single()
+      .maybeSingle()
 
     if (error) throw error
+
+    // Some legacy accounts can authenticate before a users row is materialized.
+    // In that case, create the row and persist onboarding in one write.
+    if (!data) {
+      const insertResult = await supabase
+        .from('users')
+        .insert({
+          id: req.authUser.id,
+          email: req.authUser.email ?? null,
+          full_name: normalizeNullableText(req.authUser.user_metadata?.full_name),
+          onboarding_completed: true,
+          onboarding_completed_at: nowIso,
+        })
+        .select('onboarding_completed')
+        .single()
+
+      if (insertResult.error) throw insertResult.error
+      data = insertResult.data
+    }
+
     res.json(data)
   } catch (error) {
     res.status(500).json({ error: error.message })

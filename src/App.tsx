@@ -27,7 +27,7 @@ import { SearchProvider } from './context/SearchContext'
 import { SkeletonList } from './components/Common/Skeleton'
 import { useSearch } from './context/SearchContext'
 
-type PostAuthStage = 'idle' | 'loading' | 'onboarding' | 'welcome' | 'ready'
+type PostAuthStage = 'idle' | 'loading' | 'onboarding' | 'ready'
 type ModuleKind = 'calendar' | 'notes' | 'projects' | 'dashboard' | 'settings' | null
 
 const windowParams = new URLSearchParams(window.location.search)
@@ -636,7 +636,7 @@ function DashboardContent() {
 // Main app component
 function AppShell() {
   const { user, isLoading, error: authError } = useAuthContext()
-  const { refreshWorkspaces } = useWorkspaceContext()
+  const { activeWorkspace, activeWorkspaceId, refreshWorkspaces } = useWorkspaceContext()
   const api = useApi()
   const { state, setState, isExpanded, setIsExpanded, isVisible, setIsVisible, toggleVisibility, sidebarPreferences, collapseSidebar, collapseToRail } = useSidebar()
   const { openSearch } = useSearch()
@@ -650,10 +650,14 @@ function AppShell() {
   })
   const [inviteFlowStatus, setInviteFlowStatus] = useState<'idle' | 'awaiting-auth' | 'processing' | 'error'>('idle')
   const [inviteFlowError, setInviteFlowError] = useState<string | null>(null)
+  const [onboardingWorkspaceName, setOnboardingWorkspaceName] = useState('')
+  const [onboardingError, setOnboardingError] = useState<string | null>(null)
   const handledInviteTokenRef = useRef<string | null>(null)
+  const postAuthBootstrapUserRef = useRef<string | null>(null)
   
   // Initialize workspace for authenticated users
   useWorkspaceInit()
+  const effectiveUiMode: 'auth' | 'app' = user ? 'app' : uiMode
 
   useEffect(() => {
     const handleSearchShortcut = (event: KeyboardEvent) => {
@@ -804,19 +808,13 @@ function AppShell() {
   }
 
   useEffect(() => {
-    if (isLoading) return
-
-    if (user && uiMode === 'auth') {
-      setIsAuthExiting(true)
-      const timer = window.setTimeout(() => {
-        setUiMode('app')
-        setIsAuthExiting(false)
-      }, 260)
-
-      return () => window.clearTimeout(timer)
+    if (user && uiMode !== 'app') {
+      setUiMode('app')
+      setIsAuthExiting(false)
+      return
     }
 
-    if (!user && uiMode !== 'auth') {
+    if (!user && !isLoading && uiMode !== 'auth') {
       setUiMode('auth')
       setIsAuthExiting(false)
       setPostAuthStage('idle')
@@ -877,55 +875,54 @@ function AppShell() {
   }, [pendingInviteToken, isLoading, user, api, refreshWorkspaces])
 
   useEffect(() => {
-    if (isLoading || !user || uiMode !== 'app' || postAuthStage !== 'idle') return
+    if (postAuthStage !== 'onboarding') return
+    if (onboardingWorkspaceName.trim()) return
+    const suggested = activeWorkspace?.name?.trim() || 'My Workspace'
+    setOnboardingWorkspaceName(suggested)
+  }, [activeWorkspace?.name, onboardingWorkspaceName, postAuthStage])
+
+  useEffect(() => {
+    const userId = user?.id ?? null
+
+    if (!userId) {
+      postAuthBootstrapUserRef.current = null
+      return
+    }
+
+    if (isLoading || effectiveUiMode !== 'app') return
+    if (postAuthBootstrapUserRef.current === userId) return
 
     let isCancelled = false
+    postAuthBootstrapUserRef.current = userId
+    setPostAuthStage('loading')
 
     const loadPostAuthStage = async () => {
       try {
-        setPostAuthStage('loading')
-
         const data = await api.getOnboardingStatus()
 
         if (isCancelled) return
 
         const onboardingCompleted = Boolean((data as { onboarding_completed?: boolean } | null)?.onboarding_completed)
-        setPostAuthStage(onboardingCompleted ? 'welcome' : 'onboarding')
+        setPostAuthStage(onboardingCompleted ? 'ready' : 'onboarding')
       } catch (error) {
         if (isCancelled) return
         console.warn('Unexpected onboarding state error:', error)
-        setPostAuthStage('welcome')
+        setPostAuthStage('ready')
       }
     }
 
     loadPostAuthStage()
 
+    const fallbackTimer = window.setTimeout(() => {
+      if (isCancelled) return
+      setPostAuthStage((current) => (current === 'loading' ? 'ready' : current))
+    }, 2500)
+
     return () => {
       isCancelled = true
+      window.clearTimeout(fallbackTimer)
     }
-  }, [isLoading, user, uiMode, postAuthStage])
-
-  useEffect(() => {
-    if (postAuthStage !== 'loading') return
-
-    const timeout = window.setTimeout(() => {
-      setPostAuthStage('welcome')
-    }, 4000)
-
-    return () => window.clearTimeout(timeout)
-  }, [postAuthStage])
-
-  useEffect(() => {
-    if (postAuthStage !== 'welcome') return
-
-    const closeTimer = window.setTimeout(() => {
-      setPostAuthStage('ready')
-    }, 80)
-
-    return () => {
-      window.clearTimeout(closeTimer)
-    }
-  }, [postAuthStage])
+  }, [effectiveUiMode, isLoading, user?.id])
 
   useEffect(() => {
     if (isLoading) return
@@ -962,16 +959,15 @@ function AppShell() {
     if (isLoading) return
 
     const isCenteredFlow =
-      uiMode === 'auth' ||
+      effectiveUiMode === 'auth' ||
       postAuthStage === 'loading' ||
-      postAuthStage === 'onboarding' ||
-      postAuthStage === 'welcome'
+      postAuthStage === 'onboarding'
 
     const mode = isCenteredFlow ? 'auth' : state === 'expanded' ? 'expanded' : isExpanded ? 'minimized' : 'compact'
     window.desktopWindow?.setMode(mode).catch(() => {
       // No-op outside Electron (browser dev mode)
     })
-  }, [isExpanded, isLoading, state, uiMode, postAuthStage])
+  }, [isExpanded, isLoading, state, effectiveUiMode, postAuthStage])
 
   if (isLoading) {
     return <AuthStatusScreen title='Loading' subtitle='Preparing Ledger.' />
@@ -991,11 +987,7 @@ function AppShell() {
   }
 
   // Show login if not authenticated
-  if (uiMode === 'auth' && user) {
-    return <AuthStatusScreen title='Restoring your session' subtitle='Picking up your workspace state.' />
-  }
-
-  if (uiMode === 'auth') {
+  if (!user) {
     return (
       <div className='relative flex h-screen items-center justify-center bg-transparent p-3'>
         <div className='absolute inset-3 rounded-[28px] border border-white/60 bg-[#f5f5f7] shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]' />
@@ -1027,6 +1019,7 @@ function AppShell() {
   }
 
   if (postAuthStage === 'onboarding') {
+    const workspaceName = onboardingWorkspaceName.trim()
     return (
       <div className='relative min-h-screen overflow-hidden bg-transparent p-3 text-gray-900'>
         <div className='absolute inset-3 rounded-[28px] border border-white/60 bg-[#f5f5f7] shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]' />
@@ -1050,29 +1043,45 @@ function AppShell() {
               <p className='mt-2 text-sm leading-6 text-gray-500'>Quick setup for your first workspace and team flow.</p>
             </div>
             <div className='mb-7 space-y-3.5'>
+              <label className='block text-left'>
+                <span className='mb-2 block text-xs font-semibold uppercase tracking-[0.16em] text-gray-500'>Workspace name</span>
+                <input
+                  value={onboardingWorkspaceName}
+                  onChange={(event) => setOnboardingWorkspaceName(event.target.value)}
+                  placeholder='My Workspace'
+                  className='h-11 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm text-gray-900 outline-none focus:border-gray-300'
+                />
+              </label>
               <div className='flex items-start gap-3'>
                 <CheckCircle2 size={18} className='text-green-600 mt-0.5' />
-                <p className='text-sm text-gray-700'>Your personal workspace is ready.</p>
-              </div>
-              <div className='flex items-start gap-3'>
-                <CheckCircle2 size={18} className='text-green-600 mt-0.5' />
-                <p className='text-sm text-gray-700'>Invite teammates later from the dashboard.</p>
-              </div>
-              <div className='flex items-start gap-3'>
-                <CheckCircle2 size={18} className='text-green-600 mt-0.5' />
-                <p className='text-sm text-gray-700'>Use the sidebar widget to quickly track tasks and time.</p>
+                <p className='text-sm text-gray-700'>You can invite teammates later from dashboard settings.</p>
               </div>
             </div>
+            {onboardingError ? (
+              <div className='mb-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700'>{onboardingError}</div>
+            ) : null}
             <button
               disabled={isSavingOnboarding}
               onClick={async () => {
                 if (!user || isSavingOnboarding) return
+                if (!workspaceName) {
+                  setOnboardingError('Workspace name is required.')
+                  return
+                }
                 setIsSavingOnboarding(true)
-
-                await api.completeOnboarding()
-
-                setIsSavingOnboarding(false)
-                setPostAuthStage('welcome')
+                setOnboardingError(null)
+                try {
+                  if (activeWorkspaceId) {
+                    await api.updateWorkspace(activeWorkspaceId, { name: workspaceName })
+                  }
+                  await api.completeOnboarding()
+                  await refreshWorkspaces()
+                  setPostAuthStage('ready')
+                } catch (error) {
+                  setOnboardingError(error instanceof Error ? error.message : 'Could not complete onboarding.')
+                } finally {
+                  setIsSavingOnboarding(false)
+                }
               }}
               className='inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-[#FF5F40] px-4 py-3 text-sm font-semibold text-white shadow-[0_10px_24px_rgba(255,95,64,0.24)] transition-colors hover:bg-[#ea5336] disabled:opacity-60'
             >
@@ -1092,10 +1101,6 @@ function AppShell() {
         </div>
       </div>
     )
-  }
-
-  if (postAuthStage === 'welcome') {
-    return <AuthStatusScreen title='Welcome back' subtitle='Opening your sidebar.' />
   }
 
   // Authenticated view - sidebar shell

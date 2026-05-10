@@ -48,7 +48,6 @@ const modulePath = process.env.LEDGER_NWM_PATH || 'node-window-manager'
 const { windowManager } = require(modulePath)
 const readline = require('node:readline')
 
-const ledgerPid = Number(process.env.LEDGER_DOCK_PARENT_PID || 0)
 let tracking = null
 let trackingTimer = null
 let trackingWindow = null
@@ -60,6 +59,16 @@ const send = (message) => {
   } catch {}
 }
 
+const isSidebarRect = (x, y, width, height, sidebar) => {
+  if (!sidebar) return false
+  return (
+    Math.abs(x - Number(sidebar.x)) <= 2 &&
+    Math.abs(y - Number(sidebar.y)) <= 2 &&
+    Math.abs(width - Number(sidebar.width)) <= 2 &&
+    Math.abs(height - Number(sidebar.height)) <= 2
+  )
+}
+
 try {
   const trusted = typeof windowManager.requestAccessibility === 'function'
     ? windowManager.requestAccessibility()
@@ -69,10 +78,8 @@ try {
   send({ kind: 'debug', message: 'mac helper accessibility check failed: ' + String(error) })
 }
 
-const toInfo = (window) => {
+const toInfo = (window, sidebar = null) => {
   try {
-    const pid = Number(window.processId || 0)
-    if (pid === ledgerPid) return null
     const bounds = window.getBounds && window.getBounds()
     if (!bounds) return null
     const x = Number(bounds.x)
@@ -80,6 +87,7 @@ const toInfo = (window) => {
     const width = Number(bounds.width)
     const height = Number(bounds.height)
     if (![x, y, width, height].every(Number.isFinite)) return null
+    if (isSidebarRect(x, y, width, height, sidebar)) return null
     if (width < 80 || height < 80) return null
     return { id: String(window.id), x, y, width, height }
   } catch {
@@ -87,10 +95,10 @@ const toInfo = (window) => {
   }
 }
 
-const getWindowsWithInfo = () => {
+const getWindowsWithInfo = (sidebar = null) => {
   const out = []
   for (const window of windowManager.getWindows()) {
-    const info = toInfo(window)
+    const info = toInfo(window, sidebar)
     if (info) out.push({ window, info })
   }
   return out
@@ -114,7 +122,7 @@ const scoreDockTarget = ({ sidebar, threshold }) => {
   let bestScore = Infinity
   let best = null
 
-  for (const item of getWindowsWithInfo()) {
+  for (const item of getWindowsWithInfo(sidebar)) {
     const window = item.info
     const rectLeft = window.x
     const rectTop = window.y
@@ -143,8 +151,8 @@ const scoreDockTarget = ({ sidebar, threshold }) => {
   return best
 }
 
-const findAtEdge = ({ probes }) => {
-  const windows = getWindowsWithInfo().map((item) => item.info)
+const findAtEdge = ({ probes, sidebar }) => {
+  const windows = getWindowsWithInfo(sidebar).map((item) => item.info)
   for (const probe of probes) {
     const probeX = Math.floor(probe.x)
     const probeY = Math.floor(probe.y)
@@ -1008,9 +1016,18 @@ async function getMacAccessibilityDockTargetAtCursor(
 async function getMacAccessibilityDockTargetAtEdge(
   probe: { side: DockSide; x: number; y: number },
 ): Promise<DockTargetResult | null> {
+  const sidebarBounds = sidebarWin?.getBounds()
   return requestMacDockHelper({
     kind: 'dockAtEdge',
     probes: [probe],
+    sidebar: sidebarBounds
+      ? {
+          x: sidebarBounds.x,
+          y: sidebarBounds.y,
+          width: sidebarBounds.width,
+          height: sidebarBounds.height,
+        }
+      : null,
   })
 }
 
@@ -1089,7 +1106,6 @@ public class Win32 {
   }
 }
 "@
-$ledgerPid = ${process.pid}
 $sidebarLeft = ${Math.floor(sidebarBounds.x)}
 $sidebarTop = ${Math.floor(sidebarBounds.y)}
 $sidebarRight = ${Math.floor(sidebarBounds.x + sidebarBounds.width)}
@@ -1101,13 +1117,11 @@ $script:bestScore = [Double]::PositiveInfinity
 [Win32]::EnumWindows({
   param([IntPtr]$hWnd, [IntPtr]$lParam)
   if (-not [Win32]::IsWindowVisible($hWnd)) { return $true }
-  $pid = 0
-  [Win32]::GetWindowThreadProcessId($hWnd, [ref]$pid) | Out-Null
-  if ($pid -eq $ledgerPid) { return $true }
   $rect = [Win32+RECT]::new()
   if (-not [Win32]::GetWindowRect($hWnd, [ref]$rect)) { return $true }
   $width = $rect.Right - $rect.Left
   $height = $rect.Bottom - $rect.Top
+  if ([Math]::Abs($rect.Left - $sidebarLeft) -le 2 -and [Math]::Abs($rect.Top - $sidebarTop) -le 2 -and [Math]::Abs($width - ${Math.floor(sidebarBounds.width)}) -le 2 -and [Math]::Abs($height - $sidebarHeight) -le 2) { return $true }
   if ($width -lt 80 -or $height -lt 80) { return $true }
 
   $overlapTop = [Math]::Max($sidebarTop, $rect.Top)
@@ -1227,7 +1241,10 @@ public class Win32 {
   }
 }
 "@
-$ledgerPid = ${process.pid}
+$sidebarLeft = ${Math.floor(sidebarBounds.x)}
+$sidebarTop = ${Math.floor(sidebarBounds.y)}
+$sidebarWidth = ${Math.floor(sidebarBounds.width)}
+$sidebarHeight = ${Math.floor(sidebarBounds.height)}
 $cursor = [Win32+POINT]::new()
 $cursor.X = ${Math.floor(probeX)}
 $cursor.Y = ${Math.floor(probeY)}
@@ -1235,13 +1252,13 @@ $script:result = $null
 [Win32]::EnumWindows({
   param([IntPtr]$hWnd, [IntPtr]$lParam)
   if (-not [Win32]::IsWindowVisible($hWnd)) { return $true }
-  $pid = 0
-  [Win32]::GetWindowThreadProcessId($hWnd, [ref]$pid) | Out-Null
-  if ($pid -eq $ledgerPid) { return $true }
   $rect = [Win32+RECT]::new()
   if (-not [Win32]::GetWindowRect($hWnd, [ref]$rect)) { return $true }
+  $width = $rect.Right - $rect.Left
+  $height = $rect.Bottom - $rect.Top
+  if ([Math]::Abs($rect.Left - $sidebarLeft) -le 2 -and [Math]::Abs($rect.Top - $sidebarTop) -le 2 -and [Math]::Abs($width - $sidebarWidth) -le 2 -and [Math]::Abs($height - $sidebarHeight) -le 2) { return $true }
   if ($cursor.X -ge $rect.Left -and $cursor.X -le $rect.Right -and $cursor.Y -ge $rect.Top -and $cursor.Y -le $rect.Bottom) {
-    $script:result = "$($hWnd.ToInt64())|$($rect.Left)|$($rect.Top)|$($rect.Right - $rect.Left)|$($rect.Bottom - $rect.Top)"
+    $script:result = "$($hWnd.ToInt64())|$($rect.Left)|$($rect.Top)|$width|$height"
     return $false
   }
   return $true
@@ -1609,10 +1626,12 @@ app.on('activate', () => {
     return
   }
 
+  if (!sidebarIsVisible) return
   if (sidebarWin.isVisible()) return
 
   sidebarWin.show()
   applySidebarWindowMode(currentSidebarMode)
+  sidebarIsVisible = true
   sidebarWin.webContents.send('sidebar:visibility-changed', { isVisible: true })
 })
 
@@ -1816,7 +1835,8 @@ app.whenReady().then(() => {
     const now = Date.now()
     if (now - lastSidebarToggleAt < 250) return
     lastSidebarToggleAt = now
-    applySidebarVisibility(!sidebarIsVisible)
+    const nextVisible = sidebarWin && !sidebarWin.isDestroyed() ? !sidebarWin.isVisible() : !sidebarIsVisible
+    applySidebarVisibility(nextVisible)
   })
 
   if (!registered) {

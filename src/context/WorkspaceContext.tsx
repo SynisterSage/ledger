@@ -100,7 +100,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   useEffect(() => {
     void refreshWorkspaces()
-  }, [refreshWorkspaces])
+  }, [session?.access_token, user])
 
   useEffect(() => {
     const onStorage = (event: StorageEvent) => {
