@@ -57,6 +57,18 @@ const getProgressStateColor = (value: number) => {
   return '#22C55E'
 }
 
+const getTimelineCompleteness = (startDate?: string | null, endDate?: string | null) => {
+  if (!startDate || !endDate) return null
+  const start = new Date(`${startDate}T00:00:00`)
+  const end = new Date(`${endDate}T23:59:59`)
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end <= start) return null
+  const now = Date.now()
+  if (now <= start.getTime()) return 0
+  if (now >= end.getTime()) return 100
+  const ratio = (now - start.getTime()) / (end.getTime() - start.getTime())
+  return Math.max(0, Math.min(100, Math.round(ratio * 100)))
+}
+
 export const ExpandedSidebar = ({
   onDragHandleMouseDown,
   onCollapseRequest,
@@ -97,7 +109,7 @@ export const ExpandedSidebar = ({
   const [eventEndTime, setEventEndTime] = useState('10:00')
   const [workspaceId, setWorkspaceId] = useState<string | null>(null)
   const todayBucketRef = useRef(todayKey())
-  const [projects, setProjects] = useState<Array<{ id: string; name: string; status: ProjectStatus | string; completeness: number; color?: string }>>([])
+  const [projects, setProjects] = useState<Array<{ id: string; name: string; status: ProjectStatus | string; completeness: number; color?: string; start_date?: string | null; end_date?: string | null }>>([])
   const [isLoadingProjects, setIsLoadingProjects] = useState(true)
   const [expandedProjectId, setExpandedProjectId] = useState<string | null>(null)
   const [projectUpdating, setProjectUpdating] = useState<string | null>(null)
@@ -300,11 +312,14 @@ export const ExpandedSidebar = ({
       try {
         const data = await api.getProjects()
         if (!cancelled) {
-          const projects = (data as Array<{ id: string; name: string; status: string; completeness: number; color?: string }>)
+          const projects = (data as Array<{ id: string; name: string; status: string; completeness: number; color?: string; start_date?: string | null; end_date?: string | null }>)
             .filter((project) => normalizeProjectStatus(project.status) !== 'completed')
             .map((project) => ({
               ...project,
               status: normalizeProjectStatus(project.status),
+              completeness:
+                getTimelineCompleteness(project.start_date ?? null, project.end_date ?? null) ??
+                Math.max(0, Math.min(100, Number(project.completeness) || 0)),
             }))
           setProjects(projects)
         }
@@ -644,7 +659,7 @@ export const ExpandedSidebar = ({
     try {
       const data = await api.createProject(name)
       const createdProject = {
-        ...(data as { id: string; name: string; status: string; completeness: number; color?: string }),
+        ...(data as { id: string; name: string; status: string; completeness: number; color?: string; start_date?: string | null; end_date?: string | null }),
         status: normalizeProjectStatus((data as { status: string }).status),
       }
       setProjects((prev) => {
@@ -1294,7 +1309,9 @@ export const ExpandedSidebar = ({
                 const statusKey = normalizeProjectStatus(String(project.status))
                 const statusLabel = projectStatusLabels[statusKey]
                 const statusColor = projectStatusStyles[statusKey]
-                const progressColor = getProgressStateColor(project.completeness)
+                const timelineCompleteness = getTimelineCompleteness(project.start_date ?? null, project.end_date ?? null)
+                const displayCompleteness = timelineCompleteness ?? project.completeness
+                const progressColor = getProgressStateColor(displayCompleteness)
                 const projectAccent = project.color || '#007AFF'
 
                 return (
@@ -1320,6 +1337,7 @@ export const ExpandedSidebar = ({
                         </div>
                         <div
                           onPointerDown={(e) => {
+                            if (timelineCompleteness !== null) return
                             e.stopPropagation()
                             const rect = e.currentTarget.getBoundingClientRect()
                             const percent = Math.round(((e.clientX - rect.left) / rect.width) * 100)
@@ -1334,15 +1352,17 @@ export const ExpandedSidebar = ({
                             e.currentTarget.setPointerCapture(e.pointerId)
                           }}
                           onClick={(e) => e.stopPropagation()}
-                          className="mt-2 h-2 rounded-full bg-gray-200 overflow-hidden cursor-pointer hover:bg-gray-300 transition touch-none"
+                          className={`mt-2 h-2 rounded-full bg-gray-200 overflow-hidden transition touch-none ${
+                            timelineCompleteness === null ? 'cursor-pointer hover:bg-gray-300' : 'cursor-default'
+                          }`}
                         >
                           <div
                             className={`h-full rounded-full ${draggingProjectId === project.id ? '' : 'transition-all'}`}
-                            style={{ width: `${project.completeness}%`, backgroundColor: progressColor }}
+                            style={{ width: `${displayCompleteness}%`, backgroundColor: progressColor }}
                           />
                         </div>
                         <div className="mt-2 flex items-center justify-between gap-2">
-                          <p className="text-[10px] text-gray-600">{project.completeness}% complete</p>
+                          <p className="text-[10px] text-gray-600">{displayCompleteness}% complete</p>
                           <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${statusColor}`}>
                             {statusLabel}
                           </span>
