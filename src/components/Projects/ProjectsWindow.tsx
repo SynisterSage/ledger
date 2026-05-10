@@ -14,7 +14,7 @@ import { modulePaneSizing, clampPaneWidth, getPaneWidthForViewport } from '../..
 import { useApi } from '../../hooks/useApi'
 import { useWorkspaceContext } from '../../context/WorkspaceContext'
 import { ModuleWindowHeader } from '../Common/ModuleWindowHeader'
-import { SkeletonList, SkeletonProjectCard, SkeletonTaskItem } from '../Common/Skeleton'
+import { SkeletonProjectCard, SkeletonTaskItem } from '../Common/Skeleton'
 import { useViewportWidth } from '../../hooks/useViewportWidth'
 
 type ProjectRow = {

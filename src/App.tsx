@@ -24,7 +24,7 @@ import ProjectsWindow from './components/Projects/ProjectsWindow'
 import SettingsWindow from './components/Settings/SettingsWindow'
 import { SearchModal } from './components/Search/SearchModal'
 import { SearchProvider } from './context/SearchContext'
-import { SkeletonList, SkeletonStatCards, SkeletonProjectCard, SkeletonNoteCard, SkeletonTaskItem } from './components/Common/Skeleton'
+import { SkeletonStatCards, SkeletonProjectCard, SkeletonNoteCard, SkeletonTaskItem } from './components/Common/Skeleton'
 import { useSearch } from './context/SearchContext'
 import { QuickCaptureWindow } from './components/Common/QuickCaptureWindow'
 

@@ -11,7 +11,7 @@ import { modulePaneSizing, clampPaneWidth, getPaneWidthForViewport } from '../..
 import { useApi } from '../../hooks/useApi'
 import { useWorkspaceContext } from '../../context/WorkspaceContext'
 import { ModuleWindowHeader } from '../Common/ModuleWindowHeader'
-import { SkeletonLoader, SkeletonList, SkeletonNoteCard } from '../Common/Skeleton'
+import { SkeletonLoader, SkeletonNoteCard } from '../Common/Skeleton'
 import { MindMapEditor } from './MindMapEditor'
 import { RichTextEditor } from './RichTextEditor'
 import { useViewportWidth } from '../../hooks/useViewportWidth'
