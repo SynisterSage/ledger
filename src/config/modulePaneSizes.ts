@@ -15,20 +15,20 @@ export type ModulePaneSizing = {
 export const modulePaneSizing: Record<'calendar' | 'notes' | 'projects', ModulePaneSizing> = {
   calendar: {
     left: {
-      min: 216,
-      max: 264,
-      defaultWidth: 232,
-      compactWidth: 220,
+      min: 260,
+      max: 340,
+      defaultWidth: 288,
+      compactWidth: 268,
       compactBreakpoint: 1440,
-      compactThreshold: 230,
+      compactThreshold: 280,
     },
     right: {
-      min: 196,
-      max: 256,
-      defaultWidth: 224,
-      compactWidth: 212,
+      min: 260,
+      max: 340,
+      defaultWidth: 288,
+      compactWidth: 268,
       compactBreakpoint: 1440,
-      compactThreshold: 236,
+      compactThreshold: 280,
     },
   },
   notes: {

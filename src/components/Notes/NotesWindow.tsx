@@ -544,7 +544,7 @@ export const NotesWindow = () => {
         closeLabel="Close notes"
         onClose={() => {
           void flushAutosave().finally(() => {
-            void window.desktopWindow?.toggleModule('notes')
+            void window.desktopWindow?.closeModule('notes')
           })
         }}
         actions={

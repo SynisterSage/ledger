@@ -1,12 +1,17 @@
 import {
+  ChevronLeft,
+  ChevronRight,
+  ChevronsDown,
+  ChevronsUp,
   CircleAlert,
   Loader2,
   Settings,
+  Wind,
 } from 'lucide-react'
 import { type CSSProperties, useEffect, useMemo, useRef, useState } from 'react'
 import { useAuthContext } from '../../context/AuthContext'
 import { useSidebar } from '../../context/SidebarContext'
-import { type SidebarDefaultState, type SidebarPosition } from '../../config/sidebarPreferences'
+import { defaultSidebarPreferences, type SidebarDefaultState, type SidebarPosition } from '../../config/sidebarPreferences'
 import { useWorkspaceContext } from '../../context/WorkspaceContext'
 import { useApi } from '../../hooks/useApi'
 import { ModuleWindowHeader } from '../Common/ModuleWindowHeader'
@@ -44,13 +49,64 @@ type WorkspaceInvitation = {
   created_at: string
 }
 
-type SettingsSectionId = 'account' | 'workspace' | 'calendar' | 'sidebar' | 'accessibility'
+type SettingsSectionId = 'account' | 'workspace' | 'calendar' | 'sidebar' | 'shortcuts' | 'accessibility'
 const sectionOrder: Array<{ id: SettingsSectionId; label: string; description: string }> = [
   { id: 'account', label: 'Account', description: 'Identity and security' },
   { id: 'workspace', label: 'Workspace', description: 'Display and behavior defaults' },
   { id: 'calendar', label: 'Calendar', description: 'Event and reminder defaults' },
   { id: 'sidebar', label: 'Sidebar', description: 'Docking, visibility, and placement' },
+  { id: 'shortcuts', label: 'Keyboard Shortcuts', description: 'Quick reference for actions' },
   { id: 'accessibility', label: 'Accessibility', description: 'Comfort and readability options' },
+]
+
+const shortcutSections: Array<{
+  id: string
+  title: string
+  shortcuts: Array<{ keys: string; description: string }>
+}> = [
+  {
+    id: 'sidebar',
+    title: 'Sidebar',
+    shortcuts: [
+      { keys: '⌘ + ⇧ + B', description: 'hide / show sidebar' },
+      { keys: '⌘ + B', description: 'collapse / expand' },
+    ],
+  },
+  {
+    id: 'search',
+    title: 'Search',
+    shortcuts: [
+      { keys: '⌘ + K', description: 'search everything' },
+      { keys: 'Esc', description: 'close search' },
+      { keys: '↑ ↓ Arrow keys', description: 'navigate results' },
+      { keys: 'Enter', description: 'jump to result' },
+    ],
+  },
+  {
+    id: 'navigation',
+    title: 'Navigation',
+    shortcuts: [
+      { keys: '⌘ + 1', description: 'dashboard' },
+      { keys: '⌘ + 2', description: 'calendar' },
+      { keys: '⌘ + 3', description: 'notes' },
+      { keys: '⌘ + 4', description: 'projects' },
+    ],
+  },
+  {
+    id: 'general',
+    title: 'General',
+    shortcuts: [
+      { keys: '⌘ + ,', description: 'open settings' },
+      { keys: '⌘ + ?', description: 'show this help' },
+    ],
+  },
+  {
+    id: 'mouse-actions',
+    title: 'Mouse Actions',
+    shortcuts: [
+      { keys: 'Click logo', description: 'collapse / expand' },
+    ],
+  },
 ]
 
 const STORAGE_KEY = 'ledger:settings:v1'
@@ -92,6 +148,9 @@ const selectChevronStyle: CSSProperties = {
   backgroundSize: '14px 14px',
 }
 
+const primaryActionButtonClass =
+  'h-9 rounded-xl bg-[#FF5F40] px-4 text-sm font-medium text-white transition hover:bg-[#ea5336] disabled:opacity-60'
+
 const ToggleField = ({
   id,
   label,
@@ -112,7 +171,7 @@ const ToggleField = ({
         type="checkbox"
         checked={checked}
         onChange={(e) => onChange(e.target.checked)}
-        className="mt-1 h-4 w-4 rounded border-gray-300 text-[#FF5F40] focus:ring-2 focus:ring-[#ffd9d0]"
+        className="mt-1 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-2 focus:ring-blue-200"
       />
       <span>
         <span className="block text-sm font-medium text-gray-900">{label}</span>
@@ -132,14 +191,11 @@ export const SettingsWindow = () => {
     alwaysOnTop,
     autoHide,
     setFloatingDockEnabled,
-    setFloatingDockThreshold,
-    isVisible,
     setPosition,
     setOpacity,
     setDefaultState,
     setAlwaysOnTop,
     setAutoHide,
-    setIsVisible,
   } = useSidebar()
   const api = useApi()
   const {
@@ -157,6 +213,8 @@ export const SettingsWindow = () => {
   const [isLoadingSettings, setIsLoadingSettings] = useState(true)
   const [isSavingPrefs, setIsSavingPrefs] = useState(false)
   const [saveStatus, setSaveStatus] = useState<string | null>(null)
+  const [isSavingSidebar, setIsSavingSidebar] = useState(false)
+  const [sidebarSaveStatus, setSidebarSaveStatus] = useState<string | null>(null)
 
   const [fullName, setFullName] = useState('')
   const [initialFullName, setInitialFullName] = useState('')
@@ -196,12 +254,17 @@ export const SettingsWindow = () => {
   const [isSendingInvite, setIsSendingInvite] = useState(false)
   const inviteEmailRef = useRef<HTMLInputElement | null>(null)
 
-  const sidebarPositionOptions: Array<{ value: SidebarPosition; label: string; description: string }> = [
-    { value: 'right', label: 'Right', description: 'Keep the sidebar docked on the right edge.' },
-    { value: 'left', label: 'Left', description: 'Move the sidebar to the left edge.' },
-    { value: 'top', label: 'Top', description: 'Horizontal layout at the top (experimental).' },
-    { value: 'bottom', label: 'Bottom', description: 'Horizontal layout at the bottom (experimental).' },
-    { value: 'floating', label: 'Floating', description: 'Detach the sidebar into a floating panel with optional app docking.' },
+  const sidebarPositionOptions: Array<{
+    value: SidebarPosition
+    label: string
+    description: string
+    icon: typeof ChevronRight
+  }> = [
+    { value: 'right', label: 'Right', description: 'Keep sidebar docked on the right edge.', icon: ChevronRight },
+    { value: 'left', label: 'Left', description: 'Move sidebar to the left edge.', icon: ChevronLeft },
+    { value: 'top', label: 'Top', description: 'Horizontal layout at the top.', icon: ChevronsUp },
+    { value: 'bottom', label: 'Bottom', description: 'Horizontal layout at the bottom.', icon: ChevronsDown },
+    { value: 'floating', label: 'Floating', description: 'Detached panel, draggable anywhere.', icon: Wind },
   ]
 
   const sidebarDefaultStateOptions: Array<{ value: SidebarDefaultState; label: string; description: string }> = [
@@ -315,6 +378,45 @@ export const SettingsWindow = () => {
     } finally {
       setIsSavingPrefs(false)
     }
+  }
+
+  const handleSaveSidebarSettings = async () => {
+    setIsSavingSidebar(true)
+    setSidebarSaveStatus(null)
+
+    try {
+      await window.desktopWindow?.applySidebarPreferences(sidebarPreferences)
+      await api.updateUserSettings({
+        full_name: fullName.trim() || null,
+        preferences: {
+          ...preferences,
+          sidebarDefaults: {
+            position: sidebarPreferences.position,
+            opacity: sidebarPreferences.opacity,
+            blur: sidebarPreferences.blur,
+            defaultState: sidebarPreferences.defaultState,
+            alwaysOnTop: sidebarPreferences.alwaysOnTop,
+            autoHide: sidebarPreferences.autoHide,
+            floatingDockEnabled: sidebarPreferences.floatingDockEnabled,
+          },
+        },
+      })
+      setSidebarSaveStatus('Sidebar settings saved.')
+    } catch {
+      setSidebarSaveStatus('Could not save sidebar settings.')
+    } finally {
+      setIsSavingSidebar(false)
+    }
+  }
+
+  const handleResetSidebarSettings = () => {
+    setPosition(defaultSidebarPreferences.position)
+    setOpacity(defaultSidebarPreferences.opacity)
+    setDefaultState(defaultSidebarPreferences.defaultState)
+    setAlwaysOnTop(defaultSidebarPreferences.alwaysOnTop)
+    setAutoHide(defaultSidebarPreferences.autoHide)
+    setFloatingDockEnabled(defaultSidebarPreferences.floatingDockEnabled)
+    setSidebarSaveStatus('Sidebar settings reset to defaults.')
   }
 
   const handleUpdatePassword = async () => {
@@ -614,7 +716,7 @@ export const SettingsWindow = () => {
         icon={<Settings size={18} className="text-gray-700" />}
         closeLabel="Close settings"
         onClose={() => {
-          void window.desktopWindow?.toggleModule('settings')
+          void window.desktopWindow?.closeModule('settings')
         }}
         actions={
           <button
@@ -741,13 +843,8 @@ export const SettingsWindow = () => {
                       <div>
                         <p className="text-xs uppercase tracking-wider text-gray-500">Create workspace</p>
                         <h3 className="mt-1 text-sm font-semibold text-gray-900">Start a new place for Ledger data</h3>
-                        <p className="mt-1 text-xs text-gray-600">
-                          Team workspaces can be shared with invites. Personal workspaces stay private to you, and you can create more than one.
-                        </p>
+                        <p className="mt-1 text-xs text-gray-600">Create a personal or team workspace.</p>
                       </div>
-                      <span className="rounded-full border border-gray-200 bg-gray-50 px-2.5 py-1 text-[11px] font-medium text-gray-700">
-                        {workspaceCreateType === 'personal' ? 'Personal' : 'Team'}
-                      </span>
                     </div>
 
                     <div className="mt-3 grid gap-2 md:grid-cols-[1fr_auto]">
@@ -780,12 +877,7 @@ export const SettingsWindow = () => {
                       />
                     </div>
 
-                    <div className="mt-3 flex items-center justify-between gap-3">
-                      <p className="text-xs text-gray-500">
-                        {workspaceCreateType === 'personal'
-                          ? 'Use this for solo notes and private planning. You can create multiple personal workspaces.'
-                          : 'Use this for shared projects, invites, and collaboration.'}
-                      </p>
+                    <div className="mt-3 flex items-center justify-end gap-3">
                       <button
                         onClick={() => void handleCreateWorkspace()}
                         disabled={isCreatingWorkspace || !workspaceCreateName.trim()}
@@ -798,17 +890,11 @@ export const SettingsWindow = () => {
                     {workspaceCreateStatus && (
                       <div className="mt-3 rounded-xl border border-green-200 bg-green-50 px-3 py-2">
                         <p className="text-xs font-medium text-green-800">{workspaceCreateStatus}</p>
-                        <button
-                          onClick={() => inviteEmailRef.current?.focus()}
-                          className="mt-2 text-xs font-medium text-green-700 hover:text-green-800"
-                        >
-                          Jump to invite email
-                        </button>
                       </div>
                     )}
                   </div>
 
-                  <div className="mt-4 rounded-2xl border border-gray-200 bg-gray-50 p-4">
+                  <div className="mt-4 rounded-2xl border border-gray-200 bg-white p-4">
                     <div className="flex items-center justify-between gap-3">
                       <div>
                         <p className="text-xs uppercase tracking-wider text-gray-500">Active workspace</p>
@@ -842,7 +928,7 @@ export const SettingsWindow = () => {
                     </div>
 
                     {isWorkspaceManageOpen && canManageWorkspace && (
-                      <div className="mt-3 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+                      <div className="mt-3 rounded-2xl border border-gray-200 bg-white p-4">
                         <div className="flex items-center justify-between gap-3">
                           <div>
                             <p className="text-xs uppercase tracking-wider text-gray-500">Workspace management</p>
@@ -857,7 +943,7 @@ export const SettingsWindow = () => {
                         </div>
 
                         <div className="mt-3 grid gap-3 md:grid-cols-2">
-                          <div className="rounded-2xl border border-gray-200 bg-gray-50 p-3">
+                          <div className="rounded-2xl border border-gray-200 bg-white p-3">
                             <p className="text-xs font-medium uppercase tracking-wider text-gray-500">Details</p>
                             <div className="mt-2 space-y-2">
                               <input
@@ -892,7 +978,7 @@ export const SettingsWindow = () => {
                             {workspaceEditError && <p className="mt-2 text-xs text-red-700">{workspaceEditError}</p>}
                           </div>
 
-                          <div className="rounded-2xl border border-gray-200 bg-gray-50 p-3">
+                          <div className="rounded-2xl border border-gray-200 bg-white p-3">
                             <p className="text-xs font-medium uppercase tracking-wider text-red-600">Delete</p>
                             <p className="mt-2 text-xs leading-5 text-gray-600">
                               Remove this workspace and everything inside it.
@@ -1161,27 +1247,19 @@ export const SettingsWindow = () => {
               {activeSection === 'sidebar' && (
                 <section className="rounded-2xl border border-gray-200 bg-white p-5" aria-labelledby="settings-sidebar">
                   <h2 id="settings-sidebar" className="text-lg font-semibold text-gray-900">Sidebar</h2>
-                  <p className="mt-1 text-sm text-gray-600">Basic controls for sidebar placement, appearance, and window behavior.</p>
+                  <p className="mt-1 text-sm text-gray-600">Configure position, behavior, and appearance for the sidebar.</p>
 
-                  <div className="mt-5 space-y-4">
-                    <ToggleField
-                      id="settings-sidebar-visible"
-                      label="Show sidebar"
-                      help="Use Cmd+Shift+B to toggle quickly."
-                      checked={isVisible}
-                      onChange={(checked) => setIsVisible(checked)}
-                    />
-
-                    <div>
-                      <p className="text-sm font-medium text-gray-900">Position</p>
-                      <p className="mt-1 text-xs text-gray-600">Choose where the sidebar appears relative to the main workspace.</p>
-                      <div className="mt-3 grid gap-3">
+                  <div className="mt-5 space-y-5">
+                    <div className="rounded-xl border border-gray-200 bg-gray-50 p-5">
+                      <h3 className="text-xs font-semibold uppercase tracking-[0.5px] text-gray-600">Position</h3>
+                      <p className="mt-2 text-xs text-gray-600">Choose where the sidebar appears in your workspace.</p>
+                      <div className="mt-4 grid gap-2">
                         {sidebarPositionOptions.map((option) => (
                           <label
                             key={option.value}
-                            className={`flex cursor-pointer items-start gap-3 rounded-2xl border px-4 py-3 transition ${
+                            className={`flex cursor-pointer items-start gap-3 rounded-xl border px-3 py-2.5 transition ${
                               position === option.value
-                                ? 'border-gray-300 bg-gray-100'
+                                ? 'border-gray-300 bg-white'
                                 : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'
                             }`}
                           >
@@ -1193,6 +1271,31 @@ export const SettingsWindow = () => {
                               onChange={() => setPosition(option.value)}
                               className="mt-1 h-4 w-4 border-gray-300 text-[#FF5F40] focus:ring-2 focus:ring-[#ffd9d0]"
                             />
+                            <span className="flex-1">
+                              <span className="inline-flex items-center gap-2 text-sm font-medium text-gray-900">
+                                <option.icon
+                                  size={16}
+                                  className={position === option.value ? 'text-[#FF5F40]' : 'text-gray-400'}
+                                />
+                                {option.label}
+                              </span>
+                              <span className="mt-1 block text-xs text-gray-600">{option.description}</span>
+                            </span>
+                          </label>
+                        ))}
+                      </div>
+                      <div className="mt-4 space-y-3">
+                        <p className="text-xs font-semibold uppercase tracking-[0.5px] text-gray-600">Default state</p>
+                        {sidebarDefaultStateOptions.map((option) => (
+                          <label key={option.value} className="flex items-start gap-3 rounded-xl border border-gray-200 bg-white px-3 py-2.5">
+                            <input
+                              type="radio"
+                              name="sidebar-default-state"
+                              value={option.value}
+                              checked={defaultState === option.value}
+                              onChange={() => setDefaultState(option.value)}
+                              className="mt-1 h-4 w-4 border-gray-300 text-[#FF5F40] focus:ring-2 focus:ring-[#ffd9d0]"
+                            />
                             <span>
                               <span className="block text-sm font-medium text-gray-900">{option.label}</span>
                               <span className="mt-1 block text-xs text-gray-600">{option.description}</span>
@@ -1202,15 +1305,40 @@ export const SettingsWindow = () => {
                       </div>
                     </div>
 
-                    <div className="rounded-2xl border border-gray-200 bg-white px-4 py-3">
-                      <div className="flex items-center justify-between gap-3">
-                        <div>
-                          <p className="text-sm font-medium text-gray-900">Opacity</p>
-                          <p className="mt-1 text-xs text-gray-600">Adjust the sidebar transparency between 70% and 95%.</p>
-                        </div>
-                        <span className="shrink-0 rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.16em] text-gray-500">
-                          {Math.round(opacity * 100)}%
-                        </span>
+                    <div className="rounded-xl border border-gray-200 bg-gray-50 p-5">
+                      <h3 className="text-xs font-semibold uppercase tracking-[0.5px] text-gray-600">Behavior</h3>
+                      <div className="mt-3 space-y-3">
+                        <ToggleField
+                          id="settings-sidebar-always-on-top"
+                          label="Always on top"
+                          help="Keep sidebar above other windows in docked mode."
+                          checked={alwaysOnTop}
+                          onChange={(checked) => setAlwaysOnTop(checked)}
+                        />
+                        <ToggleField
+                          id="settings-sidebar-auto-hide"
+                          label="Auto hide"
+                          help="Collapse sidebar when pointer leaves the panel."
+                          checked={autoHide}
+                          onChange={(checked) => setAutoHide(checked)}
+                        />
+                        {position === 'floating' && (
+                          <ToggleField
+                            id="settings-sidebar-dock-enabled"
+                            label="Dock to app windows"
+                            help="Attach sidebar to app windows while floating."
+                            checked={sidebarPreferences.floatingDockEnabled}
+                            onChange={(checked) => setFloatingDockEnabled(checked)}
+                          />
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="rounded-xl border border-gray-200 bg-gray-50 p-5">
+                      <h3 className="text-xs font-semibold uppercase tracking-[0.5px] text-gray-600">Appearance</h3>
+                      <div className="mt-3 flex items-center justify-between">
+                        <p className="text-sm font-medium text-gray-900">Opacity</p>
+                        <span className="text-base font-semibold text-gray-900">{Math.round(opacity * 100)}%</span>
                       </div>
                       <input
                         type="range"
@@ -1219,76 +1347,29 @@ export const SettingsWindow = () => {
                         step="0.01"
                         value={opacity}
                         onChange={(event) => setOpacity(Number(event.target.value))}
-                        className="mt-4 w-full accent-[#FF5F40]"
+                        className="mt-3 w-full accent-[#FF5F40]"
                       />
+                      <p className="mt-2 text-xs text-gray-600">(Range: 70% - 95%)</p>
                     </div>
 
-                    {position === 'floating' && (
-                      <>
-                        <ToggleField
-                          id="settings-sidebar-dock-enabled"
-                          label="Dock to app windows"
-                          help="When floating, attach the sidebar to the app window you drop onto and keep following it while that app moves or resizes."
-                          checked={sidebarPreferences.floatingDockEnabled}
-                          onChange={(checked) => setFloatingDockEnabled(checked)}
-                        />
-
-                        <div className="rounded-2xl border border-gray-200 bg-white px-4 py-3">
-                          <div className="flex items-center justify-between gap-3">
-                            <div>
-                              <p className="text-sm font-medium text-gray-900">Dock threshold</p>
-                              <p className="mt-1 text-xs text-gray-600">How close the sidebar must be to a window edge before it attaches.</p>
-                            </div>
-                            <span className="shrink-0 rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.16em] text-gray-500">
-                              {sidebarPreferences.floatingDockThreshold}px
-                            </span>
-                          </div>
-                          <input
-                            type="range"
-                            min="8"
-                            max="80"
-                            step="1"
-                            value={sidebarPreferences.floatingDockThreshold}
-                            onChange={(event) => setFloatingDockThreshold(Number(event.target.value))}
-                            className="mt-4 w-full accent-[#FF5F40]"
-                          />
-                        </div>
-                      </>
-                    )}
-
-                    <div>
-                      <p className="text-sm font-medium text-gray-900">Default state</p>
-                      <p className="mt-1 text-xs text-gray-600">Choose how the sidebar opens when the app loads.</p>
-                      <select
-                        value={defaultState}
-                        onChange={(event) => setDefaultState(event.target.value as SidebarDefaultState)}
-                        className="mt-3 h-10 w-full appearance-none rounded-xl border border-gray-200 bg-gray-50 px-3 pr-9 text-sm text-gray-900 outline-none focus:border-gray-300 focus:ring-4 focus:ring-gray-100"
-                        style={selectChevronStyle}
+                    <div className="flex items-center justify-between gap-3">
+                      <button
+                        onClick={handleResetSidebarSettings}
+                        type="button"
+                        className="h-9 rounded-xl border border-gray-200 bg-gray-100 px-4 text-sm font-medium text-gray-800 transition hover:bg-gray-200"
                       >
-                        {sidebarDefaultStateOptions.map((option) => (
-                          <option key={option.value} value={option.value}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </select>
+                        Reset to Defaults
+                      </button>
+                      <button
+                        onClick={() => void handleSaveSidebarSettings()}
+                        type="button"
+                        disabled={isSavingSidebar}
+                        className="h-9 rounded-xl bg-[#FF5F40] px-4 text-sm font-medium text-white transition hover:bg-[#ea5336] disabled:opacity-60"
+                      >
+                        {isSavingSidebar ? 'Saving...' : 'Save Settings'}
+                      </button>
                     </div>
-
-                    <ToggleField
-                      id="settings-sidebar-always-on-top"
-                      label="Always on top"
-                      help="Keep the sidebar above other windows in docked mode."
-                      checked={alwaysOnTop}
-                      onChange={(checked) => setAlwaysOnTop(checked)}
-                    />
-
-                    <ToggleField
-                      id="settings-sidebar-auto-hide"
-                      label="Auto hide"
-                      help="Collapse the sidebar when the pointer leaves the panel."
-                      checked={autoHide}
-                      onChange={(checked) => setAutoHide(checked)}
-                    />
-
+                    {sidebarSaveStatus && <p className="text-xs text-gray-700">{sidebarSaveStatus}</p>}
                   </div>
                 </section>
               )}
@@ -1331,6 +1412,42 @@ export const SettingsWindow = () => {
                 </section>
               )}
 
+              {activeSection === 'shortcuts' && (
+                <section className="rounded-2xl border border-gray-200 bg-white p-5" aria-labelledby="settings-shortcuts">
+                  <div>
+                    <h2 id="settings-shortcuts" className="text-lg font-semibold text-gray-900">Keyboard Shortcuts</h2>
+                    <p className="mt-1 text-sm text-gray-600">Quick reference for actions.</p>
+                  </div>
+
+                  <div className="mt-5 rounded-xl border border-gray-200 bg-[#fafafa] p-5">
+                    <div className="space-y-7">
+                      {shortcutSections.map((section) => (
+                        <section key={section.id} aria-labelledby={`shortcut-group-${section.id}`}>
+                          <h3
+                            id={`shortcut-group-${section.id}`}
+                            className="text-xs font-semibold uppercase tracking-[0.5px] text-gray-600"
+                          >
+                            {section.title}
+                          </h3>
+                          <div className="mt-3 space-y-3">
+                            {section.shortcuts.map((shortcut) => (
+                              <div
+                                key={`${section.id}-${shortcut.keys}-${shortcut.description}`}
+                                className="grid min-h-8 grid-cols-[180px_1fr] items-center gap-3"
+                              >
+                                <span className="font-mono text-sm font-semibold text-gray-900">{shortcut.keys}</span>
+                                <span className="text-sm text-gray-700">{shortcut.description}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </section>
+                      ))}
+                    </div>
+                  </div>
+                </section>
+              )}
+
+              {activeSection !== 'sidebar' && activeSection !== 'shortcuts' && (
                 <section className="rounded-2xl border border-gray-200 bg-white p-5">
                   <div className="flex items-center justify-between gap-3">
                     <div>
@@ -1340,15 +1457,16 @@ export const SettingsWindow = () => {
                     <button
                       onClick={() => void handleSavePrefs()}
                       disabled={isLoadingSettings || isSavingPrefs}
-                      className="h-9 rounded-xl bg-gray-900 px-4 text-sm font-medium text-white transition hover:bg-gray-800 disabled:opacity-60"
+                      className={primaryActionButtonClass}
                     >
-                      {isSavingPrefs ? 'Saving...' : 'Save settings'}
+                      {isSavingPrefs ? 'Saving...' : 'Save Settings'}
                     </button>
                   </div>
-                {saveStatus && (
-                  <p className="mt-3 text-xs text-gray-700" role="status">{saveStatus}</p>
-                )}
-              </section>
+                  {saveStatus && (
+                    <p className="mt-3 text-xs text-gray-700" role="status">{saveStatus}</p>
+                  )}
+                </section>
+              )}
             </div>
           </main>
         </div>

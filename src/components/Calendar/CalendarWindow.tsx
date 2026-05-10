@@ -60,8 +60,10 @@ const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 const hours = Array.from({ length: 12 }, (_, i) => `${i + 8}:00`)
 const NOTIFICATION_VISIBLE_MS = 4000
 const NOTIFICATION_FADE_MS = 350
-const SIDEBAR_MIN_WIDTH = 250
+const SIDEBAR_MIN_WIDTH = modulePaneSizing.calendar.left.min
 const SIDEBAR_MAX_WIDTH = 460
+const INSPECTOR_MIN_WIDTH = modulePaneSizing.calendar.right.min
+const INSPECTOR_MAX_WIDTH = 420
 
 const startOfWeek = (date: Date) => {
   const d = new Date(date)
@@ -747,7 +749,7 @@ export const CalendarWindow = () => {
 
     const handleMove = (event: MouseEvent) => {
       const next = window.innerWidth - event.clientX
-      const clamped = Math.max(260, Math.min(420, next))
+      const clamped = Math.max(INSPECTOR_MIN_WIDTH, Math.min(INSPECTOR_MAX_WIDTH, next))
       setRightPaneWidth(clamped)
     }
 
@@ -1214,7 +1216,7 @@ export const CalendarWindow = () => {
         icon={<CalendarDays size={18} className="text-blue-600" />}
         closeLabel="Close calendar"
         onClose={() => {
-          void window.desktopWindow?.toggleModule('calendar')
+          void window.desktopWindow?.closeModule('calendar')
         }}
         actions={
           <>
@@ -1392,11 +1394,11 @@ export const CalendarWindow = () => {
             <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-2">Overview</p>
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <p className="text-[10px] text-gray-500 uppercase tracking-wide">Events</p>
+                <p className="text-[10px] text-gray-500 uppercase tracking-wide whitespace-nowrap">Events</p>
                 <p className="text-xl font-semibold text-gray-900 leading-tight">{visibleEvents.length}</p>
               </div>
               <div>
-                <p className="text-[10px] text-gray-500 uppercase tracking-wide">Reminders</p>
+                <p className="text-[10px] text-gray-500 uppercase tracking-wide whitespace-nowrap">Reminders</p>
                 <p className="text-xl font-semibold text-gray-900 leading-tight">{reminders.length}</p>
               </div>
             </div>
@@ -1852,11 +1854,11 @@ export const CalendarWindow = () => {
                 <h2 className="mt-1 text-sm font-semibold text-gray-900">{viewConfig.label}</h2>
                 <div className="mt-3 grid grid-cols-2 gap-3">
                   <div className="rounded-xl border border-gray-200 bg-gray-50 p-3">
-                    <p className="text-[10px] uppercase tracking-wide text-gray-500">Events</p>
+                    <p className="text-[10px] uppercase tracking-wide text-gray-500 whitespace-nowrap">Events</p>
                     <p className="text-lg font-semibold text-gray-900">{visibleEvents.length}</p>
                   </div>
                   <div className="rounded-xl border border-gray-200 bg-gray-50 p-3">
-                    <p className="text-[10px] uppercase tracking-wide text-gray-500">Reminders</p>
+                    <p className="text-[10px] uppercase tracking-wide text-gray-500 whitespace-nowrap">Reminders</p>
                     <p className="text-lg font-semibold text-gray-900">{reminders.length}</p>
                   </div>
                 </div>

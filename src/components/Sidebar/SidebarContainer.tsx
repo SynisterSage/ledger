@@ -72,15 +72,18 @@ export const SidebarContainer = () => {
 
   const isFloating = position === 'floating'
   const isHorizontal = position === 'top' || position === 'bottom'
+  const isCollapsedIconMode = state === 'minimized' && !isExpanded
   const shellSizeClasses = state === 'expanded'
     ? isHorizontal
       ? 'w-full h-16'
       : 'w-80 h-full'
-    : isExpanded
-      ? isHorizontal
-        ? 'w-full h-16'
-        : 'w-16 h-full'
+      : isExpanded
+        ? isHorizontal
+          ? 'w-full h-16'
+          : 'w-16 h-full'
       : 'w-16 h-16'
+  const shellRadiusClass = isCollapsedIconMode ? 'rounded-[22px]' : 'rounded-[28px]'
+  const shellClipRadius = isCollapsedIconMode ? '22px' : '28px'
 
   const scheduleAutoHideHide = () => {
     if (!autoHide) return
@@ -259,13 +262,14 @@ export const SidebarContainer = () => {
 
   const shellStyle: React.CSSProperties = {
     opacity: autoHide && !isHovered && isAutoHideFading ? 0 : 1,
-    backgroundColor: `rgba(255, 255, 255, ${Math.max(0.7, Math.min(0.95, opacity))})`,
-    backdropFilter: state === 'expanded' ? 'saturate(180%) blur(12px)' : undefined,
-    WebkitBackdropFilter: state === 'expanded' ? 'saturate(180%) blur(12px)' : undefined,
-    clipPath: 'inset(0 round 28px)',
+    backgroundColor: `rgba(248, 249, 251, ${Math.max(0.7, Math.min(0.95, opacity))})`,
+    clipPath: `inset(0 round ${shellClipRadius})`,
     contain: 'paint',
-    transitionProperty: isDragging && isFloating ? 'opacity' : 'opacity, background-color, backdrop-filter, -webkit-backdrop-filter, box-shadow, border-color',
-    transitionDuration: isDragging && isFloating ? '0ms' : '300ms',
+    transitionProperty:
+      isDragging && isFloating
+        ? 'opacity'
+        : 'opacity, background-color, box-shadow, border-color, outline-color',
+    transitionDuration: isDragging && isFloating ? '0ms' : '140ms',
     transitionTimingFunction: 'ease-out',
   }
 
@@ -274,9 +278,9 @@ export const SidebarContainer = () => {
       style={shellStyle}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
-      className={`relative overflow-hidden rounded-[28px] border border-white/40 shadow-[0_18px_60px_rgba(15,23,42,0.14)] ${shellSizeClasses} transition-[width,height,opacity,border-color,box-shadow] duration-180 ease-out ${autoHide && !isHovered && !isDragging ? 'shadow-sm' : ''} ${hydrationClass}`}
+      className={`relative overflow-hidden ${shellRadiusClass} border border-[rgba(255,255,255,0.55)] shadow-[0_10px_28px_rgba(15,23,42,0.16)] outline outline-1 outline-[rgba(15,23,42,0.08)] ${shellSizeClasses} transition-[width,height,opacity,border-color,outline-color,box-shadow] duration-180 ease-out ${autoHide && !isHovered && !isDragging ? 'shadow-sm' : ''} ${hydrationClass}`}
     >
-      <div className="relative h-full w-full">
+      <div className="relative z-10 h-full w-full">
         {state === 'expanded' && (
           <div className='h-full min-h-0 w-full'>
             <ExpandedSidebar

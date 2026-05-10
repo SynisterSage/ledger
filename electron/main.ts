@@ -51,6 +51,8 @@ const readline = require('node:readline')
 const ledgerPid = Number(process.env.LEDGER_DOCK_PARENT_PID || 0)
 let tracking = null
 let trackingTimer = null
+let trackingWindow = null
+let trackingMisses = 0
 
 const send = (message) => {
   try {
@@ -69,7 +71,6 @@ try {
 
 const toInfo = (window) => {
   try {
-    if (!window.isWindow() || !window.isVisible()) return null
     const pid = Number(window.processId || 0)
     if (pid === ledgerPid) return null
     const bounds = window.getBounds && window.getBounds()
@@ -86,16 +87,21 @@ const toInfo = (window) => {
   }
 }
 
-const getWindows = () => {
+const getWindowsWithInfo = () => {
   const out = []
   for (const window of windowManager.getWindows()) {
     const info = toInfo(window)
-    if (info) out.push(info)
+    if (info) out.push({ window, info })
   }
   return out
 }
 
-const findById = (id) => getWindows().find((window) => window.id === id) || null
+const findWindowById = (id) => {
+  for (const item of getWindowsWithInfo()) {
+    if (item.info.id === id) return item.window
+  }
+  return null
+}
 
 const scoreDockTarget = ({ sidebar, threshold }) => {
   const sidebarLeft = Math.floor(sidebar.x)
@@ -108,7 +114,8 @@ const scoreDockTarget = ({ sidebar, threshold }) => {
   let bestScore = Infinity
   let best = null
 
-  for (const window of getWindows()) {
+  for (const item of getWindowsWithInfo()) {
+    const window = item.info
     const rectLeft = window.x
     const rectTop = window.y
     const rectRight = window.x + window.width
@@ -137,7 +144,7 @@ const scoreDockTarget = ({ sidebar, threshold }) => {
 }
 
 const findAtEdge = ({ probes }) => {
-  const windows = getWindows()
+  const windows = getWindowsWithInfo().map((item) => item.info)
   for (const probe of probes) {
     const probeX = Math.floor(probe.x)
     const probeY = Math.floor(probe.y)
@@ -169,21 +176,49 @@ const stopTracking = () => {
   if (trackingTimer) clearInterval(trackingTimer)
   trackingTimer = null
   tracking = null
+  trackingWindow = null
+  trackingMisses = 0
 }
 
 const startTracking = ({ target, intervalMs }) => {
   stopTracking()
   tracking = target
+  trackingWindow = findWindowById(target.id)
   trackingTimer = setInterval(() => {
-    const window = findById(target.id)
-    if (!window) {
+    let bounds = null
+    try {
+      if (!trackingWindow) {
+        trackingWindow = findWindowById(target.id)
+      }
+      bounds = trackingWindow && trackingWindow.getBounds ? trackingWindow.getBounds() : null
+    } catch {
+      bounds = null
+    }
+
+    if (!bounds) {
+      trackingMisses += 1
+      if (trackingMisses % 4 === 0) {
+        trackingWindow = findWindowById(target.id)
+      }
+      if (trackingMisses > 24) {
+        send({ kind: 'missing', target })
+      }
+      return
+    }
+
+    trackingMisses = 0
+    const x = Number(bounds.x)
+    const y = Number(bounds.y)
+    const width = Number(bounds.width)
+    const height = Number(bounds.height)
+    if (![x, y, width, height].every(Number.isFinite) || width <= 0 || height <= 0) {
       send({ kind: 'missing', target })
       return
     }
     send({
       kind: 'bounds',
       target,
-      bounds: { x: window.x, y: window.y, width: window.width, height: window.height },
+      bounds: { x, y, width, height },
     })
   }, Math.max(8, Number(intervalMs) || 16))
 }
@@ -262,6 +297,7 @@ let floatingDockNativeBuffer = ''
 let sidebarIsVisible = true
 let sidebarAlwaysOnTop = true
 let macAccessibilityPrompted = false
+let lastSidebarToggleAt = 0
 
 const WINDOW_MARGIN = 16
 const RAIL_SIZE = 64
@@ -1415,6 +1451,8 @@ function createSidebarWindow() {
   sidebarWin.setMenuBarVisibility(false)
   sidebarWin.setMenu(null)
 
+  // Keep sidebar translucency pure RGBA/CSS-only to avoid platform compositor blur artifacts.
+
   lockWindowZoom(sidebarWin)
 
   // Keep the sidebar rendering path purely CSS-based for consistent frosted glass.
@@ -1592,6 +1630,22 @@ ipcMain.handle('window:set-always-on-top', (_event, alwaysOnTop: boolean) => {
 ipcMain.handle('window:apply-sidebar-preferences', (_event, preferences: SidebarPreferencesPayload) => {
   if (!sidebarWin || sidebarWin.isDestroyed()) return
   const previousSidebarPosition = currentSidebarPosition
+  const hasPositionChange =
+    preferences.position === 'left' ||
+    preferences.position === 'right' ||
+    preferences.position === 'floating'
+  const hasFloatingPositionChange = Boolean(preferences.floatingPosition)
+  const hasDockToggleChange = typeof preferences.floatingDockEnabled === 'boolean'
+  const hasDockThresholdChange = typeof preferences.floatingDockThreshold === 'number'
+  const hasViewStateChange = typeof preferences.isExpanded === 'boolean'
+  const hasHiddenStateChange = typeof preferences.isHidden === 'boolean'
+  const hasModeRelevantChange =
+    hasPositionChange ||
+    hasFloatingPositionChange ||
+    hasDockToggleChange ||
+    hasDockThresholdChange ||
+    hasViewStateChange ||
+    hasHiddenStateChange
 
   if (preferences.position === 'left' || preferences.position === 'right') {
     currentSidebarPosition = preferences.position
@@ -1627,7 +1681,7 @@ ipcMain.handle('window:apply-sidebar-preferences', (_event, preferences: Sidebar
     ...preferences,
   }
   sidebarWin.webContents.send('sidebar:preferences-updated', preferences)
-  if (currentSidebarMode !== 'auth' && currentSidebarMode !== 'fullscreen') {
+  if (hasModeRelevantChange && currentSidebarMode !== 'auth' && currentSidebarMode !== 'fullscreen') {
     applySidebarWindowMode(currentSidebarMode)
     if (
       currentSidebarPosition === 'floating' &&
@@ -1714,6 +1768,12 @@ ipcMain.handle('window:toggle-module', (_event, payload: ModuleWindowKind | Modu
   openModuleWindow(kind, focusDate, focusProjectId, focusNoteId, focusTaskId)
 })
 
+ipcMain.handle('window:close-module', (_event, kind: ModuleWindowKind) => {
+  const existing = moduleWins.get(kind)
+  if (!existing || existing.isDestroyed()) return
+  existing.close()
+})
+
 ipcMain.handle('window:open-external', async (_event, url: string) => {
   if (!/^https?:\/\//i.test(url) && !/^webcal:\/\//i.test(url)) {
     throw new Error('Unsupported external URL protocol')
@@ -1726,6 +1786,9 @@ app.whenReady().then(() => {
 
   const toggleSidebarShortcut = process.platform === 'darwin' ? 'Cmd+Shift+B' : 'Ctrl+Shift+B'
   const registered = globalShortcut.register(toggleSidebarShortcut, () => {
+    const now = Date.now()
+    if (now - lastSidebarToggleAt < 250) return
+    lastSidebarToggleAt = now
     applySidebarVisibility(!sidebarIsVisible)
   })
 

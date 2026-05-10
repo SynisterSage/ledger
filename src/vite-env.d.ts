@@ -48,6 +48,7 @@ interface Window {
     dockFloatingWindow: () => Promise<{ x: number; y: number; width: number; height: number } | null>
     detachFloatingWindow: () => Promise<void>
     toggleModule: (kind: ModuleWindowKind, focus?: string | ModuleFocusPayload) => Promise<void>
+    closeModule: (kind: ModuleWindowKind) => Promise<void>
     openExternal: (url: string) => Promise<void>
   }
 }

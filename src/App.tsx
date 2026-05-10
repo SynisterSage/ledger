@@ -297,7 +297,7 @@ function DashboardContent() {
         icon={<img src="./logo-color.svg" alt="" className="h-5 w-5" />}
         closeLabel="Close dashboard"
         onClose={() => {
-          void window.desktopWindow?.toggleModule('dashboard')
+          void window.desktopWindow?.closeModule('dashboard')
         }}
         actions={
           <>
@@ -929,11 +929,34 @@ function AppShell() {
 
   useEffect(() => {
     if (isLoading) return
-
-    void window.desktopWindow?.applySidebarPreferences(sidebarPreferences).catch(() => {
+    const { opacity: _opacity, ...restPreferences } = sidebarPreferences
+    void window.desktopWindow?.applySidebarPreferences(restPreferences).catch(() => {
       // No-op outside Electron (browser dev mode)
     })
-  }, [isLoading, sidebarPreferences])
+  }, [
+    isLoading,
+    sidebarPreferences.position,
+    sidebarPreferences.blur,
+    sidebarPreferences.defaultState,
+    sidebarPreferences.alwaysOnTop,
+    sidebarPreferences.autoHide,
+    sidebarPreferences.isExpanded,
+    sidebarPreferences.collapsedRestoreIsExpanded,
+    sidebarPreferences.collapsedRestoreView,
+    sidebarPreferences.isHidden,
+    sidebarPreferences.floatingPosition.x,
+    sidebarPreferences.floatingPosition.y,
+    sidebarPreferences.floatingDockEnabled,
+    sidebarPreferences.floatingDockThreshold,
+    sidebarPreferences.lastState,
+  ])
+
+  useEffect(() => {
+    if (isLoading) return
+    void window.desktopWindow?.applySidebarPreferences({ opacity: sidebarPreferences.opacity }).catch(() => {
+      // No-op outside Electron (browser dev mode)
+    })
+  }, [isLoading, sidebarPreferences.opacity])
 
   useEffect(() => {
     if (isLoading) return

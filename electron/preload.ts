@@ -80,6 +80,9 @@ contextBridge.exposeInMainWorld('desktopWindow', {
       : { kind, ...(focus ?? {}) }
     return ipcRenderer.invoke('window:toggle-module', payload)
   },
+  closeModule(kind: ModuleWindowKind) {
+    return ipcRenderer.invoke('window:close-module', kind)
+  },
   openExternal(url: string) {
     return ipcRenderer.invoke('window:open-external', url)
   },

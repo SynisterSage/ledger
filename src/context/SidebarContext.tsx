@@ -56,8 +56,10 @@ interface SidebarContextType {
 const SidebarContext = createContext<SidebarContextType | undefined>(undefined)
 
 export const SidebarProvider = ({ children }: { children: ReactNode }) => {
+  const isModuleWindow = new URLSearchParams(window.location.search).get('window') === 'module'
   const [sidebarPreferences, setSidebarPreferences] = useState<SidebarPreferences>(() => loadSidebarPreferences())
   const [isHydrated, setIsHydrated] = React.useState(false)
+  const saveTimerRef = React.useRef<number | null>(null)
   const didNormalizeFloatingStartupRef = React.useRef(false)
   const wasFloatingDockedRef = React.useRef(false)
   const [isFloatingDocked, setIsFloatingDocked] = React.useState(false)
@@ -71,10 +73,24 @@ export const SidebarProvider = ({ children }: { children: ReactNode }) => {
   const [focusDate, setFocusDate] = React.useState<string | null>(null)
 
   useEffect(() => {
-    saveSidebarPreferences(sidebarPreferences)
-    // preferences saved; mark hydrated after initial preferences write
-    if (!isHydrated) setIsHydrated(true)
-  }, [sidebarPreferences])
+    if (isModuleWindow) {
+      if (!isHydrated) setIsHydrated(true)
+      return
+    }
+    if (saveTimerRef.current !== null) {
+      window.clearTimeout(saveTimerRef.current)
+    }
+    saveTimerRef.current = window.setTimeout(() => {
+      saveSidebarPreferences(sidebarPreferences)
+      if (!isHydrated) setIsHydrated(true)
+      saveTimerRef.current = null
+    }, 120)
+    return () => {
+      if (saveTimerRef.current !== null) {
+        window.clearTimeout(saveTimerRef.current)
+      }
+    }
+  }, [sidebarPreferences, isHydrated, isModuleWindow])
 
   useEffect(() => {
     const handlePreferenceSync = (_event: unknown, nextPreferences: Partial<SidebarPreferences>) => {
@@ -92,10 +108,6 @@ export const SidebarProvider = ({ children }: { children: ReactNode }) => {
       })
 
       if (!didChange) return
-
-      if (typeof nextPreferences.isExpanded === 'boolean' && state !== 'fullscreen') {
-        setSidebarState(nextPreferences.isExpanded ? 'expanded' : 'minimized')
-      }
     }
 
     window.ipcRenderer?.on('sidebar:preferences-updated', handlePreferenceSync)

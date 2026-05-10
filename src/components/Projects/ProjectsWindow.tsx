@@ -731,7 +731,7 @@ export const ProjectsWindow = () => {
         icon={<Folder size={18} className="text-blue-600" />}
         closeLabel="Close projects"
         onClose={() => {
-          void window.desktopWindow?.toggleModule('projects')
+          void window.desktopWindow?.closeModule('projects')
         }}
         actions={
           <div className="flex items-center gap-1 rounded-full border border-gray-200 bg-gray-50 p-1 shadow-sm">
