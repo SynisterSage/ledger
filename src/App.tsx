@@ -75,7 +75,7 @@ function DashboardContent() {
   const { user } = useAuthContext()
   const { activeWorkspace, activeWorkspaceId } = useWorkspaceContext()
   const api = useApi()
-  const { setState, toggleVisibility } = useSidebar()
+  const { setState } = useSidebar()
   const todayTasksRef = useRef<HTMLElement | null>(null)
   const notesRef = useRef<HTMLElement | null>(null)
   const projectsRef = useRef<HTMLElement | null>(null)
@@ -100,6 +100,7 @@ function DashboardContent() {
   const [newFocusText, setNewFocusText] = useState('')
   const [isSavingFocus, setIsSavingFocus] = useState(false)
   const [focusActionId, setFocusActionId] = useState<string | null>(null)
+  const hasLoadedDashboardRef = useRef(false)
 
   useEffect(() => {
     const handleSidebarStateChanged = (
@@ -119,6 +120,7 @@ function DashboardContent() {
 
   useEffect(() => {
     if (!user || !activeWorkspaceId) {
+      hasLoadedDashboardRef.current = false
       setIsLoadingDashboard(false)
       setDashboardError(null)
       setDaily({
@@ -136,9 +138,13 @@ function DashboardContent() {
     let cancelled = false
 
     const loadDashboard = async () => {
+      const isInitialLoad = !hasLoadedDashboardRef.current
+
       try {
-        setIsLoadingDashboard(true)
-        setDashboardError(null)
+        if (isInitialLoad) {
+          setIsLoadingDashboard(true)
+          setDashboardError(null)
+        }
 
         const [dailyData, projectData, upcomingData, noteData] = await Promise.all([
           api.getDailyAccountability(),
@@ -166,21 +172,26 @@ function DashboardContent() {
         setProjects(((projectData ?? []) as Array<{ id: string; name: string; status: string; completeness: number }>).slice(0, 4))
         setUpcoming(((upcomingData ?? []) as Array<{ id: string; title: string; start_at: string; end_at: string; color?: string }>).slice(0, 4))
         setNotes(((noteData ?? []) as Array<{ id: string; title: string; content: string; updated_at: string }>).slice(0, 4))
+        hasLoadedDashboardRef.current = true
       } catch (error) {
         if (!cancelled) {
-          setDashboardError(error instanceof Error ? error.message : 'Could not load dashboard.')
-          setDaily({
-            focusItems: [],
-            finished: '',
-            blocked: '',
-            firstTaskTomorrow: '',
-          })
-          setProjects([])
-          setUpcoming([])
-          setNotes([])
+          if (isInitialLoad) {
+            setDashboardError(error instanceof Error ? error.message : 'Could not load dashboard.')
+            setDaily({
+              focusItems: [],
+              finished: '',
+              blocked: '',
+              firstTaskTomorrow: '',
+            })
+            setProjects([])
+            setUpcoming([])
+            setNotes([])
+          } else {
+            console.error('Background dashboard refresh failed:', error)
+          }
         }
       } finally {
-        if (!cancelled) setIsLoadingDashboard(false)
+        if (!cancelled && isInitialLoad) setIsLoadingDashboard(false)
       }
     }
 
@@ -314,18 +325,18 @@ function DashboardContent() {
               Calendar
             </button>
             <button
+              onClick={() => window.desktopWindow?.toggleModule('projects')}
+              className='px-3 py-2 bg-white hover:bg-gray-50 text-gray-800 border border-gray-200 rounded-lg flex items-center gap-2 transition-colors text-sm font-medium'
+            >
+              <Folder size={15} />
+              Projects
+            </button>
+            <button
               onClick={() => window.desktopWindow?.toggleModule('notes')}
               className='px-3 py-2 bg-white hover:bg-gray-50 text-gray-800 border border-gray-200 rounded-lg flex items-center gap-2 transition-colors text-sm font-medium'
             >
               <StickyNote size={15} />
               Notes
-            </button>
-            <button
-              onClick={toggleVisibility}
-              className='px-4 py-2 bg-[#FF5F40] hover:bg-[#ea5336] text-white rounded-lg flex items-center gap-2 transition-colors text-sm font-medium'
-            >
-              <Plus size={16} />
-              Toggle sidebar
             </button>
           </>
         }

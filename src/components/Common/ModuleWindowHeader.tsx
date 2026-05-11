@@ -82,22 +82,22 @@ export const ModuleWindowHeader = ({
         </div>
       </div>
 
-      <div className="flex min-h-20 items-center justify-between gap-4 px-5 py-4">
+      <div className="flex min-h-16 items-center justify-between gap-4 px-5 py-3">
         <div className="flex min-w-0 items-center gap-4" style={dragRegionStyle}>
           <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-gray-200 bg-gray-50 shadow-sm">
             {icon}
           </div>
 
-          <div className="min-w-0">
+          <div className="min-w-0 space-y-0.5">
             {eyebrow && (
-              <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-gray-500">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.18em] leading-none text-gray-500">
                 {eyebrow}
               </p>
             )}
-            <h1 className="truncate text-[26px] font-semibold tracking-tight text-gray-900">
+            <h1 className="truncate text-[25px] font-semibold leading-[1.05] tracking-tight text-gray-900">
               {title}
             </h1>
-            {subtitle && <p className="mt-1 truncate text-xs text-gray-500">{subtitle}</p>}
+            {subtitle && <p className="truncate text-xs leading-tight text-gray-500">{subtitle}</p>}
           </div>
         </div>
 
