@@ -2197,6 +2197,7 @@ app.post('/api/notes', authMiddleware, rateLimit('write'), quotaGuard('notes'), 
     const source = req.body?.source ? String(req.body.source).trim() : 'workspace'
     const mode = ['text', 'mind_map'].includes(req.body?.mode) ? req.body.mode : 'text'
     const mindMapStructure = mode === 'mind_map' && req.body?.mind_map_structure ? req.body.mind_map_structure : null
+    const requestedSectionId = req.body?.section_id ? String(req.body.section_id).trim() : null
     const requestedParentId = req.body?.parent_id ? String(req.body.parent_id).trim() : null
     const requestedSortOrder = req.body?.sort_order
     // Determine HTML and plain text values
@@ -2217,6 +2218,18 @@ app.post('/api/notes', authMiddleware, rateLimit('write'), quotaGuard('notes'), 
         parent_id = parentRow.id
         depth = toNonNegativeInt(parentRow.depth) + 1
       }
+    }
+
+    let section_id = null
+    if (requestedSectionId) {
+      const { data: sectionRow, error: sectionError } = await supabase
+        .from('note_sections')
+        .select('id')
+        .eq('id', requestedSectionId)
+        .eq('workspace_id', workspaceId)
+        .maybeSingle()
+      if (sectionError) throw sectionError
+      if (sectionRow) section_id = sectionRow.id
     }
 
     let nextSortOrder = requestedSortOrder !== undefined ? toNonNegativeInt(requestedSortOrder) : 0
@@ -2249,10 +2262,11 @@ app.post('/api/notes', authMiddleware, rateLimit('write'), quotaGuard('notes'), 
         mode,
         mind_map_structure: mindMapStructure,
         parent_id,
+        section_id,
         sort_order: nextSortOrder,
         depth,
       })
-      .select('id, title, content, content_html, date, mood, source, mode, mind_map_structure, parent_id, sort_order, depth, created_at, updated_at')
+      .select('id, title, content, content_html, date, mood, source, mode, mind_map_structure, parent_id, section_id, sort_order, depth, created_at, updated_at')
       .single()
 
     if (error) throw error
@@ -2289,6 +2303,24 @@ app.patch('/api/notes/:id', authMiddleware, rateLimit('write'), async (req, res)
     if (req.body?.mind_map_structure !== undefined) {
       update.mind_map_structure = req.body.mind_map_structure
     }
+    if (req.body?.section_id !== undefined) {
+      const requestedSectionId = req.body?.section_id ? String(req.body.section_id).trim() : null
+      if (requestedSectionId) {
+        const { data: sectionRow, error: sectionError } = await supabase
+          .from('note_sections')
+          .select('id')
+          .eq('id', requestedSectionId)
+          .eq('workspace_id', workspaceId)
+          .maybeSingle()
+        if (sectionError) throw sectionError
+        if (!sectionRow) {
+          return res.status(404).json({ error: 'Section not found.' })
+        }
+        update.section_id = sectionRow.id
+      } else {
+        update.section_id = null
+      }
+    }
     if (req.body?.parent_id !== undefined) {
       const requestedParentId = req.body?.parent_id ? String(req.body.parent_id).trim() : null
       if (requestedParentId === req.params.id) {
@@ -2323,7 +2355,7 @@ app.patch('/api/notes/:id', authMiddleware, rateLimit('write'), async (req, res)
       .update(update)
       .eq('id', req.params.id)
       .eq('workspace_id', workspaceId)
-      .select('id, title, content, content_html, date, mood, source, mode, mind_map_structure, parent_id, sort_order, depth, created_at, updated_at')
+      .select('id, title, content, content_html, date, mood, source, mode, mind_map_structure, parent_id, section_id, sort_order, depth, created_at, updated_at')
       .single()
 
     if (error) throw error
@@ -2889,6 +2921,150 @@ app.patch('/api/templates/:id([0-9a-fA-F-]{36})/set-default', authMiddleware, ra
 
     if (error) throw error
     res.json(data)
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
+// ===== SECTION ENDPOINTS =====
+
+// GET /api/sections - List all sections in workspace
+app.get('/api/sections', authMiddleware, rateLimit('read'), withWorkspaceContext, async (req, res) => {
+  try {
+    const { workspaceId, userId } = req.user
+
+    const { data, error } = await supabase
+      .from('note_sections')
+      .select('id, name, color, sort_order, created_at, updated_at')
+      .eq('workspace_id', workspaceId)
+      .order('sort_order', { ascending: true })
+
+    if (error) throw error
+    res.json(data || [])
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
+// POST /api/sections - Create new section
+app.post('/api/sections', authMiddleware, rateLimit('write'), withWorkspaceContext, async (req, res) => {
+  try {
+    const { workspaceId, userId } = req.user
+    const { name, color = 'gray' } = req.body
+
+    if (!name?.trim()) {
+      return res.status(400).json({ error: 'Section name is required' })
+    }
+
+    const { data: existingSections } = await supabase
+      .from('note_sections')
+      .select('sort_order')
+      .eq('workspace_id', workspaceId)
+      .order('sort_order', { ascending: false })
+      .limit(1)
+
+    const nextSortOrder = (existingSections?.[0]?.sort_order ?? -1) + 1
+
+    const { data, error } = await supabase
+      .from('note_sections')
+      .insert({
+        workspace_id: workspaceId,
+        created_by: userId,
+        name: name.trim(),
+        color: ['blue', 'orange', 'purple', 'green', 'pink', 'gray'].includes(color) ? color : 'gray',
+        sort_order: nextSortOrder,
+      })
+      .select('id, name, color, sort_order, created_at, updated_at')
+      .single()
+
+    if (error) throw error
+    res.json(data)
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
+// PATCH /api/sections/:id - Update section
+app.patch('/api/sections/:id', authMiddleware, rateLimit('write'), withWorkspaceContext, async (req, res) => {
+  try {
+    const { workspaceId } = req.user
+    const { id } = req.params
+    const { name, color, sort_order } = req.body
+
+    const updateData = {}
+    if (name !== undefined) updateData.name = name.trim()
+    if (color !== undefined && ['blue', 'orange', 'purple', 'green', 'pink', 'gray'].includes(color)) {
+      updateData.color = color
+    }
+    if (sort_order !== undefined) updateData.sort_order = sort_order
+    updateData.updated_at = new Date().toISOString()
+
+    const { data, error } = await supabase
+      .from('note_sections')
+      .update(updateData)
+      .eq('id', id)
+      .eq('workspace_id', workspaceId)
+      .select('id, name, color, sort_order, created_at, updated_at')
+      .single()
+
+    if (error) throw error
+    if (!data) return res.status(404).json({ error: 'Section not found' })
+    res.json(data)
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
+// DELETE /api/sections/:id - Delete section (moves notes to NULL section)
+app.delete('/api/sections/:id', authMiddleware, rateLimit('write'), withWorkspaceContext, async (req, res) => {
+  try {
+    const { workspaceId } = req.user
+    const { id } = req.params
+
+    // Move all notes in this section to NULL section_id
+    const { error: updateError } = await supabase
+      .from('notes')
+      .update({ section_id: null })
+      .eq('section_id', id)
+
+    if (updateError) throw updateError
+
+    // Delete the section
+    const { error: deleteError } = await supabase
+      .from('note_sections')
+      .delete()
+      .eq('id', id)
+      .eq('workspace_id', workspaceId)
+
+    if (deleteError) throw deleteError
+    res.json({ success: true })
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
+// PATCH /api/sections/reorder - Bulk reorder sections
+app.patch('/api/sections/reorder', authMiddleware, rateLimit('write'), withWorkspaceContext, async (req, res) => {
+  try {
+    const { workspaceId } = req.user
+    const { sections } = req.body // Array of { id, sort_order }
+
+    if (!Array.isArray(sections)) {
+      return res.status(400).json({ error: 'sections must be an array' })
+    }
+
+    // Update each section's sort_order
+    for (const section of sections) {
+      const { error } = await supabase
+        .from('note_sections')
+        .update({ sort_order: section.sort_order, updated_at: new Date().toISOString() })
+        .eq('id', section.id)
+        .eq('workspace_id', workspaceId)
+
+      if (error) throw error
+    }
+
+    res.json({ success: true })
   } catch (error) {
     res.status(500).json({ error: error.message })
   }

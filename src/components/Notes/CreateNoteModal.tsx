@@ -6,7 +6,7 @@ import { TemplateGallery } from './TemplateGallery'
 interface CreateNoteModalProps {
   isOpen: boolean
   onClose: () => void
-  onNoteCreated?: (noteId: string) => void
+  onNoteCreated?: (note: { id: string; title: string; content: string; date: string; mood: string | null; source: string; parent_id?: string | null; sort_order?: number; depth?: number; created_at: string; updated_at: string }) => void
 }
 
 type Step = 'main' | 'gallery' | 'custom-form'
@@ -49,13 +49,24 @@ export const CreateNoteModal = ({ isOpen, onClose, onNoteCreated }: CreateNoteMo
     }
   }, [isOpen])
 
+  useEffect(() => {
+    if (!isOpen) return
+    const onEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      if (isCreating) return
+      onClose()
+    }
+    window.addEventListener('keydown', onEscape)
+    return () => window.removeEventListener('keydown', onEscape)
+  }, [isCreating, isOpen, onClose])
+
   const handleCreateBlank = async () => {
     setIsCreating(true)
     try {
       const note = await api.createNote('Untitled Note', '', {
         content_html: '<p></p>',
       })
-      onNoteCreated?.(note.id)
+      onNoteCreated?.(note)
       onClose()
     } catch (error) {
       console.error('Failed to create note:', error)
@@ -68,7 +79,7 @@ export const CreateNoteModal = ({ isOpen, onClose, onNoteCreated }: CreateNoteMo
     setIsCreating(true)
     try {
       const note = await api.createNoteFromTemplate(templateId)
-      onNoteCreated?.(note.id)
+      onNoteCreated?.(note)
       onClose()
     } catch (error) {
       console.error('Failed to create note from template:', error)
@@ -80,8 +91,8 @@ export const CreateNoteModal = ({ isOpen, onClose, onNoteCreated }: CreateNoteMo
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div className="bg-white rounded-xl shadow-lg max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => !isCreating && onClose()}>
+      <div className="bg-white rounded-xl shadow-lg max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
         {/* Header */}
         <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
           <h2 className="font-semibold text-gray-900">
@@ -175,4 +186,3 @@ export const CreateNoteModal = ({ isOpen, onClose, onNoteCreated }: CreateNoteMo
     </div>
   )
 }
-

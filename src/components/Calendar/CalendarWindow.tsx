@@ -724,6 +724,34 @@ export const CalendarWindow = () => {
   }, [listContextMenu])
 
   useEffect(() => {
+    const hasOpenModal = isComposerOpen || Boolean(eventEditorEvent) || Boolean(selectedReminder) || Boolean(overflowDayKey)
+    if (!hasOpenModal) return
+
+    const onEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      if (overflowDayKey) {
+        setOverflowDayKey(null)
+        return
+      }
+      if (selectedReminder) {
+        setSelectedReminder(null)
+        return
+      }
+      if (eventEditorEvent) {
+        setEventEditorEvent(null)
+        setConfirmDelete(false)
+        return
+      }
+      if (isComposerOpen) {
+        setIsComposerOpen(false)
+      }
+    }
+
+    window.addEventListener('keydown', onEscape)
+    return () => window.removeEventListener('keydown', onEscape)
+  }, [eventEditorEvent, isComposerOpen, overflowDayKey, selectedReminder])
+
+  useEffect(() => {
     if (!isResizingSidebar) return
 
     const handleMove = (event: MouseEvent) => {
@@ -2113,8 +2141,14 @@ export const CalendarWindow = () => {
       )}
 
       {eventEditorEvent && (
-        <div className="fixed inset-0 z-110 bg-black/20 flex items-start justify-center pt-20">
-          <div className="w-110 rounded-xl border border-gray-200 bg-white shadow-xl p-4">
+        <div
+          className="fixed inset-0 z-110 bg-black/20 flex items-start justify-center pt-20"
+          onClick={() => {
+            setEventEditorEvent(null)
+            setConfirmDelete(false)
+          }}
+        >
+          <div className="w-110 rounded-xl border border-gray-200 bg-white shadow-xl p-4" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-sm font-semibold text-gray-900">Edit Event</h3>
               <button
@@ -2240,8 +2274,8 @@ export const CalendarWindow = () => {
       )}
 
       {selectedReminder && (
-        <div className="fixed inset-0 z-112 bg-black/20 flex items-start justify-center pt-20">
-          <div className="w-110 rounded-xl border border-gray-200 bg-white shadow-xl p-4">
+        <div className="fixed inset-0 z-112 bg-black/20 flex items-start justify-center pt-20" onClick={() => setSelectedReminder(null)}>
+          <div className="w-110 rounded-xl border border-gray-200 bg-white shadow-xl p-4" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-sm font-semibold text-gray-900">Edit Reminder</h3>
               <button onClick={() => setSelectedReminder(null)} className="p-1 rounded hover:bg-gray-100">
@@ -2315,8 +2349,8 @@ export const CalendarWindow = () => {
       )}
 
       {overflowDayKey && (
-        <div className="fixed inset-0 z-111 bg-black/20 flex items-start justify-center pt-20">
-          <div className="w-130 max-h-[72vh] rounded-xl border border-gray-200 bg-white shadow-xl p-4 overflow-auto">
+        <div className="fixed inset-0 z-111 bg-black/20 flex items-start justify-center pt-20" onClick={() => setOverflowDayKey(null)}>
+          <div className="w-130 max-h-[72vh] rounded-xl border border-gray-200 bg-white shadow-xl p-4 overflow-auto" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-sm font-semibold text-gray-900">
                 {parseDateKey(overflowDayKey).toLocaleDateString([], {

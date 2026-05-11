@@ -116,7 +116,7 @@ const ToolbarButton = ({
     type="button"
     onClick={onClick}
     title={title}
-    className={`h-8 w-8 rounded-lg border transition inline-flex items-center justify-center ${
+    className={`h-7 w-7 rounded-md border transition inline-flex items-center justify-center ${
       isActive
         ? 'border-gray-900 bg-gray-900 text-white'
         : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
@@ -205,7 +205,7 @@ const ToolbarPlugin = () => {
   }, [editor, updateToolbar])
 
   return (
-    <div className="mb-3 flex flex-wrap items-center gap-1 rounded-xl border border-gray-200 bg-gray-50 p-2">
+    <div className="sticky top-0 z-10 mb-2 flex flex-wrap items-center gap-1.5 rounded-lg border border-gray-200/80 bg-white/95 px-2 py-1.5 shadow-sm backdrop-blur">
       {/* Block type selector */}
       <div className="relative">
         <button
@@ -213,7 +213,7 @@ const ToolbarPlugin = () => {
           onMouseDown={(event) => event.preventDefault()}
           onClick={() => setIsDropdownOpen(!isDropdownOpen)}
           onBlur={() => setTimeout(() => setIsDropdownOpen(false), 150)}
-          className="h-8 px-3 rounded-lg border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 inline-flex items-center justify-center gap-1 text-xs font-medium transition"
+          className="h-7 px-2.5 rounded-md border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 inline-flex items-center justify-center gap-1 text-[11px] font-medium transition"
         >
           {blockTypeLabels[blockType]}
           <ChevronDown size={13} />
@@ -347,18 +347,18 @@ export function RichTextEditor({ initialValue, editorKey, onChange, onFocus, onB
     <LexicalComposer initialConfig={editorConfig}>
       <div>
         <ToolbarPlugin />
-        <div className="relative mt-3">
+        <div className="relative mt-2">
           <RichTextBehaviorPlugin />
           <RichTextPlugin
             contentEditable={
               <ContentEditable
                 onFocus={onFocus}
                 onBlur={onBlur}
-                className="outline-none min-h-[calc(100vh-420px)] rounded-2xl border border-gray-200 bg-white px-5 py-4 text-[16px] leading-8 text-gray-800 focus:border-gray-300 focus:ring-1 focus:ring-gray-200 transition"
+                className="outline-none min-h-[calc(100vh-420px)] rounded-2xl border border-gray-200/70 bg-[#fcfcfd] px-6 py-5 text-[16px] leading-8 text-gray-800 shadow-[0_1px_2px_rgba(15,23,42,0.03)] focus:border-gray-300 focus:ring-1 focus:ring-gray-200 transition"
               />
             }
             placeholder={
-              <div className="pointer-events-none absolute left-0 right-0 top-0 flex items-start px-5 py-4 text-gray-400 text-[16px] leading-8">
+              <div className="pointer-events-none absolute left-0 right-0 top-0 flex items-start px-6 py-5 text-gray-400 text-[16px] leading-8">
                 Write something...
               </div>
             }

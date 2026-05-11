@@ -822,6 +822,17 @@ export const ProjectsWindow = () => {
     }
   }, [taskContextMenu])
 
+  useEffect(() => {
+    if (!taskNotesTask) return
+    const onEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      setTaskNotesTaskId(null)
+      setTaskNotesDraft('')
+    }
+    window.addEventListener('keydown', onEscape)
+    return () => window.removeEventListener('keydown', onEscape)
+  }, [taskNotesTask])
+
   return (
     <div className="h-screen overflow-hidden rounded-[28px] border border-gray-200 bg-[#f5f7fb] flex flex-col text-gray-900 shadow-[0_24px_80px_rgba(15,23,42,0.08)]" style={{ scrollbarGutter: 'stable' }}>
       <ModuleWindowHeader
@@ -1323,8 +1334,14 @@ export const ProjectsWindow = () => {
       </div>
 
       {taskNotesTask && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/25 p-4">
-          <div className="w-full max-w-xl rounded-2xl border border-gray-200 bg-white shadow-xl">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/25 p-4"
+          onClick={() => {
+            setTaskNotesTaskId(null)
+            setTaskNotesDraft('')
+          }}
+        >
+          <div className="w-full max-w-xl rounded-2xl border border-gray-200 bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
             <div className="border-b border-gray-100 px-5 py-4">
               <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500">Task notes</p>
               <p className="mt-1 truncate text-base font-semibold text-gray-900">{taskNotesTask.title}</p>

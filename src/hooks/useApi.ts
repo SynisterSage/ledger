@@ -283,15 +283,15 @@ export const useApi = () => {
 
     // Notes
     getNotes: () => request('/api/notes'),
-    createNote: (title: string, content: string, options?: { date?: string; mood?: string | null; source?: string; mode?: 'text' | 'mind_map'; mind_map_structure?: unknown; content_html?: string; parent_id?: string | null; sort_order?: number }) => request('/api/notes', {
+    createNote: (title: string, content: string, options?: { date?: string; mood?: string | null; source?: string; mode?: 'text' | 'mind_map'; mind_map_structure?: unknown; content_html?: string; parent_id?: string | null; sort_order?: number; section_id?: string | null }) => request('/api/notes', {
       method: 'POST',
       body: JSON.stringify({ title, content, ...options }),
     }),
-    updateNote: (id: string, update: { title?: string; content?: string; content_html?: string; date?: string; mood?: string | null; source?: string; mode?: 'text' | 'mind_map'; mind_map_structure?: unknown; parent_id?: string | null; sort_order?: number }) => request(`/api/notes/${id}`, {
+    updateNote: (id: string, update: { title?: string; content?: string; content_html?: string; date?: string; mood?: string | null; source?: string; mode?: 'text' | 'mind_map'; mind_map_structure?: unknown; parent_id?: string | null; sort_order?: number; section_id?: string | null }) => request(`/api/notes/${id}`, {
       method: 'PATCH',
       body: JSON.stringify(update),
     }),
-    createChildNote: (id: string, options?: { title?: string; content?: string; content_html?: string; date?: string; mood?: string | null; source?: string; mode?: 'text' | 'mind_map'; mind_map_structure?: unknown }) => request(`/api/notes/${id}/children`, {
+    createChildNote: (id: string, options?: { title?: string; content?: string; content_html?: string; date?: string; mood?: string | null; source?: string; mode?: 'text' | 'mind_map'; mind_map_structure?: unknown; section_id?: string | null }) => request(`/api/notes/${id}/children`, {
       method: 'POST',
       body: JSON.stringify(options ?? {}),
     }),
@@ -340,6 +340,24 @@ export const useApi = () => {
     setTemplateDefault: (id: string, is_default: boolean) => request(`/api/templates/${id}/set-default`, {
       method: 'PATCH',
       body: JSON.stringify({ is_default }),
+    }),
+
+    // Sections
+    getSections: () => request('/api/sections'),
+    createSection: (payload: { name: string; color?: string }) => request('/api/sections', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+    updateSection: (id: string, payload: { name?: string; color?: string; sort_order?: number }) => request(`/api/sections/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    }),
+    deleteSection: (id: string) => request(`/api/sections/${id}`, {
+      method: 'DELETE',
+    }),
+    reorderSections: (sections: Array<{ id: string; sort_order: number }>) => request('/api/sections/reorder', {
+      method: 'PATCH',
+      body: JSON.stringify({ sections }),
     }),
   }), [activeWorkspaceId, session?.access_token])
 }
