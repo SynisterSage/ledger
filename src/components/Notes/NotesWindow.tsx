@@ -100,9 +100,8 @@ const getColorClasses = (color: string) => {
   return colorMap[color] || colorMap.gray
 }
 
-const formatDateTime = (value: string) =>
+const formatCompactDateTime = (value: string) =>
   new Date(value).toLocaleString([], {
-    weekday: 'short',
     month: 'short',
     day: 'numeric',
     hour: 'numeric',
@@ -196,6 +195,7 @@ export const NotesWindow = () => {
   const [noteContextMenu, setNoteContextMenu] = useState<NoteContextMenuState | null>(null)
   const [renamingNoteId, setRenamingNoteId] = useState<string | null>(null)
   const [renameDraft, setRenameDraft] = useState('')
+  const [isInspectorActionsOpen, setIsInspectorActionsOpen] = useState(false)
   const [draftMode, setDraftMode] = useState<'text' | 'mind_map'>('text')
   const [draftMindMapStructure, setDraftMindMapStructure] = useState<unknown>(null)
   const [isMindMapFullscreen, setIsMindMapFullscreen] = useState(false)
@@ -226,6 +226,7 @@ export const NotesWindow = () => {
     }
   })
   const noteActionsMenuRef = useRef<HTMLDivElement | null>(null)
+  const inspectorActionsRef = useRef<HTMLDivElement | null>(null)
   const renameInputRef = useRef<HTMLInputElement | null>(null)
   const quickTemplates = [
     { id: 'meeting-notes', name: 'Meeting Notes' },
@@ -334,6 +335,14 @@ export const NotesWindow = () => {
     }
     return crumbs
   }, [nodeById, selectedNoteId])
+
+  const recentNotes = useMemo(
+    () =>
+      [...notes]
+        .sort((left, right) => new Date(right.updated_at).getTime() - new Date(left.updated_at).getTime())
+        .slice(0, 5),
+    [notes]
+  )
 
   const saveStatus = useMemo(
     () => formatSavedStatus(lastSavedAt, showSavingIndicator, isDirty),
@@ -789,6 +798,27 @@ export const NotesWindow = () => {
       window.removeEventListener('keydown', onEscape)
     }
   }, [noteContextMenu])
+
+  useEffect(() => {
+    if (!isInspectorActionsOpen) return
+
+    const closeMenu = () => setIsInspectorActionsOpen(false)
+    const onEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') closeMenu()
+    }
+
+    window.addEventListener('mousedown', closeMenu)
+    window.addEventListener('scroll', closeMenu, true)
+    window.addEventListener('resize', closeMenu)
+    window.addEventListener('keydown', onEscape)
+
+    return () => {
+      window.removeEventListener('mousedown', closeMenu)
+      window.removeEventListener('scroll', closeMenu, true)
+      window.removeEventListener('resize', closeMenu)
+      window.removeEventListener('keydown', onEscape)
+    }
+  }, [isInspectorActionsOpen])
 
   useEffect(() => {
     if (draftMode !== 'mind_map') {
@@ -1516,13 +1546,14 @@ export const NotesWindow = () => {
                               Duplicate
                             </button>
                             <button
+                              disabled={isDeleting}
                               onClick={() => {
                                 setIsNoteActionsOpen(false)
                                 void deleteSelectedNote()
                               }}
-                              className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-red-600 hover:bg-red-50"
+                              className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-red-600 hover:bg-red-50 disabled:opacity-50"
                             >
-                              Delete note
+                              {isDeleting ? 'Deleting...' : 'Delete note'}
                             </button>
                           </div>
                         )}
@@ -1644,88 +1675,166 @@ export const NotesWindow = () => {
               className={`border-l border-gray-200 bg-[#fbfcfe] overflow-auto ${isCompactLayout ? 'p-3 space-y-3' : 'p-4 space-y-4'} shrink-0`}
               style={{ width: `${rightPaneWidth}px` }}
             >
-          <section className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">At a glance</p>
-            <h2 className="mt-1 text-sm font-semibold text-gray-900">Notes workspace</h2>
-            <div className="mt-3 grid grid-cols-2 gap-3">
-              <div className="rounded-xl border border-gray-200 bg-gray-50 p-3">
-                <p className="text-[10px] uppercase tracking-wide text-gray-500">Total</p>
-                <p className="text-lg font-semibold text-gray-900">{notes.length}</p>
-              </div>
-              <div className="rounded-xl border border-gray-200 bg-gray-50 p-3">
-                <p className="text-[10px] uppercase tracking-wide text-gray-500">Visible</p>
-                <p className="text-lg font-semibold text-gray-900">{visibleNotes.length}</p>
-              </div>
-            </div>
-          </section>
-
-          <section className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
-            <div className="flex items-center justify-between">
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Current note</p>
-              <button
-                onClick={() => void deleteSelectedNote()}
-                disabled={!selectedNote || isDeleting}
-                className="text-[11px] text-red-600 hover:text-red-700 disabled:opacity-50"
-              >
-                {isDeleting ? 'Deleting...' : 'Delete'}
-              </button>
-            </div>
-
-            {selectedNote ? (
-              <div className="mt-3 space-y-3">
-                <div className="rounded-xl bg-gray-50 border border-gray-200 p-3">
-                  <p className="text-xs font-semibold text-gray-900 truncate">{selectedNote.title}</p>
-                  <p className="mt-1 text-[11px] text-gray-500">
-                    Created {formatDateTime(selectedNote.created_at)}
-                  </p>
-                </div>
-                <div className="grid grid-cols-1 gap-3">
-                  <div className="rounded-xl border border-gray-200 bg-gray-50 p-3">
-                    <p className="text-[10px] uppercase tracking-wide text-gray-500">Updated</p>
-                    <p className="mt-1 text-sm font-medium text-gray-900">{formatDateTime(selectedNote.updated_at)}</p>
+              <div className="space-y-5">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Inspector</p>
+                    <p className="mt-1 text-sm font-semibold text-gray-900 truncate">
+                      {selectedNote ? 'Current note' : 'No note selected'}
+                    </p>
+                    <p className="mt-1 text-xs text-gray-500 truncate">
+                      {selectedNote
+                        ? selectedBreadcrumb.length
+                          ? selectedBreadcrumb.map((crumb) => crumb.title).join(' > ')
+                          : 'Home'
+                        : 'Select a note to view details.'}
+                    </p>
                   </div>
-                  <div className="rounded-xl border border-gray-200 bg-gray-50 p-3">
-                    <p className="text-[10px] uppercase tracking-wide text-gray-500">Date field</p>
-                    <p className="mt-1 text-sm font-medium text-gray-900">{selectedNote.date || 'Not set'}</p>
-                  </div>
-                  <div className="rounded-xl border border-gray-200 bg-gray-50 p-3">
-                    <p className="text-[10px] uppercase tracking-wide text-gray-500">Mood</p>
-                    <p className="mt-1 text-sm font-medium text-gray-700">{selectedNote.mood || 'Not set'}</p>
-                  </div>
-                </div>
-                <div className="rounded-xl border border-gray-200 bg-gray-50 p-3">
-                  <p className="text-[10px] uppercase tracking-wide text-gray-500">Words</p>
-                  <p className="mt-1 text-lg font-semibold text-gray-900">{wordCount(selectedNote.content)}</p>
-                </div>
-              </div>
-            ) : (
-              <div className="mt-3 rounded-xl border border-dashed border-gray-200 bg-gray-50 p-3">
-                <p className="text-xs font-medium text-gray-800">No note selected</p>
-                <p className="mt-1 text-[11px] text-gray-500">Create or select a note to inspect it here.</p>
-              </div>
-            )}
-          </section>
 
-          <section className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-3">Recent updates</p>
-            <div className="space-y-2">
-              {notes.slice(0, 4).map((note) => (
-                <button
-                  key={note.id}
-                  onClick={() => void openNote(note)}
-                  className="w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-left hover:bg-gray-100 transition"
-                >
-                  <div className="flex items-start gap-2">
-                    <Clock size={13} className="mt-0.5 text-gray-500 shrink-0" />
-                    <div className="min-w-0">
-                      <p className="text-xs font-medium text-gray-900 truncate">{note.title}</p>
-                      <p className="text-[11px] text-gray-500 mt-0.5">{formatDateTime(note.updated_at)}</p>
+                  <div className="relative shrink-0" ref={inspectorActionsRef}>
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        setIsInspectorActionsOpen((current) => !current)
+                      }}
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
+                      aria-label="Inspector actions"
+                    >
+                      <MoreHorizontal size={14} />
+                    </button>
+
+                    {isInspectorActionsOpen && selectedNote && (
+                      <div className="absolute right-0 top-10 z-40 min-w-52 rounded-xl border border-gray-200 bg-white p-1.5 shadow-lg">
+                        <button
+                          onClick={() => {
+                            setIsInspectorActionsOpen(false)
+                            titleRef.current?.focus()
+                          }}
+                          className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-50"
+                        >
+                          Rename
+                        </button>
+                        <button
+                          onClick={() => {
+                            setIsInspectorActionsOpen(false)
+                            void createNewNote()
+                          }}
+                          className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-50"
+                        >
+                          Duplicate
+                        </button>
+                        <button
+                          onClick={() => {
+                            setIsInspectorActionsOpen(false)
+                            void api.saveNoteAsTemplate(selectedNote.id, {
+                              name: draftTitle || selectedNote.title || 'Untitled note',
+                            })
+                          }}
+                          className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-50"
+                        >
+                          Save as template
+                        </button>
+                        <button
+                          onClick={() => {
+                            setIsInspectorActionsOpen(false)
+                            const firstSection = sections[0]
+                            if (!firstSection) return
+                            void api.updateNote(selectedNote.id, { section_id: firstSection.id }).then((updated) => {
+                              const row = updated as NoteRow
+                              setNotes((prev) => prev.map((note) => (note.id === row.id ? row : note)))
+                            })
+                          }}
+                          className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-50"
+                        >
+                          Move to section...
+                        </button>
+                        <button
+                          onClick={() => {
+                            setIsInspectorActionsOpen(false)
+                            void createChildNote(selectedNote.id)
+                          }}
+                          className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-50"
+                        >
+                          Add child note
+                        </button>
+                        <div className="my-1 h-px bg-gray-100" />
+                        <button
+                          disabled={isDeleting}
+                          onClick={() => {
+                            setIsInspectorActionsOpen(false)
+                            void deleteSelectedNote()
+                          }}
+                          className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-red-600 hover:bg-red-50 disabled:opacity-50"
+                        >
+                          {isDeleting ? 'Deleting...' : 'Delete note'}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="space-y-2 border-t border-gray-100 pt-4">
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Details</p>
+                  {selectedNote ? (
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between gap-3 text-sm">
+                        <span className="text-gray-500">Created</span>
+                        <span className="text-gray-900">{formatCompactDateTime(selectedNote.created_at)}</span>
+                      </div>
+                      <div className="flex items-center justify-between gap-3 text-sm">
+                        <span className="text-gray-500">Updated</span>
+                        <span className="text-gray-900">{formatCompactDateTime(selectedNote.updated_at)}</span>
+                      </div>
+                      <div className="flex items-center justify-between gap-3 text-sm">
+                        <span className="text-gray-500">Date</span>
+                        <span className="text-gray-900">{selectedNote.date || 'Not set'}</span>
+                      </div>
+                      <div className="flex items-center justify-between gap-3 text-sm">
+                        <span className="text-gray-500">Mood</span>
+                        <span className="text-gray-900">{selectedNote.mood || 'Not set'}</span>
+                      </div>
+                      <div className="flex items-center justify-between gap-3 text-sm">
+                        <span className="text-gray-500">Words</span>
+                        <span className="text-gray-900">{wordCount(selectedNote.content)}</span>
+                      </div>
                     </div>
+                  ) : (
+                    <p className="text-sm text-gray-500">No metadata to show until a note is selected.</p>
+                  )}
+                </div>
+
+                <div className="space-y-2 border-t border-gray-100 pt-4">
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Workspace</p>
+                  <div className="flex items-center justify-between gap-3 text-sm">
+                    <span className="text-gray-500">Notes</span>
+                    <span className="text-gray-900">
+                      {notes.length} notes · {visibleNotes.length} visible
+                    </span>
                   </div>
-                </button>
-              ))}
-            </div>
-          </section>
+                </div>
+
+                <div className="space-y-2 border-t border-gray-100 pt-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Recent updates</p>
+                    <span className="text-[11px] text-gray-400">View all</span>
+                  </div>
+                  <div className="space-y-1">
+                    {recentNotes.map((note) => (
+                      <button
+                        key={note.id}
+                        onClick={() => void openNote(note)}
+                        className="flex w-full items-center justify-between gap-3 rounded-lg px-2 py-1.5 text-left text-sm hover:bg-gray-50 transition"
+                      >
+                        <div className="min-w-0">
+                          <p className="truncate font-medium text-gray-900">{note.title || 'Untitled note'}</p>
+                        </div>
+                        <span className="shrink-0 text-[11px] text-gray-500">{formatCompactDateTime(note.updated_at)}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
             </aside>
           </>
         )}

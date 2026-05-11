@@ -505,6 +505,20 @@ const resolveWorkspaceIdForRequest = async (req) => {
   return resolveWorkspaceId(req.authUser.id, requestedWorkspaceId)
 }
 
+const withWorkspaceContext = async (req, res, next) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req)
+    req.workspaceId = workspaceId
+    req.user = {
+      workspaceId,
+      userId: req.authUser.id,
+    }
+    next()
+  } catch (error) {
+    return res.status(500).json({ error: error.message })
+  }
+}
+
 const getCalendarId = async (workspaceId, userId) => {
   const existing = await supabase
     .from('calendars')
