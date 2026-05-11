@@ -283,16 +283,63 @@ export const useApi = () => {
 
     // Notes
     getNotes: () => request('/api/notes'),
-    createNote: (title: string, content: string, options?: { date?: string; mood?: string | null; source?: string; mode?: 'text' | 'mind_map'; mind_map_structure?: unknown; content_html?: string }) => request('/api/notes', {
+    createNote: (title: string, content: string, options?: { date?: string; mood?: string | null; source?: string; mode?: 'text' | 'mind_map'; mind_map_structure?: unknown; content_html?: string; parent_id?: string | null; sort_order?: number }) => request('/api/notes', {
       method: 'POST',
       body: JSON.stringify({ title, content, ...options }),
     }),
-    updateNote: (id: string, update: { title?: string; content?: string; content_html?: string; date?: string; mood?: string | null; source?: string; mode?: 'text' | 'mind_map'; mind_map_structure?: unknown }) => request(`/api/notes/${id}`, {
+    updateNote: (id: string, update: { title?: string; content?: string; content_html?: string; date?: string; mood?: string | null; source?: string; mode?: 'text' | 'mind_map'; mind_map_structure?: unknown; parent_id?: string | null; sort_order?: number }) => request(`/api/notes/${id}`, {
       method: 'PATCH',
       body: JSON.stringify(update),
     }),
+    createChildNote: (id: string, options?: { title?: string; content?: string; content_html?: string; date?: string; mood?: string | null; source?: string; mode?: 'text' | 'mind_map'; mind_map_structure?: unknown }) => request(`/api/notes/${id}/children`, {
+      method: 'POST',
+      body: JSON.stringify(options ?? {}),
+    }),
+    moveNoteParent: (id: string, parent_id: string | null) => request(`/api/notes/${id}/parent`, {
+      method: 'PATCH',
+      body: JSON.stringify({ parent_id }),
+    }),
+    reorderNote: (id: string, sort_order: number) => request(`/api/notes/${id}/sort_order`, {
+      method: 'PATCH',
+      body: JSON.stringify({ sort_order }),
+    }),
+    getNoteTree: (id: string) => request(`/api/notes/${id}/tree`),
     deleteNote: (id: string) => request(`/api/notes/${id}`, {
       method: 'DELETE',
+    }),
+
+    // Templates
+    getTemplates: (category?: string) => {
+      const params = new URLSearchParams()
+      if (category) params.set('category', category)
+      const query = params.toString()
+      return request(`/api/templates${query ? `?${query}` : ''}`)
+    },
+    getTemplate: (id: string) => request(`/api/templates/${id}`),
+    createTemplate: (payload: { name: string; description?: string | null; category?: string; content_html?: string; is_default?: boolean }) => request('/api/templates', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+    updateTemplate: (id: string, payload: { name?: string; description?: string | null; category?: string; content_html?: string; is_default?: boolean }) => request(`/api/templates/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    }),
+    deleteTemplate: (id: string) => request(`/api/templates/${id}`, {
+      method: 'DELETE',
+    }),
+    duplicateTemplate: (id: string) => request(`/api/templates/${id}/duplicate`, {
+      method: 'POST',
+    }),
+    createNoteFromTemplate: (templateId: string) => request(`/api/notes/from-template/${templateId}`, {
+      method: 'POST',
+    }),
+    saveNoteAsTemplate: (noteId: string, payload: { name?: string; description?: string | null; category?: string; is_default?: boolean }) => request(`/api/templates/from-note/${noteId}`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+    setTemplateDefault: (id: string, is_default: boolean) => request(`/api/templates/${id}/set-default`, {
+      method: 'PATCH',
+      body: JSON.stringify({ is_default }),
     }),
   }), [activeWorkspaceId, session?.access_token])
 }

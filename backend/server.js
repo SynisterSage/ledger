@@ -171,6 +171,79 @@ const mapNoteResponse = (row) => {
   }
 }
 
+const toNonNegativeInt = (value, fallback = 0) => {
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed)) return fallback
+  return Math.max(0, Math.floor(parsed))
+}
+
+const buildNotesTree = (rows) => {
+  const all = Array.isArray(rows) ? rows : []
+  const byId = new Map()
+  const childrenByParent = new Map()
+
+  for (const row of all) {
+    byId.set(row.id, row)
+  }
+
+  for (const row of all) {
+    const parentId = row.parent_id && byId.has(row.parent_id) ? row.parent_id : null
+    if (!childrenByParent.has(parentId)) childrenByParent.set(parentId, [])
+    childrenByParent.get(parentId).push(row)
+  }
+
+  for (const bucket of childrenByParent.values()) {
+    bucket.sort((a, b) => {
+      const orderDiff = toNonNegativeInt(a.sort_order) - toNonNegativeInt(b.sort_order)
+      if (orderDiff !== 0) return orderDiff
+      const at = new Date(a.updated_at).getTime()
+      const bt = new Date(b.updated_at).getTime()
+      return bt - at
+    })
+  }
+
+  const walk = (parentId, depth) =>
+    (childrenByParent.get(parentId) ?? []).map((row) => {
+      const children = walk(row.id, depth + 1)
+      return {
+        ...row,
+        depth,
+        children,
+      }
+    })
+
+  return walk(null, 0)
+}
+
+const flattenNotesTree = (tree, output = []) => {
+  for (const node of tree) {
+    output.push(node)
+    if (Array.isArray(node.children) && node.children.length) {
+      flattenNotesTree(node.children, output)
+    }
+  }
+  return output
+}
+
+const buildNoteBreadcrumb = (rows, noteId) => {
+  if (!noteId) return []
+  const byId = new Map((Array.isArray(rows) ? rows : []).map((row) => [row.id, row]))
+  const crumbs = []
+  const seen = new Set()
+  let cursor = byId.get(noteId) ?? null
+
+  while (cursor && !seen.has(cursor.id)) {
+    seen.add(cursor.id)
+    crumbs.unshift({
+      id: cursor.id,
+      title: cursor.title || 'Untitled note',
+    })
+    cursor = cursor.parent_id ? byId.get(cursor.parent_id) ?? null : null
+  }
+
+  return crumbs
+}
+
 const normalizeSearchTerm = (value) => String(value ?? '').trim().toLowerCase()
 
 const truncatePreview = (value, length = 80) => {
@@ -2099,15 +2172,15 @@ app.get('/api/notes', authMiddleware, rateLimit('read'), async (req, res) => {
     const workspaceId = await resolveWorkspaceIdForRequest(req)
     const { data, error } = await supabase
       .from('notes')
-      .select('id, title, content, content_html, date, mood, source, mode, mind_map_structure, created_at, updated_at')
+      .select('id, title, content, content_html, date, mood, source, mode, mind_map_structure, parent_id, sort_order, depth, created_at, updated_at')
       .eq('workspace_id', workspaceId)
-      .order('updated_at', { ascending: false })
-      .limit(100)
+      .limit(500)
 
     if (error) throw error
-    // Return `content` as HTML rendering field when available, falling back to legacy plain text
     const mapped = (data ?? []).map((row) => mapNoteResponse(row))
-    res.json(mapped)
+    const tree = buildNotesTree(mapped)
+    const flat = flattenNotesTree(tree, [])
+    res.json({ notes: flat, tree })
   } catch (error) {
     res.status(500).json({ error: error.message })
   }
@@ -2124,9 +2197,43 @@ app.post('/api/notes', authMiddleware, rateLimit('write'), quotaGuard('notes'), 
     const source = req.body?.source ? String(req.body.source).trim() : 'workspace'
     const mode = ['text', 'mind_map'].includes(req.body?.mode) ? req.body.mode : 'text'
     const mindMapStructure = mode === 'mind_map' && req.body?.mind_map_structure ? req.body.mind_map_structure : null
+    const requestedParentId = req.body?.parent_id ? String(req.body.parent_id).trim() : null
+    const requestedSortOrder = req.body?.sort_order
     // Determine HTML and plain text values
     const content_html = normalizeNoteHtml(rawContentHtml ?? plainTextToParagraphHtml(incomingContent ?? ''))
     const content_plain = htmlToPlainText(content_html)
+
+    let parent_id = null
+    let depth = 0
+    if (requestedParentId) {
+      const { data: parentRow, error: parentError } = await supabase
+        .from('notes')
+        .select('id, depth')
+        .eq('id', requestedParentId)
+        .eq('workspace_id', workspaceId)
+        .maybeSingle()
+      if (parentError) throw parentError
+      if (parentRow) {
+        parent_id = parentRow.id
+        depth = toNonNegativeInt(parentRow.depth) + 1
+      }
+    }
+
+    let nextSortOrder = requestedSortOrder !== undefined ? toNonNegativeInt(requestedSortOrder) : 0
+    if (requestedSortOrder === undefined) {
+      let siblingsQuery = supabase
+        .from('notes')
+        .select('sort_order')
+        .eq('workspace_id', workspaceId)
+        .order('sort_order', { ascending: false })
+        .limit(1)
+
+      siblingsQuery = parent_id ? siblingsQuery.eq('parent_id', parent_id) : siblingsQuery.is('parent_id', null)
+      const { data: siblings, error: siblingsError } = await siblingsQuery
+      if (siblingsError) throw siblingsError
+      const siblingTop = Array.isArray(siblings) && siblings.length ? toNonNegativeInt(siblings[0].sort_order) : -1
+      nextSortOrder = siblingTop + 1
+    }
 
     const { data, error } = await supabase
       .from('notes')
@@ -2141,8 +2248,11 @@ app.post('/api/notes', authMiddleware, rateLimit('write'), quotaGuard('notes'), 
         source,
         mode,
         mind_map_structure: mindMapStructure,
+        parent_id,
+        sort_order: nextSortOrder,
+        depth,
       })
-      .select('id, title, content, content_html, date, mood, source, mode, mind_map_structure, created_at, updated_at')
+      .select('id, title, content, content_html, date, mood, source, mode, mind_map_structure, parent_id, sort_order, depth, created_at, updated_at')
       .single()
 
     if (error) throw error
@@ -2179,6 +2289,32 @@ app.patch('/api/notes/:id', authMiddleware, rateLimit('write'), async (req, res)
     if (req.body?.mind_map_structure !== undefined) {
       update.mind_map_structure = req.body.mind_map_structure
     }
+    if (req.body?.parent_id !== undefined) {
+      const requestedParentId = req.body?.parent_id ? String(req.body.parent_id).trim() : null
+      if (requestedParentId === req.params.id) {
+        return res.status(400).json({ error: 'A note cannot be its own parent.' })
+      }
+      if (requestedParentId) {
+        const { data: parentRow, error: parentError } = await supabase
+          .from('notes')
+          .select('id, depth')
+          .eq('id', requestedParentId)
+          .eq('workspace_id', workspaceId)
+          .maybeSingle()
+        if (parentError) throw parentError
+        if (!parentRow) {
+          return res.status(404).json({ error: 'Parent note not found.' })
+        }
+        update.parent_id = parentRow.id
+        update.depth = toNonNegativeInt(parentRow.depth) + 1
+      } else {
+        update.parent_id = null
+        update.depth = 0
+      }
+    }
+    if (req.body?.sort_order !== undefined) {
+      update.sort_order = toNonNegativeInt(req.body.sort_order)
+    }
 
     update.updated_at = new Date().toISOString()
 
@@ -2187,11 +2323,152 @@ app.patch('/api/notes/:id', authMiddleware, rateLimit('write'), async (req, res)
       .update(update)
       .eq('id', req.params.id)
       .eq('workspace_id', workspaceId)
-      .select('id, title, content, content_html, date, mood, source, mode, mind_map_structure, created_at, updated_at')
+      .select('id, title, content, content_html, date, mood, source, mode, mind_map_structure, parent_id, sort_order, depth, created_at, updated_at')
       .single()
 
     if (error) throw error
     res.json(mapNoteResponse(data))
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
+app.post('/api/notes/:id/children', authMiddleware, rateLimit('write'), quotaGuard('notes'), async (req, res) => {
+  try {
+    const workspaceId = req.workspaceId ?? await resolveWorkspaceIdForRequest(req)
+    const { data: parentRow, error: parentError } = await supabase
+      .from('notes')
+      .select('id, title, depth')
+      .eq('id', req.params.id)
+      .eq('workspace_id', workspaceId)
+      .maybeSingle()
+    if (parentError) throw parentError
+    if (!parentRow) return res.status(404).json({ error: 'Parent note not found.' })
+
+    const title = String(req.body?.title ?? `New note in ${parentRow.title || 'folder'}`).trim() || 'Untitled note'
+    const rawContentHtml = req.body?.content_html !== undefined ? String(req.body.content_html ?? '').trim() : '<p></p>'
+    const incomingContent = req.body?.content !== undefined ? String(req.body.content ?? '').trim() : ''
+    const date = String(req.body?.date ?? new Date().toISOString().slice(0, 10)).trim()
+    const mood = req.body?.mood ? String(req.body.mood).trim() : null
+    const source = req.body?.source ? String(req.body.source).trim() : 'workspace'
+    const mode = ['text', 'mind_map'].includes(req.body?.mode) ? req.body.mode : 'text'
+    const mindMapStructure = mode === 'mind_map' && req.body?.mind_map_structure ? req.body.mind_map_structure : null
+    const content_html = normalizeNoteHtml(rawContentHtml ?? plainTextToParagraphHtml(incomingContent ?? ''))
+    const content_plain = htmlToPlainText(content_html)
+
+    const { data: siblings, error: siblingsError } = await supabase
+      .from('notes')
+      .select('sort_order')
+      .eq('workspace_id', workspaceId)
+      .eq('parent_id', parentRow.id)
+      .order('sort_order', { ascending: false })
+      .limit(1)
+    if (siblingsError) throw siblingsError
+    const siblingTop = Array.isArray(siblings) && siblings.length ? toNonNegativeInt(siblings[0].sort_order) : -1
+
+    const { data, error } = await supabase
+      .from('notes')
+      .insert({
+        workspace_id: workspaceId,
+        user_id: req.authUser.id,
+        title,
+        content: content_plain,
+        content_html,
+        date,
+        mood,
+        source,
+        mode,
+        mind_map_structure: mindMapStructure,
+        parent_id: parentRow.id,
+        sort_order: siblingTop + 1,
+        depth: toNonNegativeInt(parentRow.depth) + 1,
+      })
+      .select('id, title, content, content_html, date, mood, source, mode, mind_map_structure, parent_id, sort_order, depth, created_at, updated_at')
+      .single()
+    if (error) throw error
+    res.json(mapNoteResponse(data))
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
+app.patch('/api/notes/:id/parent', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req)
+    const requestedParentId = req.body?.parent_id ? String(req.body.parent_id).trim() : null
+
+    if (requestedParentId && requestedParentId === req.params.id) {
+      return res.status(400).json({ error: 'A note cannot be its own parent.' })
+    }
+
+    let parent_id = null
+    let depth = 0
+    if (requestedParentId) {
+      const { data: parentRow, error: parentError } = await supabase
+        .from('notes')
+        .select('id, depth')
+        .eq('id', requestedParentId)
+        .eq('workspace_id', workspaceId)
+        .maybeSingle()
+      if (parentError) throw parentError
+      if (!parentRow) return res.status(404).json({ error: 'Parent note not found.' })
+      parent_id = parentRow.id
+      depth = toNonNegativeInt(parentRow.depth) + 1
+    }
+
+    const { data, error } = await supabase
+      .from('notes')
+      .update({
+        parent_id,
+        depth,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', req.params.id)
+      .eq('workspace_id', workspaceId)
+      .select('id, title, content, content_html, date, mood, source, mode, mind_map_structure, parent_id, sort_order, depth, created_at, updated_at')
+      .single()
+    if (error) throw error
+    res.json(mapNoteResponse(data))
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
+app.patch('/api/notes/:id/sort_order', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req)
+    const sort_order = toNonNegativeInt(req.body?.sort_order, 0)
+
+    const { data, error } = await supabase
+      .from('notes')
+      .update({
+        sort_order,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', req.params.id)
+      .eq('workspace_id', workspaceId)
+      .select('id, title, content, content_html, date, mood, source, mode, mind_map_structure, parent_id, sort_order, depth, created_at, updated_at')
+      .single()
+    if (error) throw error
+    res.json(mapNoteResponse(data))
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
+app.get('/api/notes/:id/tree', authMiddleware, rateLimit('read'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req)
+    const { data, error } = await supabase
+      .from('notes')
+      .select('id, title, content, content_html, date, mood, source, mode, mind_map_structure, parent_id, sort_order, depth, created_at, updated_at')
+      .eq('workspace_id', workspaceId)
+      .limit(500)
+    if (error) throw error
+    const mapped = (data ?? []).map((row) => mapNoteResponse(row))
+    const tree = buildNotesTree(mapped)
+    const breadcrumbs = buildNoteBreadcrumb(mapped, req.params.id)
+    res.json({ tree, breadcrumbs })
   } catch (error) {
     res.status(500).json({ error: error.message })
   }
@@ -2244,6 +2521,370 @@ app.post('/api/daily-accountability', authMiddleware, rateLimit('write'), async 
       .from('daily_accountability')
       .upsert(payload, { onConflict: 'user_id,entry_date' })
       .select('focus_items, checkin_finished, checkin_blocked, checkin_first_task_tomorrow, entry_date, updated_at')
+      .single()
+
+    if (error) throw error
+    res.json(data)
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
+// ========== NOTE TEMPLATES API ==========
+
+// GET /api/templates - List all templates in workspace
+app.get('/api/templates', authMiddleware, rateLimit('read'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req)
+    const category = req.query?.category ? String(req.query.category).trim() : null
+
+    let query = supabase
+      .from('note_templates')
+      .select('id, name, description, category, is_default, is_system, usage_count, created_at, created_by')
+      .eq('workspace_id', workspaceId)
+
+    if (category) {
+      query = query.eq('category', category)
+    }
+
+    const { data, error } = await query
+      .order('usage_count', { ascending: false })
+      .order('created_at', { ascending: false })
+
+    if (error) throw error
+    res.json(data ?? [])
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
+// GET /api/templates/:id - Get single template
+app.get('/api/templates/:id([0-9a-fA-F-]{36})', authMiddleware, rateLimit('read'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req)
+    const { data, error } = await supabase
+      .from('note_templates')
+      .select('id, name, description, content_html, category, is_default, is_system, usage_count, created_at, updated_at, created_by')
+      .eq('id', String(req.params.id))
+      .eq('workspace_id', workspaceId)
+      .maybeSingle()
+
+    if (error) throw error
+    if (!data) return res.status(404).json({ error: 'Template not found' })
+
+    res.json(data)
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
+// POST /api/templates - Create new template
+app.post('/api/templates', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req)
+    const name = String(req.body?.name ?? '').trim()
+    const description = normalizeNullableText(req.body?.description)
+    const category = String(req.body?.category ?? 'personal').trim().toLowerCase()
+    const rawContentHtml = req.body?.content_html !== undefined ? String(req.body.content_html).trim() : null
+    const incomingContent = req.body?.content !== undefined ? String(req.body.content).trim() : null
+    const isDefault = Boolean(req.body?.is_default ?? false)
+
+    if (!name) {
+      return res.status(400).json({ error: 'Template name is required' })
+    }
+
+    const content_html = normalizeNoteHtml(rawContentHtml ?? plainTextToParagraphHtml(incomingContent ?? ''))
+
+    const { data, error } = await supabase
+      .from('note_templates')
+      .insert({
+        workspace_id: workspaceId,
+        name,
+        description,
+        content_html,
+        category,
+        is_default: isDefault,
+        is_system: false,
+        usage_count: 0,
+        created_by: req.authUser.id,
+      })
+      .select('id, name, description, content_html, category, is_default, is_system, usage_count, created_at, updated_at, created_by')
+      .single()
+
+    if (error) throw error
+    res.status(201).json(data)
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
+// PATCH /api/templates/:id - Update template
+app.patch('/api/templates/:id([0-9a-fA-F-]{36})', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req)
+    const templateId = String(req.params.id)
+
+    // Check ownership (non-system templates only)
+    const { data: existing, error: checkError } = await supabase
+      .from('note_templates')
+      .select('id, created_by, is_system')
+      .eq('id', templateId)
+      .eq('workspace_id', workspaceId)
+      .maybeSingle()
+
+    if (checkError) throw checkError
+    if (!existing) return res.status(404).json({ error: 'Template not found' })
+    if (existing.is_system && existing.created_by !== req.authUser.id) {
+      return res.status(403).json({ error: 'Cannot edit system templates' })
+    }
+    if (existing.created_by !== req.authUser.id) {
+      return res.status(403).json({ error: 'Can only edit your own templates' })
+    }
+
+    const update = {}
+    if (req.body?.name !== undefined) {
+      const nextName = String(req.body.name).trim()
+      if (!nextName) return res.status(400).json({ error: 'Template name is required' })
+      update.name = nextName
+    }
+    if (req.body?.description !== undefined) update.description = normalizeNullableText(req.body.description)
+    if (req.body?.category !== undefined) update.category = String(req.body.category).trim().toLowerCase()
+    if (req.body?.content_html !== undefined) {
+      const html = normalizeNoteHtml(req.body.content_html)
+      update.content_html = html
+    }
+    if (req.body?.is_default !== undefined) update.is_default = Boolean(req.body.is_default)
+
+    update.updated_at = new Date().toISOString()
+
+    const { data, error } = await supabase
+      .from('note_templates')
+      .update(update)
+      .eq('id', templateId)
+      .eq('workspace_id', workspaceId)
+      .select('id, name, description, content_html, category, is_default, is_system, usage_count, created_at, updated_at, created_by')
+      .single()
+
+    if (error) throw error
+    res.json(data)
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
+// DELETE /api/templates/:id - Delete template
+app.delete('/api/templates/:id([0-9a-fA-F-]{36})', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req)
+    const templateId = String(req.params.id)
+
+    const { data: existing, error: checkError } = await supabase
+      .from('note_templates')
+      .select('created_by, is_system')
+      .eq('id', templateId)
+      .eq('workspace_id', workspaceId)
+      .maybeSingle()
+
+    if (checkError) throw checkError
+    if (!existing) return res.status(404).json({ error: 'Template not found' })
+    if (existing.is_system) return res.status(403).json({ error: 'Cannot delete system templates' })
+    if (existing.created_by !== req.authUser.id) {
+      return res.status(403).json({ error: 'Can only delete your own templates' })
+    }
+
+    const { error } = await supabase
+      .from('note_templates')
+      .delete()
+      .eq('id', templateId)
+      .eq('workspace_id', workspaceId)
+
+    if (error) throw error
+    res.json({ success: true })
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
+// POST /api/templates/:id/duplicate - Duplicate template
+app.post('/api/templates/:id([0-9a-fA-F-]{36})/duplicate', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req)
+    const templateId = String(req.params.id)
+
+    const { data: original, error: fetchError } = await supabase
+      .from('note_templates')
+      .select('name, description, content_html, category')
+      .eq('id', templateId)
+      .eq('workspace_id', workspaceId)
+      .maybeSingle()
+
+    if (fetchError) throw fetchError
+    if (!original) return res.status(404).json({ error: 'Template not found' })
+
+    const duplicatedName = `${original.name} (Copy)`
+
+    const { data, error } = await supabase
+      .from('note_templates')
+      .insert({
+        workspace_id: workspaceId,
+        name: duplicatedName,
+        description: original.description,
+        content_html: original.content_html,
+        category: original.category,
+        is_default: false,
+        is_system: false,
+        usage_count: 0,
+        created_by: req.authUser.id,
+      })
+      .select('id, name, description, content_html, category, is_default, is_system, usage_count, created_at, updated_at, created_by')
+      .single()
+
+    if (error) throw error
+    res.status(201).json(data)
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
+// POST /api/notes/from-template/:templateId - Create note from template
+app.post('/api/notes/from-template/:templateId([0-9a-fA-F-]{36})', authMiddleware, rateLimit('write'), quotaGuard('notes'), async (req, res) => {
+  try {
+    const workspaceId = req.workspaceId ?? await resolveWorkspaceIdForRequest(req)
+    const templateId = String(req.params.templateId)
+
+    const { data: template, error: templateError } = await supabase
+      .from('note_templates')
+      .select('id, name, content_html')
+      .eq('id', templateId)
+      .eq('workspace_id', workspaceId)
+      .maybeSingle()
+
+    if (templateError) throw templateError
+    if (!template) return res.status(404).json({ error: 'Template not found' })
+
+    // Increment template usage count (fire and forget)
+    ;(async () => {
+      try {
+        await supabase.rpc('increment_template_usage', { template_id: templateId })
+      } catch {
+        // If RPC doesn't exist, use direct update query with current count
+        const { data: current } = await supabase
+          .from('note_templates')
+          .select('usage_count')
+          .eq('id', templateId)
+          .maybeSingle()
+        if (current) {
+          await supabase
+            .from('note_templates')
+            .update({ usage_count: (current.usage_count || 0) + 1 })
+            .eq('id', templateId)
+        }
+      }
+    })()
+
+    // Create note from template
+    const content_html = template.content_html
+    const content_plain = htmlToPlainText(content_html)
+    const date = new Date().toISOString().slice(0, 10)
+
+    const { data: note, error: noteError } = await supabase
+      .from('notes')
+      .insert({
+        workspace_id: workspaceId,
+        user_id: req.authUser.id,
+        title: template.name,
+        content: content_plain,
+        content_html,
+        date,
+        source: 'template',
+        template_id: templateId,
+      })
+      .select('id, title, content, content_html, date, mood, source, mode, mind_map_structure, parent_id, sort_order, depth, created_at, updated_at')
+      .single()
+
+    if (noteError) throw noteError
+
+    res.status(201).json(mapNoteResponse(note))
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
+// POST /api/templates/from-note/:noteId - Save note as template
+app.post('/api/templates/from-note/:noteId([0-9a-fA-F-]{36})', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req)
+    const noteId = String(req.params.noteId)
+
+    const { data: note, error: noteError } = await supabase
+      .from('notes')
+      .select('id, title, content, content_html')
+      .eq('id', noteId)
+      .eq('workspace_id', workspaceId)
+      .eq('user_id', req.authUser.id)
+      .maybeSingle()
+
+    if (noteError) throw noteError
+    if (!note) return res.status(404).json({ error: 'Note not found' })
+
+    const templateName = String(req.body?.name ?? note.title).trim() || 'Untitled Template'
+    const templateDescription = normalizeNullableText(req.body?.description)
+    const templateCategory = String(req.body?.category ?? 'personal').trim().toLowerCase()
+    const isDefault = Boolean(req.body?.is_default ?? false)
+
+    const { data: template, error } = await supabase
+      .from('note_templates')
+      .insert({
+        workspace_id: workspaceId,
+        name: templateName,
+        description: templateDescription,
+        content_html: note.content_html || plainTextToParagraphHtml(note.content || ''),
+        category: templateCategory,
+        is_default: isDefault,
+        is_system: false,
+        usage_count: 0,
+        created_by: req.authUser.id,
+      })
+      .select('id, name, description, content_html, category, is_default, is_system, usage_count, created_at, updated_at, created_by')
+      .single()
+
+    if (error) throw error
+    res.status(201).json({
+      success: true,
+      template,
+      message: 'Note saved as template successfully',
+    })
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
+// PATCH /api/templates/:id/set-default - Toggle is_default flag
+app.patch('/api/templates/:id([0-9a-fA-F-]{36})/set-default', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req)
+    const templateId = String(req.params.id)
+    const isDefault = Boolean(req.body?.is_default)
+
+    const { data: existing, error: checkError } = await supabase
+      .from('note_templates')
+      .select('created_by')
+      .eq('id', templateId)
+      .eq('workspace_id', workspaceId)
+      .maybeSingle()
+
+    if (checkError) throw checkError
+    if (!existing) return res.status(404).json({ error: 'Template not found' })
+    if (existing.created_by !== req.authUser.id) {
+      return res.status(403).json({ error: 'Can only modify your own templates' })
+    }
+
+    const { data, error } = await supabase
+      .from('note_templates')
+      .update({ is_default: isDefault, updated_at: new Date().toISOString() })
+      .eq('id', templateId)
+      .eq('workspace_id', workspaceId)
+      .select('id, is_default')
       .single()
 
     if (error) throw error

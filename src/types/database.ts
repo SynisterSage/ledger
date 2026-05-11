@@ -148,6 +148,9 @@ export type Database = {
           date: string
           mood: string | null
           source: string
+          parent_id: string | null
+          sort_order: number
+          depth: number
           created_at: string
           updated_at: string
         }
