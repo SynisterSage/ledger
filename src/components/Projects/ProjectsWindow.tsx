@@ -153,18 +153,6 @@ const getProgressStateColor = (value: number) => {
   return '#22C55E'
 }
 
-const getTimelineCompleteness = (startDate: string | null, endDate: string | null) => {
-  if (!startDate || !endDate) return null
-  const start = new Date(`${startDate}T00:00:00`)
-  const end = new Date(`${endDate}T23:59:59`)
-  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end <= start) return null
-  const now = Date.now()
-  if (now <= start.getTime()) return 0
-  if (now >= end.getTime()) return 100
-  const ratio = (now - start.getTime()) / (end.getTime() - start.getTime())
-  return Math.max(0, Math.min(100, Math.round(ratio * 100)))
-}
-
 const CONTEXT_MENU_GUTTER = 8
 
 const getClampedMenuPosition = (x: number, y: number, width: number, height: number) => {
@@ -324,12 +312,11 @@ export const ProjectsWindow = () => {
   )
 
   const syncDraftFromProject = useCallback((project: ProjectRow) => {
-    const timelineCompleteness = getTimelineCompleteness(project.start_date, project.end_date)
     setProjectDraft({
       name: project.name,
       description: project.description ?? '',
       status: parseProjectStatus(String(project.status)),
-      completeness: timelineCompleteness ?? Math.max(0, Math.min(100, Number(project.completeness) || 0)),
+      completeness: Math.max(0, Math.min(100, Number(project.completeness) || 0)),
       color: project.color || '#007AFF',
       startDate: project.start_date ?? '',
       endDate: project.end_date ?? '',
@@ -972,8 +959,9 @@ export const ProjectsWindow = () => {
                     const semantic = parseProjectStatus(String(project.status))
                     const active = selectedProjectId === project.id
                     const projectDateRange = formatProjectDateRange(project.start_date, project.end_date)
-                    const timelineCompleteness = getTimelineCompleteness(project.start_date, project.end_date)
-                    const displayCompleteness = timelineCompleteness ?? project.completeness
+                    const displayCompleteness = active
+                      ? Math.max(0, Math.min(100, Number(projectDraft.completeness) || 0))
+                      : Math.max(0, Math.min(100, Number(project.completeness) || 0))
                     const progressColor = getProgressStateColor(displayCompleteness)
 
                     return (
@@ -1104,10 +1092,8 @@ export const ProjectsWindow = () => {
                         value={projectDraft.startDate}
                         onChange={(e) => {
                           const nextStartDate = e.target.value
-                          const timelineCompleteness = getTimelineCompleteness(nextStartDate || null, projectDraft.endDate || null)
                           updateProjectDraft({
                             startDate: nextStartDate,
-                            ...(timelineCompleteness === null ? {} : { completeness: timelineCompleteness }),
                           })
                         }}
                         className="h-10 w-full rounded-xl border border-gray-200 bg-gray-50 px-3 text-sm text-gray-900 outline-none focus:border-gray-300"
@@ -1120,10 +1106,8 @@ export const ProjectsWindow = () => {
                         value={projectDraft.endDate}
                         onChange={(e) => {
                           const nextEndDate = e.target.value
-                          const timelineCompleteness = getTimelineCompleteness(projectDraft.startDate || null, nextEndDate || null)
                           updateProjectDraft({
                             endDate: nextEndDate,
-                            ...(timelineCompleteness === null ? {} : { completeness: timelineCompleteness }),
                           })
                         }}
                         className="h-10 w-full rounded-xl border border-gray-200 bg-gray-50 px-3 text-sm text-gray-900 outline-none focus:border-gray-300"
