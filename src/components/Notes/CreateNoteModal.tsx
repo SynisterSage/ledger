@@ -1,5 +1,5 @@
 import { ChevronRight, FileText, Lightbulb, User, BookOpen, X } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useApi } from '../../hooks/useApi'
 import { TemplateGallery } from './TemplateGallery'
 
@@ -8,6 +8,11 @@ interface CreateNoteModalProps {
   onClose: () => void
   defaultSectionId?: string | null
   onNoteCreated?: (note: { id: string; title: string; content: string; date: string; mood: string | null; source: string; section_id?: string | null; parent_id?: string | null; sort_order?: number; depth?: number; created_at: string; updated_at: string }) => void
+}
+
+type WorkspaceTemplateSummary = {
+  id: string
+  name: string
 }
 
 type Step = 'main' | 'gallery' | 'custom-form'
@@ -43,12 +48,52 @@ export const CreateNoteModal = ({ isOpen, onClose, defaultSectionId = null, onNo
   const api = useApi()
   const [step, setStep] = useState<Step>('main')
   const [isCreating, setIsCreating] = useState(false)
+  const [workspaceTemplates, setWorkspaceTemplates] = useState<WorkspaceTemplateSummary[]>([])
+  const [isLoadingTemplates, setIsLoadingTemplates] = useState(false)
 
   useEffect(() => {
     if (!isOpen) {
       setStep('main')
     }
   }, [isOpen])
+
+  useEffect(() => {
+    if (!isOpen) return
+
+    let mounted = true
+
+    const loadTemplates = async () => {
+      setIsLoadingTemplates(true)
+      try {
+        const data = await api.getTemplates()
+        if (!mounted) return
+        setWorkspaceTemplates(
+          Array.isArray(data)
+            ? data.map((template: { id: string; name: string }) => ({ id: template.id, name: template.name }))
+            : [],
+        )
+      } catch (error) {
+        console.error('Failed to load templates for quick create:', error)
+        if (mounted) setWorkspaceTemplates([])
+      } finally {
+        if (mounted) setIsLoadingTemplates(false)
+      }
+    }
+
+    loadTemplates()
+
+    return () => {
+      mounted = false
+    }
+  }, [api, isOpen])
+
+  const quickTemplateMap = useMemo(() => {
+    const map = new Map<string, string>()
+    workspaceTemplates.forEach((template) => {
+      map.set(template.name.toLowerCase(), template.id)
+    })
+    return map
+  }, [workspaceTemplates])
 
   useEffect(() => {
     if (!isOpen) return
@@ -89,6 +134,8 @@ export const CreateNoteModal = ({ isOpen, onClose, defaultSectionId = null, onNo
       setIsCreating(false)
     }
   }
+
+  const resolveQuickTemplateId = (name: string) => quickTemplateMap.get(name.toLowerCase()) ?? null
 
   if (!isOpen) return null
 
@@ -134,19 +181,22 @@ export const CreateNoteModal = ({ isOpen, onClose, defaultSectionId = null, onNo
               <div className="space-y-2">
                 <p className="text-xs font-semibold text-gray-600 uppercase">Quick Templates</p>
                 <div className="grid grid-cols-2 gap-2">
-                  {QUICK_TEMPLATES.map(({ id, name, icon: Icon, description }) => (
-                    <button
-                      key={id}
-                      type="button"
-                      onClick={() => handleCreateFromTemplate(id)}
-                      disabled={isCreating}
-                      className="p-3 rounded-lg border border-gray-200 text-left transition hover:bg-gray-50 active:bg-white disabled:opacity-50"
-                    >
-                      <Icon size={16} className="text-gray-600 mb-2" />
-                      <p className="font-medium text-sm text-gray-900">{name}</p>
-                      <p className="text-xs text-gray-500 line-clamp-1 mt-0.5">{description}</p>
-                    </button>
-                  ))}
+                  {QUICK_TEMPLATES.map(({ id, name, icon: Icon, description }) => {
+                    const templateId = resolveQuickTemplateId(name)
+                    return (
+                      <button
+                        key={id}
+                        type="button"
+                        onClick={() => templateId && handleCreateFromTemplate(templateId)}
+                        disabled={isCreating || isLoadingTemplates || !templateId}
+                        className="p-3 rounded-lg border border-gray-200 text-left transition hover:bg-gray-50 active:bg-white disabled:opacity-50"
+                      >
+                        <Icon size={16} className="text-gray-600 mb-2" />
+                        <p className="font-medium text-sm text-gray-900">{name}</p>
+                        <p className="text-xs text-gray-500 line-clamp-1 mt-0.5">{description}</p>
+                      </button>
+                    )
+                  })}
                 </div>
               </div>
 

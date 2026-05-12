@@ -252,6 +252,7 @@ export const NotesWindow = () => {
   const noteActionsMenuRef = useRef<HTMLDivElement | null>(null)
   const inspectorActionsRef = useRef<HTMLDivElement | null>(null)
   const renameInputRef = useRef<HTMLInputElement | null>(null)
+  const [workspaceTemplates, setWorkspaceTemplates] = useState<Array<{ id: string; name: string }>>([])
   const quickTemplates = [
     { id: 'meeting-notes', name: 'Meeting Notes' },
     { id: 'project-brief', name: 'Project Brief' },
@@ -383,6 +384,34 @@ export const NotesWindow = () => {
     setLastSavedAt(note.updated_at)
     setIsDirty(false)
   }, [])
+
+  useEffect(() => {
+    let mounted = true
+    const loadTemplates = async () => {
+      try {
+        const data = await api.getTemplates()
+        if (!mounted) return
+        setWorkspaceTemplates(
+          Array.isArray(data)
+            ? data.map((template: { id: string; name: string }) => ({ id: template.id, name: template.name }))
+            : []
+        )
+      } catch {
+        if (mounted) setWorkspaceTemplates([])
+      }
+    }
+
+    void loadTemplates()
+
+    return () => {
+      mounted = false
+    }
+  }, [api, activeWorkspaceId])
+
+  const resolveTemplateIdByName = useCallback(
+    (name: string) => workspaceTemplates.find((template) => template.name === name)?.id ?? null,
+    [workspaceTemplates]
+  )
 
   useEffect(() => {
     isDirtyRef.current = isDirty
@@ -540,44 +569,6 @@ export const NotesWindow = () => {
     },
     [flushAutosave, isDirty, selectedNoteId, syncDraftFromNote]
   )
-
-  const createNewNote = useCallback(async () => {
-    if (!user) return
-    if (isDirty) {
-      const saved = await flushAutosave()
-      if (!saved) return
-    }
-
-    setIsCreating(true)
-    setError(null)
-
-    try {
-      const data = await api.createNote('Untitled note', '', {
-        content_html: '<p></p>',
-        date: todayKey(),
-        mood: null,
-        source: 'workspace',
-      })
-
-      const created = data as NoteRow
-      setNotes((prev) => [created, ...prev])
-      setNoteTree((prev) => [
-        {
-          ...created,
-          depth: 0,
-          children: [],
-        },
-        ...prev,
-      ])
-      setSelectedNoteId(created.id)
-      syncDraftFromNote(created)
-      setTimeout(() => titleRef.current?.focus(), 0)
-    } catch (createError) {
-      setError(createError instanceof Error ? createError.message : 'Could not create note.')
-    } finally {
-      setIsCreating(false)
-    }
-  }, [api, flushAutosave, isDirty, syncDraftFromNote, user])
 
   const createChildNote = useCallback(
     async (parentId: string) => {
@@ -1722,7 +1713,11 @@ export const NotesWindow = () => {
                         }
                         setIsCreating(true)
                         try {
-                          const note = await api.createNoteFromTemplate(template.id)
+                          const resolvedTemplateId = resolveTemplateIdByName(template.name)
+                          if (!resolvedTemplateId) {
+                            throw new Error('Template not found')
+                          }
+                          const note = await api.createNoteFromTemplate(resolvedTemplateId)
                           setNotes((prev) => [note as NoteRow, ...prev])
                           setNoteTree((prev) => [
                             {
@@ -1961,7 +1956,10 @@ export const NotesWindow = () => {
                     Create a note to start writing, planning, or dumping ideas.
                   </p>
                   <button
-                    onClick={() => void createNewNote()}
+                    onClick={() => {
+                      setNoteCreationSectionId(null)
+                      setShowCreateNoteModal(true)
+                    }}
                     className="mt-5 px-4 py-2 rounded-full bg-gray-900 text-white text-sm font-medium hover:bg-gray-800"
                   >
                     New note
