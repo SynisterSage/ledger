@@ -295,6 +295,9 @@ export const useApi = () => {
       method: 'POST',
       body: JSON.stringify(options ?? {}),
     }),
+    duplicateNote: (id: string) => request(`/api/notes/${id}/duplicate`, {
+      method: 'POST',
+    }),
     moveNoteParent: (id: string, parent_id: string | null) => request(`/api/notes/${id}/parent`, {
       method: 'PATCH',
       body: JSON.stringify({ parent_id }),
@@ -330,8 +333,9 @@ export const useApi = () => {
     duplicateTemplate: (id: string) => request(`/api/templates/${id}/duplicate`, {
       method: 'POST',
     }),
-    createNoteFromTemplate: (templateId: string) => request(`/api/notes/from-template/${templateId}`, {
+    createNoteFromTemplate: (templateId: string, options?: { section_id?: string | null }) => request(`/api/notes/from-template/${templateId}`, {
       method: 'POST',
+      body: JSON.stringify(options ?? {}),
     }),
     saveNoteAsTemplate: (noteId: string, payload: { name?: string; description?: string | null; category?: string; is_default?: boolean }) => request(`/api/templates/from-note/${noteId}`, {
       method: 'POST',

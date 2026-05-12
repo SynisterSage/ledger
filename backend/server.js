@@ -244,6 +244,44 @@ const buildNoteBreadcrumb = (rows, noteId) => {
   return crumbs
 }
 
+const DEFAULT_NOTE_SECTIONS = [
+  { name: 'Work', color: 'orange' },
+  { name: 'Personal', color: 'green' },
+  { name: 'Ideas', color: 'purple' },
+]
+
+const ensureDefaultNoteSections = async (workspaceId, userId) => {
+  const { data: existingSections, error: existingError } = await supabase
+    .from('note_sections')
+    .select('id')
+    .eq('workspace_id', workspaceId)
+    .limit(1)
+
+  if (existingError) throw existingError
+  if (Array.isArray(existingSections) && existingSections.length > 0) return
+
+  const { data: lastSection, error: lastError } = await supabase
+    .from('note_sections')
+    .select('sort_order')
+    .eq('workspace_id', workspaceId)
+    .order('sort_order', { ascending: false })
+    .limit(1)
+
+  if (lastError) throw lastError
+  let nextSortOrder = (lastSection?.[0]?.sort_order ?? -1) + 1
+
+  const sectionsToInsert = DEFAULT_NOTE_SECTIONS.map((section) => ({
+    workspace_id: workspaceId,
+    created_by: userId,
+    name: section.name,
+    color: section.color,
+    sort_order: nextSortOrder++,
+  }))
+
+  const { error: insertError } = await supabase.from('note_sections').insert(sectionsToInsert)
+  if (insertError) throw insertError
+}
+
 const normalizeSearchTerm = (value) => String(value ?? '').trim().toLowerCase()
 
 const truncatePreview = (value, length = 80) => {
@@ -2186,7 +2224,7 @@ app.get('/api/notes', authMiddleware, rateLimit('read'), async (req, res) => {
     const workspaceId = await resolveWorkspaceIdForRequest(req)
     const { data, error } = await supabase
       .from('notes')
-      .select('id, title, content, content_html, date, mood, source, mode, mind_map_structure, parent_id, sort_order, depth, created_at, updated_at')
+      .select('id, title, content, content_html, date, mood, source, mode, mind_map_structure, parent_id, section_id, sort_order, depth, created_at, updated_at')
       .eq('workspace_id', workspaceId)
       .limit(500)
 
@@ -2520,6 +2558,61 @@ app.get('/api/notes/:id/tree', authMiddleware, rateLimit('read'), async (req, re
   }
 })
 
+app.post('/api/notes/:id/duplicate', authMiddleware, rateLimit('write'), quotaGuard('notes'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req)
+    const { data: source, error: sourceError } = await supabase
+      .from('notes')
+      .select('id, title, content, content_html, date, mood, source, mode, mind_map_structure, parent_id, section_id, sort_order, depth')
+      .eq('id', req.params.id)
+      .eq('workspace_id', workspaceId)
+      .maybeSingle()
+
+    if (sourceError) throw sourceError
+    if (!source) {
+      return res.status(404).json({ error: 'Note not found.' })
+    }
+
+    let siblingsQuery = supabase
+      .from('notes')
+      .select('sort_order')
+      .eq('workspace_id', workspaceId)
+      .order('sort_order', { ascending: false })
+      .limit(1)
+    siblingsQuery = source.parent_id ? siblingsQuery.eq('parent_id', source.parent_id) : siblingsQuery.is('parent_id', null)
+    const { data: siblings, error: siblingsError } = await siblingsQuery
+
+    if (siblingsError) throw siblingsError
+    const siblingTop = Array.isArray(siblings) && siblings.length ? toNonNegativeInt(siblings[0].sort_order) : -1
+
+    const { data, error } = await supabase
+      .from('notes')
+      .insert({
+        workspace_id: workspaceId,
+        user_id: req.authUser.id,
+        title: `${source.title || 'Untitled note'} Copy`,
+        content: source.content,
+        content_html: source.content_html,
+        date: source.date,
+        mood: source.mood,
+        source: source.source,
+        mode: source.mode,
+        mind_map_structure: source.mind_map_structure,
+        parent_id: source.parent_id ?? null,
+        section_id: source.section_id ?? null,
+        sort_order: siblingTop + 1,
+        depth: toNonNegativeInt(source.depth),
+      })
+      .select('id, title, content, content_html, date, mood, source, mode, mind_map_structure, parent_id, section_id, sort_order, depth, created_at, updated_at')
+      .single()
+
+    if (error) throw error
+    res.json(mapNoteResponse(data))
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
 app.delete('/api/notes/:id', authMiddleware, rateLimit('write'), async (req, res) => {
   try {
     const workspaceId = await resolveWorkspaceIdForRequest(req)
@@ -2833,6 +2926,19 @@ app.post('/api/notes/from-template/:templateId([0-9a-fA-F-]{36})', authMiddlewar
     const content_plain = htmlToPlainText(content_html)
     const date = new Date().toISOString().slice(0, 10)
 
+    const requestedSectionId = req.body?.section_id ? String(req.body.section_id).trim() : null
+    let section_id = null
+    if (requestedSectionId) {
+      const { data: sectionRow, error: sectionError } = await supabase
+        .from('note_sections')
+        .select('id')
+        .eq('id', requestedSectionId)
+        .eq('workspace_id', workspaceId)
+        .maybeSingle()
+      if (sectionError) throw sectionError
+      if (sectionRow) section_id = sectionRow.id
+    }
+
     const { data: note, error: noteError } = await supabase
       .from('notes')
       .insert({
@@ -2844,6 +2950,7 @@ app.post('/api/notes/from-template/:templateId([0-9a-fA-F-]{36})', authMiddlewar
         date,
         source: 'template',
         template_id: templateId,
+        section_id,
       })
       .select('id, title, content, content_html, date, mood, source, mode, mind_map_structure, parent_id, sort_order, depth, created_at, updated_at')
       .single()
@@ -2946,6 +3053,7 @@ app.patch('/api/templates/:id([0-9a-fA-F-]{36})/set-default', authMiddleware, ra
 app.get('/api/sections', authMiddleware, rateLimit('read'), withWorkspaceContext, async (req, res) => {
   try {
     const { workspaceId, userId } = req.user
+    await ensureDefaultNoteSections(workspaceId, userId)
 
     const { data, error } = await supabase
       .from('note_sections')

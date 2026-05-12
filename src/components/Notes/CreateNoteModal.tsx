@@ -6,7 +6,8 @@ import { TemplateGallery } from './TemplateGallery'
 interface CreateNoteModalProps {
   isOpen: boolean
   onClose: () => void
-  onNoteCreated?: (note: { id: string; title: string; content: string; date: string; mood: string | null; source: string; parent_id?: string | null; sort_order?: number; depth?: number; created_at: string; updated_at: string }) => void
+  defaultSectionId?: string | null
+  onNoteCreated?: (note: { id: string; title: string; content: string; date: string; mood: string | null; source: string; section_id?: string | null; parent_id?: string | null; sort_order?: number; depth?: number; created_at: string; updated_at: string }) => void
 }
 
 type Step = 'main' | 'gallery' | 'custom-form'
@@ -38,7 +39,7 @@ const QUICK_TEMPLATES = [
   },
 ]
 
-export const CreateNoteModal = ({ isOpen, onClose, onNoteCreated }: CreateNoteModalProps) => {
+export const CreateNoteModal = ({ isOpen, onClose, defaultSectionId = null, onNoteCreated }: CreateNoteModalProps) => {
   const api = useApi()
   const [step, setStep] = useState<Step>('main')
   const [isCreating, setIsCreating] = useState(false)
@@ -65,6 +66,7 @@ export const CreateNoteModal = ({ isOpen, onClose, onNoteCreated }: CreateNoteMo
     try {
       const note = await api.createNote('Untitled Note', '', {
         content_html: '<p></p>',
+        section_id: defaultSectionId ?? undefined,
       })
       onNoteCreated?.(note)
       onClose()
@@ -78,7 +80,7 @@ export const CreateNoteModal = ({ isOpen, onClose, onNoteCreated }: CreateNoteMo
   const handleCreateFromTemplate = async (templateId: string) => {
     setIsCreating(true)
     try {
-      const note = await api.createNoteFromTemplate(templateId)
+      const note = await api.createNoteFromTemplate(templateId, { section_id: defaultSectionId ?? undefined })
       onNoteCreated?.(note)
       onClose()
     } catch (error) {
@@ -115,6 +117,7 @@ export const CreateNoteModal = ({ isOpen, onClose, onNoteCreated }: CreateNoteMo
             <div className="space-y-4">
               {/* Blank note */}
               <button
+                type="button"
                 onClick={handleCreateBlank}
                 disabled={isCreating}
                 className="w-full flex items-center gap-4 p-4 rounded-lg border border-gray-200 text-left transition hover:bg-gray-50 active:bg-white disabled:opacity-50"
@@ -134,6 +137,7 @@ export const CreateNoteModal = ({ isOpen, onClose, onNoteCreated }: CreateNoteMo
                   {QUICK_TEMPLATES.map(({ id, name, icon: Icon, description }) => (
                     <button
                       key={id}
+                      type="button"
                       onClick={() => handleCreateFromTemplate(id)}
                       disabled={isCreating}
                       className="p-3 rounded-lg border border-gray-200 text-left transition hover:bg-gray-50 active:bg-white disabled:opacity-50"
@@ -148,6 +152,7 @@ export const CreateNoteModal = ({ isOpen, onClose, onNoteCreated }: CreateNoteMo
 
               {/* Browse all templates */}
               <button
+                type="button"
                 onClick={() => setStep('gallery')}
                 className="w-full flex items-center gap-4 p-4 rounded-lg border border-gray-200 text-left transition hover:bg-gray-50 active:bg-white"
               >
@@ -174,6 +179,7 @@ export const CreateNoteModal = ({ isOpen, onClose, onNoteCreated }: CreateNoteMo
             <div className="text-center py-8 text-gray-500">
               <p className="text-sm">Create custom template form coming soon</p>
               <button
+                type="button"
                 onClick={() => setStep('gallery')}
                 className="mt-3 text-sm font-medium text-[#FF5F40] hover:underline"
               >
