@@ -169,9 +169,15 @@ function DashboardContent() {
           firstTaskTomorrow: row?.checkin_first_task_tomorrow ?? '',
         })
 
+        const normalizedNotes = Array.isArray(noteData)
+          ? (noteData as Array<{ id: string; title: string; content: string; updated_at: string }>)
+          : Array.isArray((noteData as { notes?: Array<{ id: string; title: string; content: string; updated_at: string }> } | null)?.notes)
+            ? ((noteData as { notes: Array<{ id: string; title: string; content: string; updated_at: string }> }).notes)
+            : []
+
         setProjects(((projectData ?? []) as Array<{ id: string; name: string; status: string; completeness: number }>).slice(0, 4))
         setUpcoming(((upcomingData ?? []) as Array<{ id: string; title: string; start_at: string; end_at: string; color?: string }>).slice(0, 4))
-        setNotes(((noteData ?? []) as Array<{ id: string; title: string; content: string; updated_at: string }>).slice(0, 4))
+        setNotes(normalizedNotes.slice(0, 4))
         hasLoadedDashboardRef.current = true
       } catch (error) {
         if (!cancelled) {

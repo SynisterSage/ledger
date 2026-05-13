@@ -42,6 +42,13 @@ type ProjectStatus = 'NotStarted' | 'InProgress' | 'Paused' | 'Completed'
 const normalizeProjectNameKey = (value: unknown) => String(value ?? '').trim().toLowerCase()
 type ProjectSemanticStatus = 'not_started' | 'in_progress' | 'paused' | 'completed'
 
+const htmlToPlainText = (value: string) =>
+  String(value ?? '')
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+
 const todayKey = () => {
   const now = new Date()
   const year = now.getFullYear()
@@ -49,6 +56,52 @@ const todayKey = () => {
   const day = String(now.getDate()).padStart(2, '0')
   return `${year}-${month}-${day}`
 }
+
+const parseDateKey = (value: string) => {
+  const [yearRaw, monthRaw, dayRaw] = String(value ?? '').split('-')
+  const year = Number(yearRaw)
+  const month = Number(monthRaw)
+  const day = Number(dayRaw)
+  return {
+    year: Number.isFinite(year) ? year : new Date().getFullYear(),
+    month: Number.isFinite(month) ? month : 1,
+    day: Number.isFinite(day) ? day : 1,
+  }
+}
+
+const toDateKey = (year: number, month: number, day: number) =>
+  `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+
+const monthOptions = [
+  { value: 1, label: 'Jan' },
+  { value: 2, label: 'Feb' },
+  { value: 3, label: 'Mar' },
+  { value: 4, label: 'Apr' },
+  { value: 5, label: 'May' },
+  { value: 6, label: 'Jun' },
+  { value: 7, label: 'Jul' },
+  { value: 8, label: 'Aug' },
+  { value: 9, label: 'Sep' },
+  { value: 10, label: 'Oct' },
+  { value: 11, label: 'Nov' },
+  { value: 12, label: 'Dec' },
+]
+
+const buildTimeOptions = () => {
+  const options: Array<{ value: string; label: string }> = []
+  for (let hour = 0; hour < 24; hour += 1) {
+    for (let minute = 0; minute < 60; minute += 15) {
+      const value = `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`
+      const suffix = hour >= 12 ? 'PM' : 'AM'
+      const hour12 = hour % 12 === 0 ? 12 : hour % 12
+      const label = `${hour12}:${String(minute).padStart(2, '0')} ${suffix}`
+      options.push({ value, label })
+    }
+  }
+  return options
+}
+
+const timeOptions = buildTimeOptions()
 
 const getProgressStateColor = (value: number) => {
   const percent = Math.max(0, Math.min(100, value))
@@ -107,7 +160,6 @@ export const ExpandedSidebar = ({
   const [eventDate, setEventDate] = useState(todayKey())
   const [eventStartTime, setEventStartTime] = useState('09:00')
   const [eventEndTime, setEventEndTime] = useState('10:00')
-  const [workspaceId, setWorkspaceId] = useState<string | null>(null)
   const todayBucketRef = useRef(todayKey())
   const [projects, setProjects] = useState<Array<{ id: string; name: string; status: ProjectStatus | string; completeness: number; color?: string; start_date?: string | null; end_date?: string | null }>>([])
   const [isLoadingProjects, setIsLoadingProjects] = useState(true)
@@ -174,7 +226,6 @@ export const ExpandedSidebar = ({
 
   useEffect(() => {
     if (!activeWorkspaceId) {
-      setWorkspaceId(null)
       setIsLoadingProjects(false)
       setIsLoadingUpcoming(false)
       setQuickNotes([])
@@ -182,8 +233,6 @@ export const ExpandedSidebar = ({
       setUpcomingItems([])
       return
     }
-
-    setWorkspaceId(activeWorkspaceId)
   }, [activeWorkspaceId])
 
   useEffect(() => {
@@ -195,7 +244,6 @@ export const ExpandedSidebar = ({
           setFocusItems([])
           setCheckin({ finished: '', blocked: '', firstTaskTomorrow: '' })
           setCheckinSaved(false)
-          setWorkspaceId(null)
           setIsLoadingDaily(false)
         }
         return
@@ -239,7 +287,6 @@ export const ExpandedSidebar = ({
         }
       } finally {
         if (!cancelled) {
-          setWorkspaceId(user.id)
           setIsLoadingDaily(false)
         }
       }
@@ -266,12 +313,14 @@ export const ExpandedSidebar = ({
 
         if (cancelled) return
 
-        const mapped = ((data ?? []) as Array<{ id: string; title: string; content: string; created_at: string; source?: string | null }> )
+        const payload = data as { notes?: Array<{ id: string; title: string; content: string; created_at: string; source?: string | null }> } | Array<{ id: string; title: string; content: string; created_at: string; source?: string | null }>
+        const rows = Array.isArray(payload) ? payload : Array.isArray(payload?.notes) ? payload.notes : []
+        const mapped = rows
           .filter((row) => (row.source ?? 'workspace') === 'quick_capture')
           .map((row) => ({
             id: row.id,
             title: row.title,
-            body: row.content,
+            body: htmlToPlainText(row.content ?? ''),
             createdAt: row.created_at,
           }))
 
@@ -542,7 +591,7 @@ export const ExpandedSidebar = ({
 
   const saveQuickNote = async () => {
     const text = noteDraft.trim()
-    if (!text || !user || !workspaceId) return
+    if (!text || !user || !activeWorkspaceId) return
 
     const firstLine = text.split('\n').find((line) => line.trim())?.trim() ?? 'Untitled note'
     const title = firstLine.replace(/^#\s*/, '').slice(0, 72)
@@ -558,7 +607,7 @@ export const ExpandedSidebar = ({
     const note: QuickNote = {
       id: row.id,
       title: row.title,
-      body: row.content,
+      body: htmlToPlainText(row.content ?? text),
       createdAt: row.created_at ?? new Date().toISOString(),
     }
 
@@ -593,31 +642,80 @@ export const ExpandedSidebar = ({
 
   const saveQuickEvent = async () => {
     const title = eventDraft.trim()
-    if (!title || !user) return
+    if (!title || !user || !activeWorkspaceId) return
 
-    // Combine date and time for start/end times
-    const startDateTime = new Date(`${eventDate}T${eventStartTime}:00`)
-    const endDateTime = new Date(`${eventDate}T${eventEndTime}:00`)
+    setSaveError(null)
 
-    const data = await api.createEvent({
-      title,
-      start_at: startDateTime.toISOString(),
-      end_at: endDateTime.toISOString(),
-      notes: '',
-      all_day: false,
-      status: 'planned',
-    })
+    try {
+      const calendars = await api.getCalendars()
+      const selectedCalendar = Array.isArray(calendars) ? calendars[0] ?? null : null
+      if (!selectedCalendar) {
+        throw new Error('No calendar available')
+      }
 
-    if (!data) {
-      setSaveError('Could not save event.')
-      return
+      const startDateTime = new Date(`${eventDate}T${eventStartTime}:00`)
+      let endDateTime = new Date(`${eventDate}T${eventEndTime}:00`)
+      if (endDateTime <= startDateTime) {
+        endDateTime = new Date(startDateTime.getTime() + 60 * 60 * 1000)
+      }
+
+      const data = await api.createEvent({
+        title,
+        start_at: startDateTime.toISOString(),
+        end_at: endDateTime.toISOString(),
+        calendar_id: selectedCalendar.id,
+        color: selectedCalendar.color,
+        notes: '',
+        all_day: false,
+        status: 'planned',
+      })
+
+      if (!data) {
+        throw new Error('Could not save event.')
+      }
+
+      const createdEvent = data as { id: string; title: string; start_at: string }
+      const start = new Date(createdEvent.start_at)
+      const startAt = start.getTime()
+      const isValidDate = Number.isFinite(startAt)
+      const today = new Date()
+      today.setHours(0, 0, 0, 0)
+      const tomorrow = new Date(today)
+      tomorrow.setDate(tomorrow.getDate() + 1)
+      const eventDateISO = isValidDate ? start.toISOString().slice(0, 10) : ''
+      const todayISO = today.toISOString().slice(0, 10)
+      const tomorrowISO = tomorrow.toISOString().slice(0, 10)
+      const dueDate =
+        eventDateISO === todayISO
+          ? 'Today'
+          : eventDateISO === tomorrowISO
+            ? 'Tomorrow'
+            : isValidDate
+              ? start.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })
+              : 'No date'
+
+      const newItem = {
+        id: createdEvent.id,
+        title: createdEvent.title,
+        type: 'event' as const,
+        dueDate,
+        rawDate: eventDateISO,
+        time: isValidDate ? start.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : undefined,
+        sortAt: isValidDate ? startAt : Number.MAX_SAFE_INTEGER,
+      }
+      setUpcomingItems((prev) =>
+        [...prev.filter((item) => item.id !== newItem.id), newItem].sort((a, b) => a.sortAt - b.sortAt).slice(0, 5)
+      )
+
+      setEventDraft('')
+      setEventDate(todayKey())
+      setEventStartTime('09:00')
+      setEventEndTime('10:00')
+      setQuickCaptureMode('none')
+    } catch (error) {
+      console.error('Failed to create event from sidebar:', error)
+      setSaveError(error instanceof Error ? error.message : 'Could not save event.')
     }
-
-    setEventDraft('')
-    setEventDate(todayKey())
-    setEventStartTime('09:00')
-    setEventEndTime('10:00')
-    setQuickCaptureMode('none')
   }
 
   const updateProjectStatus = async (projectId: string, newStatus: ProjectStatus) => {
@@ -650,7 +748,7 @@ export const ExpandedSidebar = ({
 
   const createProject = async () => {
     const name = newProjectName.trim()
-    if (!name || !user || !workspaceId) {
+    if (!name || !user || !activeWorkspaceId) {
       setSaveError('Missing name, user, or workspace')
       return
     }
@@ -676,6 +774,10 @@ export const ExpandedSidebar = ({
   }
 
   const completedCount = focusItems.filter((item) => item.done).length
+  const eventDateParts = parseDateKey(eventDate)
+  const daysInSelectedMonth = new Date(eventDateParts.year, eventDateParts.month, 0).getDate()
+  const currentYear = new Date().getFullYear()
+  const eventYearOptions = Array.from({ length: 6 }).map((_, index) => currentYear - 1 + index)
 
   const deleteProject = async (projectId: string) => {
     try {
@@ -1071,30 +1173,75 @@ export const ExpandedSidebar = ({
                 placeholder="Event title"
                 className="w-full h-8 px-2 text-xs border border-gray-200 rounded-md focus:outline-none focus:border-gray-300 bg-gray-50 text-gray-900 placeholder-gray-500"
               />
-              <input
-                type="date"
-                value={eventDate}
-                onChange={(e) => setEventDate(e.target.value)}
-                className="w-full h-8 px-2 text-xs border border-gray-200 rounded-md focus:outline-none focus:border-gray-300 bg-gray-50 text-gray-900"
-              />
+              <div className="space-y-1.5">
+                <div className="grid grid-cols-3 gap-2">
+                  <select
+                    value={eventDateParts.month}
+                    onChange={(e) => {
+                      const nextMonth = Number(e.target.value)
+                      const nextDay = Math.min(eventDateParts.day, new Date(eventDateParts.year, nextMonth, 0).getDate())
+                      setEventDate(toDateKey(eventDateParts.year, nextMonth, nextDay))
+                    }}
+                    className="h-8 px-2 text-xs border border-gray-200 rounded-md focus:outline-none focus:border-gray-300 bg-gray-50 text-gray-900"
+                  >
+                    {monthOptions.map((month) => (
+                      <option key={month.value} value={month.value}>{month.label}</option>
+                    ))}
+                  </select>
+                  <select
+                    value={eventDateParts.day}
+                    onChange={(e) => {
+                      const nextDay = Number(e.target.value)
+                      setEventDate(toDateKey(eventDateParts.year, eventDateParts.month, nextDay))
+                    }}
+                    className="h-8 px-2 text-xs border border-gray-200 rounded-md focus:outline-none focus:border-gray-300 bg-gray-50 text-gray-900"
+                  >
+                    {Array.from({ length: daysInSelectedMonth }).map((_, index) => {
+                      const day = index + 1
+                      return (
+                        <option key={day} value={day}>{day}</option>
+                      )
+                    })}
+                  </select>
+                  <select
+                    value={eventDateParts.year}
+                    onChange={(e) => {
+                      const nextYear = Number(e.target.value)
+                      const nextDay = Math.min(eventDateParts.day, new Date(nextYear, eventDateParts.month, 0).getDate())
+                      setEventDate(toDateKey(nextYear, eventDateParts.month, nextDay))
+                    }}
+                    className="h-8 px-2 text-xs border border-gray-200 rounded-md focus:outline-none focus:border-gray-300 bg-gray-50 text-gray-900"
+                  >
+                    {eventYearOptions.map((year) => (
+                      <option key={year} value={year}>{year}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
               <div className="grid grid-cols-2 gap-2">
                 <div className="flex flex-col gap-1">
                   <label className="text-[10px] text-gray-600 font-medium">Start</label>
-                  <input
-                    type="time"
+                  <select
                     value={eventStartTime}
                     onChange={(e) => setEventStartTime(e.target.value)}
                     className="h-7 px-2 text-xs border border-gray-200 rounded-md focus:outline-none focus:border-gray-300 bg-gray-50 text-gray-900"
-                  />
+                  >
+                    {timeOptions.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
                 </div>
                 <div className="flex flex-col gap-1">
                   <label className="text-[10px] text-gray-600 font-medium">End</label>
-                  <input
-                    type="time"
+                  <select
                     value={eventEndTime}
                     onChange={(e) => setEventEndTime(e.target.value)}
                     className="h-7 px-2 text-xs border border-gray-200 rounded-md focus:outline-none focus:border-gray-300 bg-gray-50 text-gray-900"
-                  />
+                  >
+                    {timeOptions.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
                 </div>
               </div>
               <div className="flex items-center gap-1.5">
@@ -1546,6 +1693,27 @@ export const ExpandedSidebar = ({
               >
                 <CalendarDays size={14} />
                 Open in Calendar
+              </button>
+              <button
+                onClick={() => {
+                  const targetId = contextMenu.id
+                  const previousItems = upcomingItems
+                  setUpcomingItems((prev) => prev.filter((item) => item.id !== targetId))
+                  setExpandedUpcomingId((current) => (current === targetId ? null : current))
+                  setContextMenu(null)
+                  void (async () => {
+                    try {
+                      await api.deleteEvent(targetId)
+                    } catch (error) {
+                      setUpcomingItems(previousItems)
+                      setSaveError('Could not delete event.')
+                    }
+                  })()
+                }}
+                className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition flex items-center gap-2"
+              >
+                <Trash2 size={14} />
+                Delete Event
               </button>
             </>
           )}

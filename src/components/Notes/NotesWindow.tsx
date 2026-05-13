@@ -3,8 +3,8 @@ import {
   ChevronRight,
   Clock,
   Copy,
+  Download,
   Folder,
-  FolderPlus,
   MoreHorizontal,
   Plus,
   Search,
@@ -23,9 +23,13 @@ import { MindMapEditor } from './MindMapEditor'
 import { RichTextEditor } from './RichTextEditor'
 import { useViewportWidth } from '../../hooks/useViewportWidth'
 import { CreateNoteModal } from './CreateNoteModal'
+import { BulkExportModal } from './BulkExportModal'
+import { bulkExportNotes, bulkExportMindMaps } from '../../utils/exportUtils'
 
 type NoteRow = {
   id: string
+  workspace_id?: string
+  user_id?: string
   title: string
   content: string
   date: string
@@ -42,6 +46,12 @@ type NoteRow = {
   updated_at: string
 }
 
+type WorkspaceMember = {
+  user_id: string
+  email: string | null
+  full_name: string | null
+}
+
 type NoteTreeNode = NoteRow & {
   depth: number
   children: NoteTreeNode[]
@@ -50,7 +60,7 @@ type NoteTreeNode = NoteRow & {
 type NoteSection = {
   id: string
   name: string
-  color: 'blue' | 'orange' | 'purple' | 'green' | 'pink' | 'gray'
+  color: string
   sort_order: number
   collapsed: boolean
 }
@@ -103,10 +113,37 @@ const getColorClasses = (color: string) => {
     purple: { dot: 'bg-purple-500', text: 'text-purple-600', bg: 'bg-purple-50', border: 'border-l-2 border-purple-400' },
     green: { dot: 'bg-green-500', text: 'text-green-600', bg: 'bg-green-50', border: 'border-l-2 border-green-400' },
     pink: { dot: 'bg-pink-500', text: 'text-pink-600', bg: 'bg-pink-50', border: 'border-l-2 border-pink-400' },
+    red: { dot: 'bg-red-500', text: 'text-red-600', bg: 'bg-red-50', border: 'border-l-2 border-red-400' },
+    amber: { dot: 'bg-amber-500', text: 'text-amber-600', bg: 'bg-amber-50', border: 'border-l-2 border-amber-400' },
+    teal: { dot: 'bg-teal-500', text: 'text-teal-600', bg: 'bg-teal-50', border: 'border-l-2 border-teal-400' },
+    cyan: { dot: 'bg-cyan-500', text: 'text-cyan-600', bg: 'bg-cyan-50', border: 'border-l-2 border-cyan-400' },
+    indigo: { dot: 'bg-indigo-500', text: 'text-indigo-600', bg: 'bg-indigo-50', border: 'border-l-2 border-indigo-400' },
+    violet: { dot: 'bg-violet-500', text: 'text-violet-600', bg: 'bg-violet-50', border: 'border-l-2 border-violet-400' },
+    emerald: { dot: 'bg-emerald-500', text: 'text-emerald-600', bg: 'bg-emerald-50', border: 'border-l-2 border-emerald-400' },
+    rose: { dot: 'bg-rose-500', text: 'text-rose-600', bg: 'bg-rose-50', border: 'border-l-2 border-rose-400' },
+    slate: { dot: 'bg-slate-500', text: 'text-slate-600', bg: 'bg-slate-50', border: 'border-l-2 border-slate-400' },
     gray: { dot: 'bg-gray-400', text: 'text-gray-600', bg: 'bg-gray-50', border: 'border-l-2 border-gray-300' },
   }
   return colorMap[color] || colorMap.gray
 }
+
+const sectionColorOptions: Array<NoteSection['color']> = [
+  'gray',
+  'blue',
+  'orange',
+  'green',
+  'purple',
+  'pink',
+  'red',
+  'amber',
+  'teal',
+  'cyan',
+  'indigo',
+  'violet',
+  'emerald',
+  'rose',
+  'slate',
+]
 
 const formatCompactDateTime = (value: string) =>
   new Date(value).toLocaleString([], {
@@ -130,6 +167,37 @@ const formatSavedStatus = (savedAt: string | null, isSaving: boolean, isDirty: b
   const elapsedHours = Math.floor(elapsedMinutes / 60)
   return `Saved ${elapsedHours}h ago`
 }
+
+const formatRelativeFromNow = (value: string | null | undefined) => {
+  if (!value) return 'just now'
+  const delta = Math.max(0, Math.floor((Date.now() - new Date(value).getTime()) / 1000))
+  if (delta < 60) return `${delta}s ago`
+  const minutes = Math.floor(delta / 60)
+  if (minutes < 60) return `${minutes}m ago`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours}h ago`
+  const days = Math.floor(hours / 24)
+  return `${days}d ago`
+}
+
+const displayUserName = (member: WorkspaceMember | null | undefined) => {
+  if (!member) return 'Unknown user'
+  return member.full_name?.trim() || member.email?.trim() || 'Unknown user'
+}
+
+const initialsForName = (value: string) => {
+  const tokens = value.split(/\s+/).filter(Boolean)
+  if (!tokens.length) return '?'
+  if (tokens.length === 1) return tokens[0].slice(0, 1).toUpperCase()
+  return `${tokens[0][0] ?? ''}${tokens[1][0] ?? ''}`.toUpperCase()
+}
+
+const InspectorInfoRow = ({ label, value }: { label: string; value: string }) => (
+  <div className="py-1">
+    <p className="text-[11px] text-gray-500">{label}</p>
+    <p className="mt-0.5 text-sm font-medium text-gray-900 wrap-break-word">{value}</p>
+  </div>
+)
 
 const toNonNegativeInt = (value: unknown, fallback = 0) => {
   const parsed = Number(value)
@@ -166,9 +234,19 @@ const insertChildIntoTree = (nodes: NoteTreeNode[], parentId: string, child: Not
 
 const insertRootIntoTree = (nodes: NoteTreeNode[], child: NoteTreeNode): NoteTreeNode[] => [child, ...nodes]
 
+const getDropPreviewClasses = (
+  preview: { targetId: string; position: 'inside' | 'before' | 'after' } | null,
+  targetId: string
+) => {
+  if (!preview || preview.targetId !== targetId) return ''
+  if (preview.position === 'inside') return 'bg-gray-100 border-l-gray-400'
+  if (preview.position === 'before') return 'border-t border-gray-300'
+  return 'border-b border-gray-300'
+}
+
 export const NotesWindow = () => {
   const { user } = useAuthContext()
-  const { activeWorkspaceId } = useWorkspaceContext()
+  const { activeWorkspaceId, activeWorkspace } = useWorkspaceContext()
   const api = useApi()
   const viewportWidth = useViewportWidth()
   const initialFocusNoteId = new URLSearchParams(window.location.search).get('focusNoteId')
@@ -198,8 +276,11 @@ export const NotesWindow = () => {
   const [isCreating, setIsCreating] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
   const [showCreateNoteModal, setShowCreateNoteModal] = useState(false)
+  const [showExportModal, setShowExportModal] = useState(false)
+  const [exportType, setExportType] = useState<'notes' | 'mindmaps'>('notes')
   const [noteCreationSectionId, setNoteCreationSectionId] = useState<string | null>(null)
   const [showNewSectionPrompt, setShowNewSectionPrompt] = useState(false)
+  const [showNewMenu, setShowNewMenu] = useState(false)
   const [newSectionName, setNewSectionName] = useState('')
   const [leftPaneWidth, setLeftPaneWidth] = useState(() =>
     getPaneWidthForViewport(viewportWidth, modulePaneSizing.notes.left)
@@ -214,9 +295,13 @@ export const NotesWindow = () => {
   const [noteContextMenu, setNoteContextMenu] = useState<NoteContextMenuState | null>(null)
   const [sectionContextMenu, setSectionContextMenu] = useState<SectionContextMenuState | null>(null)
   const [renamingNoteId, setRenamingNoteId] = useState<string | null>(null)
+  const [renamingSectionId, setRenamingSectionId] = useState<string | null>(null)
+  const [renamingSectionDraft, setRenamingSectionDraft] = useState('')
   const [renameDraft, setRenameDraft] = useState('')
   const [isInspectorActionsOpen, setIsInspectorActionsOpen] = useState(false)
   const [draggedNoteId, setDraggedNoteId] = useState<string | null>(null)
+  const [draggedSectionId, setDraggedSectionId] = useState<string | null>(null)
+  const [sectionDropTargetId, setSectionDropTargetId] = useState<string | null>(null)
   const [dropPreview, setDropPreview] = useState<{ targetId: string; position: 'inside' | 'before' | 'after' } | null>(
     null
   )
@@ -251,8 +336,11 @@ export const NotesWindow = () => {
   })
   const noteActionsMenuRef = useRef<HTMLDivElement | null>(null)
   const inspectorActionsRef = useRef<HTMLDivElement | null>(null)
+  const newMenuRef = useRef<HTMLDivElement | null>(null)
   const renameInputRef = useRef<HTMLInputElement | null>(null)
+  const renameSectionInputRef = useRef<HTMLInputElement | null>(null)
   const [workspaceTemplates, setWorkspaceTemplates] = useState<Array<{ id: string; name: string }>>([])
+  const [workspaceMembers, setWorkspaceMembers] = useState<WorkspaceMember[]>([])
   const quickTemplates = [
     { id: 'meeting-notes', name: 'Meeting Notes' },
     { id: 'project-brief', name: 'Project Brief' },
@@ -287,6 +375,23 @@ export const NotesWindow = () => {
   const cancelInlineRename = useCallback(() => {
     setRenamingNoteId(null)
     setRenameDraft('')
+  }, [])
+
+  const beginInlineSectionRename = useCallback((sectionId: string) => {
+    const target = sections.find((section) => section.id === sectionId)
+    if (!target) return
+    setRenamingSectionId(sectionId)
+    setRenamingSectionDraft(target.name || 'Untitled folder')
+    setSectionContextMenu(null)
+    window.setTimeout(() => {
+      renameSectionInputRef.current?.focus()
+      renameSectionInputRef.current?.select()
+    }, 0)
+  }, [sections])
+
+  const cancelInlineSectionRename = useCallback(() => {
+    setRenamingSectionId(null)
+    setRenamingSectionDraft('')
   }, [])
 
   const commitInlineRename = useCallback(async () => {
@@ -325,6 +430,33 @@ export const NotesWindow = () => {
       cancelInlineRename()
     }
   }, [api, cancelInlineRename, notes, renameDraft, renamingNoteId, selectedNoteId])
+
+  const commitInlineSectionRename = useCallback(async () => {
+    if (!renamingSectionId) return
+
+    const trimmed = renamingSectionDraft.trim() || 'Untitled folder'
+    const existing = sections.find((item) => item.id === renamingSectionId)
+    if (!existing) {
+      cancelInlineSectionRename()
+      return
+    }
+    if (trimmed === (existing.name || 'Untitled folder')) {
+      cancelInlineSectionRename()
+      return
+    }
+
+    setSections((prev) => prev.map((item) => (item.id === renamingSectionId ? { ...item, name: trimmed } : item)))
+
+    try {
+      const updated = (await api.updateSection(renamingSectionId, { name: trimmed })) as NoteSection
+      setSections((prev) => prev.map((item) => (item.id === renamingSectionId ? { ...item, ...updated } : item)))
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Could not rename folder.')
+      setSections((prev) => prev.map((item) => (item.id === renamingSectionId ? existing : item)))
+    } finally {
+      cancelInlineSectionRename()
+    }
+  }, [api, cancelInlineSectionRename, renamingSectionDraft, renamingSectionId, sections])
 
   const visibleNotes = useMemo(() => {
     const term = search.trim().toLowerCase()
@@ -369,6 +501,28 @@ export const NotesWindow = () => {
     [notes]
   )
 
+  const workspaceMemberById = useMemo(() => {
+    return new Map(workspaceMembers.map((member) => [member.user_id, member]))
+  }, [workspaceMembers])
+
+  const creatorMember = useMemo(() => {
+    if (!selectedNote?.user_id) return null
+    return workspaceMemberById.get(selectedNote.user_id) ?? null
+  }, [selectedNote?.user_id, workspaceMemberById])
+
+  const editorMember = creatorMember
+
+  const activeViewerNames = useMemo(() => {
+    const names: string[] = []
+    if (user?.id) {
+      const me = workspaceMemberById.get(user.id)
+      names.push(me ? displayUserName(me) : 'You')
+    } else {
+      names.push('You')
+    }
+    return names
+  }, [user?.id, workspaceMemberById])
+
   const saveStatus = useMemo(
     () => formatSavedStatus(lastSavedAt, showSavingIndicator, isDirty),
     [isDirty, lastSavedAt, saveStatusTick, showSavingIndicator]
@@ -407,6 +561,39 @@ export const NotesWindow = () => {
       mounted = false
     }
   }, [api, activeWorkspaceId])
+
+  useEffect(() => {
+    let mounted = true
+
+    const loadWorkspaceMembers = async () => {
+      if (!activeWorkspaceId) {
+        if (mounted) setWorkspaceMembers([])
+        return
+      }
+
+      try {
+        const payload = await api.getWorkspaceMembers(activeWorkspaceId) as {
+          members?: Array<{ user_id: string; email?: string | null; full_name?: string | null }>
+        }
+        if (!mounted) return
+        const members = Array.isArray(payload?.members)
+          ? payload.members.map((member) => ({
+              user_id: member.user_id,
+              email: member.email ?? null,
+              full_name: member.full_name ?? null,
+            }))
+          : []
+        setWorkspaceMembers(members)
+      } catch {
+        if (mounted) setWorkspaceMembers([])
+      }
+    }
+
+    void loadWorkspaceMembers()
+    return () => {
+      mounted = false
+    }
+  }, [activeWorkspaceId, api])
 
   const resolveTemplateIdByName = useCallback(
     (name: string) => workspaceTemplates.find((template) => template.name === name)?.id ?? null,
@@ -493,17 +680,46 @@ export const NotesWindow = () => {
         const nextSections = defaultSections.sort((left, right) => left.sort_order - right.sort_order)
         setSections(nextSections)
         localStorage.setItem('notes-sections', JSON.stringify(nextSections))
+        const nextCollapsedIds = new Set<string>(['__unsorted__', ...nextSections.map((section) => section.id)])
+        setCollapsedSectionIds(nextCollapsedIds)
+        localStorage.setItem('notes-sections-collapsed', JSON.stringify([...nextCollapsedIds]))
         return nextSections
       }
 
       setSections(rows)
       localStorage.setItem('notes-sections', JSON.stringify(rows))
+      const nextCollapsedIds = new Set<string>(['__unsorted__', ...rows.map((section) => section.id)])
+      setCollapsedSectionIds(nextCollapsedIds)
+      localStorage.setItem('notes-sections-collapsed', JSON.stringify([...nextCollapsedIds]))
       return rows
     } catch (error) {
       console.error('Failed to load sections:', error)
       return []
     }
   }, [activeWorkspaceId, api])
+
+  const updateSectionColor = useCallback(
+    async (sectionId: string, color: NoteSection['color']) => {
+      const previous = sections
+      const next = sections.map((section) => (section.id === sectionId ? { ...section, color } : section))
+      setSections(next)
+      localStorage.setItem('notes-sections', JSON.stringify(next))
+
+      try {
+        const updated = await api.updateSection(sectionId, { color })
+        setSections((current) =>
+          current.map((section) =>
+            section.id === sectionId ? { ...section, ...(updated as Partial<NoteSection>) } : section
+          )
+        )
+      } catch (error) {
+        setSections(previous)
+        localStorage.setItem('notes-sections', JSON.stringify(previous))
+        setError(error instanceof Error ? error.message : 'Could not update folder color.')
+      }
+    },
+    [api, sections]
+  )
 
   const flushAutosave = useCallback(
     async (override?: { title?: string; content?: string; date?: string; mood?: string }) => {
@@ -685,12 +901,56 @@ export const NotesWindow = () => {
   )
 
   const handleTreeDragStart = useCallback((noteId: string) => {
+    if (draggedSectionId) return
     setDraggedNoteId(noteId)
   }, [])
 
   const handleTreeDragEnd = useCallback(() => {
     setDraggedNoteId(null)
     setDropPreview(null)
+  }, [])
+
+  const handleSectionDragStart = useCallback((sectionId: string, event?: DragEvent<HTMLElement>) => {
+    if (draggedNoteId) return
+    setDraggedSectionId(sectionId)
+    if (event?.dataTransfer) {
+      event.dataTransfer.setData('application/x-ledger-section-id', sectionId)
+      event.dataTransfer.effectAllowed = 'move'
+    }
+  }, [draggedNoteId])
+
+  const handleSectionDrop = useCallback(
+    async (targetSectionId: string, dropSectionId?: string | null) => {
+      const sourceSectionId = dropSectionId ?? draggedSectionId
+      if (!sourceSectionId || sourceSectionId === targetSectionId) return
+
+      const fromIndex = sections.findIndex((section) => section.id === sourceSectionId)
+      const toIndex = sections.findIndex((section) => section.id === targetSectionId)
+      if (fromIndex < 0 || toIndex < 0) return
+
+      const reordered = [...sections]
+      const [moved] = reordered.splice(fromIndex, 1)
+      reordered.splice(toIndex, 0, moved)
+      const normalized = reordered.map((section, index) => ({ ...section, sort_order: index }))
+
+      setSections(normalized)
+      localStorage.setItem('notes-sections', JSON.stringify(normalized))
+      setDraggedSectionId(null)
+      setSectionDropTargetId(null)
+
+      try {
+        await api.reorderSections(normalized.map((section) => ({ id: section.id, sort_order: section.sort_order })))
+      } catch (error) {
+        setError(error instanceof Error ? error.message : 'Could not reorder folders.')
+        void loadSections()
+      }
+    },
+    [api, draggedSectionId, loadSections, sections]
+  )
+
+  const handleSectionDragEnd = useCallback(() => {
+    setDraggedSectionId(null)
+    setSectionDropTargetId(null)
   }, [])
 
   const handleDropOnSection = useCallback(
@@ -756,6 +1016,39 @@ export const NotesWindow = () => {
     const relativeY = (event.clientY - rect.top) / Math.max(rect.height, 1)
     return relativeY < 0.25 ? 'before' : relativeY > 0.75 ? 'after' : 'inside'
   }, [])
+
+  const handleBulkExport = useCallback(async (format: 'pdf' | 'png' | 'html' | 'txt', selectedIds: Set<string>) => {
+    try {
+      if (exportType === 'mindmaps') {
+        const mindMapsToExport = notes
+          .filter((note) => selectedIds.has(note.id) && note.mode === 'mind_map')
+          .map((note) => {
+            const element = document.querySelector(`[data-mindmap-id="${note.id}"]`) as HTMLElement
+            return {
+              id: note.id,
+              title: note.title || 'Untitled',
+              element: element || document.createElement('div'),
+              created_at: note.created_at,
+            }
+          })
+        await bulkExportMindMaps(mindMapsToExport, format as 'pdf' | 'png' | 'txt')
+      } else {
+        const notesToExport = notes
+          .filter((note) => selectedIds.has(note.id))
+          .map((note) => ({
+            id: note.id,
+            title: note.title || 'Untitled',
+            content: note.content || '',
+            date: note.date,
+            created_at: note.created_at,
+          }))
+        await bulkExportNotes(notesToExport, format as 'pdf' | 'html' | 'txt')
+      }
+    } catch (error) {
+      console.error('Bulk export failed:', error)
+      setError('Export failed. Please try again.')
+    }
+  }, [notes, exportType])
 
   const deleteSelectedNote = useCallback(async () => {
     if (!selectedNote) return
@@ -1076,6 +1369,25 @@ export const NotesWindow = () => {
     }
   }, [isNoteActionsOpen])
 
+  useEffect(() => {
+    if (!showNewMenu) return
+
+    const onPointerDown = (event: MouseEvent) => {
+      if (newMenuRef.current?.contains(event.target as Node)) return
+      setShowNewMenu(false)
+    }
+    const onEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setShowNewMenu(false)
+    }
+
+    window.addEventListener('mousedown', onPointerDown)
+    window.addEventListener('keydown', onEscape)
+    return () => {
+      window.removeEventListener('mousedown', onPointerDown)
+      window.removeEventListener('keydown', onEscape)
+    }
+  }, [showNewMenu])
+
   return (
     <div className="h-screen overflow-hidden rounded-[28px] border border-gray-200 bg-[#f5f7fb] flex flex-col shadow-[0_24px_80px_rgba(15,23,42,0.08)]" style={{ scrollbarGutter: 'stable' }}>
       <ModuleWindowHeader
@@ -1136,6 +1448,18 @@ export const NotesWindow = () => {
               <Clock size={13} />
               {isRefreshing ? 'Syncing' : 'Live'}
             </button>
+            <button
+              onClick={() => {
+                setExportType(selectedNote?.mode === 'mind_map' ? 'mindmaps' : 'notes')
+                setShowExportModal(true)
+              }}
+              disabled={notes.length === 0}
+              className="h-8 rounded-full border border-gray-200 bg-white px-2.5 text-[11px] font-medium text-gray-600 hover:bg-gray-50 inline-flex items-center gap-1.5 disabled:opacity-40"
+              title="Export notes or mind maps"
+            >
+              <Download size={13} />
+              Export
+            </button>
           </div>
         }
       />
@@ -1144,7 +1468,7 @@ export const NotesWindow = () => {
         <div className="px-5 py-2 text-xs text-red-700 bg-red-50 border-b border-red-100">{error}</div>
       )}
       <div className="flex-1 flex overflow-hidden">
-        {!isLeftPaneCollapsed && (
+        {!isLeftPaneCollapsed && hasLoadedOnce && (
           <>
             <aside
               className={`border-r border-gray-200 bg-white flex flex-col overflow-hidden shrink-0 ${isCompactLayout ? 'text-sm' : ''}`}
@@ -1153,27 +1477,43 @@ export const NotesWindow = () => {
           <div className={`${isCompactLayout ? 'p-3' : 'p-4'} border-b border-gray-100`}>
             <div className="flex items-center justify-between mb-3">
               <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-600">Notes</h2>
-              <div className="flex items-center gap-1.5">
+              <div className="relative" ref={newMenuRef}>
                 <button
-                  onClick={() => setShowNewSectionPrompt((current) => !current)}
-                  className="h-7 px-2.5 rounded-lg bg-white text-gray-700 text-xs font-semibold hover:bg-gray-100 transition inline-flex items-center gap-1.5 border border-gray-200"
-                  title="Create a new folder"
-                >
-                  <FolderPlus size={11} />
-                  Folder
-                </button>
-                <button
-                  onClick={() => {
-                    setNoteCreationSectionId(null)
-                    setShowCreateNoteModal(true)
-                  }}
+                  onClick={() => setShowNewMenu((current) => !current)}
                   disabled={isCreating}
                   className="h-7 px-2.5 rounded-lg bg-gray-900 text-white text-xs font-semibold hover:bg-gray-800 transition inline-flex items-center gap-1.5 disabled:opacity-60"
-                  title="Create a new note"
+                  title="Create new"
                 >
                   <Plus size={11} />
                   New
+                  <ChevronDown size={11} />
                 </button>
+                {showNewMenu && (
+                  <div className="absolute right-0 top-8 z-40 min-w-32 rounded-lg border border-gray-200 bg-white p-1 shadow-lg">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowNewMenu(false)
+                        setShowNewSectionPrompt(false)
+                        setNoteCreationSectionId(null)
+                        setShowCreateNoteModal(true)
+                      }}
+                      className="w-full rounded-md px-2.5 py-1.5 text-left text-xs font-medium text-gray-800 hover:bg-gray-50"
+                    >
+                      New note
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowNewMenu(false)
+                        setShowNewSectionPrompt(true)
+                      }}
+                      className="w-full rounded-md px-2.5 py-1.5 text-left text-xs font-medium text-gray-800 hover:bg-gray-50"
+                    >
+                      New folder
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -1247,15 +1587,15 @@ export const NotesWindow = () => {
                         event.preventDefault()
                         setNoteContextMenu({ x: event.clientX, y: event.clientY, noteId: note.id })
                       }}
-                      className={`w-full text-left px-3 py-2.5 rounded-lg text-sm transition ${
-                        active ? 'bg-[#fff1ec] text-[#b7442c]' : 'bg-transparent hover:bg-gray-50 text-gray-900'
+                      className={`w-full text-left px-3 py-2 rounded text-sm transition ${
+                        active ? 'bg-gray-50 text-gray-900' : 'bg-transparent hover:bg-gray-50/50 text-gray-700'
                       }`}
                     >
                       <div className="flex items-center gap-2 min-w-0">
-                        <StickyNote size={13} className="text-gray-500 shrink-0" />
+                        <StickyNote size={12} className="text-gray-400 shrink-0" />
                         <div className="min-w-0 flex-1">
-                          <p className="font-medium truncate">{note.title || 'Untitled'}</p>
-                          <p className="text-xs text-gray-500 truncate">{preview}</p>
+                          <p className="font-medium truncate text-sm">{note.title || 'Untitled'}</p>
+                          <p className="text-xs text-gray-400 truncate">{preview}</p>
                         </div>
                       </div>
                     </button>
@@ -1264,16 +1604,35 @@ export const NotesWindow = () => {
               </div>
             ) : (
               // Tree view with sections
-              <div className="space-y-1.5">
+              <div className="space-y-2">
                 {sections.map((section) => {
                   const sectionColor = getColorClasses(section.color)
                   const isSectionCollapsed = collapsedSectionIds.has(section.id)
                   const sectionNotes = notes.filter((n) => n.section_id === section.id && !n.parent_id)
                   
                   return (
-                    <div key={section.id}>
+                    <div
+                      key={section.id}
+                      onDragOver={(event) => {
+                        if (!draggedSectionId) return
+                        event.preventDefault()
+                        if (draggedSectionId !== section.id) {
+                          setSectionDropTargetId(section.id)
+                        }
+                      }}
+                      onDrop={(event) => {
+                        if (!draggedSectionId) return
+                        event.preventDefault()
+                        const dropSectionId = event.dataTransfer.getData('application/x-ledger-section-id') || draggedSectionId
+                        if (!dropSectionId || dropSectionId === section.id) return
+                        void handleSectionDrop(section.id, dropSectionId)
+                      }}
+                    >
                       {/* Section header */}
                       <button
+                        draggable
+                        onDragStart={(event) => handleSectionDragStart(section.id, event)}
+                        onDragEnd={handleSectionDragEnd}
                         onClick={() => {
                           const next = new Set(collapsedSectionIds)
                           if (next.has(section.id)) next.delete(section.id)
@@ -1287,10 +1646,17 @@ export const NotesWindow = () => {
                         }}
                         onDragOver={(event) => {
                           event.preventDefault()
-                          setDropPreview({ targetId: section.id, position: 'inside' })
+                          if (!draggedSectionId) {
+                            setDropPreview({ targetId: section.id, position: 'inside' })
+                          }
                         }}
                         onDrop={(event) => {
                           event.preventDefault()
+                          if (draggedSectionId && draggedSectionId !== section.id) {
+                            const dropSectionId = event.dataTransfer.getData('application/x-ledger-section-id') || draggedSectionId
+                            void handleSectionDrop(section.id, dropSectionId)
+                            return
+                          }
                           void handleDropOnSection(section.id)
                         }}
                         onContextMenu={(event) => {
@@ -1303,12 +1669,42 @@ export const NotesWindow = () => {
                           })
                         }}
                         className={`w-full text-left px-3 py-2 flex items-center gap-2 text-sm font-semibold text-gray-800 hover:bg-gray-50 rounded-lg transition group ${
-                          dropPreview?.targetId === section.id ? 'bg-orange-50' : ''
+                          sectionDropTargetId === section.id
+                            ? 'bg-orange-50 ring-1 ring-orange-200 border border-dashed border-orange-300'
+                            : draggedSectionId === section.id
+                              ? 'bg-orange-50/60 ring-1 ring-orange-100'
+                              : dropPreview?.targetId === section.id
+                                ? 'bg-orange-50 ring-1 ring-orange-200'
+                                : ''
                         }`}
                       >
                         <div className={`h-1.5 w-1.5 rounded-full shrink-0 ${sectionColor.dot}`} />
                         <Folder size={14} className="text-gray-500 shrink-0" />
-                        <span className="flex-1 truncate">{section.name}</span>
+                        <span className="flex-1 truncate">
+                          {renamingSectionId === section.id ? (
+                            <input
+                              ref={renameSectionInputRef}
+                              value={renamingSectionDraft}
+                              onChange={(event) => setRenamingSectionDraft(event.target.value)}
+                              onBlur={() => {
+                                void commitInlineSectionRename()
+                              }}
+                              onKeyDown={(event) => {
+                                if (event.key === 'Enter') {
+                                  event.preventDefault()
+                                  void commitInlineSectionRename()
+                                } else if (event.key === 'Escape') {
+                                  event.preventDefault()
+                                  cancelInlineSectionRename()
+                                }
+                              }}
+                              onClick={(event) => event.stopPropagation()}
+                              className="w-full bg-transparent text-sm font-semibold text-gray-900 outline-none"
+                            />
+                          ) : (
+                            section.name
+                          )}
+                        </span>
                         <ChevronRight
                           size={14}
                           className={`text-gray-400 transition-transform shrink-0 ${!isSectionCollapsed ? 'rotate-90' : ''}`}
@@ -1318,7 +1714,7 @@ export const NotesWindow = () => {
                       
                       {/* Section notes */}
                       {!isSectionCollapsed && (
-                        <div className="space-y-0.5 pl-4">
+                        <div className="space-y-1 pl-4 mt-0.5">
                           {sectionNotes.map((note) => {
                             const active = note.id === selectedNoteId
                             const preview = htmlToPlainText(note.content).slice(0, 60) || 'No content'
@@ -1327,7 +1723,7 @@ export const NotesWindow = () => {
                             const childCount = notes.filter((n) => n.parent_id === note.id).length
                             
                             return (
-                              <div key={note.id} className="space-y-0.5">
+                              <div key={note.id} className="space-y-1">
                                 {/* Note row */}
                                 <div className="flex items-center gap-1 min-w-0">
                                   <button
@@ -1347,17 +1743,17 @@ export const NotesWindow = () => {
                                       event.preventDefault()
                                       setNoteContextMenu({ x: event.clientX, y: event.clientY, noteId: note.id })
                                     }}
-                                    className={`flex-1 min-w-0 px-2.5 py-2 rounded-lg text-left text-sm transition ${
+                                    className={`flex-1 min-w-0 px-2.5 py-1.5 rounded text-left text-sm transition ${
                                       active
-                                        ? 'bg-orange-50 text-gray-900 ring-1 ring-orange-100'
-                                        : 'bg-transparent hover:bg-gray-50 text-gray-900'
-                                    } ${dropPreview?.targetId === note.id ? 'bg-orange-50 ring-1 ring-orange-100' : ''}`}
+                                        ? 'bg-gray-50 text-gray-900'
+                                        : 'bg-transparent hover:bg-gray-50/50 text-gray-700'
+                                    } ${getDropPreviewClasses(dropPreview, note.id)}`}
                                   >
                                     <div className="flex items-center gap-2 min-w-0">
                                       {childCount > 0 ? (
-                                        <Folder size={12} className="text-gray-500 shrink-0" />
+                                        <Folder size={12} className="text-gray-400 shrink-0" />
                                       ) : (
-                                        <StickyNote size={12} className="text-gray-500 shrink-0" />
+                                        <StickyNote size={12} className="text-gray-400 shrink-0" />
                                       )}
                                       <div className="min-w-0 flex-1">
                                         {renamingNoteId === note.id ? (
@@ -1382,9 +1778,9 @@ export const NotesWindow = () => {
                                             className="w-full bg-transparent font-medium text-gray-900 outline-none"
                                           />
                                         ) : (
-                                          <p className="font-medium truncate">{note.title || 'Untitled'}</p>
+                                          <p className="font-medium truncate text-sm">{note.title || 'Untitled'}</p>
                                         )}
-                                        <p className="text-xs text-gray-500 truncate">{preview}</p>
+                                        <p className="text-xs text-gray-400 truncate">{preview}</p>
                                       </div>
                                     </div>
                                   </button>
@@ -1432,11 +1828,11 @@ export const NotesWindow = () => {
                                               event.preventDefault()
                                               setNoteContextMenu({ x: event.clientX, y: event.clientY, noteId: child.id })
                                             }}
-                                            className={`flex-1 min-w-0 px-2.5 py-1.5 rounded-lg text-left text-xs transition ${
+                                            className={`flex-1 min-w-0 px-2.5 py-1.5 rounded text-left text-xs transition ${
                                               selectedNoteId === child.id
-                                                ? 'bg-orange-50 text-gray-900 ring-1 ring-orange-100'
-                                                : 'bg-transparent hover:bg-gray-50 text-gray-800'
-                                            } ${dropPreview?.targetId === child.id ? 'bg-orange-50 ring-1 ring-orange-100' : ''}`}
+                                                ? 'bg-gray-50 text-gray-900'
+                                                : 'bg-transparent hover:bg-gray-50/50 text-gray-600'
+                                            } ${getDropPreviewClasses(dropPreview, child.id)}`}
                                           >
                                             <div className="flex items-center gap-2 min-w-0">
                                               <StickyNote size={11} className="text-gray-400 shrink-0" />
@@ -1458,7 +1854,7 @@ export const NotesWindow = () => {
                               setNoteCreationSectionId(section.id)
                               setShowCreateNoteModal(true)
                             }}
-                            className="w-full text-left px-3 py-1.5 rounded-lg text-xs font-medium text-gray-500 hover:text-gray-700 hover:bg-gray-100 transition flex items-center gap-2"
+                            className="w-full text-left px-2.5 py-1.5 rounded text-xs font-medium text-gray-400 hover:text-gray-600 hover:bg-gray-50/50 transition flex items-center gap-2"
                           >
                             <Plus size={12} />
                             Add note
@@ -1506,7 +1902,7 @@ export const NotesWindow = () => {
                           event.preventDefault()
                           void handleDropOnSection(null)
                         }}
-                        className="w-full text-left px-3 py-2 flex items-center gap-2 text-sm font-semibold text-gray-800 hover:bg-gray-50 rounded-lg transition group"
+                        className="w-full text-left px-3 py-1.5 flex items-center gap-2 text-sm font-semibold text-gray-800 hover:bg-gray-50 rounded-lg transition group"
                       >
                         <div className={`h-1.5 w-1.5 rounded-full shrink-0 ${sectionColor.dot}`} />
                         <Folder size={14} className="text-gray-500 shrink-0" />
@@ -1519,7 +1915,7 @@ export const NotesWindow = () => {
                       </button>
                       
                       {!isUnsortedCollapsed && (
-                        <div className="space-y-0.5 pl-4">
+                        <div className="space-y-1 pl-3.5 mt-0.5">
                           {unsortedNotes.map((note) => {
                             const active = note.id === selectedNoteId
                             const preview = htmlToPlainText(note.content).slice(0, 60) || 'No content'
@@ -1527,7 +1923,7 @@ export const NotesWindow = () => {
                             const childCount = notes.filter((n) => n.parent_id === note.id).length
                             
                             return (
-                              <div key={note.id} className="space-y-0.5">
+                              <div key={note.id} className="space-y-1">
                                 <div className="flex items-center gap-1 min-w-0">
                                   <button
                                     onClick={() => void openNote(note)}
@@ -1546,14 +1942,14 @@ export const NotesWindow = () => {
                                       event.preventDefault()
                                       setNoteContextMenu({ noteId: note.id, x: event.clientX, y: event.clientY })
                                     }}
-                        className={`flex-1 min-w-0 text-left px-2 py-1.5 rounded-lg hover:bg-gray-100 transition cursor-pointer flex items-center gap-2 ${
-                                      active ? 'bg-orange-50 text-gray-900 ring-1 ring-orange-100' : 'text-gray-700'
-                                    } ${dropPreview?.targetId === note.id ? 'bg-orange-50 ring-1 ring-orange-100' : ''}`}
+                        className={`flex-1 min-w-0 text-left px-2.5 py-1 rounded text-sm transition flex items-center gap-2 ${
+                                      active ? 'bg-gray-50 text-gray-900' : 'bg-transparent hover:bg-gray-50/50 text-gray-700'
+                                    } ${getDropPreviewClasses(dropPreview, note.id)}`}
                                   >
                                     {childCount > 0 ? (
-                                      <Folder size={13} className="shrink-0" />
+                                      <Folder size={13} className="text-gray-400 shrink-0" />
                                     ) : (
-                                      <StickyNote size={13} className="shrink-0" />
+                                      <StickyNote size={13} className="text-gray-400 shrink-0" />
                                     )}
                                     <div className="min-w-0 flex-1">
                                       {renamingNoteId === note.id ? (
@@ -1602,7 +1998,7 @@ export const NotesWindow = () => {
                                   )}
                                 </div>
                                 {isExpanded && childCount > 0 && (
-                                  <div className="space-y-0.5 pl-6">
+                                  <div className="space-y-1 pl-3.5">
                                     {notes
                                       .filter((n) => n.parent_id === note.id)
                                       .map((child) => {
@@ -1627,11 +2023,11 @@ export const NotesWindow = () => {
                                               event.preventDefault()
                                               setNoteContextMenu({ noteId: child.id, x: event.clientX, y: event.clientY })
                                             }}
-                                            className={`w-full text-left px-2 py-1 rounded-lg text-sm flex items-center gap-2 transition ${
-                                              childActive ? 'bg-orange-50 text-gray-900 ring-1 ring-orange-100' : 'text-gray-600 hover:bg-gray-100'
-                                            } ${dropPreview?.targetId === child.id ? 'bg-orange-50 ring-1 ring-orange-100' : ''}`}
+                                            className={`w-full text-left px-2.5 py-1 rounded text-xs transition flex items-center gap-2 ${
+                                              childActive ? 'bg-gray-50 text-gray-900' : 'bg-transparent hover:bg-gray-50/50 text-gray-600'
+                                            } ${getDropPreviewClasses(dropPreview, child.id)}`}
                                           >
-                                            <StickyNote size={12} className="shrink-0" />
+                                            <StickyNote size={12} className="text-gray-400 shrink-0" />
                                             <div className="min-w-0 flex-1">
                                               {renamingNoteId === child.id ? (
                                                 <input
@@ -1701,7 +2097,7 @@ export const NotesWindow = () => {
             </button>
             
             {isTemplatesExpanded && (
-              <div className="px-3 py-3 space-y-1.5 bg-transparent">
+              <div className="px-3 py-2 space-y-0.5 bg-transparent">
                 {quickTemplates.map((template) => (
                   <button
                     key={template.id}
@@ -1738,7 +2134,7 @@ export const NotesWindow = () => {
                       }
                       void handleTemplate()
                     }}
-                    className="w-full text-left px-3 py-2 rounded-lg text-sm font-medium text-gray-700 bg-white border border-gray-200 hover:bg-gray-50 hover:border-gray-300 active:bg-gray-100 transition truncate"
+                    className="w-full text-left px-2.5 py-1 rounded text-sm text-gray-700 bg-transparent hover:bg-gray-50 transition truncate"
                   >
                     {template.name}
                   </button>
@@ -1748,7 +2144,7 @@ export const NotesWindow = () => {
                     setNoteCreationSectionId(null)
                     setShowCreateNoteModal(true)
                   }}
-                  className="w-full text-left px-3 py-2 rounded-lg text-sm font-semibold border border-[#ea5336] bg-[#FF5F40] text-white hover:bg-[#ea5336] active:bg-[#d94b31] transition flex items-center justify-center"
+                  className="w-full text-left px-2.5 py-1.5 rounded text-xs font-medium text-gray-600 bg-gray-50 border border-gray-200 hover:bg-gray-100 hover:border-gray-300 transition"
                 >
                   Browse All Templates
                 </button>
@@ -1930,7 +2326,7 @@ export const NotesWindow = () => {
                         }}
                       />
                     ) : (
-                      <div className="w-full min-h-[calc(100vh-330px)] mt-4">
+                      <div className="w-full min-h-[calc(100vh-330px)] mt-4" data-mindmap-id={selectedNote?.id}>
                         <MindMapEditor
                           structure={draftMindMapStructure}
                           onChange={(structure) => {
@@ -1986,7 +2382,7 @@ export const NotesWindow = () => {
             >
               <div className="space-y-5">
                 <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
+                  <div className="min-w-0 flex-1">
                     <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Inspector</p>
                     <p className="mt-1 text-sm font-semibold text-gray-900 truncate">
                       {selectedNote ? 'Current note' : 'No note selected'}
@@ -1996,25 +2392,26 @@ export const NotesWindow = () => {
                         ? selectedBreadcrumb.length
                           ? selectedBreadcrumb.map((crumb) => crumb.title).join(' > ')
                           : 'Home'
-                        : 'Select a note to view details.'}
+                        : 'Click a note to view details'}
                     </p>
                   </div>
 
-                  <div className="relative shrink-0" ref={inspectorActionsRef}>
-                    <button
-                      type="button"
-                      onClick={(event) => {
-                        event.stopPropagation()
-                        setIsInspectorActionsOpen((current) => !current)
-                      }}
-                      className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
-                      aria-label="Inspector actions"
-                    >
-                      <MoreHorizontal size={14} />
-                    </button>
+                  {selectedNote && (
+                    <div className="relative shrink-0" ref={inspectorActionsRef}>
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          setIsInspectorActionsOpen((current) => !current)
+                        }}
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
+                        aria-label="Inspector actions"
+                      >
+                        <MoreHorizontal size={14} />
+                      </button>
 
-                    {isInspectorActionsOpen && selectedNote && (
-                      <div className="absolute right-0 top-10 z-40 min-w-52 rounded-xl border border-gray-200 bg-white p-1.5 shadow-lg">
+                      {isInspectorActionsOpen && selectedNote && (
+                        <div className="absolute right-0 top-10 z-40 min-w-52 rounded-xl border border-gray-200 bg-white p-1.5 shadow-lg">
                         <button
                           onClick={() => {
                             setIsInspectorActionsOpen(false)
@@ -2081,6 +2478,7 @@ export const NotesWindow = () => {
                       </div>
                     )}
                   </div>
+                  )}
                 </div>
 
                 <div className="space-y-2 border-t border-gray-100 pt-4">
@@ -2100,10 +2498,6 @@ export const NotesWindow = () => {
                         <span className="text-gray-900">{selectedNote.date || 'Not set'}</span>
                       </div>
                       <div className="flex items-center justify-between gap-3 text-sm">
-                        <span className="text-gray-500">Mood</span>
-                        <span className="text-gray-900">{selectedNote.mood || 'Not set'}</span>
-                      </div>
-                      <div className="flex items-center justify-between gap-3 text-sm">
                         <span className="text-gray-500">Words</span>
                         <span className="text-gray-900">{wordCount(selectedNote.content)}</span>
                       </div>
@@ -2115,12 +2509,42 @@ export const NotesWindow = () => {
 
                 <div className="space-y-2 border-t border-gray-100 pt-4">
                   <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Workspace</p>
-                  <div className="flex items-center justify-between gap-3 text-sm">
-                    <span className="text-gray-500">Notes</span>
-                    <span className="text-gray-900">
-                      {notes.length} notes · {visibleNotes.length} visible
-                    </span>
-                  </div>
+                  {selectedNote ? (
+                    <div className="space-y-2">
+                      <div className="text-sm font-medium text-gray-900 truncate">
+                        {activeWorkspace?.name?.trim() || 'Current workspace'}
+                      </div>
+                      <InspectorInfoRow label="Created by" value={displayUserName(creatorMember)} />
+                      <InspectorInfoRow
+                        label="Last edited by"
+                        value={`${displayUserName(editorMember)} · ${formatRelativeFromNow(selectedNote.updated_at)}`}
+                      />
+                      <div className="py-1">
+                        <p className="text-[11px] text-gray-500">Viewing</p>
+                        {activeViewerNames.length <= 1 ? (
+                          <p className="mt-0.5 text-sm font-medium text-gray-900">Only you</p>
+                        ) : (
+                          <div className="mt-1 flex items-center gap-1">
+                            {activeViewerNames.slice(0, 3).map((name) => (
+                              <span
+                                key={name}
+                                className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-gray-100 text-[10px] font-semibold text-gray-700"
+                                title={name}
+                              >
+                                {initialsForName(name)}
+                              </span>
+                            ))}
+                            {activeViewerNames.length > 3 && (
+                              <span className="text-[11px] text-gray-500">+{activeViewerNames.length - 3}</span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                      <InspectorInfoRow label="Notes" value={String(notes.length)} />
+                    </div>
+                  ) : (
+                    <p className="text-sm text-gray-500">Select a note to view workspace details.</p>
+                  )}
                 </div>
 
                 <div className="space-y-2 border-t border-gray-100 pt-4">
@@ -2169,7 +2593,7 @@ export const NotesWindow = () => {
                 Exit fullscreen
               </button>
             </div>
-            <div className="flex-1 min-h-0 p-4">
+            <div className="flex-1 min-h-0 p-4" data-mindmap-id={selectedNote?.id}>
               <MindMapEditor
                 structure={draftMindMapStructure}
                 onChange={(structure) => {
@@ -2189,11 +2613,47 @@ export const NotesWindow = () => {
           className="fixed z-210 min-w-40 rounded-lg border border-gray-200 bg-white text-gray-900 shadow-lg p-0"
           style={{
             left: Math.max(8, Math.min(sectionContextMenu.x, window.innerWidth - 180)),
-            top: Math.max(8, Math.min(sectionContextMenu.y, window.innerHeight - 140)),
+            top: Math.max(8, Math.min(sectionContextMenu.y, window.innerHeight - 220)),
           }}
           onClick={(e) => e.stopPropagation()}
           onMouseDown={(e) => e.stopPropagation()}
         >
+          <button
+            onClick={() => {
+              beginInlineSectionRename(sectionContextMenu.sectionId)
+            }}
+            className="w-full h-9 px-3 rounded-none text-left hover:bg-gray-50 flex items-center gap-3 text-sm transition border-b border-gray-100"
+          >
+            <span className="text-gray-500 shrink-0">Aa</span>
+            <span className="font-medium">Rename folder</span>
+          </button>
+          <div className="px-3 py-2 border-b border-gray-100">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Folder color</p>
+            <div className="relative mt-2">
+              <div className="overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                <div className="flex items-center gap-1.5 w-max pr-8">
+                  {sectionColorOptions.map((color) => {
+                    const isActive = sections.find((section) => section.id === sectionContextMenu.sectionId)?.color === color
+                    const swatch = getColorClasses(color)
+                    return (
+                      <button
+                        key={color}
+                        type="button"
+                        onClick={() => {
+                          void updateSectionColor(sectionContextMenu.sectionId, color)
+                        }}
+                        className={`h-5 w-5 rounded-full border transition ${isActive ? 'border-gray-500 scale-110' : 'border-gray-200 hover:border-gray-300'}`}
+                        title={`Set ${sectionContextMenu.sectionName} color to ${color}`}
+                      >
+                        <span className={`block h-full w-full rounded-full ${swatch.dot}`} />
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+              <div className="pointer-events-none absolute right-0 top-0 h-6 w-7 bg-linear-to-l from-white to-transparent" />
+            </div>
+          </div>
           <button
             onClick={() => {
               const target = sections.find((section) => section.id === sectionContextMenu.sectionId)
@@ -2352,6 +2812,14 @@ export const NotesWindow = () => {
             syncDraftFromNote(created)
           }
         }}
+      />
+
+      <BulkExportModal
+        isOpen={showExportModal}
+        onClose={() => setShowExportModal(false)}
+        onExport={handleBulkExport}
+        notes={notes}
+        isMindMapOnly={exportType === 'mindmaps'}
       />
     </div>
   )

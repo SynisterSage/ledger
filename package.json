@@ -21,6 +21,8 @@
     "@supabase/supabase-js": "^2.105.1",
     "classnames": "^2.5.1",
     "date-fns": "^4.1.0",
+    "html2canvas": "^1.4.1",
+    "jspdf": "^4.2.1",
     "lexical": "^0.44.0",
     "lucide-react": "^1.14.0",
     "node-window-manager": "^2.2.4",

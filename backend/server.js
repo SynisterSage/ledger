@@ -2224,7 +2224,7 @@ app.get('/api/notes', authMiddleware, rateLimit('read'), async (req, res) => {
     const workspaceId = await resolveWorkspaceIdForRequest(req)
     const { data, error } = await supabase
       .from('notes')
-      .select('id, title, content, content_html, date, mood, source, mode, mind_map_structure, parent_id, section_id, sort_order, depth, created_at, updated_at')
+      .select('id, workspace_id, user_id, title, content, content_html, date, mood, source, mode, mind_map_structure, parent_id, section_id, sort_order, depth, created_at, updated_at')
       .eq('workspace_id', workspaceId)
       .limit(500)
 
@@ -2318,7 +2318,7 @@ app.post('/api/notes', authMiddleware, rateLimit('write'), quotaGuard('notes'), 
         sort_order: nextSortOrder,
         depth,
       })
-      .select('id, title, content, content_html, date, mood, source, mode, mind_map_structure, parent_id, section_id, sort_order, depth, created_at, updated_at')
+      .select('id, workspace_id, user_id, title, content, content_html, date, mood, source, mode, mind_map_structure, parent_id, section_id, sort_order, depth, created_at, updated_at')
       .single()
 
     if (error) throw error
@@ -2400,6 +2400,7 @@ app.patch('/api/notes/:id', authMiddleware, rateLimit('write'), async (req, res)
       update.sort_order = toNonNegativeInt(req.body.sort_order)
     }
 
+    update.user_id = req.authUser.id
     update.updated_at = new Date().toISOString()
 
     const { data, error } = await supabase
@@ -2407,7 +2408,7 @@ app.patch('/api/notes/:id', authMiddleware, rateLimit('write'), async (req, res)
       .update(update)
       .eq('id', req.params.id)
       .eq('workspace_id', workspaceId)
-      .select('id, title, content, content_html, date, mood, source, mode, mind_map_structure, parent_id, section_id, sort_order, depth, created_at, updated_at')
+      .select('id, workspace_id, user_id, title, content, content_html, date, mood, source, mode, mind_map_structure, parent_id, section_id, sort_order, depth, created_at, updated_at')
       .single()
 
     if (error) throw error
@@ -2467,7 +2468,7 @@ app.post('/api/notes/:id/children', authMiddleware, rateLimit('write'), quotaGua
         sort_order: siblingTop + 1,
         depth: toNonNegativeInt(parentRow.depth) + 1,
       })
-      .select('id, title, content, content_html, date, mood, source, mode, mind_map_structure, parent_id, sort_order, depth, created_at, updated_at')
+      .select('id, workspace_id, user_id, title, content, content_html, date, mood, source, mode, mind_map_structure, parent_id, sort_order, depth, created_at, updated_at')
       .single()
     if (error) throw error
     res.json(mapNoteResponse(data))
@@ -2505,11 +2506,12 @@ app.patch('/api/notes/:id/parent', authMiddleware, rateLimit('write'), async (re
       .update({
         parent_id,
         depth,
+        user_id: req.authUser.id,
         updated_at: new Date().toISOString(),
       })
       .eq('id', req.params.id)
       .eq('workspace_id', workspaceId)
-      .select('id, title, content, content_html, date, mood, source, mode, mind_map_structure, parent_id, sort_order, depth, created_at, updated_at')
+      .select('id, workspace_id, user_id, title, content, content_html, date, mood, source, mode, mind_map_structure, parent_id, sort_order, depth, created_at, updated_at')
       .single()
     if (error) throw error
     res.json(mapNoteResponse(data))
@@ -2527,11 +2529,12 @@ app.patch('/api/notes/:id/sort_order', authMiddleware, rateLimit('write'), async
       .from('notes')
       .update({
         sort_order,
+        user_id: req.authUser.id,
         updated_at: new Date().toISOString(),
       })
       .eq('id', req.params.id)
       .eq('workspace_id', workspaceId)
-      .select('id, title, content, content_html, date, mood, source, mode, mind_map_structure, parent_id, sort_order, depth, created_at, updated_at')
+      .select('id, workspace_id, user_id, title, content, content_html, date, mood, source, mode, mind_map_structure, parent_id, sort_order, depth, created_at, updated_at')
       .single()
     if (error) throw error
     res.json(mapNoteResponse(data))
@@ -2545,7 +2548,7 @@ app.get('/api/notes/:id/tree', authMiddleware, rateLimit('read'), async (req, re
     const workspaceId = await resolveWorkspaceIdForRequest(req)
     const { data, error } = await supabase
       .from('notes')
-      .select('id, title, content, content_html, date, mood, source, mode, mind_map_structure, parent_id, sort_order, depth, created_at, updated_at')
+      .select('id, workspace_id, user_id, title, content, content_html, date, mood, source, mode, mind_map_structure, parent_id, sort_order, depth, created_at, updated_at')
       .eq('workspace_id', workspaceId)
       .limit(500)
     if (error) throw error
@@ -2603,7 +2606,7 @@ app.post('/api/notes/:id/duplicate', authMiddleware, rateLimit('write'), quotaGu
         sort_order: siblingTop + 1,
         depth: toNonNegativeInt(source.depth),
       })
-      .select('id, title, content, content_html, date, mood, source, mode, mind_map_structure, parent_id, section_id, sort_order, depth, created_at, updated_at')
+      .select('id, workspace_id, user_id, title, content, content_html, date, mood, source, mode, mind_map_structure, parent_id, section_id, sort_order, depth, created_at, updated_at')
       .single()
 
     if (error) throw error
@@ -2952,7 +2955,7 @@ app.post('/api/notes/from-template/:templateId([0-9a-fA-F-]{36})', authMiddlewar
         template_id: templateId,
         section_id,
       })
-      .select('id, title, content, content_html, date, mood, source, mode, mind_map_structure, parent_id, sort_order, depth, created_at, updated_at')
+      .select('id, workspace_id, user_id, title, content, content_html, date, mood, source, mode, mind_map_structure, parent_id, sort_order, depth, created_at, updated_at')
       .single()
 
     if (noteError) throw noteError
@@ -3087,13 +3090,15 @@ app.post('/api/sections', authMiddleware, rateLimit('write'), withWorkspaceConte
 
     const nextSortOrder = (existingSections?.[0]?.sort_order ?? -1) + 1
 
+    const allowedSectionColors = ['gray', 'blue', 'orange', 'green', 'purple', 'pink', 'red', 'amber', 'teal', 'cyan', 'indigo', 'violet', 'emerald', 'rose', 'slate']
+
     const { data, error } = await supabase
       .from('note_sections')
       .insert({
         workspace_id: workspaceId,
         created_by: userId,
         name: name.trim(),
-        color: ['blue', 'orange', 'purple', 'green', 'pink', 'gray'].includes(color) ? color : 'gray',
+        color: allowedSectionColors.includes(color) ? color : 'gray',
         sort_order: nextSortOrder,
       })
       .select('id, name, color, sort_order, created_at, updated_at')
@@ -3107,7 +3112,7 @@ app.post('/api/sections', authMiddleware, rateLimit('write'), withWorkspaceConte
 })
 
 // PATCH /api/sections/:id - Update section
-app.patch('/api/sections/:id', authMiddleware, rateLimit('write'), withWorkspaceContext, async (req, res) => {
+app.patch('/api/sections/:id([0-9a-fA-F-]{36})', authMiddleware, rateLimit('write'), withWorkspaceContext, async (req, res) => {
   try {
     const { workspaceId } = req.user
     const { id } = req.params
@@ -3115,7 +3120,8 @@ app.patch('/api/sections/:id', authMiddleware, rateLimit('write'), withWorkspace
 
     const updateData = {}
     if (name !== undefined) updateData.name = name.trim()
-    if (color !== undefined && ['blue', 'orange', 'purple', 'green', 'pink', 'gray'].includes(color)) {
+    const allowedSectionColors = ['gray', 'blue', 'orange', 'green', 'purple', 'pink', 'red', 'amber', 'teal', 'cyan', 'indigo', 'violet', 'emerald', 'rose', 'slate']
+    if (color !== undefined && allowedSectionColors.includes(color)) {
       updateData.color = color
     }
     if (sort_order !== undefined) updateData.sort_order = sort_order
@@ -3138,7 +3144,7 @@ app.patch('/api/sections/:id', authMiddleware, rateLimit('write'), withWorkspace
 })
 
 // DELETE /api/sections/:id - Delete section (moves notes to NULL section)
-app.delete('/api/sections/:id', authMiddleware, rateLimit('write'), withWorkspaceContext, async (req, res) => {
+app.delete('/api/sections/:id([0-9a-fA-F-]{36})', authMiddleware, rateLimit('write'), withWorkspaceContext, async (req, res) => {
   try {
     const { workspaceId } = req.user
     const { id } = req.params

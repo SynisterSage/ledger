@@ -279,7 +279,7 @@ export const SidebarContainer = () => {
       style={shellStyle}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
-      className={`relative ${shellOverflowClass} ${shellRadiusClass} border border-[rgba(255,255,255,0.55)] shadow-[0_10px_28px_rgba(15,23,42,0.16)] outline outline-1 outline-[rgba(15,23,42,0.08)] ${shellSizeClasses} transition-[width,height,opacity,border-color,outline-color,box-shadow] duration-180 ease-out ${autoHide && !isHovered && !isDragging ? 'shadow-sm' : ''} ${hydrationClass}`}
+      className={`relative ${shellOverflowClass} ${shellRadiusClass} border border-[rgba(255,255,255,0.55)] shadow-[0_10px_28px_rgba(15,23,42,0.16)] outline outline-[rgba(15,23,42,0.08)] ${shellSizeClasses} transition-[width,height,opacity,border-color,outline-color,box-shadow] duration-180 ease-out ${autoHide && !isHovered && !isDragging ? 'shadow-sm' : ''} ${hydrationClass}`}
     >
       <div className="relative z-10 h-full w-full">
         {state === 'expanded' && (

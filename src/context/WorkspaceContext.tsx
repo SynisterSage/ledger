@@ -105,12 +105,29 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   useEffect(() => {
     const onStorage = (event: StorageEvent) => {
       if (event.key !== WORKSPACE_STORAGE_KEY) return
-      setActiveWorkspaceId(event.newValue)
+      const nextWorkspaceId = event.newValue ? String(event.newValue).trim() : null
+      setActiveWorkspaceId(nextWorkspaceId || null)
     }
 
     window.addEventListener('storage', onStorage)
     return () => window.removeEventListener('storage', onStorage)
   }, [])
+
+  useEffect(() => {
+    // Keep workspace in sync across Electron windows where StorageEvent propagation
+    // can be inconsistent depending on process/webview boundaries.
+    const syncFromStorage = () => {
+      const stored = window.localStorage.getItem(WORKSPACE_STORAGE_KEY)
+      const normalized = stored ? String(stored).trim() : null
+      const next = normalized || null
+      if (next !== activeWorkspaceId) {
+        setActiveWorkspaceId(next)
+      }
+    }
+
+    const timer = window.setInterval(syncFromStorage, 500)
+    return () => window.clearInterval(timer)
+  }, [activeWorkspaceId])
 
   const setActiveWorkspace = useCallback(async (workspaceId: string) => {
     setError(null)
