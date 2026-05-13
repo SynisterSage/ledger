@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { LexicalComposer } from '@lexical/react/LexicalComposer'
 import { RichTextPlugin } from '@lexical/react/LexicalRichTextPlugin'
 import { ContentEditable } from '@lexical/react/LexicalContentEditable'
@@ -69,8 +69,13 @@ const editorConfig = {
 
 const LoadHtmlPlugin = ({ html, editorKey }: { html?: string | null; editorKey?: string }) => {
   const [editor] = useLexicalComposerContext()
+  const lastLoadedKeyRef = useRef<string | null>(null)
 
   useEffect(() => {
+    const key = String(editorKey ?? '__default__')
+    if (lastLoadedKeyRef.current === key) return
+    lastLoadedKeyRef.current = key
+
     editor.update(() => {
       const root = $getRoot()
       root.clear()

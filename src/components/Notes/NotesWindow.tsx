@@ -772,6 +772,17 @@ export const NotesWindow = () => {
     [api, draftContent, draftDate, draftMood, draftMode, draftMindMapStructure, draftTitle, selectedNoteId]
   )
 
+  const runQuickAutosaveThen = useCallback((after: () => void, timeoutMs = 120) => {
+    let completed = false
+    const finish = () => {
+      if (completed) return
+      completed = true
+      after()
+    }
+    window.setTimeout(finish, timeoutMs)
+    void flushAutosave().finally(finish)
+  }, [flushAutosave])
+
   const openNote = useCallback(
     async (note: NoteRow) => {
       if (selectedNoteId === note.id) return
@@ -1023,15 +1034,25 @@ export const NotesWindow = () => {
         const mindMapsToExport = notes
           .filter((note) => selectedIds.has(note.id) && note.mode === 'mind_map')
           .map((note) => {
-            const element = document.querySelector(`[data-mindmap-id="${note.id}"]`) as HTMLElement
+            const element = document.querySelector(`[data-mindmap-id="${note.id}"]`) as HTMLElement | null
+            if (!element) {
+              console.warn(`Mind map element not found for note ${note.id}`)
+            }
             return {
               id: note.id,
               title: note.title || 'Untitled',
-              element: element || document.createElement('div'),
+              element: element,
               created_at: note.created_at,
             }
           })
-        await bulkExportMindMaps(mindMapsToExport, format as 'pdf' | 'png' | 'txt')
+          .filter((item) => item.element !== null && item.element !== undefined)
+        
+        if (mindMapsToExport.length === 0) {
+          setError('No mind maps found to export. Make sure the mind map is rendered on screen.')
+          return
+        }
+        
+        await bulkExportMindMaps(mindMapsToExport as any, format as 'pdf' | 'png' | 'txt')
       } else {
         const notesToExport = notes
           .filter((note) => selectedIds.has(note.id))
@@ -1397,18 +1418,18 @@ export const NotesWindow = () => {
         closeLabel="Close notes"
         minimizeLabel="Minimize notes"
         onMinimize={() => {
-          void flushAutosave().finally(() => {
+          runQuickAutosaveThen(() => {
             void window.desktopWindow?.minimizeModule('notes')
-          })
+          }, 100)
         }}
         fullscreenLabel="Fullscreen notes"
         onToggleFullscreen={() => {
           void window.desktopWindow?.toggleModuleFullscreen('notes')
         }}
         onClose={() => {
-          void flushAutosave().finally(() => {
+          runQuickAutosaveThen(() => {
             void window.desktopWindow?.closeModule('notes')
-          })
+          }, 120)
         }}
         actions={
           <div className="flex items-center gap-2">

@@ -135,22 +135,31 @@ export const exportMindMap = async (mindMap: ExportMindMap, format: ExportFormat
       const textContent = `${mindMap.title}\n\n${textNodes.join('\n')}`
       downloadFile(textContent, `${filename}.txt`)
     } else {
-      // Clone the element to avoid modifying the original
-      const clone = mindMap.element.cloneNode(true) as HTMLElement
-
-      // Capture canvas
-      const canvas = await html2canvas(clone, {
+      // Capture the element directly without cloning to preserve SVG/Canvas rendering
+      const canvas = await html2canvas(mindMap.element, {
         scale: 2,
         backgroundColor: '#ffffff',
         logging: false,
+        useCORS: true,
+        allowTaint: true,
       })
 
       if (format === 'png') {
-        // Export as PNG
-        canvas.toBlob((blob) => {
-          if (!blob) return
-          downloadFile(blob, `${filename}.png`)
-        }, 'image/png')
+        // Export as PNG - wait for blob to be ready
+        return new Promise<void>((resolve, reject) => {
+          canvas.toBlob((blob) => {
+            if (!blob) {
+              reject(new Error('Failed to convert canvas to blob'))
+              return
+            }
+            try {
+              downloadFile(blob, `${filename}.png`)
+              resolve()
+            } catch (error) {
+              reject(error)
+            }
+          }, 'image/png')
+        })
       } else if (format === 'pdf') {
         // Export as PDF
         const imgData = canvas.toDataURL('image/png')

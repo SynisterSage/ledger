@@ -101,7 +101,7 @@ const projectStatusAliases = {
   completed: ['Completed', 'completed', 'done'],
 }
 
-const projectSelectColumns = 'id, name, description, status, completeness, color, start_date, end_date, created_at, updated_at'
+const projectSelectColumns = 'id, name, description, status, completeness, color, start_date, end_date, created_by, created_at, updated_at'
 const taskSelectColumns = 'id, workspace_id, project_id, title, description, notes, due_date, due_time, status, priority, assigned_to, tags, created_at, updated_at'
 const workspaceRoleRank = { viewer: 1, member: 2, admin: 3, owner: 4 }
 const workspaceMemberRoles = ['admin', 'member', 'viewer']
@@ -1664,6 +1664,158 @@ app.delete('/api/projects/:id', authMiddleware, rateLimit('write'), async (req, 
   try {
     const workspaceId = await resolveWorkspaceIdForRequest(req)
     const { error } = await supabase.from('projects').delete().eq('id', req.params.id).eq('workspace_id', workspaceId)
+    if (error) throw error
+    res.json({ success: true })
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
+app.get('/api/projects/:id/note-links', authMiddleware, rateLimit('read'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req)
+    const projectId = String(req.params.id)
+    const allowed = await ensureWorkspaceResource('projects', projectId, workspaceId)
+    if (!allowed) {
+      return res.status(404).json({ error: 'Project not found' })
+    }
+
+    const { data, error } = await supabase
+      .from('project_note_links')
+      .select('id, note_id, created_at')
+      .eq('workspace_id', workspaceId)
+      .eq('project_id', projectId)
+      .order('created_at', { ascending: false })
+
+    if (error) throw error
+
+    const noteIds = (data ?? []).map((row) => row.note_id).filter(Boolean)
+    let noteById = new Map()
+    if (noteIds.length > 0) {
+      const notesResult = await supabase
+        .from('notes')
+        .select('id, title, content, content_html, updated_at')
+        .eq('workspace_id', workspaceId)
+        .in('id', noteIds)
+      if (notesResult.error) throw notesResult.error
+      noteById = new Map((notesResult.data ?? []).map((note) => [note.id, note]))
+    }
+
+    const links = (data ?? []).map((row) => {
+      const note = noteById.get(row.note_id)
+      if (!note) return null
+      const previewSource = note.content_html || plainTextToParagraphHtml(note.content ?? '')
+      return {
+        id: row.id,
+        note_id: row.note_id,
+        created_at: row.created_at,
+        note: {
+          id: note.id,
+          title: note.title || 'Untitled note',
+          preview: htmlToPlainText(previewSource).slice(0, 160),
+          updated_at: note.updated_at ?? null,
+        },
+      }
+    }).filter(Boolean)
+
+    res.json({ links })
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
+app.post('/api/projects/:id/note-links', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req)
+    const projectId = String(req.params.id)
+    const noteId = String(req.body?.note_id ?? '').trim()
+    if (!noteId) {
+      return res.status(400).json({ error: 'note_id is required' })
+    }
+
+    const [projectAllowed, noteAllowed] = await Promise.all([
+      ensureWorkspaceResource('projects', projectId, workspaceId),
+      ensureWorkspaceResource('notes', noteId, workspaceId),
+    ])
+
+    if (!projectAllowed) return res.status(404).json({ error: 'Project not found' })
+    if (!noteAllowed) return res.status(404).json({ error: 'Note not found' })
+
+    const existing = await supabase
+      .from('project_note_links')
+      .select('id')
+      .eq('workspace_id', workspaceId)
+      .eq('project_id', projectId)
+      .eq('note_id', noteId)
+      .maybeSingle()
+
+    if (existing.error) throw existing.error
+    if (!existing.data) {
+      const insert = await supabase
+        .from('project_note_links')
+        .insert({
+          workspace_id: workspaceId,
+          project_id: projectId,
+          note_id: noteId,
+          created_by: req.authUser.id,
+        })
+      if (insert.error) throw insert.error
+    }
+
+    const { data, error } = await supabase
+      .from('project_note_links')
+      .select('id, note_id, created_at')
+      .eq('workspace_id', workspaceId)
+      .eq('project_id', projectId)
+      .eq('note_id', noteId)
+      .single()
+
+    if (error) throw error
+
+    const noteResult = await supabase
+      .from('notes')
+      .select('id, title, content, content_html, updated_at')
+      .eq('workspace_id', workspaceId)
+      .eq('id', noteId)
+      .single()
+    if (noteResult.error) throw noteResult.error
+    const note = noteResult.data
+    const previewSource = note.content_html || plainTextToParagraphHtml(note.content ?? '')
+
+    res.json({
+      id: data.id,
+      note_id: data.note_id,
+      created_at: data.created_at,
+      note: {
+        id: note.id,
+        title: note.title || 'Untitled note',
+        preview: htmlToPlainText(previewSource).slice(0, 160),
+        updated_at: note.updated_at ?? null,
+      },
+    })
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
+app.delete('/api/projects/:id/note-links/:noteId', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req)
+    const projectId = String(req.params.id)
+    const noteId = String(req.params.noteId)
+
+    const projectAllowed = await ensureWorkspaceResource('projects', projectId, workspaceId)
+    if (!projectAllowed) {
+      return res.status(404).json({ error: 'Project not found' })
+    }
+
+    const { error } = await supabase
+      .from('project_note_links')
+      .delete()
+      .eq('workspace_id', workspaceId)
+      .eq('project_id', projectId)
+      .eq('note_id', noteId)
+
     if (error) throw error
     res.json({ success: true })
   } catch (error) {

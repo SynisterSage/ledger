@@ -171,6 +171,14 @@ export const useApi = () => {
     deleteProject: (id: string) => request(`/api/projects/${id}`, {
       method: 'DELETE',
     }),
+    getProjectNoteLinks: (projectId: string) => request(`/api/projects/${projectId}/note-links`),
+    linkProjectNote: (projectId: string, noteId: string) => request(`/api/projects/${projectId}/note-links`, {
+      method: 'POST',
+      body: JSON.stringify({ note_id: noteId }),
+    }),
+    unlinkProjectNote: (projectId: string, noteId: string) => request(`/api/projects/${projectId}/note-links/${noteId}`, {
+      method: 'DELETE',
+    }),
 
     // Tasks
     getTasks: (options?: { projectId?: string }) => {

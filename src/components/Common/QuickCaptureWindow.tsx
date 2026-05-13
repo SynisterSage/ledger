@@ -56,6 +56,34 @@ export const QuickCaptureWindow = ({ kind }: { kind: 'quick-task' | 'quick-note'
     void window.desktopWindow?.toggleModuleFullscreen(kind as any)
   }
 
+  const footer = (onSave: () => void, canSave: boolean) => (
+    <div className='border-t border-gray-200 bg-white p-4'>
+      <div className='flex gap-2'>
+        <button
+          type='button'
+          onClick={closeWindow}
+          className='flex-1 rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50'
+        >
+          Cancel
+        </button>
+        <button
+          type='button'
+          onClick={onSave}
+          disabled={isSaving || !canSave}
+          className='flex-1 rounded-lg bg-[#FF5F40] px-3 py-2 text-sm font-medium text-white hover:bg-[#E54E30] disabled:opacity-50'
+        >
+          {isSaving ? 'Saving...' : 'Save'}
+        </button>
+      </div>
+    </div>
+  )
+
+  const shellClassName =
+    'grid h-screen w-screen grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden rounded-[28px] border border-gray-200 bg-[#f5f7fb] shadow-[0_24px_80px_rgba(15,23,42,0.08)]'
+
+  const scrollAreaClassName =
+    'min-h-0 overflow-y-auto overflow-x-hidden p-4 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden'
+
   const saveQuickTask = async () => {
     if (!user || !activeWorkspaceId || !taskTitle.trim()) {
       setError('Task title cannot be empty')
@@ -136,9 +164,10 @@ export const QuickCaptureWindow = ({ kind }: { kind: 'quick-task' | 'quick-note'
 
   if (kind === 'quick-task') {
     return (
-      <div className='flex h-screen flex-col bg-[#f5f5f7]'>
+      <div className={shellClassName}>
         <ModuleWindowHeader title='Quick Task' icon={<Check size={16} />} onClose={closeWindow} onMinimize={minimizeWindow} onToggleFullscreen={toggleFullscreen} />
-        <div className='flex-1 overflow-y-auto p-4'>
+
+        <div className={scrollAreaClassName}>
           <div className='space-y-4'>
             <div>
               <label className='block text-xs font-medium text-gray-600 mb-1'>Task Title</label>
@@ -163,35 +192,19 @@ export const QuickCaptureWindow = ({ kind }: { kind: 'quick-task' | 'quick-note'
                 {error}
               </div>
             )}
-
-            <div className='flex gap-2 pt-2'>
-              <button
-                type='button'
-                onClick={closeWindow}
-                className='flex-1 rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50'
-              >
-                Cancel
-              </button>
-              <button
-                type='button'
-                onClick={() => void saveQuickTask()}
-                disabled={isSaving || !taskTitle.trim()}
-                className='flex-1 rounded-lg bg-[#FF5F40] px-3 py-2 text-sm font-medium text-white hover:bg-[#E54E30] disabled:opacity-50'
-              >
-                {isSaving ? 'Saving...' : 'Save'}
-              </button>
-            </div>
           </div>
         </div>
+        {footer(() => void saveQuickTask(), Boolean(taskTitle.trim()))}
       </div>
     )
   }
 
   if (kind === 'quick-note') {
     return (
-      <div className='flex h-screen flex-col bg-[#f5f5f7]'>
+      <div className={shellClassName}>
         <ModuleWindowHeader title='Quick Note' icon={<FileText size={16} />} onClose={closeWindow} onMinimize={minimizeWindow} onToggleFullscreen={toggleFullscreen} />
-        <div className='flex-1 overflow-y-auto p-4'>
+
+        <div className={scrollAreaClassName}>
           <div className='space-y-4'>
             <div>
               <label className='block text-xs font-medium text-gray-600 mb-1'>Note Title</label>
@@ -212,7 +225,7 @@ export const QuickCaptureWindow = ({ kind }: { kind: 'quick-task' | 'quick-note'
                 onChange={(e) => setNoteContent(e.target.value)}
                 placeholder='Add your notes here...'
                 rows={4}
-                className='w-full rounded-lg border border-gray-200 px-3 py-2 text-sm placeholder:text-gray-400 focus:border-gray-400 focus:bg-white focus:outline-none'
+                className='w-full rounded-lg border border-gray-200 px-3 py-2 text-sm placeholder:text-gray-400 focus:border-gray-400 focus:bg-white focus:outline-none resize-none'
               />
             </div>
 
@@ -221,35 +234,19 @@ export const QuickCaptureWindow = ({ kind }: { kind: 'quick-task' | 'quick-note'
                 {error}
               </div>
             )}
-
-            <div className='flex gap-2 pt-2'>
-              <button
-                type='button'
-                onClick={closeWindow}
-                className='flex-1 rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50'
-              >
-                Cancel
-              </button>
-              <button
-                type='button'
-                onClick={() => void saveQuickNote()}
-                disabled={isSaving || !noteTitle.trim()}
-                className='flex-1 rounded-lg bg-[#FF5F40] px-3 py-2 text-sm font-medium text-white hover:bg-[#E54E30] disabled:opacity-50'
-              >
-                {isSaving ? 'Saving...' : 'Save'}
-              </button>
-            </div>
           </div>
         </div>
+        {footer(() => void saveQuickNote(), Boolean(noteTitle.trim()))}
       </div>
     )
   }
 
   if (kind === 'quick-event') {
     return (
-      <div className='flex h-screen flex-col bg-[#f5f5f7]'>
+      <div className={shellClassName}>
         <ModuleWindowHeader title='Quick Event' icon={<Calendar size={16} />} onClose={closeWindow} onMinimize={minimizeWindow} onToggleFullscreen={toggleFullscreen} />
-        <div className='flex-1 overflow-y-auto p-4'>
+
+        <div className={scrollAreaClassName}>
           <div className='space-y-4'>
             <div>
               <label className='block text-xs font-medium text-gray-600 mb-1'>Event Title</label>
@@ -289,26 +286,9 @@ export const QuickCaptureWindow = ({ kind }: { kind: 'quick-task' | 'quick-note'
                 {error}
               </div>
             )}
-
-            <div className='flex gap-2 pt-2'>
-              <button
-                type='button'
-                onClick={closeWindow}
-                className='flex-1 rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50'
-              >
-                Cancel
-              </button>
-              <button
-                type='button'
-                onClick={() => void saveQuickEvent()}
-                disabled={isSaving || !eventTitle.trim()}
-                className='flex-1 rounded-lg bg-[#FF5F40] px-3 py-2 text-sm font-medium text-white hover:bg-[#E54E30] disabled:opacity-50'
-              >
-                {isSaving ? 'Saving...' : 'Save'}
-              </button>
-            </div>
           </div>
         </div>
+        {footer(() => void saveQuickEvent(), Boolean(eventTitle.trim()))}
       </div>
     )
   }

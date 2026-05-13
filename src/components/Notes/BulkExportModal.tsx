@@ -75,8 +75,14 @@ export const BulkExportModal = ({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div className="w-full max-w-md rounded-2xl border border-gray-200 bg-white shadow-lg">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+      onMouseDown={onClose}
+    >
+      <div
+        className="w-full max-w-md rounded-2xl border border-gray-200 bg-white shadow-lg"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
         {/* Header */}
         <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
           <div className="flex items-center gap-2">

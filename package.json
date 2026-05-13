@@ -8,7 +8,7 @@
     "dev:web": "node scripts/dev-web.mjs",
     "dev:electron": "node scripts/dev-electron.mjs",
     "dev:desktop": "node scripts/dev-desktop.mjs",
-    "build": "tsc && vite build && electron-builder",
+    "build": "tsc -p tsconfig.json && vite build && electron-builder",
     "preview": "vite preview"
   },
   "dependencies": {

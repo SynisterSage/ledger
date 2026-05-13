@@ -1,4 +1,5 @@
 import {
+  BarChart3,
   CalendarDays,
   Check,
   CheckCircle2,
@@ -908,8 +909,9 @@ export const ExpandedSidebar = ({
         <div className="grid grid-cols-2 gap-2">
           <button
             onClick={() => window.desktopWindow?.toggleModule('dashboard')}
-            className="h-10 rounded-lg border border-gray-200 bg-white text-xs font-medium text-gray-700 hover:bg-gray-50 transition flex items-center justify-center"
+            className="h-10 rounded-lg border border-gray-200 bg-white text-xs font-medium text-gray-700 hover:bg-gray-50 transition flex items-center justify-center gap-1.5"
           >
+            <BarChart3 size={13} />
             Dashboard
           </button>
           <button
@@ -1724,8 +1726,9 @@ export const ExpandedSidebar = ({
       <div className="px-5 space-y-3 border-t border-white/20 pt-4">
         <button
           onClick={() => window.desktopWindow?.toggleModule('dashboard')}
-          className="w-full px-3 py-2 text-sm font-medium text-white bg-[#FF5F40] hover:bg-[#ea5336] rounded-lg transition"
+          className="w-full px-3 py-2 text-sm font-medium text-white bg-[#FF5F40] hover:bg-[#ea5336] rounded-lg transition flex items-center justify-center gap-2"
         >
+          <BarChart3 size={16} />
           Open Dashboard
         </button>
         <button

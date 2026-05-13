@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, screen, shell, globalShortcut, systemPreferences, TouchBar } from 'electron'
+import { app, BrowserWindow, ipcMain, screen, shell, globalShortcut, systemPreferences, TouchBar, Menu } from 'electron'
 import { execFile, spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { promisify } from 'node:util'
 import { fileURLToPath } from 'node:url'
@@ -1508,6 +1508,52 @@ function getRendererUrl(search: string) {
   return `file://${path.join(RENDERER_DIST, 'index.html')}${search}`
 }
 
+function attachNativeContextMenu(win: BrowserWindow) {
+  win.webContents.on('context-menu', (_event, params) => {
+    const template: Electron.MenuItemConstructorOptions[] = []
+    const suggestions = Array.isArray(params.dictionarySuggestions) ? params.dictionarySuggestions : []
+    const hasSuggestions = suggestions.length > 0
+
+    if (hasSuggestions) {
+      for (const suggestion of suggestions.slice(0, 6)) {
+        template.push({
+          label: suggestion,
+          click: () => win.webContents.replaceMisspelling(suggestion),
+        })
+      }
+      template.push({ type: 'separator' })
+    }
+
+    if (params.misspelledWord) {
+      template.push({
+        label: 'Add to Dictionary',
+        click: () => {
+          if (!params.misspelledWord) return
+          win.webContents.session.addWordToSpellCheckerDictionary(params.misspelledWord)
+        },
+      })
+      template.push({ type: 'separator' })
+    }
+
+    if (params.isEditable) {
+      template.push(
+        { role: 'undo' },
+        { role: 'redo' },
+        { type: 'separator' },
+        { role: 'cut' },
+        { role: 'copy' },
+        { role: 'paste' },
+        { role: 'selectAll' },
+      )
+    } else if (params.selectionText?.trim()) {
+      template.push({ role: 'copy' })
+    }
+
+    if (template.length === 0) return
+    Menu.buildFromTemplate(template).popup({ window: win })
+  })
+}
+
 function createSidebarWindow() {
   sidebarWin = new BrowserWindow({
     ...getCenteredBounds(AUTH_WIDTH, AUTH_HEIGHT),
@@ -1519,6 +1565,7 @@ function createSidebarWindow() {
     ...getWindowChromeOptions(),
     webPreferences: {
       preload: path.join(__dirname, 'preload.mjs'),
+      spellcheck: true,
     },
   })
 
@@ -1531,6 +1578,7 @@ function createSidebarWindow() {
   // Keep sidebar translucency pure RGBA/CSS-only to avoid platform compositor blur artifacts.
 
   lockWindowZoom(sidebarWin)
+  attachNativeContextMenu(sidebarWin)
 
   // Keep the sidebar rendering path purely CSS-based for consistent frosted glass.
 
@@ -1660,6 +1708,7 @@ function openModuleWindow(
     maximizable: !isQuickCapture,
     webPreferences: {
       preload: path.join(__dirname, 'preload.mjs'),
+      spellcheck: true,
     },
   })
 
@@ -1677,6 +1726,7 @@ function openModuleWindow(
   }
 
   lockWindowZoom(moduleWin)
+  attachNativeContextMenu(moduleWin)
 
   moduleWins.set(kind, moduleWin)
 

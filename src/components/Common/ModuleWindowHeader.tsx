@@ -1,4 +1,4 @@
-import { type ReactNode, type CSSProperties } from 'react'
+import { type ReactNode, type CSSProperties, type MouseEvent as ReactMouseEvent } from 'react'
 import { Maximize2, Minus, X } from 'lucide-react'
 
 type ModuleWindowHeaderProps = {
@@ -44,12 +44,20 @@ export const ModuleWindowHeader = ({
     }
   }
 
+  const triggerOnPrimaryMouseDown = (event: ReactMouseEvent<HTMLButtonElement>, action?: () => void) => {
+    if (!action) return
+    if (event.button !== 0) return
+    event.preventDefault()
+    action()
+  }
+
   return (
     <div className="border-b border-gray-200 bg-white" style={dragRegionStyle}>
       <div className="h-10 px-4 py-2 flex items-center bg-gray-50 border-b border-gray-200 cursor-default" style={dragRegionStyle} onDoubleClick={handleTitleBarDoubleClick}>
         <div className="flex items-center gap-1.5" style={noDragRegionStyle}>
           <button
             type="button"
+            onMouseDown={(event) => triggerOnPrimaryMouseDown(event, onClose)}
             onClick={onClose}
             title={closeLabel}
             aria-label={closeLabel}
@@ -60,6 +68,7 @@ export const ModuleWindowHeader = ({
           {onMinimize && (
             <button
               type="button"
+              onMouseDown={(event) => triggerOnPrimaryMouseDown(event, onMinimize)}
               onClick={onMinimize}
               title={minimizeLabel}
               aria-label={minimizeLabel}
@@ -71,6 +80,7 @@ export const ModuleWindowHeader = ({
           {onToggleFullscreen && (
             <button
               type="button"
+              onMouseDown={(event) => triggerOnPrimaryMouseDown(event, onToggleFullscreen)}
               onClick={onToggleFullscreen}
               title={fullscreenLabel}
               aria-label={fullscreenLabel}
