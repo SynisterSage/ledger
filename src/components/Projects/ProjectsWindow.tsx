@@ -51,6 +51,7 @@ type ProjectStatusFilter = 'all' | 'active' | 'paused' | 'completed'
 type ProjectSemanticStatus = 'not_started' | 'in_progress' | 'paused' | 'completed'
 type ProjectContextMenuState = { x: number; y: number; projectId: string }
 type TaskContextMenuState = { x: number; y: number; taskId: string }
+type LinkedNoteContextMenuState = { x: number; y: number; noteId: string; source: 'center' | 'right' }
 type WorkspaceMember = {
   user_id: string
   email: string | null
@@ -206,6 +207,7 @@ export const ProjectsWindow = () => {
   const isCompletenessDraggingRef = useRef(false)
   const projectContextRef = useRef<HTMLDivElement | null>(null)
   const taskContextRef = useRef<HTMLDivElement | null>(null)
+  const linkedNoteContextRef = useRef<HTMLDivElement | null>(null)
   const rightPanelMenuRef = useRef<HTMLDivElement | null>(null)
 
   const [projects, setProjects] = useState<ProjectRow[]>([])
@@ -229,6 +231,7 @@ export const ProjectsWindow = () => {
   const [isResizingRightPane, setIsResizingRightPane] = useState(false)
   const [projectContextMenu, setProjectContextMenu] = useState<ProjectContextMenuState | null>(null)
   const [taskContextMenu, setTaskContextMenu] = useState<TaskContextMenuState | null>(null)
+  const [linkedNoteContextMenu, setLinkedNoteContextMenu] = useState<LinkedNoteContextMenuState | null>(null)
   const [isCreatingProject, setIsCreatingProject] = useState(false)
   const [newProjectName, setNewProjectName] = useState('')
   const [isCreatingProjectNow, setIsCreatingProjectNow] = useState(false)
@@ -364,6 +367,10 @@ export const ProjectsWindow = () => {
     if (!taskContextMenu) return null
     return getClampedMenuPosition(taskContextMenu.x, taskContextMenu.y, 208, 220)
   }, [taskContextMenu])
+  const linkedNoteMenuPosition = useMemo(() => {
+    if (!linkedNoteContextMenu) return null
+    return getClampedMenuPosition(linkedNoteContextMenu.x, linkedNoteContextMenu.y, 208, 144)
+  }, [linkedNoteContextMenu])
 
   const isCompactLayout = viewportWidth < modulePaneSizing.projects.right.compactBreakpoint
   const taskNotesTask = useMemo(
@@ -781,6 +788,10 @@ export const ProjectsWindow = () => {
     }
   }, [api, linkedNotes, loadLinkedNotes, selectedProjectId])
 
+  const openLinkedNoteInNotesModule = useCallback((noteId: string) => {
+    void window.desktopWindow?.toggleModule('notes', { focusNoteId: noteId })
+  }, [])
+
   const saveTaskNotes = useCallback(async () => {
     if (!taskNotesTaskId) return
     setIsSavingTaskNotes(true)
@@ -1009,6 +1020,31 @@ export const ProjectsWindow = () => {
       window.removeEventListener('keydown', onEscape)
     }
   }, [taskContextMenu])
+
+  useEffect(() => {
+    if (!linkedNoteContextMenu) return
+
+    const closeMenu = () => setLinkedNoteContextMenu(null)
+    const onPointerDown = (event: MouseEvent) => {
+      if (linkedNoteContextRef.current?.contains(event.target as Node)) return
+      closeMenu()
+    }
+    const onEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') closeMenu()
+    }
+
+    window.addEventListener('mousedown', onPointerDown)
+    window.addEventListener('scroll', closeMenu, true)
+    window.addEventListener('resize', closeMenu)
+    window.addEventListener('keydown', onEscape)
+
+    return () => {
+      window.removeEventListener('mousedown', onPointerDown)
+      window.removeEventListener('scroll', closeMenu, true)
+      window.removeEventListener('resize', closeMenu)
+      window.removeEventListener('keydown', onEscape)
+    }
+  }, [linkedNoteContextMenu])
 
   useEffect(() => {
     if (!isContextMenuOpen) return
@@ -1560,7 +1596,15 @@ export const ProjectsWindow = () => {
                   ) : (
                     <div className="mt-3 space-y-2">
                       {linkedNotes.map((link) => (
-                        <div key={link.id} className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
+                        <div
+                          key={link.id}
+                          onContextMenu={(event) => {
+                            event.preventDefault()
+                            setLinkedNoteContextMenu({ x: event.clientX, y: event.clientY, noteId: link.note_id, source: 'center' })
+                          }}
+                          onDoubleClick={() => openLinkedNoteInNotesModule(link.note_id)}
+                          className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2"
+                        >
                           <div className="flex items-start justify-between gap-2">
                             <div className="min-w-0">
                               <p className="truncate text-sm font-medium text-gray-900">{link.note.title}</p>
@@ -1614,8 +1658,8 @@ export const ProjectsWindow = () => {
               }}
             />
 
-            <aside className="flex shrink-0 flex-col overflow-hidden border-l border-gray-200 bg-white" style={{ width: `${rightPaneWidth}px` }}>
-              <div className="flex-1 overflow-auto p-4 space-y-6">
+            <aside className="flex shrink-0 flex-col overflow-hidden border-l border-gray-200 bg-[#fbfcfe]" style={{ width: `${rightPaneWidth}px` }}>
+              <div className="flex-1 overflow-auto p-3 space-y-4">
                 <div className="flex items-center justify-between gap-3">
                   <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-gray-500">Project context</p>
                   {selectedProject && (
@@ -1686,17 +1730,17 @@ export const ProjectsWindow = () => {
                   <p className="text-sm text-gray-500">Select a project to view notes, details, and workspace activity.</p>
                 ) : (
                   <>
-                    <section className="space-y-2">
+                    <section className="space-y-1.5">
                       <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-gray-500">Project notes</p>
                       <textarea
                         value={projectDraft.description}
                         onChange={(e) => updateProjectDraft({ description: e.target.value })}
                         placeholder="Add project context, decisions, links, or reminders..."
-                        className="h-32 w-full resize-none rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-800 outline-none focus:border-gray-300"
+                        className="h-24 w-full resize-none rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-800 outline-none focus:border-gray-300"
                       />
                     </section>
 
-                    <section className="space-y-2 border-t border-gray-100 pt-4">
+                    <section className="space-y-1.5 border-t border-gray-100 pt-3">
                       <div className="flex items-center justify-between gap-3">
                         <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-gray-500">Linked notes</p>
                         <button
@@ -1714,12 +1758,20 @@ export const ProjectsWindow = () => {
                       ) : linkedNotes.length === 0 ? (
                         <p className="text-sm text-gray-500">No notes linked yet.</p>
                       ) : (
-                        <div className="space-y-1.5">
+                        <div className="space-y-1">
                           {linkedNotes.slice(0, 6).map((link) => (
-                            <div key={link.id} className="flex items-start justify-between gap-2">
+                            <div
+                              key={link.id}
+                              onContextMenu={(event) => {
+                                event.preventDefault()
+                                setLinkedNoteContextMenu({ x: event.clientX, y: event.clientY, noteId: link.note_id, source: 'right' })
+                              }}
+                              onDoubleClick={() => openLinkedNoteInNotesModule(link.note_id)}
+                              className="flex items-start justify-between gap-2 rounded-md px-1 py-1 hover:bg-white"
+                            >
                               <div className="min-w-0">
                                 <p className="truncate text-sm text-gray-800">{link.note.title}</p>
-                                <p className="truncate text-xs text-gray-500">{link.note.preview || 'No content'}</p>
+                                <p className="truncate text-[11px] text-gray-500">{link.note.preview || 'No content'}</p>
                               </div>
                               <button
                                 type="button"
@@ -1734,9 +1786,9 @@ export const ProjectsWindow = () => {
                       )}
                     </section>
 
-                    <section className="space-y-2 border-t border-gray-100 pt-4">
+                    <section className="space-y-1.5 border-t border-gray-100 pt-3">
                       <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-gray-500">Details</p>
-                      <div className="space-y-1.5 text-sm">
+                      <div className="space-y-1 text-sm">
                         <div className="flex items-center justify-between gap-3"><span className="text-gray-500">Status</span><span className="text-gray-900">{projectStatusLabels[projectDraft.status]}</span></div>
                         <div className="flex items-center justify-between gap-3"><span className="text-gray-500">Progress</span><span className="text-gray-900">{projectDraft.completeness}%</span></div>
                         <div className="flex items-center justify-between gap-3"><span className="text-gray-500">Start</span><span className="text-gray-900">{projectDraft.startDate ? formatShortDate(projectDraft.startDate) : 'Not set'}</span></div>
@@ -1747,22 +1799,25 @@ export const ProjectsWindow = () => {
                       </div>
                     </section>
 
-                    <section className="space-y-2 border-t border-gray-100 pt-4">
+                    <section className="space-y-1.5 border-t border-gray-100 pt-3">
                       <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-gray-500">Workspace</p>
                       <p className="text-sm font-medium text-gray-900">{activeWorkspace?.name?.trim() || 'Current workspace'}</p>
-                      <div className="space-y-1.5 text-sm">
+                      <div className="space-y-1 text-sm">
                         <div className="flex items-center justify-between gap-3"><span className="text-gray-500">Created by</span><span className="text-gray-900">{creatorDisplayName}</span></div>
-                        <div className="flex items-center justify-between gap-3"><span className="text-gray-500">Last edited</span><span className="text-gray-900">{creatorDisplayName} · {formatRelativeFromNow(selectedProject.updated_at)}</span></div>
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="text-gray-500">Last edited</span>
+                          <span className="max-w-[60%] truncate text-right text-gray-900">{creatorDisplayName} · {formatRelativeFromNow(selectedProject.updated_at)}</span>
+                        </div>
                         <div className="flex items-center justify-between gap-3"><span className="text-gray-500">Viewing</span><span className="text-gray-900">Only you</span></div>
                       </div>
                     </section>
 
-                    <section className="space-y-2 border-t border-gray-100 pt-4">
+                    <section className="space-y-1.5 border-t border-gray-100 pt-3">
                       <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-gray-500">Recent activity</p>
                       {recentProjectActivity.length === 0 ? (
                         <p className="text-sm text-gray-500">No recent activity.</p>
                       ) : (
-                        <div className="space-y-1.5">
+                        <div className="space-y-1">
                           {recentProjectActivity.map((item) => (
                             <div key={item.id} className="flex items-center justify-between gap-3 text-sm">
                               <span className="min-w-0 truncate text-gray-700">{item.label}</span>
@@ -1820,6 +1875,39 @@ export const ProjectsWindow = () => {
               </div>
             </div>
           </div>
+        </div>
+      )}
+
+      {linkedNoteContextMenu && linkedNoteMenuPosition && (
+        <div
+          ref={linkedNoteContextRef}
+          className="fixed z-50 min-w-44 overflow-hidden rounded-xl border border-gray-200 bg-white py-1 shadow-xl"
+          style={{ left: `${linkedNoteMenuPosition.x}px`, top: `${linkedNoteMenuPosition.y}px` }}
+          role="menu"
+          aria-label="Linked note actions"
+        >
+          <button
+            type="button"
+            onClick={() => {
+              openLinkedNoteInNotesModule(linkedNoteContextMenu.noteId)
+              setLinkedNoteContextMenu(null)
+            }}
+            className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
+          >
+            <FileText size={14} />
+            Open in notes
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              void unlinkNoteFromProject(linkedNoteContextMenu.noteId)
+              setLinkedNoteContextMenu(null)
+            }}
+            className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50"
+          >
+            <Trash2 size={14} />
+            Unlink note
+          </button>
         </div>
       )}
 
