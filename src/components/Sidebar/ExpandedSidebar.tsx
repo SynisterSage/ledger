@@ -681,10 +681,25 @@ export const ExpandedSidebar = ({
     setSaveError(null)
 
     try {
-      const calendars = await api.getCalendars()
-      const selectedCalendar = Array.isArray(calendars) ? calendars[0] ?? null : null
+      let calendars = await api.getCalendars()
+      let selectedCalendar = Array.isArray(calendars) ? calendars[0] ?? null : null
+
       if (!selectedCalendar) {
-        throw new Error('No calendar available')
+        const createdCalendar = await api.createCalendar('Personal', '#3B82F6', true)
+        if (createdCalendar && typeof createdCalendar === 'object') {
+          const created = createdCalendar as { id: string; color?: string }
+          selectedCalendar = {
+            id: created.id,
+            color: created.color ?? '#3B82F6',
+          }
+        } else {
+          calendars = await api.getCalendars()
+          selectedCalendar = Array.isArray(calendars) ? calendars[0] ?? null : null
+        }
+      }
+
+      if (!selectedCalendar) {
+        throw new Error('Could not create a calendar for this workspace.')
       }
 
       const startDateTime = new Date(`${eventDate}T${eventStartTime}:00`)

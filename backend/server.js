@@ -3283,7 +3283,7 @@ app.get('/api/sections', authMiddleware, rateLimit('read'), withWorkspaceContext
 
     const { data, error } = await supabase
       .from('note_sections')
-      .select('id, name, color, sort_order, created_at, updated_at')
+      .select('id, name, color, parent_id, sort_order, created_at, updated_at')
       .eq('workspace_id', workspaceId)
       .order('sort_order', { ascending: true })
 
@@ -3299,17 +3299,35 @@ app.post('/api/sections', authMiddleware, rateLimit('write'), withWorkspaceConte
   try {
     const { workspaceId, userId } = req.user
     const { name, color = 'gray' } = req.body
+    const parent_id = req.body?.parent_id ? String(req.body.parent_id).trim() : null
 
     if (!name?.trim()) {
       return res.status(400).json({ error: 'Section name is required' })
     }
 
-    const { data: existingSections } = await supabase
+    if (parent_id) {
+      const { data: parent, error: parentError } = await supabase
+        .from('note_sections')
+        .select('id')
+        .eq('id', parent_id)
+        .eq('workspace_id', workspaceId)
+        .maybeSingle()
+      if (parentError) throw parentError
+      if (!parent?.id) return res.status(404).json({ error: 'Parent section not found' })
+    }
+
+    let existingSectionsQuery = supabase
       .from('note_sections')
       .select('sort_order')
       .eq('workspace_id', workspaceId)
       .order('sort_order', { ascending: false })
       .limit(1)
+
+    existingSectionsQuery = parent_id
+      ? existingSectionsQuery.eq('parent_id', parent_id)
+      : existingSectionsQuery.is('parent_id', null)
+
+    const { data: existingSections } = await existingSectionsQuery
 
     const nextSortOrder = (existingSections?.[0]?.sort_order ?? -1) + 1
 
@@ -3322,9 +3340,10 @@ app.post('/api/sections', authMiddleware, rateLimit('write'), withWorkspaceConte
         created_by: userId,
         name: name.trim(),
         color: allowedSectionColors.includes(color) ? color : 'gray',
+        parent_id,
         sort_order: nextSortOrder,
       })
-      .select('id, name, color, sort_order, created_at, updated_at')
+      .select('id, name, color, parent_id, sort_order, created_at, updated_at')
       .single()
 
     if (error) throw error
@@ -3348,6 +3367,38 @@ app.patch('/api/sections/:id([0-9a-fA-F-]{36})', authMiddleware, rateLimit('writ
       updateData.color = color
     }
     if (sort_order !== undefined) updateData.sort_order = sort_order
+    if (req.body?.parent_id !== undefined) {
+      const requestedParentId = req.body?.parent_id ? String(req.body.parent_id).trim() : null
+      if (requestedParentId === id) {
+        return res.status(400).json({ error: 'Section cannot be its own parent' })
+      }
+
+      if (requestedParentId) {
+        const { data: parent, error: parentError } = await supabase
+          .from('note_sections')
+          .select('id')
+          .eq('id', requestedParentId)
+          .eq('workspace_id', workspaceId)
+          .maybeSingle()
+        if (parentError) throw parentError
+        if (!parent?.id) return res.status(404).json({ error: 'Parent section not found' })
+
+        const { data: sectionsForCycle, error: cycleError } = await supabase
+          .from('note_sections')
+          .select('id, parent_id')
+          .eq('workspace_id', workspaceId)
+        if (cycleError) throw cycleError
+        const byId = new Map((sectionsForCycle ?? []).map((row) => [row.id, row]))
+        let cursor = byId.get(requestedParentId) ?? null
+        while (cursor) {
+          if (cursor.id === id) {
+            return res.status(400).json({ error: 'Cannot move folder into its own descendant' })
+          }
+          cursor = cursor.parent_id ? byId.get(cursor.parent_id) ?? null : null
+        }
+      }
+      updateData.parent_id = requestedParentId
+    }
     updateData.updated_at = new Date().toISOString()
 
     const { data, error } = await supabase
@@ -3355,7 +3406,7 @@ app.patch('/api/sections/:id([0-9a-fA-F-]{36})', authMiddleware, rateLimit('writ
       .update(updateData)
       .eq('id', id)
       .eq('workspace_id', workspaceId)
-      .select('id, name, color, sort_order, created_at, updated_at')
+      .select('id, name, color, parent_id, sort_order, created_at, updated_at')
       .single()
 
     if (error) throw error
@@ -3380,6 +3431,14 @@ app.delete('/api/sections/:id([0-9a-fA-F-]{36})', authMiddleware, rateLimit('wri
 
     if (updateError) throw updateError
 
+    const { error: childDetachError } = await supabase
+      .from('note_sections')
+      .update({ parent_id: null, updated_at: new Date().toISOString() })
+      .eq('workspace_id', workspaceId)
+      .eq('parent_id', id)
+
+    if (childDetachError) throw childDetachError
+
     // Delete the section
     const { error: deleteError } = await supabase
       .from('note_sections')
@@ -3398,7 +3457,7 @@ app.delete('/api/sections/:id([0-9a-fA-F-]{36})', authMiddleware, rateLimit('wri
 app.patch('/api/sections/reorder', authMiddleware, rateLimit('write'), withWorkspaceContext, async (req, res) => {
   try {
     const { workspaceId } = req.user
-    const { sections } = req.body // Array of { id, sort_order }
+    const { sections } = req.body // Array of { id, sort_order, parent_id? }
 
     if (!Array.isArray(sections)) {
       return res.status(400).json({ error: 'sections must be an array' })
@@ -3406,9 +3465,13 @@ app.patch('/api/sections/reorder', authMiddleware, rateLimit('write'), withWorks
 
     // Update each section's sort_order
     for (const section of sections) {
+      const updatePayload = { sort_order: section.sort_order, updated_at: new Date().toISOString() }
+      if (section.parent_id !== undefined) {
+        updatePayload.parent_id = section.parent_id ? String(section.parent_id).trim() : null
+      }
       const { error } = await supabase
         .from('note_sections')
-        .update({ sort_order: section.sort_order, updated_at: new Date().toISOString() })
+        .update(updatePayload)
         .eq('id', section.id)
         .eq('workspace_id', workspaceId)
 

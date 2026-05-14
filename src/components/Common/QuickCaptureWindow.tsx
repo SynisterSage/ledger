@@ -5,6 +5,26 @@ import { useAuthContext } from '../../context/AuthContext'
 import { useWorkspaceContext } from '../../context/WorkspaceContext'
 import { ModuleWindowHeader } from './ModuleWindowHeader'
 
+type FollowUpContext = {
+  eventId: string
+  eventTitle: string
+  projectId: string | null
+  noteId: string | null
+}
+
+const parseFollowUpContext = (value?: string): FollowUpContext | null => {
+  if (!value) return null
+  if (!value.startsWith('ledger-followup|')) return null
+  const [, eventId = '', eventTitle = '', projectId = '', noteId = ''] = value.split('|')
+  if (!eventId) return null
+  return {
+    eventId,
+    eventTitle: decodeURIComponent(eventTitle || ''),
+    projectId: projectId || null,
+    noteId: noteId || null,
+  }
+}
+
 export const QuickCaptureWindow = ({ kind, context }: { kind: 'quick-task' | 'quick-note' | 'quick-event'; context?: string }) => {
   const { user } = useAuthContext()
   const { activeWorkspaceId } = useWorkspaceContext()
@@ -84,7 +104,9 @@ export const QuickCaptureWindow = ({ kind, context }: { kind: 'quick-task' | 'qu
   const scrollAreaClassName =
     'min-h-0 overflow-y-auto overflow-x-hidden p-4 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden'
   const contextText = context?.trim()
-  const truncatedContext = contextText ? (contextText.length > 80 ? `${contextText.slice(0, 77)}...` : contextText) : undefined
+  const followUpContext = parseFollowUpContext(contextText)
+  const displayContext = followUpContext?.eventTitle ? `Follow-up: ${followUpContext.eventTitle}` : contextText
+  const truncatedContext = displayContext ? (displayContext.length > 80 ? `${displayContext.slice(0, 77)}...` : displayContext) : undefined
 
   const saveQuickTask = async () => {
     if (!user || !activeWorkspaceId || !taskTitle.trim()) {
@@ -95,11 +117,15 @@ export const QuickCaptureWindow = ({ kind, context }: { kind: 'quick-task' | 'qu
     try {
       setIsSaving(true)
       setError(null)
-      await api.createTask({
+      const createdTask = await api.createTask({
         title: taskTitle.trim(),
-        description: '',
+        description: followUpContext
+          ? `calendar_followup:${followUpContext.eventId}`
+          : '',
         status: 'todo',
         priority: 'medium',
+        project_id: followUpContext?.projectId ?? null,
+        notes: followUpContext?.eventTitle ? `Follow-up from calendar: ${followUpContext.eventTitle}` : null,
         due_date: (() => {
           const today = new Date()
           const year = today.getFullYear()
@@ -108,6 +134,14 @@ export const QuickCaptureWindow = ({ kind, context }: { kind: 'quick-task' | 'qu
           return `${year}-${month}-${day}`
         })(),
       })
+
+      if (followUpContext) {
+        window.ipcRenderer?.send('calendar:follow-up-created', {
+          eventId: followUpContext.eventId,
+          eventTitle: followUpContext.eventTitle,
+          task: createdTask,
+        })
+      }
       closeWindow()
     } catch (error) {
       console.error('Failed to create task:', error)

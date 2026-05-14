@@ -483,6 +483,25 @@ function getCenteredBounds(width: number, height: number) {
   }
 }
 
+function getCenteredBoundsForCurrentSidebarDisplay(width: number, height: number) {
+  if (!sidebarWin || sidebarWin.isDestroyed()) {
+    return getCenteredBounds(width, height)
+  }
+
+  const currentBounds = sidebarWin.getBounds()
+  const display = screen.getDisplayMatching(currentBounds)
+  const { x, y, width: workWidth, height: workHeight } = display.workArea
+  const safeWidth = Math.min(width, workWidth - WINDOW_MARGIN * 2)
+  const safeHeight = Math.min(height, workHeight - WINDOW_MARGIN * 2)
+
+  return {
+    x: x + Math.floor((workWidth - safeWidth) / 2),
+    y: y + Math.floor((workHeight - safeHeight) / 2),
+    width: safeWidth,
+    height: safeHeight,
+  }
+}
+
 function clampRectToWorkArea(rect: Rect, workArea: Electron.Rectangle) {
   const maxX = workArea.x + workArea.width - rect.width
   const maxY = workArea.y + workArea.height - rect.height
@@ -1457,7 +1476,7 @@ function applySidebarWindowMode(mode: SidebarWindowMode) {
     floatingDockDragActive = false
     clearCurrentFloatingDockTarget()
     stopFloatingDockTracking()
-    const bounds = getCenteredBounds(AUTH_WIDTH, AUTH_HEIGHT)
+    const bounds = getCenteredBoundsForCurrentSidebarDisplay(AUTH_WIDTH, AUTH_HEIGHT)
     sidebarWin.setAlwaysOnTop(false)
     sidebarWin.setResizable(false)
     setWindowButtonVisibility(sidebarWin, false)
@@ -2083,6 +2102,12 @@ ipcMain.on('daily:checkin-updated', (_event, payload: { finished?: string; block
   const dashboardWin = moduleWins.get('dashboard')
   if (!dashboardWin || dashboardWin.isDestroyed()) return
   dashboardWin.webContents.send('daily:checkin-updated', payload)
+})
+
+ipcMain.on('calendar:follow-up-created', (_event, payload: { eventId?: string; eventTitle?: string; task?: unknown }) => {
+  const calendarWin = moduleWins.get('calendar')
+  if (!calendarWin || calendarWin.isDestroyed()) return
+  calendarWin.webContents.send('calendar:follow-up-created', payload)
 })
 
 // Touch Bar setup for macOS

@@ -1,16 +1,20 @@
 import {
   ArrowRight,
   CalendarDays,
+  ChevronDown,
+  ChevronUp,
   CheckCircle2,
   Circle,
   Folder,
   Loader2,
+  MoreHorizontal,
   Plus,
   StickyNote,
   Trash2,
   X,
 } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { type CSSProperties, useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useAuthContext } from './context/AuthContext'
 import { useWorkspaceContext } from './context/WorkspaceContext'
 import { useWorkspaceInit } from './hooks/useWorkspaceInit'
@@ -36,9 +40,12 @@ const windowParams = new URLSearchParams(window.location.search)
 const isModuleWindow = windowParams.get('window') === 'module'
 const moduleKind = (windowParams.get('module') as ModuleKind) ?? null
 const moduleFocusContext = windowParams.get('focusContext')?.trim() ?? ''
+const moduleFocusTaskId = windowParams.get('focusTaskId')?.trim() ?? ''
+const dragRegionStyle = { WebkitAppRegion: 'drag' } as CSSProperties & { WebkitAppRegion: 'drag' }
+const noDragRegionStyle = { WebkitAppRegion: 'no-drag' } as CSSProperties & { WebkitAppRegion: 'no-drag' }
 function AuthStatusScreen({ title, subtitle }: { title: string; subtitle: string }) {
   return (
-    <div className="relative min-h-screen overflow-hidden bg-transparent p-3 text-gray-900">
+    <div className="relative min-h-screen overflow-hidden bg-transparent p-3 text-gray-900" style={dragRegionStyle}>
       <div className="absolute inset-3 rounded-[28px] border border-white/60 bg-[#f5f5f7] shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]" />
       <button
         type="button"
@@ -47,10 +54,11 @@ function AuthStatusScreen({ title, subtitle }: { title: string; subtitle: string
         }}
         aria-label="Close"
         className="absolute right-6 top-7 z-20 inline-flex h-8 w-8 items-center justify-center rounded-full border border-black/5 bg-white/60 text-gray-500 transition hover:bg-white/90 hover:text-gray-900"
+        style={noDragRegionStyle}
       >
         <X size={16} />
       </button>
-      <div className="relative z-10 flex min-h-[calc(100vh-1.5rem)] items-center justify-center px-8">
+      <div className="relative z-10 flex min-h-[calc(100vh-1.5rem)] items-center justify-center px-8" style={noDragRegionStyle}>
         <div className="flex w-full max-w-90 flex-col items-center text-center">
           <img src="./logo-color.svg" alt="Ledger" className="mb-5 h-12 w-12" />
           <h2 className="text-[26px] font-semibold leading-tight text-gray-950">{title}</h2>
@@ -73,12 +81,13 @@ const htmlToPlainText = (value: string) =>
     .trim()
 
 // Dashboard content component
-function DashboardContent() {
+function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string }) {
   const { user } = useAuthContext()
   const { activeWorkspace, activeWorkspaceId } = useWorkspaceContext()
   const api = useApi()
   const { setState } = useSidebar()
   const todayTasksRef = useRef<HTMLElement | null>(null)
+  const followUpsRef = useRef<HTMLElement | null>(null)
 
   const [isLoadingDashboard, setIsLoadingDashboard] = useState(true)
   const [dashboardError, setDashboardError] = useState<string | null>(null)
@@ -93,12 +102,26 @@ function DashboardContent() {
     blocked: '',
     firstTaskTomorrow: '',
   })
-  const [projects, setProjects] = useState<Array<{ id: string; name: string; status: string; completeness: number }>>([])
+  const [projects, setProjects] = useState<Array<{ id: string; name: string; status: string; completeness: number; end_date?: string | null }>>([])
   const [upcoming, setUpcoming] = useState<Array<{ id: string; title: string; start_at: string; end_at: string; color?: string }>>([])
   const [notes, setNotes] = useState<Array<{ id: string; title: string; content: string; updated_at: string }>>([])
+  const [followUpTasks, setFollowUpTasks] = useState<
+    Array<{ id: string; title: string; status?: string | null; description?: string | null; notes?: string | null; updated_at?: string; eventId?: string | null; eventTitle?: string | null }>
+  >([])
+  const [focusedTaskId, setFocusedTaskId] = useState<string | null>(initialFocusTaskId ?? null)
   const [newFocusText, setNewFocusText] = useState('')
   const [isSavingFocus, setIsSavingFocus] = useState(false)
   const [focusActionId, setFocusActionId] = useState<string | null>(null)
+  const [expandedTimelineIds, setExpandedTimelineIds] = useState<Set<string>>(new Set())
+  const [expandedNoteIds, setExpandedNoteIds] = useState<Set<string>>(new Set())
+  const [dashboardContextMenu, setDashboardContextMenu] = useState<
+    | { x: number; y: number; type: 'followup'; taskId: string }
+    | { x: number; y: number; type: 'timeline'; eventId: string }
+    | { x: number; y: number; type: 'project'; projectId: string }
+    | { x: number; y: number; type: 'note'; noteId: string }
+    | { x: number; y: number; type: 'checkin' }
+    | null
+  >(null)
   const hasLoadedDashboardRef = useRef(false)
 
   useEffect(() => {
@@ -131,6 +154,7 @@ function DashboardContent() {
       setProjects([])
       setUpcoming([])
       setNotes([])
+      setFollowUpTasks([])
       return
     }
 
@@ -145,11 +169,12 @@ function DashboardContent() {
           setDashboardError(null)
         }
 
-        const [dailyData, projectData, upcomingData, noteData] = await Promise.all([
+        const [dailyData, projectData, upcomingData, noteData, taskData] = await Promise.all([
           api.getDailyAccountability(),
           api.getProjects(),
           api.getUpcomingEvents(),
           api.getNotes(),
+          api.getTasks(),
         ])
 
         if (cancelled) return
@@ -177,6 +202,30 @@ function DashboardContent() {
         setProjects(((projectData ?? []) as Array<{ id: string; name: string; status: string; completeness: number }>).slice(0, 4))
         setUpcoming(((upcomingData ?? []) as Array<{ id: string; title: string; start_at: string; end_at: string; color?: string }>).slice(0, 4))
         setNotes(normalizedNotes.slice(0, 4))
+        const rawTasks = Array.isArray(taskData)
+          ? (taskData as Array<{ id: string; title: string; status?: string | null; description?: string | null; notes?: string | null; updated_at?: string }>)
+          : []
+        const calendarFollowUps = rawTasks
+          .filter((task) => String(task.description ?? '').startsWith('calendar_followup:'))
+          .map((task) => {
+            const marker = String(task.description ?? '')
+            const eventId = marker.startsWith('calendar_followup:') ? marker.slice('calendar_followup:'.length).trim() : ''
+            const noteText = String(task.notes ?? '')
+            const eventTitle = noteText.startsWith('Follow-up from calendar: ')
+              ? noteText.slice('Follow-up from calendar: '.length).trim()
+              : ''
+            return {
+              ...task,
+              eventId: eventId || null,
+              eventTitle: eventTitle || null,
+            }
+          })
+          .sort(
+            (left, right) =>
+              new Date(right.updated_at ?? 0).getTime() - new Date(left.updated_at ?? 0).getTime()
+          )
+          .slice(0, 8)
+        setFollowUpTasks(calendarFollowUps)
         hasLoadedDashboardRef.current = true
       } catch (error) {
         if (!cancelled) {
@@ -191,6 +240,7 @@ function DashboardContent() {
             setProjects([])
             setUpcoming([])
             setNotes([])
+            setFollowUpTasks([])
           } else {
             console.error('Background dashboard refresh failed:', error)
           }
@@ -233,6 +283,42 @@ function DashboardContent() {
       window.ipcRenderer?.off('daily:checkin-updated', handleCheckinUpdated)
     }
   }, [])
+
+  useEffect(() => {
+    if (!initialFocusTaskId) return
+    setFocusedTaskId(initialFocusTaskId)
+  }, [initialFocusTaskId])
+
+  useEffect(() => {
+    const onFocusTask = (_event: unknown, payload: { kind?: string; focusTaskId?: string | null }) => {
+      if (payload?.kind !== 'dashboard' || !payload.focusTaskId) return
+      setFocusedTaskId(payload.focusTaskId)
+      window.setTimeout(() => {
+        followUpsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      }, 30)
+    }
+
+    window.ipcRenderer?.on('module:focus-task', onFocusTask)
+    return () => {
+      window.ipcRenderer?.off('module:focus-task', onFocusTask)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!dashboardContextMenu) return
+    const close = () => setDashboardContextMenu(null)
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') close()
+    }
+    window.addEventListener('click', close)
+    window.addEventListener('resize', close)
+    window.addEventListener('keydown', onKeyDown)
+    return () => {
+      window.removeEventListener('click', close)
+      window.removeEventListener('resize', close)
+      window.removeEventListener('keydown', onKeyDown)
+    }
+  }, [dashboardContextMenu])
 
   const saveDailyAccountability = async (next: {
     focusItems?: Array<{ id: string; text: string; done: boolean }>
@@ -315,6 +401,133 @@ function DashboardContent() {
 
   const openModule = (kind: 'calendar' | 'notes' | 'projects') => {
     void window.desktopWindow?.toggleModule(kind)
+  }
+
+  const openContextMenu = (
+    event: { preventDefault: () => void; clientX: number; clientY: number },
+    menu:
+      | { type: 'followup'; taskId: string }
+      | { type: 'timeline'; eventId: string }
+      | { type: 'project'; projectId: string }
+      | { type: 'note'; noteId: string }
+      | { type: 'checkin' }
+  ) => {
+    event.preventDefault()
+    setDashboardContextMenu({
+      x: event.clientX,
+      y: event.clientY,
+      ...menu,
+    })
+  }
+
+  const clearCheckin = async () => {
+    const previous = daily
+    setDaily((current) => ({
+      ...current,
+      finished: '',
+      blocked: '',
+      firstTaskTomorrow: '',
+    }))
+    setDashboardContextMenu(null)
+    try {
+      await saveDailyAccountability({
+        finished: '',
+        blocked: '',
+        firstTaskTomorrow: '',
+      })
+    } catch {
+      setDaily(previous)
+    }
+  }
+
+  const markFollowUpDone = async (taskId: string) => {
+    const target = followUpTasks.find((task) => task.id === taskId)
+    if (!target) return
+    const nextStatus = target.status === 'done' ? 'todo' : 'done'
+    setFollowUpTasks((prev) => prev.map((task) => (task.id === taskId ? { ...task, status: nextStatus } : task)))
+    setDashboardContextMenu(null)
+    try {
+      await api.updateTask(taskId, { status: nextStatus })
+    } catch {
+      setFollowUpTasks((prev) => prev.map((task) => (task.id === taskId ? target : task)))
+    }
+  }
+
+  const deleteFollowUp = async (taskId: string) => {
+    const previous = followUpTasks
+    setFollowUpTasks((prev) => prev.filter((task) => task.id !== taskId))
+    setDashboardContextMenu(null)
+    try {
+      await api.deleteTask(taskId)
+    } catch {
+      setFollowUpTasks(previous)
+    }
+  }
+
+  const openFollowUpEvent = (taskId: string) => {
+    const target = followUpTasks.find((task) => task.id === taskId)
+    if (!target) return
+    void window.desktopWindow?.toggleModule(
+      'calendar',
+      target.eventId
+        ? {
+            kind: 'calendar',
+            focusContext: `focus-event:${target.eventId}`,
+          }
+        : {
+            kind: 'calendar',
+          }
+    )
+    setDashboardContextMenu(null)
+  }
+
+  const updateProjectStatus = async (projectId: string, status: 'not_started' | 'in_progress' | 'paused' | 'completed') => {
+    const previous = projects
+    setProjects((prev) => prev.map((project) => (project.id === projectId ? { ...project, status } : project)))
+    setDashboardContextMenu(null)
+    try {
+      await api.updateProject(projectId, { status })
+    } catch {
+      setProjects(previous)
+    }
+  }
+
+  const deleteDashboardProject = async (projectId: string) => {
+    const previous = projects
+    setProjects((prev) => prev.filter((project) => project.id !== projectId))
+    setDashboardContextMenu(null)
+    try {
+      await api.deleteProject(projectId)
+    } catch {
+      setProjects(previous)
+    }
+  }
+
+  const deleteDashboardNote = async (noteId: string) => {
+    const previous = notes
+    setNotes((prev) => prev.filter((note) => note.id !== noteId))
+    setDashboardContextMenu(null)
+    try {
+      await api.deleteNote(noteId)
+    } catch {
+      setNotes(previous)
+    }
+  }
+
+  const deleteTimelineEvent = async (eventId: string) => {
+    const previous = upcoming
+    setUpcoming((prev) => prev.filter((item) => item.id !== eventId))
+    setExpandedTimelineIds((prev) => {
+      const next = new Set(prev)
+      next.delete(eventId)
+      return next
+    })
+    setDashboardContextMenu(null)
+    try {
+      await api.deleteEvent(eventId)
+    } catch {
+      setUpcoming(previous)
+    }
   }
 
   const getProjectAttentionScore = (project: { status: string; completeness: number; end_date?: string | null; updated_at?: string | null }) => {
@@ -498,7 +711,10 @@ function DashboardContent() {
                 )}
               </section>
 
-              <section className='rounded-2xl border border-gray-200 bg-white p-5 shadow-sm'>
+              <section
+                className='rounded-2xl border border-gray-200 bg-white p-5 shadow-sm'
+                onContextMenu={(event) => openContextMenu(event, { type: 'checkin' })}
+              >
                 <p className='text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-500'>Capture</p>
                 <div className='mt-4 grid grid-cols-2 gap-3 md:grid-cols-4'>
                   {[
@@ -585,8 +801,9 @@ function DashboardContent() {
                     recentNotes.map((note) => (
                       <button
                         key={note.id}
+                        onContextMenu={(event) => openContextMenu(event, { type: 'note', noteId: note.id })}
                         onClick={() => openModule('notes')}
-                        className='w-full px-1 py-3 text-left transition hover:bg-gray-50'
+                        className='w-full rounded-lg px-2 py-3 text-left transition hover:bg-gray-50'
                       >
                         <div className='flex items-start justify-between gap-3'>
                           <div className='min-w-0'>
@@ -594,6 +811,11 @@ function DashboardContent() {
                             <p className='mt-1 line-clamp-2 text-sm text-gray-600'>
                               {htmlToPlainText(note.content) || 'No content yet'}
                             </p>
+                            {expandedNoteIds.has(note.id) && (
+                              <p className='mt-2 text-sm text-gray-700 whitespace-pre-wrap wrap-break-word'>
+                                {htmlToPlainText(note.content) || 'No content yet'}
+                              </p>
+                            )}
                           </div>
                           <p className='shrink-0 text-[11px] text-gray-500'>
                             {new Date(note.updated_at).toLocaleDateString([], { month: 'short', day: 'numeric' })}
@@ -607,6 +829,72 @@ function DashboardContent() {
             </div>
 
             <div className='space-y-6'>
+              <section ref={followUpsRef} className='rounded-2xl border border-gray-200 bg-white p-5 shadow-sm'>
+                <div className='flex items-center justify-between'>
+                  <div>
+                    <p className='text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-500'>Follow-ups</p>
+                    <h3 className='mt-1 text-lg font-semibold text-gray-950'>From Calendar</h3>
+                  </div>
+                </div>
+                <div className='mt-4 space-y-2'>
+                  {followUpTasks.length === 0 ? (
+                    <div className='rounded-2xl border border-dashed border-gray-200 bg-gray-50 p-5'>
+                      <p className='text-sm font-medium text-gray-800'>No follow-up tasks yet.</p>
+                      <p className='mt-1 text-sm text-gray-500'>Create one from Calendar event context.</p>
+                    </div>
+                  ) : (
+                    followUpTasks.map((task) => {
+                      const isFocused = focusedTaskId === task.id
+                      const statusLabel = task.status === 'done' ? 'Done' : 'Todo'
+                      return (
+                        <button
+                          key={task.id}
+                          onContextMenu={(event) => openContextMenu(event, { type: 'followup', taskId: task.id })}
+                          onClick={() =>
+                            void window.desktopWindow?.toggleModule(
+                              'calendar',
+                              task.eventId
+                                ? {
+                                    kind: 'calendar',
+                                    focusContext: `focus-event:${task.eventId}`,
+                                  }
+                                : {
+                                    kind: 'calendar',
+                                  }
+                            )
+                          }
+                          className={`w-full rounded-xl border px-4 py-3 text-left transition ${
+                            isFocused
+                              ? 'border-orange-200 bg-orange-50 ring-1 ring-orange-200'
+                              : 'border-gray-200 bg-gray-50 hover:bg-white'
+                          }`}
+                        >
+                          <div className='flex items-center justify-between gap-3'>
+                            <p className='min-w-0 truncate text-sm font-medium text-gray-900'>{task.title}</p>
+                            <div className='flex items-center gap-2'>
+                              <span className='shrink-0 text-xs text-gray-500'>{statusLabel}</span>
+                              <button
+                                type='button'
+                                onClick={(event) => {
+                                  event.stopPropagation()
+                                  void markFollowUpDone(task.id)
+                                }}
+                                className='rounded px-1.5 py-0.5 text-[11px] text-gray-600 hover:bg-white hover:text-gray-900'
+                              >
+                                {task.status === 'done' ? 'Undo' : 'Done'}
+                              </button>
+                            </div>
+                          </div>
+                          {task.eventTitle && (
+                            <p className='mt-1 truncate text-xs text-gray-500'>Event: {task.eventTitle}</p>
+                          )}
+                        </button>
+                      )
+                    })
+                  )}
+                </div>
+              </section>
+
               <section className='rounded-2xl border border-gray-200 bg-white p-5 shadow-sm'>
                 <div className='flex items-center justify-between'>
                   <div>
@@ -634,6 +922,7 @@ function DashboardContent() {
                   ) : (
                     upcoming.map((item) => {
                       const start = new Date(item.start_at)
+                      const isExpanded = expandedTimelineIds.has(item.id)
                       const timeLabel = start.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
                       const dayLabel = start.toDateString() === new Date().toDateString()
                         ? 'Today'
@@ -641,11 +930,12 @@ function DashboardContent() {
                       return (
                         <button
                           key={item.id}
+                          onContextMenu={(event) => openContextMenu(event, { type: 'timeline', eventId: item.id })}
                           onClick={() => openModule('calendar')}
                           className='w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-left transition hover:bg-white'
                         >
                           <div className='flex items-center justify-between gap-3'>
-                            <p className='truncate text-sm font-medium text-gray-900'>{item.title}</p>
+                            <p className={`${isExpanded ? '' : 'truncate'} text-sm font-medium text-gray-900`}>{item.title}</p>
                             <p className='shrink-0 text-xs text-gray-500'>{dayLabel}</p>
                           </div>
                           <p className='mt-1 text-xs text-gray-600'>{timeLabel}</p>
@@ -698,6 +988,7 @@ function DashboardContent() {
                       return (
                         <button
                           key={project.id}
+                          onContextMenu={(event) => openContextMenu(event, { type: 'project', projectId: project.id })}
                           onClick={() => openModule('projects')}
                           className='w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-left transition hover:bg-white'
                         >
@@ -720,6 +1011,164 @@ function DashboardContent() {
           </div>
         </div>
       </div>
+      {dashboardContextMenu &&
+        createPortal(
+          <div
+            className='fixed z-140 min-w-46.5 rounded-lg border border-gray-200 bg-white py-1 shadow-lg'
+            style={{
+              left: `${Math.max(8, Math.min(dashboardContextMenu.x, window.innerWidth - 200))}px`,
+              top: `${Math.max(8, Math.min(dashboardContextMenu.y, window.innerHeight - 240))}px`,
+            }}
+            onClick={(event) => event.stopPropagation()}
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            {dashboardContextMenu.type === 'followup' && (
+              <>
+                <button onClick={() => openFollowUpEvent(dashboardContextMenu.taskId)} className='flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[#FF5F40] hover:bg-[#fff0eb]'>
+                  <CalendarDays size={14} />
+                  Jump to event
+                </button>
+                <button onClick={() => void markFollowUpDone(dashboardContextMenu.taskId)} className='flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50'>
+                  <CheckCircle2 size={14} />
+                  Mark as done
+                </button>
+                <button onClick={() => void deleteFollowUp(dashboardContextMenu.taskId)} className='flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50'>
+                  <Trash2 size={14} />
+                  Delete follow-up
+                </button>
+              </>
+            )}
+            {dashboardContextMenu.type === 'timeline' && (
+              <>
+                {expandedTimelineIds.has(dashboardContextMenu.eventId) ? (
+                  <button
+                    onClick={() => {
+                      setExpandedTimelineIds((prev) => {
+                        const next = new Set(prev)
+                        next.delete(dashboardContextMenu.eventId)
+                        return next
+                      })
+                      setDashboardContextMenu(null)
+                    }}
+                    className='flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50'
+                  >
+                    <ChevronUp size={14} />
+                    Collapse
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => {
+                      setExpandedTimelineIds((prev) => new Set(prev).add(dashboardContextMenu.eventId))
+                      setDashboardContextMenu(null)
+                    }}
+                    className='flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50'
+                  >
+                    <ChevronDown size={14} />
+                    Expand
+                  </button>
+                )}
+                <button
+                  onClick={() => {
+                    const event = upcoming.find((item) => item.id === dashboardContextMenu.eventId)
+                    if (!event) return
+                    void window.desktopWindow?.toggleModule('calendar', { kind: 'calendar', focusContext: `focus-event:${event.id}` })
+                    setDashboardContextMenu(null)
+                  }}
+                  className='flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[#FF5F40] hover:bg-[#fff0eb]'
+                >
+                  <CalendarDays size={14} />
+                  Open in Calendar
+                </button>
+                <button onClick={() => void deleteTimelineEvent(dashboardContextMenu.eventId)} className='flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50'>
+                  <Trash2 size={14} />
+                  Delete Event
+                </button>
+              </>
+            )}
+            {dashboardContextMenu.type === 'project' && (
+              <>
+                <button
+                  onClick={() => {
+                    void window.desktopWindow?.toggleModule('projects', { kind: 'projects', focusProjectId: dashboardContextMenu.projectId })
+                    setDashboardContextMenu(null)
+                  }}
+                  className='flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[#FF5F40] hover:bg-[#fff0eb]'
+                >
+                  <Folder size={14} />
+                  Navigate to project
+                </button>
+                <button onClick={() => void updateProjectStatus(dashboardContextMenu.projectId, 'in_progress')} className='flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50'>
+                  <MoreHorizontal size={14} />
+                  Mark in progress
+                </button>
+                <button onClick={() => void updateProjectStatus(dashboardContextMenu.projectId, 'paused')} className='flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50'>
+                  <MoreHorizontal size={14} />
+                  Mark paused
+                </button>
+                <button onClick={() => void updateProjectStatus(dashboardContextMenu.projectId, 'completed')} className='flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50'>
+                  <CheckCircle2 size={14} />
+                  Mark completed
+                </button>
+                <button onClick={() => void deleteDashboardProject(dashboardContextMenu.projectId)} className='flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50'>
+                  <Trash2 size={14} />
+                  Delete project
+                </button>
+              </>
+            )}
+            {dashboardContextMenu.type === 'note' && (
+              <>
+                {expandedNoteIds.has(dashboardContextMenu.noteId) ? (
+                  <button
+                    onClick={() => {
+                      setExpandedNoteIds((prev) => {
+                        const next = new Set(prev)
+                        next.delete(dashboardContextMenu.noteId)
+                        return next
+                      })
+                      setDashboardContextMenu(null)
+                    }}
+                    className='flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50'
+                  >
+                    <ChevronUp size={14} />
+                    Collapse
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => {
+                      setExpandedNoteIds((prev) => new Set(prev).add(dashboardContextMenu.noteId))
+                      setDashboardContextMenu(null)
+                    }}
+                    className='flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50'
+                  >
+                    <ChevronDown size={14} />
+                    Expand
+                  </button>
+                )}
+                <button
+                  onClick={() => {
+                    void window.desktopWindow?.toggleModule('notes', { kind: 'notes', focusNoteId: dashboardContextMenu.noteId })
+                    setDashboardContextMenu(null)
+                  }}
+                  className='flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[#FF5F40] hover:bg-[#fff0eb]'
+                >
+                  <StickyNote size={14} />
+                  Navigate to note
+                </button>
+                <button onClick={() => void deleteDashboardNote(dashboardContextMenu.noteId)} className='flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50'>
+                  <Trash2 size={14} />
+                  Delete note
+                </button>
+              </>
+            )}
+            {dashboardContextMenu.type === 'checkin' && (
+              <button onClick={() => void clearCheckin()} className='flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50'>
+                <Trash2 size={14} />
+                Clear check-in
+              </button>
+            )}
+          </div>,
+          document.body
+        )}
     </div>
   )
 }
@@ -970,7 +1419,7 @@ function AppShell() {
     }
 
     if (moduleKind === 'dashboard') {
-      return <DashboardContent />
+      return <DashboardContent initialFocusTaskId={moduleFocusTaskId || undefined} />
     }
 
     if (moduleKind === 'settings') {
@@ -1174,7 +1623,7 @@ function AppShell() {
   // Show login if not authenticated
   if (!user) {
     return (
-      <div className='relative flex h-screen items-center justify-center bg-transparent p-3'>
+      <div className='relative flex h-screen items-center justify-center bg-transparent p-3' style={dragRegionStyle}>
         <div className='absolute inset-3 rounded-[28px] border border-white/60 bg-[#f5f5f7] shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]' />
         <button
           type='button'
@@ -1183,6 +1632,7 @@ function AppShell() {
           }}
           aria-label='Close'
           className='absolute right-6 top-7 z-20 inline-flex h-8 w-8 items-center justify-center rounded-full border border-black/5 bg-white/60 text-gray-500 transition hover:bg-white/90 hover:text-gray-900'
+          style={noDragRegionStyle}
         >
           <X size={16} />
         </button>
@@ -1190,6 +1640,7 @@ function AppShell() {
           className={`relative z-10 transform transition-all duration-250 ease-out ${
             isAuthExiting ? 'opacity-0 scale-95 translate-y-2' : 'opacity-100 scale-100 translate-y-0'
           }`}
+          style={noDragRegionStyle}
         >
           <LoginForm notice={pendingInviteToken ? 'Sign in to accept your workspace invitation.' : null} />
         </div>
@@ -1204,7 +1655,7 @@ function AppShell() {
   if (postAuthStage === 'onboarding') {
     const workspaceName = onboardingWorkspaceName.trim()
     return (
-      <div className='relative min-h-screen overflow-hidden bg-transparent p-3 text-gray-900'>
+      <div className='relative min-h-screen overflow-hidden bg-transparent p-3 text-gray-900' style={dragRegionStyle}>
         <div className='absolute inset-3 rounded-[28px] border border-white/60 bg-[#f5f5f7] shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]' />
         <button
           type='button'
@@ -1213,10 +1664,11 @@ function AppShell() {
           }}
           aria-label='Close'
           className='absolute right-6 top-7 z-20 inline-flex h-8 w-8 items-center justify-center rounded-full border border-black/5 bg-white/60 text-gray-500 transition hover:bg-white/90 hover:text-gray-900'
+          style={noDragRegionStyle}
         >
           <X size={16} />
         </button>
-        <div className='relative z-10 flex min-h-[calc(100vh-1.5rem)] items-center justify-center px-8'>
+        <div className='relative z-10 flex min-h-[calc(100vh-1.5rem)] items-center justify-center px-8' style={noDragRegionStyle}>
           <div className='w-full max-w-97.5'>
             <div className='mb-7 text-center'>
               <img src="./logo-color.svg" alt="Ledger" className="mx-auto mb-4 h-12 w-12" />

@@ -61,6 +61,7 @@ type NoteSection = {
   id: string
   name: string
   color: string
+  parent_id?: string | null
   sort_order: number
   collapsed: boolean
 }
@@ -100,13 +101,86 @@ const normalizeEditorHtml = (value: string) => {
   return String(value ?? '')
 }
 
+const spellingReplacements: Array<[RegExp, string]> = [
+  [/\bteh\b/gi, 'the'],
+  [/\brecieve\b/gi, 'receive'],
+  [/\bseperate\b/gi, 'separate'],
+  [/\bdefinately\b/gi, 'definitely'],
+  [/\boccured\b/gi, 'occurred'],
+  [/\buntill\b/gi, 'until'],
+  [/\bbecuase\b/gi, 'because'],
+  [/\bwierd\b/gi, 'weird'],
+  [/\bthier\b/gi, 'their'],
+  [/\balot\b/gi, 'a lot'],
+]
+
+const preserveCaseReplacement = (source: string, replacement: string) => {
+  if (!source) return replacement
+  if (source.toUpperCase() === source) return replacement.toUpperCase()
+  if (source[0] === source[0].toUpperCase()) {
+    return replacement.charAt(0).toUpperCase() + replacement.slice(1)
+  }
+  return replacement
+}
+
+const autoCorrectText = (input: string) => {
+  let output = input
+  for (const [pattern, replacement] of spellingReplacements) {
+    output = output.replace(pattern, (match) => preserveCaseReplacement(match, replacement))
+  }
+  return output
+}
+
+const autoCorrectHtml = (html: string) => {
+  const raw = String(html ?? '')
+  if (!raw.trim()) return raw
+
+  const parser = new DOMParser()
+  const doc = parser.parseFromString(raw, 'text/html')
+  const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT)
+  let node = walker.nextNode()
+
+  while (node) {
+    const textNode = node as Text
+    textNode.nodeValue = autoCorrectText(textNode.nodeValue ?? '')
+    node = walker.nextNode()
+  }
+
+  return doc.body.innerHTML
+}
+
 const wordCount = (text: string) =>
   htmlToPlainText(text)
     .trim()
     .split(/\s+/)
     .filter(Boolean).length
 
+const validSectionColors = [
+  'blue',
+  'orange',
+  'purple',
+  'green',
+  'pink',
+  'gray',
+  'red',
+  'amber',
+  'teal',
+  'cyan',
+  'indigo',
+  'violet',
+  'emerald',
+  'rose',
+  'slate',
+] as const
+type ValidSectionColor = (typeof validSectionColors)[number]
+
+const normalizeSectionColor = (color: string | null | undefined): ValidSectionColor => {
+  if (!color) return 'gray'
+  return (validSectionColors as readonly string[]).includes(color) ? (color as ValidSectionColor) : 'gray'
+}
+
 const getColorClasses = (color: string) => {
+  const normalizedColor = normalizeSectionColor(color)
   const colorMap: Record<string, { dot: string; text: string; bg: string; border: string }> = {
     blue: { dot: 'bg-blue-500', text: 'text-blue-600', bg: 'bg-blue-50', border: 'border-l-2 border-blue-400' },
     orange: { dot: 'bg-orange-500', text: 'text-orange-600', bg: 'bg-orange-50', border: 'border-l-2 border-orange-400' },
@@ -124,25 +198,22 @@ const getColorClasses = (color: string) => {
     slate: { dot: 'bg-slate-500', text: 'text-slate-600', bg: 'bg-slate-50', border: 'border-l-2 border-slate-400' },
     gray: { dot: 'bg-gray-400', text: 'text-gray-600', bg: 'bg-gray-50', border: 'border-l-2 border-gray-300' },
   }
-  return colorMap[color] || colorMap.gray
+  return colorMap[normalizedColor] || colorMap.gray
 }
 
 const sectionColorOptions: Array<NoteSection['color']> = [
   'gray',
   'blue',
-  'orange',
   'green',
   'purple',
   'pink',
   'red',
   'amber',
   'teal',
-  'cyan',
   'indigo',
-  'violet',
   'emerald',
-  'rose',
   'slate',
+  'orange',
 ]
 
 const formatCompactDateTime = (value: string) =>
@@ -468,6 +539,56 @@ export const NotesWindow = () => {
     })
   }, [notes, search])
 
+  const sectionDepthById = useMemo(() => {
+    const depthById = new Map<string, number>()
+    const byId = new Map(sections.map((section) => [section.id, section]))
+
+    const resolveDepth = (sectionId: string, seen = new Set<string>()): number => {
+      if (depthById.has(sectionId)) return depthById.get(sectionId) ?? 0
+      if (seen.has(sectionId)) return 0
+      seen.add(sectionId)
+      const section = byId.get(sectionId)
+      if (!section?.parent_id) {
+        depthById.set(sectionId, 0)
+        return 0
+      }
+      const depth = 1 + resolveDepth(section.parent_id, seen)
+      depthById.set(sectionId, Math.min(depth, 6))
+      return depthById.get(sectionId) ?? 0
+    }
+
+    for (const section of sections) {
+      resolveDepth(section.id)
+    }
+    return depthById
+  }, [sections])
+
+  const orderedSections = useMemo(() => {
+    const roots = sections
+      .filter((section) => !section.parent_id)
+      .sort((left, right) => left.sort_order - right.sort_order)
+
+    const byParent = new Map<string, NoteSection[]>()
+    for (const section of sections) {
+      if (!section.parent_id) continue
+      const bucket = byParent.get(section.parent_id) ?? []
+      bucket.push(section)
+      byParent.set(section.parent_id, bucket)
+    }
+    for (const bucket of byParent.values()) {
+      bucket.sort((left, right) => left.sort_order - right.sort_order)
+    }
+
+    const result: NoteSection[] = []
+    const walk = (section: NoteSection) => {
+      result.push(section)
+      const children = byParent.get(section.id) ?? []
+      for (const child of children) walk(child)
+    }
+    for (const root of roots) walk(root)
+    return result
+  }, [sections])
+
   const nodeById = useMemo(() => {
     const map = new Map<string, NoteTreeNode>()
     const walk = (nodes: NoteTreeNode[]) => {
@@ -686,12 +807,13 @@ export const NotesWindow = () => {
         return nextSections
       }
 
-      setSections(rows)
-      localStorage.setItem('notes-sections', JSON.stringify(rows))
+      const normalizedRows = rows.map((section) => ({ ...section, color: normalizeSectionColor(section.color) }))
+      setSections(normalizedRows)
+      localStorage.setItem('notes-sections', JSON.stringify(normalizedRows))
       const nextCollapsedIds = new Set<string>(['__unsorted__', ...rows.map((section) => section.id)])
       setCollapsedSectionIds(nextCollapsedIds)
       localStorage.setItem('notes-sections-collapsed', JSON.stringify([...nextCollapsedIds]))
-      return rows
+      return normalizedRows
     } catch (error) {
       console.error('Failed to load sections:', error)
       return []
@@ -700,16 +822,19 @@ export const NotesWindow = () => {
 
   const updateSectionColor = useCallback(
     async (sectionId: string, color: NoteSection['color']) => {
+      const safeColor = normalizeSectionColor(color)
       const previous = sections
-      const next = sections.map((section) => (section.id === sectionId ? { ...section, color } : section))
+      const next = sections.map((section) => (section.id === sectionId ? { ...section, color: safeColor } : section))
       setSections(next)
       localStorage.setItem('notes-sections', JSON.stringify(next))
 
       try {
-        const updated = await api.updateSection(sectionId, { color })
+        const updated = await api.updateSection(sectionId, { color: safeColor })
         setSections((current) =>
           current.map((section) =>
-            section.id === sectionId ? { ...section, ...(updated as Partial<NoteSection>) } : section
+            section.id === sectionId
+              ? { ...section, ...(updated as Partial<NoteSection>), color: normalizeSectionColor((updated as Partial<NoteSection>).color ?? safeColor) }
+              : section
           )
         )
       } catch (error) {
@@ -783,6 +908,15 @@ export const NotesWindow = () => {
     void flushAutosave().finally(finish)
   }, [flushAutosave])
 
+  const runAutoCorrectSpelling = useCallback(() => {
+    if (draftMode !== 'text') return
+    const corrected = normalizeEditorHtml(autoCorrectHtml(draftContent))
+    const current = normalizeEditorHtml(draftContent)
+    if (corrected === current) return
+    setDraftContent(corrected)
+    setIsDirty(true)
+  }, [draftContent, draftMode])
+
   const openNote = useCallback(
     async (note: NoteRow) => {
       if (selectedNoteId === note.id) return
@@ -839,14 +973,14 @@ export const NotesWindow = () => {
   )
 
   const createSection = useCallback(
-    async (name: string) => {
+    async (name: string, parentId: string | null = null) => {
       const trimmed = name.trim()
       if (!trimmed) return
       setError(null)
       try {
-        const created = await api.createSection({ name: trimmed, color: 'gray' })
-        const nextSections = [...sections, created].sort((left, right) => left.sort_order - right.sort_order)
-        setSections(nextSections)
+      const created = await api.createSection({ name: trimmed, color: 'gray', parent_id: parentId })
+      const nextSections = [...sections, created].sort((left, right) => left.sort_order - right.sort_order)
+      setSections(nextSections.map((section) => ({ ...section, color: normalizeSectionColor(section.color) })))
       } catch (createError) {
         setError(createError instanceof Error ? createError.message : 'Could not create section.')
       }
@@ -931,28 +1065,67 @@ export const NotesWindow = () => {
   }, [draggedNoteId])
 
   const handleSectionDrop = useCallback(
-    async (targetSectionId: string, dropSectionId?: string | null) => {
+    async (targetSectionId: string, dropSectionId?: string | null, position: 'inside' | 'before' | 'after' = 'inside') => {
       const sourceSectionId = dropSectionId ?? draggedSectionId
       if (!sourceSectionId || sourceSectionId === targetSectionId) return
+      const source = sections.find((section) => section.id === sourceSectionId)
+      const target = sections.find((section) => section.id === targetSectionId)
+      if (!source || !target) return
 
-      const fromIndex = sections.findIndex((section) => section.id === sourceSectionId)
-      const toIndex = sections.findIndex((section) => section.id === targetSectionId)
-      if (fromIndex < 0 || toIndex < 0) return
+      let optimistic: NoteSection[] = sections
+      if (position === 'inside') {
+        const siblingTop = sections.reduce((max, section) => {
+          if ((section.parent_id ?? null) !== targetSectionId) return max
+          return Math.max(max, toNonNegativeInt(section.sort_order))
+        }, -1)
+        const nextSortOrder = siblingTop + 1
+        optimistic = sections.map((section) =>
+          section.id === sourceSectionId
+            ? { ...section, parent_id: targetSectionId, sort_order: nextSortOrder }
+            : section
+        )
+      } else {
+        const siblingParentId = target.parent_id ?? null
+        const siblings = sections
+          .filter((section) => (section.parent_id ?? null) === siblingParentId && section.id !== sourceSectionId)
+          .sort((a, b) => toNonNegativeInt(a.sort_order) - toNonNegativeInt(b.sort_order))
+        const targetIndex = siblings.findIndex((section) => section.id === targetSectionId)
+        const insertIndex = position === 'before' ? targetIndex : targetIndex + 1
+        const reorderedSiblings = [
+          ...siblings.slice(0, insertIndex),
+          { ...source, parent_id: siblingParentId },
+          ...siblings.slice(insertIndex),
+        ]
+        const updatesById = new Map(reorderedSiblings.map((section, index) => [section.id, { sort_order: index, parent_id: siblingParentId }]))
+        optimistic = sections.map((section) => {
+          const next = updatesById.get(section.id)
+          if (!next) return section
+          return { ...section, sort_order: next.sort_order, parent_id: next.parent_id }
+        })
+      }
 
-      const reordered = [...sections]
-      const [moved] = reordered.splice(fromIndex, 1)
-      reordered.splice(toIndex, 0, moved)
-      const normalized = reordered.map((section, index) => ({ ...section, sort_order: index }))
-
-      setSections(normalized)
-      localStorage.setItem('notes-sections', JSON.stringify(normalized))
+      setSections(optimistic)
+      localStorage.setItem('notes-sections', JSON.stringify(optimistic))
       setDraggedSectionId(null)
       setSectionDropTargetId(null)
 
       try {
-        await api.reorderSections(normalized.map((section) => ({ id: section.id, sort_order: section.sort_order })))
+        if (position === 'inside') {
+          const moved = optimistic.find((section) => section.id === sourceSectionId)
+          await api.updateSection(sourceSectionId, {
+            parent_id: targetSectionId,
+            sort_order: moved?.sort_order ?? 0,
+          })
+        } else {
+          const siblingParentId = (optimistic.find((section) => section.id === targetSectionId)?.parent_id ?? null)
+          const siblingPayload = optimistic
+            .filter((section) => (section.parent_id ?? null) === siblingParentId)
+            .sort((a, b) => toNonNegativeInt(a.sort_order) - toNonNegativeInt(b.sort_order))
+            .map((section, index) => ({ id: section.id, sort_order: index, parent_id: siblingParentId }))
+          await api.reorderSections(siblingPayload)
+        }
       } catch (error) {
-        setError(error instanceof Error ? error.message : 'Could not reorder folders.')
+        setError(error instanceof Error ? error.message : 'Could not move folder.')
         void loadSections()
       }
     },
@@ -1632,7 +1805,7 @@ export const NotesWindow = () => {
                       <div className="flex items-center gap-2 min-w-0">
                         <StickyNote size={12} className="text-gray-400 shrink-0" />
                         <div className="min-w-0 flex-1">
-                          <p className="font-medium truncate text-sm">{note.title || 'Untitled'}</p>
+                          <p className="font-medium truncate text-sm leading-5">{note.title || 'Untitled'}</p>
                           <p className="text-xs text-gray-400 truncate">{preview}</p>
                         </div>
                       </div>
@@ -1643,14 +1816,16 @@ export const NotesWindow = () => {
             ) : (
               // Tree view with sections
               <div className="space-y-2">
-                {sections.map((section) => {
+                {orderedSections.map((section) => {
                   const sectionColor = getColorClasses(section.color)
                   const isSectionCollapsed = collapsedSectionIds.has(section.id)
                   const sectionNotes = notes.filter((n) => n.section_id === section.id && !n.parent_id)
+                  const sectionDepth = sectionDepthById.get(section.id) ?? 0
                   
                   return (
                     <div
                       key={section.id}
+                      style={{ marginLeft: `${sectionDepth * 12}px` }}
                       onDragOver={(event) => {
                         if (!draggedSectionId) return
                         event.preventDefault()
@@ -1663,7 +1838,10 @@ export const NotesWindow = () => {
                         event.preventDefault()
                         const dropSectionId = event.dataTransfer.getData('application/x-ledger-section-id') || draggedSectionId
                         if (!dropSectionId || dropSectionId === section.id) return
-                        void handleSectionDrop(section.id, dropSectionId)
+                        const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
+                        const relativeY = (event.clientY - rect.top) / Math.max(rect.height, 1)
+                        const position: 'inside' | 'before' | 'after' = relativeY < 0.22 ? 'before' : relativeY > 0.78 ? 'after' : 'inside'
+                        void handleSectionDrop(section.id, dropSectionId, position)
                       }}
                     >
                       {/* Section header */}
@@ -1692,7 +1870,10 @@ export const NotesWindow = () => {
                           event.preventDefault()
                           if (draggedSectionId && draggedSectionId !== section.id) {
                             const dropSectionId = event.dataTransfer.getData('application/x-ledger-section-id') || draggedSectionId
-                            void handleSectionDrop(section.id, dropSectionId)
+                            const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
+                            const relativeY = (event.clientY - rect.top) / Math.max(rect.height, 1)
+                            const position: 'inside' | 'before' | 'after' = relativeY < 0.22 ? 'before' : relativeY > 0.78 ? 'after' : 'inside'
+                            void handleSectionDrop(section.id, dropSectionId, position)
                             return
                           }
                           void handleDropOnSection(section.id)
@@ -1816,7 +1997,7 @@ export const NotesWindow = () => {
                                             className="w-full bg-transparent font-medium text-gray-900 outline-none"
                                           />
                                         ) : (
-                                          <p className="font-medium truncate text-sm">{note.title || 'Untitled'}</p>
+                                          <p className="font-medium truncate text-sm leading-5">{note.title || 'Untitled'}</p>
                                         )}
                                         <p className="text-xs text-gray-400 truncate">{preview}</p>
                                       </div>
@@ -1874,7 +2055,7 @@ export const NotesWindow = () => {
                                           >
                                             <div className="flex items-center gap-2 min-w-0">
                                               <StickyNote size={11} className="text-gray-400 shrink-0" />
-                                              <p className="font-medium truncate">{child.title || 'Untitled'}</p>
+                                              <p className="font-medium truncate leading-5">{child.title || 'Untitled'}</p>
                                             </div>
                                           </button>
                                         </div>
@@ -2012,7 +2193,7 @@ export const NotesWindow = () => {
                                           className="w-full bg-transparent font-medium text-gray-900 outline-none"
                                         />
                                       ) : (
-                                        <p className="font-medium truncate">{note.title || 'Untitled'}</p>
+                                        <p className="font-medium truncate leading-5">{note.title || 'Untitled'}</p>
                                       )}
                                       <p className="text-xs text-gray-500 truncate">{preview}</p>
                                     </div>
@@ -2089,7 +2270,7 @@ export const NotesWindow = () => {
                                                   className="w-full bg-transparent font-medium text-gray-900 outline-none"
                                                 />
                                               ) : (
-                                                <p className="font-medium truncate">{child.title || 'Untitled'}</p>
+                                                <p className="font-medium truncate leading-5">{child.title || 'Untitled'}</p>
                                               )}
                                               <p className="text-xs text-gray-500 truncate">{childPreview}</p>
                                             </div>
@@ -2252,6 +2433,16 @@ export const NotesWindow = () => {
                               className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-50"
                             >
                               Rename
+                            </button>
+                            <button
+                              disabled={draftMode !== 'text'}
+                              onClick={() => {
+                                setIsNoteActionsOpen(false)
+                                runAutoCorrectSpelling()
+                              }}
+                              className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:text-gray-400"
+                            >
+                              Auto-correct spelling
                             </button>
                             <button
                               onClick={() => {
@@ -2460,6 +2651,16 @@ export const NotesWindow = () => {
                           Rename
                         </button>
                         <button
+                          disabled={draftMode !== 'text'}
+                          onClick={() => {
+                            setIsInspectorActionsOpen(false)
+                            runAutoCorrectSpelling()
+                          }}
+                          className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:text-gray-400"
+                        >
+                          Auto-correct spelling
+                        </button>
+                        <button
                           onClick={() => {
                             setIsInspectorActionsOpen(false)
                             void duplicateNoteById(selectedNote.id)
@@ -2665,6 +2866,24 @@ export const NotesWindow = () => {
             <span className="text-gray-500 shrink-0">Aa</span>
             <span className="font-medium">Rename folder</span>
           </button>
+          <button
+            onClick={() => {
+              const parent = sections.find((section) => section.id === sectionContextMenu.sectionId)
+              if (!parent) return
+              setSectionContextMenu(null)
+              void createSection('New folder', parent.id).then(() => {
+                setCollapsedSectionIds((prev) => {
+                  const next = new Set(prev)
+                  next.delete(parent.id)
+                  return next
+                })
+              })
+            }}
+            className="w-full h-9 px-3 rounded-none text-left hover:bg-gray-50 flex items-center gap-3 text-sm transition border-b border-gray-100"
+          >
+            <Plus size={14} className="text-gray-500 shrink-0" />
+            <span className="font-medium">Create subfolder</span>
+          </button>
           <div className="px-3 py-2 border-b border-gray-100">
             <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Folder color</p>
             <div className="relative mt-2">
@@ -2680,7 +2899,7 @@ export const NotesWindow = () => {
                         onClick={() => {
                           void updateSectionColor(sectionContextMenu.sectionId, color)
                         }}
-                        className={`h-5 w-5 rounded-full border transition ${isActive ? 'border-gray-500 scale-110' : 'border-gray-200 hover:border-gray-300'}`}
+                        className={`h-5 w-5 rounded-full transition ${isActive ? 'border-2 border-gray-500 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.85)]' : 'border border-gray-200 hover:border-gray-300'}`}
                         title={`Set ${sectionContextMenu.sectionName} color to ${color}`}
                       >
                         <span className={`block h-full w-full rounded-full ${swatch.dot}`} />

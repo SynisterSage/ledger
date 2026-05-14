@@ -361,18 +361,18 @@ export const useApi = () => {
 
     // Sections
     getSections: () => request('/api/sections'),
-    createSection: (payload: { name: string; color?: string }) => request('/api/sections', {
+    createSection: (payload: { name: string; color?: string; parent_id?: string | null }) => request('/api/sections', {
       method: 'POST',
       body: JSON.stringify(payload),
     }),
-    updateSection: (id: string, payload: { name?: string; color?: string; sort_order?: number }) => request(`/api/sections/${id}`, {
+    updateSection: (id: string, payload: { name?: string; color?: string; sort_order?: number; parent_id?: string | null }) => request(`/api/sections/${id}`, {
       method: 'PATCH',
       body: JSON.stringify(payload),
     }),
     deleteSection: (id: string) => request(`/api/sections/${id}`, {
       method: 'DELETE',
     }),
-    reorderSections: (sections: Array<{ id: string; sort_order: number }>) => request('/api/sections/reorder', {
+    reorderSections: (sections: Array<{ id: string; sort_order: number; parent_id?: string | null }>) => request('/api/sections/reorder', {
       method: 'PATCH',
       body: JSON.stringify({ sections }),
     }),
