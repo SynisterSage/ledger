@@ -1706,6 +1706,15 @@ function createSidebarWindow() {
         console.log('[electron][sidebar] did-finish-load')
         if (sidebarWin && !sidebarWin.isDestroyed()) {
           sidebarWin.webContents.send('app:did-finish-load')
+          if (sidebarWin.isMinimized()) {
+            sidebarWin.restore()
+          }
+          // Reset to docked state to ensure valid bounds
+          const dockedBounds = getDockedBounds(EXPANDED_WIDTH)
+          sidebarWin.setBounds(dockedBounds)
+          sidebarWin.show()
+          sidebarWin.focus()
+          console.log('[electron][sidebar] window bounds reset:', dockedBounds)
         }
       } catch (err) {
         console.error('[electron][sidebar] did-finish-load handler error', err)

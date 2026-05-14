@@ -1389,13 +1389,10 @@ function AppShell() {
     if (ensuredVisibleOnBootRef.current) return
 
     ensuredVisibleOnBootRef.current = true
-    // Respect explicit hidden preference (e.g. shortcut toggle) instead of
-    // forcing the sidebar visible again during post-auth boot sync.
-    if (sidebarPreferences.isHidden) return
     if (!isVisible) {
       setIsVisible(true)
     }
-  }, [effectiveUiMode, isLoading, isVisible, postAuthStage, setIsVisible, sidebarPreferences.isHidden, user])
+  }, [effectiveUiMode, isLoading, isVisible, postAuthStage, setIsVisible, user])
 
   if (isModuleWindow) {
     if (isLoading) {
@@ -1520,6 +1517,7 @@ function AppShell() {
     }
 
     if (isLoading || effectiveUiMode !== 'app') return
+    
     if (postAuthBootstrapUserRef.current === userId) return
 
     let isCancelled = false

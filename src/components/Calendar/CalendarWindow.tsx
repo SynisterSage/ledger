@@ -1,6 +1,5 @@
 import { CalendarDays, ChevronLeft, ChevronRight, ChevronDown, X, BellRing, ClipboardPaste, CalendarPlus, Trash2, Folder, Plus } from 'lucide-react'
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
-import rrulePkg from 'rrule'
 import { useAuthContext } from '../../context/AuthContext'
 import { modulePaneSizing, clampPaneWidth, getPaneWidthForViewport } from '../../config/modulePaneSizes'
 import { useWorkspaceContext } from '../../context/WorkspaceContext'
@@ -161,7 +160,6 @@ const endOfLocalDay = (date: Date) => {
 }
 const baseEventId = (id: string) => id.split('__')[0]
 const ICAL_SERVICE_URL = (import.meta.env.VITE_ICAL_SERVICE_URL ?? '').replace(/\/$/, '')
-const { RRule } = rrulePkg
 
 type ParsedIcsEvent = {
   title: string
@@ -226,170 +224,6 @@ const parseIcsDate = (value: string): Date | null => {
   return null
 }
 
-const recurrenceImportHorizon = (start: Date) => {
-  const end = new Date(start)
-  end.setFullYear(end.getFullYear() + 1)
-  return end
-}
-
-const rruleFrequencyMap: Record<string, number> = {
-  SECONDLY: RRule.SECONDLY,
-  MINUTELY: RRule.MINUTELY,
-  HOURLY: RRule.HOURLY,
-  DAILY: RRule.DAILY,
-  WEEKLY: RRule.WEEKLY,
-  MONTHLY: RRule.MONTHLY,
-  YEARLY: RRule.YEARLY,
-}
-
-const rruleWeekdayMap: Record<string, any> = {
-  MO: RRule.MO,
-  TU: RRule.TU,
-  WE: RRule.WE,
-  TH: RRule.TH,
-  FR: RRule.FR,
-  SA: RRule.SA,
-  SU: RRule.SU,
-}
-
-const parseRRuleValue = (value: string, dtstart: Date) => {
-  const options: Record<string, unknown> = { dtstart }
-
-  for (const part of value.split(';')) {
-    const [rawKey, rawValue] = part.split('=')
-    const key = rawKey?.trim().toUpperCase()
-    const partValue = rawValue?.trim() ?? ''
-    if (!key || !partValue) continue
-
-    if (key === 'FREQ') {
-      const freq = rruleFrequencyMap[partValue.toUpperCase()]
-      if (typeof freq === 'number') {
-        options.freq = freq
-      }
-      continue
-    }
-
-    if (key === 'INTERVAL') {
-      const interval = Number(partValue)
-      if (Number.isFinite(interval) && interval > 0) {
-        options.interval = interval
-      }
-      continue
-    }
-
-    if (key === 'COUNT') {
-      const count = Number(partValue)
-      if (Number.isFinite(count) && count > 0) {
-        options.count = count
-      }
-      continue
-    }
-
-    if (key === 'UNTIL') {
-      const until = parseIcsDate(partValue)
-      if (until) {
-        options.until = until
-      }
-      continue
-    }
-
-    if (key === 'BYDAY') {
-      const byweekday = partValue
-        .split(',')
-        .map((token) => token.trim().toUpperCase())
-        .map((token) => {
-          const match = token.match(/^([+-]?\d+)?(MO|TU|WE|TH|FR|SA|SU)$/)
-          if (!match) return null
-          const ordinal = match[1] ? Number(match[1]) : null
-          const weekday = rruleWeekdayMap[match[2]]
-          if (!weekday) return null
-          return ordinal ? weekday.nth(ordinal) : weekday
-        })
-        .filter(Boolean)
-
-      if (byweekday.length > 0) {
-        options.byweekday = byweekday
-      }
-      continue
-    }
-
-    if (key === 'BYMONTHDAY') {
-      const bymonthday = partValue
-        .split(',')
-        .map((token) => Number(token.trim()))
-        .filter((token) => Number.isFinite(token) && token !== 0)
-
-      if (bymonthday.length > 0) {
-        options.bymonthday = bymonthday
-      }
-      continue
-    }
-
-    if (key === 'BYMONTH') {
-      const bymonth = partValue
-        .split(',')
-        .map((token) => Number(token.trim()))
-        .filter((token) => Number.isFinite(token) && token >= 1 && token <= 12)
-
-      if (bymonth.length > 0) {
-        options.bymonth = bymonth
-      }
-      continue
-    }
-
-    if (key === 'WKST') {
-      const wkst = rruleWeekdayMap[partValue.toUpperCase()]
-      if (wkst) {
-        options.wkst = wkst
-      }
-    }
-  }
-
-  if (typeof options.freq !== 'number') return null
-  return options
-}
-
-const expandRecurringIcsEvent = (
-  baseEvent: Omit<ParsedIcsEvent, 'startAt' | 'endAt'>,
-  start: Date,
-  end: Date,
-  rruleValue: string,
-) => {
-  const durationMs = Math.max(0, end.getTime() - start.getTime())
-  const options = parseRRuleValue(rruleValue, start)
-  if (!options) {
-    return [
-      {
-        ...baseEvent,
-        startAt: start.toISOString(),
-        endAt: end.toISOString(),
-      },
-    ]
-  }
-
-  const rule = new RRule(options as ConstructorParameters<typeof RRule>[0])
-  const hasExplicitLimit = Boolean(options.count || options.until)
-  const occurrences = hasExplicitLimit
-    ? rule.all()
-    : rule.between(start, recurrenceImportHorizon(start), true)
-
-  if (occurrences.length === 0) {
-    return [
-      {
-        ...baseEvent,
-        startAt: start.toISOString(),
-        endAt: end.toISOString(),
-      },
-    ]
-  }
-
-  return occurrences.map((occurrence) => ({
-    ...baseEvent,
-    startAt: occurrence.toISOString(),
-    endAt: new Date(occurrence.getTime() + durationMs).toISOString(),
-  }))
-}
-
 const parseIcsEvents = (rawIcs: string): ParsedIcsEvent[] => {
   const text = unfoldIcsLines(rawIcs)
   const out: ParsedIcsEvent[] = []
@@ -441,9 +275,10 @@ const parseIcsEvents = (rawIcs: string): ParsedIcsEvent[] => {
       location: location || undefined,
     }
 
+    // TODO: Re-enable RRULE expansion once rrule module import is fixed
+    // For now, treat recurring events as single events
     if (rrule) {
-      out.push(...expandRecurringIcsEvent(baseEvent, start, end, rrule))
-      return
+      // Skip RRULE expansion - just import as single event
     }
 
     out.push({
