@@ -1,11 +1,11 @@
-import { Check, FileText, Calendar } from 'lucide-react'
+import { Check, FileText, Calendar} from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useApi } from '../../hooks/useApi'
 import { useAuthContext } from '../../context/AuthContext'
 import { useWorkspaceContext } from '../../context/WorkspaceContext'
 import { ModuleWindowHeader } from './ModuleWindowHeader'
 
-export const QuickCaptureWindow = ({ kind }: { kind: 'quick-task' | 'quick-note' | 'quick-event' }) => {
+export const QuickCaptureWindow = ({ kind, context }: { kind: 'quick-task' | 'quick-note' | 'quick-event'; context?: string }) => {
   const { user } = useAuthContext()
   const { activeWorkspaceId } = useWorkspaceContext()
   const api = useApi()
@@ -83,6 +83,8 @@ export const QuickCaptureWindow = ({ kind }: { kind: 'quick-task' | 'quick-note'
 
   const scrollAreaClassName =
     'min-h-0 overflow-y-auto overflow-x-hidden p-4 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden'
+  const contextText = context?.trim()
+  const truncatedContext = contextText ? (contextText.length > 80 ? `${contextText.slice(0, 77)}...` : contextText) : undefined
 
   const saveQuickTask = async () => {
     if (!user || !activeWorkspaceId || !taskTitle.trim()) {
@@ -96,8 +98,8 @@ export const QuickCaptureWindow = ({ kind }: { kind: 'quick-task' | 'quick-note'
       await api.createTask({
         title: taskTitle.trim(),
         description: '',
-        status: 'not_started',
-        priority: 'none',
+        status: 'todo',
+        priority: 'medium',
         due_date: (() => {
           const today = new Date()
           const year = today.getFullYear()
@@ -167,6 +169,13 @@ export const QuickCaptureWindow = ({ kind }: { kind: 'quick-task' | 'quick-note'
       <div className={shellClassName}>
         <ModuleWindowHeader title='Quick Task' icon={<Check size={16} />} onClose={closeWindow} onMinimize={minimizeWindow} onToggleFullscreen={toggleFullscreen} />
 
+        {truncatedContext && (
+          <div className='border-b border-gray-200 bg-white px-4 py-2'>
+            <p className='text-[11px] text-gray-500'>From Calendar</p>
+            <p className='mt-0.5 text-xs font-medium text-gray-900 truncate whitespace-nowrap'>{truncatedContext}</p>
+          </div>
+        )}
+
         <div className={scrollAreaClassName}>
           <div className='space-y-4'>
             <div>
@@ -203,6 +212,13 @@ export const QuickCaptureWindow = ({ kind }: { kind: 'quick-task' | 'quick-note'
     return (
       <div className={shellClassName}>
         <ModuleWindowHeader title='Quick Note' icon={<FileText size={16} />} onClose={closeWindow} onMinimize={minimizeWindow} onToggleFullscreen={toggleFullscreen} />
+
+        {contextText && (
+          <div className='border-b border-gray-200 bg-white px-4 py-2'>
+            <p className='text-[11px] text-gray-500'>From Calendar</p>
+            <p className='mt-0.5 text-xs font-medium text-gray-900 truncate'>{contextText}</p>
+          </div>
+        )}
 
         <div className={scrollAreaClassName}>
           <div className='space-y-4'>
@@ -245,6 +261,13 @@ export const QuickCaptureWindow = ({ kind }: { kind: 'quick-task' | 'quick-note'
     return (
       <div className={shellClassName}>
         <ModuleWindowHeader title='Quick Event' icon={<Calendar size={16} />} onClose={closeWindow} onMinimize={minimizeWindow} onToggleFullscreen={toggleFullscreen} />
+
+        {contextText && (
+          <div className='border-b border-gray-200 bg-white px-4 py-2'>
+            <p className='text-[11px] text-gray-500'>From Calendar</p>
+            <p className='mt-0.5 text-xs font-medium text-gray-900 truncate'>{contextText}</p>
+          </div>
+        )}
 
         <div className={scrollAreaClassName}>
           <div className='space-y-4'>

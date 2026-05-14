@@ -1031,10 +1031,27 @@ export const NotesWindow = () => {
   const handleBulkExport = useCallback(async (format: 'pdf' | 'png' | 'html' | 'txt', selectedIds: Set<string>) => {
     try {
       if (exportType === 'mindmaps') {
+        const resolveMindMapElement = (noteId: string) => {
+          const selector = `[data-mindmap-id="${noteId}"]`
+          const candidates = Array.from(document.querySelectorAll(selector)) as HTMLElement[]
+          if (!candidates.length) return null
+
+          const visible = candidates.filter((element) => {
+            const rect = element.getBoundingClientRect()
+            return rect.width > 20 && rect.height > 20
+          })
+          const pool = visible.length ? visible : candidates
+          return pool.reduce((best, current) => {
+            const bestRect = best.getBoundingClientRect()
+            const currentRect = current.getBoundingClientRect()
+            return currentRect.width * currentRect.height > bestRect.width * bestRect.height ? current : best
+          })
+        }
+
         const mindMapsToExport = notes
           .filter((note) => selectedIds.has(note.id) && note.mode === 'mind_map')
           .map((note) => {
-            const element = document.querySelector(`[data-mindmap-id="${note.id}"]`) as HTMLElement | null
+            const element = resolveMindMapElement(note.id)
             if (!element) {
               console.warn(`Mind map element not found for note ${note.id}`)
             }

@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect, useMemo } from 'react'
 import { Download, Loader2, X, Check } from 'lucide-react'
 
 interface BulkExportModalProps {
@@ -16,18 +16,30 @@ export const BulkExportModal = ({
   notes,
   isMindMapOnly = false,
 }: BulkExportModalProps) => {
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set(notes.map((n) => n.id)))
+  const relevantNotes = useMemo(
+    () => (isMindMapOnly ? notes.filter((n) => n.mode === 'mind_map') : notes),
+    [isMindMapOnly, notes]
+  )
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set(relevantNotes.map((n) => n.id)))
   const [format, setFormat] = useState<'pdf' | 'png' | 'html' | 'txt'>(isMindMapOnly ? 'pdf' : 'pdf')
   const [isExporting, setIsExporting] = useState(false)
   const [exportStatus, setExportStatus] = useState<'idle' | 'success' | 'error'>('idle')
+  const selectedRelevantCount = relevantNotes.reduce((count, note) => (selectedIds.has(note.id) ? count + 1 : count), 0)
+
+  useEffect(() => {
+    if (!isOpen) return
+    setSelectedIds(new Set(relevantNotes.map((note) => note.id)))
+    setFormat(isMindMapOnly ? 'pdf' : 'pdf')
+    setExportStatus('idle')
+  }, [isOpen, isMindMapOnly, relevantNotes])
 
   const handleSelectAll = useCallback(() => {
-    if (selectedIds.size === notes.length) {
+    if (selectedRelevantCount === relevantNotes.length) {
       setSelectedIds(new Set())
     } else {
-      setSelectedIds(new Set(notes.map((n) => n.id)))
+      setSelectedIds(new Set(relevantNotes.map((n) => n.id)))
     }
-  }, [notes, selectedIds.size])
+  }, [relevantNotes, selectedRelevantCount])
 
   const handleToggleNote = useCallback((noteId: string) => {
     setSelectedIds((prev) => {
@@ -42,11 +54,12 @@ export const BulkExportModal = ({
   }, [])
 
   const handleExport = async () => {
-    if (selectedIds.size === 0) return
+    const filteredSelectedIds = new Set(relevantNotes.filter((note) => selectedIds.has(note.id)).map((note) => note.id))
+    if (filteredSelectedIds.size === 0) return
     setIsExporting(true)
     setExportStatus('idle')
     try {
-      await onExport(format, selectedIds)
+      await onExport(format, filteredSelectedIds)
       setExportStatus('success')
       setTimeout(() => {
         onClose()
@@ -62,7 +75,6 @@ export const BulkExportModal = ({
 
   if (!isOpen) return null
 
-  const relevantNotes = isMindMapOnly ? notes.filter((n) => n.mode === 'mind_map') : notes
   const formatOptions = isMindMapOnly 
     ? (['pdf', 'png', 'txt'] as const)
     : (['pdf', 'txt', 'html'] as const)
@@ -126,13 +138,13 @@ export const BulkExportModal = ({
           <div>
             <div className="mb-2 flex items-center justify-between">
               <label className="text-sm font-medium text-gray-700">
-                Select {isMindMapOnly ? 'mind maps' : 'notes'} ({selectedIds.size} of {relevantNotes.length})
+                Select {isMindMapOnly ? 'mind maps' : 'notes'} ({selectedRelevantCount} of {relevantNotes.length})
               </label>
               <button
                 onClick={handleSelectAll}
                 className="text-xs font-medium text-gray-600 hover:text-gray-900"
               >
-                {selectedIds.size === relevantNotes.length ? 'Deselect all' : 'Select all'}
+                {selectedRelevantCount === relevantNotes.length ? 'Deselect all' : 'Select all'}
               </button>
             </div>
             <div className="max-h-60 overflow-y-auto rounded-lg border border-gray-200 divide-y">
@@ -184,7 +196,7 @@ export const BulkExportModal = ({
           </button>
           <button
             onClick={handleExport}
-            disabled={isExporting || selectedIds.size === 0}
+            disabled={isExporting || selectedRelevantCount === 0}
             className="flex-1 flex items-center justify-center gap-2 rounded-lg bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-50"
           >
             {isExporting ? (
@@ -195,7 +207,7 @@ export const BulkExportModal = ({
             ) : (
               <>
                 <Download size={16} />
-                Export ({selectedIds.size})
+                Export ({selectedRelevantCount})
               </>
             )}
           </button>

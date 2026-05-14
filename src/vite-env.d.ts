@@ -8,6 +8,7 @@ type ModuleFocusPayload = {
   focusProjectId?: string | null
   focusNoteId?: string | null
   focusTaskId?: string | null
+  focusContext?: string | null
 }
 
 interface ImportMetaEnv {

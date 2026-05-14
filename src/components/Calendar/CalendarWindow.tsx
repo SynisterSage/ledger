@@ -1,4 +1,4 @@
-import { CalendarDays, ChevronLeft, ChevronRight, ChevronDown, X, BellRing, ClipboardPaste, CalendarPlus, Trash2 } from 'lucide-react'
+import { CalendarDays, ChevronLeft, ChevronRight, ChevronDown, X, BellRing, ClipboardPaste, CalendarPlus, Trash2, Folder, Plus } from 'lucide-react'
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { useAuthContext } from '../../context/AuthContext'
 import { modulePaneSizing, clampPaneWidth, getPaneWidthForViewport } from '../../config/modulePaneSizes'
@@ -13,6 +13,9 @@ type CalendarRow = {
   color: string
   workspace_id: string
   is_personal: boolean
+  is_default?: boolean
+  is_visible?: boolean
+  created_by?: string | null
 }
 
 type EventRow = {
@@ -24,6 +27,9 @@ type EventRow = {
   color?: string
   status?: 'planned' | 'done' | 'missed' | 'cancelled'
   recurrence_rule?: 'none' | 'daily' | 'weekly' | 'weekdays'
+  project_id?: string | null
+  note_id?: string | null
+  notes?: string | null
 }
 
 type ReminderRow = {
@@ -33,6 +39,20 @@ type ReminderRow = {
   calendar_id: string
   color?: string
   is_done: boolean
+  project_id?: string | null
+  note_id?: string | null
+  notes?: string | null
+}
+
+type ProjectRow = {
+  id: string
+  name: string
+  color?: string
+}
+
+type NoteRow = {
+  id: string
+  title: string
 }
 
 type GridQuickAddState = {
@@ -277,6 +297,8 @@ export const CalendarWindow = () => {
   const [calendars, setCalendars] = useState<CalendarRow[]>([])
   const [events, setEvents] = useState<EventRow[]>([])
   const [reminders, setReminders] = useState<ReminderRow[]>([])
+  const [projects, setProjects] = useState<ProjectRow[]>([])
+  const [notes, setNotes] = useState<NoteRow[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [hasLoadedData, setHasLoadedData] = useState(false)
@@ -286,8 +308,13 @@ export const CalendarWindow = () => {
   const [newEventTitle, setNewEventTitle] = useState('')
   const [newEventDate, setNewEventDate] = useState(() => formatDateKey(new Date()))
   const [newEventTime, setNewEventTime] = useState('09:00')
+  const [newEventEndTime, setNewEventEndTime] = useState('')
   const [newEventRecurrence, setNewEventRecurrence] = useState<'none' | 'daily' | 'weekly' | 'weekdays'>('none')
   const [composerMode, setComposerMode] = useState<'event' | 'reminder'>('event')
+  const [composerCalendarId, setComposerCalendarId] = useState('')
+  const [composerProjectId, setComposerProjectId] = useState('')
+  const [composerNoteId, setComposerNoteId] = useState('')
+  const [composerNotes, setComposerNotes] = useState('')
   const [isSavingEvent, setIsSavingEvent] = useState(false)
   const [, setIsSyncingApple] = useState(false)
   const [appleSyncMessage, setAppleSyncMessage] = useState<string | null>(null)
@@ -303,6 +330,17 @@ export const CalendarWindow = () => {
   const [selectedEvent, setSelectedEvent] = useState<EventRow | null>(null)
   const [eventEditorEvent, setEventEditorEvent] = useState<EventRow | null>(null)
   const [selectedReminder, setSelectedReminder] = useState<ReminderRow | null>(null)
+  const [eventNotesDrafts, setEventNotesDrafts] = useState<Record<string, string>>({})
+  const [isLinkProjectModalOpen, setIsLinkProjectModalOpen] = useState(false)
+  const [linkProjectsSearch, setLinkProjectsSearch] = useState('')
+  const [linkProjects, setLinkProjects] = useState<Array<{ id: string; name: string; color?: string }>>([])
+  const [isLoadingLinkProjects, setIsLoadingLinkProjects] = useState(false)
+  const [isLinkingProject, setIsLinkingProject] = useState(false)
+  const [isLinkNoteModalOpen, setIsLinkNoteModalOpen] = useState(false)
+  const [linkNotesSearch, setLinkNotesSearch] = useState('')
+  const [linkNotes, setLinkNotes] = useState<NoteRow[]>([])
+  const [isLoadingLinkNotes, setIsLoadingLinkNotes] = useState(false)
+  const [isLinkingNote, setIsLinkingNote] = useState(false)
   const [editTitle, setEditTitle] = useState('')
   const [editDate, setEditDate] = useState('')
   const [editTime, setEditTime] = useState('')
@@ -320,6 +358,10 @@ export const CalendarWindow = () => {
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [calendarColorDrafts, setCalendarColorDrafts] = useState<Record<string, string>>({})
   const [isSavingColorId, setIsSavingColorId] = useState<string | null>(null)
+  const [isNewCalendarModalOpen, setIsNewCalendarModalOpen] = useState(false)
+  const [newCalendarName, setNewCalendarName] = useState('')
+  const [newCalendarColor, setNewCalendarColor] = useState('#3B82F6')
+  const [isCreatingCalendar, setIsCreatingCalendar] = useState(false)
   const [leftPaneWidth, setLeftPaneWidth] = useState(() =>
     getPaneWidthForViewport(viewportWidth, modulePaneSizing.calendar.left)
   )
@@ -385,8 +427,6 @@ export const CalendarWindow = () => {
         }
     }
   }
-  const selectedReminderPreview = selectedReminder ?? null
-
   useEffect(() => {
     const applyFocusDate = (focusDate: string) => {
       const date = new Date(focusDate)
@@ -457,7 +497,9 @@ export const CalendarWindow = () => {
 
   const visibleEvents = useMemo(() => {
     const expanded: EventRow[] = []
+    const visibleCalendarIds = new Set(calendars.filter((calendar) => calendar.is_visible !== false).map((calendar) => calendar.id))
     for (const event of events) {
+      if (!visibleCalendarIds.has(event.calendar_id)) continue
       const recurrence = event.recurrence_rule ?? 'none'
       if (recurrence === 'none') {
         expanded.push(event)
@@ -507,6 +549,10 @@ export const CalendarWindow = () => {
     return expanded
   }, [events, viewConfig.start, viewConfig.end])
 
+  const calendarById = useMemo(() => new Map(calendars.map((calendar) => [calendar.id, calendar])), [calendars])
+  const projectById = useMemo(() => new Map(projects.map((project) => [project.id, project])), [projects])
+  const noteById = useMemo(() => new Map(notes.map((note) => [note.id, note])), [notes])
+
   const eventsByDay = useMemo(() => {
     const grouped: Record<string, EventRow[]> = {}
     for (const date of viewConfig.dates) grouped[formatDateKey(date)] = []
@@ -540,6 +586,26 @@ export const CalendarWindow = () => {
 
     return grouped
   }, [reminders, viewConfig.dates])
+
+  const selectedContextDate = selectedEventPreview ? new Date(selectedEventPreview.start_at) : viewAnchor
+  const selectedContextDayKey = formatDateKey(selectedContextDate)
+  const selectedContextDayEvents = eventsByDay[selectedContextDayKey] ?? []
+  const selectedContextDayReminders = remindersByDay[selectedContextDayKey] ?? []
+  const selectedCalendar = useMemo(
+    () => (selectedEventPreview ? calendars.find((calendar) => calendar.id === selectedEventPreview.calendar_id) ?? null : null),
+    [calendars, selectedEventPreview]
+  )
+  const selectedEventProject = useMemo(
+    () => (selectedEventPreview?.project_id ? projectById.get(selectedEventPreview.project_id) ?? null : null),
+    [projectById, selectedEventPreview]
+  )
+  const selectedEventNote = useMemo(
+    () => (selectedEventPreview?.note_id ? noteById.get(selectedEventPreview.note_id) ?? null : null),
+    [noteById, selectedEventPreview]
+  )
+  const selectedEventNoteDraft = selectedEventPreview ? eventNotesDrafts[selectedEventPreview.id] ?? selectedEventPreview.notes ?? '' : ''
+  const getCalendarColor = (calendarId: string) => calendarById.get(calendarId)?.color ?? '#93C5FD'
+  const getDefaultCalendar = () => calendars.find((calendar) => calendar.is_visible !== false && (calendar.is_default || calendar.is_personal)) ?? calendars[0] ?? null
 
   const overflowEvents = useMemo(
     () => (overflowDayKey ? eventsByDay[overflowDayKey] ?? [] : []),
@@ -583,7 +649,7 @@ export const CalendarWindow = () => {
         let finalCalendars = (loadedCalendars ?? []) as CalendarRow[]
 
         if (finalCalendars.length === 0) {
-          const createdCalendar = await api.createCalendar('Personal', '#3B82F6')
+          const createdCalendar = await api.createCalendar('Personal', '#3B82F6', true)
           if (cancelled) return
 
           if (!createdCalendar) {
@@ -612,6 +678,20 @@ export const CalendarWindow = () => {
             const remindAt = new Date(reminder.remind_at).getTime()
             return remindAt >= viewConfig.start.getTime() && remindAt < viewConfig.end.getTime()
           })
+        )
+
+        const [projectResult, noteResult] = await Promise.allSettled([
+          api.getProjects({ includeCompleted: true }),
+          api.getNotes(),
+        ])
+
+        if (cancelled) return
+
+        setProjects(projectResult.status === 'fulfilled' && Array.isArray(projectResult.value) ? (projectResult.value as ProjectRow[]) : [])
+        setNotes(
+          noteResult.status === 'fulfilled' && noteResult.value && Array.isArray((noteResult.value as { notes?: NoteRow[] }).notes)
+            ? ((noteResult.value as { notes: NoteRow[] }).notes ?? [])
+            : []
         )
         hasLoadedDataRef.current = true
         setHasLoadedData(true)
@@ -804,8 +884,13 @@ export const CalendarWindow = () => {
     setGridQuickTitle('')
     setNewEventDate(dateKey)
     setNewEventTime(`${String(hour).padStart(2, '0')}:00`)
+    setNewEventEndTime('')
     setNewEventTitle(title)
     setNewEventRecurrence('none')
+    setComposerCalendarId(calendars.find((calendar) => calendar.is_visible !== false && (calendar.is_personal || calendar.is_default))?.id ?? calendars[0]?.id ?? '')
+    setComposerProjectId('')
+    setComposerNoteId('')
+    setComposerNotes('')
     setComposerMode(mode)
     setIsComposerOpen(true)
   }
@@ -825,10 +910,16 @@ export const CalendarWindow = () => {
   const createQuickEvent = async () => {
     if (!user || !newEventTitle.trim() || calendars.length === 0) return
 
-    const selectedCalendar = calendars[0]
+    const selectedCalendar = calendars.find((calendar) => calendar.id === composerCalendarId) ?? getDefaultCalendar()
+    if (!selectedCalendar) return
     const start = new Date(`${newEventDate}T${newEventTime}:00`)
-    const end = new Date(start)
-    end.setHours(start.getHours() + 1)
+    const end = newEventEndTime.trim() ? new Date(`${newEventDate}T${newEventEndTime}:00`) : new Date(start)
+    if (!newEventEndTime.trim()) {
+      end.setHours(start.getHours() + 1)
+    }
+    if (end <= start) {
+      end.setHours(start.getHours() + 1)
+    }
 
     setIsSavingEvent(true)
     setError(null)
@@ -840,6 +931,9 @@ export const CalendarWindow = () => {
         calendar_id: selectedCalendar.id,
         color: selectedCalendar.color,
         is_done: false,
+        project_id: composerProjectId || null,
+        note_id: composerNoteId || null,
+        notes: composerNotes.trim() || null,
       })) as ReminderRow
 
       setIsSavingEvent(false)
@@ -858,6 +952,11 @@ export const CalendarWindow = () => {
       setIsComposerOpen(false)
       setComposerMode('event')
       setNewEventRecurrence('none')
+      setComposerCalendarId(getDefaultCalendar()?.id ?? '')
+      setComposerProjectId('')
+      setComposerNoteId('')
+      setComposerNotes('')
+      setNewEventEndTime('')
       return
     }
 
@@ -869,6 +968,9 @@ export const CalendarWindow = () => {
       color: selectedCalendar.color,
       recurrence_rule: newEventRecurrence,
       status: 'planned',
+      project_id: composerProjectId || null,
+      note_id: composerNoteId || null,
+      notes: composerNotes.trim() || null,
     })) as EventRow
 
     setIsSavingEvent(false)
@@ -883,6 +985,36 @@ export const CalendarWindow = () => {
     setIsComposerOpen(false)
     setComposerMode('event')
     setNewEventRecurrence('none')
+    setComposerCalendarId(getDefaultCalendar()?.id ?? '')
+    setComposerProjectId('')
+    setComposerNoteId('')
+    setComposerNotes('')
+    setNewEventEndTime('')
+  }
+
+  const createNewCalendar = async () => {
+    const name = newCalendarName.trim() || 'Personal'
+    setIsCreatingCalendar(true)
+    setError(null)
+
+    try {
+      const created = (await api.createCalendar(name, newCalendarColor, true)) as CalendarRow
+      if (!created) {
+        setError('Could not create calendar.')
+        return
+      }
+
+      setCalendars((prev) => [...prev, created].sort((a, b) => Number(b.is_personal) - Number(a.is_personal) || a.name.localeCompare(b.name)))
+      setCalendarColorDrafts((prev) => ({ ...prev, [created.id]: created.color }))
+      setComposerCalendarId(created.id)
+      setIsNewCalendarModalOpen(false)
+      setNewCalendarName('')
+      setNewCalendarColor('#3B82F6')
+    } catch (error) {
+      setError('Could not create calendar.')
+    } finally {
+      setIsCreatingCalendar(false)
+    }
   }
 
   const toggleReminderDone = async (reminder: ReminderRow) => {
@@ -980,7 +1112,87 @@ export const CalendarWindow = () => {
     setEditStatus(source.status ?? 'planned')
     setEditColor(source.color ?? '#93C5FD')
     setEditRecurrence(source.recurrence_rule ?? 'none')
+    setEventNotesDrafts((prev) => ({ ...prev, [source.id]: source.notes ?? prev[source.id] ?? '' }))
     setConfirmDelete(false)
+  }
+
+  const openLinkProjectModal = async () => {
+    if (!selectedEventPreview) return
+    setIsLinkProjectModalOpen(true)
+    setLinkProjectsSearch('')
+    setIsLoadingLinkProjects(true)
+    try {
+      const projects = (await api.getProjects({ includeCompleted: true })) as Array<{ id: string; name: string; color?: string }>
+      setLinkProjects(projects)
+    } catch (err) {
+      console.error('Failed to load projects for linking', err)
+      setLinkProjects([])
+    } finally {
+      setIsLoadingLinkProjects(false)
+    }
+  }
+
+  const openLinkNoteModal = async () => {
+    if (!selectedEventPreview) return
+    setIsLinkNoteModalOpen(true)
+    setLinkNotesSearch('')
+    setIsLoadingLinkNotes(true)
+    try {
+      setLinkNotes(notes)
+    } catch (err) {
+      console.error('Failed to load notes for linking', err)
+      setLinkNotes([])
+    } finally {
+      setIsLoadingLinkNotes(false)
+    }
+  }
+
+  const linkEventToProject = async (projectId: string) => {
+    if (!selectedEventPreview) return
+    setIsLinkingProject(true)
+    try {
+      const targetId = baseEventId(selectedEventPreview.id)
+      const updated = (await api.updateEvent(targetId, { project_id: projectId })) as EventRow
+      setEvents((prev) => prev.map((evt) => (baseEventId(evt.id) === baseEventId(updated.id) ? { ...evt, ...updated } : evt)))
+      setSelectedEvent((current) => (current && baseEventId(current.id) === updated.id ? { ...current, ...updated } : current))
+      setIsLinkProjectModalOpen(false)
+    } catch (err) {
+      console.error('Failed to link event to project', err)
+    } finally {
+      setIsLinkingProject(false)
+    }
+  }
+
+  const linkEventToNote = async (noteId: string) => {
+    if (!selectedEventPreview) return
+    setIsLinkingNote(true)
+    try {
+      const targetId = baseEventId(selectedEventPreview.id)
+      const updated = (await api.updateEvent(targetId, { note_id: noteId })) as EventRow
+      setEvents((prev) => prev.map((evt) => (baseEventId(evt.id) === baseEventId(updated.id) ? { ...evt, ...updated } : evt)))
+      setSelectedEvent((current) => (current && baseEventId(current.id) === updated.id ? { ...current, ...updated } : current))
+      setIsLinkNoteModalOpen(false)
+    } catch (err) {
+      console.error('Failed to link event to note', err)
+    } finally {
+      setIsLinkingNote(false)
+    }
+  }
+
+  const saveSelectedEventNotes = async () => {
+    if (!selectedEventPreview) return
+
+    const targetId = baseEventId(selectedEventPreview.id)
+    const nextNotes = selectedEventNoteDraft.trim()
+
+    try {
+      const updated = (await api.updateEvent(targetId, { notes: nextNotes || null })) as EventRow
+      setEvents((prev) => prev.map((evt) => (baseEventId(evt.id) === baseEventId(updated.id) ? { ...evt, ...updated } : evt)))
+      setEventNotesDrafts((prev) => ({ ...prev, [targetId]: updated.notes ?? '' }))
+      setSelectedEvent((current) => (current && baseEventId(current.id) === updated.id ? { ...current, ...updated } : current))
+    } catch (error) {
+      setError('Could not save event notes.')
+    }
   }
 
   const saveEventEdits = async () => {
@@ -1000,6 +1212,7 @@ export const CalendarWindow = () => {
       color: editColor,
       status: editStatus,
       recurrence_rule: editRecurrence,
+      notes: eventNotesDrafts[eventEditorEvent.id] ?? eventEditorEvent.notes ?? null,
     })) as EventRow
 
     setIsSavingEdit(false)
@@ -1068,10 +1281,27 @@ export const CalendarWindow = () => {
     }
   }
 
+  const toggleCalendarVisibility = async (calendar: CalendarRow) => {
+    setError(null)
+
+    try {
+      const updated = (await api.updateCalendar(calendar.id, { is_visible: !(calendar.is_visible !== false) })) as CalendarRow
+      if (!updated) {
+        setError('Could not update calendar visibility.')
+        return
+      }
+
+      setCalendars((prev) => prev.map((item) => (item.id === updated.id ? updated : item)))
+    } catch (error) {
+      setError('Could not update calendar visibility.')
+    }
+  }
+
   const createGridEvent = async () => {
     if (!user || !gridQuickAdd || !gridQuickTitle.trim() || calendars.length === 0) return
 
-    const selectedCalendar = calendars[0]
+    const selectedCalendar = getDefaultCalendar()
+    if (!selectedCalendar) return
     const hourString = String(gridQuickAdd.hour).padStart(2, '0')
     const start = new Date(`${gridQuickAdd.dateKey}T${hourString}:00:00`)
     const end = new Date(start)
@@ -1169,7 +1399,8 @@ export const CalendarWindow = () => {
         return
       }
 
-      const selectedCalendar = calendars[0]
+      const selectedCalendar = getDefaultCalendar()
+      if (!selectedCalendar) return
       const payload = parsed.map((evt) => ({
         calendar_id: selectedCalendar.id,
         workspace_id: selectedCalendar.workspace_id,
@@ -1441,15 +1672,41 @@ export const CalendarWindow = () => {
           </div>
 
           <div className="mb-5 border-t border-gray-100 pt-4">
-            <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Calendars</h2>
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Calendars</h2>
+              <button
+                type="button"
+                onClick={() => {
+                  setNewCalendarName('')
+                  setNewCalendarColor('#3B82F6')
+                  setIsNewCalendarModalOpen(true)
+                }}
+                className="h-6 w-6 rounded-full border border-gray-200 bg-white text-gray-500 hover:bg-gray-100 flex items-center justify-center shadow-sm"
+                title="New calendar"
+                aria-label="New calendar"
+              >
+                <Plus size={12} />
+              </button>
+            </div>
             <div className="space-y-2">
               {calendars.map((calendar) => (
-                <div key={calendar.id} className="flex items-center justify-between gap-2 text-sm text-gray-800">
+                <div
+                  key={calendar.id}
+                  className={`flex items-center justify-between gap-2 rounded-lg border px-2 py-1.5 text-sm ${calendar.is_visible === false ? 'border-gray-100 bg-gray-50 text-gray-400' : 'border-transparent text-gray-800'}`}
+                >
                   <div className="flex items-center gap-2 min-w-0">
                     <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: calendar.color }} />
                     <span className="truncate font-medium">{calendar.name}</span>
                   </div>
                   <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => void toggleCalendarVisibility(calendar)}
+                      className={`h-5 rounded border px-1.5 text-[10px] font-medium ${calendar.is_visible === false ? 'border-gray-200 bg-white text-gray-500' : 'border-gray-200 bg-gray-900 text-white'}`}
+                      title={calendar.is_visible === false ? 'Show calendar' : 'Hide calendar'}
+                    >
+                      {calendar.is_visible === false ? 'Off' : 'On'}
+                    </button>
                     <input
                       type="color"
                       value={calendarColorDrafts[calendar.id] ?? calendar.color}
@@ -1476,9 +1733,7 @@ export const CalendarWindow = () => {
             <div className="grid grid-cols-2 gap-2">
               <button
                 onClick={() => {
-                  setComposerMode('event')
-                  setNewEventRecurrence('none')
-                  setIsComposerOpen(true)
+                  openComposerAtSlot(formatDateKey(viewAnchor), 9, '', 'event')
                 }}
                 className="h-9 rounded-md bg-gray-900 text-white text-xs font-medium hover:bg-gray-800 transition"
               >
@@ -1486,9 +1741,7 @@ export const CalendarWindow = () => {
               </button>
               <button
                 onClick={() => {
-                  setComposerMode('reminder')
-                  setNewEventRecurrence('none')
-                  setIsComposerOpen(true)
+                  openComposerAtSlot(formatDateKey(viewAnchor), 9, '', 'reminder')
                 }}
                 className="h-9 rounded-md bg-gray-100 text-gray-800 text-xs font-medium hover:bg-gray-200 transition"
               >
@@ -1624,13 +1877,17 @@ export const CalendarWindow = () => {
                         {visibleEvents.map((event) => (
                           (() => {
                             const meta = getEventStatusMeta(event.status)
+                            const calendarColor = getCalendarColor(event.calendar_id)
                             return (
                           <div
                             key={event.id}
-                            className={`text-[10px] rounded px-1.5 py-0.5 truncate border ${
+                            className={`text-[10px] rounded-md px-2 py-0.5 truncate border shadow-sm ${
                               meta.previewClass
                             } ${event.status === 'done' ? 'line-through opacity-80' : ''} ${event.status === 'cancelled' ? 'opacity-65' : ''}`}
-                            style={{ backgroundColor: `${event.color ?? '#93C5FD'}22` }}
+                            style={{
+                              backgroundColor: `${calendarColor}18`,
+                              borderColor: `${calendarColor}44`,
+                            }}
                             onContextMenu={(e) => {
                               e.preventDefault()
                               e.stopPropagation()
@@ -1642,7 +1899,8 @@ export const CalendarWindow = () => {
                               })
                             }}
                           >
-                            <span className={`mr-1 inline-block h-1.5 w-1.5 rounded-full ${meta.dotClass}`} />
+                            <span className={`mr-1 inline-block h-1.5 w-1.5 rounded-full ${meta.dotClass}`} style={{ backgroundColor: calendarColor }} />
+                            {event.project_id && <Folder size={8} className="mr-1 inline-block align-middle text-gray-500" />}
                             {event.title}
                           </div>
                             )
@@ -1825,12 +2083,15 @@ export const CalendarWindow = () => {
                                 id: evt.id,
                               })
                             }}
-                            className="text-[10px] rounded px-1.5 py-0.5 truncate w-full text-left mb-0.5 last:mb-0"
+                            className="text-[10px] rounded-md px-2 py-0.5 truncate w-full text-left mb-0.5 last:mb-0 border shadow-sm"
                             style={{
-                              backgroundColor: `${evt.color ?? '#93C5FD'}44`,
+                              backgroundColor: `${getCalendarColor(evt.calendar_id)}18`,
+                              borderColor: `${getCalendarColor(evt.calendar_id)}44`,
                               color: '#1F2937',
                             }}
                           >
+                            <span className="mr-1 inline-block h-1.5 w-1.5 rounded-full align-middle" style={{ backgroundColor: getCalendarColor(evt.calendar_id) }} />
+                            {evt.project_id && <Folder size={8} className="mr-1 inline-block align-middle text-gray-500" />}
                             {evt.title}
                           </button>
                         ))}
@@ -1872,189 +2133,191 @@ export const CalendarWindow = () => {
             />
 
             <aside
-              className="border-l border-gray-200 bg-[#fbfcfe] overflow-auto p-4 space-y-4"
+              className="border-l border-gray-200 bg-[#fbfcfe] overflow-auto p-5 space-y-5"
               style={{ width: `${rightPaneWidth}px` }}
             >
-              <div className="flex items-center justify-between mb-1">
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Inspector</p>
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Day context</p>
+                  <h2 className="mt-1 text-sm font-semibold text-gray-900">
+                    {selectedContextDate.toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric' })}
+                  </h2>
+                  <p className="mt-1 text-xs text-gray-500">
+                    {selectedContextDayEvents.length} events · {selectedContextDayReminders.length} reminders
+                  </p>
+                </div>
                 <button
                   onClick={() => setIsRightPaneCollapsed(true)}
-                  className="h-7 w-7 rounded-full border border-gray-200 bg-white text-gray-500 hover:bg-gray-100 flex items-center justify-center shadow-sm"
+                  className="h-7 w-7 shrink-0 rounded-full border border-gray-200 bg-white text-gray-500 shadow-sm hover:bg-gray-100 flex items-center justify-center"
                   title="Hide right panel"
+                  aria-label="Hide right panel"
                 >
                   <ChevronRight size={13} strokeWidth={2.25} />
                 </button>
               </div>
-              <section className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">At a glance</p>
-                <h2 className="mt-1 text-sm font-semibold text-gray-900">{viewConfig.label}</h2>
-                <div className="mt-3 grid grid-cols-2 gap-3">
-                  <div className="rounded-xl border border-gray-200 bg-gray-50 p-3">
-                    <p className="text-[10px] uppercase tracking-wide text-gray-500 whitespace-nowrap">Events</p>
-                    <p className="text-lg font-semibold text-gray-900">{visibleEvents.length}</p>
-                  </div>
-                  <div className="rounded-xl border border-gray-200 bg-gray-50 p-3">
-                    <p className="text-[10px] uppercase tracking-wide text-gray-500 whitespace-nowrap">Reminders</p>
-                    <p className="text-lg font-semibold text-gray-900">{reminders.length}</p>
-                  </div>
-                </div>
-              </section>
 
-              <section className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Selection</p>
-                {selectedEventPreview ? (
-                  <div className="mt-3 space-y-2">
-                    {(() => {
-                      const meta = getEventStatusMeta(selectedEventPreview.status)
-                      return (
-                    <div className={`rounded-xl border p-3 ${meta.previewClass}`}>
-                      <p className="text-xs font-semibold">{selectedEventPreview.title}</p>
-                      <p className="mt-1 text-[11px] opacity-80">
-                        {new Date(selectedEventPreview.start_at).toLocaleString([], {
-                          weekday: 'short',
-                          month: 'short',
-                          day: 'numeric',
-                          hour: 'numeric',
-                          minute: '2-digit',
-                        })}
-                      </p>
-                      <span className={`mt-2 inline-flex rounded-full border px-1.5 py-0.5 text-[10px] font-medium ${meta.chipClass}`}>
-                        {meta.label}
-                      </span>
-                    </div>
-                      )
-                    })()}
-              <button
-                onClick={() => openEventEditor(selectedEventPreview)}
-                className="w-full h-8 rounded-md bg-gray-900 text-white text-xs font-medium hover:bg-gray-800"
-              >
-                Open Editor
-              </button>
-                  </div>
-                ) : selectedReminderPreview ? (
-                  <div className="mt-3 space-y-2">
-                    <div className="rounded-xl bg-amber-50 border border-amber-100 p-3">
-                      <p className="text-xs font-semibold text-amber-900">{selectedReminderPreview.title}</p>
-                      <p className="mt-1 text-[11px] text-amber-800">
-                        {new Date(selectedReminderPreview.remind_at).toLocaleString([], {
-                          weekday: 'short',
-                          month: 'short',
-                          day: 'numeric',
-                          hour: 'numeric',
-                          minute: '2-digit',
-                        })}
-                      </p>
-                    </div>
-                    <button
-                      onClick={() => openReminderEditor(selectedReminderPreview)}
-                      className="w-full h-8 rounded-md bg-gray-900 text-white text-xs font-medium hover:bg-gray-800"
-                    >
-                      Edit Reminder
-                    </button>
-                  </div>
-                ) : (
-                  <div className="mt-3 rounded-xl border border-dashed border-gray-200 bg-gray-50 p-3">
-                    <p className="text-xs font-medium text-gray-800">No item selected</p>
-                    <p className="mt-1 text-[11px] text-gray-500">
-                      Open an event or reminder to inspect it here.
-                    </p>
-                  </div>
-                )}
-              </section>
-
-              <section className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
-                <div className="flex items-center justify-between mb-3">
-                  <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Upcoming</p>
-                  <button
-                    onClick={() => setViewMode('day')}
-                    className="text-[11px] text-gray-500 hover:text-gray-900"
-                  >
-                    Focus day
-                  </button>
-                </div>
-                <div className="space-y-2 max-h-48 overflow-auto pr-1">
-                  {events.length === 0 && !isLoading && <p className="text-xs text-gray-500">No events in this view.</p>}
-                  {events.slice(0, 6).map((event) => (
+              <div className="space-y-4 px-0">
+                <div className="space-y-2">
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Selected event</p>
+                  {selectedEventPreview ? (
                     (() => {
-                      const meta = getEventStatusMeta(event.status)
+                      const meta = getEventStatusMeta(selectedEventPreview.status)
+                      const selectedColor = getCalendarColor(selectedEventPreview.calendar_id)
                       return (
-                    <button
-                      key={event.id}
-                      onClick={() => setSelectedEvent(event)}
-                      onContextMenu={(e) => {
-                        e.preventDefault()
-                        setListContextMenu({
-                          x: e.clientX,
-                          y: e.clientY,
-                          kind: 'event',
-                          id: event.id,
-                        })
-                      }}
-                      className={`w-full rounded-xl border px-3 py-2 text-left hover:bg-gray-100 transition ${meta.previewClass} ${
-                        event.status === 'done' ? 'line-through opacity-80' : ''
-                      } ${event.status === 'cancelled' ? 'opacity-65' : ''} ${
-                        selectedEventPreview?.id === event.id ? 'ring-1 ring-gray-400' : ''
-                      }`}
-                    >
-                      <div className="flex items-start gap-2">
-                        <span className={`mt-0.5 w-2 h-2 rounded-full shrink-0 ${meta.dotClass}`} style={{ backgroundColor: event.color ?? undefined }} />
-                        <div className="min-w-0">
-                          <p className="text-xs font-medium text-gray-900 truncate">{event.title}</p>
-                          <p className="text-[11px] text-gray-500 mt-0.5">
-                            {new Date(event.start_at).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' })}
-                          </p>
-                          <span className={`mt-1 inline-flex rounded-full border px-1.5 py-0.5 text-[10px] font-medium ${meta.chipClass}`}>
-                            {meta.label}
-                          </span>
+                        <div className="space-y-1">
+                          <div className="flex items-start gap-2">
+                            <span className="mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: selectedColor }} />
+                            <div className="min-w-0">
+                              <p className="text-sm font-semibold leading-5 text-gray-900">{selectedEventPreview.title}</p>
+                              <p className="mt-1 text-xs text-gray-600">
+                                {new Date(selectedEventPreview.start_at).toLocaleString([], {
+                                  weekday: 'short',
+                                  month: 'short',
+                                  day: 'numeric',
+                                  hour: 'numeric',
+                                  minute: '2-digit',
+                                })}
+                              </p>
+                              <p className="mt-1 text-xs font-medium text-gray-700">{meta.label}</p>
+                              <p className="mt-1 text-xs text-gray-500">Calendar · {selectedCalendar?.name ?? 'No calendar context'}</p>
+                              <div className="mt-2 space-y-1 text-xs text-gray-700">
+                                <div className="flex items-center justify-between gap-2">
+                                  <span className="text-gray-500">Project</span>
+                                  {selectedEventProject ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => void window.desktopWindow?.toggleModule('projects', { focusProjectId: selectedEventProject.id })}
+                                      className="font-medium text-[#FF5F40] hover:text-[#ea5336]"
+                                    >
+                                      {selectedEventProject.name} →
+                                    </button>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={() => void (selectedEventPreview ? openLinkProjectModal() : null)}
+                                      className="font-medium text-[#FF5F40] hover:text-[#ea5336]"
+                                    >
+                                      + Link project
+                                    </button>
+                                  )}
+                                </div>
+                                <div className="flex items-center justify-between gap-2">
+                                  <span className="text-gray-500">Linked note</span>
+                                  {selectedEventNote ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => void window.desktopWindow?.toggleModule('notes', { focusNoteId: selectedEventNote.id })}
+                                      className="font-medium text-[#FF5F40] hover:text-[#ea5336]"
+                                    >
+                                      {selectedEventNote.title} →
+                                    </button>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={() => void openLinkNoteModal()}
+                                      className="font-medium text-[#FF5F40] hover:text-[#ea5336]"
+                                    >
+                                      + Link note
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                          <div className="mt-1">
+                            <button
+                              onClick={() => openEventEditor(selectedEventPreview)}
+                              className="w-full text-left text-xs font-medium text-gray-900 hover:text-[#FF5F40]"
+                            >
+                              Open event
+                            </button>
+                          </div>
                         </div>
-                      </div>
-                    </button>
                       )
                     })()
-                  ))}
-                </div>
-              </section>
-
-              <section className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-3">Reminders</p>
-                <div className="space-y-2 max-h-40 overflow-auto pr-1">
-                  {reminders.length === 0 && !isLoading && (
-                    <p className="text-xs text-gray-500">No reminders in this view.</p>
+                  ) : (
+                    <p className="text-sm text-gray-500">Select an event to view context.</p>
                   )}
-                  {reminders.slice(0, 6).map((reminder) => (
-                    <button
-                      key={reminder.id}
-                      onClick={() => void toggleReminderDone(reminder)}
-                      onContextMenu={(e) => {
-                        e.preventDefault()
-                        setListContextMenu({
-                          x: e.clientX,
-                          y: e.clientY,
-                          kind: 'reminder',
-                          id: reminder.id,
-                        })
-                      }}
-                      className={`w-full rounded-xl border px-3 py-2 text-left transition ${
-                        reminder.is_done ? 'border-green-100 bg-green-50' : 'border-amber-100 bg-amber-50'
-                      }`}
-                    >
-                      <div className="flex items-start gap-2">
-                        <span className="mt-0.5 w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: reminder.color ?? '#F59E0B' }} />
-                        <div className="min-w-0">
-                          <p className="text-xs font-medium text-gray-900 truncate">{reminder.title}</p>
-                          <p className="text-[11px] text-gray-500 mt-0.5">
-                            {new Date(reminder.remind_at).toLocaleString([], {
-                              weekday: 'short',
-                              hour: 'numeric',
-                              minute: '2-digit',
-                            })}
-                          </p>
-                        </div>
-                      </div>
-                    </button>
-                  ))}
                 </div>
-              </section>
+
+                <div className="space-y-2 border-t border-gray-100 pt-4">
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Event notes</p>
+                  <textarea
+                    value={selectedEventPreview ? selectedEventNoteDraft : ''}
+                    onChange={(e) => {
+                      if (!selectedEventPreview) return
+                      const nextValue = e.target.value
+                      setEventNotesDrafts((prev) => ({ ...prev, [selectedEventPreview.id]: nextValue }))
+                    }}
+                    disabled={!selectedEventPreview}
+                    rows={2}
+                    placeholder="Add notes for this event..."
+                    className="w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-800 placeholder:text-gray-400 outline-none focus:border-gray-300 focus:bg-white disabled:cursor-not-allowed disabled:opacity-70"
+                  />
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-[11px] text-gray-500">Saved to the event.</p>
+                    <button
+                      type="button"
+                      onClick={() => void saveSelectedEventNotes()}
+                      disabled={!selectedEventPreview}
+                      className={`text-xs font-medium ${selectedEventPreview ? 'text-[#FF5F40] hover:text-[#ea5336]' : 'text-gray-300 cursor-not-allowed'}`}
+                    >
+                      Save notes
+                    </button>
+                  </div>
+                </div>
+
+                <div className="space-y-1.5 border-t border-gray-100 pt-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Follow-ups</p>
+                    <button
+                      onClick={() =>
+                        selectedEventPreview &&
+                        window.desktopWindow?.toggleModule('quick-task' as any, {
+                          focusContext: selectedEventPreview
+                            ? `Follow-up: ${selectedEventPreview.title}`
+                            : 'Follow-up from Calendar',
+                        })
+                      }
+                      disabled={!selectedEventPreview}
+                      className={`text-xs font-medium ${selectedEventPreview ? 'cursor-pointer' : 'cursor-not-allowed'}`}
+                    >
+                      <span className={selectedEventPreview ? 'text-[#FF5F40]' : 'text-gray-300'}>+ </span>
+                      <span className={selectedEventPreview ? 'text-gray-900 hover:text-[#ea5336]' : 'text-gray-300'}>
+                        Follow-up
+                      </span>
+                    </button>
+                  </div>
+                  <p className="text-sm text-gray-500">No follow-ups yet.</p>
+                </div>
+
+                <div className="space-y-1.5 border-t border-gray-100 pt-4">
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Agenda</p>
+                  <div className="space-y-1">
+                    {selectedContextDayEvents.length === 0 ? (
+                      <p className="text-sm text-gray-500">No events for this day.</p>
+                    ) : (
+                      selectedContextDayEvents.map((event) => {
+                        const isSelected = selectedEventPreview?.id === event.id
+                        const eventColor = getCalendarColor(event.calendar_id)
+                        return (
+                          <button
+                            key={event.id}
+                            onClick={() => setSelectedEvent(event)}
+                            className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left transition ${isSelected ? 'bg-gray-50 ring-1 ring-gray-200' : 'hover:bg-gray-50'}`}
+                          >
+                            <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: eventColor }} />
+                            <p className="w-14 shrink-0 text-xs font-medium text-gray-900">
+                              {new Date(event.start_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+                            </p>
+                            <p className="min-w-0 flex-1 truncate text-xs text-gray-700">{event.title}</p>
+                          </button>
+                        )
+                      })
+                    )}
+                  </div>
+                </div>
+              </div>
             </aside>
           </>
         )}
@@ -2107,6 +2370,67 @@ export const CalendarWindow = () => {
                 />
               </div>
               {composerMode === 'event' && (
+                <input
+                  type="time"
+                  value={newEventEndTime}
+                  onChange={(e) => setNewEventEndTime(e.target.value)}
+                  placeholder="End time optional"
+                  className="h-9 w-full px-2 text-sm border border-gray-200 rounded-md focus:outline-none focus:border-gray-400"
+                />
+              )}
+              <div className="relative">
+                <select
+                  value={composerCalendarId || getDefaultCalendar()?.id || ''}
+                  onChange={(e) => setComposerCalendarId(e.target.value)}
+                  className="w-full h-9 pr-9 pl-2 text-sm border border-gray-200 rounded-md focus:outline-none focus:border-gray-400 bg-white appearance-none"
+                  disabled={calendars.length === 0}
+                >
+                  {calendars.map((calendar) => (
+                    <option key={calendar.id} value={calendar.id}>
+                      {calendar.name}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown size={16} className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500" />
+              </div>
+              <div className="relative">
+                <select
+                  value={composerProjectId}
+                  onChange={(e) => setComposerProjectId(e.target.value)}
+                  className="w-full h-9 pr-9 pl-2 text-sm border border-gray-200 rounded-md focus:outline-none focus:border-gray-400 bg-white appearance-none"
+                >
+                  <option value="">None</option>
+                  {projects.map((project) => (
+                    <option key={project.id} value={project.id}>
+                      {project.name}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown size={16} className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500" />
+              </div>
+              <div className="relative">
+                <select
+                  value={composerNoteId}
+                  onChange={(e) => setComposerNoteId(e.target.value)}
+                  className="w-full h-9 pr-9 pl-2 text-sm border border-gray-200 rounded-md focus:outline-none focus:border-gray-400 bg-white appearance-none"
+                >
+                  <option value="">None</option>
+                  {notes.map((note) => (
+                    <option key={note.id} value={note.id}>
+                      {note.title}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown size={16} className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500" />
+              </div>
+              <textarea
+                value={composerNotes}
+                onChange={(e) => setComposerNotes(e.target.value)}
+                placeholder={composerMode === 'reminder' ? 'Optional reminder notes' : 'Add context for this event...'}
+                rows={3}
+                className="w-full rounded-md border border-gray-200 px-3 py-2 text-sm text-gray-800 placeholder:text-gray-400 outline-none focus:border-gray-400"
+              />
+              {composerMode === 'event' && (
                 <div className="relative">
                   <select
                     value={newEventRecurrence}
@@ -2130,10 +2454,158 @@ export const CalendarWindow = () => {
               </button>
               <button
                 onClick={() => void createQuickEvent()}
-                disabled={isSavingEvent || !newEventTitle.trim()}
+                disabled={isSavingEvent || !newEventTitle.trim() || calendars.length === 0}
                 className="px-3 py-2 text-xs font-medium text-white bg-gray-900 hover:bg-gray-800 rounded-md disabled:opacity-60"
               >
                 {isSavingEvent ? 'Saving...' : composerMode === 'reminder' ? 'Create Reminder' : 'Create'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isNewCalendarModalOpen && (
+        <div className="fixed inset-0 z-105 bg-black/20 flex items-start justify-center pt-24" onClick={() => setIsNewCalendarModalOpen(false)}>
+          <div className="w-96 rounded-xl border border-gray-200 bg-white shadow-xl p-4" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-semibold text-gray-900">New Calendar</h3>
+              <button onClick={() => setIsNewCalendarModalOpen(false)} className="p-1 rounded hover:bg-gray-100">
+                <X size={14} className="text-gray-600" />
+              </button>
+            </div>
+            <div className="space-y-2.5">
+              <input
+                value={newCalendarName}
+                onChange={(e) => setNewCalendarName(e.target.value)}
+                placeholder="Calendar name"
+                className="w-full h-9 px-3 text-sm border border-gray-200 rounded-md focus:outline-none focus:border-gray-400"
+              />
+              <label className="flex items-center justify-between border border-gray-200 rounded-md px-2.5 h-9">
+                <span className="text-sm text-gray-700">Color</span>
+                <input
+                  type="color"
+                  value={newCalendarColor}
+                  onChange={(e) => setNewCalendarColor(e.target.value)}
+                  className="h-6 w-8 p-0 border-0 bg-transparent cursor-pointer"
+                />
+              </label>
+            </div>
+            <div className="mt-4 flex justify-end gap-2">
+              <button onClick={() => setIsNewCalendarModalOpen(false)} className="px-3 py-2 text-xs font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-md">
+                Cancel
+              </button>
+              <button
+                onClick={() => void createNewCalendar()}
+                disabled={isCreatingCalendar || !newCalendarName.trim()}
+                className="px-3 py-2 text-xs font-medium text-white bg-gray-900 hover:bg-gray-800 rounded-md disabled:opacity-60"
+              >
+                {isCreatingCalendar ? 'Creating...' : 'Create'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isLinkProjectModalOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/25 p-4"
+          onClick={() => setIsLinkProjectModalOpen(false)}
+        >
+          <div className="w-full max-w-xl rounded-2xl border border-gray-200 bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <div className="border-b border-gray-100 px-5 py-4">
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500">Link project</p>
+              <p className="mt-1 text-base font-semibold text-gray-900">Attach this event to a project</p>
+            </div>
+            <div className="space-y-3 p-5">
+              <input
+                type="text"
+                value={linkProjectsSearch}
+                onChange={(e) => setLinkProjectsSearch(e.target.value)}
+                placeholder="Search projects"
+                className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-900 outline-none focus:border-gray-300"
+              />
+              <div className="max-h-80 overflow-auto rounded-lg border border-gray-200 bg-white">
+                {isLoadingLinkProjects ? (
+                  <p className="p-3 text-sm text-gray-500">Loading projects…</p>
+                ) : (linkProjects.filter(p => p.name.toLowerCase().includes(linkProjectsSearch.toLowerCase())).length === 0) ? (
+                  <p className="p-3 text-sm text-gray-500">No projects found.</p>
+                ) : (
+                  linkProjects
+                    .filter(p => p.name.toLowerCase().includes(linkProjectsSearch.toLowerCase()))
+                    .map((project) => (
+                      <button
+                        key={project.id}
+                        type="button"
+                        disabled={isLinkingProject}
+                        onClick={() => void linkEventToProject(project.id)}
+                        className="w-full border-b border-gray-100 px-3 py-2 text-left last:border-b-0 hover:bg-gray-50 disabled:opacity-50"
+                      >
+                        <p className="truncate text-sm font-medium text-gray-900">{project.name}</p>
+                      </button>
+                    ))
+                )}
+              </div>
+            </div>
+            <div className="flex items-center justify-end border-t border-gray-100 px-5 py-3">
+              <button
+                type="button"
+                onClick={() => setIsLinkProjectModalOpen(false)}
+                className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isLinkNoteModalOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/25 p-4"
+          onClick={() => setIsLinkNoteModalOpen(false)}
+        >
+          <div className="w-full max-w-xl rounded-2xl border border-gray-200 bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <div className="border-b border-gray-100 px-5 py-4">
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500">Link note</p>
+              <p className="mt-1 text-base font-semibold text-gray-900">Attach this event to a note</p>
+            </div>
+            <div className="space-y-3 p-5">
+              <input
+                type="text"
+                value={linkNotesSearch}
+                onChange={(e) => setLinkNotesSearch(e.target.value)}
+                placeholder="Search notes"
+                className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-900 outline-none focus:border-gray-300"
+              />
+              <div className="max-h-80 overflow-auto rounded-lg border border-gray-200 bg-white">
+                {isLoadingLinkNotes ? (
+                  <p className="p-3 text-sm text-gray-500">Loading notes…</p>
+                ) : (linkNotes.filter((note) => note.title.toLowerCase().includes(linkNotesSearch.toLowerCase())).length === 0) ? (
+                  <p className="p-3 text-sm text-gray-500">No notes found.</p>
+                ) : (
+                  linkNotes
+                    .filter((note) => note.title.toLowerCase().includes(linkNotesSearch.toLowerCase()))
+                    .map((note) => (
+                      <button
+                        key={note.id}
+                        type="button"
+                        disabled={isLinkingNote}
+                        onClick={() => void linkEventToNote(note.id)}
+                        className="w-full border-b border-gray-100 px-3 py-2 text-left last:border-b-0 hover:bg-gray-50 disabled:opacity-50"
+                      >
+                        <p className="truncate text-sm font-medium text-gray-900">{note.title}</p>
+                      </button>
+                    ))
+                )}
+              </div>
+            </div>
+            <div className="flex items-center justify-end border-t border-gray-100 px-5 py-3">
+              <button
+                type="button"
+                onClick={() => setIsLinkNoteModalOpen(false)}
+                className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+              >
+                Close
               </button>
             </div>
           </div>
@@ -2413,7 +2885,7 @@ export const CalendarWindow = () => {
 
       {contextMenu && (
         <div
-          className="fixed z-200 min-w-42 rounded-xl border border-white/20 bg-[#1f2530]/95 text-white shadow-2xl backdrop-blur-md p-1.5"
+          className="fixed z-50 min-w-44 overflow-hidden rounded-xl border border-gray-200 bg-white py-1 shadow-xl"
           style={{
             left: Math.max(8, Math.min(contextMenu.x, window.innerWidth - 188)),
             top: Math.max(8, Math.min(contextMenu.y, window.innerHeight - 138)),
@@ -2426,12 +2898,9 @@ export const CalendarWindow = () => {
               openComposerAtSlot(contextMenu.dateKey, contextMenu.hour)
               setContextMenu(null)
             }}
-            className="w-full h-8 px-2 rounded-lg text-left hover:bg-white/10 flex items-center gap-2"
+            className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
           >
-            <CalendarPlus size={13} className="text-gray-200" />
-            <span className="text-[20px] leading-none text-gray-200" aria-hidden>
-              ·
-            </span>
+            <CalendarPlus size={14} className="shrink-0 text-gray-500" />
             <span className="text-[14px] font-medium tracking-tight">New Event</span>
           </button>
           <button
@@ -2439,22 +2908,13 @@ export const CalendarWindow = () => {
               openComposerAtSlot(contextMenu.dateKey, contextMenu.hour, 'Reminder', 'reminder')
               setContextMenu(null)
             }}
-            className="w-full h-8 px-2 rounded-lg text-left hover:bg-white/10 flex items-center gap-2"
+            className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
           >
-            <BellRing size={13} className="text-gray-200" />
-            <span className="text-[20px] leading-none text-gray-200" aria-hidden>
-              ·
-            </span>
+            <BellRing size={14} className="shrink-0 text-gray-500" />
             <span className="text-[14px] font-medium tracking-tight">New Reminder</span>
           </button>
-          <button
-            disabled
-            className="w-full h-8 px-2 rounded-lg text-left text-white/35 flex items-center gap-2 cursor-not-allowed"
-          >
-            <ClipboardPaste size={13} />
-            <span className="text-[20px] leading-none" aria-hidden>
-              ·
-            </span>
+          <button disabled className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-400 cursor-not-allowed">
+            <ClipboardPaste size={14} className="shrink-0 text-gray-400" />
             <span className="text-[14px] font-medium tracking-tight">Paste Event</span>
           </button>
         </div>
@@ -2462,7 +2922,7 @@ export const CalendarWindow = () => {
 
       {listContextMenu && (
         <div
-          className="fixed z-210 min-w-38 rounded-xl border border-white/20 bg-[#1f2530]/95 text-white shadow-2xl backdrop-blur-md p-1.5"
+          className="fixed z-50 min-w-44 overflow-hidden rounded-xl border border-gray-200 bg-white py-1 shadow-xl"
           style={{
             left: Math.max(8, Math.min(listContextMenu.x, window.innerWidth - 168)),
             top: Math.max(8, Math.min(listContextMenu.y, window.innerHeight - 74)),
@@ -2481,12 +2941,9 @@ export const CalendarWindow = () => {
               }
               setListContextMenu(null)
             }}
-            className="w-full h-8 px-2 rounded-lg text-left hover:bg-white/10 flex items-center gap-2"
+            className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
           >
-            <CalendarPlus size={13} className="text-gray-200" />
-            <span className="text-[20px] leading-none text-gray-200" aria-hidden>
-              ·
-            </span>
+            <CalendarPlus size={14} className="shrink-0 text-gray-500" />
             <span className="text-[14px] font-medium tracking-tight">
               Edit {listContextMenu.kind === 'event' ? 'Event' : 'Reminder'}
             </span>
@@ -2509,12 +2966,9 @@ export const CalendarWindow = () => {
                 }
                 setListContextMenu(null)
               }}
-              className="w-full h-8 px-2 rounded-lg text-left hover:bg-white/10 flex items-center gap-2"
+              className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
             >
-              <BellRing size={13} className="text-gray-200" />
-              <span className="text-[20px] leading-none text-gray-200" aria-hidden>
-                ·
-              </span>
+              <BellRing size={14} className="shrink-0 text-gray-500" />
               <span className="text-[14px] font-medium tracking-tight">
                 Mark {events.find((item) => item.id === baseEventId(listContextMenu.id))?.status === 'done' ? 'Planned' : 'Done'}
               </span>
@@ -2526,12 +2980,9 @@ export const CalendarWindow = () => {
                 if (reminder) void toggleReminderDone(reminder)
                 setListContextMenu(null)
               }}
-              className="w-full h-8 px-2 rounded-lg text-left hover:bg-white/10 flex items-center gap-2"
+              className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
             >
-              <BellRing size={13} className="text-gray-200" />
-              <span className="text-[20px] leading-none text-gray-200" aria-hidden>
-                ·
-              </span>
+                <BellRing size={14} className="shrink-0 text-gray-500" />
               <span className="text-[14px] font-medium tracking-tight">
                 Toggle Done
               </span>
@@ -2546,12 +2997,9 @@ export const CalendarWindow = () => {
               }
               setListContextMenu(null)
             }}
-            className="w-full h-8 px-2 rounded-lg text-left hover:bg-white/10 flex items-center gap-2 text-red-300"
+            className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50"
           >
-            <Trash2 size={13} />
-            <span className="text-[20px] leading-none" aria-hidden>
-              ·
-            </span>
+            <Trash2 size={14} className="shrink-0 text-red-500" />
             <span className="text-[14px] font-medium tracking-tight">
               Delete {listContextMenu.kind === 'event' ? 'Event' : 'Reminder'}
             </span>

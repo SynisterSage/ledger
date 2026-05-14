@@ -1800,7 +1800,7 @@ export const ExpandedSidebar = ({
 
       {todayHelpVisible && createPortal(
         <div
-          className="pointer-events-none fixed z-[280] w-48 -translate-x-1/2 -translate-y-full rounded-md border border-gray-200 bg-white px-2 py-1.5 text-[10px] leading-4 text-gray-700 shadow-lg"
+          className="pointer-events-none fixed z-280 w-48 -translate-x-1/2 -translate-y-full rounded-md border border-gray-200 bg-white px-2 py-1.5 text-[10px] leading-4 text-gray-700 shadow-lg"
           style={{
             left: `${Math.max(96, Math.min(todayHelpPosition.x, window.innerWidth - 96))}px`,
             top: `${Math.max(24, todayHelpPosition.y)}px`,

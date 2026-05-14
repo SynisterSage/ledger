@@ -280,6 +280,7 @@ type ModuleFocusPayload = {
   focusProjectId?: string | null
   focusNoteId?: string | null
   focusTaskId?: string | null
+  focusContext?: string | null
 }
 type Rect = { x: number; y: number; width: number; height: number }
 type DockSide = 'left' | 'right'
@@ -1705,7 +1706,8 @@ function sendModuleFocus(
   focusDate?: string | null,
   focusProjectId?: string | null,
   focusNoteId?: string | null,
-  focusTaskId?: string | null
+  focusTaskId?: string | null,
+  focusContext?: string | null
 ) {
   const existing = moduleWins.get(kind)
   if (existing && !existing.isDestroyed()) {
@@ -1721,6 +1723,9 @@ function sendModuleFocus(
     if (focusTaskId) {
       existing.webContents.send('module:focus-task', { kind, focusTaskId })
     }
+    if (focusContext) {
+      existing.webContents.send('module:focus-context', { kind, focusContext })
+    }
   }
 }
 
@@ -1729,13 +1734,14 @@ function openModuleWindow(
   focusDate?: string | null,
   focusProjectId?: string | null,
   focusNoteId?: string | null,
-  focusTaskId?: string | null
+  focusTaskId?: string | null,
+  focusContext?: string | null
 ) {
   const existing = moduleWins.get(kind)
   if (existing && !existing.isDestroyed()) {
     existing.show()
     existing.focus()
-    sendModuleFocus(kind, focusDate, focusProjectId, focusNoteId, focusTaskId)
+    sendModuleFocus(kind, focusDate, focusProjectId, focusNoteId, focusTaskId, focusContext)
     return
   }
 
@@ -1819,13 +1825,14 @@ function openModuleWindow(
   const focusProjectQuery = focusProjectId ? `&focusProjectId=${encodeURIComponent(focusProjectId)}` : ''
   const focusNoteQuery = focusNoteId ? `&focusNoteId=${encodeURIComponent(focusNoteId)}` : ''
   const focusTaskQuery = focusTaskId ? `&focusTaskId=${encodeURIComponent(focusTaskId)}` : ''
+  const focusContextQuery = focusContext ? `&focusContext=${encodeURIComponent(focusContext)}` : ''
   moduleWin.webContents.once('did-finish-load', () => {
     moduleWin.show()
     moduleWin.focus()
-    sendModuleFocus(kind, focusDate, focusProjectId, focusNoteId, focusTaskId)
+    sendModuleFocus(kind, focusDate, focusProjectId, focusNoteId, focusTaskId, focusContext)
   })
   try {
-    const moduleUrl = getRendererUrl(`?window=module&module=${kind}${focusDateQuery}${focusProjectQuery}${focusNoteQuery}${focusTaskQuery}`)
+    const moduleUrl = getRendererUrl(`?window=module&module=${kind}${focusDateQuery}${focusProjectQuery}${focusNoteQuery}${focusTaskQuery}${focusContextQuery}`)
     moduleWin.loadURL(moduleUrl)
   } catch (err) {
     console.error('[electron] Error while loading module renderer:', err)
@@ -1989,6 +1996,7 @@ ipcMain.handle('window:toggle-module', (_event, payload: ModuleWindowKind | Modu
   const focusProjectId = typeof payload === 'string' ? undefined : payload.focusProjectId
   const focusNoteId = typeof payload === 'string' ? undefined : payload.focusNoteId
   const focusTaskId = typeof payload === 'string' ? undefined : payload.focusTaskId
+  const focusContext = typeof payload === 'string' ? undefined : payload.focusContext
   const existing = moduleWins.get(kind)
 
   if (existing && !existing.isDestroyed()) {
@@ -1998,7 +2006,7 @@ ipcMain.handle('window:toggle-module', (_event, payload: ModuleWindowKind | Modu
       }
       existing.show()
       existing.focus()
-      sendModuleFocus(kind, focusDate, focusProjectId, focusNoteId, focusTaskId)
+      sendModuleFocus(kind, focusDate, focusProjectId, focusNoteId, focusTaskId, focusContext)
       return
     }
 
@@ -2018,7 +2026,7 @@ ipcMain.handle('window:toggle-module', (_event, payload: ModuleWindowKind | Modu
     return
   }
 
-  openModuleWindow(kind, focusDate, focusProjectId, focusNoteId, focusTaskId)
+  openModuleWindow(kind, focusDate, focusProjectId, focusNoteId, focusTaskId, focusContext)
 })
 
 ipcMain.handle('window:close-module', (_event, kind: ModuleWindowKind) => {

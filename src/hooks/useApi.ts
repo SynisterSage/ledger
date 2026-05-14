@@ -216,11 +216,11 @@ export const useApi = () => {
 
     // Calendars
     getCalendars: () => request('/api/calendars'),
-    createCalendar: (name: string, color?: string) => request('/api/calendars', {
+    createCalendar: (name: string, color?: string, is_visible?: boolean) => request('/api/calendars', {
       method: 'POST',
-      body: JSON.stringify({ name, color }),
+      body: JSON.stringify({ name, color, is_visible }),
     }),
-    updateCalendar: (id: string, update: { name?: string; color?: string }) => request(`/api/calendars/${id}`, {
+    updateCalendar: (id: string, update: { name?: string; color?: string; is_visible?: boolean }) => request(`/api/calendars/${id}`, {
       method: 'PATCH',
       body: JSON.stringify(update),
     }),
@@ -237,8 +237,10 @@ export const useApi = () => {
     createEvent: (payload: {
       title: string
       start_at: string
-      end_at: string
+      end_at?: string | null
       calendar_id?: string
+      project_id?: string | null
+      note_id?: string | null
       color?: string
       recurrence_rule?: string
       notes?: string | null
@@ -263,6 +265,9 @@ export const useApi = () => {
       title: string
       remind_at: string
       calendar_id?: string
+      project_id?: string | null
+      note_id?: string | null
+      notes?: string | null
       color?: string
       is_done?: boolean
     }) => request('/api/reminders', {

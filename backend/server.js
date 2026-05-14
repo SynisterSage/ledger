@@ -1957,9 +1957,10 @@ app.get('/api/calendars', authMiddleware, rateLimit('read'), async (req, res) =>
     const workspaceId = await resolveWorkspaceIdForRequest(req)
     const { data, error } = await supabase
       .from('calendars')
-      .select('id, name, color, workspace_id, is_personal')
+      .select('id, name, color, workspace_id, is_personal, is_visible, created_by')
       .eq('workspace_id', workspaceId)
       .order('is_personal', { ascending: false })
+      .order('name', { ascending: true })
 
     if (error) throw error
     res.json(data ?? [])
@@ -1978,12 +1979,14 @@ app.post('/api/calendars', authMiddleware, rateLimit('write'), async (req, res) 
       .insert({
         workspace_id: workspaceId,
         owner_id: req.authUser.id,
+        created_by: req.authUser.id,
         name,
         color: req.body?.color || '#3B82F6',
         is_personal: Boolean(req.body?.is_personal ?? false),
         is_default: Boolean(req.body?.is_default ?? false),
+        is_visible: Boolean(req.body?.is_visible ?? true),
       })
-      .select('id, name, color, workspace_id, is_personal')
+      .select('id, name, color, workspace_id, is_personal, is_visible, created_by')
       .single()
 
     if (error) throw error
@@ -2004,12 +2007,13 @@ app.patch('/api/calendars/:id', authMiddleware, rateLimit('write'), async (req, 
     const update = {}
     if (req.body?.name !== undefined) update.name = String(req.body.name).trim()
     if (req.body?.color !== undefined) update.color = String(req.body.color)
+    if (req.body?.is_visible !== undefined) update.is_visible = Boolean(req.body.is_visible)
 
     const { data, error } = await supabase
       .from('calendars')
       .update(update)
       .eq('id', req.params.id)
-      .select('id, name, color, workspace_id, is_personal')
+      .select('id, name, color, workspace_id, is_personal, is_visible, created_by')
       .single()
 
     if (error) throw error
@@ -2024,7 +2028,7 @@ app.get('/api/events', authMiddleware, rateLimit('read'), async (req, res) => {
     const workspaceId = await resolveWorkspaceIdForRequest(req)
     let query = supabase
       .from('events')
-      .select('id, title, start_at, end_at, calendar_id, color, status, recurrence_rule, created_at')
+      .select('id, title, start_at, end_at, calendar_id, color, status, recurrence_rule, notes, project_id, note_id, created_at')
       .eq('workspace_id', workspaceId)
 
     if (req.query?.startDate) {
@@ -2075,6 +2079,9 @@ app.post('/api/events', authMiddleware, rateLimit('write'), quotaGuard('events')
     }
 
     const calendarId = req.body?.calendar_id || (await getCalendarId(workspaceId, req.authUser.id))
+    const startAt = String(req.body?.start_at ?? '')
+    const parsedStartAt = startAt ? new Date(startAt) : null
+    const endAt = req.body?.end_at ? String(req.body.end_at) : parsedStartAt ? new Date(parsedStartAt.getTime() + 60 * 60 * 1000).toISOString() : null
 
     const { data, error } = await supabase
       .from('events')
@@ -2082,17 +2089,21 @@ app.post('/api/events', authMiddleware, rateLimit('write'), quotaGuard('events')
         workspace_id: workspaceId,
         calendar_id: calendarId,
         created_by: req.authUser.id,
+        updated_by: req.authUser.id,
         title,
         start_at: req.body?.start_at,
-        end_at: req.body?.end_at,
+        end_at: endAt,
         color: req.body?.color || null,
-        status: req.body?.status || 'NotStarted',
-        recurrence_rule: req.body?.recurrence_rule || 'none',
+        status: req.body?.status || 'planned',
+        recurrence_rule: req.body?.recurrence_rule || null,
         notes: req.body?.notes || null,
         location: req.body?.location || null,
         all_day: Boolean(req.body?.all_day ?? false),
+        project_id: req.body?.project_id || null,
+        linked_project_id: req.body?.project_id || null,
+        note_id: req.body?.note_id || null,
       })
-      .select('id, title, start_at, end_at, calendar_id, color, status, recurrence_rule')
+      .select('id, title, start_at, end_at, calendar_id, color, status, recurrence_rule, notes, project_id, note_id')
       .single()
 
     if (error) throw error
@@ -2111,15 +2122,37 @@ app.patch('/api/events/:id', authMiddleware, rateLimit('write'), async (req, res
     }
 
     const update = {}
-    for (const key of ['title', 'start_at', 'end_at', 'calendar_id', 'color', 'status', 'recurrence_rule', 'notes', 'location']) {
+    for (const key of ['title', 'start_at', 'end_at', 'calendar_id', 'color', 'status', 'recurrence_rule', 'notes', 'location', 'note_id']) {
       if (req.body?.[key] !== undefined) update[key] = req.body[key]
     }
+    if (req.body?.project_id !== undefined) {
+      const projectId = req.body.project_id ? String(req.body.project_id) : null
+      if (projectId) {
+        const projectAllowed = await ensureWorkspaceResource('projects', projectId, workspaceId)
+        if (!projectAllowed) {
+          return res.status(404).json({ error: 'Project not found' })
+        }
+      }
+      update.project_id = projectId
+      update.linked_project_id = projectId
+    }
+    if (req.body?.note_id !== undefined) {
+      const noteId = req.body.note_id ? String(req.body.note_id) : null
+      if (noteId) {
+        const noteAllowed = await ensureWorkspaceResource('notes', noteId, workspaceId)
+        if (!noteAllowed) {
+          return res.status(404).json({ error: 'Note not found' })
+        }
+      }
+      update.note_id = noteId
+    }
+    update.updated_by = req.authUser.id
 
     const { data, error } = await supabase
       .from('events')
       .update(update)
       .eq('id', req.params.id)
-      .select('id, title, start_at, end_at, calendar_id, color, status, recurrence_rule')
+      .select('id, title, start_at, end_at, calendar_id, color, status, recurrence_rule, notes, project_id, note_id')
       .single()
 
     if (error) throw error
@@ -2280,7 +2313,7 @@ app.get('/api/reminders', authMiddleware, rateLimit('read'), async (req, res) =>
     const { data, error } = await withReminderTable((table) =>
       supabase
         .from(table)
-        .select('id, title, remind_at, calendar_id, color, is_done')
+        .select('id, title, remind_at, calendar_id, color, is_done, notes, project_id, note_id')
         .eq('workspace_id', workspaceId)
         .order('remind_at', { ascending: true })
     )
@@ -2301,17 +2334,34 @@ app.post('/api/reminders', authMiddleware, rateLimit('write'), quotaGuard('remin
       workspace_id: workspaceId,
       calendar_id: calendarId,
       created_by: req.authUser.id,
+      updated_by: req.authUser.id,
       title: String(req.body?.title ?? 'Reminder').trim() || 'Reminder',
       remind_at: req.body?.remind_at,
       color: req.body?.color || null,
       is_done: Boolean(req.body?.is_done ?? false),
+      notes: req.body?.notes || null,
+      project_id: req.body?.project_id || null,
+      note_id: req.body?.note_id || null,
+    }
+
+    if (insertPayload.project_id) {
+      const projectAllowed = await ensureWorkspaceResource('projects', String(insertPayload.project_id), workspaceId)
+      if (!projectAllowed) {
+        return res.status(404).json({ error: 'Project not found' })
+      }
+    }
+    if (insertPayload.note_id) {
+      const noteAllowed = await ensureWorkspaceResource('notes', String(insertPayload.note_id), workspaceId)
+      if (!noteAllowed) {
+        return res.status(404).json({ error: 'Note not found' })
+      }
     }
 
     const { data, error } = await withReminderTable((table) =>
       supabase
         .from(table)
         .insert(insertPayload)
-        .select('id, title, remind_at, calendar_id, color, is_done')
+        .select('id, title, remind_at, calendar_id, color, is_done, notes, project_id, note_id')
         .single()
     )
 
@@ -2333,16 +2383,37 @@ app.patch('/api/reminders/:id', authMiddleware, rateLimit('write'), async (req, 
     }
 
     const update = {}
-    for (const key of ['title', 'remind_at', 'calendar_id', 'color', 'is_done']) {
+    for (const key of ['title', 'remind_at', 'calendar_id', 'color', 'is_done', 'notes', 'note_id']) {
       if (req.body?.[key] !== undefined) update[key] = req.body[key]
     }
+    if (req.body?.project_id !== undefined) {
+      const projectId = req.body.project_id ? String(req.body.project_id) : null
+      if (projectId) {
+        const projectAllowed = await ensureWorkspaceResource('projects', projectId, workspaceId)
+        if (!projectAllowed) {
+          return res.status(404).json({ error: 'Project not found' })
+        }
+      }
+      update.project_id = projectId
+    }
+    if (req.body?.note_id !== undefined) {
+      const noteId = req.body.note_id ? String(req.body.note_id) : null
+      if (noteId) {
+        const noteAllowed = await ensureWorkspaceResource('notes', noteId, workspaceId)
+        if (!noteAllowed) {
+          return res.status(404).json({ error: 'Note not found' })
+        }
+      }
+      update.note_id = noteId
+    }
+    update.updated_by = req.authUser.id
 
     const { data, error } = await withReminderTable((table) =>
       supabase
         .from(table)
         .update(update)
         .eq('id', req.params.id)
-        .select('id, title, remind_at, calendar_id, color, is_done')
+        .select('id, title, remind_at, calendar_id, color, is_done, notes, project_id, note_id')
         .single()
     )
 

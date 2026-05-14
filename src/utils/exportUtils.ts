@@ -39,6 +39,92 @@ const downloadFile = (content: Blob | string, filename: string) => {
   URL.revokeObjectURL(url)
 }
 
+const hasUnsupportedColorFunction = (value: string) =>
+  /oklch\(|oklab\(|\boklab\b|lch\(|lab\(|color\(|color-mix\(|var\(/i.test(value)
+
+const sanitizeInlineStyle = (element: Element) => {
+  const htmlElement = element as HTMLElement
+  const style = htmlElement.style
+  if (!style) return
+
+  for (let index = style.length - 1; index >= 0; index -= 1) {
+    const property = style.item(index)
+    const value = style.getPropertyValue(property)
+    if (property.startsWith('--') || hasUnsupportedColorFunction(value)) {
+      style.removeProperty(property)
+    }
+  }
+}
+
+const buildInlineStyleSnapshot = (sourceRoot: HTMLElement) => {
+  const wrapper = document.createElement('div')
+  wrapper.style.position = 'fixed'
+  wrapper.style.left = '-20000px'
+  wrapper.style.top = '0'
+  wrapper.style.padding = '0'
+  wrapper.style.margin = '0'
+  wrapper.style.background = '#ffffff'
+  wrapper.style.zIndex = '-1'
+
+  const sourceToClone = new Map<Element, Element>()
+
+  const cloneTree = (source: Node): Node => {
+    if (source.nodeType === Node.TEXT_NODE) {
+      return document.createTextNode(source.textContent ?? '')
+    }
+
+    if (source.nodeType !== Node.ELEMENT_NODE) {
+      return document.createTextNode('')
+    }
+
+    const sourceElement = source as Element
+    const clone = sourceElement.cloneNode(false) as Element
+    clone.removeAttribute('class')
+    clone.removeAttribute('style')
+    sourceToClone.set(sourceElement, clone)
+    for (const child of Array.from(source.childNodes)) {
+      clone.appendChild(cloneTree(child))
+    }
+    return clone
+  }
+
+  const cloneRoot = cloneTree(sourceRoot) as HTMLElement
+  wrapper.appendChild(cloneRoot)
+  document.body.appendChild(wrapper)
+
+  const applyComputedStyles = (source: Element) => {
+    const clone = sourceToClone.get(source) as HTMLElement | SVGElement | undefined
+    if (!clone) return
+    const computed = window.getComputedStyle(source as HTMLElement)
+
+    for (const property of Array.from(computed)) {
+      // Skip CSS custom props (Tailwind vars often contain oklch()).
+      if (property.startsWith('--')) continue
+      const value = computed.getPropertyValue(property)
+      const priority = computed.getPropertyPriority(property)
+      // html2canvas currently fails on modern color functions in declarations.
+      if (!value || hasUnsupportedColorFunction(value)) continue
+      if (value) {
+        ;(clone as HTMLElement).style.setProperty(property, value, priority)
+      }
+    }
+    sanitizeInlineStyle(clone)
+
+    for (const child of Array.from(source.children)) {
+      applyComputedStyles(child)
+    }
+  }
+
+  applyComputedStyles(sourceRoot)
+
+  return {
+    element: cloneRoot,
+    cleanup: () => {
+      wrapper.remove()
+    },
+  }
+}
+
 /**
  * Export regular notes in various formats
  */
@@ -84,14 +170,15 @@ ${cleanContent}`
       const margin = 15
 
       // Title
-      pdf.setFont(undefined, 'bold')
+      pdf.setFont('helvetica', 'bold')
       pdf.setFontSize(18)
-      const titleLines = pdf.splitTextToSize(note.title, pageWidth - margin * 2)
+      const titleLinesRaw = pdf.splitTextToSize(note.title, pageWidth - margin * 2)
+      const titleLines = Array.isArray(titleLinesRaw) ? titleLinesRaw : [String(titleLinesRaw)]
       pdf.text(titleLines, margin, margin)
 
       // Metadata
       let yPosition = margin + titleLines.length * 7 + 5
-      pdf.setFont(undefined, 'normal')
+      pdf.setFont('helvetica', 'normal')
       pdf.setFontSize(10)
       pdf.setTextColor(100)
       pdf.text(`Date: ${note.date || 'Not set'}`, margin, yPosition)
@@ -102,8 +189,18 @@ ${cleanContent}`
       // Content
       pdf.setTextColor(0)
       pdf.setFontSize(11)
-      const contentLines = pdf.splitTextToSize(cleanContent, pageWidth - margin * 2)
-      pdf.text(contentLines, margin, yPosition)
+      const contentLinesRaw = pdf.splitTextToSize(cleanContent, pageWidth - margin * 2)
+      const contentLines = Array.isArray(contentLinesRaw) ? contentLinesRaw : [String(contentLinesRaw)]
+      const lineHeight = 5
+
+      for (const line of contentLines) {
+        if (yPosition > pageHeight - margin) {
+          pdf.addPage()
+          yPosition = margin
+        }
+        pdf.text(line, margin, yPosition)
+        yPosition += lineHeight
+      }
 
       pdf.save(filename)
     }
@@ -135,14 +232,42 @@ export const exportMindMap = async (mindMap: ExportMindMap, format: ExportFormat
       const textContent = `${mindMap.title}\n\n${textNodes.join('\n')}`
       downloadFile(textContent, `${filename}.txt`)
     } else {
-      // Capture the element directly without cloning to preserve SVG/Canvas rendering
-      const canvas = await html2canvas(mindMap.element, {
-        scale: 2,
-        backgroundColor: '#ffffff',
-        logging: false,
-        useCORS: true,
-        allowTaint: true,
-      })
+      // Snapshot with inline computed styles avoids html2canvas failures on unsupported
+      // modern CSS color functions (e.g. oklch) coming from global stylesheets.
+      const snapshot = buildInlineStyleSnapshot(mindMap.element)
+      let canvas: HTMLCanvasElement
+      try {
+        canvas = await html2canvas(snapshot.element, {
+          scale: 2,
+          backgroundColor: '#ffffff',
+          logging: false,
+          useCORS: true,
+          allowTaint: true,
+          onclone: (clonedDocument) => {
+            // Remove external styles so html2canvas only sees the safe inline snapshot.
+            clonedDocument.querySelectorAll('style,link[rel="stylesheet"]').forEach((node) => node.remove())
+            clonedDocument.querySelectorAll('*').forEach((node) => {
+              node.removeAttribute('class')
+              sanitizeInlineStyle(node)
+            })
+
+            const style = clonedDocument.createElement('style')
+            style.textContent = `
+              * {
+                box-sizing: border-box;
+              }
+              html, body {
+                margin: 0;
+                padding: 0;
+                background: #ffffff;
+              }
+            `
+            clonedDocument.head.appendChild(style)
+          },
+        })
+      } finally {
+        snapshot.cleanup()
+      }
 
       if (format === 'png') {
         // Export as PNG - wait for blob to be ready
@@ -161,39 +286,34 @@ export const exportMindMap = async (mindMap: ExportMindMap, format: ExportFormat
           }, 'image/png')
         })
       } else if (format === 'pdf') {
-        // Export as PDF
         const imgData = canvas.toDataURL('image/png')
-        const imgWidth = 210 // A4 width in mm
-        const imgHeight = (canvas.height * imgWidth) / canvas.width
-
         const pdf = new jsPDF({
-          orientation: imgHeight > imgWidth ? 'portrait' : 'landscape',
+          orientation: canvas.width >= canvas.height ? 'landscape' : 'portrait',
           unit: 'mm',
           format: 'a4',
         })
 
-        const pageHeight = pdf.internal.pageSize.getHeight()
         const pageWidth = pdf.internal.pageSize.getWidth()
-        let heightLeft = imgHeight
-        let position = 0
+        const pageHeight = pdf.internal.pageSize.getHeight()
+        const margin = 10
+        const maxWidth = pageWidth - margin * 2
+        const maxHeight = pageHeight - margin * 2 - 10
+
+        const widthScale = maxWidth / canvas.width
+        const heightScale = maxHeight / canvas.height
+        const scale = Math.min(widthScale, heightScale, 1)
+        const renderWidth = canvas.width * scale
+        const renderHeight = canvas.height * scale
 
         // Add title
-        pdf.setFont(undefined, 'bold')
+        pdf.setFont('helvetica', 'bold')
         pdf.setFontSize(14)
-        pdf.text(mindMap.title, 10, 10)
+        pdf.text(mindMap.title, margin, 8)
 
-        // Add image with pagination
-        position = 25
-        while (heightLeft >= 0) {
-          const sourceY = position - 25
-          pdf.addImage(imgData, 'PNG', 0, position, pageWidth, imgHeight)
-          heightLeft -= pageHeight
-          position += pageHeight
-          if (heightLeft > 0) {
-            pdf.addPage()
-            position = 0
-          }
-        }
+        // Fit image on page consistently to avoid pagination glitches.
+        const x = margin + (maxWidth - renderWidth) / 2
+        const y = 14 + (maxHeight - renderHeight) / 2
+        pdf.addImage(imgData, 'PNG', x, y, renderWidth, renderHeight)
 
         pdf.save(`${filename}.pdf`)
       }

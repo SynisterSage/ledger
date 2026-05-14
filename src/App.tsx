@@ -35,6 +35,7 @@ type ModuleKind = 'calendar' | 'notes' | 'projects' | 'dashboard' | 'settings' |
 const windowParams = new URLSearchParams(window.location.search)
 const isModuleWindow = windowParams.get('window') === 'module'
 const moduleKind = (windowParams.get('module') as ModuleKind) ?? null
+const moduleFocusContext = windowParams.get('focusContext')?.trim() ?? ''
 function AuthStatusScreen({ title, subtitle }: { title: string; subtitle: string }) {
   return (
     <div className="relative min-h-screen overflow-hidden bg-transparent p-3 text-gray-900">
@@ -977,7 +978,7 @@ function AppShell() {
     }
 
     if (moduleKind === 'quick-task' || moduleKind === 'quick-note' || moduleKind === 'quick-event') {
-      return <QuickCaptureWindow kind={moduleKind} />
+      return <QuickCaptureWindow kind={moduleKind} context={moduleFocusContext || undefined} />
     }
 
     return (
