@@ -1,11 +1,15 @@
-import { CalendarDays, ChevronLeft, ChevronRight, ChevronDown, X, BellRing, ClipboardPaste, CalendarPlus, Trash2, Folder, Plus } from 'lucide-react'
+import { CalendarDays, ChevronLeft, ChevronRight, ChevronDown, X, BellRing, ClipboardPaste, CalendarPlus, Trash2, Folder, Plus, Loader2 } from 'lucide-react'
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
+import * as rruleModule from 'rrule'
 import { useAuthContext } from '../../context/AuthContext'
 import { modulePaneSizing, clampPaneWidth, getPaneWidthForViewport } from '../../config/modulePaneSizes'
 import { useWorkspaceContext } from '../../context/WorkspaceContext'
 import { useApi } from '../../hooks/useApi'
 import { ModuleWindowHeader } from '../Common/ModuleWindowHeader'
 import { useViewportWidth } from '../../hooks/useViewportWidth'
+
+// Get RRule from the module - handles both ESM and CommonJS
+const RRule = (rruleModule as any).RRule || (rruleModule as any).default?.RRule || rruleModule
 
 type CalendarRow = {
   id: string
@@ -224,11 +228,233 @@ const parseIcsDate = (value: string): Date | null => {
   return null
 }
 
+const recurrenceImportHorizon = (start: Date) => {
+  const end = new Date(start)
+  end.setFullYear(end.getFullYear() + 1)
+  return end
+}
+
+// RRule frequency constants
+const RRULE_FREQ = {
+  DAILY: 2,
+  WEEKLY: 3,
+  MONTHLY: 4,
+  YEARLY: 5,
+}
+
+const rruleFrequencyMap: Record<string, number> = {
+  SECONDLY: 0,
+  MINUTELY: 1,
+  HOURLY: 2,
+  DAILY: RRULE_FREQ.DAILY,
+  WEEKLY: RRULE_FREQ.WEEKLY,
+  MONTHLY: RRULE_FREQ.MONTHLY,
+  YEARLY: RRULE_FREQ.YEARLY,
+}
+
+// Get actual RRule weekday constant if available
+const getRRuleWeekday = (day: string, ordinal: number | null) => {
+  const dayMap: Record<string, string> = {
+    MO: 'MO',
+    TU: 'TU',
+    WE: 'WE',
+    TH: 'TH',
+    FR: 'FR',
+    SA: 'SA',
+    SU: 'SU',
+  }
+  
+  const dayStr = dayMap[day]
+  if (!dayStr) return null
+  
+  // Try to access the real RRule weekday constant
+  const weekdayConst = (RRule as any)[dayStr]
+  if (!weekdayConst) return null
+  
+  if (ordinal) {
+    return typeof weekdayConst.nth === 'function' ? weekdayConst.nth(ordinal) : weekdayConst
+  }
+  return weekdayConst
+}
+
+const rruleWeekdayMap: Record<string, any> = {
+  MO: { index: 0, nth: (n: number) => ({ index: 0, nth_val: n }) },
+  TU: { index: 1, nth: (n: number) => ({ index: 1, nth_val: n }) },
+  WE: { index: 2, nth: (n: number) => ({ index: 2, nth_val: n }) },
+  TH: { index: 3, nth: (n: number) => ({ index: 3, nth_val: n }) },
+  FR: { index: 4, nth: (n: number) => ({ index: 4, nth_val: n }) },
+  SA: { index: 5, nth: (n: number) => ({ index: 5, nth_val: n }) },
+  SU: { index: 6, nth: (n: number) => ({ index: 6, nth_val: n }) },
+}
+
+const parseRRuleValue = (value: string, dtstart: Date) => {
+  const options: Record<string, unknown> = { dtstart }
+
+  for (const part of value.split(';')) {
+    const [rawKey, rawValue] = part.split('=')
+    const key = rawKey?.trim().toUpperCase()
+    const partValue = rawValue?.trim() ?? ''
+    if (!key || !partValue) continue
+
+    if (key === 'FREQ') {
+      const freq = rruleFrequencyMap[partValue.toUpperCase()]
+      if (typeof freq === 'number') {
+        options.freq = freq
+      }
+      continue
+    }
+
+    if (key === 'INTERVAL') {
+      const interval = Number(partValue)
+      if (Number.isFinite(interval) && interval > 0) {
+        options.interval = interval
+      }
+      continue
+    }
+
+    if (key === 'COUNT') {
+      const count = Number(partValue)
+      if (Number.isFinite(count) && count > 0) {
+        options.count = count
+      }
+      continue
+    }
+
+    if (key === 'UNTIL') {
+      const until = parseIcsDate(partValue)
+      if (until) {
+        options.until = until
+      }
+      continue
+    }
+
+    if (key === 'BYDAY') {
+      const byweekday = partValue
+        .split(',')
+        .map((token) => token.trim().toUpperCase())
+        .map((token) => {
+          const match = token.match(/^([+-]?\d+)?(MO|TU|WE|TH|FR|SA|SU)$/)
+          if (!match) return null
+          const ordinal = match[1] ? Number(match[1]) : null
+          // Try to get the real RRule weekday constant first
+          const rruleWeekday = getRRuleWeekday(match[2], ordinal)
+          if (rruleWeekday) return rruleWeekday
+          // Fallback to mock object
+          const weekday = rruleWeekdayMap[match[2]]
+          if (!weekday) return null
+          return ordinal ? weekday.nth(ordinal) : weekday
+        })
+        .filter(Boolean)
+
+      if (byweekday.length > 0) {
+        options.byweekday = byweekday
+      }
+      continue
+    }
+
+    if (key === 'BYMONTHDAY') {
+      const bymonthday = partValue
+        .split(',')
+        .map((token) => Number(token.trim()))
+        .filter((token) => Number.isFinite(token) && token !== 0)
+
+      if (bymonthday.length > 0) {
+        options.bymonthday = bymonthday
+      }
+      continue
+    }
+
+    if (key === 'BYMONTH') {
+      const bymonth = partValue
+        .split(',')
+        .map((token) => Number(token.trim()))
+        .filter((token) => Number.isFinite(token) && token >= 1 && token <= 12)
+
+      if (bymonth.length > 0) {
+        options.bymonth = bymonth
+      }
+      continue
+    }
+
+    if (key === 'WKST') {
+      const dayStr = partValue.toUpperCase()
+      const rruleWeekday = getRRuleWeekday(dayStr, null)
+      if (rruleWeekday) {
+        options.wkst = rruleWeekday
+      } else {
+        const wkst = rruleWeekdayMap[dayStr]
+        if (wkst) {
+          options.wkst = wkst
+        }
+      }
+    }
+  }
+
+  if (typeof options.freq !== 'number') return null
+  return options
+}
+
+const expandRecurringIcsEvent = (
+  baseEvent: Omit<ParsedIcsEvent, 'startAt' | 'endAt'>,
+  start: Date,
+  end: Date,
+  rruleValue: string,
+): ParsedIcsEvent[] => {
+  const durationMs = Math.max(0, end.getTime() - start.getTime())
+  const options = parseRRuleValue(rruleValue, start)
+  if (!options) {
+    console.warn('[expandRecurringIcsEvent] Failed to parse RRULE:', rruleValue)
+    return [
+      {
+        ...baseEvent,
+        startAt: start.toISOString(),
+        endAt: end.toISOString(),
+      },
+    ]
+  }
+
+  try {
+    const rule = new RRule(options as ConstructorParameters<typeof RRule>[0])
+    const hasExplicitLimit = Boolean(options.count || options.until)
+    const occurrences = hasExplicitLimit ? rule.all() : rule.between(start, recurrenceImportHorizon(start), true)
+
+    console.log('[expandRecurringIcsEvent] Expanded:', { rruleValue, occurrenceCount: occurrences.length, hasExplicitLimit })
+
+    if (occurrences.length === 0) {
+      return [
+        {
+          ...baseEvent,
+          startAt: start.toISOString(),
+          endAt: end.toISOString(),
+        },
+      ]
+    }
+
+    return occurrences.map((occurrence: Date) => ({
+      ...baseEvent,
+      startAt: occurrence.toISOString(),
+      endAt: new Date(occurrence.getTime() + durationMs).toISOString(),
+    }))
+  } catch (error) {
+    // Fallback if RRule fails
+    console.warn('RRULE expansion failed:', error)
+    return [
+      {
+        ...baseEvent,
+        startAt: start.toISOString(),
+        endAt: end.toISOString(),
+      },
+    ]
+  }
+}
+
 const parseIcsEvents = (rawIcs: string): ParsedIcsEvent[] => {
   const text = unfoldIcsLines(rawIcs)
   const out: ParsedIcsEvent[] = []
+  let blockCount = 0
 
   const parseBlock = (section: string, blockType: 'VEVENT' | 'VTODO' | 'VJOURNAL') => {
+    blockCount++
     const lines = section.split('\n').map((l) => l.trim()).filter(Boolean)
     const props: Record<string, string[]> = {}
 
@@ -257,7 +483,10 @@ const parseIcsEvents = (rawIcs: string): ParsedIcsEvent[] => {
 
     const start = parseIcsDate(dtStart || due || dtStamp)
     let end = parseIcsDate(dtEnd || due)
-    if (!start) return
+    if (!start) {
+      console.warn(`[parseIcsEvents] Block ${blockCount} skipped: no valid start date`, { dtStart, due, dtStamp })
+      return
+    }
     if (!end) {
       end = new Date(start)
       const isDateOnly = /^\d{8}$/.test((dtStart || due || '').trim())
@@ -275,10 +504,13 @@ const parseIcsEvents = (rawIcs: string): ParsedIcsEvent[] => {
       location: location || undefined,
     }
 
-    // TODO: Re-enable RRULE expansion once rrule module import is fixed
-    // For now, treat recurring events as single events
+    // Expand recurring events
     if (rrule) {
-      // Skip RRULE expansion - just import as single event
+      const beforeCount = out.length
+      out.push(...expandRecurringIcsEvent(baseEvent, start, end, rrule))
+      const afterCount = out.length
+      console.log(`[parseIcsEvents] Block ${blockCount} (${blockType}): "${summary}" expanded from ${beforeCount} to ${afterCount} (${afterCount - beforeCount} instances from RRULE)`)
+      return
     }
 
     out.push({
@@ -286,15 +518,19 @@ const parseIcsEvents = (rawIcs: string): ParsedIcsEvent[] => {
       startAt: start.toISOString(),
       endAt: end.toISOString(),
     })
+    console.log(`[parseIcsEvents] Block ${blockCount} (${blockType}): "${summary}" (single event)`)
   }
 
   const componentRegex = /BEGIN:(VEVENT|VTODO|VJOURNAL)\s*([\s\S]*?)END:\1/gi
+  let componentCount = 0
   for (const match of text.matchAll(componentRegex)) {
+    componentCount++
     const blockType = (match[1] || '').toUpperCase() as 'VEVENT' | 'VTODO' | 'VJOURNAL'
     const section = match[2] || ''
     parseBlock(section, blockType)
   }
 
+  console.log(`[parseIcsEvents] Total: ${componentCount} components → ${out.length} events`)
   return out
 }
 
@@ -318,6 +554,8 @@ export const CalendarWindow = () => {
     return new Date()
   })
   const [calendars, setCalendars] = useState<CalendarRow[]>([])
+  const [editingCalendarId, setEditingCalendarId] = useState<string | null>(null)
+  const [editingCalendarName, setEditingCalendarName] = useState('')
   const [events, setEvents] = useState<EventRow[]>([])
   const [reminders, setReminders] = useState<ReminderRow[]>([])
   const [projects, setProjects] = useState<ProjectRow[]>([])
@@ -342,7 +580,7 @@ export const CalendarWindow = () => {
   const [, setIsSyncingApple] = useState(false)
   const [appleSyncMessage, setAppleSyncMessage] = useState<string | null>(null)
   const [isAppleSyncMessageVisible, setIsAppleSyncMessageVisible] = useState(false)
-  const [, setIsImportingIcs] = useState(false)
+  const [isImportingIcs, setIsImportingIcs] = useState(false)
   const [importMessage, setImportMessage] = useState<string | null>(null)
   const [isImportMessageVisible, setIsImportMessageVisible] = useState(false)
   const importInputRef = useRef<HTMLInputElement | null>(null)
@@ -1451,6 +1689,29 @@ export const CalendarWindow = () => {
     }
   }
 
+  const renameCalendar = async (calendarId: string, newName: string) => {
+    if (!newName.trim()) {
+      setEditingCalendarId(null)
+      return
+    }
+
+    setError(null)
+
+    try {
+      const updated = (await api.updateCalendar(calendarId, { name: newName.trim() })) as CalendarRow
+      if (!updated) {
+        setError('Could not rename calendar.')
+        return
+      }
+
+      setCalendars((prev) => prev.map((item) => (item.id === updated.id ? updated : item)))
+      setEditingCalendarId(null)
+    } catch (error) {
+      setError('Could not rename calendar.')
+      setEditingCalendarId(null)
+    }
+  }
+
   const createGridEvent = async () => {
     if (!user || !gridQuickAdd || !gridQuickTitle.trim() || calendars.length === 0) return
 
@@ -1543,6 +1804,7 @@ export const CalendarWindow = () => {
     try {
       const raw = await file.text()
       const parsed = parseIcsEvents(raw)
+      console.log('[CalendarWindow] ICS import:', { baseEventCount: (raw.match(/BEGIN:VEVENT/gi) ?? []).length, expandedEventCount: parsed.length })
       if (parsed.length === 0) {
         const unfolded = unfoldIcsLines(raw)
         const veventCount = (unfolded.match(/BEGIN:VEVENT/gi) ?? []).length
@@ -1570,33 +1832,84 @@ export const CalendarWindow = () => {
         status: 'planned',
       }))
 
-      const importedEvents = [] as EventRow[]
-      for (const item of payload) {
-        const created = (await api.createEvent({
-          title: item.title,
-          start_at: item.start_at,
-          end_at: item.end_at,
-          calendar_id: item.calendar_id,
-          color: item.color,
-          status: item.status,
-          recurrence_rule: 'none',
-          notes: item.notes ?? null,
-          location: item.location ?? null,
-        })) as EventRow
+      // Deduplicate: check if events already exist in the calendar
+      const existingEventKeys = new Set<string>()
+      for (const evt of events) {
+        const key = `${evt.title}|${evt.start_at}|${evt.end_at}`
+        existingEventKeys.add(key)
+      }
 
-        if (created) {
-          importedEvents.push(created)
+      const payloadToImport = payload.filter((item) => {
+        const key = `${item.title}|${item.start_at}|${item.end_at}`
+        return !existingEventKeys.has(key)
+      })
+
+      if (payloadToImport.length < payload.length) {
+        console.log(`[ICS Import] Deduplicated ${payload.length - payloadToImport.length} duplicate events`)
+      }
+
+      const importedEvents = [] as EventRow[]
+      const failedEvents = [] as Array<{ title: string; startAt: string; error: string }>
+      
+      for (let i = 0; i < payloadToImport.length; i++) {
+        const item = payloadToImport[i]
+        try {
+          // Validate before submitting
+          if (!item.title?.trim()) {
+            failedEvents.push({ title: 'Untitled', startAt: item.start_at, error: 'Missing title' })
+            continue
+          }
+          if (!item.start_at || !item.end_at) {
+            failedEvents.push({ title: item.title, startAt: item.start_at, error: 'Missing date/time' })
+            continue
+          }
+          
+          console.log(`[ICS Import] Creating event ${i + 1}/${payload.length}:`, { title: item.title, start_at: item.start_at })
+          
+          const created = (await api.createEvent({
+            title: item.title,
+            start_at: item.start_at,
+            end_at: item.end_at,
+            calendar_id: item.calendar_id,
+            color: item.color,
+            status: item.status,
+            recurrence_rule: 'none',
+            notes: item.notes ?? null,
+            location: item.location ?? null,
+          })) as EventRow | null
+
+          if (created) {
+            importedEvents.push(created)
+            console.log(`[ICS Import] ✓ Created event ${i + 1}/${payloadToImport.length}`)
+          } else {
+            failedEvents.push({ title: item.title, startAt: item.start_at, error: 'API returned null' })
+            console.warn(`[ICS Import] ✗ Failed to create event ${i + 1}/${payloadToImport.length}: API returned null`)
+          }
+        } catch (err) {
+          const errorMsg = err instanceof Error ? err.message : 'Unknown error'
+          failedEvents.push({ title: item.title, startAt: item.start_at, error: errorMsg })
+          console.error(`[ICS Import] ✗ Failed to create event ${i + 1}/${payloadToImport.length}:`, err)
         }
       }
+      
       setEvents((prev) =>
         [...prev, ...importedEvents].sort(
           (a, b) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime()
         )
       )
-      setImportMessage(`Imported ${importedEvents.length} event${importedEvents.length === 1 ? '' : 's'} from .ics`)
+      
+      let message = `Imported ${importedEvents.length} of ${payloadToImport.length} events`
+      if (failedEvents.length > 0) {
+        message += ` (${failedEvents.length} failed)`
+        const failureDetails = failedEvents.slice(0, 3).map((f) => `${f.title} (${f.error})`).join('; ')
+        message += `. Failed: ${failureDetails}${failedEvents.length > 3 ? '...' : ''}`
+        console.warn('[ICS Import] Failed events:', failedEvents)
+      }
+      setImportMessage(message)
     } catch (importErr) {
       const message = importErr instanceof Error ? importErr.message : 'Import failed'
       setError(`Could not import .ics. ${message}`)
+      console.error('[ICS Import] Fatal error:', importErr)
     } finally {
       setIsImportingIcs(false)
       if (importInputRef.current) importInputRef.current.value = ''
@@ -1852,7 +2165,34 @@ export const CalendarWindow = () => {
                 >
                   <div className="flex items-center gap-2 min-w-0">
                     <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: calendar.color }} />
-                    <span className="truncate font-medium">{calendar.name}</span>
+                    {editingCalendarId === calendar.id ? (
+                      <input
+                        autoFocus
+                        type="text"
+                        value={editingCalendarName}
+                        onChange={(e) => setEditingCalendarName(e.target.value)}
+                        onBlur={() => renameCalendar(calendar.id, editingCalendarName)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            renameCalendar(calendar.id, editingCalendarName)
+                          } else if (e.key === 'Escape') {
+                            setEditingCalendarId(null)
+                          }
+                        }}
+                        className="truncate font-medium bg-white border border-gray-300 rounded px-1 py-0.5 text-sm focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                      />
+                    ) : (
+                      <span
+                        className="truncate font-medium cursor-pointer hover:bg-gray-100 rounded px-1 py-0.5"
+                        onDoubleClick={() => {
+                          setEditingCalendarId(calendar.id)
+                          setEditingCalendarName(calendar.name)
+                        }}
+                        title="Double-click to rename"
+                      >
+                        {calendar.name}
+                      </span>
+                    )}
                   </div>
                   <div className="flex items-center gap-1.5">
                     <button
@@ -1905,9 +2245,17 @@ export const CalendarWindow = () => {
               </button>
               <button
                 onClick={() => importInputRef.current?.click()}
-                className="h-9 rounded-md border border-gray-200 bg-white text-gray-700 text-xs font-medium hover:bg-gray-50 transition"
+                disabled={isImportingIcs}
+                className="h-9 rounded-md border border-gray-200 bg-white text-gray-700 text-xs font-medium hover:bg-gray-50 transition disabled:opacity-60 disabled:cursor-not-allowed inline-flex items-center justify-center gap-1.5"
               >
-                Import .ics
+                {isImportingIcs ? (
+                  <>
+                    <Loader2 size={13} className="animate-spin" />
+                    <span>Importing...</span>
+                  </>
+                ) : (
+                  <span>Import .ics</span>
+                )}
               </button>
               <button
                 onClick={() => void syncAppleCalendar()}
