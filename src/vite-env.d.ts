@@ -53,5 +53,6 @@ interface Window {
     minimizeModule: (kind: ModuleWindowKind) => Promise<void>
     toggleModuleFullscreen: (kind: ModuleWindowKind) => Promise<boolean>
     openExternal: (url: string) => Promise<void>
+    openCheckin: () => Promise<void>
   }
 }

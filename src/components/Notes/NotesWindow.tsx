@@ -2118,7 +2118,7 @@ export const NotesWindow = () => {
             </button>
             
             {isTemplatesExpanded && (
-              <div className="px-3 py-2 space-y-0.5 bg-transparent">
+              <div className="px-3 pt-2 pb-4 space-y-0.5 bg-transparent">
                 {quickTemplates.map((template) => (
                   <button
                     key={template.id}

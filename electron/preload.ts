@@ -95,4 +95,7 @@ contextBridge.exposeInMainWorld('desktopWindow', {
   openExternal(url: string) {
     return ipcRenderer.invoke('window:open-external', url)
   },
+  openCheckin() {
+    return ipcRenderer.invoke('window:open-checkin')
+  },
 })

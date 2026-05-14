@@ -173,9 +173,14 @@ export const ExpandedSidebar = ({
   const [expandedUpcomingId, setExpandedUpcomingId] = useState<string | null>(null)
   const [draggingProjectId, setDraggingProjectId] = useState<string | null>(null)
   const [contextMenu, setContextMenu] = useState<{ type: 'project' | 'upcoming'; id: string; x: number; y: number } | null>(null)
+  const [todayHelpVisible, setTodayHelpVisible] = useState(false)
+  const [todayHelpPosition, setTodayHelpPosition] = useState<{ x: number; y: number }>({ x: 0, y: 0 })
+  const todayHelpButtonRef = useRef<HTMLButtonElement | null>(null)
   const taskCaptureRef = useRef<HTMLInputElement | null>(null)
   const noteCaptureRef = useRef<HTMLTextAreaElement | null>(null)
   const eventCaptureRef = useRef<HTMLInputElement | null>(null)
+  const checkinSectionRef = useRef<HTMLElement | null>(null)
+  const checkinSavedTimerRef = useRef<number | null>(null)
   const projectDragRef = useRef<{ projectId: string; rectLeft: number; rectWidth: number; pointerId: number } | null>(null)
   const sidebarContextMenuWidth = 188
   const sidebarContextMenuHeight = 132
@@ -271,14 +276,7 @@ export const ExpandedSidebar = ({
           blocked: row?.checkin_blocked ?? '',
           firstTaskTomorrow: row?.checkin_first_task_tomorrow ?? '',
         })
-
-        setCheckinSaved(
-          Boolean(
-            (row?.checkin_finished ?? '').trim() ||
-              (row?.checkin_blocked ?? '').trim() ||
-              (row?.checkin_first_task_tomorrow ?? '').trim()
-          )
-        )
+        setCheckinSaved(false)
       } catch (error) {
         if (!cancelled) {
           console.error('Failed to load daily accountability:', error)
@@ -481,6 +479,20 @@ export const ExpandedSidebar = ({
   }, [quickCaptureMode])
 
   useEffect(() => {
+    const handleOpenCheckin = () => {
+      setIsCheckinExpanded(true)
+      window.setTimeout(() => {
+        checkinSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      }, 80)
+    }
+
+    window.ipcRenderer?.on('sidebar:open-checkin', handleOpenCheckin)
+    return () => {
+      window.ipcRenderer?.off('sidebar:open-checkin', handleOpenCheckin)
+    }
+  }, [])
+
+  useEffect(() => {
     const syncToNextDay = () => {
       const currentDay = todayKey()
       if (todayBucketRef.current === currentDay) return
@@ -507,13 +519,7 @@ export const ExpandedSidebar = ({
             blocked: row?.checkin_blocked ?? '',
             firstTaskTomorrow: row?.checkin_first_task_tomorrow ?? '',
           })
-          setCheckinSaved(
-            Boolean(
-              (row?.checkin_finished ?? '').trim() ||
-                (row?.checkin_blocked ?? '').trim() ||
-                (row?.checkin_first_task_tomorrow ?? '').trim()
-            )
-          )
+          setCheckinSaved(false)
         } catch (error) {
           console.error('Failed to refresh daily accountability on day rollover:', error)
         } finally {
@@ -579,16 +585,43 @@ export const ExpandedSidebar = ({
   }
 
   const saveCheckin = async () => {
+    window.ipcRenderer?.send('daily:checkin-updated', {
+      finished: checkin.finished,
+      blocked: checkin.blocked,
+      firstTaskTomorrow: checkin.firstTaskTomorrow,
+    })
     const success = await saveDaily({ checkin })
-    if (success) setCheckinSaved(true)
+    if (success) {
+      setCheckinSaved(true)
+      if (checkinSavedTimerRef.current !== null) {
+        window.clearTimeout(checkinSavedTimerRef.current)
+      }
+      checkinSavedTimerRef.current = window.setTimeout(() => {
+        setCheckinSaved(false)
+        checkinSavedTimerRef.current = null
+      }, 2200)
+    }
   }
 
   const clearCheckin = async () => {
     const empty = { finished: '', blocked: '', firstTaskTomorrow: '' }
     setCheckin(empty)
+    window.ipcRenderer?.send('daily:checkin-updated', empty)
     const success = await saveDaily({ checkin: empty })
+    if (checkinSavedTimerRef.current !== null) {
+      window.clearTimeout(checkinSavedTimerRef.current)
+      checkinSavedTimerRef.current = null
+    }
     if (success) setCheckinSaved(false)
   }
+
+  useEffect(() => {
+    return () => {
+      if (checkinSavedTimerRef.current !== null) {
+        window.clearTimeout(checkinSavedTimerRef.current)
+      }
+    }
+  }, [])
 
   const saveQuickNote = async () => {
     const text = noteDraft.trim()
@@ -722,6 +755,13 @@ export const ExpandedSidebar = ({
   const updateProjectStatus = async (projectId: string, newStatus: ProjectStatus) => {
     setProjectUpdating(projectId)
     const semantic = normalizeProjectStatus(newStatus)
+    const previousProject = projects.find((p) => p.id === projectId)
+    const previousStatus = previousProject ? normalizeProjectStatus(String(previousProject.status)) : null
+
+    // Optimistic UI: reflect status immediately.
+    setProjects((prev) =>
+      prev.map((p) => (p.id === projectId ? { ...p, status: semantic } : p))
+    )
     try {
       const resolvedStatus = await updateProjectStatusWithFallback(projectId, semantic)
       setProjects((prev) =>
@@ -730,6 +770,11 @@ export const ExpandedSidebar = ({
     } catch (error) {
       console.error('Project status update error:', error)
       setSaveError('Could not update project status.')
+      if (previousStatus) {
+        setProjects((prev) =>
+          prev.map((p) => (p.id === projectId ? { ...p, status: previousStatus } : p))
+        )
+      }
     }
     setProjectUpdating(null)
   }
@@ -775,6 +820,18 @@ export const ExpandedSidebar = ({
   }
 
   const completedCount = focusItems.filter((item) => item.done).length
+
+  const showTodayHelp = () => {
+    const rect = todayHelpButtonRef.current?.getBoundingClientRect()
+    if (!rect) return
+    setTodayHelpPosition({
+      x: rect.left + rect.width / 2,
+      y: rect.top - 8,
+    })
+    setTodayHelpVisible(true)
+  }
+
+  const hideTodayHelp = () => setTodayHelpVisible(false)
   const eventDateParts = parseDateKey(eventDate)
   const daysInSelectedMonth = new Date(eventDateParts.year, eventDateParts.month, 0).getDate()
   const currentYear = new Date().getFullYear()
@@ -943,16 +1000,18 @@ export const ExpandedSidebar = ({
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-1.5">
               <h2 className="text-xs font-semibold text-gray-600 uppercase tracking-wider">Today's Tasks</h2>
-              <div className="relative group">
+              <div className="relative z-30">
                 <button
+                  ref={todayHelpButtonRef}
                   aria-label="Today tasks help"
                   className="text-gray-400 hover:text-gray-600 transition"
+                  onMouseEnter={showTodayHelp}
+                  onMouseLeave={hideTodayHelp}
+                  onFocus={showTodayHelp}
+                  onBlur={hideTodayHelp}
                 >
                   <CircleHelp size={12} />
                 </button>
-                <div className="pointer-events-none absolute left-1/2 top-5 -translate-x-1/2 w-48 rounded-md bg-white border border-gray-200 text-gray-700 text-[10px] leading-4 px-2 py-1.5 opacity-0 group-hover:opacity-100 transition-opacity z-20 shadow-lg">
-                  Add your tasks for today. Items save to your profile and reset daily.
-                </div>
               </div>
             </div>
             <span className="text-[10px] text-gray-500">{completedCount}/{focusItems.length}</span>
@@ -1314,7 +1373,7 @@ export const ExpandedSidebar = ({
           )}
         </section>
 
-        <section className="bg-white border border-gray-200 rounded-xl p-3.5">
+        <section ref={checkinSectionRef} className="bg-white border border-gray-200 rounded-xl p-3.5">
           <button
             onClick={() => setIsCheckinExpanded((prev) => !prev)}
             className="w-full flex items-center justify-between"
@@ -1620,29 +1679,32 @@ export const ExpandedSidebar = ({
         >
           {contextMenu.type === 'project' && (
             <>
-              <button
-                onClick={() => {
-                  const project = projects.find((p) => p.id === contextMenu.id)
-                  if (project) {
-                    setExpandedProjectId(contextMenu.id)
+              {expandedProjectId === contextMenu.id ? (
+                <button
+                  onClick={() => {
+                    setExpandedProjectId(null)
                     setContextMenu(null)
-                  }
-                }}
-                className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition flex items-center gap-2"
-              >
-                <ChevronDown size={14} />
-                Expand
-              </button>
-              <button
-                onClick={() => {
-                  setExpandedProjectId(null)
-                  setContextMenu(null)
-                }}
-                className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition flex items-center gap-2"
-              >
-                <ChevronUp size={14} />
-                Collapse
-              </button>
+                  }}
+                  className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition flex items-center gap-2"
+                >
+                  <ChevronUp size={14} />
+                  Collapse
+                </button>
+              ) : (
+                <button
+                  onClick={() => {
+                    const project = projects.find((p) => p.id === contextMenu.id)
+                    if (project) {
+                      setExpandedProjectId(contextMenu.id)
+                      setContextMenu(null)
+                    }
+                  }}
+                  className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition flex items-center gap-2"
+                >
+                  <ChevronDown size={14} />
+                  Expand
+                </button>
+              )}
               <button
                 onClick={() => {
                   const project = projects.find((p) => p.id === contextMenu.id)
@@ -1673,16 +1735,29 @@ export const ExpandedSidebar = ({
 
           {contextMenu.type === 'upcoming' && (
             <>
-              <button
-                onClick={() => {
-                  setExpandedUpcomingId(contextMenu.id)
-                  setContextMenu(null)
-                }}
-                className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition flex items-center gap-2"
-              >
-                <ChevronDown size={14} />
-                Expand
-              </button>
+              {expandedUpcomingId === contextMenu.id ? (
+                <button
+                  onClick={() => {
+                    setExpandedUpcomingId(null)
+                    setContextMenu(null)
+                  }}
+                  className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition flex items-center gap-2"
+                >
+                  <ChevronUp size={14} />
+                  Collapse
+                </button>
+              ) : (
+                <button
+                  onClick={() => {
+                    setExpandedUpcomingId(contextMenu.id)
+                    setContextMenu(null)
+                  }}
+                  className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition flex items-center gap-2"
+                >
+                  <ChevronDown size={14} />
+                  Expand
+                </button>
+              )}
               <button
                 onClick={() => {
                   const event = upcomingItems.find((e) => e.id === contextMenu.id)
@@ -1719,6 +1794,19 @@ export const ExpandedSidebar = ({
               </button>
             </>
           )}
+        </div>,
+        document.body,
+      )}
+
+      {todayHelpVisible && createPortal(
+        <div
+          className="pointer-events-none fixed z-[280] w-48 -translate-x-1/2 -translate-y-full rounded-md border border-gray-200 bg-white px-2 py-1.5 text-[10px] leading-4 text-gray-700 shadow-lg"
+          style={{
+            left: `${Math.max(96, Math.min(todayHelpPosition.x, window.innerWidth - 96))}px`,
+            top: `${Math.max(24, todayHelpPosition.y)}px`,
+          }}
+        >
+          Add your tasks for today. Items save to your profile and reset daily.
         </div>,
         document.body,
       )}

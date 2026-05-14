@@ -2,6 +2,7 @@ import {
   ArrowRight,
   CalendarDays,
   CheckCircle2,
+  Circle,
   Folder,
   Loader2,
   Plus,
@@ -24,7 +25,7 @@ import ProjectsWindow from './components/Projects/ProjectsWindow'
 import SettingsWindow from './components/Settings/SettingsWindow'
 import { SearchModal } from './components/Search/SearchModal'
 import { SearchProvider } from './context/SearchContext'
-import { SkeletonStatCards, SkeletonProjectCard, SkeletonNoteCard, SkeletonTaskItem } from './components/Common/Skeleton'
+import { SkeletonProjectCard, SkeletonNoteCard, SkeletonTaskItem } from './components/Common/Skeleton'
 import { useSearch } from './context/SearchContext'
 import { QuickCaptureWindow } from './components/Common/QuickCaptureWindow'
 
@@ -77,9 +78,6 @@ function DashboardContent() {
   const api = useApi()
   const { setState } = useSidebar()
   const todayTasksRef = useRef<HTMLElement | null>(null)
-  const notesRef = useRef<HTMLElement | null>(null)
-  const projectsRef = useRef<HTMLElement | null>(null)
-  const calendarRef = useRef<HTMLElement | null>(null)
 
   const [isLoadingDashboard, setIsLoadingDashboard] = useState(true)
   const [dashboardError, setDashboardError] = useState<string | null>(null)
@@ -212,6 +210,29 @@ function DashboardContent() {
     }
   }, [activeWorkspaceId, api, user])
 
+  useEffect(() => {
+    const handleCheckinUpdated = (
+      _event: unknown,
+      payload: { finished?: string; blocked?: string; firstTaskTomorrow?: string }
+    ) => {
+      if (!payload) return
+      setDaily((prev) => ({
+        ...prev,
+        finished: typeof payload.finished === 'string' ? payload.finished : prev.finished,
+        blocked: typeof payload.blocked === 'string' ? payload.blocked : prev.blocked,
+        firstTaskTomorrow:
+          typeof payload.firstTaskTomorrow === 'string'
+            ? payload.firstTaskTomorrow
+            : prev.firstTaskTomorrow,
+      }))
+    }
+
+    window.ipcRenderer?.on('daily:checkin-updated', handleCheckinUpdated)
+    return () => {
+      window.ipcRenderer?.off('daily:checkin-updated', handleCheckinUpdated)
+    }
+  }, [])
+
   const saveDailyAccountability = async (next: {
     focusItems?: Array<{ id: string; text: string; done: boolean }>
     finished?: string
@@ -288,16 +309,34 @@ function DashboardContent() {
     day: 'numeric',
   })
 
-  const scrollToSection = (ref: React.RefObject<HTMLElement | null>) => {
-    ref.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-  }
+  const focusSummary = daily.focusItems.length ? `${completedFocus}/${daily.focusItems.length} focus` : '0 focus'
+  const summaryText = `${focusSummary} · ${upcoming.length} upcoming · ${recentNotes.length} recent notes · ${activeProjects} active projects`
 
   const openModule = (kind: 'calendar' | 'notes' | 'projects') => {
     void window.desktopWindow?.toggleModule(kind)
   }
 
+  const getProjectAttentionScore = (project: { status: string; completeness: number; end_date?: string | null; updated_at?: string | null }) => {
+    const status = String(project.status ?? '').toLowerCase()
+    const dueDate = project.end_date ? new Date(project.end_date) : null
+    const now = Date.now()
+    const dueDays = dueDate ? Math.ceil((dueDate.getTime() - now) / (1000 * 60 * 60 * 24)) : null
+
+    let score = 0
+    if (status.includes('pause')) score += 4
+    if (dueDays !== null && dueDays <= 3) score += 3
+    if (dueDays !== null && dueDays < 0) score += 5
+    if (project.completeness >= 70 && project.completeness < 100) score += 2
+    if (status.includes('progress')) score += 1
+    return score
+  }
+
+  const attentionProjects = [...projects]
+    .sort((a, b) => getProjectAttentionScore(b as any) - getProjectAttentionScore(a as any))
+    .slice(0, 4)
+
   return (
-    <div className="flex h-screen flex-col overflow-hidden rounded-[28px] border border-gray-200 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.9),rgba(245,247,251,1)_45%)] shadow-[0_24px_80px_rgba(15,23,42,0.08)]" style={{ scrollbarGutter: 'stable' }}>
+    <div className="flex h-screen flex-col overflow-hidden rounded-[28px] border border-gray-200 bg-[#f6f7f9] shadow-[0_24px_80px_rgba(15,23,42,0.08)]" style={{ scrollbarGutter: 'stable' }}>
       <ModuleWindowHeader
         eyebrow="Workspace"
         title={activeWorkspace?.name ?? 'My Work'}
@@ -349,16 +388,22 @@ function DashboardContent() {
       />
 
       <div className='flex-1 min-h-0 overflow-auto p-8' style={{ scrollbarGutter: 'stable' }}>
-        <div className='mx-auto max-w-7xl space-y-8'>
-          <div className='flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between'>
+        <div className='mx-auto max-w-7xl space-y-5'>
+          <div>
             <div>
-              <p className='text-xs uppercase tracking-[0.2em] text-gray-500'>Dashboard</p>
-              <h2 className='mt-2 text-3xl font-semibold tracking-tight text-gray-900'>Good to see you, {firstName}</h2>
-              <p className='mt-2 max-w-2xl text-sm leading-6 text-gray-600'>
-                {todayLabel}. What awaits you today?
-              </p>
+              <p className='text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-500'>Today</p>
+              <h2 className='mt-2 text-2xl font-semibold tracking-tight text-gray-950'>Good to see you, {firstName}</h2>
+              <p className='mt-1 max-w-2xl text-sm leading-6 text-gray-600'>What needs your attention today?</p>
+              <p className='mt-1 text-sm text-gray-500'>{todayLabel}</p>
             </div>
           </div>
+
+          {!isLoadingDashboard && (
+            <div className='rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-700 shadow-sm'>
+              <span className='font-medium text-gray-900'>Today</span>
+              <span className='ml-2 text-gray-600'>{summaryText}</span>
+            </div>
+          )}
 
           {dashboardError && (
             <div className='rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700'>
@@ -366,49 +411,18 @@ function DashboardContent() {
             </div>
           )}
 
-          {isLoadingDashboard ? (
-            <SkeletonStatCards count={4} />
-          ) : (
-            <div className='grid gap-4 md:grid-cols-2 xl:grid-cols-4'>
-              {[
-                { label: 'Today focus', value: `${completedFocus}/${daily.focusItems.length}`, note: daily.focusItems.length ? 'From your daily checklist' : 'No items set yet', icon: CheckCircle2, action: () => scrollToSection(todayTasksRef), actionLabel: 'Jump to tasks' },
-                { label: 'Active projects', value: String(activeProjects), note: 'Project Tracker items in progress', icon: Folder, action: () => openModule('projects'), actionLabel: 'Open projects' },
-                { label: 'Upcoming items', value: String(upcoming.length), note: 'Events from your calendar', icon: CalendarDays, action: () => openModule('calendar'), actionLabel: 'Open calendar' },
-                { label: 'Recent notes', value: String(recentNotes.length), note: 'Fresh ideas and captures', icon: StickyNote, action: () => openModule('notes'), actionLabel: 'Open notes' },
-              ].map(({ label, value, note, icon: Icon, action, actionLabel }) => (
-                <button
-                  key={label}
-                  onClick={action}
-                  className='group rounded-3xl border border-gray-200 bg-white p-5 shadow-sm text-left transition-transform hover:-translate-y-0.5 hover:shadow-md'
-                >
-                  <div className='flex items-center justify-between'>
-                    <p className='text-sm font-medium text-gray-600'>{label}</p>
-                    <div className='flex items-center gap-2 text-gray-400'>
-                      <span className='text-[11px] font-medium opacity-0 transition-opacity group-hover:opacity-100'>{actionLabel}</span>
-                      <Icon size={18} className='text-gray-400' />
-                    </div>
-                  </div>
-                  <p className='mt-4 text-3xl font-semibold tracking-tight text-gray-900'>{value}</p>
-                  <p className='mt-1 text-xs text-gray-500'>{note}</p>
-                </button>
-              ))}
-            </div>
-          )}
-
-          <div className='grid gap-6 xl:grid-cols-[1.25fr_0.75fr]'>
+          <div className='grid gap-6 xl:grid-cols-[2fr_1fr]'>
             <div className='space-y-6'>
-              <section ref={todayTasksRef} className='rounded-[28px] border border-gray-200 bg-white p-6 shadow-sm'>
-                <div className='flex items-center justify-between'>
+              <section ref={todayTasksRef} className='rounded-2xl border border-gray-200 bg-white p-5 shadow-sm'>
+                <div className='flex items-start justify-between gap-4'>
                   <div>
-                    <p className='text-xs uppercase tracking-[0.2em] text-gray-500'>Today</p>
-                    <h3 className='mt-1 text-xl font-semibold text-gray-900'>Today&apos;s tasks</h3>
+                    <p className='text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-500'>Focus</p>
+                    <h3 className='mt-1 text-lg font-semibold text-gray-950'>Today&apos;s focus</h3>
+                    <p className='mt-1 text-sm text-gray-500'>One to three priorities. Keep it narrow.</p>
                   </div>
-                  <button
-                    onClick={() => openModule('projects')}
-                    className='rounded-full border border-gray-200 bg-gray-50 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-100'
-                  >
-                    Open projects
-                  </button>
+                  <span className='rounded-full border border-gray-200 bg-gray-50 px-3 py-1.5 text-xs font-medium text-gray-600'>
+                    {completedFocus}/{daily.focusItems.length || 0}
+                  </span>
                 </div>
 
                 {isLoadingDashboard ? (
@@ -430,12 +444,12 @@ function DashboardContent() {
                           }
                         }}
                         placeholder='Add a focus task for today'
-                        className='flex-1 rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm outline-none transition focus:border-gray-300 focus:ring-4 focus:ring-gray-100'
+                        className='flex-1 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm outline-none transition focus:border-gray-300 focus:bg-white focus:ring-4 focus:ring-gray-100'
                       />
                       <button
                         onClick={() => void addFocusItem()}
                         disabled={isSavingFocus}
-                        className='inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-[#FF5F40] text-white transition-colors hover:bg-[#ea5336] disabled:opacity-60'
+                        className='inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#FF5F40] text-white transition-colors hover:bg-[#ea5336] disabled:opacity-60'
                       >
                         <Plus size={16} />
                       </button>
@@ -443,15 +457,15 @@ function DashboardContent() {
 
                     <div className='mt-5 space-y-3'>
                       {daily.focusItems.length === 0 ? (
-                        <div className='rounded-2xl border border-dashed border-gray-200 bg-gray-50 p-5'>
-                          <p className='text-sm font-medium text-gray-800'>No tasks signed for today yet.</p>
-                          <p className='mt-1 text-sm text-gray-500'>Add your top priorities here or from the sidebar.</p>
+                        <div className='rounded-xl border border-dashed border-gray-200 bg-gray-50 px-4 py-4'>
+                          <p className='text-sm font-medium text-gray-800'>No focus set yet.</p>
+                          <p className='mt-1 text-sm text-gray-500'>Add what would make today feel handled.</p>
                         </div>
                       ) : (
                         daily.focusItems.map((item) => (
                           <div
                             key={item.id}
-                            className='flex items-start gap-3 rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3'
+                            className='flex items-start gap-3 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3'
                           >
                             <button
                               onClick={() => void toggleFocusDone(item.id)}
@@ -479,27 +493,74 @@ function DashboardContent() {
                       )}
                     </div>
 
-                    <div className='mt-5 grid gap-3 md:grid-cols-3'>
-                      {[
-                        { label: 'Finished', value: daily.finished || 'Nothing yet' },
-                        { label: 'Blocked', value: daily.blocked || 'No blockers' },
-                        { label: 'Next task', value: daily.firstTaskTomorrow || 'Not set yet' },
-                      ].map((item) => (
-                        <div key={item.label} className='rounded-2xl border border-gray-200 bg-white p-4'>
-                          <p className='text-[10px] uppercase tracking-wider text-gray-500'>{item.label}</p>
-                          <p className='mt-2 text-sm leading-6 text-gray-800'>{item.value}</p>
-                        </div>
-                      ))}
-                    </div>
                   </>
                 )}
               </section>
 
-              <section ref={notesRef} className='rounded-[28px] border border-gray-200 bg-white p-6 shadow-sm'>
+              <section className='rounded-2xl border border-gray-200 bg-white p-5 shadow-sm'>
+                <p className='text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-500'>Capture</p>
+                <div className='mt-4 grid grid-cols-2 gap-3 md:grid-cols-4'>
+                  {[
+                    { label: 'Task', icon: CheckCircle2, action: () => window.desktopWindow?.toggleModule('quick-task' as any) },
+                    { label: 'Note', icon: StickyNote, action: () => window.desktopWindow?.toggleModule('quick-note' as any) },
+                    { label: 'Event', icon: CalendarDays, action: () => window.desktopWindow?.toggleModule('quick-event' as any) },
+                    {
+                      label: 'Project',
+                      icon: Folder,
+                      action: () =>
+                        window.desktopWindow?.toggleModule('projects', {
+                          kind: 'projects',
+                          focusProjectId: '__new__',
+                        }),
+                    },
+                  ].map(({ label, icon: Icon, action }) => (
+                    <button
+                      key={label}
+                      onClick={() => void action()}
+                      className='flex h-20 items-center justify-center gap-2 rounded-xl border border-gray-200 bg-gray-50 text-sm font-medium text-gray-800 transition hover:border-gray-300 hover:bg-white'
+                    >
+                      <Icon size={16} className='text-gray-500' />
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </section>
+
+              <section className='rounded-2xl border border-gray-200 bg-white p-5 shadow-sm'>
                 <div className='flex items-center justify-between'>
                   <div>
-                    <p className='text-xs uppercase tracking-[0.2em] text-gray-500'>Notes</p>
-                    <h3 className='mt-1 text-xl font-semibold text-gray-900'>Recent captures</h3>
+                    <p className='text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-500'>Review</p>
+                    <h3 className='mt-1 text-lg font-semibold text-gray-950'>Daily check-in</h3>
+                  </div>
+                  <button
+                    onClick={() => {
+                      void window.desktopWindow?.openCheckin()
+                      setState('expanded')
+                    }}
+                    className='rounded-full border border-gray-200 bg-gray-50 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-100'
+                  >
+                    Open check-in
+                  </button>
+                </div>
+                <div className='mt-4 divide-y divide-gray-100 rounded-xl border border-gray-200 bg-gray-50'>
+                  {[
+                    { label: 'Finished', value: daily.finished || 'Nothing yet' },
+                    { label: 'Blocked', value: daily.blocked || 'No blockers' },
+                    { label: 'First task tomorrow', value: daily.firstTaskTomorrow || 'Not set yet' },
+                  ].map((item) => (
+                    <div key={item.label} className='flex items-start justify-between gap-4 px-4 py-3'>
+                      <p className='shrink-0 text-sm text-gray-500'>{item.label}</p>
+                      <p className='text-right text-sm font-medium leading-6 text-gray-900'>{item.value}</p>
+                    </div>
+                  ))}
+                </div>
+              </section>
+
+              <section className='rounded-2xl border border-gray-200 bg-white p-5 shadow-sm'>
+                <div className='flex items-center justify-between'>
+                  <div>
+                    <p className='text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-500'>Recent</p>
+                    <h3 className='mt-1 text-lg font-semibold text-gray-950'>Notes</h3>
                   </div>
                   <button
                     onClick={() => openModule('notes')}
@@ -509,7 +570,7 @@ function DashboardContent() {
                   </button>
                 </div>
 
-                <div className='mt-5 grid gap-3'>
+                <div className='mt-4 divide-y divide-gray-100'>
                   {isLoadingDashboard ? (
                     Array.from({ length: 2 }).map((_, i) => (
                       <SkeletonNoteCard key={i} />
@@ -524,7 +585,7 @@ function DashboardContent() {
                       <button
                         key={note.id}
                         onClick={() => openModule('notes')}
-                        className='rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3 text-left transition hover:bg-white hover:shadow-sm'
+                        className='w-full px-1 py-3 text-left transition hover:bg-gray-50'
                       >
                         <div className='flex items-start justify-between gap-3'>
                           <div className='min-w-0'>
@@ -545,32 +606,81 @@ function DashboardContent() {
             </div>
 
             <div className='space-y-6'>
-              <section ref={projectsRef} className='rounded-[28px] border border-gray-200 bg-white p-6 shadow-sm'>
+              <section className='rounded-2xl border border-gray-200 bg-white p-5 shadow-sm'>
                 <div className='flex items-center justify-between'>
                   <div>
-                    <p className='text-xs uppercase tracking-[0.2em] text-gray-500'>Projects</p>
-                    <h3 className='mt-1 text-xl font-semibold text-gray-900'>Project Tracker</h3>
+                    <p className='text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-500'>Upcoming</p>
+                    <h3 className='mt-1 text-lg font-semibold text-gray-950'>Timeline</h3>
+                  </div>
+                  <button
+                    onClick={() => openModule('calendar')}
+                    className='rounded-full border border-gray-200 bg-gray-50 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-100'
+                  >
+                    Open calendar
+                  </button>
+                </div>
+
+                <div className='mt-4 space-y-2'>
+                  {isLoadingDashboard ? (
+                    Array.from({ length: 3 }).map((_, i) => (
+                      <SkeletonNoteCard key={i} />
+                    ))
+                  ) : upcoming.length === 0 ? (
+                    <div className='rounded-2xl border border-dashed border-gray-200 bg-gray-50 p-5'>
+                      <p className='text-sm font-medium text-gray-800'>No upcoming events today.</p>
+                      <p className='mt-1 text-sm text-gray-500'>Add events or reminders to build your timeline.</p>
+                    </div>
+                  ) : (
+                    upcoming.map((item) => {
+                      const start = new Date(item.start_at)
+                      const timeLabel = start.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+                      const dayLabel = start.toDateString() === new Date().toDateString()
+                        ? 'Today'
+                        : start.toLocaleDateString([], { month: 'short', day: 'numeric' })
+                      return (
+                        <button
+                          key={item.id}
+                          onClick={() => openModule('calendar')}
+                          className='w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-left transition hover:bg-white'
+                        >
+                          <div className='flex items-center justify-between gap-3'>
+                            <p className='truncate text-sm font-medium text-gray-900'>{item.title}</p>
+                            <p className='shrink-0 text-xs text-gray-500'>{dayLabel}</p>
+                          </div>
+                          <p className='mt-1 text-xs text-gray-600'>{timeLabel}</p>
+                        </button>
+                      )
+                    })
+                  )}
+                </div>
+              </section>
+
+              <section className='rounded-2xl border border-gray-200 bg-white p-5 shadow-sm'>
+                <div className='flex items-center justify-between'>
+                  <div>
+                    <p className='text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-500'>Projects</p>
+                    <h3 className='mt-1 text-lg font-semibold text-gray-950'>Needs attention</h3>
                   </div>
                   <button
                     onClick={() => openModule('projects')}
                     className='rounded-full border border-gray-200 bg-gray-50 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-100'
                   >
-                    Open
+                    Open projects
                   </button>
                 </div>
 
-                <div className='mt-5 space-y-3'>
+                <div className='mt-4 space-y-2'>
                   {isLoadingDashboard ? (
                     Array.from({ length: 3 }).map((_, i) => (
                       <SkeletonProjectCard key={i} />
                     ))
-                  ) : projects.length === 0 ? (
+                  ) : attentionProjects.length === 0 ? (
                     <div className='rounded-2xl border border-dashed border-gray-200 bg-gray-50 p-5'>
-                      <p className='text-sm font-medium text-gray-800'>No projects yet.</p>
-                      <p className='mt-1 text-sm text-gray-500'>Create internship, class, or job search projects in the sidebar.</p>
+                      <p className='text-sm font-medium text-gray-800'>No projects need attention.</p>
+                      <p className='mt-1 text-sm text-gray-500'>Your active projects are on track.</p>
                     </div>
                   ) : (
-                    projects.map((project) => {
+                    attentionProjects.map((project) => {
                       const status = String(project.status).toLowerCase()
                       const label = status.includes('complete')
                         ? 'Completed'
@@ -579,26 +689,25 @@ function DashboardContent() {
                           : status.includes('pause')
                             ? 'Paused'
                             : 'Not started'
+                      const due = (project as { end_date?: string | null }).end_date
+                      const dueLabel = due
+                        ? `Due ${new Date(due).toLocaleDateString([], { month: 'short', day: 'numeric' })}`
+                        : 'No due date'
 
                       return (
                         <button
                           key={project.id}
                           onClick={() => openModule('projects')}
-                          className='w-full rounded-2xl border border-gray-200 bg-gray-50 p-4 text-left transition hover:bg-white hover:shadow-sm'
+                          className='w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-left transition hover:bg-white'
                         >
-                          <div className='flex items-start justify-between gap-3'>
-                            <div className='min-w-0'>
-                              <p className='text-sm font-medium text-gray-900 truncate'>{project.name}</p>
-                              <p className='mt-1 text-[11px] text-gray-500'>{label}</p>
-                            </div>
-                            <span className='text-[11px] font-medium text-gray-700'>{project.completeness}%</span>
-                          </div>
-                          <div className='mt-3 h-2 rounded-full bg-gray-200'>
-                            <div
-                              className='h-2 rounded-full bg-gray-900'
-                              style={{ width: `${Math.max(0, Math.min(100, project.completeness))}%` }}
-                            />
-                          </div>
+                          <p className='truncate text-sm font-medium text-gray-900'>{project.name}</p>
+                          <p className='mt-1 flex items-center gap-2 text-xs text-gray-600'>
+                            <Circle size={8} className='fill-current text-[#FF5F40]' />
+                            <span>{label}</span>
+                            <span>·</span>
+                            <span>{Math.max(0, Math.min(100, project.completeness))}%</span>
+                          </p>
+                          <p className='mt-1 text-xs text-gray-500'>{dueLabel}</p>
                         </button>
                       )
                     })
@@ -606,51 +715,6 @@ function DashboardContent() {
                 </div>
               </section>
 
-              <section ref={calendarRef} className='rounded-[28px] border border-gray-200 bg-white p-6 shadow-sm'>
-                <div className='flex items-center justify-between'>
-                  <div>
-                    <p className='text-xs uppercase tracking-[0.2em] text-gray-500'>Calendar</p>
-                    <h3 className='mt-1 text-xl font-semibold text-gray-900'>Upcoming</h3>
-                  </div>
-                  <button
-                    onClick={() => openModule('calendar')}
-                    className='rounded-full border border-gray-200 bg-gray-50 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-100'
-                  >
-                    Open
-                  </button>
-                </div>
-
-                <div className='mt-5 space-y-3'>
-                  {isLoadingDashboard ? (
-                    Array.from({ length: 3 }).map((_, i) => (
-                      <SkeletonNoteCard key={i} />
-                    ))
-                  ) : upcoming.length === 0 ? (
-                    <div className='rounded-2xl border border-dashed border-gray-200 bg-gray-50 p-5'>
-                      <p className='text-sm font-medium text-gray-800'>No upcoming items.</p>
-                      <p className='mt-1 text-sm text-gray-500'>Add events or reminders to see them here.</p>
-                    </div>
-                  ) : (
-                    upcoming.map((item) => {
-                      const time = new Date(item.start_at).toLocaleTimeString([], {
-                        hour: 'numeric',
-                        minute: '2-digit',
-                      })
-
-                      return (
-                        <button
-                          key={item.id}
-                          onClick={() => openModule('calendar')}
-                          className='w-full rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3 text-left transition hover:bg-white hover:shadow-sm'
-                        >
-                          <p className='text-sm font-medium text-gray-900 truncate'>{item.title}</p>
-                          <p className='mt-1 text-[11px] text-gray-500'>{time}</p>
-                        </button>
-                      )
-                    })
-                  )}
-                </div>
-              </section>
             </div>
           </div>
         </div>
@@ -812,6 +876,19 @@ function AppShell() {
       window.ipcRenderer?.off('sidebar:visibility-changed', handleSidebarVisibilityChanged)
     }
   }, [setIsVisible])
+
+  useEffect(() => {
+    const handleOpenCheckin = () => {
+      setIsVisible(true)
+      setIsExpanded(true)
+      setState('expanded')
+    }
+
+    window.ipcRenderer?.on('sidebar:open-checkin', handleOpenCheckin)
+    return () => {
+      window.ipcRenderer?.off('sidebar:open-checkin', handleOpenCheckin)
+    }
+  }, [setIsExpanded, setIsVisible, setState])
 
   useEffect(() => {
     const handleTouchBarOpenSearch = () => {

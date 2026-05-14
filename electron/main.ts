@@ -309,6 +309,13 @@ let lastSidebarToggleAt = 0
 let allLedgerWindowsHidden = false
 let sidebarWasVisibleBeforeHideAll = false
 const moduleKindsVisibleBeforeHideAll = new Set<ModuleWindowKind>()
+const moduleWindowBoundsMemory = new Map<
+  ModuleWindowKind,
+  {
+    bounds: Electron.Rectangle
+    sidebarPosition: 'left' | 'right' | 'floating'
+  }
+>()
 
 const WINDOW_MARGIN = 16
 const RAIL_SIZE = 64
@@ -325,8 +332,10 @@ const DASHBOARD_WIDTH = 1280
 const DASHBOARD_HEIGHT = 860
 const AUTH_WIDTH = 540
 const AUTH_HEIGHT = 560
-const MODULE_WIDTH = 1180
-const MODULE_HEIGHT = 760
+const MODULE_DEFAULT_WIDTH = 1440
+const MODULE_DEFAULT_HEIGHT = 860
+const MODULE_MIN_WIDTH = 1100
+const MODULE_MIN_HEIGHT = 720
 const QUICK_CAPTURE_WIDTH = 400
 const QUICK_CAPTURE_HEIGHT = 320
 const MODULE_GAP = 12
@@ -1341,34 +1350,90 @@ async function dockFloatingSidebarToTarget() {
   return clamped
 }
 
-function getModuleBoundsNextToSidebar() {
+function getCenteredBoundsInWorkArea(
+  width: number,
+  height: number,
+  workArea: Electron.Rectangle
+): Electron.Rectangle {
+  return {
+    x: Math.round(workArea.x + (workArea.width - width) / 2),
+    y: Math.round(workArea.y + (workArea.height - height) / 2),
+    width,
+    height,
+  }
+}
+
+function isRectInsideWorkArea(rect: Electron.Rectangle, workArea: Electron.Rectangle) {
+  return (
+    rect.x >= workArea.x &&
+    rect.y >= workArea.y &&
+    rect.x + rect.width <= workArea.x + workArea.width &&
+    rect.y + rect.height <= workArea.y + workArea.height
+  )
+}
+
+function resolveModuleBounds(kind: ModuleWindowKind): Electron.Rectangle {
   const sidebarBounds = sidebarWin?.getBounds() ?? getDockedBounds(RAIL_SIZE)
-  const workArea = screen.getDisplayMatching(sidebarBounds).workArea
-  const { x, width: workWidth, height: workHeight } = workArea
+  const sidebarAnchorPoint = {
+    x: Math.round(sidebarBounds.x + sidebarBounds.width / 2),
+    y: Math.round(sidebarBounds.y + sidebarBounds.height / 2),
+  }
+  const display = screen.getDisplayNearestPoint(sidebarAnchorPoint)
+  const workArea = display.workArea
 
-  const width = Math.min(MODULE_WIDTH, workWidth - WINDOW_MARGIN * 2)
-  const height = Math.min(MODULE_HEIGHT, workHeight - WINDOW_MARGIN * 2)
+  const remembered = moduleWindowBoundsMemory.get(kind)
+  if (remembered && remembered.sidebarPosition === currentSidebarPosition) {
+    const width = Math.max(MODULE_MIN_WIDTH, Math.min(remembered.bounds.width, workArea.width - WINDOW_MARGIN * 2))
+    const height = Math.max(MODULE_MIN_HEIGHT, Math.min(remembered.bounds.height, workArea.height - WINDOW_MARGIN * 2))
+    const candidate = clampRectToWorkArea(
+      { x: remembered.bounds.x, y: remembered.bounds.y, width, height },
+      workArea,
+    )
+    if (isRectInsideWorkArea(candidate, workArea)) {
+      return candidate
+    }
+  }
 
-  const leftSpace = sidebarBounds.x - x - MODULE_GAP - WINDOW_MARGIN
-  const rightSpace = x + workWidth - (sidebarBounds.x + sidebarBounds.width) - MODULE_GAP - WINDOW_MARGIN
+  const maxWidth = Math.max(MODULE_MIN_WIDTH, workArea.width - WINDOW_MARGIN * 2)
+  const maxHeight = Math.max(MODULE_MIN_HEIGHT, workArea.height - WINDOW_MARGIN * 2)
+  const targetWidth = Math.min(MODULE_DEFAULT_WIDTH, maxWidth)
+  const targetHeight = Math.min(MODULE_DEFAULT_HEIGHT, maxHeight)
 
-  const preferredSide = currentSidebarPosition === 'left' ? 'right' : 'left'
-  const canFitPreferred = preferredSide === 'right' ? rightSpace >= width : leftSpace >= width
-  const side: 'left' | 'right' = canFitPreferred
-    ? preferredSide
-    : rightSpace >= leftSpace
+  const leftSpace = sidebarBounds.x - workArea.x - MODULE_GAP - WINDOW_MARGIN
+  const rightSpace =
+    workArea.x + workArea.width - (sidebarBounds.x + sidebarBounds.width) - MODULE_GAP - WINDOW_MARGIN
+
+  const preferredSide: 'left' | 'right' =
+    currentSidebarPosition === 'left'
       ? 'right'
-      : 'left'
+      : currentSidebarPosition === 'right'
+        ? 'left'
+        : rightSpace >= leftSpace
+          ? 'right'
+          : 'left'
 
-  let moduleX =
+  const canFitPreferred = preferredSide === 'right' ? rightSpace >= targetWidth : leftSpace >= targetWidth
+  const side: 'left' | 'right' = canFitPreferred ? preferredSide : rightSpace >= leftSpace ? 'right' : 'left'
+
+  const sideSpace = side === 'right' ? rightSpace : leftSpace
+  const width = Math.max(MODULE_MIN_WIDTH, Math.min(targetWidth, Math.max(MODULE_MIN_WIDTH, sideSpace)))
+  const height = targetHeight
+
+  const x =
     side === 'right'
       ? sidebarBounds.x + sidebarBounds.width + MODULE_GAP
       : sidebarBounds.x - width - MODULE_GAP
+  const y = sidebarBounds.y
+  const candidate = clampRectToWorkArea({ x, y, width, height }, workArea)
+  const fitsWithoutOverlap =
+    (side === 'right' && candidate.x >= sidebarBounds.x + sidebarBounds.width + MODULE_GAP) ||
+    (side === 'left' && candidate.x + candidate.width <= sidebarBounds.x - MODULE_GAP)
 
-  let moduleY = sidebarBounds.y
+  if (fitsWithoutOverlap && isRectInsideWorkArea(candidate, workArea)) {
+    return candidate
+  }
 
-  const bounded = clampRectToWorkArea({ x: moduleX, y: moduleY, width, height }, workArea)
-  return bounded
+  return clampRectToWorkArea(getCenteredBoundsInWorkArea(width, height, workArea), workArea)
 }
 
 function applySidebarWindowMode(mode: SidebarWindowMode) {
@@ -1676,7 +1741,7 @@ function openModuleWindow(
 
   // Quick capture modules use smaller dimensions
   const isQuickCapture = kind === 'quick-task' || kind === 'quick-note' || kind === 'quick-event'
-  let initialBounds = getModuleBoundsNextToSidebar()
+  let initialBounds = resolveModuleBounds(kind)
   
   if (isQuickCapture) {
     const displayForModule = screen.getDisplayMatching(initialBounds).workArea
@@ -1688,21 +1753,16 @@ function openModuleWindow(
     }
   }
 
-  const displayForModule = screen.getDisplayMatching(initialBounds).workArea
-  const dynamicMinWidth = isQuickCapture 
-    ? QUICK_CAPTURE_WIDTH 
-    : Math.min(1080, Math.max(860, displayForModule.width - WINDOW_MARGIN * 2))
-  const dynamicMinHeight = isQuickCapture 
-    ? QUICK_CAPTURE_HEIGHT 
-    : Math.min(680, Math.max(620, displayForModule.height - WINDOW_MARGIN * 2))
+  const minWidth = isQuickCapture ? QUICK_CAPTURE_WIDTH : MODULE_MIN_WIDTH
+  const minHeight = isQuickCapture ? QUICK_CAPTURE_HEIGHT : MODULE_MIN_HEIGHT
 
   const moduleWin = new BrowserWindow({
     ...initialBounds,
     transparent: true,
     backgroundColor: '#00000000',
     ...getModuleWindowChromeOptions(),
-    minWidth: Math.min(dynamicMinWidth, initialBounds.width),
-    minHeight: Math.min(dynamicMinHeight, initialBounds.height),
+    minWidth: Math.min(minWidth, initialBounds.width),
+    minHeight: Math.min(minHeight, initialBounds.height),
     resizable: !isQuickCapture,
     minimizable: !isQuickCapture,
     maximizable: !isQuickCapture,
@@ -1741,6 +1801,19 @@ function openModuleWindow(
   moduleWin.on('closed', () => {
     moduleWins.delete(kind)
   })
+
+  if (!isQuickCapture) {
+    const rememberBounds = () => {
+      if (moduleWin.isDestroyed()) return
+      const bounds = moduleWin.getBounds()
+      moduleWindowBoundsMemory.set(kind, {
+        bounds,
+        sidebarPosition: currentSidebarPosition,
+      })
+    }
+    moduleWin.on('moved', rememberBounds)
+    moduleWin.on('resized', rememberBounds)
+  }
 
   const focusDateQuery = focusDate ? `&focusDate=${encodeURIComponent(focusDate)}` : ''
   const focusProjectQuery = focusProjectId ? `&focusProjectId=${encodeURIComponent(focusProjectId)}` : ''
@@ -1980,6 +2053,28 @@ ipcMain.handle('window:open-external', async (_event, url: string) => {
     throw new Error('Unsupported external URL protocol')
   }
   await shell.openExternal(url)
+})
+
+ipcMain.handle('window:open-checkin', () => {
+  applySidebarVisibility(true)
+  applySidebarWindowMode('expanded')
+  if (sidebarWin && !sidebarWin.isDestroyed()) {
+    sidebarWin.webContents.send('sidebar:state-changed', { state: 'expanded' })
+    // ExpandedSidebar may mount a moment after switching from rail/compact.
+    // Send immediately and once more after mount to avoid dropping the signal.
+    sidebarWin.webContents.send('sidebar:open-checkin')
+    setTimeout(() => {
+      if (!sidebarWin || sidebarWin.isDestroyed()) return
+      sidebarWin.webContents.send('sidebar:state-changed', { state: 'expanded' })
+      sidebarWin.webContents.send('sidebar:open-checkin')
+    }, 220)
+  }
+})
+
+ipcMain.on('daily:checkin-updated', (_event, payload: { finished?: string; blocked?: string; firstTaskTomorrow?: string }) => {
+  const dashboardWin = moduleWins.get('dashboard')
+  if (!dashboardWin || dashboardWin.isDestroyed()) return
+  dashboardWin.webContents.send('daily:checkin-updated', payload)
 })
 
 // Touch Bar setup for macOS

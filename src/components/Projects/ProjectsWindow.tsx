@@ -209,6 +209,7 @@ export const ProjectsWindow = () => {
   const taskContextRef = useRef<HTMLDivElement | null>(null)
   const linkedNoteContextRef = useRef<HTMLDivElement | null>(null)
   const rightPanelMenuRef = useRef<HTMLDivElement | null>(null)
+  const createProjectInputRef = useRef<HTMLInputElement | null>(null)
 
   const [projects, setProjects] = useState<ProjectRow[]>([])
   const [tasks, setTasks] = useState<TaskRow[]>([])
@@ -579,6 +580,14 @@ export const ProjectsWindow = () => {
     }
   }, [api, newProjectName, syncDraftFromProject])
 
+  const openCreateProjectComposer = useCallback(() => {
+    setIsCreatingProject(true)
+    window.setTimeout(() => {
+      createProjectInputRef.current?.focus()
+      createProjectInputRef.current?.select()
+    }, 60)
+  }, [])
+
   const deleteProject = useCallback(
     async (projectId: string) => {
       try {
@@ -887,14 +896,22 @@ export const ProjectsWindow = () => {
 
   useEffect(() => {
     if (!initialFocusProjectId) return
+    if (initialFocusProjectId === '__new__') {
+      openCreateProjectComposer()
+      return
+    }
     if (!projects.length) return
     if (selectedProjectId === initialFocusProjectId) return
     void focusProjectById(initialFocusProjectId)
-  }, [focusProjectById, initialFocusProjectId, projects, selectedProjectId])
+  }, [focusProjectById, initialFocusProjectId, openCreateProjectComposer, projects, selectedProjectId])
 
   useEffect(() => {
     const focusProjectListener = (_event: unknown, payload: { kind?: string; focusProjectId?: string | null }) => {
       if (payload?.kind !== 'projects' || !payload.focusProjectId) return
+      if (payload.focusProjectId === '__new__') {
+        openCreateProjectComposer()
+        return
+      }
       void focusProjectById(payload.focusProjectId)
     }
 
@@ -903,7 +920,7 @@ export const ProjectsWindow = () => {
     return () => {
       window.ipcRenderer?.off('module:focus-project', focusProjectListener)
     }
-  }, [focusProjectById])
+  }, [focusProjectById, openCreateProjectComposer])
 
   useEffect(() => {
     if (!initialFocusTaskId) return
@@ -1179,6 +1196,7 @@ export const ProjectsWindow = () => {
                 {isCreatingProject && (
                   <div className="mt-3 space-y-2 rounded-2xl border border-gray-200 bg-gray-50 p-3">
                     <input
+                      ref={createProjectInputRef}
                       value={newProjectName}
                       onChange={(e) => setNewProjectName(e.target.value)}
                       onKeyDown={(e) => {
@@ -1189,7 +1207,6 @@ export const ProjectsWindow = () => {
                       }}
                       placeholder="Project name"
                       className="w-full h-9 px-3 text-sm border border-gray-200 rounded-lg focus:outline-none focus:border-gray-300 bg-white text-gray-900 placeholder-gray-500"
-                      autoFocus
                     />
                     <button
                       onClick={() => void createProject()}
@@ -1659,9 +1676,17 @@ export const ProjectsWindow = () => {
             />
 
             <aside className="flex shrink-0 flex-col overflow-hidden border-l border-gray-200 bg-[#fbfcfe]" style={{ width: `${rightPaneWidth}px` }}>
-              <div className="flex-1 overflow-auto p-3 space-y-4">
-                <div className="flex items-center justify-between gap-3">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-gray-500">Project context</p>
+              <div className="flex-1 overflow-auto p-4 space-y-5">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Inspector</p>
+                    <p className="mt-1 text-sm font-semibold text-gray-900 truncate">
+                      {selectedProject ? 'Project context' : 'No project selected'}
+                    </p>
+                    <p className="mt-1 text-xs text-gray-500 truncate">
+                      {selectedProject ? projectDraft.name : 'Click a project to view details'}
+                    </p>
+                  </div>
                   {selectedProject && (
                     <div className="relative" ref={rightPanelMenuRef}>
                       <button
@@ -1730,19 +1755,18 @@ export const ProjectsWindow = () => {
                   <p className="text-sm text-gray-500">Select a project to view notes, details, and workspace activity.</p>
                 ) : (
                   <>
-                    <section className="space-y-1.5">
-                      <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-gray-500">Project notes</p>
-                      <textarea
-                        value={projectDraft.description}
-                        onChange={(e) => updateProjectDraft({ description: e.target.value })}
-                        placeholder="Add project context, decisions, links, or reminders..."
-                        className="h-24 w-full resize-none rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-800 outline-none focus:border-gray-300"
-                      />
+                    <section className="space-y-2">
+                      <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Project notes</p>
+                      <p className="text-sm text-gray-500 leading-6">
+                        {projectDraft.description?.trim()
+                          ? projectDraft.description.trim()
+                          : 'Add project context, decisions, links, or reminders.'}
+                      </p>
                     </section>
 
-                    <section className="space-y-1.5 border-t border-gray-100 pt-3">
+                    <section className="space-y-2 border-t border-gray-100 pt-4">
                       <div className="flex items-center justify-between gap-3">
-                        <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-gray-500">Linked notes</p>
+                        <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Linked notes</p>
                         <button
                           type="button"
                           className="text-xs font-medium text-[#FF5F40] hover:text-[#EA5336]"
@@ -1770,8 +1794,8 @@ export const ProjectsWindow = () => {
                               className="flex items-start justify-between gap-2 rounded-md px-1 py-1 hover:bg-white"
                             >
                               <div className="min-w-0">
-                                <p className="truncate text-sm text-gray-800">{link.note.title}</p>
-                                <p className="truncate text-[11px] text-gray-500">{link.note.preview || 'No content'}</p>
+                                <p className="truncate text-sm font-medium text-gray-900">{link.note.title}</p>
+                                <p className="truncate text-xs text-gray-500">{link.note.preview || 'No content'}</p>
                               </div>
                               <button
                                 type="button"
@@ -1786,9 +1810,9 @@ export const ProjectsWindow = () => {
                       )}
                     </section>
 
-                    <section className="space-y-1.5 border-t border-gray-100 pt-3">
-                      <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-gray-500">Details</p>
-                      <div className="space-y-1 text-sm">
+                    <section className="space-y-2 border-t border-gray-100 pt-4">
+                      <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Details</p>
+                      <div className="space-y-1.5 text-sm">
                         <div className="flex items-center justify-between gap-3"><span className="text-gray-500">Status</span><span className="text-gray-900">{projectStatusLabels[projectDraft.status]}</span></div>
                         <div className="flex items-center justify-between gap-3"><span className="text-gray-500">Progress</span><span className="text-gray-900">{projectDraft.completeness}%</span></div>
                         <div className="flex items-center justify-between gap-3"><span className="text-gray-500">Start</span><span className="text-gray-900">{projectDraft.startDate ? formatShortDate(projectDraft.startDate) : 'Not set'}</span></div>
@@ -1799,10 +1823,10 @@ export const ProjectsWindow = () => {
                       </div>
                     </section>
 
-                    <section className="space-y-1.5 border-t border-gray-100 pt-3">
-                      <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-gray-500">Workspace</p>
-                      <p className="text-sm font-medium text-gray-900">{activeWorkspace?.name?.trim() || 'Current workspace'}</p>
-                      <div className="space-y-1 text-sm">
+                    <section className="space-y-2 border-t border-gray-100 pt-4">
+                      <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Workspace</p>
+                      <p className="text-sm font-medium text-gray-900 truncate">{activeWorkspace?.name?.trim() || 'Current workspace'}</p>
+                      <div className="space-y-1.5 text-sm">
                         <div className="flex items-center justify-between gap-3"><span className="text-gray-500">Created by</span><span className="text-gray-900">{creatorDisplayName}</span></div>
                         <div className="flex items-center justify-between gap-3">
                           <span className="text-gray-500">Last edited</span>
@@ -1812,17 +1836,21 @@ export const ProjectsWindow = () => {
                       </div>
                     </section>
 
-                    <section className="space-y-1.5 border-t border-gray-100 pt-3">
-                      <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-gray-500">Recent activity</p>
+                    <section className="space-y-2 border-t border-gray-100 pt-4">
+                      <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Recent activity</p>
                       {recentProjectActivity.length === 0 ? (
                         <p className="text-sm text-gray-500">No recent activity.</p>
                       ) : (
                         <div className="space-y-1">
                           {recentProjectActivity.map((item) => (
-                            <div key={item.id} className="flex items-center justify-between gap-3 text-sm">
-                              <span className="min-w-0 truncate text-gray-700">{item.label}</span>
+                            <button
+                              key={item.id}
+                              type="button"
+                              className="flex w-full items-center justify-between gap-3 rounded-lg px-2 py-1.5 text-left text-sm hover:bg-gray-50 transition"
+                            >
+                              <span className="min-w-0 truncate font-medium text-gray-900">{item.label}</span>
                               <span className="shrink-0 text-[11px] text-gray-500">{formatShortDate(item.at)}</span>
-                            </div>
+                            </button>
                           ))}
                         </div>
                       )}

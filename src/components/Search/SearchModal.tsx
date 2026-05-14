@@ -211,24 +211,6 @@ export const SearchModal = () => {
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               onKeyDown={(event) => {
-                if (event.key === 'ArrowDown') {
-                  event.preventDefault()
-                  if (results.length > 0) setSelectedIndex((current) => Math.min(current + 1, results.length - 1))
-                  return
-                }
-
-                if (event.key === 'ArrowUp') {
-                  event.preventDefault()
-                  if (results.length > 0) setSelectedIndex((current) => Math.max(current - 1, 0))
-                  return
-                }
-
-                if (event.key === 'Enter') {
-                  event.preventDefault()
-                  if (activeResult) jumpToResult(activeResult)
-                  return
-                }
-
                 if (event.key === 'Escape') {
                   event.preventDefault()
                   closeSearch()
@@ -302,9 +284,11 @@ export const SearchModal = () => {
           )}
         </div>
 
-        <div className="flex items-center justify-between border-t border-gray-100 px-4 py-3 text-[11px] text-gray-500">
-          <span>↑↓ to navigate • Enter to jump • ESC to close</span>
-          <span className="truncate">{activeResult ? `${activeResult.type} selected` : ' '}</span>
+        <div className="flex items-center gap-2 border-t border-gray-100 px-4 py-3 text-[11px] text-gray-500">
+          <span className="min-w-0 flex-1 truncate">↑↓ to navigate • Enter to jump • ESC to close</span>
+          <span className="hidden max-w-[42%] shrink-0 truncate text-right min-[460px]:inline">
+            {activeResult ? `${activeResult.type} selected` : ' '}
+          </span>
         </div>
       </div>
     </div>,
