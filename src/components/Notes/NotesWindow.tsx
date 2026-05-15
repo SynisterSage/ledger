@@ -367,6 +367,8 @@ export const NotesWindow = () => {
   const [isLoadingVersions, setIsLoadingVersions] = useState(false)
   const [isRestoringVersionId, setIsRestoringVersionId] = useState<string | null>(null)
   const [noteVersions, setNoteVersions] = useState<NoteVersion[]>([])
+  const sessionCheckpointMapRef = useRef<Map<string, boolean>>(new Map())
+  const lastAutosaveCheckpointRef = useRef<Map<string, number>>(new Map())
   const [exportType, setExportType] = useState<'notes' | 'mindmaps'>('notes')
   const [noteCreationSectionId, setNoteCreationSectionId] = useState<string | null>(null)
   const [showNewSectionPrompt, setShowNewSectionPrompt] = useState(false)
@@ -445,6 +447,11 @@ export const NotesWindow = () => {
     () => notes.find((note) => note.id === selectedNoteId) ?? null,
     [notes, selectedNoteId]
   )
+
+  const notesRef = useRef<NoteRow[]>(notes)
+  useEffect(() => {
+    notesRef.current = notes
+  }, [notes])
 
   const exitMindMapFullscreen = useCallback(() => {
     setIsMindMapFullscreen(false)
@@ -681,6 +688,13 @@ export const NotesWindow = () => {
     setIsDirty(false)
     setHasUserEdited(false)
     setHasHydratedNote(true)
+    // mark that this note has no session checkpoint yet and clear autosave checkpoint timestamp
+    try {
+      sessionCheckpointMapRef.current.set(note.id, false)
+      lastAutosaveCheckpointRef.current.delete(note.id)
+    } catch (e) {
+      // ignore
+    }
     window.setTimeout(() => {
       if (hydrationNoteIdRef.current === note.id) {
         setIsHydratingNote(false)
@@ -758,6 +772,24 @@ export const NotesWindow = () => {
       setHasUserEdited(true)
     }
   }, [isDirty])
+
+  // On first real user edit after hydration, create a session checkpoint (pre-edit snapshot)
+  useEffect(() => {
+    if (!selectedNoteId) return
+    if (!hasHydratedNote) return
+    if (!hasUserEdited) return
+    const already = sessionCheckpointMapRef.current.get(selectedNoteId)
+    if (already) return
+    void (async () => {
+      try {
+        await api.createNoteVersion(selectedNoteId, { reason: 'before_edit' })
+      } catch (e) {
+        console.error('[notes] failed to create session checkpoint', e)
+      }
+      sessionCheckpointMapRef.current.set(selectedNoteId, true)
+      lastAutosaveCheckpointRef.current.set(selectedNoteId, Date.now())
+    })()
+  }, [api, hasHydratedNote, hasUserEdited, selectedNoteId])
 
   useEffect(() => {
     if (selectedNoteId) return
@@ -917,6 +949,43 @@ export const NotesWindow = () => {
       setError(null)
 
       try {
+      // safety: create a checkpoint if update would be destructive
+      try {
+        const existing = notes.find((n) => n.id === selectedNoteId)
+        if (existing) {
+          const oldPlain = htmlToPlainText((existing as any).content_html ?? existing.content ?? '')
+          const newPlain = htmlToPlainText(noteContent)
+          const oldLen = String(oldPlain).replace(/\s/g, '').length
+          const newLen = String(newPlain).replace(/\s/g, '').length
+          if (oldLen > 50 && newLen < Math.max(5, Math.floor(oldLen * 0.25))) {
+            try {
+              await api.createNoteVersion(selectedNoteId, { reason: 'before_destructive_overwrite' })
+            } catch (e) {
+              console.error('[notes] failed to create destructive overwrite checkpoint', e)
+            }
+          }
+        }
+      } catch (e) {
+        console.error('[notes] safety check failed', e)
+      }
+
+      // autosave checkpoint throttling: at most one autosave checkpoint every 3 minutes per note
+      try {
+        const now = Date.now()
+        const last = lastAutosaveCheckpointRef.current.get(selectedNoteId) ?? 0
+        const THREE_MIN = 3 * 60 * 1000
+        if (!last || now - last >= THREE_MIN) {
+          try {
+            await api.createNoteVersion(selectedNoteId, { reason: 'autosave_checkpoint' })
+            lastAutosaveCheckpointRef.current.set(selectedNoteId, now)
+          } catch (e) {
+            console.error('[notes] failed to create autosave checkpoint', e)
+          }
+        }
+      } catch (e) {
+        console.error('[notes] autosave checkpoint check failed', e)
+      }
+
       const data = await api.updateNote(selectedNoteId, {
         title: noteTitle,
         content_html: noteContent,
@@ -942,7 +1011,7 @@ export const NotesWindow = () => {
         setShowSavingIndicator(false)
       }
     },
-    [api, draftContent, draftDate, draftMood, draftMode, draftMindMapStructure, draftTitle, selectedNoteId]
+    [api, draftContent, draftDate, draftMood, draftMode, draftMindMapStructure, draftTitle, selectedNoteId, notes]
   )
 
   const runQuickAutosaveThen = useCallback((after: () => void, timeoutMs = 120) => {
@@ -983,23 +1052,39 @@ export const NotesWindow = () => {
     }
   }, [api, selectedNoteId, syncDraftFromNote])
 
-  const openVersionHistory = useCallback(async (noteId?: string) => {
+  const openVersionHistory = useCallback((noteId?: string) => {
     const id = noteId ?? selectedNoteId
-    console.debug('[Notes] openVersionHistory called for id=', id, 'selectedNoteId=', selectedNoteId)
     if (!id) return
+    if (selectedNoteId !== id) {
+      setSelectedNoteId(id)
+    }
     setShowVersionHistoryModal(true)
+  }, [selectedNoteId])
+
+
+  useEffect(() => {
+    if (!showVersionHistoryModal || !selectedNoteId) return
+    let cancelled = false
     setIsLoadingVersions(true)
     setError(null)
-    try {
-      const versions = (await api.getNoteVersions(id)) as NoteVersion[]
-      setNoteVersions(Array.isArray(versions) ? versions : [])
-    } catch (error) {
-      setError(error instanceof Error ? error.message : 'Could not load version history.')
-      setNoteVersions([])
-    } finally {
-      setIsLoadingVersions(false)
+    void (async () => {
+      try {
+        const versions = (await api.getNoteVersions(selectedNoteId)) as NoteVersion[]
+        if (cancelled) return
+        setNoteVersions(Array.isArray(versions) ? versions : [])
+      } catch (error) {
+        if (cancelled) return
+        setError(error instanceof Error ? error.message : 'Could not load version history.')
+        setNoteVersions([])
+      } finally {
+        if (!cancelled) setIsLoadingVersions(false)
+      }
+    })()
+
+    return () => {
+      cancelled = true
     }
-  }, [api, selectedNoteId])
+  }, [api, selectedNoteId, showVersionHistoryModal])
 
   const restoreVersionById = useCallback(
     async (versionId: string) => {
@@ -1630,17 +1715,21 @@ export const NotesWindow = () => {
     if (!isInspectorActionsOpen) return
 
     const closeMenu = () => setIsInspectorActionsOpen(false)
+    const onPointerDown = (event: MouseEvent) => {
+      if (inspectorActionsRef.current?.contains(event.target as Node)) return
+      closeMenu()
+    }
     const onEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') closeMenu()
     }
 
-    window.addEventListener('mousedown', closeMenu)
+    window.addEventListener('mousedown', onPointerDown)
     window.addEventListener('scroll', closeMenu, true)
     window.addEventListener('resize', closeMenu)
     window.addEventListener('keydown', onEscape)
 
     return () => {
-      window.removeEventListener('mousedown', closeMenu)
+      window.removeEventListener('mousedown', onPointerDown)
       window.removeEventListener('scroll', closeMenu, true)
       window.removeEventListener('resize', closeMenu)
       window.removeEventListener('keydown', onEscape)
@@ -1682,7 +1771,7 @@ export const NotesWindow = () => {
   useEffect(() => {
     const focusNoteListener = (_event: unknown, payload: { kind?: string; focusNoteId?: string | null }) => {
       if (payload?.kind !== 'notes' || !payload.focusNoteId) return
-      const target = notes.find((note) => note.id === payload.focusNoteId)
+      const target = notesRef.current.find((note) => note.id === payload.focusNoteId)
       if (target) {
         void openNote(target)
         return
@@ -1695,7 +1784,7 @@ export const NotesWindow = () => {
     return () => {
       window.ipcRenderer?.off('module:focus-note', focusNoteListener)
     }
-  }, [notes, openNote, openNoteById])
+  }, [openNote, openNoteById])
 
   useEffect(() => {
     if (!lastSavedAt || isDirty || showSavingIndicator) return
@@ -2617,10 +2706,12 @@ export const NotesWindow = () => {
                             </button>
                             <button
                               onClick={() => {
-                                setIsNoteActionsOpen(false)
-                                const id = selectedNote?.id ?? selectedNoteId
-                                void openVersionHistory(id)
-                              }}
+                            setIsNoteActionsOpen(false)
+                            const id = selectedNote?.id ?? selectedNoteId
+                            if (!id) return
+                            setShowVersionHistoryModal(true)
+                            void openVersionHistory(id)
+                          }}
                               className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-50"
                             >
                               Version history
@@ -2842,6 +2933,8 @@ export const NotesWindow = () => {
                           onClick={() => {
                             setIsInspectorActionsOpen(false)
                             const id = selectedNote?.id ?? selectedNoteId
+                            if (!id) return
+                            setShowVersionHistoryModal(true)
                             void openVersionHistory(id)
                           }}
                           className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-50"

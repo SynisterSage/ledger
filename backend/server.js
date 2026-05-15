@@ -171,7 +171,7 @@ const mapNoteResponse = (row) => {
   }
 }
 
-const NOTE_VERSION_LIMIT = 100
+const NOTE_VERSION_LIMIT = 25
 
 const createNoteVersionSnapshot = async (workspaceId, actorUserId, noteRow, reason = 'update') => {
   if (!noteRow?.id) return
@@ -194,24 +194,38 @@ const createNoteVersionSnapshot = async (workspaceId, actorUserId, noteRow, reas
     depth: toNonNegativeInt(noteRow.depth, 0),
   }
 
-  const { error } = await supabase.from('note_versions').insert(payload)
-  if (error) {
-    console.error('[notes] failed to create note version snapshot', { noteId: noteRow.id, reason, error: error.message })
+  const { error: insertError } = await supabase.from('note_versions').insert(payload)
+  if (insertError) {
+    console.error('[notes] failed to create note version snapshot', { noteId: noteRow.id, reason, error: insertError.message })
     return
   }
 
-  const { data: existingIds, error: listError } = await supabase
+  // Prune older revisions beyond the limit. Prefer deleting autosave checkpoints first.
+  const { data: olderRows, error: listError } = await supabase
     .from('note_versions')
-    .select('id')
+    .select('id, source, reason')
     .eq('note_id', noteRow.id)
     .order('created_at', { ascending: false })
-    .range(NOTE_VERSION_LIMIT, NOTE_VERSION_LIMIT + 200)
+    .range(NOTE_VERSION_LIMIT, NOTE_VERSION_LIMIT + 500)
 
-  if (listError || !Array.isArray(existingIds) || existingIds.length === 0) return
+  if (listError || !Array.isArray(olderRows) || olderRows.length === 0) return
 
-  const staleIds = existingIds.map((row) => row.id).filter(Boolean)
-  if (!staleIds.length) return
-  const { error: pruneError } = await supabase.from('note_versions').delete().in('id', staleIds)
+  const idsToDelete = []
+  // First, collect autosave checkpoints (source === 'autosave_checkpoint') or legacy 'update' reasons
+  for (const r of olderRows) {
+    if (r?.source === 'autosave_checkpoint' || String(r?.reason) === 'update') idsToDelete.push(r.id)
+  }
+
+  // If not enough deletable autosave rows to prune down, include other rows as a last resort
+  if (idsToDelete.length < olderRows.length) {
+    for (const r of olderRows) {
+      if (idsToDelete.includes(r.id)) continue
+      idsToDelete.push(r.id)
+    }
+  }
+
+  if (!idsToDelete.length) return
+  const { error: pruneError } = await supabase.from('note_versions').delete().in('id', idsToDelete)
   if (pruneError) {
     console.error('[notes] failed pruning note versions', { noteId: noteRow.id, error: pruneError.message })
   }
@@ -2698,8 +2712,6 @@ app.patch('/api/notes/:id', authMiddleware, rateLimit('write'), async (req, res)
       return res.json(mapNoteResponse(existing))
     }
 
-    await createNoteVersionSnapshot(workspaceId, req.authUser.id, existing, 'update')
-
     update.user_id = req.authUser.id
     update.updated_at = new Date().toISOString()
 
@@ -2958,6 +2970,37 @@ app.get('/api/notes/:id/versions', authMiddleware, rateLimit('read'), async (req
       .limit(NOTE_VERSION_LIMIT)
     if (error) throw error
     res.json(Array.isArray(data) ? data : [])
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
+app.post('/api/notes/:id/versions', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req)
+    const { id } = req.params
+    const reason = String(req.body?.reason ?? 'manual')
+
+    const { data: existing, error: existingError } = await supabase
+      .from('notes')
+      .select('id, workspace_id, user_id, title, content, content_html, date, mood, source, mode, mind_map_structure, parent_id, section_id, sort_order, depth, created_at, updated_at')
+      .eq('workspace_id', workspaceId)
+      .eq('id', id)
+      .maybeSingle()
+    if (existingError) throw existingError
+    if (!existing) return res.status(404).json({ error: 'Note not found.' })
+
+    await createNoteVersionSnapshot(workspaceId, req.authUser.id, existing, reason)
+
+    const { data: newest, error: newestError } = await supabase
+      .from('note_versions')
+      .select('id, note_id, versioned_by, reason, title, content, content_html, date, mood, source, mode, mind_map_structure, parent_id, section_id, sort_order, depth, created_at')
+      .eq('workspace_id', workspaceId)
+      .eq('note_id', id)
+      .order('created_at', { ascending: false })
+      .limit(1)
+    if (newestError) throw newestError
+    res.json(Array.isArray(newest) && newest[0] ? newest[0] : null)
   } catch (error) {
     res.status(500).json({ error: error.message })
   }
