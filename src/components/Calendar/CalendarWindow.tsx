@@ -53,6 +53,7 @@ type EventRow = {
   color?: string;
   status?: 'planned' | 'done' | 'missed' | 'cancelled';
   recurrence_rule?: 'none' | 'daily' | 'weekly' | 'weekdays';
+  all_day?: boolean;
   project_id?: string | null;
   note_id?: string | null;
   notes?: string | null;
@@ -623,7 +624,8 @@ export const CalendarWindow = () => {
   const [newEventTitle, setNewEventTitle] = useState('');
   const [newEventDate, setNewEventDate] = useState(() => formatDateKey(new Date()));
   const [newEventTime, setNewEventTime] = useState('09:00');
-  const [newEventEndTime, setNewEventEndTime] = useState('');
+  const [newEventDurationValue, setNewEventDurationValue] = useState(30);
+  const [newEventDurationUnit, setNewEventDurationUnit] = useState<'minutes' | 'hours'>('minutes');
   const [newEventRecurrence, setNewEventRecurrence] = useState<
     'none' | 'daily' | 'weekly' | 'weekdays'
   >('none');
@@ -668,6 +670,8 @@ export const CalendarWindow = () => {
   const [editTitle, setEditTitle] = useState('');
   const [editDate, setEditDate] = useState('');
   const [editTime, setEditTime] = useState('');
+  const [editDurationValue, setEditDurationValue] = useState(30);
+  const [editDurationUnit, setEditDurationUnit] = useState<'minutes' | 'hours'>('minutes');
   const [editStatus, setEditStatus] = useState<'planned' | 'done' | 'missed' | 'cancelled'>(
     'planned'
   );
@@ -688,6 +692,7 @@ export const CalendarWindow = () => {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [, setCalendarColorDrafts] = useState<Record<string, string>>({});
   const [isSavingColorId, setIsSavingColorId] = useState<string | null>(null);
+  const [defaultEventDurationMinutes, setDefaultEventDurationMinutes] = useState(30);
   const [showCloseGuardModal, setShowCloseGuardModal] = useState(false);
   const [isNewCalendarModalOpen, setIsNewCalendarModalOpen] = useState(false);
   const [newCalendarName, setNewCalendarName] = useState('');
@@ -932,6 +937,20 @@ export const CalendarWindow = () => {
             occurrenceStart < viewConfig.end
           ) {
             const occurrenceEnd = new Date(occurrenceStart.getTime() + durationMs);
+              // Debug: log if baseStart or occurrenceStart have unexpected midnight hours
+              try {
+                if (baseStart.getHours() === 0 || occurrenceStart.getHours() === 0) {
+                  console.debug('[Calendar] recurrence expansion hours', {
+                    eventId: event.id,
+                    baseStart: baseStart.toISOString(),
+                    baseStartHours: baseStart.getHours(),
+                    occurrenceStart: occurrenceStart.toISOString(),
+                    occurrenceHours: occurrenceStart.getHours(),
+                  });
+                }
+              } catch (err) {
+                /* ignore */
+              }
             expanded.push({
               ...event,
               id: `${event.id}__${formatDateKey(occurrenceStart)}`,
@@ -965,12 +984,39 @@ export const CalendarWindow = () => {
 
     for (const evt of visibleEvents) {
       const key = formatDateKey(new Date(evt.start_at));
+      // Debug: detect suspicious midnight times on past events
+      try {
+        const h = new Date(evt.start_at).getHours();
+        const isPast = new Date(evt.end_at).getTime() < Date.now();
+        if (isPast && h === 0) {
+          console.debug('[Calendar] past event at midnight', { id: evt.id, start_at: evt.start_at, end_at: evt.end_at });
+        }
+      } catch (err) {
+        // ignore
+      }
       if (!grouped[key]) grouped[key] = [];
       grouped[key].push(evt);
     }
 
     for (const key of Object.keys(grouped)) {
       grouped[key].sort((a, b) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime());
+    }
+
+    // If a specific occurrence is selected (could be a recurrence occurrence), ensure
+    // it appears in the grouped results for its day so the center timeline can render it.
+    try {
+      if (selectedEvent) {
+        const selectedKey = formatDateKey(new Date(selectedEvent.start_at));
+        if (grouped[selectedKey]) {
+          const exists = grouped[selectedKey].some((e) => e.id === selectedEvent.id);
+          if (!exists) {
+            grouped[selectedKey].push(selectedEvent);
+            grouped[selectedKey].sort((a, b) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime());
+          }
+        }
+      }
+    } catch (err) {
+      // ignore
     }
 
     return grouped;
@@ -1005,11 +1051,27 @@ export const CalendarWindow = () => {
   const selectedContextDayKey = formatDateKey(selectedContextDate);
   const selectedContextDayEvents = eventsByDay[selectedContextDayKey] ?? [];
   const selectedContextDayReminders = remindersByDay[selectedContextDayKey] ?? [];
-  const overviewEventCount = visibleEvents.length;
-  const overviewReminderCount = Object.values(remindersByDay).reduce(
-    (total, items) => total + items.length,
+  const activeVisibleEvents = visibleEvents.filter((event) => event.status !== 'done');
+  const activeRemindersByDay = Object.values(remindersByDay).reduce(
+    (total, items) => total + items.filter((reminder) => !reminder.is_done).length,
     0
   );
+  const selectedContextDayActiveEvents = selectedContextDayEvents.filter(
+    (event) => event.status !== 'done'
+  );
+  const selectedContextDayActiveReminders = selectedContextDayReminders.filter(
+    (reminder) => !reminder.is_done
+  );
+  const overviewEventCount = activeVisibleEvents.length;
+  const overviewReminderCount = activeRemindersByDay;
+  const selectedContextDayEventCount = selectedContextDayActiveEvents.length;
+  const selectedContextDayReminderCount = selectedContextDayActiveReminders.length;
+  const selectedContextDayEventCountLabel = `${selectedContextDayEventCount} event${
+    selectedContextDayEventCount === 1 ? '' : 's'
+  }`;
+  const selectedContextDayReminderCountLabel = `${selectedContextDayReminderCount} reminder${
+    selectedContextDayReminderCount === 1 ? '' : 's'
+  }`;
   const selectedTimelineDate = selectedEventPreview
     ? new Date(selectedEventPreview.start_at)
     : selectedReminder
@@ -1018,6 +1080,28 @@ export const CalendarWindow = () => {
   const selectedTimelineHour = selectedTimelineDate?.getHours() ?? null;
   const selectedTimelineInVisibleHours =
     selectedTimelineHour !== null && selectedTimelineHour >= 8 && selectedTimelineHour < 20;
+  const hoursToRender = useMemo(() => {
+    const hourSet = new Set<number>(hours.map((h) => Number.parseInt(h.split(':')[0], 10)));
+
+    // Include hours present in visible events/reminders for the current view's dates
+    const dateKeys = new Set(viewConfig.dates.map((d) => formatDateKey(d)));
+
+    for (const evt of visibleEvents) {
+      const key = formatDateKey(new Date(evt.start_at));
+      if (!dateKeys.has(key)) continue;
+      hourSet.add(new Date(evt.start_at).getHours());
+    }
+
+    for (const rem of reminders) {
+      const key = formatDateKey(new Date(rem.remind_at));
+      if (!dateKeys.has(key)) continue;
+      hourSet.add(new Date(rem.remind_at).getHours());
+    }
+
+    return Array.from(hourSet)
+      .sort((a, b) => a - b)
+      .map((h) => `${h}:00`);
+  }, [hours, visibleEvents, reminders, viewConfig.dates]);
   const selectedEventProject = useMemo(
     () =>
       selectedEventPreview?.project_id
@@ -1039,8 +1123,97 @@ export const CalendarWindow = () => {
     () => (selectedReminder?.note_id ? noteById.get(selectedReminder.note_id) ?? null : null),
     [noteById, selectedReminder]
   );
+  const isAllDayEvent = (event: EventRow) => {
+    if (event.all_day) return true;
+    const start = new Date(event.start_at);
+    const end = new Date(event.end_at);
+    const durationMinutes = (end.getTime() - start.getTime()) / 60000;
+    return (
+      start.getHours() === 0 &&
+      start.getMinutes() === 0 &&
+      end.getHours() === 0 &&
+      end.getMinutes() === 0 &&
+      durationMinutes >= 1380
+    );
+  };
+  const formatEventTimeLabel = (event: EventRow) => {
+    if (isAllDayEvent(event)) return 'All day';
+    const start = new Date(event.start_at);
+    const end = new Date(event.end_at);
+    const startLabel = start.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    if (getEventDurationMinutes(event) > 60) {
+      const endLabel = end.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+      return `${startLabel} – ${endLabel}`;
+    }
+    return startLabel;
+  };
+  const formatEventDateTimeLabel = (event: EventRow) =>
+    (() => {
+      const start = new Date(event.start_at);
+      const base = start.toLocaleDateString([], {
+        weekday: 'short',
+        month: 'short',
+        day: 'numeric',
+      });
+      if (isAllDayEvent(event)) return base;
+      const startLabel = start.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+      if (getEventDurationMinutes(event) > 60) {
+        const endLabel = new Date(event.end_at).toLocaleTimeString([], {
+          hour: 'numeric',
+          minute: '2-digit',
+        });
+        return `${base}, ${startLabel} – ${endLabel}`;
+      }
+      return `${base}, ${startLabel}`;
+    })();
+  const getEventDurationMinutes = (event: EventRow) =>
+    Math.max(1, Math.round((new Date(event.end_at).getTime() - new Date(event.start_at).getTime()) / 60000));
+  const getEventDurationRows = (event: EventRow) =>
+    Math.max(1, Math.min(12, Math.ceil(getEventDurationMinutes(event) / 60)));
+  const formatEventTimeRangeLabel = (event: EventRow) => {
+    if (isAllDayEvent(event)) return 'All day';
+    const start = new Date(event.start_at);
+    const end = new Date(event.end_at);
+    const startLabel = start.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    const endLabel = end.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    return `${startLabel} – ${endLabel}`;
+  };
+  const getDurationDisplay = (minutes: number) => {
+    if (minutes >= 60 && minutes % 60 === 0) {
+      return { value: minutes / 60, unit: 'hours' as const };
+    }
+    return { value: minutes, unit: 'minutes' as const };
+  };
+  const getDurationMinutes = (value: number, unit: 'minutes' | 'hours') =>
+    Math.max(1, Math.round(unit === 'hours' ? value * 60 : value));
   const isPastEvent = (event: EventRow) => new Date(event.end_at).getTime() < Date.now();
+  const canEditEvent = (event: EventRow) => !isPastEvent(event);
   const isPastReminder = (reminder: ReminderRow) => new Date(reminder.remind_at).getTime() < Date.now();
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadPreferenceDefaults = async () => {
+      try {
+        const payload = (await api.getUserSettings()) as {
+          preferences?: { defaultEventMinutes?: number } | null;
+        };
+        if (cancelled) return;
+
+        const minutes = Number(payload?.preferences?.defaultEventMinutes ?? 30);
+        setDefaultEventDurationMinutes([30, 45, 60].includes(minutes) ? minutes : 30);
+      } catch {
+        if (!cancelled) setDefaultEventDurationMinutes(30);
+      }
+    };
+
+    void loadPreferenceDefaults();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [api, user?.id]);
+
   useEffect(() => {
     if (viewMode !== 'day' || !selectedTimelineInVisibleHours || selectedTimelineHour === null) {
       return;
@@ -1456,7 +1629,9 @@ export const CalendarWindow = () => {
     setGridQuickTitle('');
     setNewEventDate(dateKey);
     setNewEventTime(`${String(hour).padStart(2, '0')}:00`);
-    setNewEventEndTime('');
+    const defaultDuration = getDurationDisplay(defaultEventDurationMinutes);
+    setNewEventDurationValue(defaultDuration.value);
+    setNewEventDurationUnit(defaultDuration.unit);
     setNewEventTitle(title);
     setNewEventRecurrence('none');
     setComposerCalendarId(
@@ -1496,12 +1671,8 @@ export const CalendarWindow = () => {
       calendars.find((calendar) => calendar.id === composerCalendarId) ?? getDefaultCalendar();
     if (!selectedCalendar) return;
     const start = new Date(`${newEventDate}T${newEventTime}:00`);
-    const end = newEventEndTime.trim()
-      ? new Date(`${newEventDate}T${newEventEndTime}:00`)
-      : new Date(start);
-    if (!newEventEndTime.trim()) {
-      end.setHours(start.getHours() + 1);
-    }
+    const durationMinutes = getDurationMinutes(newEventDurationValue, newEventDurationUnit);
+    const end = new Date(start.getTime() + durationMinutes * 60 * 1000);
     if (end <= start) {
       end.setHours(start.getHours() + 1);
     }
@@ -1542,7 +1713,9 @@ export const CalendarWindow = () => {
       setComposerProjectId('');
       setComposerNoteId('');
       setComposerNotes('');
-      setNewEventEndTime('');
+      const defaultDuration = getDurationDisplay(defaultEventDurationMinutes);
+      setNewEventDurationValue(defaultDuration.value);
+      setNewEventDurationUnit(defaultDuration.unit);
       notifyCalendarItemsUpdated();
       return;
     }
@@ -1582,7 +1755,9 @@ export const CalendarWindow = () => {
     setComposerProjectId('');
     setComposerNoteId('');
     setComposerNotes('');
-    setNewEventEndTime('');
+    const defaultDuration = getDurationDisplay(defaultEventDurationMinutes);
+    setNewEventDurationValue(defaultDuration.value);
+    setNewEventDurationUnit(defaultDuration.unit);
     notifyCalendarItemsUpdated();
   };
 
@@ -1722,6 +1897,11 @@ export const CalendarWindow = () => {
   const openEventEditor = (event: EventRow) => {
     const source = events.find((row) => row.id === baseEventId(event.id)) ?? event;
     const start = new Date(event.start_at);
+    const durationMinutes = Math.max(
+      1,
+      Math.round((new Date(source.end_at).getTime() - new Date(source.start_at).getTime()) / 60000)
+    );
+    const durationDisplay = getDurationDisplay(durationMinutes);
     setSelectedEvent(event);
     setEventEditorEvent(source);
     setEditTitle(source.title);
@@ -1729,6 +1909,8 @@ export const CalendarWindow = () => {
     setEditTime(
       `${String(start.getHours()).padStart(2, '0')}:${String(start.getMinutes()).padStart(2, '0')}`
     );
+    setEditDurationValue(durationDisplay.value);
+    setEditDurationUnit(durationDisplay.unit);
     setEditStatus(source.status ?? 'planned');
     setEditCalendarId(source.calendar_id);
     setEditColor(calendarById.get(source.calendar_id)?.color ?? source.color ?? '#93C5FD');
@@ -1861,8 +2043,8 @@ export const CalendarWindow = () => {
     if (!eventEditorEvent || !editTitle.trim()) return;
 
     const start = new Date(`${editDate}T${editTime}:00`);
-    const end = new Date(start);
-    end.setHours(start.getHours() + 1);
+    const durationMinutes = getDurationMinutes(editDurationValue, editDurationUnit);
+    const end = new Date(start.getTime() + durationMinutes * 60 * 1000);
 
     setIsSavingEdit(true);
     setError(null);
@@ -1932,6 +2114,9 @@ export const CalendarWindow = () => {
     try {
       await api.deleteEvent(targetId);
       setEvents((prev) => prev.filter((evt) => evt.id !== targetId));
+      setSelectedEvent((current) =>
+        current && baseEventId(current.id) === targetId ? null : current
+      );
     } catch (error) {
       setError('Could not delete event.');
     }
@@ -2685,20 +2870,20 @@ export const CalendarWindow = () => {
             <div
               ref={centerScrollRef}
               className="flex-1 min-w-0 overflow-auto"
-              onWheel={(event) => {
-                const container = centerScrollRef.current;
-                if (!container) return;
+                onWheel={(event) => {
+                  const container = centerScrollRef.current;
+                  if (!container) return;
 
-                const hasHorizontalOverflow = container.scrollWidth > container.clientWidth;
-                if (!hasHorizontalOverflow) return;
+                  const hasHorizontalOverflow = container.scrollWidth > container.clientWidth;
+                  if (!hasHorizontalOverflow) return;
 
-                const delta =
-                  Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
-                if (delta === 0) return;
+                  const delta =
+                    Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
+                  if (delta === 0) return;
 
-                event.preventDefault();
-                container.scrollLeft += delta;
-              }}
+                  // Avoid calling preventDefault here to prevent passive event listener warnings.
+                  container.scrollLeft += delta;
+                }}
             >
               {isInitialLoading ? (
                 loadingSkeleton
@@ -2827,8 +3012,8 @@ export const CalendarWindow = () => {
                                       setContextMenu(null);
                                       setGridQuickAdd(null);
                                       setGridQuickTitle('');
-                                      const source = events.find((row) => baseEventId(row.id) === baseEventId(event.id)) ?? event;
-                                      setSelectedEvent(source);
+                                      // Select the occurrence so selectedEventPreview preserves the occurrence time
+                                      setSelectedEvent(event);
                                       setSelectedReminder(null);
                                       setViewMode('day');
                                       const eventDate = new Date(event.start_at);
@@ -2850,6 +3035,23 @@ export const CalendarWindow = () => {
                                       className={`mr-1 inline-block h-1.5 w-1.5 rounded-full ${meta.dotClass}`}
                                       style={{ backgroundColor: calendarColor }}
                                     />
+                                    {event.status === 'done' && (
+                                      <span className="text-green-600 mr-1 inline-block align-middle text-[12px]">
+                                        ✓
+                                      </span>
+                                    )}
+                                    {pastEvent && new Date(event.start_at).getHours() === 0 &&
+                                      (() => {
+                                        try {
+                                          console.debug('[Calendar] month-preview-past-midnight', {
+                                            id: event.id,
+                                            start_at: event.start_at,
+                                            parsed: new Date(event.start_at).toString(),
+                                          });
+                                        } catch (err) {}
+                                        return null;
+                                      })()
+                                    }
                                     {event.project_id && (
                                       <Folder
                                         size={8}
@@ -2880,25 +3082,7 @@ export const CalendarWindow = () => {
                 </div>
               ) : (
                 <div className="space-y-3 p-3">
-                  {viewMode === 'day' && selectedTimelineDate && !selectedTimelineInVisibleHours && (
-                    <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 shadow-sm">
-                      <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-amber-800">
-                        Selected item
-                      </p>
-                      <p className="mt-1 text-sm font-semibold text-gray-900">
-                        {selectedEventPreview?.title ?? selectedReminder?.title ?? 'Item'}
-                      </p>
-                      <p className="mt-1 text-xs text-gray-600">
-                        {selectedTimelineDate.toLocaleString([], {
-                          weekday: 'short',
-                          month: 'short',
-                          day: 'numeric',
-                          hour: 'numeric',
-                          minute: '2-digit',
-                        })}
-                      </p>
-                    </div>
-                  )}
+                  {/* Removed fallback card: events are rendered into the normal day grid, including off-hour rows */}
                   <div
                     className="grid min-w-210"
                     style={{
@@ -2920,38 +3104,151 @@ export const CalendarWindow = () => {
                     </div>
                   ))}
 
-                  {hours.map((hour) => (
+                  <div className="h-10 border-b border-gray-100 pr-3 text-[11px] text-gray-400 flex items-start justify-end pt-1.5">
+                    All day
+                  </div>
+                  {viewConfig.dates.map((dayDate) => {
+                    const key = formatDateKey(dayDate);
+                    const allDayItems = (eventsByDay[key] ?? []).filter((evt) =>
+                      isAllDayEvent(evt)
+                    );
+                    const visibleAllDayItems = allDayItems.slice(0, 2);
+                    const hiddenAllDayCount = allDayItems.length - visibleAllDayItems.length;
+
+                    return (
+                      <div
+                        key={`all-day-${key}`}
+                        className="h-10 border-b border-l border-gray-100 relative px-1 py-1 bg-gray-50/30"
+                      >
+                        <div className="space-y-0.5">
+                          {visibleAllDayItems.map((evt) => {
+                            const eventColor = getCalendarColor(evt.calendar_id);
+                            const pastEvent = isPastEvent(evt);
+                            return (
+                              <button
+                                key={evt.id}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setSelectedEvent(evt);
+                                  setSelectedReminder(null);
+                                  setViewMode('day');
+                                  setViewAnchor(dayDate);
+                                }}
+                                onContextMenu={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  setListContextMenu({
+                                    x: e.clientX,
+                                    y: e.clientY,
+                                    kind: 'event',
+                                    id: evt.id,
+                                  });
+                                }}
+                                className="text-[10px] rounded-md px-2 py-0.5 truncate w-full text-left border shadow-sm"
+                                style={{
+                                  backgroundColor: pastEvent ? '#F3F4F6' : `${eventColor}18`,
+                                  borderColor: pastEvent ? '#E5E7EB' : `${eventColor}44`,
+                                  color: pastEvent ? '#6B7280' : '#1F2937',
+                                }}
+                              >
+                                <span
+                                  className="mr-1 inline-block h-1.5 w-1.5 rounded-full align-middle"
+                                  style={{ backgroundColor: eventColor }}
+                                />
+                                {evt.status === 'done' && (
+                                  <span className="text-green-600 mr-1 inline-block align-middle text-[12px]">
+                                    ✓
+                                  </span>
+                                )}
+                                {evt.title}
+                              </button>
+                            );
+                          })}
+                          {hiddenAllDayCount > 0 && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setOverflowDayKey(key);
+                              }}
+                              className="text-[10px] text-gray-500 hover:text-gray-700"
+                              title={`${hiddenAllDayCount} more all-day event${
+                                hiddenAllDayCount === 1 ? '' : 's'
+                              }`}
+                            >
+                              +{hiddenAllDayCount} more
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+
+                  {hoursToRender.map((hour) => (
                     <Fragment key={hour}>
                       {(() => {
                         const hourInt = Number.parseInt(hour.split(':')[0], 10);
+                        const rowHeight = Math.max(
+                          64,
+                          ...viewConfig.dates.map((dayDate) => {
+                            const key = formatDateKey(dayDate);
+                            const dayReminders = remindersByDay[key] ?? [];
+                            const remindersForHour = dayReminders.filter(
+                              (reminder) => new Date(reminder.remind_at).getHours() === hourInt
+                            );
+                            const visibleReminders = remindersForHour.slice(0, 2);
+                            const hiddenReminders = remindersForHour.length - visibleReminders.length;
+                            return (
+                              64 +
+                              (visibleReminders.length > 0
+                                ? visibleReminders.length * 24 + (hiddenReminders > 0 ? 16 : 0)
+                                : 0)
+                            );
+                          })
+                        );
                         return (
                           <>
                             <div
                               data-timeline-hour={hourInt}
-                              className="h-16 border-b border-gray-100 pr-3 text-[11px] text-gray-400 flex items-start justify-end pt-1.5"
+                              className="border-b border-gray-100 pr-3 text-[11px] text-gray-400 flex items-start justify-end pt-1.5"
+                              style={{ minHeight: `${rowHeight}px` }}
                             >
                               {hour}
                             </div>
                             {viewConfig.dates.map((dayDate) => {
                               const key = formatDateKey(dayDate);
-                        const items = (eventsByDay[key] ?? []).filter(
-                          (evt) => new Date(evt.start_at).getHours() === hourInt
-                        );
+                        const hourStart = dayDate ? new Date(dayDate) : new Date();
+                        hourStart.setHours(hourInt, 0, 0, 0);
+                        const hourEnd = new Date(hourStart.getTime() + 60 * 60 * 1000);
+                        const hourEvents = (eventsByDay[key] ?? []).filter((evt) => {
+                          if (isAllDayEvent(evt)) return false;
+                          const startTs = new Date(evt.start_at).getTime();
+                          const endTs = new Date(evt.end_at).getTime();
+                          return startTs < hourEnd.getTime() && endTs > hourStart.getTime();
+                        });
+                        const startingEvents = hourEvents.filter((evt) => {
+                          const startTs = new Date(evt.start_at).getTime();
+                          return startTs >= hourStart.getTime() && startTs < hourEnd.getTime();
+                        });
                         const dayReminders = remindersByDay[key] ?? [];
-                        const visibleItems = items.slice(0, 2);
-                        const hiddenCount = items.length - visibleItems.length;
+                        const visibleItems = startingEvents.slice(0, 2);
+                        const hiddenCount = startingEvents.length - visibleItems.length;
                         const remindersForHour = dayReminders.filter(
                           (reminder) => new Date(reminder.remind_at).getHours() === hourInt
                         );
                         const visibleReminders = remindersForHour.slice(0, 2);
                         const hiddenReminders = remindersForHour.length - visibleReminders.length;
+                        const reminderStackHeight =
+                          visibleReminders.length > 0
+                            ? visibleReminders.length * 24 + (hiddenReminders > 0 ? 16 : 6)
+                            : 0;
                         const isQuickAddOpen =
                           gridQuickAdd?.dateKey === key && gridQuickAdd?.hour === hourInt;
 
                               return (
                                 <div
                                   key={`${hour}-${key}`}
-                                  className="h-16 border-b border-l border-gray-100 relative px-1 py-1 hover:bg-blue-50/40 cursor-pointer"
+                                  className="border-b border-l border-gray-100 relative px-1 py-1 hover:bg-blue-50/40 cursor-pointer"
+                                  style={{ minHeight: `${rowHeight}px` }}
                                   onClick={() => {
                                     setSelectedEvent(null);
                                     setSelectedReminder(null);
@@ -3016,106 +3313,141 @@ export const CalendarWindow = () => {
                                 </div>
                               </div>
                             )}
-                            {visibleReminders.map((reminder) => (
-                              <button
-                                key={reminder.id}
-                                onClick={(e) => {
-                                  setSelectedEvent(null);
-                                  setSelectedReminder(null);
-                                  e.stopPropagation();
-                                  void toggleReminderDone(reminder);
-                                }}
-                                onContextMenu={(e) => {
-                                  e.preventDefault();
-                                  e.stopPropagation();
-                                  setListContextMenu({
-                                    x: e.clientX,
-                                    y: e.clientY,
-                                    kind: 'reminder',
-                                    id: reminder.id,
-                                  });
-                                }}
-                                className={`text-[10px] rounded px-1.5 py-0.5 truncate w-full text-left mb-0.5 ${
-                                  reminder.is_done ? 'line-through opacity-60' : ''
-                                } ${isPastReminder(reminder) ? 'opacity-80' : ''}`}
-                                style={{
-                                  backgroundColor: isPastReminder(reminder)
-                                    ? '#F3F4F6'
-                                    : `${reminder.color ?? '#F59E0B'}33`,
-                                  color: isPastReminder(reminder) ? '#6B7280' : '#1F2937',
-                                }}
-                                title={`${new Date(reminder.remind_at).toLocaleTimeString([], {
-                                  hour: 'numeric',
-                                  minute: '2-digit',
-                                })} • ${reminder.title}`}
-                              >
-                                Reminder: {reminder.title}
-                              </button>
-                            ))}
-                            {hiddenReminders > 0 && (
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setOverflowDayKey(key);
-                                }}
-                                className="text-[10px] text-amber-700 font-medium mb-0.5"
-                                title={`${hiddenReminders} more reminder${
-                                  hiddenReminders === 1 ? '' : 's'
-                                }`}
-                              >
-                                +{hiddenReminders} reminders
-                              </button>
-                            )}
-                            {visibleItems.map((evt) => (
-                              <button
-                                key={evt.id}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setSelectedEvent(
-                                    events.find((row) => row.id === baseEventId(evt.id)) ?? evt
-                                  );
-                                }}
-                                onContextMenu={(e) => {
-                                  e.preventDefault();
-                                  e.stopPropagation();
-                                  setListContextMenu({
-                                    x: e.clientX,
-                                    y: e.clientY,
-                                    kind: 'event',
-                                    id: evt.id,
-                                  });
-                                }}
-                                className="text-[10px] rounded-md px-2 py-0.5 truncate w-full text-left mb-0.5 last:mb-0 border shadow-sm"
-                                style={{
-                                  backgroundColor: isPastEvent(evt)
-                                    ? '#F3F4F6'
-                                    : `${getCalendarColor(evt.calendar_id)}18`,
-                                  borderColor: isPastEvent(evt)
-                                    ? '#E5E7EB'
-                                    : `${getCalendarColor(evt.calendar_id)}44`,
-                                  color: isPastEvent(evt) ? '#6B7280' : '#1F2937',
-                                }}
-                              >
-                                <span
-                                  className="mr-1 inline-block h-1.5 w-1.5 rounded-full align-middle"
-                                  style={{ backgroundColor: getCalendarColor(evt.calendar_id) }}
-                                />
-                                {evt.project_id && (
-                                  <Folder
-                                    size={8}
-                                    className="mr-1 inline-block align-middle text-gray-500"
-                                  />
+                            {(visibleReminders.length > 0 || hiddenReminders > 0) && (
+                              <div className="relative z-40 mb-1 space-y-1">
+                                {visibleReminders.map((reminder) => (
+                                  <button
+                                    key={reminder.id}
+                                    onClick={(e) => {
+                                      setSelectedEvent(null);
+                                      setSelectedReminder(null);
+                                      e.stopPropagation();
+                                      void toggleReminderDone(reminder);
+                                    }}
+                                    onContextMenu={(e) => {
+                                      e.preventDefault();
+                                      e.stopPropagation();
+                                      setListContextMenu({
+                                        x: e.clientX,
+                                        y: e.clientY,
+                                        kind: 'reminder',
+                                        id: reminder.id,
+                                      });
+                                    }}
+                                    className={`relative z-40 block w-full truncate rounded-md border px-2 py-1 text-left text-[10px] shadow-sm ${
+                                      reminder.is_done ? 'line-through opacity-60' : ''
+                                    } ${isPastReminder(reminder) ? 'opacity-80' : ''}`}
+                                    style={{
+                                      backgroundColor: isPastReminder(reminder) ? '#F9FAFB' : '#FFFFFF',
+                                      borderColor: isPastReminder(reminder)
+                                        ? '#E5E7EB'
+                                        : `${reminder.color ?? '#F59E0B'}55`,
+                                      color: isPastReminder(reminder) ? '#6B7280' : '#1F2937',
+                                    }}
+                                    title={`${new Date(reminder.remind_at).toLocaleTimeString([], {
+                                      hour: 'numeric',
+                                      minute: '2-digit',
+                                    })} • ${reminder.title}`}
+                                  >
+                                    <span
+                                      className="mr-1 inline-block h-1.5 w-1.5 shrink-0 rounded-full align-middle"
+                                      style={{
+                                        backgroundColor: isPastReminder(reminder)
+                                          ? '#9CA3AF'
+                                          : reminder.color ?? '#F59E0B',
+                                      }}
+                                    />
+                                    Reminder: {reminder.title}
+                                  </button>
+                                ))}
+                                {hiddenReminders > 0 && (
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setOverflowDayKey(key);
+                                    }}
+                                    className="relative z-40 text-[10px] font-medium text-amber-700"
+                                    title={`${hiddenReminders} more reminder${
+                                      hiddenReminders === 1 ? '' : 's'
+                                    }`}
+                                  >
+                                    +{hiddenReminders} reminders
+                                  </button>
                                 )}
-                                {evt.title}
-                              </button>
-                            ))}
+                              </div>
+                            )}
+                            {visibleItems.map((evt) => {
+                              const eventColor = getCalendarColor(evt.calendar_id);
+                              const pastEvent = isPastEvent(evt);
+                              const durationRows = getEventDurationRows(evt);
+                              return (
+                                <button
+                                  key={evt.id}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setSelectedEvent(evt);
+                                  }}
+                                  onContextMenu={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    setListContextMenu({
+                                      x: e.clientX,
+                                      y: e.clientY,
+                                      kind: 'event',
+                                      id: evt.id,
+                                    });
+                                  }}
+                                  className="absolute inset-x-1 z-10 overflow-hidden rounded-md border px-2 py-1 text-left text-[10px] shadow-sm"
+                                  style={{
+                                    top: `${Math.max(8, reminderStackHeight + 6)}px`,
+                                    height: `${Math.max(40, durationRows * 64 - 8)}px`,
+                                    backgroundColor: pastEvent ? '#F3F4F6' : '#FFFFFF',
+                                    borderColor: pastEvent ? '#E5E7EB' : `${eventColor}55`,
+                                    color: pastEvent ? '#6B7280' : '#1F2937',
+                                    boxSizing: 'border-box',
+                                    lineHeight: 1.2,
+                                    boxShadow: pastEvent
+                                      ? 'none'
+                                      : `0 0 0 1px ${eventColor}12, 0 1px 2px rgba(15, 23, 42, 0.04)`,
+                                  }}
+                                >
+                                  <div className="flex items-start gap-1.5 min-w-0">
+                                    <span
+                                      className="mt-1 inline-block h-1.5 w-1.5 shrink-0 rounded-full"
+                                      style={{ backgroundColor: eventColor }}
+                                    />
+                                    <div className="min-w-0 flex-1">
+                                      <div className="flex items-start gap-1 min-w-0">
+                                        {evt.status === 'done' && (
+                                          <span className="mt-0.5 text-green-600 shrink-0 text-[12px] leading-none">
+                                            ✓
+                                          </span>
+                                        )}
+                                        {evt.project_id && (
+                                          <Folder
+                                            size={8}
+                                            className="mt-0.5 shrink-0 text-gray-500"
+                                          />
+                                        )}
+                                        <span className="min-w-0 truncate font-medium">{evt.title}</span>
+                                      </div>
+                                      {durationRows > 1 && (
+                                        <div className="mt-0.5 text-[9px] text-gray-500">
+                                          {formatEventTimeRangeLabel(evt)}
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                </button>
+                              );
+                            })}
                             {hiddenCount > 0 && (
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   setOverflowDayKey(key);
                                 }}
-                                className="text-[10px] text-gray-600 hover:text-gray-800 px-1.5 py-0.5"
+                                className="relative z-30 text-[10px] text-gray-600 hover:text-gray-800 px-1.5 py-0.5"
                               >
                                 +{hiddenCount} more
                               </button>
@@ -3167,10 +3499,7 @@ export const CalendarWindow = () => {
                     })}
                   </h2>
                   <p className="mt-1 text-[13px] text-gray-600">
-                    {selectedContextDayEvents.length} event
-                    {selectedContextDayEvents.length === 1 ? '' : 's'} ·{' '}
-                    {selectedContextDayReminders.length} reminder
-                    {selectedContextDayReminders.length === 1 ? '' : 's'}
+                    {selectedContextDayEventCountLabel} · {selectedContextDayReminderCountLabel}
                   </p>
                 </div>
                 <button
@@ -3204,13 +3533,7 @@ export const CalendarWindow = () => {
                                 {selectedEventPreview.title}
                               </p>
                               <p className="mt-1 text-[13px] text-gray-600">
-                                {new Date(selectedEventPreview.start_at).toLocaleString([], {
-                                  weekday: 'short',
-                                  month: 'short',
-                                  day: 'numeric',
-                                  hour: 'numeric',
-                                  minute: '2-digit',
-                                })}
+                                {formatEventDateTimeLabel(selectedEventPreview)}
                               </p>
                               <p className="mt-1 text-[13px] text-gray-700">{meta.label}</p>
                               <div className="mt-3 space-y-2 text-[13px]">
@@ -3268,12 +3591,14 @@ export const CalendarWindow = () => {
                             </div>
                           </div>
                           <div className="mt-1">
-                            <button
-                              onClick={() => openEventEditor(selectedEventPreview)}
-                              className="w-full text-left text-[13px] font-medium text-gray-700 hover:text-[#FF5F40]"
-                            >
-                              Edit event
-                            </button>
+                            {canEditEvent(selectedEventPreview) && (
+                              <button
+                                onClick={() => openEventEditor(selectedEventPreview)}
+                                className="w-full text-left text-[13px] font-medium text-gray-700 hover:text-[#FF5F40]"
+                              >
+                                Edit event
+                              </button>
+                            )}
                           </div>
                         </div>
                       );
@@ -3486,10 +3811,7 @@ export const CalendarWindow = () => {
                               style={{ backgroundColor: isPastEvent(event) ? '#9CA3AF' : eventColor }}
                             />
                             <p className="w-16 shrink-0 text-[12px] font-medium text-gray-900">
-                              {new Date(event.start_at).toLocaleTimeString([], {
-                                hour: 'numeric',
-                                minute: '2-digit',
-                              })}
+                              {formatEventTimeLabel(event)}
                             </p>
                             <p className={`min-w-0 flex-1 truncate text-[13px] ${isPastEvent(event) ? 'text-gray-500' : 'text-gray-700'}`}>
                               {event.title}
@@ -3562,13 +3884,32 @@ export const CalendarWindow = () => {
                 />
               </div>
               {composerMode === 'event' && (
-                <input
-                  type="time"
-                  value={newEventEndTime}
-                  onChange={(e) => setNewEventEndTime(e.target.value)}
-                  placeholder="End time optional"
-                  className="h-9 w-full px-2 text-sm border border-gray-200 rounded-md focus:outline-none focus:border-gray-400"
-                />
+                <div className="grid grid-cols-[1fr_92px] gap-2">
+                  <input
+                    type="number"
+                    min="1"
+                    step="1"
+                    value={newEventDurationValue}
+                    onChange={(e) => setNewEventDurationValue(Number(e.target.value) || 1)}
+                    className="h-9 px-2 text-sm border border-gray-200 rounded-md focus:outline-none focus:border-gray-400"
+                  />
+                  <div className="relative">
+                    <select
+                      value={newEventDurationUnit}
+                      onChange={(e) =>
+                        setNewEventDurationUnit(e.target.value as 'minutes' | 'hours')
+                      }
+                      className="w-full h-9 pr-8 pl-2 text-sm border border-gray-200 rounded-md focus:outline-none focus:border-gray-400 bg-white appearance-none"
+                    >
+                      <option value="minutes">minutes</option>
+                      <option value="hours">hours</option>
+                    </select>
+                    <ChevronDown
+                      size={16}
+                      className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500"
+                    />
+                  </div>
+                </div>
               )}
               <div className="relative">
                 <select
@@ -3907,6 +4248,30 @@ export const CalendarWindow = () => {
                   className="h-9 px-2 text-sm border border-gray-200 rounded-md focus:outline-none focus:border-gray-400"
                 />
               </div>
+              <div className="grid grid-cols-[1fr_92px] gap-2">
+                <input
+                  type="number"
+                  min="1"
+                  step="1"
+                  value={editDurationValue}
+                  onChange={(e) => setEditDurationValue(Number(e.target.value) || 1)}
+                  className="h-9 px-2 text-sm border border-gray-200 rounded-md focus:outline-none focus:border-gray-400"
+                />
+                <div className="relative">
+                  <select
+                    value={editDurationUnit}
+                    onChange={(e) => setEditDurationUnit(e.target.value as 'minutes' | 'hours')}
+                    className="w-full h-9 pr-8 pl-2 text-sm border border-gray-200 rounded-md focus:outline-none focus:border-gray-400 bg-white appearance-none"
+                  >
+                    <option value="minutes">minutes</option>
+                    <option value="hours">hours</option>
+                  </select>
+                  <ChevronDown
+                    size={16}
+                    className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500"
+                  />
+                </div>
+              </div>
               <div className="relative">
                 <select
                   value={editStatus}
@@ -4188,13 +4553,10 @@ export const CalendarWindow = () => {
                           ? 'border-gray-400 bg-gray-100'
                           : 'border-gray-200 bg-gray-50'
                       }`}
-                    >
+                      >
                       <span className="font-medium">{event.title}</span>
                       <span className="ml-2 text-gray-600">
-                        {new Date(event.start_at).toLocaleTimeString([], {
-                          hour: 'numeric',
-                          minute: '2-digit',
-                        })}
+                        {formatEventTimeLabel(event)}
                       </span>
                     </button>
                   ))}
@@ -4402,24 +4764,44 @@ export const CalendarWindow = () => {
           onClick={(e) => e.stopPropagation()}
           onMouseDown={(e) => e.stopPropagation()}
         >
-          <button
-            onClick={() => {
-              if (listContextMenu.kind === 'event') {
-                const event = events.find((item) => item.id === baseEventId(listContextMenu.id));
-                if (event) openEventEditor(event);
-              } else {
+          {listContextMenu.kind === 'event' ? (
+            (() => {
+              const event = events.find((item) => item.id === baseEventId(listContextMenu.id));
+              const canEditMenuEvent = Boolean(event && canEditEvent(event));
+
+              return (
+                <button
+                  onClick={() => {
+                    if (!canEditMenuEvent || !event) return;
+                    openEventEditor(event);
+                    setListContextMenu(null);
+                  }}
+                  disabled={!canEditMenuEvent}
+                  className={`flex w-full items-center gap-2 px-4 py-2 text-left text-sm ${
+                    canEditMenuEvent
+                      ? 'text-gray-700 hover:bg-gray-50'
+                      : 'cursor-not-allowed text-gray-300'
+                  }`}
+                  title={canEditMenuEvent ? 'Edit Event' : 'Past events are read-only here'}
+                >
+                  <CalendarPlus size={14} className="shrink-0 text-gray-500" />
+                  <span className="text-[14px] font-medium tracking-tight">Edit Event</span>
+                </button>
+              );
+            })()
+          ) : (
+            <button
+              onClick={() => {
                 const reminder = reminders.find((item) => item.id === listContextMenu.id);
                 if (reminder) openReminderEditor(reminder);
-              }
-              setListContextMenu(null);
-            }}
-            className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
-          >
-            <CalendarPlus size={14} className="shrink-0 text-gray-500" />
-            <span className="text-[14px] font-medium tracking-tight">
-              Edit {listContextMenu.kind === 'event' ? 'Event' : 'Reminder'}
-            </span>
-          </button>
+                setListContextMenu(null);
+              }}
+              className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
+            >
+              <CalendarPlus size={14} className="shrink-0 text-gray-500" />
+              <span className="text-[14px] font-medium tracking-tight">Edit Reminder</span>
+            </button>
+          )}
           {listContextMenu.kind === 'event' ? (
             <button
               onClick={() => {

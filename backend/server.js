@@ -2234,7 +2234,7 @@ app.get('/api/events', authMiddleware, rateLimit('read'), async (req, res) => {
     let query = supabase
       .from('events')
       .select(
-        'id, title, start_at, end_at, calendar_id, color, status, recurrence_rule, notes, project_id, note_id, created_at'
+        'id, title, start_at, end_at, all_day, calendar_id, color, status, recurrence_rule, notes, project_id, note_id, created_at'
       )
       .eq('workspace_id', workspaceId);
 
@@ -2263,7 +2263,7 @@ app.get('/api/events/upcoming', authMiddleware, rateLimit('read'), async (req, r
 
     const { data, error } = await supabase
       .from('events')
-      .select('id, title, start_at, end_at, calendar_id, color, status, recurrence_rule')
+      .select('id, title, start_at, end_at, all_day, calendar_id, color, status, recurrence_rule')
       .eq('workspace_id', workspaceId)
       .gte('start_at', today.toISOString())
       .lte('start_at', end.toISOString())
@@ -2321,7 +2321,7 @@ app.post(
           note_id: req.body?.note_id || null,
         })
         .select(
-          'id, title, start_at, end_at, calendar_id, color, status, recurrence_rule, notes, project_id, note_id'
+          'id, title, start_at, end_at, all_day, calendar_id, color, status, recurrence_rule, notes, project_id, note_id'
         )
         .single();
 
@@ -2341,11 +2341,26 @@ app.patch('/api/events/:id', authMiddleware, rateLimit('write'), async (req, res
       return res.status(404).json({ error: 'Event not found' });
     }
 
+    const { data: existingEvent, error: existingError } = await supabase
+      .from('events')
+      .select('id, start_at, end_at')
+      .eq('id', req.params.id)
+      .single();
+
+    if (existingError) throw existingError;
+
+    const existingEnd = existingEvent?.end_at ? new Date(existingEvent.end_at) : null;
+    const isPastEvent = existingEnd ? existingEnd.getTime() < Date.now() : false;
+    if (isPastEvent) {
+      return res.status(409).json({ error: 'Past events cannot be edited' });
+    }
+
     const update = {};
     for (const key of [
       'title',
       'start_at',
       'end_at',
+      'all_day',
       'calendar_id',
       'color',
       'status',
@@ -2384,7 +2399,7 @@ app.patch('/api/events/:id', authMiddleware, rateLimit('write'), async (req, res
       .update(update)
       .eq('id', req.params.id)
       .select(
-        'id, title, start_at, end_at, calendar_id, color, status, recurrence_rule, notes, project_id, note_id'
+        'id, title, start_at, end_at, all_day, calendar_id, color, status, recurrence_rule, notes, project_id, note_id'
       )
       .single();
 

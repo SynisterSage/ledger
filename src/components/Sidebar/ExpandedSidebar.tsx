@@ -125,7 +125,7 @@ export const ExpandedSidebar = ({
   onCollapseRequest?: () => void;
 }) => {
   const { user, signOut } = useAuthContext();
-  const { activeWorkspace, activeWorkspaceId } = useWorkspaceContext();
+  const { activeWorkspace, activeWorkspaceId, workspaces, setActiveWorkspace } = useWorkspaceContext();
   const { collapseToRail, position } = useSidebar();
   const { openSearch } = useSearch();
   const api = useApi();
@@ -218,6 +218,94 @@ export const ExpandedSidebar = ({
     if (value.includes('pause') || value.includes('archiv')) return 'paused';
     if (value.includes('progress') || value.includes('in_')) return 'in_progress';
     return 'not_started';
+  };
+
+  const WorkspaceSwitcher = () => {
+    const [open, setOpen] = useState(false);
+    const buttonRef = useRef<HTMLButtonElement | null>(null);
+    const dropdownRef = useRef<HTMLDivElement | null>(null);
+    const [portalStyle, setPortalStyle] = useState<React.CSSProperties | null>(null);
+
+    useEffect(() => {
+      const handleClickOutside = (e: MouseEvent) => {
+        if (buttonRef.current && buttonRef.current.contains(e.target as Node)) return;
+        if (dropdownRef.current && dropdownRef.current.contains(e.target as Node)) return;
+        setOpen(false);
+      };
+
+      document.addEventListener('click', handleClickOutside);
+      return () => document.removeEventListener('click', handleClickOutside);
+    }, []);
+
+    useEffect(() => {
+      if (!open || !buttonRef.current) {
+        setPortalStyle(null);
+        return;
+      }
+
+      const rect = buttonRef.current.getBoundingClientRect();
+      const left = Math.max(8, rect.left + 4);
+      const top = rect.bottom + 6;
+      const width = Math.max(160, rect.width + 20);
+
+      setPortalStyle({ position: 'fixed', left: `${left}px`, top: `${top}px`, width: `${width}px`, zIndex: 9999 });
+    }, [open]);
+
+    const dropdown = (
+      <div
+        ref={dropdownRef}
+        style={portalStyle ?? undefined}
+        className="rounded-2xl border bg-white shadow-[0_12px_40px_rgba(15,23,42,0.12)] max-h-56 overflow-auto"
+      >
+        {Array.isArray(workspaces) && workspaces.length > 0 ? (
+          workspaces.map((ws) => (
+            <button
+              key={ws.id}
+              onClick={async (ev) => {
+                ev.stopPropagation();
+                try {
+                  await setActiveWorkspace(ws.id);
+                } catch (err) {
+                  // ignore
+                }
+                setOpen(false);
+              }}
+              className="flex w-full items-center gap-3 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+            >
+              {ws.id === activeWorkspaceId ? (
+                <Check size={14} className="text-gray-600" />
+              ) : (
+                <span className="w-4" />
+              )}
+              <span className="truncate">{ws.name}</span>
+            </button>
+          ))
+        ) : (
+          <div className="px-3 py-2 text-sm text-gray-500">No workspaces</div>
+        )}
+      </div>
+    );
+
+    return (
+      <div className="relative inline-block w-full">
+        <button
+          ref={buttonRef}
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            setOpen((v) => !v);
+          }}
+          className="w-full text-left text-[11px] font-medium text-gray-600 truncate flex items-center justify-between gap-2"
+        >
+          <span className="truncate">{activeWorkspace ? activeWorkspace.name : 'No workspace'}</span>
+          <ChevronDown size={14} className="text-gray-500 shrink-0" />
+        </button>
+
+        {open && typeof document !== 'undefined'
+          ? createPortal(dropdown, document.body)
+          : null}
+      </div>
+    );
   };
 
   const projectStatusLabels: Record<ProjectSemanticStatus, string> = {
@@ -1039,9 +1127,9 @@ export const ExpandedSidebar = ({
         <div className="bg-white rounded-lg p-3 border border-gray-200 flex items-start justify-between">
           <div>
             <p className="text-sm font-semibold text-gray-900">{firstName}</p>
-            <p className="mt-0.5 text-[11px] font-medium text-gray-500 truncate">
-              {activeWorkspace ? `Workspace: ${activeWorkspace.name}` : 'No workspace selected'}
-            </p>
+            <div className="mt-0.5">
+              <WorkspaceSwitcher />
+            </div>
             <p className="text-xs text-gray-700 truncate">{user?.email}</p>
           </div>
           <button

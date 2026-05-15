@@ -49,6 +49,8 @@ export const QuickCaptureWindow = ({
     return `${year}-${month}-${day}`;
   });
   const [eventTime, setEventTime] = useState('09:00');
+  const [eventDurationValue, setEventDurationValue] = useState(30);
+  const [eventDurationUnit, setEventDurationUnit] = useState<'minutes' | 'hours'>('minutes');
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showCloseGuardModal, setShowCloseGuardModal] = useState(false);
@@ -72,6 +74,35 @@ export const QuickCaptureWindow = ({
     return () => window.clearTimeout(timer);
   }, [kind]);
 
+  useEffect(() => {
+    if (kind !== 'quick-event' || !user) return;
+
+    let cancelled = false;
+    const loadDefaultDuration = async () => {
+      try {
+        const payload = (await api.getUserSettings()) as {
+          preferences?: { defaultEventMinutes?: number } | null;
+        };
+        if (cancelled) return;
+        const minutes = Number(payload?.preferences?.defaultEventMinutes ?? 30);
+        const resolved = [30, 45, 60].includes(minutes) ? minutes : 30;
+        setEventDurationValue(resolved >= 60 && resolved % 60 === 0 ? resolved / 60 : resolved);
+        setEventDurationUnit(resolved >= 60 && resolved % 60 === 0 ? 'hours' : 'minutes');
+      } catch {
+        if (!cancelled) {
+          setEventDurationValue(30);
+          setEventDurationUnit('minutes');
+        }
+      }
+    };
+
+    void loadDefaultDuration();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [api, kind, user]);
+
   const closeWindowNow = () => {
     void window.desktopWindow?.closeModule(kind as any);
   };
@@ -81,6 +112,12 @@ export const QuickCaptureWindow = ({
     noteTitle.trim().length > 0 ||
     noteContent.trim().length > 0 ||
     eventTitle.trim().length > 0;
+
+  const getEventDurationMinutes = () =>
+    Math.max(
+      1,
+      Math.round(eventDurationUnit === 'hours' ? eventDurationValue * 60 : eventDurationValue)
+    );
 
   const closeWindow = () => {
     if (isSaving || hasUnsavedDraft) {
@@ -210,7 +247,9 @@ export const QuickCaptureWindow = ({
       setIsSaving(true);
       setError(null);
       const startDateTime = new Date(`${eventDate}T${eventTime}:00`);
-      const endDateTime = new Date(startDateTime.getTime() + 60 * 60 * 1000); // 1 hour later
+      const endDateTime = new Date(
+        startDateTime.getTime() + getEventDurationMinutes() * 60 * 1000
+      );
 
       await api.createEvent({
         title: eventTitle.trim(),
@@ -422,6 +461,33 @@ export const QuickCaptureWindow = ({
                   onChange={(e) => setEventTime(e.target.value)}
                   className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-gray-400 focus:bg-white focus:outline-none"
                 />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-[1fr_92px] gap-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Duration</label>
+                <input
+                  type="number"
+                  min="1"
+                  step="1"
+                  value={eventDurationValue}
+                  onChange={(e) => setEventDurationValue(Number(e.target.value) || 1)}
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-gray-400 focus:bg-white focus:outline-none"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1 invisible">
+                  Duration unit
+                </label>
+                <select
+                  value={eventDurationUnit}
+                  onChange={(e) => setEventDurationUnit(e.target.value as 'minutes' | 'hours')}
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-gray-400 focus:bg-white focus:outline-none bg-white"
+                >
+                  <option value="minutes">minutes</option>
+                  <option value="hours">hours</option>
+                </select>
               </div>
             </div>
 
