@@ -296,6 +296,11 @@ export const useApi = () => {
 
     // Notes
     getNotes: () => request('/api/notes'),
+    getNoteById: (id: string) => request(`/api/notes/${id}`),
+    getNoteVersions: (id: string) => request(`/api/notes/${id}/versions`),
+    restoreNoteVersion: (id: string, versionId: string) => request(`/api/notes/${id}/versions/${versionId}/restore`, {
+      method: 'POST',
+    }),
     createNote: (title: string, content: string, options?: { date?: string; mood?: string | null; source?: string; mode?: 'text' | 'mind_map'; mind_map_structure?: unknown; content_html?: string; parent_id?: string | null; sort_order?: number; section_id?: string | null }) => request('/api/notes', {
       method: 'POST',
       body: JSON.stringify({ title, content, ...options }),

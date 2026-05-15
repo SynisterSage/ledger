@@ -1072,12 +1072,18 @@ export const ExpandedSidebar = ({
               <div key={item.id} className="w-full flex items-start gap-2">
                 <button
                   onClick={() => void toggleFocusDone(item.id)}
-                  className="flex-1 text-left flex items-start gap-2"
+                  className="flex-1 min-w-0 text-left flex items-start gap-2"
                 >
-                  <span className={`mt-0.5 w-4 h-4 rounded-full border flex items-center justify-center ${item.done ? 'bg-green-500 border-green-500' : 'border-gray-400 bg-white/60'}`}>
+                  <span
+                    className={`mt-0.5 inline-flex h-4 w-4 shrink-0 flex-none items-center justify-center rounded-full border leading-none ${
+                      item.done ? 'bg-green-500 border-green-500' : 'border-gray-400 bg-white/60'
+                    }`}
+                  >
                     {item.done && <Check size={11} className="text-white" />}
                   </span>
-                  <p className={`text-xs leading-5 ${item.done ? 'text-gray-400 line-through' : 'text-gray-800'}`}>{item.text}</p>
+                  <p className={`min-w-0 flex-1 text-xs leading-5 ${item.done ? 'text-gray-400 line-through' : 'text-gray-800'}`}>
+                    {item.text}
+                  </p>
                 </button>
                 <button
                   onClick={() => void removeFocusItem(item.id)}

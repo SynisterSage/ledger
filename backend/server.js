@@ -171,6 +171,52 @@ const mapNoteResponse = (row) => {
   }
 }
 
+const NOTE_VERSION_LIMIT = 100
+
+const createNoteVersionSnapshot = async (workspaceId, actorUserId, noteRow, reason = 'update') => {
+  if (!noteRow?.id) return
+  const payload = {
+    note_id: noteRow.id,
+    workspace_id: workspaceId,
+    versioned_by: actorUserId,
+    reason,
+    title: noteRow.title ?? 'Untitled',
+    content: noteRow.content ?? '',
+    content_html: normalizeNoteHtml(noteRow.content_html ?? plainTextToParagraphHtml(noteRow.content ?? '')),
+    date: noteRow.date ?? null,
+    mood: noteRow.mood ?? null,
+    source: noteRow.source ?? 'workspace',
+    mode: noteRow.mode ?? 'text',
+    mind_map_structure: noteRow.mind_map_structure ?? null,
+    parent_id: noteRow.parent_id ?? null,
+    section_id: noteRow.section_id ?? null,
+    sort_order: toNonNegativeInt(noteRow.sort_order, 0),
+    depth: toNonNegativeInt(noteRow.depth, 0),
+  }
+
+  const { error } = await supabase.from('note_versions').insert(payload)
+  if (error) {
+    console.error('[notes] failed to create note version snapshot', { noteId: noteRow.id, reason, error: error.message })
+    return
+  }
+
+  const { data: existingIds, error: listError } = await supabase
+    .from('note_versions')
+    .select('id')
+    .eq('note_id', noteRow.id)
+    .order('created_at', { ascending: false })
+    .range(NOTE_VERSION_LIMIT, NOTE_VERSION_LIMIT + 200)
+
+  if (listError || !Array.isArray(existingIds) || existingIds.length === 0) return
+
+  const staleIds = existingIds.map((row) => row.id).filter(Boolean)
+  if (!staleIds.length) return
+  const { error: pruneError } = await supabase.from('note_versions').delete().in('id', staleIds)
+  if (pruneError) {
+    console.error('[notes] failed pruning note versions', { noteId: noteRow.id, error: pruneError.message })
+  }
+}
+
 const toNonNegativeInt = (value, fallback = 0) => {
   const parsed = Number(value)
   if (!Number.isFinite(parsed)) return fallback
@@ -2461,6 +2507,23 @@ app.get('/api/notes', authMiddleware, rateLimit('read'), async (req, res) => {
   }
 })
 
+app.get('/api/notes/:id', authMiddleware, rateLimit('read'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req)
+    const { data, error } = await supabase
+      .from('notes')
+      .select('id, workspace_id, user_id, title, content, content_html, date, mood, source, mode, mind_map_structure, parent_id, section_id, sort_order, depth, created_at, updated_at')
+      .eq('workspace_id', workspaceId)
+      .eq('id', req.params.id)
+      .maybeSingle()
+    if (error) throw error
+    if (!data) return res.status(404).json({ error: 'Note not found.' })
+    res.json(mapNoteResponse(data))
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
 app.post('/api/notes', authMiddleware, rateLimit('write'), quotaGuard('notes'), async (req, res) => {
   try {
     const workspaceId = req.workspaceId ?? await resolveWorkspaceIdForRequest(req)
@@ -2555,6 +2618,14 @@ app.patch('/api/notes/:id', authMiddleware, rateLimit('write'), async (req, res)
   try {
     const workspaceId = await resolveWorkspaceIdForRequest(req)
     const update = {}
+    const { data: existing, error: existingError } = await supabase
+      .from('notes')
+      .select('id, workspace_id, user_id, title, content, content_html, date, mood, source, mode, mind_map_structure, parent_id, section_id, sort_order, depth, created_at, updated_at')
+      .eq('id', req.params.id)
+      .eq('workspace_id', workspaceId)
+      .maybeSingle()
+    if (existingError) throw existingError
+    if (!existing) return res.status(404).json({ error: 'Note not found.' })
 
     if (req.body?.title !== undefined) update.title = String(req.body.title ?? '').trim() || 'Untitled'
     // Support rich HTML content via `content_html`, but remain backward-compatible with `content` as plain text
@@ -2622,6 +2693,12 @@ app.patch('/api/notes/:id', authMiddleware, rateLimit('write'), async (req, res)
     if (req.body?.sort_order !== undefined) {
       update.sort_order = toNonNegativeInt(req.body.sort_order)
     }
+
+    if (Object.keys(update).length === 0) {
+      return res.json(mapNoteResponse(existing))
+    }
+
+    await createNoteVersionSnapshot(workspaceId, req.authUser.id, existing, 'update')
 
     update.user_id = req.authUser.id
     update.updated_at = new Date().toISOString()
@@ -2842,9 +2919,103 @@ app.post('/api/notes/:id/duplicate', authMiddleware, rateLimit('write'), quotaGu
 app.delete('/api/notes/:id', authMiddleware, rateLimit('write'), async (req, res) => {
   try {
     const workspaceId = await resolveWorkspaceIdForRequest(req)
+    const { data: existing, error: existingError } = await supabase
+      .from('notes')
+      .select('id, workspace_id, user_id, title, content, content_html, date, mood, source, mode, mind_map_structure, parent_id, section_id, sort_order, depth, created_at, updated_at')
+      .eq('id', req.params.id)
+      .eq('workspace_id', workspaceId)
+      .maybeSingle()
+    if (existingError) throw existingError
+    if (!existing) return res.status(404).json({ error: 'Note not found.' })
+
+    await createNoteVersionSnapshot(workspaceId, req.authUser.id, existing, 'delete')
     const { error } = await supabase.from('notes').delete().eq('id', req.params.id).eq('workspace_id', workspaceId)
     if (error) throw error
     res.json({ success: true })
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
+app.get('/api/notes/:id/versions', authMiddleware, rateLimit('read'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req)
+    const { data: noteExists, error: noteExistsError } = await supabase
+      .from('notes')
+      .select('id')
+      .eq('workspace_id', workspaceId)
+      .eq('id', req.params.id)
+      .maybeSingle()
+    if (noteExistsError) throw noteExistsError
+    if (!noteExists) return res.status(404).json({ error: 'Note not found.' })
+
+    const { data, error } = await supabase
+      .from('note_versions')
+      .select('id, note_id, versioned_by, reason, title, content, content_html, date, mood, source, mode, mind_map_structure, parent_id, section_id, sort_order, depth, created_at')
+      .eq('workspace_id', workspaceId)
+      .eq('note_id', req.params.id)
+      .order('created_at', { ascending: false })
+      .limit(NOTE_VERSION_LIMIT)
+    if (error) throw error
+    res.json(Array.isArray(data) ? data : [])
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
+app.post('/api/notes/:id/versions/:versionId/restore', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req)
+    const { id, versionId } = req.params
+
+    const { data: existing, error: existingError } = await supabase
+      .from('notes')
+      .select('id, workspace_id, user_id, title, content, content_html, date, mood, source, mode, mind_map_structure, parent_id, section_id, sort_order, depth, created_at, updated_at')
+      .eq('workspace_id', workspaceId)
+      .eq('id', id)
+      .maybeSingle()
+    if (existingError) throw existingError
+    if (!existing) return res.status(404).json({ error: 'Note not found.' })
+
+    const { data: version, error: versionError } = await supabase
+      .from('note_versions')
+      .select('id, note_id, workspace_id, title, content, content_html, date, mood, source, mode, mind_map_structure, parent_id, section_id, sort_order, depth')
+      .eq('workspace_id', workspaceId)
+      .eq('note_id', id)
+      .eq('id', versionId)
+      .maybeSingle()
+    if (versionError) throw versionError
+    if (!version) return res.status(404).json({ error: 'Version not found.' })
+
+    await createNoteVersionSnapshot(workspaceId, req.authUser.id, existing, 'restore_before')
+
+    const payload = {
+      title: String(version.title ?? 'Untitled').trim() || 'Untitled',
+      content: String(version.content ?? ''),
+      content_html: normalizeNoteHtml(version.content_html ?? plainTextToParagraphHtml(version.content ?? '')),
+      date: version.date ?? new Date().toISOString().slice(0, 10),
+      mood: version.mood ?? null,
+      source: version.source ?? 'workspace',
+      mode: version.mode === 'mind_map' ? 'mind_map' : 'text',
+      mind_map_structure: version.mind_map_structure ?? null,
+      parent_id: version.parent_id ?? null,
+      section_id: version.section_id ?? null,
+      sort_order: toNonNegativeInt(version.sort_order, 0),
+      depth: toNonNegativeInt(version.depth, 0),
+      user_id: req.authUser.id,
+      updated_at: new Date().toISOString(),
+    }
+
+    const { data: restored, error: restoreError } = await supabase
+      .from('notes')
+      .update(payload)
+      .eq('workspace_id', workspaceId)
+      .eq('id', id)
+      .select('id, workspace_id, user_id, title, content, content_html, date, mood, source, mode, mind_map_structure, parent_id, section_id, sort_order, depth, created_at, updated_at')
+      .single()
+    if (restoreError) throw restoreError
+
+    res.json(mapNoteResponse(restored))
   } catch (error) {
     res.status(500).json({ error: error.message })
   }

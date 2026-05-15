@@ -24,6 +24,7 @@ import { RichTextEditor } from './RichTextEditor'
 import { useViewportWidth } from '../../hooks/useViewportWidth'
 import { CreateNoteModal } from './CreateNoteModal'
 import { BulkExportModal } from './BulkExportModal'
+import { VersionHistoryModal } from './VersionHistoryModal'
 import { bulkExportNotes, bulkExportMindMaps } from '../../utils/exportUtils'
 
 type NoteRow = {
@@ -50,6 +51,16 @@ type WorkspaceMember = {
   user_id: string
   email: string | null
   full_name: string | null
+}
+
+type NoteVersion = {
+  id: string
+  note_id: string
+  versioned_by?: string | null
+  reason?: string | null
+  title: string
+  content_html?: string | null
+  created_at: string
 }
 
 type NoteTreeNode = NoteRow & {
@@ -326,6 +337,7 @@ export const NotesWindow = () => {
   const savingIndicatorTimerRef = useRef<number | null>(null)
   const isEditingRef = useRef(false)
   const isDirtyRef = useRef(false)
+  const hydrationNoteIdRef = useRef<string | null>(null)
 
   const [notes, setNotes] = useState<NoteRow[]>([])
   const [noteTree, setNoteTree] = useState<NoteTreeNode[]>([])
@@ -342,12 +354,19 @@ export const NotesWindow = () => {
   const [draftMood, setDraftMood] = useState('')
   const [isDirty, setIsDirty] = useState(false)
   const [showSavingIndicator, setShowSavingIndicator] = useState(false)
+  const [isHydratingNote, setIsHydratingNote] = useState(false)
+  const [hasHydratedNote, setHasHydratedNote] = useState(false)
+  const [hasUserEdited, setHasUserEdited] = useState(false)
   const [lastSavedAt, setLastSavedAt] = useState<string | null>(null)
   const [saveStatusTick, setSaveStatusTick] = useState(0)
   const [isCreating, setIsCreating] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
   const [showCreateNoteModal, setShowCreateNoteModal] = useState(false)
   const [showExportModal, setShowExportModal] = useState(false)
+  const [showVersionHistoryModal, setShowVersionHistoryModal] = useState(false)
+  const [isLoadingVersions, setIsLoadingVersions] = useState(false)
+  const [isRestoringVersionId, setIsRestoringVersionId] = useState<string | null>(null)
+  const [noteVersions, setNoteVersions] = useState<NoteVersion[]>([])
   const [exportType, setExportType] = useState<'notes' | 'mindmaps'>('notes')
   const [noteCreationSectionId, setNoteCreationSectionId] = useState<string | null>(null)
   const [showNewSectionPrompt, setShowNewSectionPrompt] = useState(false)
@@ -650,6 +669,8 @@ export const NotesWindow = () => {
   )
 
   const syncDraftFromNote = useCallback((note: NoteRow) => {
+    hydrationNoteIdRef.current = note.id
+    setIsHydratingNote(true)
     setDraftTitle(note.title)
     setDraftContent(normalizeEditorHtml(note.content))
     setDraftDate(note.date || todayKey())
@@ -658,6 +679,13 @@ export const NotesWindow = () => {
     setDraftMindMapStructure(note.mind_map_structure || null)
     setLastSavedAt(note.updated_at)
     setIsDirty(false)
+    setHasUserEdited(false)
+    setHasHydratedNote(true)
+    window.setTimeout(() => {
+      if (hydrationNoteIdRef.current === note.id) {
+        setIsHydratingNote(false)
+      }
+    }, 0)
   }, [])
 
   useEffect(() => {
@@ -725,6 +753,20 @@ export const NotesWindow = () => {
     isDirtyRef.current = isDirty
   }, [isDirty])
 
+  useEffect(() => {
+    if (isDirty) {
+      setHasUserEdited(true)
+    }
+  }, [isDirty])
+
+  useEffect(() => {
+    if (selectedNoteId) return
+    hydrationNoteIdRef.current = null
+    setIsHydratingNote(false)
+    setHasHydratedNote(false)
+    setHasUserEdited(false)
+  }, [selectedNoteId])
+
   const loadNotes = useCallback(
     async (opts?: { silent?: boolean }) => {
       if (!user || !activeWorkspaceId) {
@@ -735,6 +777,9 @@ export const NotesWindow = () => {
         setDraftDate(todayKey())
         setDraftMood('')
         setIsDirty(false)
+        setHasHydratedNote(false)
+        setHasUserEdited(false)
+        setIsHydratingNote(false)
         setIsLoading(false)
         return
       }
@@ -776,6 +821,9 @@ export const NotesWindow = () => {
           setDraftMood('')
           setLastSavedAt(null)
           setIsDirty(false)
+          setHasHydratedNote(false)
+          setHasUserEdited(false)
+          setIsHydratingNote(false)
         }
       } catch (fetchError) {
         setError(fetchError instanceof Error ? fetchError.message : 'Could not load notes.')
@@ -917,6 +965,63 @@ export const NotesWindow = () => {
     setIsDirty(true)
   }, [draftContent, draftMode])
 
+  const restoreLatestVersion = useCallback(async () => {
+    if (!selectedNoteId) return
+    try {
+      const versions = (await api.getNoteVersions(selectedNoteId)) as Array<{ id: string }>
+      const latest = Array.isArray(versions) ? versions[0] : null
+      if (!latest?.id) {
+        setError('No previous versions available for this note.')
+        return
+      }
+      const restored = (await api.restoreNoteVersion(selectedNoteId, latest.id)) as NoteRow
+      setNotes((prev) => prev.map((note) => (note.id === restored.id ? restored : note)))
+      syncDraftFromNote(restored)
+      setSelectedNoteId(restored.id)
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Could not restore note version.')
+    }
+  }, [api, selectedNoteId, syncDraftFromNote])
+
+  const openVersionHistory = useCallback(async (noteId?: string) => {
+    const id = noteId ?? selectedNoteId
+    console.debug('[Notes] openVersionHistory called for id=', id, 'selectedNoteId=', selectedNoteId)
+    if (!id) return
+    setShowVersionHistoryModal(true)
+    setIsLoadingVersions(true)
+    setError(null)
+    try {
+      const versions = (await api.getNoteVersions(id)) as NoteVersion[]
+      setNoteVersions(Array.isArray(versions) ? versions : [])
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Could not load version history.')
+      setNoteVersions([])
+    } finally {
+      setIsLoadingVersions(false)
+    }
+  }, [api, selectedNoteId])
+
+  const restoreVersionById = useCallback(
+    async (versionId: string) => {
+      if (!selectedNoteId) return
+      setIsRestoringVersionId(versionId)
+      setError(null)
+      try {
+        const restored = (await api.restoreNoteVersion(selectedNoteId, versionId)) as NoteRow
+        setNotes((prev) => prev.map((note) => (note.id === restored.id ? restored : note)))
+        syncDraftFromNote(restored)
+        setSelectedNoteId(restored.id)
+        const versions = (await api.getNoteVersions(selectedNoteId)) as NoteVersion[]
+        setNoteVersions(Array.isArray(versions) ? versions : [])
+      } catch (error) {
+        setError(error instanceof Error ? error.message : 'Could not restore selected version.')
+      } finally {
+        setIsRestoringVersionId(null)
+      }
+    },
+    [api, selectedNoteId, syncDraftFromNote]
+  )
+
   const openNote = useCallback(
     async (note: NoteRow) => {
       if (selectedNoteId === note.id) return
@@ -929,6 +1034,42 @@ export const NotesWindow = () => {
       titleRef.current?.focus()
     },
     [flushAutosave, isDirty, selectedNoteId, syncDraftFromNote]
+  )
+
+  const openNoteById = useCallback(
+    async (noteId: string) => {
+      const existing = notes.find((note) => note.id === noteId)
+      if (existing) {
+        await openNote(existing)
+        return
+      }
+
+      if (isDirty) {
+        const saved = await flushAutosave()
+        if (!saved) return
+      }
+
+      setIsHydratingNote(true)
+      setHasHydratedNote(false)
+      setHasUserEdited(false)
+      hydrationNoteIdRef.current = noteId
+
+      try {
+        const fetched = (await api.getNoteById(noteId)) as NoteRow
+        setNotes((prev) => {
+          const exists = prev.some((note) => note.id === fetched.id)
+          if (exists) return prev.map((note) => (note.id === fetched.id ? fetched : note))
+          return [fetched, ...prev]
+        })
+        setSelectedNoteId(fetched.id)
+        syncDraftFromNote(fetched)
+      } catch (error) {
+        setIsHydratingNote(false)
+        setHasHydratedNote(false)
+        setError(error instanceof Error ? error.message : 'Could not load note.')
+      }
+    },
+    [api, flushAutosave, isDirty, notes, openNote, syncDraftFromNote]
   )
 
   const createChildNote = useCallback(
@@ -1381,6 +1522,8 @@ export const NotesWindow = () => {
 
   useEffect(() => {
     if (!selectedNoteId || !isDirty) return
+    if (isHydratingNote || !hasHydratedNote || !hasUserEdited) return
+    if (hydrationNoteIdRef.current !== selectedNoteId) return
 
     const noteTitle = draftTitle.trim() || 'Untitled note'
     const noteContent = normalizeEditorHtml(draftContent)
@@ -1400,7 +1543,7 @@ export const NotesWindow = () => {
         window.clearTimeout(autosaveTimerRef.current)
       }
     }
-  }, [draftContent, draftDate, draftMood, draftTitle, flushAutosave, isDirty, selectedNoteId])
+  }, [draftContent, draftDate, draftMood, draftTitle, flushAutosave, hasHydratedNote, hasUserEdited, isDirty, isHydratingNote, selectedNoteId])
 
   useEffect(() => {
     if (!isResizingLeftPane) return
@@ -1526,20 +1669,25 @@ export const NotesWindow = () => {
 
   useEffect(() => {
     if (!initialFocusNoteId) return
-    if (!notes.length) return
     if (selectedNoteId === initialFocusNoteId) return
 
     const target = notes.find((note) => note.id === initialFocusNoteId)
-    if (!target) return
-    void openNote(target)
-  }, [initialFocusNoteId, notes, openNote, selectedNoteId])
+    if (target) {
+      void openNote(target)
+      return
+    }
+    void openNoteById(initialFocusNoteId)
+  }, [initialFocusNoteId, notes, openNote, openNoteById, selectedNoteId])
 
   useEffect(() => {
     const focusNoteListener = (_event: unknown, payload: { kind?: string; focusNoteId?: string | null }) => {
       if (payload?.kind !== 'notes' || !payload.focusNoteId) return
       const target = notes.find((note) => note.id === payload.focusNoteId)
-      if (!target) return
-      void openNote(target)
+      if (target) {
+        void openNote(target)
+        return
+      }
+      void openNoteById(payload.focusNoteId)
     }
 
     window.ipcRenderer?.on('module:focus-note', focusNoteListener)
@@ -1547,7 +1695,7 @@ export const NotesWindow = () => {
     return () => {
       window.ipcRenderer?.off('module:focus-note', focusNoteListener)
     }
-  }, [notes, openNote])
+  }, [notes, openNote, openNoteById])
 
   useEffect(() => {
     if (!lastSavedAt || isDirty || showSavingIndicator) return
@@ -2470,6 +2618,16 @@ export const NotesWindow = () => {
                             <button
                               onClick={() => {
                                 setIsNoteActionsOpen(false)
+                                const id = selectedNote?.id ?? selectedNoteId
+                                void openVersionHistory(id)
+                              }}
+                              className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-50"
+                            >
+                              Version history
+                            </button>
+                            <button
+                              onClick={() => {
+                                setIsNoteActionsOpen(false)
                                 void duplicateNoteById(selectedNote.id)
                               }}
                               className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-50"
@@ -2679,6 +2837,26 @@ export const NotesWindow = () => {
                           className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-50"
                         >
                           Save as template
+                        </button>
+                        <button
+                          onClick={() => {
+                            setIsInspectorActionsOpen(false)
+                            const id = selectedNote?.id ?? selectedNoteId
+                            void openVersionHistory(id)
+                          }}
+                          className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-50"
+                        >
+                          Version history
+                        </button>
+
+                        <button
+                          onClick={() => {
+                            setIsInspectorActionsOpen(false)
+                            void restoreLatestVersion()
+                          }}
+                          className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-50"
+                        >
+                          Restore last version
                         </button>
                         <button
                           onClick={() => {
@@ -3077,6 +3255,19 @@ export const NotesWindow = () => {
         onExport={handleBulkExport}
         notes={notes}
         isMindMapOnly={exportType === 'mindmaps'}
+      />
+
+      <VersionHistoryModal
+        isOpen={showVersionHistoryModal}
+        noteTitle={draftTitle || selectedNote?.title || 'Untitled note'}
+        versions={noteVersions}
+        isLoading={isLoadingVersions}
+        restoringVersionId={isRestoringVersionId}
+        onClose={() => setShowVersionHistoryModal(false)}
+        onRestore={(versionId) => {
+          void restoreVersionById(versionId)
+        }}
+        resolveActorName={(userId) => displayUserName(workspaceMemberById.get(userId ?? '') ?? null)}
       />
     </div>
   )
