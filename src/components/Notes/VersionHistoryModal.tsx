@@ -71,7 +71,7 @@ export const VersionHistoryModal = ({
           <button
             type="button"
             onClick={onClose}
-            className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
+            className="relative z-20 inline-flex h-8 w-8 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
             aria-label="Close version history"
           >
             <X size={16} />

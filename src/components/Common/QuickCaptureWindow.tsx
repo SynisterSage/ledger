@@ -4,6 +4,7 @@ import { useApi } from '../../hooks/useApi'
 import { useAuthContext } from '../../context/AuthContext'
 import { useWorkspaceContext } from '../../context/WorkspaceContext'
 import { ModuleWindowHeader } from './ModuleWindowHeader'
+import { CloseGuardModal } from './CloseGuardModal'
 
 type FollowUpContext = {
   eventId: string
@@ -44,6 +45,7 @@ export const QuickCaptureWindow = ({ kind, context }: { kind: 'quick-task' | 'qu
   const [eventTime, setEventTime] = useState('09:00')
   const [isSaving, setIsSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [showCloseGuardModal, setShowCloseGuardModal] = useState(false)
 
   const taskInputRef = useRef<HTMLInputElement>(null)
   const noteInputRef = useRef<HTMLTextAreaElement>(null)
@@ -64,8 +66,22 @@ export const QuickCaptureWindow = ({ kind, context }: { kind: 'quick-task' | 'qu
     return () => window.clearTimeout(timer)
   }, [kind])
 
-  const closeWindow = () => {
+  const closeWindowNow = () => {
     void window.desktopWindow?.closeModule(kind as any)
+  }
+
+  const hasUnsavedDraft =
+    taskTitle.trim().length > 0 ||
+    noteTitle.trim().length > 0 ||
+    noteContent.trim().length > 0 ||
+    eventTitle.trim().length > 0
+
+  const closeWindow = () => {
+    if (isSaving || hasUnsavedDraft) {
+      setShowCloseGuardModal(true)
+      return
+    }
+    closeWindowNow()
   }
 
   const minimizeWindow = () => {
@@ -201,6 +217,19 @@ export const QuickCaptureWindow = ({ kind, context }: { kind: 'quick-task' | 'qu
   if (kind === 'quick-task') {
     return (
       <div className={shellClassName}>
+        <CloseGuardModal
+          isOpen={showCloseGuardModal}
+          isSaving={isSaving}
+          hasUnsavedChanges={hasUnsavedDraft}
+          onCancel={() => setShowCloseGuardModal(false)}
+          onCloseWithoutSaving={() => {
+            setShowCloseGuardModal(false)
+            closeWindowNow()
+          }}
+          onRetrySaveAndClose={() => {
+            void saveQuickTask()
+          }}
+        />
         <ModuleWindowHeader title='Quick Task' icon={<Check size={16} />} onClose={closeWindow} onMinimize={minimizeWindow} onToggleFullscreen={toggleFullscreen} />
 
         {truncatedContext && (
@@ -245,6 +274,19 @@ export const QuickCaptureWindow = ({ kind, context }: { kind: 'quick-task' | 'qu
   if (kind === 'quick-note') {
     return (
       <div className={shellClassName}>
+        <CloseGuardModal
+          isOpen={showCloseGuardModal}
+          isSaving={isSaving}
+          hasUnsavedChanges={hasUnsavedDraft}
+          onCancel={() => setShowCloseGuardModal(false)}
+          onCloseWithoutSaving={() => {
+            setShowCloseGuardModal(false)
+            closeWindowNow()
+          }}
+          onRetrySaveAndClose={() => {
+            void saveQuickNote()
+          }}
+        />
         <ModuleWindowHeader title='Quick Note' icon={<FileText size={16} />} onClose={closeWindow} onMinimize={minimizeWindow} onToggleFullscreen={toggleFullscreen} />
 
         {contextText && (
@@ -294,6 +336,19 @@ export const QuickCaptureWindow = ({ kind, context }: { kind: 'quick-task' | 'qu
   if (kind === 'quick-event') {
     return (
       <div className={shellClassName}>
+        <CloseGuardModal
+          isOpen={showCloseGuardModal}
+          isSaving={isSaving}
+          hasUnsavedChanges={hasUnsavedDraft}
+          onCancel={() => setShowCloseGuardModal(false)}
+          onCloseWithoutSaving={() => {
+            setShowCloseGuardModal(false)
+            closeWindowNow()
+          }}
+          onRetrySaveAndClose={() => {
+            void saveQuickEvent()
+          }}
+        />
         <ModuleWindowHeader title='Quick Event' icon={<Calendar size={16} />} onClose={closeWindow} onMinimize={minimizeWindow} onToggleFullscreen={toggleFullscreen} />
 
         {contextText && (

@@ -1,5 +1,6 @@
 import { app, BrowserWindow, ipcMain, screen, shell, globalShortcut, systemPreferences, TouchBar, Menu } from 'electron'
 import { execFile, spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
+import { createRequire } from 'node:module'
 import { promisify } from 'node:util'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
@@ -18,6 +19,131 @@ const dockLog = (message: string) => {
     const timestamp = new Date().toISOString()
     fs.appendFileSync(logFile, `[${timestamp}] ${message}\n`)
   } catch {}
+}
+
+const require = createRequire(import.meta.url)
+
+type Spellchecker = {
+  correct: (word: string) => boolean
+  suggest: (word: string) => string[]
+}
+
+type SpellcheckAutocorrectResult = {
+  title: string
+  content_html: string
+  count: number
+}
+
+const tokenizeText = (input: string) => input.match(/[A-Za-z]+(?:'[A-Za-z]+)?|[^A-Za-z]+/g) ?? []
+
+const preserveCaseReplacement = (source: string, replacement: string) => {
+  if (!source) return replacement
+  if (source.toUpperCase() === source) return replacement.toUpperCase()
+  if (source[0] === source[0].toUpperCase()) {
+    return replacement.charAt(0).toUpperCase() + replacement.slice(1)
+  }
+  return replacement
+}
+
+const getSpellchecker = (() => {
+  let promise: Promise<Spellchecker> | null = null
+
+  return () => {
+    if (!promise) {
+      promise = new Promise((resolve, reject) => {
+        const nspell = require('nspell') as (dictionary: unknown) => Spellchecker
+        const dictionary = require('dictionary-en-us') as (callback: (error: Error | null, dictionary?: unknown) => void) => void
+
+        dictionary((error, loadedDictionary) => {
+          if (error) {
+            reject(error)
+            return
+          }
+          resolve(nspell(loadedDictionary))
+        })
+      })
+    }
+    return promise
+  }
+})()
+
+const correctTextWithSpellchecker = (spellchecker: Spellchecker, input: string) => {
+  const tokens = tokenizeText(String(input ?? ''))
+  let output = ''
+  let count = 0
+
+  for (const token of tokens) {
+    if (!/^[A-Za-z]+(?:'[A-Za-z]+)?$/.test(token)) {
+      output += token
+      continue
+    }
+
+    if (spellchecker.correct(token)) {
+      output += token
+      continue
+    }
+
+    const suggestion = spellchecker.suggest(token)[0]
+    if (!suggestion) {
+      output += token
+      continue
+    }
+
+    count += 1
+    output += preserveCaseReplacement(token, suggestion)
+  }
+
+  return { text: output, count }
+}
+
+const correctHtmlWithSpellchecker = async (spellchecker: Spellchecker, html: string) => {
+  const { parseHTML } = require('linkedom') as { parseHTML: (source: string) => { document: { body: { innerHTML: string; childNodes: ArrayLike<unknown> } } } }
+  const raw = String(html ?? '')
+  if (!raw.trim()) return { html: raw, count: 0 }
+
+  const { document } = parseHTML(`<html><body>${raw}</body></html>`)
+  let count = 0
+
+  const walk = (node: { nodeType?: number; nodeValue?: string | null; childNodes?: ArrayLike<unknown> }) => {
+    if (node.nodeType === 3) {
+      const original = String(node.nodeValue ?? '')
+      const tokens = tokenizeText(original)
+      let nextValue = ''
+
+      for (const token of tokens) {
+        if (!/^[A-Za-z]+(?:'[A-Za-z]+)?$/.test(token)) {
+          nextValue += token
+          continue
+        }
+
+        if (spellchecker.correct(token)) {
+          nextValue += token
+          continue
+        }
+
+        const suggestion = spellchecker.suggest(token)[0]
+        if (!suggestion) {
+          nextValue += token
+          continue
+        }
+
+        count += 1
+        nextValue += preserveCaseReplacement(token, suggestion)
+      }
+
+      node.nodeValue = nextValue
+      return
+    }
+
+    const children = node.childNodes ? Array.from(node.childNodes as ArrayLike<unknown>) : []
+    for (const child of children as Array<{ nodeType?: number; nodeValue?: string | null; childNodes?: ArrayLike<unknown> }>) {
+      walk(child)
+    }
+  }
+
+  walk(document.body as unknown as { nodeType?: number; nodeValue?: string | null; childNodes?: ArrayLike<unknown> })
+
+  return { html: document.body.innerHTML, count }
 }
 
 type DockTargetResult = {
@@ -2105,6 +2231,17 @@ ipcMain.handle('window:open-checkin', () => {
       sidebarWin.webContents.send('sidebar:open-checkin')
     }, 220)
   }
+})
+
+ipcMain.handle('spellcheck:autocorrect-note', async (_event, payload: { title?: string; content_html?: string }) => {
+  const spellchecker = await getSpellchecker()
+  const correctedTitle = correctTextWithSpellchecker(spellchecker, String(payload?.title ?? ''))
+  const correctedHtml = await correctHtmlWithSpellchecker(spellchecker, String(payload?.content_html ?? ''))
+  return {
+    title: correctedTitle.text,
+    content_html: correctedHtml.html,
+    count: correctedTitle.count + correctedHtml.count,
+  } satisfies SpellcheckAutocorrectResult
 })
 
 ipcMain.on('daily:checkin-updated', (_event, payload: { finished?: string; blocked?: string; firstTaskTomorrow?: string }) => {

@@ -6,6 +6,7 @@ import { modulePaneSizing, clampPaneWidth, getPaneWidthForViewport } from '../..
 import { useWorkspaceContext } from '../../context/WorkspaceContext'
 import { useApi } from '../../hooks/useApi'
 import { ModuleWindowHeader } from '../Common/ModuleWindowHeader'
+import { CloseGuardModal } from '../Common/CloseGuardModal'
 import { useViewportWidth } from '../../hooks/useViewportWidth'
 
 // Get RRule from the module - handles both ESM and CommonJS
@@ -623,6 +624,7 @@ export const CalendarWindow = () => {
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [calendarColorDrafts, setCalendarColorDrafts] = useState<Record<string, string>>({})
   const [isSavingColorId, setIsSavingColorId] = useState<string | null>(null)
+  const [showCloseGuardModal, setShowCloseGuardModal] = useState(false)
   const [isNewCalendarModalOpen, setIsNewCalendarModalOpen] = useState(false)
   const [newCalendarName, setNewCalendarName] = useState('')
   const [newCalendarColor, setNewCalendarColor] = useState('#3B82F6')
@@ -1936,8 +1938,22 @@ export const CalendarWindow = () => {
     </div>
   )
 
+  const attemptCloseCalendar = () => {
+    if (isSavingEvent || isSavingEdit || isSavingColorId !== null) {
+      setShowCloseGuardModal(true)
+      return
+    }
+    void window.desktopWindow?.closeModule('calendar')
+  }
+
   return (
     <div className="h-screen overflow-hidden rounded-[28px] border border-gray-200 bg-[#f5f7fb] flex flex-col shadow-[0_24px_80px_rgba(15,23,42,0.08)]" style={{ scrollbarGutter: 'stable' }}>
+      <CloseGuardModal
+        isOpen={showCloseGuardModal}
+        isSaving
+        hasUnsavedChanges={false}
+        onCancel={() => setShowCloseGuardModal(false)}
+      />
       <ModuleWindowHeader
         title="Calendar"
         subtitle={viewConfig.label}
@@ -1951,9 +1967,7 @@ export const CalendarWindow = () => {
         onToggleFullscreen={() => {
           void window.desktopWindow?.toggleModuleFullscreen('calendar')
         }}
-        onClose={() => {
-          void window.desktopWindow?.closeModule('calendar')
-        }}
+        onClose={attemptCloseCalendar}
         actions={
           <>
             {isRefreshing && !isInitialLoading && (

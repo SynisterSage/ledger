@@ -22,6 +22,7 @@ import { useApi } from './hooks/useApi'
 import { useSidebar } from './context/SidebarContext'
 import { MainLayout } from './components/Common/MainLayout'
 import { ModuleWindowHeader } from './components/Common/ModuleWindowHeader'
+import { CloseGuardModal } from './components/Common/CloseGuardModal'
 import LoginForm from './components/Common/LoginForm'
 import CalendarWindow from './components/Calendar/CalendarWindow'
 import NotesWindow from './components/Notes/NotesWindow'
@@ -111,6 +112,7 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
   const [focusedTaskId, setFocusedTaskId] = useState<string | null>(initialFocusTaskId ?? null)
   const [newFocusText, setNewFocusText] = useState('')
   const [isSavingFocus, setIsSavingFocus] = useState(false)
+  const [showCloseGuardModal, setShowCloseGuardModal] = useState(false)
   const [focusActionId, setFocusActionId] = useState<string | null>(null)
   const [expandedTimelineIds, setExpandedTimelineIds] = useState<Set<string>>(new Set())
   const [expandedNoteIds, setExpandedNoteIds] = useState<Set<string>>(new Set())
@@ -549,8 +551,38 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
     .sort((a, b) => getProjectAttentionScore(b as any) - getProjectAttentionScore(a as any))
     .slice(0, 4)
 
+  const attemptCloseDashboard = () => {
+    const hasUnsaved = newFocusText.trim().length > 0
+    if (isSavingFocus || hasUnsaved) {
+      setShowCloseGuardModal(true)
+      return
+    }
+    void window.desktopWindow?.closeModule('dashboard')
+  }
+
   return (
     <div className="flex h-screen flex-col overflow-hidden rounded-[28px] border border-gray-200 bg-[#f6f7f9] shadow-[0_24px_80px_rgba(15,23,42,0.08)]" style={{ scrollbarGutter: 'stable' }}>
+      <CloseGuardModal
+        isOpen={showCloseGuardModal}
+        isSaving={isSavingFocus}
+        hasUnsavedChanges={newFocusText.trim().length > 0}
+        onCancel={() => setShowCloseGuardModal(false)}
+        onCloseWithoutSaving={() => {
+          setShowCloseGuardModal(false)
+          setNewFocusText('')
+          void window.desktopWindow?.closeModule('dashboard')
+        }}
+        onRetrySaveAndClose={() => {
+          void (async () => {
+            if (isSavingFocus) return
+            if (newFocusText.trim()) {
+              await addFocusItem()
+            }
+            setShowCloseGuardModal(false)
+            void window.desktopWindow?.closeModule('dashboard')
+          })()
+        }}
+      />
       <ModuleWindowHeader
         eyebrow="Workspace"
         title={activeWorkspace?.name ?? 'My Work'}
@@ -571,9 +603,7 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
         onToggleFullscreen={() => {
           void window.desktopWindow?.toggleModuleFullscreen('dashboard')
         }}
-        onClose={() => {
-          void window.desktopWindow?.closeModule('dashboard')
-        }}
+        onClose={attemptCloseDashboard}
         actions={
           <>
             <button

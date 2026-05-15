@@ -15,6 +15,7 @@ import { modulePaneSizing, clampPaneWidth, getPaneWidthForViewport } from '../..
 import { useApi } from '../../hooks/useApi'
 import { useWorkspaceContext } from '../../context/WorkspaceContext'
 import { ModuleWindowHeader } from '../Common/ModuleWindowHeader'
+import { CloseGuardModal } from '../Common/CloseGuardModal'
 import { SkeletonProjectCard, SkeletonTaskItem } from '../Common/Skeleton'
 import { useViewportWidth } from '../../hooks/useViewportWidth'
 
@@ -265,6 +266,7 @@ export const ProjectsWindow = () => {
   const [linkableNotes, setLinkableNotes] = useState<NoteOption[]>([])
   const [isLoadingLinkableNotes, setIsLoadingLinkableNotes] = useState(false)
   const [linkNotesSearch, setLinkNotesSearch] = useState('')
+  const [showCloseGuardModal, setShowCloseGuardModal] = useState(false)
 
   const selectedProject = useMemo(
     () => projects.find((project) => project.id === selectedProjectId) ?? null,
@@ -1092,8 +1094,34 @@ export const ProjectsWindow = () => {
     return () => window.removeEventListener('keydown', onEscape)
   }, [taskNotesTask])
 
+  const attemptCloseProjects = useCallback(() => {
+    if (isSavingProject || isSavingTaskNotes || isDirtyRef.current) {
+      setShowCloseGuardModal(true)
+      return
+    }
+    void window.desktopWindow?.closeModule('projects')
+  }, [isSavingProject, isSavingTaskNotes])
+
   return (
     <div className="h-screen overflow-hidden rounded-[28px] border border-gray-200 bg-[#f5f7fb] flex flex-col text-gray-900 shadow-[0_24px_80px_rgba(15,23,42,0.08)]" style={{ scrollbarGutter: 'stable' }}>
+      <CloseGuardModal
+        isOpen={showCloseGuardModal}
+        isSaving={isSavingProject || isSavingTaskNotes}
+        hasUnsavedChanges={isDirtyRef.current}
+        onCancel={() => setShowCloseGuardModal(false)}
+        onCloseWithoutSaving={() => {
+          setShowCloseGuardModal(false)
+          void window.desktopWindow?.closeModule('projects')
+        }}
+        onRetrySaveAndClose={() => {
+          void (async () => {
+            const saved = await flushProjectDraft()
+            if (!saved && isDirtyRef.current) return
+            setShowCloseGuardModal(false)
+            void window.desktopWindow?.closeModule('projects')
+          })()
+        }}
+      />
       <ModuleWindowHeader
         title="Projects"
         subtitle="Simple outcomes, clear next steps"
@@ -1107,9 +1135,7 @@ export const ProjectsWindow = () => {
         onToggleFullscreen={() => {
           void window.desktopWindow?.toggleModuleFullscreen('projects')
         }}
-        onClose={() => {
-          void window.desktopWindow?.closeModule('projects')
-        }}
+        onClose={attemptCloseProjects}
         actions={
           <div className="flex items-center gap-2">
             <div className="flex items-center gap-1 rounded-full border border-gray-200 bg-gray-50 p-1 shadow-sm">

@@ -18,6 +18,7 @@ import { modulePaneSizing, clampPaneWidth, getPaneWidthForViewport } from '../..
 import { useApi } from '../../hooks/useApi'
 import { useWorkspaceContext } from '../../context/WorkspaceContext'
 import { ModuleWindowHeader } from '../Common/ModuleWindowHeader'
+import { CloseGuardModal } from '../Common/CloseGuardModal'
 import { SkeletonLoader, SkeletonNoteCard } from '../Common/Skeleton'
 import { MindMapEditor } from './MindMapEditor'
 import { RichTextEditor } from './RichTextEditor'
@@ -112,52 +113,17 @@ const normalizeEditorHtml = (value: string) => {
   return String(value ?? '')
 }
 
-const spellingReplacements: Array<[RegExp, string]> = [
-  [/\bteh\b/gi, 'the'],
-  [/\brecieve\b/gi, 'receive'],
-  [/\bseperate\b/gi, 'separate'],
-  [/\bdefinately\b/gi, 'definitely'],
-  [/\boccured\b/gi, 'occurred'],
-  [/\buntill\b/gi, 'until'],
-  [/\bbecuase\b/gi, 'because'],
-  [/\bwierd\b/gi, 'weird'],
-  [/\bthier\b/gi, 'their'],
-  [/\balot\b/gi, 'a lot'],
-]
-
-const preserveCaseReplacement = (source: string, replacement: string) => {
-  if (!source) return replacement
-  if (source.toUpperCase() === source) return replacement.toUpperCase()
-  if (source[0] === source[0].toUpperCase()) {
-    return replacement.charAt(0).toUpperCase() + replacement.slice(1)
-  }
-  return replacement
+type SpellcheckAutocorrectResult = {
+  title: string
+  content_html: string
+  count: number
 }
 
-const autoCorrectText = (input: string) => {
-  let output = input
-  for (const [pattern, replacement] of spellingReplacements) {
-    output = output.replace(pattern, (match) => preserveCaseReplacement(match, replacement))
-  }
-  return output
-}
-
-const autoCorrectHtml = (html: string) => {
-  const raw = String(html ?? '')
-  if (!raw.trim()) return raw
-
-  const parser = new DOMParser()
-  const doc = parser.parseFromString(raw, 'text/html')
-  const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT)
-  let node = walker.nextNode()
-
-  while (node) {
-    const textNode = node as Text
-    textNode.nodeValue = autoCorrectText(textNode.nodeValue ?? '')
-    node = walker.nextNode()
-  }
-
-  return doc.body.innerHTML
+const autocorrectNoteContent = async (title: string, contentHtml: string) => {
+  return window.ipcRenderer.invoke('spellcheck:autocorrect-note', {
+    title,
+    content_html: contentHtml,
+  }) as Promise<SpellcheckAutocorrectResult>
 }
 
 const wordCount = (text: string) =>
@@ -364,11 +330,13 @@ export const NotesWindow = () => {
   const [showCreateNoteModal, setShowCreateNoteModal] = useState(false)
   const [showExportModal, setShowExportModal] = useState(false)
   const [showVersionHistoryModal, setShowVersionHistoryModal] = useState(false)
+  const [showCloseGuardModal, setShowCloseGuardModal] = useState(false)
   const [isLoadingVersions, setIsLoadingVersions] = useState(false)
   const [isRestoringVersionId, setIsRestoringVersionId] = useState<string | null>(null)
   const [noteVersions, setNoteVersions] = useState<NoteVersion[]>([])
   const sessionCheckpointMapRef = useRef<Map<string, boolean>>(new Map())
   const lastAutosaveCheckpointRef = useRef<Map<string, number>>(new Map())
+  const [editorRefreshTick, setEditorRefreshTick] = useState(0)
   const [exportType, setExportType] = useState<'notes' | 'mindmaps'>('notes')
   const [noteCreationSectionId, setNoteCreationSectionId] = useState<string | null>(null)
   const [showNewSectionPrompt, setShowNewSectionPrompt] = useState(false)
@@ -615,6 +583,54 @@ export const NotesWindow = () => {
     return result
   }, [sections])
 
+  const visibleSections = useMemo(() => {
+    if (!orderedSections.length) return orderedSections
+    const byId = new Map(orderedSections.map((section) => [section.id, section]))
+    return orderedSections.filter((section) => {
+      let cursor = section.parent_id ? byId.get(section.parent_id) ?? null : null
+      while (cursor) {
+        if (collapsedSectionIds.has(cursor.id)) return false
+        cursor = cursor.parent_id ? byId.get(cursor.parent_id) ?? null : null
+      }
+      return true
+    })
+  }, [collapsedSectionIds, orderedSections])
+
+  const sectionNoteCountById = useMemo(() => {
+    if (!sections.length) return new Map<string, number>()
+
+    const childrenByParent = new Map<string, string[]>()
+    for (const section of sections) {
+      if (!section.parent_id) continue
+      const bucket = childrenByParent.get(section.parent_id) ?? []
+      bucket.push(section.id)
+      childrenByParent.set(section.parent_id, bucket)
+    }
+
+    const directCount = new Map<string, number>()
+    for (const note of notes) {
+      if (!note.section_id) continue
+      directCount.set(note.section_id, (directCount.get(note.section_id) ?? 0) + 1)
+    }
+
+    const totalCount = new Map<string, number>()
+    const memo = new Map<string, number>()
+    const countRecursive = (sectionId: string): number => {
+      if (memo.has(sectionId)) return memo.get(sectionId) ?? 0
+      const own = directCount.get(sectionId) ?? 0
+      const children = childrenByParent.get(sectionId) ?? []
+      const childTotal = children.reduce((sum, childId) => sum + countRecursive(childId), 0)
+      const total = own + childTotal
+      memo.set(sectionId, total)
+      return total
+    }
+
+    for (const section of sections) {
+      totalCount.set(section.id, countRecursive(section.id))
+    }
+    return totalCount
+  }, [notes, sections])
+
   const nodeById = useMemo(() => {
     const map = new Map<string, NoteTreeNode>()
     const walk = (nodes: NoteTreeNode[]) => {
@@ -688,6 +704,7 @@ export const NotesWindow = () => {
     setIsDirty(false)
     setHasUserEdited(false)
     setHasHydratedNote(true)
+    setEditorRefreshTick((current) => current + 1)
     // mark that this note has no session checkpoint yet and clear autosave checkpoint timestamp
     try {
       sessionCheckpointMapRef.current.set(note.id, false)
@@ -1025,14 +1042,50 @@ export const NotesWindow = () => {
     void flushAutosave().finally(finish)
   }, [flushAutosave])
 
-  const runAutoCorrectSpelling = useCallback(() => {
+  const attemptCloseNotes = useCallback(() => {
+    if (showSavingIndicator || isDirty) {
+      setShowCloseGuardModal(true)
+      return
+    }
+    void window.desktopWindow?.closeModule('notes')
+  }, [isDirty, showSavingIndicator])
+
+  const runAutoCorrectSpelling = useCallback(async () => {
     if (draftMode !== 'text') return
-    const corrected = normalizeEditorHtml(autoCorrectHtml(draftContent))
-    const current = normalizeEditorHtml(draftContent)
-    if (corrected === current) return
-    setDraftContent(corrected)
+
+    const currentTitle = String(draftTitle ?? '')
+    const currentContent = normalizeEditorHtml(draftContent)
+    const currentPlainTextLength = htmlToPlainText(currentContent).replace(/\s/g, '').length
+    const corrected = await autocorrectNoteContent(currentTitle, currentContent)
+    const correctedTitle = String(corrected.title ?? currentTitle)
+    const correctedContent = normalizeEditorHtml(String(corrected.content_html ?? currentContent))
+
+    if (!correctedContent.trim() && currentPlainTextLength > 0) {
+      setError('Autocorrect returned empty content, so the note was left unchanged.')
+      return
+    }
+
+    if (correctedTitle === currentTitle && correctedContent === currentContent) {
+      return
+    }
+
+    setDraftTitle(correctedTitle)
+    setDraftContent(correctedContent)
     setIsDirty(true)
-  }, [draftContent, draftMode])
+    setEditorRefreshTick((current) => current + 1)
+
+    const saved = await flushAutosave({
+      title: correctedTitle,
+      content: correctedContent,
+      date: draftDate,
+      mood: draftMood,
+    })
+
+    if (saved) {
+      setNotes((prev) => prev.map((note) => (note.id === saved.id ? saved : note)))
+      syncDraftFromNote(saved)
+    }
+  }, [draftContent, draftDate, draftMode, draftMood, draftTitle, flushAutosave, syncDraftFromNote])
 
   const restoreLatestVersion = useCallback(async () => {
     if (!selectedNoteId) return
@@ -1098,6 +1151,7 @@ export const NotesWindow = () => {
         setSelectedNoteId(restored.id)
         const versions = (await api.getNoteVersions(selectedNoteId)) as NoteVersion[]
         setNoteVersions(Array.isArray(versions) ? versions : [])
+        setShowVersionHistoryModal(false)
       } catch (error) {
         setError(error instanceof Error ? error.message : 'Could not restore selected version.')
       } finally {
@@ -1838,6 +1892,24 @@ export const NotesWindow = () => {
 
   return (
     <div className="h-screen overflow-hidden rounded-[28px] border border-gray-200 bg-[#f5f7fb] flex flex-col shadow-[0_24px_80px_rgba(15,23,42,0.08)]" style={{ scrollbarGutter: 'stable' }}>
+      <CloseGuardModal
+        isOpen={showCloseGuardModal}
+        isSaving={showSavingIndicator}
+        hasUnsavedChanges={isDirty}
+        onCancel={() => setShowCloseGuardModal(false)}
+        onCloseWithoutSaving={() => {
+          setShowCloseGuardModal(false)
+          void window.desktopWindow?.closeModule('notes')
+        }}
+        onRetrySaveAndClose={() => {
+          void (async () => {
+            const saved = await flushAutosave()
+            if (!saved && isDirty) return
+            setShowCloseGuardModal(false)
+            void window.desktopWindow?.closeModule('notes')
+          })()
+        }}
+      />
       <ModuleWindowHeader
         title="Notes"
         subtitle="Your simple note workspace"
@@ -1853,11 +1925,7 @@ export const NotesWindow = () => {
         onToggleFullscreen={() => {
           void window.desktopWindow?.toggleModuleFullscreen('notes')
         }}
-        onClose={() => {
-          runQuickAutosaveThen(() => {
-            void window.desktopWindow?.closeModule('notes')
-          }, 120)
-        }}
+        onClose={attemptCloseNotes}
         actions={
           <div className="flex items-center gap-2">
             <div className="flex items-center gap-1 rounded-full border border-gray-200 bg-gray-50 p-1 shadow-sm">
@@ -2053,10 +2121,11 @@ export const NotesWindow = () => {
             ) : (
               // Tree view with sections
               <div className="space-y-2">
-                {orderedSections.map((section) => {
+                {visibleSections.map((section) => {
                   const sectionColor = getColorClasses(section.color)
                   const isSectionCollapsed = collapsedSectionIds.has(section.id)
                   const sectionNotes = notes.filter((n) => n.section_id === section.id && !n.parent_id)
+                  const sectionTotalCount = sectionNoteCountById.get(section.id) ?? 0
                   const sectionDepth = sectionDepthById.get(section.id) ?? 0
                   
                   return (
@@ -2064,14 +2133,14 @@ export const NotesWindow = () => {
                       key={section.id}
                       style={{ marginLeft: `${sectionDepth * 12}px` }}
                       onDragOver={(event) => {
-                        if (!draggedSectionId) return
+                        const dropSectionId = event.dataTransfer.getData('application/x-ledger-section-id') || draggedSectionId
+                        if (!dropSectionId) return
                         event.preventDefault()
-                        if (draggedSectionId !== section.id) {
+                        if (dropSectionId !== section.id) {
                           setSectionDropTargetId(section.id)
                         }
                       }}
                       onDrop={(event) => {
-                        if (!draggedSectionId) return
                         event.preventDefault()
                         const dropSectionId = event.dataTransfer.getData('application/x-ledger-section-id') || draggedSectionId
                         if (!dropSectionId || dropSectionId === section.id) return
@@ -2105,8 +2174,8 @@ export const NotesWindow = () => {
                         }}
                         onDrop={(event) => {
                           event.preventDefault()
-                          if (draggedSectionId && draggedSectionId !== section.id) {
-                            const dropSectionId = event.dataTransfer.getData('application/x-ledger-section-id') || draggedSectionId
+                          const dropSectionId = event.dataTransfer.getData('application/x-ledger-section-id') || draggedSectionId
+                          if (dropSectionId && dropSectionId !== section.id) {
                             const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
                             const relativeY = (event.clientY - rect.top) / Math.max(rect.height, 1)
                             const position: 'inside' | 'before' | 'after' = relativeY < 0.22 ? 'before' : relativeY > 0.78 ? 'after' : 'inside'
@@ -2165,7 +2234,7 @@ export const NotesWindow = () => {
                           size={14}
                           className={`text-gray-400 transition-transform shrink-0 ${!isSectionCollapsed ? 'rotate-90' : ''}`}
                         />
-                        <span className="text-xs text-gray-400 mr-1">{sectionNotes.length}</span>
+                        <span className="text-xs text-gray-400 mr-1">{sectionTotalCount}</span>
                       </button>
                       
                       {/* Section notes */}
@@ -2786,7 +2855,7 @@ export const NotesWindow = () => {
                   <div className="max-w-3xl mx-auto space-y-6">
                     {draftMode === 'text' ? (
                       <RichTextEditor
-                        editorKey={selectedNote.id}
+                        editorKey={`${selectedNote.id}:${editorRefreshTick}`}
                         initialValue={draftContent}
                         onChange={(nextHtml) => {
                           const normalizedNext = normalizeEditorHtml(nextHtml)

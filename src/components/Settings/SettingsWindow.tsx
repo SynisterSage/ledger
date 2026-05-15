@@ -15,6 +15,7 @@ import { defaultSidebarPreferences, type SidebarDefaultState, type SidebarPositi
 import { useWorkspaceContext } from '../../context/WorkspaceContext'
 import { useApi } from '../../hooks/useApi'
 import { ModuleWindowHeader } from '../Common/ModuleWindowHeader'
+import { CloseGuardModal } from '../Common/CloseGuardModal'
 import authService from '../../services/auth'
 
 type UserPreferences = {
@@ -237,6 +238,7 @@ export const SettingsWindow = () => {
   const [workspaceEditStatus, setWorkspaceEditStatus] = useState<string | null>(null)
   const [workspaceEditError, setWorkspaceEditError] = useState<string | null>(null)
   const [isSavingWorkspace, setIsSavingWorkspace] = useState(false)
+  const [showCloseGuardModal, setShowCloseGuardModal] = useState(false)
   const [workspaceDeleteConfirm, setWorkspaceDeleteConfirm] = useState('')
   const [workspaceDeleteStatus, setWorkspaceDeleteStatus] = useState<string | null>(null)
   const [workspaceDeleteError, setWorkspaceDeleteError] = useState<string | null>(null)
@@ -709,8 +711,22 @@ export const SettingsWindow = () => {
     }
   }
 
+  const attemptCloseSettings = () => {
+    if (isSavingPrefs || isSavingSidebar || isSavingWorkspace) {
+      setShowCloseGuardModal(true)
+      return
+    }
+    void window.desktopWindow?.closeModule('settings')
+  }
+
   return (
     <div className="h-screen overflow-hidden rounded-[28px] border border-gray-200 bg-[#f5f7fb] text-gray-900 flex flex-col shadow-[0_24px_80px_rgba(15,23,42,0.08)]" style={{ scrollbarGutter: 'stable' }}>
+      <CloseGuardModal
+        isOpen={showCloseGuardModal}
+        isSaving
+        hasUnsavedChanges={false}
+        onCancel={() => setShowCloseGuardModal(false)}
+      />
       <ModuleWindowHeader
         title="Settings"
         subtitle="Defaults, accessible controls"
@@ -724,9 +740,7 @@ export const SettingsWindow = () => {
         onToggleFullscreen={() => {
           void window.desktopWindow?.toggleModuleFullscreen('settings')
         }}
-        onClose={() => {
-          void window.desktopWindow?.closeModule('settings')
-        }}
+        onClose={attemptCloseSettings}
         actions={
           <button
             onClick={() => {
