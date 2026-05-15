@@ -7,6 +7,8 @@ import {
   BellRing,
   ClipboardPaste,
   CalendarPlus,
+  Palette,
+  PencilLine,
   Trash2,
   Folder,
   Plus,
@@ -99,6 +101,18 @@ type CalendarContextMenuState = {
   y: number;
   dateKey: string;
   hour: number;
+};
+
+type CalendarRowContextMenuState = {
+  x: number;
+  y: number;
+  calendarId: string;
+};
+
+type CalendarColorMenuState = {
+  x: number;
+  y: number;
+  calendarId: string;
 };
 
 type ListContextMenuState = {
@@ -629,6 +643,9 @@ export const CalendarWindow = () => {
   const [gridQuickAdd, setGridQuickAdd] = useState<GridQuickAddState | null>(null);
   const [gridQuickTitle, setGridQuickTitle] = useState('');
   const [contextMenu, setContextMenu] = useState<CalendarContextMenuState | null>(null);
+  const [calendarRowContextMenu, setCalendarRowContextMenu] =
+    useState<CalendarRowContextMenuState | null>(null);
+  const [calendarColorMenu, setCalendarColorMenu] = useState<CalendarColorMenuState | null>(null);
   const [listContextMenu, setListContextMenu] = useState<ListContextMenuState | null>(null);
   const [selectedEvent, setSelectedEvent] = useState<EventRow | null>(null);
   const [eventEditorEvent, setEventEditorEvent] = useState<EventRow | null>(null);
@@ -669,7 +686,7 @@ export const CalendarWindow = () => {
   const [isDeletingEvent, setIsDeletingEvent] = useState(false);
   const [isDeletingReminder, setIsDeletingReminder] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const [calendarColorDrafts, setCalendarColorDrafts] = useState<Record<string, string>>({});
+  const [, setCalendarColorDrafts] = useState<Record<string, string>>({});
   const [isSavingColorId, setIsSavingColorId] = useState<string | null>(null);
   const [showCloseGuardModal, setShowCloseGuardModal] = useState(false);
   const [isNewCalendarModalOpen, setIsNewCalendarModalOpen] = useState(false);
@@ -698,7 +715,7 @@ export const CalendarWindow = () => {
   const selectedEventPreview = useMemo(() => {
     if (!selectedEvent) return null;
     const fresh = events.find((row) => row.id === baseEventId(selectedEvent.id));
-    if (!fresh) return selectedEvent;
+    if (!fresh) return null;
     if (fresh.id === selectedEvent.id) return fresh;
     return {
       ...fresh,
@@ -982,10 +999,25 @@ export const CalendarWindow = () => {
 
   const selectedContextDate = selectedEventPreview
     ? new Date(selectedEventPreview.start_at)
+    : selectedReminder
+    ? new Date(selectedReminder.remind_at)
     : viewAnchor;
   const selectedContextDayKey = formatDateKey(selectedContextDate);
   const selectedContextDayEvents = eventsByDay[selectedContextDayKey] ?? [];
   const selectedContextDayReminders = remindersByDay[selectedContextDayKey] ?? [];
+  const overviewEventCount = visibleEvents.length;
+  const overviewReminderCount = Object.values(remindersByDay).reduce(
+    (total, items) => total + items.length,
+    0
+  );
+  const selectedTimelineDate = selectedEventPreview
+    ? new Date(selectedEventPreview.start_at)
+    : selectedReminder
+    ? new Date(selectedReminder.remind_at)
+    : null;
+  const selectedTimelineHour = selectedTimelineDate?.getHours() ?? null;
+  const selectedTimelineInVisibleHours =
+    selectedTimelineHour !== null && selectedTimelineHour >= 8 && selectedTimelineHour < 20;
   const selectedEventProject = useMemo(
     () =>
       selectedEventPreview?.project_id
@@ -1007,6 +1039,27 @@ export const CalendarWindow = () => {
     () => (selectedReminder?.note_id ? noteById.get(selectedReminder.note_id) ?? null : null),
     [noteById, selectedReminder]
   );
+  const isPastEvent = (event: EventRow) => new Date(event.end_at).getTime() < Date.now();
+  const isPastReminder = (reminder: ReminderRow) => new Date(reminder.remind_at).getTime() < Date.now();
+  useEffect(() => {
+    if (viewMode !== 'day' || !selectedTimelineInVisibleHours || selectedTimelineHour === null) {
+      return;
+    }
+
+    const container = centerScrollRef.current;
+    if (!container) return;
+
+    const hourRow = container.querySelector(
+      `[data-timeline-hour="${selectedTimelineHour}"]`
+    ) as HTMLElement | null;
+    if (!hourRow) return;
+
+    container.scrollTo({
+      top: Math.max(0, hourRow.offsetTop - 24),
+      behavior: 'smooth',
+    });
+  }, [selectedTimelineHour, selectedTimelineInVisibleHours, viewMode, selectedEventPreview, selectedReminder]);
+
   const selectedEventNoteDraft = selectedEventPreview
     ? eventNotesDrafts[selectedEventPreview.id] ?? selectedEventPreview.notes ?? ''
     : '';
@@ -1021,6 +1074,10 @@ export const CalendarWindow = () => {
     ) ??
     calendars[0] ??
     null;
+
+  const notifyCalendarItemsUpdated = () => {
+    window.ipcRenderer?.send('calendar:items-updated');
+  };
 
   const overflowEvents = useMemo(
     () => (overflowDayKey ? eventsByDay[overflowDayKey] ?? [] : []),
@@ -1095,6 +1152,15 @@ export const CalendarWindow = () => {
           })
         );
 
+        const eventRowsById = new Set(((eventRows ?? []) as EventRow[]).map((event) => event.id));
+        const reminderRowsById = new Set(((reminderRows ?? []) as ReminderRow[]).map((item) => item.id));
+        setSelectedEvent((current) =>
+          current && !eventRowsById.has(baseEventId(current.id)) ? null : current
+        );
+        setSelectedReminder((current) =>
+          current && !reminderRowsById.has(current.id) ? null : current
+        );
+
         const [projectResult, noteResult, taskResult] = await Promise.allSettled([
           api.getProjects({ includeCompleted: true }),
           api.getNotes(),
@@ -1155,12 +1221,19 @@ export const CalendarWindow = () => {
 
     loadCalendarData();
 
+    const handleCalendarItemsUpdated = () => {
+      void loadCalendarData();
+    };
+
+    window.ipcRenderer?.on('calendar:items-updated', handleCalendarItemsUpdated);
+
     const refreshTimer = window.setInterval(() => {
       void loadCalendarData();
     }, 60_000);
 
     return () => {
       cancelled = true;
+      window.ipcRenderer?.off('calendar:items-updated', handleCalendarItemsUpdated);
       window.clearInterval(refreshTimer);
     };
   }, [
@@ -1227,6 +1300,30 @@ export const CalendarWindow = () => {
       window.removeEventListener('keydown', onEscape);
     };
   }, [contextMenu]);
+
+  useEffect(() => {
+    if (!calendarRowContextMenu && !calendarColorMenu) return;
+
+    const closeMenu = () => {
+      setCalendarRowContextMenu(null);
+      setCalendarColorMenu(null);
+    };
+    const onEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') closeMenu();
+    };
+
+    window.addEventListener('mousedown', closeMenu);
+    window.addEventListener('scroll', closeMenu, true);
+    window.addEventListener('resize', closeMenu);
+    window.addEventListener('keydown', onEscape);
+
+    return () => {
+      window.removeEventListener('mousedown', closeMenu);
+      window.removeEventListener('scroll', closeMenu, true);
+      window.removeEventListener('resize', closeMenu);
+      window.removeEventListener('keydown', onEscape);
+    };
+  }, [calendarColorMenu, calendarRowContextMenu]);
 
   useEffect(() => {
     if (!listContextMenu) return;
@@ -1377,6 +1474,8 @@ export const CalendarWindow = () => {
   };
 
   const moveView = (direction: -1 | 1) => {
+    setSelectedEvent(null);
+    setSelectedReminder(null);
     setViewAnchor((prev) => {
       if (viewMode === 'day') return addDays(prev, direction);
       if (viewMode === 'month') return addMonths(prev, direction);
@@ -1385,6 +1484,8 @@ export const CalendarWindow = () => {
   };
 
   const jumpToToday = () => {
+    setSelectedEvent(null);
+    setSelectedReminder(null);
     setViewAnchor(new Date());
   };
 
@@ -1442,6 +1543,7 @@ export const CalendarWindow = () => {
       setComposerNoteId('');
       setComposerNotes('');
       setNewEventEndTime('');
+      notifyCalendarItemsUpdated();
       return;
     }
 
@@ -1481,6 +1583,7 @@ export const CalendarWindow = () => {
     setComposerNoteId('');
     setComposerNotes('');
     setNewEventEndTime('');
+    notifyCalendarItemsUpdated();
   };
 
   const createNewCalendar = async () => {
@@ -1558,6 +1661,7 @@ export const CalendarWindow = () => {
     setIsSavingEdit(true);
     setError(null);
 
+    const originalReminderDate = new Date(selectedReminder.remind_at);
     const remindAt = new Date(`${reminderEditDate}T${reminderEditTime}:00`);
     const resolvedReminderCalendarId =
       reminderEditCalendarId || selectedReminder.calendar_id || getDefaultCalendar()?.id || '';
@@ -1584,7 +1688,18 @@ export const CalendarWindow = () => {
         .map((item) => (item.id === updated.id ? updated : item))
         .sort((a, b) => new Date(a.remind_at).getTime() - new Date(b.remind_at).getTime())
     );
-    setSelectedReminder(null);
+
+    const updatedReminderDate = new Date(updated.remind_at);
+    updatedReminderDate.setHours(0, 0, 0, 0);
+    const updatedReminderDateKey = formatDateKey(updatedReminderDate);
+    const originalReminderDateKey = formatDateKey(originalReminderDate);
+    if (updatedReminderDateKey !== originalReminderDateKey) {
+      setViewMode('day');
+      setViewAnchor(updatedReminderDate);
+    }
+
+    setSelectedReminder(updated);
+    notifyCalendarItemsUpdated();
   };
 
   const deleteReminderFromEditor = async () => {
@@ -1596,6 +1711,7 @@ export const CalendarWindow = () => {
       await api.deleteReminder(selectedReminder.id);
       setReminders((prev) => prev.filter((item) => item.id !== selectedReminder.id));
       setSelectedReminder(null);
+      notifyCalendarItemsUpdated();
     } catch (error) {
       setError('Could not delete reminder.');
     } finally {
@@ -1606,7 +1722,7 @@ export const CalendarWindow = () => {
   const openEventEditor = (event: EventRow) => {
     const source = events.find((row) => row.id === baseEventId(event.id)) ?? event;
     const start = new Date(event.start_at);
-    setSelectedEvent(source);
+    setSelectedEvent(event);
     setEventEditorEvent(source);
     setEditTitle(source.title);
     setEditDate(formatDateKey(start));
@@ -1778,7 +1894,17 @@ export const CalendarWindow = () => {
         .sort((a, b) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime())
     );
     setSelectedEvent((current) => (current?.id === updated.id ? updated : current));
+    setSelectedReminder(null);
+    const updatedDate = new Date(updated.start_at);
+    updatedDate.setHours(0, 0, 0, 0);
+    const updatedDateKey = formatDateKey(updatedDate);
+    const currentAnchorKey = formatDateKey(viewAnchor);
+    if (updatedDateKey !== currentAnchorKey) {
+      setViewMode('day');
+      setViewAnchor(updatedDate);
+    }
     setEventEditorEvent(null);
+    notifyCalendarItemsUpdated();
   };
 
   const deleteEvent = async () => {
@@ -1793,6 +1919,7 @@ export const CalendarWindow = () => {
       setSelectedEvent((current) => (current?.id === eventEditorEvent.id ? null : current));
       setEventEditorEvent(null);
       setConfirmDelete(false);
+      notifyCalendarItemsUpdated();
     } catch (error) {
       setError('Could not delete event.');
     } finally {
@@ -1828,6 +1955,38 @@ export const CalendarWindow = () => {
       setError('Could not update calendar color.');
     } finally {
       setIsSavingColorId(null);
+    }
+  };
+
+  const deleteCalendar = async (calendar: CalendarRow) => {
+    setError(null);
+
+    try {
+      const deleted = await api.deleteCalendar(calendar.id);
+      if (!deleted) {
+        setError('Could not delete calendar.');
+        return;
+      }
+
+      setCalendars((prev) => prev.filter((item) => item.id !== calendar.id));
+      setSelectedEvent((current) =>
+        current && current.calendar_id === calendar.id ? null : current
+      );
+      setSelectedReminder((current) =>
+        current && current.calendar_id === calendar.id ? null : current
+      );
+
+      if (composerCalendarId === calendar.id) {
+        setComposerCalendarId('');
+      }
+      if (editCalendarId === calendar.id) {
+        setEditCalendarId('');
+      }
+      if (reminderEditCalendarId === calendar.id) {
+        setReminderEditCalendarId('');
+      }
+    } catch (error) {
+      setError('Could not delete calendar.');
     }
   };
 
@@ -2353,7 +2512,7 @@ export const CalendarWindow = () => {
                       Events
                     </p>
                     <p className="text-xl font-semibold text-gray-900 leading-tight">
-                      {visibleEvents.length}
+                      {overviewEventCount}
                     </p>
                   </div>
                   <div>
@@ -2361,7 +2520,7 @@ export const CalendarWindow = () => {
                       Reminders
                     </p>
                     <p className="text-xl font-semibold text-gray-900 leading-tight">
-                      {reminders.length}
+                      {overviewReminderCount}
                     </p>
                   </div>
                 </div>
@@ -2390,10 +2549,21 @@ export const CalendarWindow = () => {
                   {calendars.map((calendar) => (
                     <div
                       key={calendar.id}
+                      onContextMenu={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setEditingCalendarId(null);
+                        setCalendarRowContextMenu({
+                          x: e.clientX,
+                          y: e.clientY,
+                          calendarId: calendar.id,
+                        });
+                        setCalendarColorMenu(null);
+                      }}
                       className={`flex items-center justify-between gap-2 rounded-lg border px-2 py-1.5 text-sm ${
                         calendar.is_visible === false
                           ? 'border-gray-100 bg-gray-50 text-gray-400'
-                          : 'border-transparent text-gray-800'
+                          : 'border-transparent text-gray-800 hover:bg-gray-50'
                       }`}
                     >
                       <div className="flex items-center gap-2 min-w-0">
@@ -2428,36 +2598,6 @@ export const CalendarWindow = () => {
                           >
                             {calendar.name}
                           </span>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        <button
-                          type="button"
-                          onClick={() => void toggleCalendarVisibility(calendar)}
-                          className={`h-8 w-8 rounded-full flex items-center justify-center border border-gray-200 shadow-sm ${
-                            calendar.is_visible === false ? 'bg-white text-gray-500' : 'bg-white text-gray-900'
-                          }`}
-                          title={calendar.is_visible === false ? 'Show calendar' : 'Hide calendar'}
-                        >
-                          {calendar.is_visible === false ? (
-                            <EyeOff size={14} />
-                          ) : (
-                            <Eye size={14} />
-                          )}
-                        </button>
-                        <input
-                          type="color"
-                          value={calendarColorDrafts[calendar.id] ?? calendar.color}
-                          onChange={(e) => {
-                            const next = e.target.value;
-                            setCalendarColorDrafts((prev) => ({ ...prev, [calendar.id]: next }));
-                            void saveCalendarColor(calendar, next);
-                          }}
-                          title={`Change ${calendar.name} color`}
-                          className="h-5 w-5 rounded border border-gray-200 bg-white p-0 cursor-pointer"
-                        />
-                        {isSavingColorId === calendar.id && (
-                          <span className="text-[10px] text-gray-400">...</span>
                         )}
                       </div>
                     </div>
@@ -2590,6 +2730,8 @@ export const CalendarWindow = () => {
                         <button
                           key={key}
                           onClick={() => {
+                            setSelectedEvent(null);
+                            setSelectedReminder(null);
                             setViewMode('day');
                             setViewAnchor(dayDate);
                           }}
@@ -2622,31 +2764,50 @@ export const CalendarWindow = () => {
                           </div>
                           <div className="mt-2 space-y-1">
                             {visibleReminders.map((reminder) => (
-                              <div
-                                key={reminder.id}
-                                className="text-[10px] rounded px-1.5 py-0.5 truncate"
-                                style={{
-                                  backgroundColor: `${reminder.color ?? '#F59E0B'}33`,
-                                  color: '#1F2937',
-                                }}
-                                onContextMenu={(event) => {
-                                  event.preventDefault();
-                                  event.stopPropagation();
-                                  setListContextMenu({
-                                    x: event.clientX,
-                                    y: event.clientY,
-                                    kind: 'reminder',
-                                    id: reminder.id,
-                                  });
-                                }}
-                              >
-                                {reminder.title}
-                              </div>
+                              (() => {
+                                const pastReminder = isPastReminder(reminder);
+                                return (
+                                  <div
+                                    key={reminder.id}
+                                    className={`text-[10px] rounded px-1.5 py-0.5 truncate ${
+                                      pastReminder ? 'opacity-80' : ''
+                                    }`}
+                                    style={{
+                                      backgroundColor: pastReminder
+                                        ? '#F3F4F6'
+                                        : `${reminder.color ?? '#F59E0B'}33`,
+                                      color: pastReminder ? '#6B7280' : '#1F2937',
+                                    }}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setSelectedEvent(null);
+                                      setSelectedReminder(reminder);
+                                      setViewMode('day');
+                                      const date = new Date(reminder.remind_at);
+                                      date.setHours(0, 0, 0, 0);
+                                      setViewAnchor(date);
+                                    }}
+                                    onContextMenu={(event) => {
+                                      event.preventDefault();
+                                      event.stopPropagation();
+                                      setListContextMenu({
+                                        x: event.clientX,
+                                        y: event.clientY,
+                                        kind: 'reminder',
+                                        id: reminder.id,
+                                      });
+                                    }}
+                                  >
+                                    {reminder.title}
+                                  </div>
+                                );
+                              })()
                             ))}
                             {visibleEvents.map((event) =>
                               (() => {
                                 const meta = getEventStatusMeta(event.status);
                                 const calendarColor = getCalendarColor(event.calendar_id);
+                                const pastEvent = isPastEvent(event);
                                 return (
                                   <div
                                     key={event.id}
@@ -2654,10 +2815,25 @@ export const CalendarWindow = () => {
                                       meta.previewClass
                                     } ${event.status === 'done' ? 'line-through opacity-80' : ''} ${
                                       event.status === 'cancelled' ? 'opacity-65' : ''
-                                    }`}
+                                    } ${pastEvent ? 'opacity-75 grayscale-[0.15]' : ''}`}
                                     style={{
-                                      backgroundColor: `${calendarColor}18`,
-                                      borderColor: `${calendarColor}44`,
+                                      backgroundColor: pastEvent ? '#F3F4F6' : `${calendarColor}18`,
+                                      borderColor: pastEvent ? '#E5E7EB' : `${calendarColor}44`,
+                                      color: pastEvent ? '#6B7280' : '#1F2937',
+                                    }}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setListContextMenu(null);
+                                      setContextMenu(null);
+                                      setGridQuickAdd(null);
+                                      setGridQuickTitle('');
+                                      const source = events.find((row) => baseEventId(row.id) === baseEventId(event.id)) ?? event;
+                                      setSelectedEvent(source);
+                                      setSelectedReminder(null);
+                                      setViewMode('day');
+                                      const eventDate = new Date(event.start_at);
+                                      eventDate.setHours(0, 0, 0, 0);
+                                      setViewAnchor(eventDate);
                                     }}
                                     onContextMenu={(e) => {
                                       e.preventDefault();
@@ -2703,12 +2879,32 @@ export const CalendarWindow = () => {
                   </div>
                 </div>
               ) : (
-                <div
-                  className="grid min-w-210"
-                  style={{
-                    gridTemplateColumns: `72px repeat(${viewConfig.dates.length}, minmax(0, 1fr))`,
-                  }}
-                >
+                <div className="space-y-3 p-3">
+                  {viewMode === 'day' && selectedTimelineDate && !selectedTimelineInVisibleHours && (
+                    <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 shadow-sm">
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-amber-800">
+                        Selected item
+                      </p>
+                      <p className="mt-1 text-sm font-semibold text-gray-900">
+                        {selectedEventPreview?.title ?? selectedReminder?.title ?? 'Item'}
+                      </p>
+                      <p className="mt-1 text-xs text-gray-600">
+                        {selectedTimelineDate.toLocaleString([], {
+                          weekday: 'short',
+                          month: 'short',
+                          day: 'numeric',
+                          hour: 'numeric',
+                          minute: '2-digit',
+                        })}
+                      </p>
+                    </div>
+                  )}
+                  <div
+                    className="grid min-w-210"
+                    style={{
+                      gridTemplateColumns: `72px repeat(${viewConfig.dates.length}, minmax(0, 1fr))`,
+                    }}
+                  >
                   <div className="sticky top-0 z-10 h-12 bg-white border-b border-gray-200" />
                   {viewConfig.dates.map((dayDate) => (
                     <div
@@ -2726,12 +2922,18 @@ export const CalendarWindow = () => {
 
                   {hours.map((hour) => (
                     <Fragment key={hour}>
-                      <div className="h-16 border-b border-gray-100 pr-3 text-[11px] text-gray-400 flex items-start justify-end pt-1.5">
-                        {hour}
-                      </div>
-                      {viewConfig.dates.map((dayDate) => {
-                        const key = formatDateKey(dayDate);
+                      {(() => {
                         const hourInt = Number.parseInt(hour.split(':')[0], 10);
+                        return (
+                          <>
+                            <div
+                              data-timeline-hour={hourInt}
+                              className="h-16 border-b border-gray-100 pr-3 text-[11px] text-gray-400 flex items-start justify-end pt-1.5"
+                            >
+                              {hour}
+                            </div>
+                            {viewConfig.dates.map((dayDate) => {
+                              const key = formatDateKey(dayDate);
                         const items = (eventsByDay[key] ?? []).filter(
                           (evt) => new Date(evt.start_at).getHours() === hourInt
                         );
@@ -2746,30 +2948,32 @@ export const CalendarWindow = () => {
                         const isQuickAddOpen =
                           gridQuickAdd?.dateKey === key && gridQuickAdd?.hour === hourInt;
 
-                        return (
-                          <div
-                            key={`${hour}-${key}`}
-                            className="h-16 border-b border-l border-gray-100 relative px-1 py-1 hover:bg-blue-50/40 cursor-pointer"
-                            onClick={() => {
-                              setContextMenu(null);
-                              setListContextMenu(null);
-                              setGridQuickAdd(null);
-                              setGridQuickTitle('');
-                              setViewMode('day');
-                              setViewAnchor(dayDate);
-                            }}
-                            onContextMenu={(event) => {
-                              event.preventDefault();
-                              setGridQuickAdd(null);
-                              setGridQuickTitle('');
-                              setContextMenu({
-                                x: event.clientX,
-                                y: event.clientY,
-                                dateKey: key,
-                                hour: hourInt,
-                              });
-                            }}
-                          >
+                              return (
+                                <div
+                                  key={`${hour}-${key}`}
+                                  className="h-16 border-b border-l border-gray-100 relative px-1 py-1 hover:bg-blue-50/40 cursor-pointer"
+                                  onClick={() => {
+                                    setSelectedEvent(null);
+                                    setSelectedReminder(null);
+                                    setContextMenu(null);
+                                    setListContextMenu(null);
+                                    setGridQuickAdd(null);
+                                    setGridQuickTitle('');
+                                    setViewMode('day');
+                                    setViewAnchor(dayDate);
+                                  }}
+                                  onContextMenu={(event) => {
+                                    event.preventDefault();
+                                    setGridQuickAdd(null);
+                                    setGridQuickTitle('');
+                                    setContextMenu({
+                                      x: event.clientX,
+                                      y: event.clientY,
+                                      dateKey: key,
+                                      hour: hourInt,
+                                    });
+                                  }}
+                                >
                             {isQuickAddOpen && (
                               <div
                                 className="absolute top-1 left-1 right-1 z-20 rounded-md border border-gray-200 bg-white shadow-lg p-1.5"
@@ -2816,6 +3020,8 @@ export const CalendarWindow = () => {
                               <button
                                 key={reminder.id}
                                 onClick={(e) => {
+                                  setSelectedEvent(null);
+                                  setSelectedReminder(null);
                                   e.stopPropagation();
                                   void toggleReminderDone(reminder);
                                 }}
@@ -2831,10 +3037,12 @@ export const CalendarWindow = () => {
                                 }}
                                 className={`text-[10px] rounded px-1.5 py-0.5 truncate w-full text-left mb-0.5 ${
                                   reminder.is_done ? 'line-through opacity-60' : ''
-                                }`}
+                                } ${isPastReminder(reminder) ? 'opacity-80' : ''}`}
                                 style={{
-                                  backgroundColor: `${reminder.color ?? '#F59E0B'}33`,
-                                  color: '#1F2937',
+                                  backgroundColor: isPastReminder(reminder)
+                                    ? '#F3F4F6'
+                                    : `${reminder.color ?? '#F59E0B'}33`,
+                                  color: isPastReminder(reminder) ? '#6B7280' : '#1F2937',
                                 }}
                                 title={`${new Date(reminder.remind_at).toLocaleTimeString([], {
                                   hour: 'numeric',
@@ -2879,9 +3087,13 @@ export const CalendarWindow = () => {
                                 }}
                                 className="text-[10px] rounded-md px-2 py-0.5 truncate w-full text-left mb-0.5 last:mb-0 border shadow-sm"
                                 style={{
-                                  backgroundColor: `${getCalendarColor(evt.calendar_id)}18`,
-                                  borderColor: `${getCalendarColor(evt.calendar_id)}44`,
-                                  color: '#1F2937',
+                                  backgroundColor: isPastEvent(evt)
+                                    ? '#F3F4F6'
+                                    : `${getCalendarColor(evt.calendar_id)}18`,
+                                  borderColor: isPastEvent(evt)
+                                    ? '#E5E7EB'
+                                    : `${getCalendarColor(evt.calendar_id)}44`,
+                                  color: isPastEvent(evt) ? '#6B7280' : '#1F2937',
                                 }}
                               >
                                 <span
@@ -2908,11 +3120,15 @@ export const CalendarWindow = () => {
                                 +{hiddenCount} more
                               </button>
                             )}
-                          </div>
+                                </div>
+                              );
+                            })}
+                          </>
                         );
-                      })}
+                      })()}
                     </Fragment>
                   ))}
+                  </div>
                 </div>
               )}
             </div>
@@ -3267,7 +3483,7 @@ export const CalendarWindow = () => {
                           >
                             <span
                               className="h-2 w-2 shrink-0 rounded-full"
-                              style={{ backgroundColor: eventColor }}
+                              style={{ backgroundColor: isPastEvent(event) ? '#9CA3AF' : eventColor }}
                             />
                             <p className="w-16 shrink-0 text-[12px] font-medium text-gray-900">
                               {new Date(event.start_at).toLocaleTimeString([], {
@@ -3275,7 +3491,7 @@ export const CalendarWindow = () => {
                                 minute: '2-digit',
                               })}
                             </p>
-                            <p className="min-w-0 flex-1 truncate text-[13px] text-gray-700">
+                            <p className={`min-w-0 flex-1 truncate text-[13px] ${isPastEvent(event) ? 'text-gray-500' : 'text-gray-700'}`}>
                               {event.title}
                             </p>
                           </button>
@@ -4026,6 +4242,153 @@ export const CalendarWindow = () => {
             <ClipboardPaste size={14} className="shrink-0 text-gray-400" />
             <span className="text-[14px] font-medium tracking-tight">Paste Event</span>
           </button>
+        </div>
+      )}
+
+      {calendarRowContextMenu && (
+        <div
+          className="fixed z-50 min-w-48 overflow-hidden rounded-xl border border-gray-200 bg-white py-1 shadow-xl"
+          style={{
+            left: Math.max(8, Math.min(calendarRowContextMenu.x, window.innerWidth - 192)),
+            top: Math.max(8, Math.min(calendarRowContextMenu.y, window.innerHeight - 176)),
+          }}
+          onClick={(e) => e.stopPropagation()}
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          <button
+            onClick={() => {
+              const calendar = calendars.find((item) => item.id === calendarRowContextMenu.calendarId);
+              if (calendar) {
+                setEditingCalendarId(calendar.id);
+                setEditingCalendarName(calendar.name);
+              }
+              setCalendarRowContextMenu(null);
+            }}
+            className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
+          >
+            <PencilLine size={14} className="shrink-0 text-gray-500" />
+            <span className="text-[14px] font-medium tracking-tight">Rename</span>
+          </button>
+          <button
+            onClick={() => {
+              const calendar = calendars.find((item) => item.id === calendarRowContextMenu.calendarId);
+              if (calendar) {
+                void toggleCalendarVisibility(calendar);
+              }
+              setCalendarRowContextMenu(null);
+            }}
+            className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
+          >
+            {calendars.find((item) => item.id === calendarRowContextMenu.calendarId)?.is_visible ===
+            false ? (
+              <Eye size={14} className="shrink-0 text-gray-500" />
+            ) : (
+              <EyeOff size={14} className="shrink-0 text-gray-500" />
+            )}
+            <span className="text-[14px] font-medium tracking-tight">
+              {calendars.find((item) => item.id === calendarRowContextMenu.calendarId)?.is_visible ===
+              false
+                ? 'Show'
+                : 'Hide'}
+            </span>
+          </button>
+          <button
+            onClick={() => {
+              const calendar = calendars.find((item) => item.id === calendarRowContextMenu.calendarId);
+              if (calendar) {
+                setCalendarColorMenu({
+                    x: Math.max(
+                      8,
+                      Math.min(calendarRowContextMenu.x, window.innerWidth - 264)
+                    ),
+                    y: Math.max(8, Math.min(calendarRowContextMenu.y + 12, window.innerHeight - 180)),
+                  calendarId: calendar.id,
+                });
+              }
+              setCalendarRowContextMenu(null);
+            }}
+            className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
+          >
+            <Palette size={14} className="shrink-0 text-gray-500" />
+            <span className="text-[14px] font-medium tracking-tight">Change color</span>
+          </button>
+          <button
+            onClick={() => {
+              const calendar = calendars.find((item) => item.id === calendarRowContextMenu.calendarId);
+              if (calendar) {
+                const confirmed = window.confirm(
+                  `Delete calendar “${calendar.name}”? Events and reminders in it will also be removed.`
+                );
+                if (confirmed) void deleteCalendar(calendar);
+              }
+              setCalendarRowContextMenu(null);
+            }}
+            className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50"
+          >
+            <Trash2 size={14} className="shrink-0 text-red-500" />
+            <span className="text-[14px] font-medium tracking-tight">Delete</span>
+          </button>
+        </div>
+      )}
+
+      {calendarColorMenu && (
+        <div
+          className="fixed z-50 w-64 overflow-hidden rounded-xl border border-gray-200 bg-white p-3 shadow-xl"
+          style={{
+            left: Math.max(8, Math.min(calendarColorMenu.x, window.innerWidth - 264)),
+            top: Math.max(8, Math.min(calendarColorMenu.y, window.innerHeight - 180)),
+          }}
+          onClick={(e) => e.stopPropagation()}
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          <div className="mb-3 flex items-center justify-between">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">
+              Calendar Color
+            </p>
+            <button
+              type="button"
+              onClick={() => setCalendarColorMenu(null)}
+              className="h-6 w-6 rounded-full border border-gray-200 bg-white text-gray-500 hover:bg-gray-100 flex items-center justify-center"
+              title="Close"
+            >
+              <X size={12} />
+            </button>
+          </div>
+          <div className="grid grid-cols-6 gap-2">
+            {[
+              '#94A3B8',
+              '#3B82F6',
+              '#F97316',
+              '#22C55E',
+              '#A855F7',
+              '#EC4899',
+              '#EF4444',
+              '#F59E0B',
+              '#06B6D4',
+              '#0EA5E9',
+              '#14B8A6',
+              '#8B5CF6',
+            ].map((color) => {
+              const calendar = calendars.find((item) => item.id === calendarColorMenu.calendarId);
+              const isActive = (calendar?.color ?? '') === color;
+              return (
+                <button
+                  key={color}
+                  type="button"
+                  onClick={() => {
+                    const target = calendars.find((item) => item.id === calendarColorMenu.calendarId);
+                    if (target) void saveCalendarColor(target, color);
+                    setCalendarColorMenu(null);
+                  }}
+                  className={`h-6 w-6 rounded-full border-2 transition ${
+                    isActive ? 'border-gray-900' : 'border-transparent'
+                  }`}
+                  style={{ backgroundColor: color }}
+                  title={color}
+                />
+              );
+            })}
+          </div>
         </div>
       )}
 

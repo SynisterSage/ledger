@@ -505,6 +505,14 @@ const QUICK_CAPTURE_WIDTH = 400;
 const QUICK_CAPTURE_HEIGHT = 320;
 const MODULE_GAP = 12;
 
+const broadcastCalendarItemsUpdated = () => {
+  const targets = [sidebarWin, moduleWins.get('calendar'), moduleWins.get('dashboard')];
+  for (const win of targets) {
+    if (!win || win.isDestroyed()) continue;
+    win.webContents.send('calendar:items-updated');
+  }
+};
+
 function lockWindowZoom(win: BrowserWindow) {
   const { webContents } = win;
 
@@ -2409,6 +2417,10 @@ ipcMain.on(
     calendarWin.webContents.send('calendar:follow-up-created', payload);
   }
 );
+
+ipcMain.on('calendar:items-updated', () => {
+  broadcastCalendarItemsUpdated();
+});
 
 // Touch Bar setup for macOS
 function setupTouchBar() {

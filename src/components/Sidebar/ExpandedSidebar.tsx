@@ -527,8 +527,15 @@ export const ExpandedSidebar = ({
       void loadUpcoming();
     }, 60_000);
 
+    const handleCalendarItemsUpdated = () => {
+      void loadUpcoming();
+    };
+
+    window.ipcRenderer?.on('calendar:items-updated', handleCalendarItemsUpdated);
+
     return () => {
       cancelled = true;
+      window.ipcRenderer?.off('calendar:items-updated', handleCalendarItemsUpdated);
       window.clearInterval(refreshTimer);
     };
   }, [user?.id, activeWorkspaceId]);
@@ -1972,6 +1979,7 @@ export const ExpandedSidebar = ({
                     void (async () => {
                       try {
                         await api.deleteEvent(targetId);
+                        window.ipcRenderer?.send('calendar:items-updated');
                       } catch (error) {
                         setUpcomingItems(previousItems);
                         setSaveError('Could not delete event.');

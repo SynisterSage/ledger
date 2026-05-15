@@ -2207,6 +2207,27 @@ app.patch('/api/calendars/:id', authMiddleware, rateLimit('write'), async (req, 
   }
 });
 
+app.delete('/api/calendars/:id', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    const allowed = await ensureWorkspaceResource('calendars', req.params.id, workspaceId);
+    if (!allowed) {
+      return res.status(404).json({ error: 'Calendar not found' });
+    }
+
+    const { error } = await supabase
+      .from('calendars')
+      .delete()
+      .eq('id', req.params.id)
+      .eq('workspace_id', workspaceId);
+
+    if (error) throw error;
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 app.get('/api/events', authMiddleware, rateLimit('read'), async (req, res) => {
   try {
     const workspaceId = await resolveWorkspaceIdForRequest(req);

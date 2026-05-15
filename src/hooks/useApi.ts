@@ -275,6 +275,10 @@ export const useApi = () => {
           method: 'PATCH',
           body: JSON.stringify(update),
         }),
+      deleteCalendar: (id: string) =>
+        request(`/api/calendars/${id}`, {
+          method: 'DELETE',
+        }),
 
       // Events
       getEvents: (startDate?: string, endDate?: string) => {
