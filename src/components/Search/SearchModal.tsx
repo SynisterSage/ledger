@@ -1,204 +1,225 @@
-import { createPortal } from 'react-dom'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Briefcase, CalendarDays, Check, FileText, Maximize2, Minimize2, Search, X } from 'lucide-react'
-import { useAuthContext } from '../../context/AuthContext'
-import { useWorkspaceContext } from '../../context/WorkspaceContext'
-import { useSearch } from '../../context/SearchContext'
-import { useApi } from '../../hooks/useApi'
+import { createPortal } from 'react-dom';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  Briefcase,
+  CalendarDays,
+  Check,
+  FileText,
+  Maximize2,
+  Minimize2,
+  Search,
+  X,
+} from 'lucide-react';
+import { useAuthContext } from '../../context/AuthContext';
+import { useWorkspaceContext } from '../../context/WorkspaceContext';
+import { useSearch } from '../../context/SearchContext';
+import { useApi } from '../../hooks/useApi';
 
-type SearchResultType = 'note' | 'project' | 'task' | 'event'
+type SearchResultType = 'note' | 'project' | 'task' | 'event';
 
 type SearchResult = {
-  type: SearchResultType
-  id: string
-  title: string
-  preview: string
-  icon: string
-  project_id?: string | null
-  focusDate?: string | null
-}
+  type: SearchResultType;
+  id: string;
+  title: string;
+  preview: string;
+  icon: string;
+  project_id?: string | null;
+  focusDate?: string | null;
+};
 
 const iconMap: Record<SearchResultType, typeof FileText> = {
   note: FileText,
   project: Briefcase,
   task: Check,
   event: CalendarDays,
-}
+};
 
 const truncatePreview = (value: string, length = 80) => {
-  const text = String(value ?? '').trim().replace(/\s+/g, ' ')
-  if (!text) return ''
-  if (text.length <= length) return text
-  return `${text.slice(0, length - 1).trimEnd()}…`
-}
+  const text = String(value ?? '')
+    .trim()
+    .replace(/\s+/g, ' ');
+  if (!text) return '';
+  if (text.length <= length) return text;
+  return `${text.slice(0, length - 1).trimEnd()}…`;
+};
 
 export const SearchModal = () => {
-  const { user } = useAuthContext()
-  const { activeWorkspaceId } = useWorkspaceContext()
-  const { isSearchOpen, closeSearch } = useSearch()
-  const api = useApi()
-  const inputRef = useRef<HTMLInputElement | null>(null)
-  const itemRefs = useRef<Array<HTMLButtonElement | null>>([])
-  const searchIdRef = useRef(0)
-  const resultsRef = useRef<SearchResult[]>([])
-  const selectedIndexRef = useRef(0)
+  const { user } = useAuthContext();
+  const { activeWorkspaceId } = useWorkspaceContext();
+  const { isSearchOpen, closeSearch } = useSearch();
+  const api = useApi();
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const itemRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const searchIdRef = useRef(0);
+  const resultsRef = useRef<SearchResult[]>([]);
+  const selectedIndexRef = useRef(0);
 
-  const [query, setQuery] = useState('')
-  const [results, setResults] = useState<SearchResult[]>([])
-  const [selectedIndex, setSelectedIndex] = useState(0)
-  const [isLoading, setIsLoading] = useState(false)
-  const [isFullscreen, setIsFullscreen] = useState(false)
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState<SearchResult[]>([]);
+  const [selectedIndex, setSelectedIndex] = useState(0);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   // Keep refs in sync with state
   useEffect(() => {
-    resultsRef.current = results
-  }, [results])
+    resultsRef.current = results;
+  }, [results]);
 
   useEffect(() => {
-    selectedIndexRef.current = selectedIndex
-  }, [selectedIndex])
+    selectedIndexRef.current = selectedIndex;
+  }, [selectedIndex]);
 
-  const trimmedQuery = query.trim()
+  const trimmedQuery = query.trim();
 
   useEffect(() => {
     if (!isSearchOpen) {
-      return
+      return;
     }
 
-    setQuery('')
-    setResults([])
-    setSelectedIndex(0)
-    setIsFullscreen(false)
+    setQuery('');
+    setResults([]);
+    setSelectedIndex(0);
+    setIsFullscreen(false);
 
     const timer = window.setTimeout(() => {
-      inputRef.current?.focus()
-    }, 20)
+      inputRef.current?.focus();
+    }, 20);
 
-    return () => window.clearTimeout(timer)
-  }, [isSearchOpen])
+    return () => window.clearTimeout(timer);
+  }, [isSearchOpen]);
 
-  const activeResult = useMemo(() => results[selectedIndex] ?? null, [results, selectedIndex])
+  const activeResult = useMemo(() => results[selectedIndex] ?? null, [results, selectedIndex]);
 
   useEffect(() => {
     if (!isSearchOpen || !user || !activeWorkspaceId) {
-      return
+      return;
     }
 
     if (trimmedQuery.length < 2) {
-      setResults([])
-      setIsLoading(false)
-      setSelectedIndex(0)
-      return
+      setResults([]);
+      setIsLoading(false);
+      setSelectedIndex(0);
+      return;
     }
 
-    setIsLoading(true)
-    const searchId = searchIdRef.current + 1
-    searchIdRef.current = searchId
-    let cancelled = false
+    setIsLoading(true);
+    const searchId = searchIdRef.current + 1;
+    searchIdRef.current = searchId;
+    let cancelled = false;
 
     const timer = window.setTimeout(() => {
-      void api.searchWorkspace(activeWorkspaceId, trimmedQuery)
+      void api
+        .searchWorkspace(activeWorkspaceId, trimmedQuery)
         .then((data) => {
-          if (cancelled || searchIdRef.current !== searchId) return
-          const next = Array.isArray(data) ? (data as SearchResult[]) : []
-          setResults(next)
-          setSelectedIndex(next.length > 0 ? 0 : 0)
+          if (cancelled || searchIdRef.current !== searchId) return;
+          const next = Array.isArray(data) ? (data as SearchResult[]) : [];
+          setResults(next);
+          setSelectedIndex(next.length > 0 ? 0 : 0);
         })
         .catch((error) => {
-          if (cancelled || searchIdRef.current !== searchId) return
-          console.error('Search failed:', error)
-          setResults([])
+          if (cancelled || searchIdRef.current !== searchId) return;
+          console.error('Search failed:', error);
+          setResults([]);
         })
         .finally(() => {
-          if (cancelled || searchIdRef.current !== searchId) return
-          setIsLoading(false)
-        })
-    }, 300)
+          if (cancelled || searchIdRef.current !== searchId) return;
+          setIsLoading(false);
+        });
+    }, 300);
 
     return () => {
-      cancelled = true
-      window.clearTimeout(timer)
-    }
-  }, [activeWorkspaceId, api, isSearchOpen, trimmedQuery, user])
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [activeWorkspaceId, api, isSearchOpen, trimmedQuery, user]);
 
   useEffect(() => {
-    const selected = itemRefs.current[selectedIndex]
-    selected?.scrollIntoView({ block: 'nearest' })
-  }, [selectedIndex, results])
+    const selected = itemRefs.current[selectedIndex];
+    selected?.scrollIntoView({ block: 'nearest' });
+  }, [selectedIndex, results]);
 
   useEffect(() => {
-    if (!isSearchOpen) return
+    if (!isSearchOpen) return;
 
-    const previous = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
 
     return () => {
-      document.body.style.overflow = previous
-    }
-  }, [isSearchOpen])
+      document.body.style.overflow = previous;
+    };
+  }, [isSearchOpen]);
 
-  const jumpToResult = useCallback((result: SearchResult) => {
-    if (result.type === 'note') {
-      void window.desktopWindow?.toggleModule('notes', { focusNoteId: result.id })
-    } else if (result.type === 'project') {
-      void window.desktopWindow?.toggleModule('projects', { focusProjectId: result.id })
-    } else if (result.type === 'task') {
-      void window.desktopWindow?.toggleModule('projects', { focusProjectId: result.project_id ?? undefined, focusTaskId: result.id })
-    } else if (result.type === 'event') {
-      const focusDate = result.focusDate ?? undefined
-      void window.desktopWindow?.toggleModule('calendar', focusDate ? { focusDate } : undefined)
-    }
+  const jumpToResult = useCallback(
+    (result: SearchResult) => {
+      if (result.type === 'note') {
+        void window.desktopWindow?.toggleModule('notes', { focusNoteId: result.id });
+      } else if (result.type === 'project') {
+        void window.desktopWindow?.toggleModule('projects', { focusProjectId: result.id });
+      } else if (result.type === 'task') {
+        void window.desktopWindow?.toggleModule('projects', {
+          focusProjectId: result.project_id ?? undefined,
+          focusTaskId: result.id,
+        });
+      } else if (result.type === 'event') {
+        const focusDate = result.focusDate ?? undefined;
+        void window.desktopWindow?.toggleModule('calendar', focusDate ? { focusDate } : undefined);
+      }
 
-    closeSearch()
-  }, [closeSearch])
+      closeSearch();
+    },
+    [closeSearch]
+  );
 
-  const onKeyDown = useCallback((event: KeyboardEvent) => {
-    if (event.key === 'Escape') {
-      event.preventDefault()
-      closeSearch()
-      return
-    }
+  const onKeyDown = useCallback(
+    (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        closeSearch();
+        return;
+      }
 
-    if (event.key === 'ArrowDown') {
-      if (resultsRef.current.length === 0) return
-      event.preventDefault()
-      setSelectedIndex((current) => Math.min(current + 1, resultsRef.current.length - 1))
-      return
-    }
+      if (event.key === 'ArrowDown') {
+        if (resultsRef.current.length === 0) return;
+        event.preventDefault();
+        setSelectedIndex((current) => Math.min(current + 1, resultsRef.current.length - 1));
+        return;
+      }
 
-    if (event.key === 'ArrowUp') {
-      if (resultsRef.current.length === 0) return
-      event.preventDefault()
-      setSelectedIndex((current) => Math.max(current - 1, 0))
-      return
-    }
+      if (event.key === 'ArrowUp') {
+        if (resultsRef.current.length === 0) return;
+        event.preventDefault();
+        setSelectedIndex((current) => Math.max(current - 1, 0));
+        return;
+      }
 
-    if (event.key === 'Enter') {
-      const activeResult = resultsRef.current[selectedIndexRef.current]
-      if (!activeResult) return
-      event.preventDefault()
-      jumpToResult(activeResult)
-    }
-  }, [closeSearch, jumpToResult])
+      if (event.key === 'Enter') {
+        const activeResult = resultsRef.current[selectedIndexRef.current];
+        if (!activeResult) return;
+        event.preventDefault();
+        jumpToResult(activeResult);
+      }
+    },
+    [closeSearch, jumpToResult]
+  );
 
   useEffect(() => {
-    if (!isSearchOpen) return
+    if (!isSearchOpen) return;
 
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [isSearchOpen, onKeyDown])
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [isSearchOpen, onKeyDown]);
 
   if (!isSearchOpen || typeof document === 'undefined' || !user || !activeWorkspaceId) {
-    return null
+    return null;
   }
 
   const shellClassName = isFullscreen
     ? 'fixed inset-0 z-[220] bg-transparent p-4 sm:p-8'
-    : 'fixed inset-0 z-[220] flex items-start justify-center bg-transparent px-4 pt-16'
+    : 'fixed inset-0 z-[220] flex items-start justify-center bg-transparent px-4 pt-16';
 
   const panelClassName = isFullscreen
     ? 'flex h-full w-full flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl'
-    : 'flex h-[400px] w-full max-w-[500px] flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl'
+    : 'flex h-[400px] w-full max-w-[500px] flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl';
 
   return createPortal(
     <div className={shellClassName} onMouseDown={closeSearch}>
@@ -212,8 +233,8 @@ export const SearchModal = () => {
               onChange={(event) => setQuery(event.target.value)}
               onKeyDown={(event) => {
                 if (event.key === 'Escape') {
-                  event.preventDefault()
-                  closeSearch()
+                  event.preventDefault();
+                  closeSearch();
                 }
               }}
               placeholder="Search everything..."
@@ -242,11 +263,17 @@ export const SearchModal = () => {
 
         <div className="min-h-0 flex-1 overflow-auto px-2 py-2">
           {!trimmedQuery ? (
-            <div className="flex h-full items-center justify-center px-4 text-sm text-gray-500">Start typing to search...</div>
+            <div className="flex h-full items-center justify-center px-4 text-sm text-gray-500">
+              Start typing to search...
+            </div>
           ) : trimmedQuery.length < 2 ? (
-            <div className="flex h-full items-center justify-center px-4 text-sm text-gray-500">Type at least 2 characters to search.</div>
+            <div className="flex h-full items-center justify-center px-4 text-sm text-gray-500">
+              Type at least 2 characters to search.
+            </div>
           ) : isLoading ? (
-            <div className="flex h-full items-center justify-center px-4 text-sm text-gray-500">Searching…</div>
+            <div className="flex h-full items-center justify-center px-4 text-sm text-gray-500">
+              Searching…
+            </div>
           ) : results.length === 0 ? (
             <div className="flex h-full items-center justify-center px-4 text-sm text-gray-500">
               No results for “{trimmedQuery}”
@@ -254,13 +281,15 @@ export const SearchModal = () => {
           ) : (
             <div className="space-y-1">
               {results.map((result, index) => {
-                const Icon = iconMap[result.type]
-                const selected = index === selectedIndex
+                const Icon = iconMap[result.type];
+                const selected = index === selectedIndex;
 
                 return (
                   <button
                     key={`${result.type}-${result.id}`}
-                    ref={(element) => { itemRefs.current[index] = element }}
+                    ref={(element) => {
+                      itemRefs.current[index] = element;
+                    }}
                     type="button"
                     onMouseEnter={() => setSelectedIndex(index)}
                     onClick={() => jumpToResult(result)}
@@ -270,22 +299,30 @@ export const SearchModal = () => {
                         : 'border-transparent hover:border-gray-200 hover:bg-gray-50'
                     }`}
                   >
-                    <span className={`mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${selected ? 'bg-white text-[#FF5F40]' : 'bg-gray-100 text-gray-600'}`}>
+                    <span
+                      className={`mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${
+                        selected ? 'bg-white text-[#FF5F40]' : 'bg-gray-100 text-gray-600'
+                      }`}
+                    >
                       <Icon size={16} />
                     </span>
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-semibold text-gray-900">{result.title}</p>
-                      <p className="mt-0.5 line-clamp-2 text-xs leading-5 text-gray-500">{truncatePreview(result.preview) || 'No preview available'}</p>
+                      <p className="mt-0.5 line-clamp-2 text-xs leading-5 text-gray-500">
+                        {truncatePreview(result.preview) || 'No preview available'}
+                      </p>
                     </div>
                   </button>
-                )
+                );
               })}
             </div>
           )}
         </div>
 
         <div className="flex items-center gap-2 border-t border-gray-100 px-4 py-3 text-[11px] text-gray-500">
-          <span className="min-w-0 flex-1 truncate">↑↓ to navigate • Enter to jump • ESC to close</span>
+          <span className="min-w-0 flex-1 truncate">
+            ↑↓ to navigate • Enter to jump • ESC to close
+          </span>
           <span className="hidden max-w-[42%] shrink-0 truncate text-right min-[460px]:inline">
             {activeResult ? `${activeResult.type} selected` : ' '}
           </span>
@@ -293,5 +330,5 @@ export const SearchModal = () => {
       </div>
     </div>,
     document.body
-  )
-}
+  );
+};

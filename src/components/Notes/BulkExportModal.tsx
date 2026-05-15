@@ -1,12 +1,12 @@
-import { useState, useCallback, useEffect, useMemo } from 'react'
-import { Download, Loader2, X, Check } from 'lucide-react'
+import { useState, useCallback, useEffect, useMemo } from 'react';
+import { Download, Loader2, X, Check } from 'lucide-react';
 
 interface BulkExportModalProps {
-  isOpen: boolean
-  onClose: () => void
-  onExport: (format: 'pdf' | 'png' | 'html' | 'txt', selectedIds: Set<string>) => Promise<void>
-  notes: Array<{ id: string; title: string; mode?: 'text' | 'mind_map' }>
-  isMindMapOnly?: boolean
+  isOpen: boolean;
+  onClose: () => void;
+  onExport: (format: 'pdf' | 'png' | 'html' | 'txt', selectedIds: Set<string>) => Promise<void>;
+  notes: Array<{ id: string; title: string; mode?: 'text' | 'mind_map' }>;
+  isMindMapOnly?: boolean;
 }
 
 export const BulkExportModal = ({
@@ -19,72 +19,81 @@ export const BulkExportModal = ({
   const relevantNotes = useMemo(
     () => (isMindMapOnly ? notes.filter((n) => n.mode === 'mind_map') : notes),
     [isMindMapOnly, notes]
-  )
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set(relevantNotes.map((n) => n.id)))
-  const [format, setFormat] = useState<'pdf' | 'png' | 'html' | 'txt'>(isMindMapOnly ? 'pdf' : 'pdf')
-  const [isExporting, setIsExporting] = useState(false)
-  const [exportStatus, setExportStatus] = useState<'idle' | 'success' | 'error'>('idle')
-  const selectedRelevantCount = relevantNotes.reduce((count, note) => (selectedIds.has(note.id) ? count + 1 : count), 0)
+  );
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(
+    new Set(relevantNotes.map((n) => n.id))
+  );
+  const [format, setFormat] = useState<'pdf' | 'png' | 'html' | 'txt'>(
+    isMindMapOnly ? 'pdf' : 'pdf'
+  );
+  const [isExporting, setIsExporting] = useState(false);
+  const [exportStatus, setExportStatus] = useState<'idle' | 'success' | 'error'>('idle');
+  const selectedRelevantCount = relevantNotes.reduce(
+    (count, note) => (selectedIds.has(note.id) ? count + 1 : count),
+    0
+  );
 
   useEffect(() => {
-    if (!isOpen) return
-    setSelectedIds(new Set(relevantNotes.map((note) => note.id)))
-    setFormat(isMindMapOnly ? 'pdf' : 'pdf')
-    setExportStatus('idle')
-  }, [isOpen, isMindMapOnly, relevantNotes])
+    if (!isOpen) return;
+    setSelectedIds(new Set(relevantNotes.map((note) => note.id)));
+    setFormat(isMindMapOnly ? 'pdf' : 'pdf');
+    setExportStatus('idle');
+  }, [isOpen, isMindMapOnly, relevantNotes]);
 
   const handleSelectAll = useCallback(() => {
     if (selectedRelevantCount === relevantNotes.length) {
-      setSelectedIds(new Set())
+      setSelectedIds(new Set());
     } else {
-      setSelectedIds(new Set(relevantNotes.map((n) => n.id)))
+      setSelectedIds(new Set(relevantNotes.map((n) => n.id)));
     }
-  }, [relevantNotes, selectedRelevantCount])
+  }, [relevantNotes, selectedRelevantCount]);
 
   const handleToggleNote = useCallback((noteId: string) => {
     setSelectedIds((prev) => {
-      const next = new Set(prev)
+      const next = new Set(prev);
       if (next.has(noteId)) {
-        next.delete(noteId)
+        next.delete(noteId);
       } else {
-        next.add(noteId)
+        next.add(noteId);
       }
-      return next
-    })
-  }, [])
+      return next;
+    });
+  }, []);
 
   const handleExport = async () => {
-    const filteredSelectedIds = new Set(relevantNotes.filter((note) => selectedIds.has(note.id)).map((note) => note.id))
-    if (filteredSelectedIds.size === 0) return
-    setIsExporting(true)
-    setExportStatus('idle')
+    const filteredSelectedIds = new Set(
+      relevantNotes.filter((note) => selectedIds.has(note.id)).map((note) => note.id)
+    );
+    if (filteredSelectedIds.size === 0) return;
+    setIsExporting(true);
+    setExportStatus('idle');
     try {
-      await onExport(format, filteredSelectedIds)
-      setExportStatus('success')
+      await onExport(format, filteredSelectedIds);
+      setExportStatus('success');
       setTimeout(() => {
-        onClose()
-        setExportStatus('idle')
-      }, 1500)
+        onClose();
+        setExportStatus('idle');
+      }, 1500);
     } catch (error) {
-      console.error('Export failed:', error)
-      setExportStatus('error')
+      console.error('Export failed:', error);
+      setExportStatus('error');
     } finally {
-      setIsExporting(false)
+      setIsExporting(false);
     }
-  }
+  };
 
-  if (!isOpen) return null
+  if (!isOpen) return null;
 
-  const formatOptions = isMindMapOnly 
+  const formatOptions = isMindMapOnly
     ? (['pdf', 'png', 'txt'] as const)
-    : (['pdf', 'txt', 'html'] as const)
+    : (['pdf', 'txt', 'html'] as const);
 
   const formatLabels: Record<string, string> = {
     pdf: 'PDF',
     png: 'PNG',
     txt: 'Text',
     html: 'HTML',
-  }
+  };
 
   return (
     <div
@@ -138,7 +147,8 @@ export const BulkExportModal = ({
           <div>
             <div className="mb-2 flex items-center justify-between">
               <label className="text-sm font-medium text-gray-700">
-                Select {isMindMapOnly ? 'mind maps' : 'notes'} ({selectedRelevantCount} of {relevantNotes.length})
+                Select {isMindMapOnly ? 'mind maps' : 'notes'} ({selectedRelevantCount} of{' '}
+                {relevantNotes.length})
               </label>
               <button
                 onClick={handleSelectAll}
@@ -164,7 +174,9 @@ export const BulkExportModal = ({
                       onChange={() => handleToggleNote(note.id)}
                       className="rounded border-gray-300"
                     />
-                    <span className="flex-1 truncate text-sm text-gray-900">{note.title || 'Untitled'}</span>
+                    <span className="flex-1 truncate text-sm text-gray-900">
+                      {note.title || 'Untitled'}
+                    </span>
                   </label>
                 ))
               )}
@@ -214,5 +226,5 @@ export const BulkExportModal = ({
         </div>
       </div>
     </div>
-  )
-}
+  );
+};

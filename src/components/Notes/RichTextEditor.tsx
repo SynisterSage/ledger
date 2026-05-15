@@ -1,39 +1,76 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react'
-import { LexicalComposer } from '@lexical/react/LexicalComposer'
-import { RichTextPlugin } from '@lexical/react/LexicalRichTextPlugin'
-import { ContentEditable } from '@lexical/react/LexicalContentEditable'
-import { HistoryPlugin } from '@lexical/react/LexicalHistoryPlugin'
-import { OnChangePlugin } from '@lexical/react/LexicalOnChangePlugin'
-import { LinkPlugin } from '@lexical/react/LexicalLinkPlugin'
-import { MarkdownShortcutPlugin } from '@lexical/react/LexicalMarkdownShortcutPlugin'
-import { TabIndentationPlugin } from '@lexical/react/LexicalTabIndentationPlugin'
-import { ListPlugin } from '@lexical/react/LexicalListPlugin'
-import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext'
-import { Bold, Italic, Underline, List, ListOrdered, Link2, Code2, ChevronDown } from 'lucide-react'
-import { AutoLinkNode, LinkNode } from '@lexical/link'
-import { TOGGLE_LINK_COMMAND } from '@lexical/link'
-import { ListItemNode, ListNode } from '@lexical/list'
-import { INSERT_ORDERED_LIST_COMMAND, INSERT_UNORDERED_LIST_COMMAND } from '@lexical/list'
-import { CodeHighlightNode, CodeNode } from '@lexical/code'
-import { HorizontalRuleNode } from '@lexical/react/LexicalHorizontalRuleNode'
-import { HeadingNode, QuoteNode, registerRichText } from '@lexical/rich-text'
-import { $generateHtmlFromNodes } from '@lexical/html'
-import { $generateNodesFromDOM } from '@lexical/html'
-import { $getRoot, $insertNodes, EditorState, FORMAT_TEXT_COMMAND, $getPreviousSelection, $getSelection, $isRangeSelection, $createParagraphNode } from 'lexical'
-import { $setBlocksType } from '@lexical/selection'
-import { $createHeadingNode, $createQuoteNode } from '@lexical/rich-text'
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { LexicalComposer } from '@lexical/react/LexicalComposer';
+import { RichTextPlugin } from '@lexical/react/LexicalRichTextPlugin';
+import { ContentEditable } from '@lexical/react/LexicalContentEditable';
+import { HistoryPlugin } from '@lexical/react/LexicalHistoryPlugin';
+import { OnChangePlugin } from '@lexical/react/LexicalOnChangePlugin';
+import { LinkPlugin } from '@lexical/react/LexicalLinkPlugin';
+import { MarkdownShortcutPlugin } from '@lexical/react/LexicalMarkdownShortcutPlugin';
+import { TabIndentationPlugin } from '@lexical/react/LexicalTabIndentationPlugin';
+import { ListPlugin } from '@lexical/react/LexicalListPlugin';
+import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext';
+import {
+  Bold,
+  Italic,
+  Underline,
+  List,
+  ListOrdered,
+  Link2,
+  Code2,
+  ChevronDown,
+} from 'lucide-react';
+import { AutoLinkNode, LinkNode } from '@lexical/link';
+import { TOGGLE_LINK_COMMAND } from '@lexical/link';
+import { ListItemNode, ListNode } from '@lexical/list';
+import { INSERT_ORDERED_LIST_COMMAND, INSERT_UNORDERED_LIST_COMMAND } from '@lexical/list';
+import { CodeHighlightNode, CodeNode } from '@lexical/code';
+import { HorizontalRuleNode } from '@lexical/react/LexicalHorizontalRuleNode';
+import { HeadingNode, QuoteNode, registerRichText } from '@lexical/rich-text';
+import { $generateHtmlFromNodes } from '@lexical/html';
+import { $generateNodesFromDOM } from '@lexical/html';
+import {
+  $getRoot,
+  $insertNodes,
+  EditorState,
+  FORMAT_TEXT_COMMAND,
+  $getPreviousSelection,
+  $getSelection,
+  $isRangeSelection,
+  $createParagraphNode,
+  COMMAND_PRIORITY_EDITOR,
+  PASTE_COMMAND,
+  DROP_COMMAND,
+} from 'lexical';
+import { $setBlocksType } from '@lexical/selection';
+import { $createHeadingNode, $createQuoteNode } from '@lexical/rich-text';
+import { $createImageNode, ImageNode } from './nodes/ImageNode';
+import { supabase } from '../../services/supabase';
+import { useWorkspaceContext } from '../../context/WorkspaceContext';
+import { useToast } from '../Common/ToastProvider';
 
 type Props = {
-  initialValue?: string | null
-  editorKey?: string
-  onChange: (html: string) => void
-  onFocus?: () => void
-  onBlur?: () => void
-}
+  initialValue?: string | null;
+  editorKey?: string;
+  noteId?: string | null;
+  onChange: (html: string) => void;
+  onFocus?: () => void;
+  onBlur?: () => void;
+};
 
 const editorConfig = {
   namespace: 'ledger-notes',
-  nodes: [HeadingNode, QuoteNode, HorizontalRuleNode, ListNode, ListItemNode, LinkNode, AutoLinkNode, CodeNode, CodeHighlightNode],
+  nodes: [
+    HeadingNode,
+    QuoteNode,
+    HorizontalRuleNode,
+    ListNode,
+    ListItemNode,
+    LinkNode,
+    AutoLinkNode,
+    CodeNode,
+    CodeHighlightNode,
+    ImageNode,
+  ],
   theme: {
     text: {
       bold: 'font-bold',
@@ -65,46 +102,46 @@ const editorConfig = {
     },
   },
   onError: (error: Error) => console.error(error),
-}
+};
 
 const LoadHtmlPlugin = ({ html, editorKey }: { html?: string | null; editorKey?: string }) => {
-  const [editor] = useLexicalComposerContext()
-  const lastLoadedKeyRef = useRef<string | null>(null)
+  const [editor] = useLexicalComposerContext();
+  const lastLoadedKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
-    const key = String(editorKey ?? '__default__')
-    if (lastLoadedKeyRef.current === key) return
-    lastLoadedKeyRef.current = key
+    const key = String(editorKey ?? '__default__');
+    if (lastLoadedKeyRef.current === key) return;
+    lastLoadedKeyRef.current = key;
 
     editor.update(() => {
-      const root = $getRoot()
-      root.clear()
+      const root = $getRoot();
+      root.clear();
 
-      const initialHtml = String(html ?? '').trim()
+      const initialHtml = String(html ?? '').trim();
       if (!initialHtml) {
-        return
+        return;
       }
 
-      const parser = new DOMParser()
-      const dom = parser.parseFromString(initialHtml, 'text/html')
-      const nodes = $generateNodesFromDOM(editor, dom)
+      const parser = new DOMParser();
+      const dom = parser.parseFromString(initialHtml, 'text/html');
+      const nodes = $generateNodesFromDOM(editor, dom);
       if (nodes.length > 0) {
-        root.select()
-        $insertNodes(nodes)
+        root.select();
+        $insertNodes(nodes);
       }
-    })
-  }, [editor, editorKey, html])
+    });
+  }, [editor, editorKey, html]);
 
-  return null
-}
+  return null;
+};
 
 const RichTextBehaviorPlugin = () => {
-  const [editor] = useLexicalComposerContext()
+  const [editor] = useLexicalComposerContext();
 
-  useEffect(() => registerRichText(editor), [editor])
+  useEffect(() => registerRichText(editor), [editor]);
 
-  return null
-}
+  return null;
+};
 
 const ToolbarButton = ({
   onClick,
@@ -112,10 +149,10 @@ const ToolbarButton = ({
   children,
   isActive = false,
 }: {
-  onClick: () => void
-  title: string
-  children: React.ReactNode
-  isActive?: boolean
+  onClick: () => void;
+  title: string;
+  children: React.ReactNode;
+  isActive?: boolean;
 }) => (
   <button
     type="button"
@@ -129,71 +166,71 @@ const ToolbarButton = ({
   >
     {children}
   </button>
-)
+);
 
-type BlockType = 'paragraph' | 'h1' | 'h2' | 'h3' | 'quote'
+type BlockType = 'paragraph' | 'h1' | 'h2' | 'h3' | 'quote';
 
 const ToolbarPlugin = () => {
-  const [editor] = useLexicalComposerContext()
-  const [blockType, setBlockType] = useState<BlockType>('paragraph')
-  const [isDropdownOpen, setIsDropdownOpen] = useState(false)
+  const [editor] = useLexicalComposerContext();
+  const [blockType, setBlockType] = useState<BlockType>('paragraph');
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [activeFormats, setActiveFormats] = useState({
     bold: false,
     italic: false,
     underline: false,
     code: false,
-  })
+  });
 
   const updateToolbar = useCallback(() => {
     editor.update(() => {
-      const selection = $getSelection()
+      const selection = $getSelection();
       if ($isRangeSelection(selection)) {
         setActiveFormats({
           bold: selection.hasFormat('bold'),
           italic: selection.hasFormat('italic'),
           underline: selection.hasFormat('underline'),
           code: selection.hasFormat('code'),
-        })
+        });
 
-        const anchorNode = selection.anchor.getNode()
-        let element = anchorNode
+        const anchorNode = selection.anchor.getNode();
+        let element = anchorNode;
         if (anchorNode.getKey() === 'root') {
-          element = anchorNode
+          element = anchorNode;
         } else {
-          element = anchorNode.getTopLevelElementOrThrow()
+          element = anchorNode.getTopLevelElementOrThrow();
         }
-        const elementKey = element.getKey()
-        const elementDOM = editor.getElementByKey(elementKey)
+        const elementKey = element.getKey();
+        const elementDOM = editor.getElementByKey(elementKey);
         if (elementDOM !== null) {
-          const tag = elementDOM.tagName.toLowerCase()
-          if (tag === 'h1') setBlockType('h1')
-          else if (tag === 'h2') setBlockType('h2')
-          else if (tag === 'h3') setBlockType('h3')
-          else if (tag === 'blockquote') setBlockType('quote')
-          else setBlockType('paragraph')
+          const tag = elementDOM.tagName.toLowerCase();
+          if (tag === 'h1') setBlockType('h1');
+          else if (tag === 'h2') setBlockType('h2');
+          else if (tag === 'h3') setBlockType('h3');
+          else if (tag === 'blockquote') setBlockType('quote');
+          else setBlockType('paragraph');
         }
       }
-    })
-  }, [editor])
+    });
+  }, [editor]);
 
   const changeBlockType = useCallback(
     (type: BlockType) => {
-      editor.focus()
+      editor.focus();
       editor.update(() => {
-        const selection = $getSelection() || $getPreviousSelection()
+        const selection = $getSelection() || $getPreviousSelection();
         if (selection && $isRangeSelection(selection)) {
-          if (type === 'h1') $setBlocksType(selection, () => $createHeadingNode('h1'))
-          else if (type === 'h2') $setBlocksType(selection, () => $createHeadingNode('h2'))
-          else if (type === 'h3') $setBlocksType(selection, () => $createHeadingNode('h3'))
-          else if (type === 'quote') $setBlocksType(selection, () => $createQuoteNode())
-          else $setBlocksType(selection, () => $createParagraphNode())
+          if (type === 'h1') $setBlocksType(selection, () => $createHeadingNode('h1'));
+          else if (type === 'h2') $setBlocksType(selection, () => $createHeadingNode('h2'));
+          else if (type === 'h3') $setBlocksType(selection, () => $createHeadingNode('h3'));
+          else if (type === 'quote') $setBlocksType(selection, () => $createQuoteNode());
+          else $setBlocksType(selection, () => $createParagraphNode());
         }
-      })
-      setBlockType(type)
-      setIsDropdownOpen(false)
+      });
+      setBlockType(type);
+      setIsDropdownOpen(false);
     },
     [editor]
-  )
+  );
 
   const blockTypeLabels: Record<BlockType, string> = {
     paragraph: 'Normal',
@@ -201,13 +238,13 @@ const ToolbarPlugin = () => {
     h2: 'H2',
     h3: 'H3',
     quote: 'Quote',
-  }
+  };
 
   useEffect(() => {
     return editor.registerUpdateListener(() => {
-      updateToolbar()
-    })
-  }, [editor, updateToolbar])
+      updateToolbar();
+    });
+  }, [editor, updateToolbar]);
 
   return (
     <div className="sticky top-0 z-10 mb-2 flex flex-wrap items-center gap-1.5 rounded-lg border border-gray-200/80 bg-white/95 px-2 py-1.5 shadow-sm backdrop-blur">
@@ -231,7 +268,11 @@ const ToolbarPlugin = () => {
                 type="button"
                 onMouseDown={(event) => event.preventDefault()}
                 onClick={() => changeBlockType(type)}
-                className={`w-full text-left px-3 py-2 text-sm ${blockType === type ? 'bg-gray-100 font-medium text-gray-900' : 'text-gray-700 hover:bg-gray-50'}`}
+                className={`w-full text-left px-3 py-2 text-sm ${
+                  blockType === type
+                    ? 'bg-gray-100 font-medium text-gray-900'
+                    : 'text-gray-700 hover:bg-gray-50'
+                }`}
               >
                 {blockTypeLabels[type]}
               </button>
@@ -266,7 +307,10 @@ const ToolbarPlugin = () => {
 
       <div className="mx-1 h-5 w-px bg-gray-200" />
 
-      <ToolbarButton title="Bullet List" onClick={() => editor.dispatchCommand(INSERT_UNORDERED_LIST_COMMAND, undefined)}>
+      <ToolbarButton
+        title="Bullet List"
+        onClick={() => editor.dispatchCommand(INSERT_UNORDERED_LIST_COMMAND, undefined)}
+      >
         <List size={14} />
       </ToolbarButton>
       <ToolbarButton
@@ -288,65 +332,168 @@ const ToolbarPlugin = () => {
       <ToolbarButton
         title="Add Link"
         onClick={() => {
-          const url = window.prompt('Enter URL')
-          if (!url) return
-          editor.dispatchCommand(TOGGLE_LINK_COMMAND, url)
+          const url = window.prompt('Enter URL');
+          if (!url) return;
+          editor.dispatchCommand(TOGGLE_LINK_COMMAND, url);
         }}
       >
         <Link2 size={14} />
       </ToolbarButton>
     </div>
-  )
-}
+  );
+};
 
-export function RichTextEditor({ initialValue, editorKey, onChange, onFocus, onBlur }: Props) {
-  const lastChangeTimeRef = React.useRef(0)
-  const pendingHtmlRef = React.useRef<string | null>(null)
-  const throttleTimerRef = React.useRef<NodeJS.Timeout | null>(null)
+const NOTE_IMAGE_BUCKET = 'note-images';
+
+const ImagePasteDropPlugin = ({ noteId }: { noteId?: string | null }) => {
+  const [editor] = useLexicalComposerContext();
+  const { activeWorkspaceId } = useWorkspaceContext();
+
+  const toast = useToast();
+
+  const uploadAndInsert = useCallback(
+    async (file: File) => {
+      // validation: workspace and file
+      if (!activeWorkspaceId) return;
+
+      const allowed = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp', 'image/gif'];
+      const maxBytes = 10 * 1024 * 1024; // 10MB
+      if (!allowed.includes(file.type.toLowerCase())) {
+        toast.show('Unsupported image type', { variant: 'error' });
+        return;
+      }
+      if (file.size > maxBytes) {
+        toast.show('Image too large (max 10MB)', { variant: 'error' });
+        return;
+      }
+
+      const ext = file.name.includes('.') ? file.name.split('.').pop() : file.type.split('/').pop();
+      const random = Math.random().toString(36).slice(2, 8);
+      const timestamp = Date.now();
+      const safeNoteId = noteId ?? 'unassigned';
+      const storagePath = `workspaces/${activeWorkspaceId}/notes/${safeNoteId}/images/${timestamp}-${random}.${ext}`;
+
+      try {
+        const { error: uploadError } = await supabase.storage
+          .from(NOTE_IMAGE_BUCKET)
+          .upload(storagePath, file, { cacheControl: '3600', upsert: false });
+        if (uploadError) {
+          console.error('Image upload failed', uploadError);
+          toast.show('Image upload failed', { variant: 'error' });
+          return;
+        }
+
+        // TEMP MVP: using public URL for rendering. Replace with signed URL resolution
+        // when moving to private buckets / per-workspace access control.
+        const { data } = supabase.storage.from(NOTE_IMAGE_BUCKET).getPublicUrl(storagePath);
+        const imageUrl = data?.publicUrl;
+        if (!imageUrl) {
+          toast.show('Could not retrieve image URL', { variant: 'error' });
+          return;
+        }
+
+        // only insert after successful upload and valid render URL
+        editor.update(() => {
+          $insertNodes([
+            $createImageNode({ src: imageUrl, altText: file.name || 'Pasted image', storagePath }),
+            $createParagraphNode(),
+          ]);
+        });
+      } catch (uploadError) {
+        console.error('Image upload failed', uploadError);
+        toast.show('Image upload failed', { variant: 'error' });
+      }
+    },
+    [activeWorkspaceId, editor, noteId]
+  );
+
+  useEffect(() => {
+    return editor.registerCommand(
+      PASTE_COMMAND,
+      (event: ClipboardEvent) => {
+        const files = Array.from(event.clipboardData?.files ?? []).filter((file) =>
+          file.type.startsWith('image/')
+        );
+        if (files.length === 0) return false;
+        event.preventDefault();
+        for (const file of files) {
+          void uploadAndInsert(file);
+        }
+        return true;
+      },
+      COMMAND_PRIORITY_EDITOR
+    );
+  }, [editor, uploadAndInsert]);
+
+  useEffect(() => {
+    return editor.registerCommand(
+      DROP_COMMAND,
+      (event: DragEvent) => {
+        const files = Array.from(event.dataTransfer?.files ?? []).filter((file) =>
+          file.type.startsWith('image/')
+        );
+        if (files.length === 0) return false;
+        event.preventDefault();
+        for (const file of files) {
+          void uploadAndInsert(file);
+        }
+        return true;
+      },
+      COMMAND_PRIORITY_EDITOR
+    );
+  }, [editor, uploadAndInsert]);
+
+  return null;
+};
+
+export function RichTextEditor({ initialValue, editorKey, noteId, onChange, onFocus, onBlur }: Props) {
+  const lastChangeTimeRef = React.useRef(0);
+  const pendingHtmlRef = React.useRef<string | null>(null);
+  const throttleTimerRef = React.useRef<NodeJS.Timeout | null>(null);
 
   const handleChange = (editorState: EditorState, editor: any) => {
     try {
       editorState.read(() => {
-        const html = $generateHtmlFromNodes(editor, null)
-        pendingHtmlRef.current = html
+        const html = $generateHtmlFromNodes(editor, null);
+        pendingHtmlRef.current = html;
 
-        const now = Date.now()
-        const elapsed = now - lastChangeTimeRef.current
+        const now = Date.now();
+        const elapsed = now - lastChangeTimeRef.current;
 
         if (elapsed >= 300) {
           // Enough time has passed, fire immediately
-          lastChangeTimeRef.current = now
-          onChange(html)
+          lastChangeTimeRef.current = now;
+          onChange(html);
 
           // Clear any pending throttle
           if (throttleTimerRef.current) {
-            clearTimeout(throttleTimerRef.current)
-            throttleTimerRef.current = null
+            clearTimeout(throttleTimerRef.current);
+            throttleTimerRef.current = null;
           }
         } else if (!throttleTimerRef.current) {
           // Schedule onChange for later (after throttle window)
           throttleTimerRef.current = setTimeout(() => {
             if (pendingHtmlRef.current !== null) {
-              lastChangeTimeRef.current = Date.now()
-              onChange(pendingHtmlRef.current)
+              lastChangeTimeRef.current = Date.now();
+              onChange(pendingHtmlRef.current);
             }
-            throttleTimerRef.current = null
-          }, 300 - elapsed)
+            throttleTimerRef.current = null;
+          }, 300 - elapsed);
         }
-      })
+      });
     } catch (e) {
-      console.error('Editor change error', e)
+      console.error('Editor change error', e);
     }
-  }
+  };
 
   // Cleanup timer on unmount
   useEffect(() => {
     return () => {
       if (throttleTimerRef.current) {
-        clearTimeout(throttleTimerRef.current)
+        clearTimeout(throttleTimerRef.current);
       }
-    }
-  }, [])
+    };
+  }, []);
 
   return (
     <LexicalComposer initialConfig={editorConfig}>
@@ -375,9 +522,10 @@ export function RichTextEditor({ initialValue, editorKey, onChange, onFocus, onB
           <MarkdownShortcutPlugin />
           <TabIndentationPlugin />
           <ListPlugin />
+          <ImagePasteDropPlugin noteId={noteId} />
           <OnChangePlugin onChange={handleChange} />
         </div>
       </div>
     </LexicalComposer>
-  )
+  );
 }

@@ -1,7 +1,7 @@
-import { spawn } from 'node:child_process'
-import path from 'node:path'
+import { spawn } from 'node:child_process';
+import path from 'node:path';
 
-const viteEntry = path.join(process.cwd(), 'node_modules', 'vite', 'bin', 'vite.js')
+const viteEntry = path.join(process.cwd(), 'node_modules', 'vite', 'bin', 'vite.js');
 
 const child = spawn(process.execPath, [viteEntry, '--host', '127.0.0.1', '--port', '5173'], {
   stdio: 'inherit',
@@ -9,23 +9,23 @@ const child = spawn(process.execPath, [viteEntry, '--host', '127.0.0.1', '--port
     ...process.env,
     VITE_LAUNCH_ELECTRON: '0',
   },
-})
+});
 
 const exit = (code = 0) => {
   if (!child.killed) {
-    child.kill()
+    child.kill();
   }
-  process.exit(code)
-}
+  process.exit(code);
+};
 
-process.on('SIGINT', () => exit(0))
-process.on('SIGTERM', () => exit(0))
+process.on('SIGINT', () => exit(0));
+process.on('SIGTERM', () => exit(0));
 
 child.on('error', (error) => {
-  console.error('[dev:web] Failed to start Vite:', error)
-  exit(1)
-})
+  console.error('[dev:web] Failed to start Vite:', error);
+  exit(1);
+});
 
 child.on('exit', (code) => {
-  exit(code ?? 0)
-})
+  exit(code ?? 0);
+});

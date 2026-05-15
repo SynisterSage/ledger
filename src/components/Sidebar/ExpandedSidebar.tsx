@@ -15,63 +15,69 @@ import {
   Trash2,
   CircleHelp,
   Search,
-} from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
-import { createPortal } from 'react-dom'
-import { useAuthContext } from '../../context/AuthContext'
-import { useWorkspaceContext } from '../../context/WorkspaceContext'
-import { useSidebar } from '../../context/SidebarContext'
-import { useSearch } from '../../context/SearchContext'
-import { useApi } from '../../hooks/useApi'
-import { SkeletonList } from '../Common/Skeleton'
+} from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { useAuthContext } from '../../context/AuthContext';
+import { useWorkspaceContext } from '../../context/WorkspaceContext';
+import { useSidebar } from '../../context/SidebarContext';
+import { useSearch } from '../../context/SearchContext';
+import { useApi } from '../../hooks/useApi';
+import { SkeletonList } from '../Common/Skeleton';
 
 type FocusItem = {
-  id: string
-  text: string
-  done: boolean
-}
+  id: string;
+  text: string;
+  done: boolean;
+};
 
 type QuickNote = {
-  id: string
-  title: string
-  body: string
-  createdAt: string
-}
-type QuickCaptureMode = 'none' | 'task' | 'note' | 'event'
-type ProjectStatus = 'NotStarted' | 'InProgress' | 'Paused' | 'Completed'
+  id: string;
+  title: string;
+  body: string;
+  createdAt: string;
+};
+type QuickCaptureMode = 'none' | 'task' | 'note' | 'event';
+type ProjectStatus = 'NotStarted' | 'InProgress' | 'Paused' | 'Completed';
 
-const normalizeProjectNameKey = (value: unknown) => String(value ?? '').trim().toLowerCase()
-type ProjectSemanticStatus = 'not_started' | 'in_progress' | 'paused' | 'completed'
+const normalizeProjectNameKey = (value: unknown) =>
+  String(value ?? '')
+    .trim()
+    .toLowerCase();
+type ProjectSemanticStatus = 'not_started' | 'in_progress' | 'paused' | 'completed';
 
 const htmlToPlainText = (value: string) =>
   String(value ?? '')
     .replace(/<[^>]*>/g, ' ')
     .replace(/&nbsp;/g, ' ')
     .replace(/\s+/g, ' ')
-    .trim()
+    .trim();
 
 const todayKey = () => {
-  const now = new Date()
-  const year = now.getFullYear()
-  const month = String(now.getMonth() + 1).padStart(2, '0')
-  const day = String(now.getDate()).padStart(2, '0')
-  return `${year}-${month}-${day}`
-}
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
 
 const parseDateKey = (value: string) => {
-  const [yearRaw, monthRaw, dayRaw] = String(value ?? '').split('-')
-  const year = Number(yearRaw)
-  const month = Number(monthRaw)
-  const day = Number(dayRaw)
+  const [yearRaw, monthRaw, dayRaw] = String(value ?? '').split('-');
+  const year = Number(yearRaw);
+  const month = Number(monthRaw);
+  const day = Number(dayRaw);
   return {
     year: Number.isFinite(year) ? year : new Date().getFullYear(),
     month: Number.isFinite(month) ? month : 1,
     day: Number.isFinite(day) ? day : 1,
-  }
-}
+  };
+};
 
 const toDateKey = (year: number, month: number, day: number) =>
-  `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+  `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(day).padStart(
+    2,
+    '0'
+  )}`;
 
 const monthOptions = [
   { value: 1, label: 'Jan' },
@@ -86,234 +92,278 @@ const monthOptions = [
   { value: 10, label: 'Oct' },
   { value: 11, label: 'Nov' },
   { value: 12, label: 'Dec' },
-]
+];
 
 const buildTimeOptions = () => {
-  const options: Array<{ value: string; label: string }> = []
+  const options: Array<{ value: string; label: string }> = [];
   for (let hour = 0; hour < 24; hour += 1) {
     for (let minute = 0; minute < 60; minute += 15) {
-      const value = `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`
-      const suffix = hour >= 12 ? 'PM' : 'AM'
-      const hour12 = hour % 12 === 0 ? 12 : hour % 12
-      const label = `${hour12}:${String(minute).padStart(2, '0')} ${suffix}`
-      options.push({ value, label })
+      const value = `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+      const suffix = hour >= 12 ? 'PM' : 'AM';
+      const hour12 = hour % 12 === 0 ? 12 : hour % 12;
+      const label = `${hour12}:${String(minute).padStart(2, '0')} ${suffix}`;
+      options.push({ value, label });
     }
   }
-  return options
-}
+  return options;
+};
 
-const timeOptions = buildTimeOptions()
+const timeOptions = buildTimeOptions();
 
 const getProgressStateColor = (value: number) => {
-  const percent = Math.max(0, Math.min(100, value))
-  if (percent < 35) return '#FF5F40'
-  if (percent < 70) return '#F59E0B'
-  return '#22C55E'
-}
-
-const getTimelineCompleteness = (startDate?: string | null, endDate?: string | null) => {
-  if (!startDate || !endDate) return null
-  const start = new Date(`${startDate}T00:00:00`)
-  const end = new Date(`${endDate}T23:59:59`)
-  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end <= start) return null
-  const now = Date.now()
-  if (now <= start.getTime()) return 0
-  if (now >= end.getTime()) return 100
-  const ratio = (now - start.getTime()) / (end.getTime() - start.getTime())
-  return Math.max(0, Math.min(100, Math.round(ratio * 100)))
-}
+  const percent = Math.max(0, Math.min(100, value));
+  if (percent < 35) return '#FF5F40';
+  if (percent < 70) return '#F59E0B';
+  return '#22C55E';
+};
 
 export const ExpandedSidebar = ({
   onDragHandleMouseDown,
   onCollapseRequest,
 }: {
-  onDragHandleMouseDown?: (e: React.MouseEvent<HTMLDivElement>) => void
-  onCollapseRequest?: () => void
+  onDragHandleMouseDown?: (e: React.MouseEvent<HTMLDivElement>) => void;
+  onCollapseRequest?: () => void;
 }) => {
-  const { user, signOut } = useAuthContext()
-  const { activeWorkspace, activeWorkspaceId } = useWorkspaceContext()
-  const { collapseToRail, position } = useSidebar()
-  const { openSearch } = useSearch()
-  const api = useApi()
-  const isHorizontal = position === 'top' || position === 'bottom'
-  const fullName = (user?.user_metadata?.full_name as string | undefined)?.trim() ?? ''
-  const firstName = fullName ? fullName.split(' ')[0] : (user?.email?.split('@')[0] ?? 'User')
+  const { user, signOut } = useAuthContext();
+  const { activeWorkspace, activeWorkspaceId } = useWorkspaceContext();
+  const { collapseToRail, position } = useSidebar();
+  const { openSearch } = useSearch();
+  const api = useApi();
+  const isHorizontal = position === 'top' || position === 'bottom';
+  const fullName = (user?.user_metadata?.full_name as string | undefined)?.trim() ?? '';
+  const firstName = fullName ? fullName.split(' ')[0] : user?.email?.split('@')[0] ?? 'User';
 
-  const [focusItems, setFocusItems] = useState<FocusItem[]>([])
-  const [newFocusText, setNewFocusText] = useState('')
+  const [focusItems, setFocusItems] = useState<FocusItem[]>([]);
+  const [newFocusText, setNewFocusText] = useState('');
   const [checkin, setCheckin] = useState({
     finished: '',
     blocked: '',
     firstTaskTomorrow: '',
-  })
-  const [checkinSaved, setCheckinSaved] = useState(false)
-  const [isCheckinExpanded, setIsCheckinExpanded] = useState(false)
-  const [isLoadingDaily, setIsLoadingDaily] = useState(true)
-  const [saveError, setSaveError] = useState<string | null>(null)
-  const [quickCaptureMode, setQuickCaptureMode] = useState<QuickCaptureMode>('none')
-  const [taskDraft, setTaskDraft] = useState('')
-  const [taskPriority, setTaskPriority] = useState<'none' | 'high' | 'medium' | 'low'>('none')
-  const [taskTag, setTaskTag] = useState('')
-  const [taskCaptureSaved, setTaskCaptureSaved] = useState(false)
-  const [noteDraft, setNoteDraft] = useState('')
-  const [quickNotes, setQuickNotes] = useState<QuickNote[]>([])
-  const [eventDraft, setEventDraft] = useState('')
-  const [eventDate, setEventDate] = useState(todayKey())
-  const [eventStartTime, setEventStartTime] = useState('09:00')
-  const [eventEndTime, setEventEndTime] = useState('10:00')
-  const todayBucketRef = useRef(todayKey())
-  const [projects, setProjects] = useState<Array<{ id: string; name: string; status: ProjectStatus | string; completeness: number; color?: string; start_date?: string | null; end_date?: string | null }>>([])
-  const [isLoadingProjects, setIsLoadingProjects] = useState(true)
-  const [expandedProjectId, setExpandedProjectId] = useState<string | null>(null)
-  const [projectUpdating, setProjectUpdating] = useState<string | null>(null)
-  const [newProjectName, setNewProjectName] = useState('')
-  const [isCreatingProject, setIsCreatingProject] = useState(false)
-  const [upcomingItems, setUpcomingItems] = useState<Array<{ id: string; title: string; type: 'event' | 'task'; dueDate: string; time?: string; rawDate: string; sortAt: number }>>([])
-  const [isLoadingUpcoming, setIsLoadingUpcoming] = useState(true)
-  const [expandedUpcomingId, setExpandedUpcomingId] = useState<string | null>(null)
-  const [draggingProjectId, setDraggingProjectId] = useState<string | null>(null)
-  const [contextMenu, setContextMenu] = useState<{ type: 'project' | 'upcoming'; id: string; x: number; y: number } | null>(null)
-  const [todayHelpVisible, setTodayHelpVisible] = useState(false)
-  const [todayHelpPosition, setTodayHelpPosition] = useState<{ x: number; y: number }>({ x: 0, y: 0 })
-  const todayHelpButtonRef = useRef<HTMLButtonElement | null>(null)
-  const taskCaptureRef = useRef<HTMLInputElement | null>(null)
-  const noteCaptureRef = useRef<HTMLTextAreaElement | null>(null)
-  const eventCaptureRef = useRef<HTMLInputElement | null>(null)
-  const checkinSectionRef = useRef<HTMLElement | null>(null)
-  const checkinSavedTimerRef = useRef<number | null>(null)
-  const projectDragRef = useRef<{ projectId: string; rectLeft: number; rectWidth: number; pointerId: number } | null>(null)
-  const sidebarContextMenuWidth = 188
-  const sidebarContextMenuHeight = 132
+  });
+  const [checkinSaved, setCheckinSaved] = useState(false);
+  const [isCheckinExpanded, setIsCheckinExpanded] = useState(false);
+  const [isLoadingDaily, setIsLoadingDaily] = useState(true);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [quickCaptureMode, setQuickCaptureMode] = useState<QuickCaptureMode>('none');
+  const [taskDraft, setTaskDraft] = useState('');
+  const [taskPriority, setTaskPriority] = useState<'none' | 'high' | 'medium' | 'low'>('none');
+  const [taskTag, setTaskTag] = useState('');
+  const [taskCaptureSaved, setTaskCaptureSaved] = useState(false);
+  const [noteDraft, setNoteDraft] = useState('');
+  const [quickNotes, setQuickNotes] = useState<QuickNote[]>([]);
+  const [eventDraft, setEventDraft] = useState('');
+  const [eventDate, setEventDate] = useState(todayKey());
+  const [eventStartTime, setEventStartTime] = useState('09:00');
+  const [eventEndTime, setEventEndTime] = useState('10:00');
+  const todayBucketRef = useRef(todayKey());
+  const [projects, setProjects] = useState<
+    Array<{
+      id: string;
+      name: string;
+      status: ProjectStatus | string;
+      completeness: number;
+      color?: string;
+      start_date?: string | null;
+      end_date?: string | null;
+    }>
+  >([]);
+  const [isLoadingProjects, setIsLoadingProjects] = useState(true);
+  const [expandedProjectId, setExpandedProjectId] = useState<string | null>(null);
+  const [projectUpdating, setProjectUpdating] = useState<string | null>(null);
+  const [newProjectName, setNewProjectName] = useState('');
+  const [isCreatingProject, setIsCreatingProject] = useState(false);
+  const [upcomingItems, setUpcomingItems] = useState<
+    Array<{
+      id: string;
+      title: string;
+      type: 'event' | 'task';
+      dueDate: string;
+      time?: string;
+      rawDate: string;
+      sortAt: number;
+    }>
+  >([]);
+  const [isLoadingUpcoming, setIsLoadingUpcoming] = useState(true);
+  const [expandedUpcomingId, setExpandedUpcomingId] = useState<string | null>(null);
+  const [draggingProjectId, setDraggingProjectId] = useState<string | null>(null);
+  const [contextMenu, setContextMenu] = useState<{
+    type: 'project' | 'upcoming';
+    id: string;
+    x: number;
+    y: number;
+  } | null>(null);
+  const [todayHelpVisible, setTodayHelpVisible] = useState(false);
+  const [todayHelpPosition, setTodayHelpPosition] = useState<{ x: number; y: number }>({
+    x: 0,
+    y: 0,
+  });
+  const todayHelpButtonRef = useRef<HTMLButtonElement | null>(null);
+  const taskCaptureRef = useRef<HTMLInputElement | null>(null);
+  const noteCaptureRef = useRef<HTMLTextAreaElement | null>(null);
+  const eventCaptureRef = useRef<HTMLInputElement | null>(null);
+  const checkinSectionRef = useRef<HTMLElement | null>(null);
+  const checkinSavedTimerRef = useRef<number | null>(null);
+  const projectDragRef = useRef<{
+    projectId: string;
+    rectLeft: number;
+    rectWidth: number;
+    pointerId: number;
+  } | null>(null);
+  const sidebarContextMenuWidth = 188;
+  const sidebarContextMenuHeight = 132;
 
   const normalizeProjectStatus = (status: string): ProjectSemanticStatus => {
-    const value = status.toLowerCase()
-    if (value.includes('complete')) return 'completed'
-    if (value.includes('pause') || value.includes('archiv')) return 'paused'
-    if (value.includes('progress') || value.includes('in_')) return 'in_progress'
-    return 'not_started'
-  }
+    const value = status.toLowerCase();
+    if (value.includes('complete')) return 'completed';
+    if (value.includes('pause') || value.includes('archiv')) return 'paused';
+    if (value.includes('progress') || value.includes('in_')) return 'in_progress';
+    return 'not_started';
+  };
 
   const projectStatusLabels: Record<ProjectSemanticStatus, string> = {
     not_started: 'Not Started',
     in_progress: 'In Progress',
     paused: 'Paused',
     completed: 'Completed',
-  }
+  };
 
   const projectStatusStyles: Record<ProjectSemanticStatus, string> = {
     not_started: 'text-blue-700 bg-blue-50',
     in_progress: 'text-[#C84E2B] bg-[#FFF0EB]',
     paused: 'text-gray-700 bg-gray-100',
     completed: 'text-green-700 bg-green-50',
-  }
+  };
 
   const projectStatusCandidates: Record<ProjectSemanticStatus, string[]> = {
     not_started: ['NotStarted', 'not_started'],
     in_progress: ['InProgress', 'in_progress'],
     paused: ['Paused', 'paused', 'archived'],
     completed: ['Completed', 'completed'],
-  }
+  };
 
-  const updateProjectStatusWithFallback = async (projectId: string, semantic: ProjectSemanticStatus) => {
-    const candidates = projectStatusCandidates[semantic]
-    let lastError: unknown = null
+  const updateProjectStatusWithFallback = async (
+    projectId: string,
+    semantic: ProjectSemanticStatus
+  ) => {
+    const candidates = projectStatusCandidates[semantic];
+    let lastError: unknown = null;
 
     for (const candidate of candidates) {
       try {
-        await api.updateProject(projectId, { status: candidate })
-        return candidate
+        await api.updateProject(projectId, { status: candidate });
+        return candidate;
       } catch (error) {
-        lastError = error
+        lastError = error;
       }
     }
 
-    throw lastError instanceof Error ? lastError : new Error('Could not update project status.')
-  }
+    throw lastError instanceof Error ? lastError : new Error('Could not update project status.');
+  };
 
   useEffect(() => {
     if (!activeWorkspaceId) {
-      setIsLoadingProjects(false)
-      setIsLoadingUpcoming(false)
-      setQuickNotes([])
-      setProjects([])
-      setUpcomingItems([])
-      return
+      setIsLoadingProjects(false);
+      setIsLoadingUpcoming(false);
+      setQuickNotes([]);
+      setProjects([]);
+      setUpcomingItems([]);
+      return;
     }
-  }, [activeWorkspaceId])
+  }, [activeWorkspaceId]);
 
   useEffect(() => {
-    let cancelled = false
+    let cancelled = false;
 
     const loadDaily = async () => {
       if (!user) {
         if (!cancelled) {
-          setFocusItems([])
-          setCheckin({ finished: '', blocked: '', firstTaskTomorrow: '' })
-          setCheckinSaved(false)
-          setIsLoadingDaily(false)
+          setFocusItems([]);
+          setCheckin({ finished: '', blocked: '', firstTaskTomorrow: '' });
+          setCheckinSaved(false);
+          setIsLoadingDaily(false);
         }
-        return
+        return;
       }
 
-      setIsLoadingDaily(true)
-      setSaveError(null)
+      setIsLoadingDaily(true);
+      setSaveError(null);
 
       try {
-        const data = await api.getDailyAccountability()
+        const data = await api.getDailyAccountability();
 
-        if (cancelled) return
+        if (cancelled) return;
 
         const row = data as {
-          focus_items?: FocusItem[] | null
-          checkin_finished?: string | null
-          checkin_blocked?: string | null
-          checkin_first_task_tomorrow?: string | null
-        } | null
+          focus_items?: FocusItem[] | null;
+          checkin_finished?: string | null;
+          checkin_blocked?: string | null;
+          checkin_first_task_tomorrow?: string | null;
+        } | null;
 
-        setFocusItems(Array.isArray(row?.focus_items) ? row!.focus_items : [])
+        setFocusItems(Array.isArray(row?.focus_items) ? row!.focus_items : []);
         setCheckin({
           finished: row?.checkin_finished ?? '',
           blocked: row?.checkin_blocked ?? '',
           firstTaskTomorrow: row?.checkin_first_task_tomorrow ?? '',
-        })
-        setCheckinSaved(false)
+        });
+        setCheckinSaved(false);
       } catch (error) {
         if (!cancelled) {
-          console.error('Failed to load daily accountability:', error)
-          setFocusItems([])
-          setCheckin({ finished: '', blocked: '', firstTaskTomorrow: '' })
-          setCheckinSaved(false)
+          console.error('Failed to load daily accountability:', error);
+          setFocusItems([]);
+          setCheckin({ finished: '', blocked: '', firstTaskTomorrow: '' });
+          setCheckinSaved(false);
         }
       } finally {
         if (!cancelled) {
-          setIsLoadingDaily(false)
+          setIsLoadingDaily(false);
         }
       }
-    }
+    };
 
-    loadDaily()
+    loadDaily();
 
     return () => {
-      cancelled = true
-    }
-  }, [user?.id, activeWorkspaceId])
+      cancelled = true;
+    };
+  }, [user?.id, activeWorkspaceId]);
 
   useEffect(() => {
-    let cancelled = false
+    let cancelled = false;
 
     const loadQuickNotes = async () => {
       if (!user || !activeWorkspaceId) {
-        setQuickNotes([])
-        return
+        setQuickNotes([]);
+        return;
       }
 
       try {
-        const data = await api.getNotes()
+        const data = await api.getNotes();
 
-        if (cancelled) return
+        if (cancelled) return;
 
-        const payload = data as { notes?: Array<{ id: string; title: string; content: string; created_at: string; source?: string | null }> } | Array<{ id: string; title: string; content: string; created_at: string; source?: string | null }>
-        const rows = Array.isArray(payload) ? payload : Array.isArray(payload?.notes) ? payload.notes : []
+        const payload = data as
+          | {
+              notes?: Array<{
+                id: string;
+                title: string;
+                content: string;
+                created_at: string;
+                source?: string | null;
+              }>;
+            }
+          | Array<{
+              id: string;
+              title: string;
+              content: string;
+              created_at: string;
+              source?: string | null;
+            }>;
+        const rows = Array.isArray(payload)
+          ? payload
+          : Array.isArray(payload?.notes)
+          ? payload.notes
+          : [];
         const mapped = rows
           .filter((row) => (row.source ?? 'workspace') === 'quick_capture')
           .map((row) => ({
@@ -321,117 +371,129 @@ export const ExpandedSidebar = ({
             title: row.title,
             body: htmlToPlainText(row.content ?? ''),
             createdAt: row.created_at,
-          }))
+          }));
 
-        setQuickNotes(mapped)
+        setQuickNotes(mapped);
       } catch (error) {
         if (!cancelled) {
-          console.error('Failed to load notes:', error)
-          setQuickNotes([])
+          console.error('Failed to load notes:', error);
+          setQuickNotes([]);
         }
       }
-    }
+    };
 
-    void loadQuickNotes()
+    void loadQuickNotes();
 
     return () => {
-      cancelled = true
-    }
-  }, [user?.id, activeWorkspaceId])
+      cancelled = true;
+    };
+  }, [user?.id, activeWorkspaceId]);
 
   useEffect(() => {
     if (!user) {
-      setIsLoadingProjects(false)
-      setProjects([])
-      return
+      setIsLoadingProjects(false);
+      setProjects([]);
+      return;
     }
 
     if (!activeWorkspaceId) {
-      setProjects([])
-      setIsLoadingProjects(false)
-      return
+      setProjects([]);
+      setIsLoadingProjects(false);
+      return;
     }
 
-    let cancelled = false
+    let cancelled = false;
 
-    setIsLoadingProjects(true)
+    setIsLoadingProjects(true);
 
     const loadProjects = async () => {
       try {
-        const data = await api.getProjects()
+        const data = await api.getProjects();
         if (!cancelled) {
-          const projects = (data as Array<{ id: string; name: string; status: string; completeness: number; color?: string; start_date?: string | null; end_date?: string | null }>)
+          const projects = (
+            data as Array<{
+              id: string;
+              name: string;
+              status: string;
+              completeness: number;
+              color?: string;
+              start_date?: string | null;
+              end_date?: string | null;
+            }>
+          )
             .filter((project) => normalizeProjectStatus(project.status) !== 'completed')
             .map((project) => ({
               ...project,
               status: normalizeProjectStatus(project.status),
-              completeness:
-                getTimelineCompleteness(project.start_date ?? null, project.end_date ?? null) ??
-                Math.max(0, Math.min(100, Number(project.completeness) || 0)),
-            }))
-          setProjects(projects)
+              completeness: Math.max(0, Math.min(100, Number(project.completeness) || 0)),
+            }));
+          setProjects(projects);
         }
       } catch (error) {
-        console.error('Failed to load projects:', error)
+        console.error('Failed to load projects:', error);
       } finally {
-        if (!cancelled) setIsLoadingProjects(false)
+        if (!cancelled) setIsLoadingProjects(false);
       }
-    }
+    };
 
-    void loadProjects()
+    void loadProjects();
 
     const refreshTimer = window.setInterval(() => {
-      void loadProjects()
-    }, 45_000)
+      void loadProjects();
+    }, 45_000);
 
     return () => {
-      cancelled = true
-      window.clearInterval(refreshTimer)
-    }
-  }, [user?.id, activeWorkspaceId])
+      cancelled = true;
+      window.clearInterval(refreshTimer);
+    };
+  }, [user?.id, activeWorkspaceId]);
 
   useEffect(() => {
     if (!user) {
-      setIsLoadingUpcoming(false)
-      setUpcomingItems([])
-      return
+      setIsLoadingUpcoming(false);
+      setUpcomingItems([]);
+      return;
     }
 
     if (!activeWorkspaceId) {
-      setUpcomingItems([])
-      setIsLoadingUpcoming(false)
-      return
+      setUpcomingItems([]);
+      setIsLoadingUpcoming(false);
+      return;
     }
 
-    let cancelled = false
+    let cancelled = false;
 
-    setIsLoadingUpcoming(true)
+    setIsLoadingUpcoming(true);
 
     const loadUpcoming = async () => {
       try {
-        const events = await api.getUpcomingEvents()
-        const today = new Date()
-        today.setHours(0, 0, 0, 0)
-        const todayISO = today.toISOString().slice(0, 10)
-        const tomorrow = new Date(today)
-        tomorrow.setDate(tomorrow.getDate() + 1)
-        const tomorrowISO = tomorrow.toISOString().slice(0, 10)
+        const events = await api.getUpcomingEvents();
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const todayISO = today.toISOString().slice(0, 10);
+        const tomorrow = new Date(today);
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        const tomorrowISO = tomorrow.toISOString().slice(0, 10);
 
         const eventItems = (events || []).map((e: any) => {
-          const startDate = new Date(e.start_at)
-          const startAt = startDate.getTime()
-          const isValidDate = Number.isFinite(startAt)
-          const eventDateISO = isValidDate ? startDate.toISOString().slice(0, 10) : ''
-          let dateDisplay = ''
+          const startDate = new Date(e.start_at);
+          const startAt = startDate.getTime();
+          const isValidDate = Number.isFinite(startAt);
+          const eventDateISO = isValidDate ? startDate.toISOString().slice(0, 10) : '';
+          let dateDisplay = '';
 
           if (eventDateISO === todayISO) {
-            dateDisplay = 'Today'
+            dateDisplay = 'Today';
           } else if (eventDateISO === tomorrowISO) {
-            dateDisplay = 'Tomorrow'
+            dateDisplay = 'Tomorrow';
           } else {
             dateDisplay = isValidDate
-              ? startDate.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })
-              : 'No date'
+              ? startDate.toLocaleDateString([], {
+                  weekday: 'short',
+                  month: 'short',
+                  day: 'numeric',
+                })
+              : 'No date';
           }
 
           return {
@@ -440,272 +502,278 @@ export const ExpandedSidebar = ({
             type: 'event' as const,
             dueDate: dateDisplay,
             rawDate: eventDateISO,
-            time: isValidDate ? startDate.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : undefined,
+            time: isValidDate
+              ? startDate.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+              : undefined,
             sortAt: isValidDate ? startAt : Number.MAX_SAFE_INTEGER,
-          }
-        })
+          };
+        });
 
-        eventItems.sort((a: { sortAt: number }, b: { sortAt: number }) => a.sortAt - b.sortAt)
+        eventItems.sort((a: { sortAt: number }, b: { sortAt: number }) => a.sortAt - b.sortAt);
 
         if (!cancelled) {
-          setUpcomingItems(eventItems.slice(0, 5))
+          setUpcomingItems(eventItems.slice(0, 5));
         }
       } catch (error) {
-        console.error('Failed to load upcoming:', error)
+        console.error('Failed to load upcoming:', error);
       } finally {
-        if (!cancelled) setIsLoadingUpcoming(false)
+        if (!cancelled) setIsLoadingUpcoming(false);
       }
-    }
+    };
 
-    void loadUpcoming()
+    void loadUpcoming();
 
     const refreshTimer = window.setInterval(() => {
-      void loadUpcoming()
-    }, 60_000)
+      void loadUpcoming();
+    }, 60_000);
 
     return () => {
-      cancelled = true
-      window.clearInterval(refreshTimer)
-    }
-  }, [user?.id, activeWorkspaceId])
+      cancelled = true;
+      window.clearInterval(refreshTimer);
+    };
+  }, [user?.id, activeWorkspaceId]);
 
   useEffect(() => {
-    if (quickCaptureMode === 'none') return
+    if (quickCaptureMode === 'none') return;
     const t = window.setTimeout(() => {
-      if (quickCaptureMode === 'task') taskCaptureRef.current?.focus()
-      if (quickCaptureMode === 'note') noteCaptureRef.current?.focus()
-    }, 120)
-    return () => window.clearTimeout(t)
-  }, [quickCaptureMode])
+      if (quickCaptureMode === 'task') taskCaptureRef.current?.focus();
+      if (quickCaptureMode === 'note') noteCaptureRef.current?.focus();
+    }, 120);
+    return () => window.clearTimeout(t);
+  }, [quickCaptureMode]);
 
   useEffect(() => {
     const handleOpenCheckin = () => {
-      setIsCheckinExpanded(true)
+      setIsCheckinExpanded(true);
       window.setTimeout(() => {
-        checkinSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-      }, 80)
-    }
+        checkinSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }, 80);
+    };
 
-    window.ipcRenderer?.on('sidebar:open-checkin', handleOpenCheckin)
+    window.ipcRenderer?.on('sidebar:open-checkin', handleOpenCheckin);
     return () => {
-      window.ipcRenderer?.off('sidebar:open-checkin', handleOpenCheckin)
-    }
-  }, [])
+      window.ipcRenderer?.off('sidebar:open-checkin', handleOpenCheckin);
+    };
+  }, []);
 
   useEffect(() => {
     const syncToNextDay = () => {
-      const currentDay = todayKey()
-      if (todayBucketRef.current === currentDay) return
+      const currentDay = todayKey();
+      if (todayBucketRef.current === currentDay) return;
 
-      todayBucketRef.current = currentDay
-      setFocusItems([])
-      setCheckin({ finished: '', blocked: '', firstTaskTomorrow: '' })
-      setCheckinSaved(false)
-      setIsLoadingDaily(true)
+      todayBucketRef.current = currentDay;
+      setFocusItems([]);
+      setCheckin({ finished: '', blocked: '', firstTaskTomorrow: '' });
+      setCheckinSaved(false);
+      setIsLoadingDaily(true);
 
       void (async () => {
         try {
-          const data = await api.getDailyAccountability()
+          const data = await api.getDailyAccountability();
           const row = data as {
-            focus_items?: FocusItem[] | null
-            checkin_finished?: string | null
-            checkin_blocked?: string | null
-            checkin_first_task_tomorrow?: string | null
-          } | null
+            focus_items?: FocusItem[] | null;
+            checkin_finished?: string | null;
+            checkin_blocked?: string | null;
+            checkin_first_task_tomorrow?: string | null;
+          } | null;
 
-          setFocusItems(Array.isArray(row?.focus_items) ? row!.focus_items : [])
+          setFocusItems(Array.isArray(row?.focus_items) ? row!.focus_items : []);
           setCheckin({
             finished: row?.checkin_finished ?? '',
             blocked: row?.checkin_blocked ?? '',
             firstTaskTomorrow: row?.checkin_first_task_tomorrow ?? '',
-          })
-          setCheckinSaved(false)
+          });
+          setCheckinSaved(false);
         } catch (error) {
-          console.error('Failed to refresh daily accountability on day rollover:', error)
+          console.error('Failed to refresh daily accountability on day rollover:', error);
         } finally {
-          setIsLoadingDaily(false)
+          setIsLoadingDaily(false);
         }
-      })()
-    }
+      })();
+    };
 
-    syncToNextDay()
-    const timer = window.setInterval(syncToNextDay, 60_000)
-    return () => window.clearInterval(timer)
-  }, [api])
+    syncToNextDay();
+    const timer = window.setInterval(syncToNextDay, 60_000);
+    return () => window.clearInterval(timer);
+  }, [api]);
 
   const saveDaily = async (next: {
-    focusItems?: FocusItem[]
-    checkin?: { finished: string; blocked: string; firstTaskTomorrow: string }
+    focusItems?: FocusItem[];
+    checkin?: { finished: string; blocked: string; firstTaskTomorrow: string };
   }) => {
-    if (!user) return false
+    if (!user) return false;
 
-    const nextFocus = next.focusItems ?? focusItems
-    const nextCheckin = next.checkin ?? checkin
+    const nextFocus = next.focusItems ?? focusItems;
+    const nextCheckin = next.checkin ?? checkin;
 
     const data = await api.saveDailyAccountability({
       focus_items: nextFocus,
       finished: nextCheckin.finished.trim(),
       blocked: nextCheckin.blocked.trim(),
       first_task_tomorrow: nextCheckin.firstTaskTomorrow.trim(),
-    })
+    });
 
     if (!data) {
-      setSaveError('Could not save. Try again.')
-      return false
+      setSaveError('Could not save. Try again.');
+      return false;
     }
 
-    setSaveError(null)
-    return true
-  }
+    setSaveError(null);
+    return true;
+  };
 
   const toggleFocusDone = async (id: string) => {
-    const next = focusItems.map((item) => (item.id === id ? { ...item, done: !item.done } : item))
-    setFocusItems(next)
-    const saved = await saveDaily({ focusItems: next })
+    const next = focusItems.map((item) => (item.id === id ? { ...item, done: !item.done } : item));
+    setFocusItems(next);
+    const saved = await saveDaily({ focusItems: next });
     if (saved) {
-      setTaskCaptureSaved(true)
-      window.setTimeout(() => setTaskCaptureSaved(false), 1500)
+      setTaskCaptureSaved(true);
+      window.setTimeout(() => setTaskCaptureSaved(false), 1500);
     }
-  }
+  };
 
   const addFocusItem = async () => {
-    const text = newFocusText.trim()
-    if (!text) return
+    const text = newFocusText.trim();
+    if (!text) return;
 
-    const next = [...focusItems, { id: `f-${Date.now()}`, text, done: false }]
-    setFocusItems(next)
-    setNewFocusText('')
-    await saveDaily({ focusItems: next })
-  }
+    const next = [...focusItems, { id: `f-${Date.now()}`, text, done: false }];
+    setFocusItems(next);
+    setNewFocusText('');
+    await saveDaily({ focusItems: next });
+  };
 
   const removeFocusItem = async (id: string) => {
-    const next = focusItems.filter((item) => item.id !== id)
-    setFocusItems(next)
-    await saveDaily({ focusItems: next })
-  }
+    const next = focusItems.filter((item) => item.id !== id);
+    setFocusItems(next);
+    await saveDaily({ focusItems: next });
+  };
 
   const saveCheckin = async () => {
     window.ipcRenderer?.send('daily:checkin-updated', {
       finished: checkin.finished,
       blocked: checkin.blocked,
       firstTaskTomorrow: checkin.firstTaskTomorrow,
-    })
-    const success = await saveDaily({ checkin })
+    });
+    const success = await saveDaily({ checkin });
     if (success) {
-      setCheckinSaved(true)
+      setCheckinSaved(true);
       if (checkinSavedTimerRef.current !== null) {
-        window.clearTimeout(checkinSavedTimerRef.current)
+        window.clearTimeout(checkinSavedTimerRef.current);
       }
       checkinSavedTimerRef.current = window.setTimeout(() => {
-        setCheckinSaved(false)
-        checkinSavedTimerRef.current = null
-      }, 2200)
+        setCheckinSaved(false);
+        checkinSavedTimerRef.current = null;
+      }, 2200);
     }
-  }
+  };
 
   const clearCheckin = async () => {
-    const empty = { finished: '', blocked: '', firstTaskTomorrow: '' }
-    setCheckin(empty)
-    window.ipcRenderer?.send('daily:checkin-updated', empty)
-    const success = await saveDaily({ checkin: empty })
+    const empty = { finished: '', blocked: '', firstTaskTomorrow: '' };
+    setCheckin(empty);
+    window.ipcRenderer?.send('daily:checkin-updated', empty);
+    const success = await saveDaily({ checkin: empty });
     if (checkinSavedTimerRef.current !== null) {
-      window.clearTimeout(checkinSavedTimerRef.current)
-      checkinSavedTimerRef.current = null
+      window.clearTimeout(checkinSavedTimerRef.current);
+      checkinSavedTimerRef.current = null;
     }
-    if (success) setCheckinSaved(false)
-  }
+    if (success) setCheckinSaved(false);
+  };
 
   useEffect(() => {
     return () => {
       if (checkinSavedTimerRef.current !== null) {
-        window.clearTimeout(checkinSavedTimerRef.current)
+        window.clearTimeout(checkinSavedTimerRef.current);
       }
-    }
-  }, [])
+    };
+  }, []);
 
   const saveQuickNote = async () => {
-    const text = noteDraft.trim()
-    if (!text || !user || !activeWorkspaceId) return
+    const text = noteDraft.trim();
+    if (!text || !user || !activeWorkspaceId) return;
 
-    const firstLine = text.split('\n').find((line) => line.trim())?.trim() ?? 'Untitled note'
-    const title = firstLine.replace(/^#\s*/, '').slice(0, 72)
+    const firstLine =
+      text
+        .split('\n')
+        .find((line) => line.trim())
+        ?.trim() ?? 'Untitled note';
+    const title = firstLine.replace(/^#\s*/, '').slice(0, 72);
 
-    const data = await api.createNote(title, text, { source: 'quick_capture' })
+    const data = await api.createNote(title, text, { source: 'quick_capture' });
 
     if (!data) {
-      setSaveError('Could not save note.')
-      return
+      setSaveError('Could not save note.');
+      return;
     }
 
-    const row = data as { id: string; title: string; content: string; created_at: string }
+    const row = data as { id: string; title: string; content: string; created_at: string };
     const note: QuickNote = {
       id: row.id,
       title: row.title,
       body: htmlToPlainText(row.content ?? text),
       createdAt: row.created_at ?? new Date().toISOString(),
-    }
+    };
 
-    setQuickNotes((prev) => [note, ...prev].slice(0, 24))
-    setNoteDraft('')
-    setQuickCaptureMode('none')
-  }
+    setQuickNotes((prev) => [note, ...prev].slice(0, 24));
+    setNoteDraft('');
+    setQuickCaptureMode('none');
+  };
 
   const saveQuickTask = async () => {
-    const base = taskDraft.trim()
-    if (!base) return
+    const base = taskDraft.trim();
+    if (!base) return;
 
     const priorityLabel =
       taskPriority === 'high'
         ? '[High]'
         : taskPriority === 'medium'
-          ? '[Medium]'
-          : taskPriority === 'low'
-            ? '[Low]'
-            : ''
+        ? '[Medium]'
+        : taskPriority === 'low'
+        ? '[Low]'
+        : '';
 
-    const tagLabel = taskTag.trim() ? `#${taskTag.trim().replace(/^#/, '')}` : ''
-    const text = [priorityLabel, tagLabel, base].filter(Boolean).join(' ')
-    const next = [...focusItems, { id: `f-${Date.now()}`, text, done: false }]
-    setFocusItems(next)
-    setTaskDraft('')
-    setTaskPriority('none')
-    setTaskTag('')
-    setQuickCaptureMode('none')
-    await saveDaily({ focusItems: next })
-  }
+    const tagLabel = taskTag.trim() ? `#${taskTag.trim().replace(/^#/, '')}` : '';
+    const text = [priorityLabel, tagLabel, base].filter(Boolean).join(' ');
+    const next = [...focusItems, { id: `f-${Date.now()}`, text, done: false }];
+    setFocusItems(next);
+    setTaskDraft('');
+    setTaskPriority('none');
+    setTaskTag('');
+    setQuickCaptureMode('none');
+    await saveDaily({ focusItems: next });
+  };
 
   const saveQuickEvent = async () => {
-    const title = eventDraft.trim()
-    if (!title || !user || !activeWorkspaceId) return
+    const title = eventDraft.trim();
+    if (!title || !user || !activeWorkspaceId) return;
 
-    setSaveError(null)
+    setSaveError(null);
 
     try {
-      let calendars = await api.getCalendars()
-      let selectedCalendar = Array.isArray(calendars) ? calendars[0] ?? null : null
+      let calendars = await api.getCalendars();
+      let selectedCalendar = Array.isArray(calendars) ? calendars[0] ?? null : null;
 
       if (!selectedCalendar) {
-        const createdCalendar = await api.createCalendar('Personal', '#3B82F6', true)
+        const createdCalendar = await api.createCalendar('Personal', '#3B82F6', true);
         if (createdCalendar && typeof createdCalendar === 'object') {
-          const created = createdCalendar as { id: string; color?: string }
+          const created = createdCalendar as { id: string; color?: string };
           selectedCalendar = {
             id: created.id,
             color: created.color ?? '#3B82F6',
-          }
+          };
         } else {
-          calendars = await api.getCalendars()
-          selectedCalendar = Array.isArray(calendars) ? calendars[0] ?? null : null
+          calendars = await api.getCalendars();
+          selectedCalendar = Array.isArray(calendars) ? calendars[0] ?? null : null;
         }
       }
 
       if (!selectedCalendar) {
-        throw new Error('Could not create a calendar for this workspace.')
+        throw new Error('Could not create a calendar for this workspace.');
       }
 
-      const startDateTime = new Date(`${eventDate}T${eventStartTime}:00`)
-      let endDateTime = new Date(`${eventDate}T${eventEndTime}:00`)
+      const startDateTime = new Date(`${eventDate}T${eventStartTime}:00`);
+      let endDateTime = new Date(`${eventDate}T${eventEndTime}:00`);
       if (endDateTime <= startDateTime) {
-        endDateTime = new Date(startDateTime.getTime() + 60 * 60 * 1000)
+        endDateTime = new Date(startDateTime.getTime() + 60 * 60 * 1000);
       }
 
       const data = await api.createEvent({
@@ -717,31 +785,31 @@ export const ExpandedSidebar = ({
         notes: '',
         all_day: false,
         status: 'planned',
-      })
+      });
 
       if (!data) {
-        throw new Error('Could not save event.')
+        throw new Error('Could not save event.');
       }
 
-      const createdEvent = data as { id: string; title: string; start_at: string }
-      const start = new Date(createdEvent.start_at)
-      const startAt = start.getTime()
-      const isValidDate = Number.isFinite(startAt)
-      const today = new Date()
-      today.setHours(0, 0, 0, 0)
-      const tomorrow = new Date(today)
-      tomorrow.setDate(tomorrow.getDate() + 1)
-      const eventDateISO = isValidDate ? start.toISOString().slice(0, 10) : ''
-      const todayISO = today.toISOString().slice(0, 10)
-      const tomorrowISO = tomorrow.toISOString().slice(0, 10)
+      const createdEvent = data as { id: string; title: string; start_at: string };
+      const start = new Date(createdEvent.start_at);
+      const startAt = start.getTime();
+      const isValidDate = Number.isFinite(startAt);
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const tomorrow = new Date(today);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      const eventDateISO = isValidDate ? start.toISOString().slice(0, 10) : '';
+      const todayISO = today.toISOString().slice(0, 10);
+      const tomorrowISO = tomorrow.toISOString().slice(0, 10);
       const dueDate =
         eventDateISO === todayISO
           ? 'Today'
           : eventDateISO === tomorrowISO
-            ? 'Tomorrow'
-            : isValidDate
-              ? start.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })
-              : 'No date'
+          ? 'Tomorrow'
+          : isValidDate
+          ? start.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })
+          : 'No date';
 
       const newItem = {
         id: createdEvent.id,
@@ -749,178 +817,196 @@ export const ExpandedSidebar = ({
         type: 'event' as const,
         dueDate,
         rawDate: eventDateISO,
-        time: isValidDate ? start.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : undefined,
+        time: isValidDate
+          ? start.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+          : undefined,
         sortAt: isValidDate ? startAt : Number.MAX_SAFE_INTEGER,
-      }
+      };
       setUpcomingItems((prev) =>
-        [...prev.filter((item) => item.id !== newItem.id), newItem].sort((a, b) => a.sortAt - b.sortAt).slice(0, 5)
-      )
+        [...prev.filter((item) => item.id !== newItem.id), newItem]
+          .sort((a, b) => a.sortAt - b.sortAt)
+          .slice(0, 5)
+      );
 
-      setEventDraft('')
-      setEventDate(todayKey())
-      setEventStartTime('09:00')
-      setEventEndTime('10:00')
-      setQuickCaptureMode('none')
+      setEventDraft('');
+      setEventDate(todayKey());
+      setEventStartTime('09:00');
+      setEventEndTime('10:00');
+      setQuickCaptureMode('none');
     } catch (error) {
-      console.error('Failed to create event from sidebar:', error)
-      setSaveError(error instanceof Error ? error.message : 'Could not save event.')
+      console.error('Failed to create event from sidebar:', error);
+      setSaveError(error instanceof Error ? error.message : 'Could not save event.');
     }
-  }
+  };
 
   const updateProjectStatus = async (projectId: string, newStatus: ProjectStatus) => {
-    setProjectUpdating(projectId)
-    const semantic = normalizeProjectStatus(newStatus)
-    const previousProject = projects.find((p) => p.id === projectId)
-    const previousStatus = previousProject ? normalizeProjectStatus(String(previousProject.status)) : null
+    setProjectUpdating(projectId);
+    const semantic = normalizeProjectStatus(newStatus);
+    const previousProject = projects.find((p) => p.id === projectId);
+    const previousStatus = previousProject
+      ? normalizeProjectStatus(String(previousProject.status))
+      : null;
 
     // Optimistic UI: reflect status immediately.
-    setProjects((prev) =>
-      prev.map((p) => (p.id === projectId ? { ...p, status: semantic } : p))
-    )
+    setProjects((prev) => prev.map((p) => (p.id === projectId ? { ...p, status: semantic } : p)));
     try {
-      const resolvedStatus = await updateProjectStatusWithFallback(projectId, semantic)
+      const resolvedStatus = await updateProjectStatusWithFallback(projectId, semantic);
       setProjects((prev) =>
-        prev.map((p) => (p.id === projectId ? { ...p, status: normalizeProjectStatus(resolvedStatus) } : p))
-      )
+        prev.map((p) =>
+          p.id === projectId ? { ...p, status: normalizeProjectStatus(resolvedStatus) } : p
+        )
+      );
     } catch (error) {
-      console.error('Project status update error:', error)
-      setSaveError('Could not update project status.')
+      console.error('Project status update error:', error);
+      setSaveError('Could not update project status.');
       if (previousStatus) {
         setProjects((prev) =>
           prev.map((p) => (p.id === projectId ? { ...p, status: previousStatus } : p))
-        )
+        );
       }
     }
-    setProjectUpdating(null)
-  }
+    setProjectUpdating(null);
+  };
 
   const setProjectCompletenessLocal = (projectId: string, completeness: number) => {
-    completeness = Math.max(0, Math.min(100, completeness))
-    setProjects((prev) => prev.map((p) => (p.id === projectId ? { ...p, completeness } : p)))
-  }
+    completeness = Math.max(0, Math.min(100, completeness));
+    setProjects((prev) => prev.map((p) => (p.id === projectId ? { ...p, completeness } : p)));
+  };
 
   const saveProjectCompleteness = async (projectId: string, completeness: number) => {
     try {
-      await api.updateProject(projectId, { completeness })
+      await api.updateProject(projectId, { completeness });
     } catch (error) {
-      setSaveError('Could not update progress.')
+      setSaveError('Could not update progress.');
     }
-  }
+  };
 
   const createProject = async () => {
-    const name = newProjectName.trim()
+    const name = newProjectName.trim();
     if (!name || !user || !activeWorkspaceId) {
-      setSaveError('Missing name, user, or workspace')
-      return
+      setSaveError('Missing name, user, or workspace');
+      return;
     }
 
-    setIsCreatingProject(true)
+    setIsCreatingProject(true);
     try {
-      const data = await api.createProject(name)
+      const data = await api.createProject(name);
       const createdProject = {
-        ...(data as { id: string; name: string; status: string; completeness: number; color?: string; start_date?: string | null; end_date?: string | null }),
+        ...(data as {
+          id: string;
+          name: string;
+          status: string;
+          completeness: number;
+          color?: string;
+          start_date?: string | null;
+          end_date?: string | null;
+        }),
         status: normalizeProjectStatus((data as { status: string }).status),
-      }
+      };
       setProjects((prev) => {
-        const next = prev.filter((project) => normalizeProjectNameKey(project.name) !== normalizeProjectNameKey(createdProject.name))
-        return [createdProject, ...next]
-      })
-      setNewProjectName('')
+        const next = prev.filter(
+          (project) =>
+            normalizeProjectNameKey(project.name) !== normalizeProjectNameKey(createdProject.name)
+        );
+        return [createdProject, ...next];
+      });
+      setNewProjectName('');
     } catch (error) {
-      console.error('Project creation error:', error)
-      setSaveError(error instanceof Error ? error.message : 'Could not create project.')
+      console.error('Project creation error:', error);
+      setSaveError(error instanceof Error ? error.message : 'Could not create project.');
     } finally {
-      setIsCreatingProject(false)
+      setIsCreatingProject(false);
     }
-  }
+  };
 
-  const completedCount = focusItems.filter((item) => item.done).length
+  const completedCount = focusItems.filter((item) => item.done).length;
 
   const showTodayHelp = () => {
-    const rect = todayHelpButtonRef.current?.getBoundingClientRect()
-    if (!rect) return
+    const rect = todayHelpButtonRef.current?.getBoundingClientRect();
+    if (!rect) return;
     setTodayHelpPosition({
       x: rect.left + rect.width / 2,
       y: rect.top - 8,
-    })
-    setTodayHelpVisible(true)
-  }
+    });
+    setTodayHelpVisible(true);
+  };
 
-  const hideTodayHelp = () => setTodayHelpVisible(false)
-  const eventDateParts = parseDateKey(eventDate)
-  const daysInSelectedMonth = new Date(eventDateParts.year, eventDateParts.month, 0).getDate()
-  const currentYear = new Date().getFullYear()
-  const eventYearOptions = Array.from({ length: 6 }).map((_, index) => currentYear - 1 + index)
+  const hideTodayHelp = () => setTodayHelpVisible(false);
+  const eventDateParts = parseDateKey(eventDate);
+  const daysInSelectedMonth = new Date(eventDateParts.year, eventDateParts.month, 0).getDate();
+  const currentYear = new Date().getFullYear();
+  const eventYearOptions = Array.from({ length: 6 }).map((_, index) => currentYear - 1 + index);
 
   const deleteProject = async (projectId: string) => {
     try {
-      await api.deleteProject(projectId)
-      setProjects((prev) => prev.filter((p) => p.id !== projectId))
-      setContextMenu(null)
+      await api.deleteProject(projectId);
+      setProjects((prev) => prev.filter((p) => p.id !== projectId));
+      setContextMenu(null);
     } catch (error) {
-      setSaveError('Could not delete project.')
+      setSaveError('Could not delete project.');
     }
-  }
+  };
 
   useEffect(() => {
     const handleClickOutside = () => {
-      if (contextMenu) setContextMenu(null)
-    }
-    document.addEventListener('click', handleClickOutside)
-    return () => document.removeEventListener('click', handleClickOutside)
-  }, [contextMenu])
+      if (contextMenu) setContextMenu(null);
+    };
+    document.addEventListener('click', handleClickOutside);
+    return () => document.removeEventListener('click', handleClickOutside);
+  }, [contextMenu]);
 
   useEffect(() => {
-    if (!draggingProjectId) return
+    if (!draggingProjectId) return;
 
     const handleMove = (event: PointerEvent) => {
-      const drag = projectDragRef.current
-      if (!drag || drag.projectId !== draggingProjectId) return
+      const drag = projectDragRef.current;
+      if (!drag || drag.projectId !== draggingProjectId) return;
 
-      const percent = Math.round(((event.clientX - drag.rectLeft) / drag.rectWidth) * 100)
-      setProjectCompletenessLocal(drag.projectId, percent)
-    }
+      const percent = Math.round(((event.clientX - drag.rectLeft) / drag.rectWidth) * 100);
+      setProjectCompletenessLocal(drag.projectId, percent);
+    };
 
     const handleUp = () => {
-      const drag = projectDragRef.current
+      const drag = projectDragRef.current;
       if (!drag || drag.projectId !== draggingProjectId) {
-        setDraggingProjectId(null)
-        projectDragRef.current = null
-        return
+        setDraggingProjectId(null);
+        projectDragRef.current = null;
+        return;
       }
 
-      const project = projects.find((item) => item.id === drag.projectId)
-      const finalPercent = project?.completeness ?? 0
-      projectDragRef.current = null
-      setDraggingProjectId(null)
-      void saveProjectCompleteness(drag.projectId, finalPercent)
-    }
+      const project = projects.find((item) => item.id === drag.projectId);
+      const finalPercent = project?.completeness ?? 0;
+      projectDragRef.current = null;
+      setDraggingProjectId(null);
+      void saveProjectCompleteness(drag.projectId, finalPercent);
+    };
 
-    window.addEventListener('pointermove', handleMove)
-    window.addEventListener('pointerup', handleUp)
-    window.addEventListener('pointercancel', handleUp)
+    window.addEventListener('pointermove', handleMove);
+    window.addEventListener('pointerup', handleUp);
+    window.addEventListener('pointercancel', handleUp);
 
     return () => {
-      window.removeEventListener('pointermove', handleMove)
-      window.removeEventListener('pointerup', handleUp)
-      window.removeEventListener('pointercancel', handleUp)
-    }
-  }, [draggingProjectId, projects])
+      window.removeEventListener('pointermove', handleMove);
+      window.removeEventListener('pointerup', handleUp);
+      window.removeEventListener('pointercancel', handleUp);
+    };
+  }, [draggingProjectId, projects]);
 
   return (
     <div
       className={`flex h-full min-h-0 w-full bg-transparent ${
-        isHorizontal
-          ? 'flex-col border-b border-gray-200 py-5'
-          : 'flex-col py-5'
+        isHorizontal ? 'flex-col border-b border-gray-200 py-5' : 'flex-col py-5'
       }`}
     >
       <div
         className="px-5 pb-2 border-b border-white/20"
         onMouseDown={(e) => {
-          if (!onDragHandleMouseDown) return
-          if ((e.target as HTMLElement).closest('button, a, input, select, textarea, [role="button"]')) return
-          onDragHandleMouseDown(e)
+          if (!onDragHandleMouseDown) return;
+          if (
+            (e.target as HTMLElement).closest('button, a, input, select, textarea, [role="button"]')
+          )
+            return;
+          onDragHandleMouseDown(e);
         }}
         style={{ cursor: onDragHandleMouseDown ? 'grab' : 'auto' }}
       >
@@ -933,8 +1019,8 @@ export const ExpandedSidebar = ({
             type="button"
             onMouseDown={(e) => e.stopPropagation()}
             onClick={() => {
-              onCollapseRequest?.()
-              collapseToRail()
+              onCollapseRequest?.();
+              collapseToRail();
             }}
             className="p-1 hover:bg-white/30 rounded-lg transition"
             title="Collapse sidebar"
@@ -1014,7 +1100,9 @@ export const ExpandedSidebar = ({
         <section>
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-1.5">
-              <h2 className="text-xs font-semibold text-gray-600 uppercase tracking-wider">Today's Tasks</h2>
+              <h2 className="text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                Today's Tasks
+              </h2>
               <div className="relative z-30">
                 <button
                   ref={todayHelpButtonRef}
@@ -1029,7 +1117,9 @@ export const ExpandedSidebar = ({
                 </button>
               </div>
             </div>
-            <span className="text-[10px] text-gray-500">{completedCount}/{focusItems.length}</span>
+            <span className="text-[10px] text-gray-500">
+              {completedCount}/{focusItems.length}
+            </span>
           </div>
 
           <div className="bg-white border border-gray-200 rounded-lg p-3 space-y-2">
@@ -1039,8 +1129,8 @@ export const ExpandedSidebar = ({
                 onChange={(e) => setNewFocusText(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') {
-                    e.preventDefault()
-                    void addFocusItem()
+                    e.preventDefault();
+                    void addFocusItem();
                   }
                 }}
                 placeholder="Add a task for today"
@@ -1081,7 +1171,11 @@ export const ExpandedSidebar = ({
                   >
                     {item.done && <Check size={11} className="text-white" />}
                   </span>
-                  <p className={`min-w-0 flex-1 text-xs leading-5 ${item.done ? 'text-gray-400 line-through' : 'text-gray-800'}`}>
+                  <p
+                    className={`min-w-0 flex-1 text-xs leading-5 ${
+                      item.done ? 'text-gray-400 line-through' : 'text-gray-800'
+                    }`}
+                  >
                     {item.text}
                   </p>
                 </button>
@@ -1098,7 +1192,9 @@ export const ExpandedSidebar = ({
         </section>
 
         <section>
-          <h2 className="text-xs font-semibold text-gray-600 uppercase tracking-wider mb-2">Quick Capture</h2>
+          <h2 className="text-xs font-semibold text-gray-600 uppercase tracking-wider mb-2">
+            Quick Capture
+          </h2>
           <div className="grid grid-cols-3 gap-2">
             <button
               onClick={() => setQuickCaptureMode((prev) => (prev === 'task' ? 'none' : 'task'))}
@@ -1147,11 +1243,11 @@ export const ExpandedSidebar = ({
                 onChange={(e) => setTaskDraft(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') {
-                    e.preventDefault()
-                    void saveQuickTask()
+                    e.preventDefault();
+                    void saveQuickTask();
                   } else if (e.key === 'Escape') {
-                    e.preventDefault()
-                    if (!taskDraft.trim()) setQuickCaptureMode('none')
+                    e.preventDefault();
+                    if (!taskDraft.trim()) setQuickCaptureMode('none');
                   }
                 }}
                 placeholder="Add a task..."
@@ -1160,7 +1256,9 @@ export const ExpandedSidebar = ({
               <div className="mt-2 grid grid-cols-2 gap-2">
                 <select
                   value={taskPriority}
-                  onChange={(e) => setTaskPriority(e.target.value as 'none' | 'high' | 'medium' | 'low')}
+                  onChange={(e) =>
+                    setTaskPriority(e.target.value as 'none' | 'high' | 'medium' | 'low')
+                  }
                   className="h-8 px-2 text-xs border border-gray-200 rounded-md focus:outline-none focus:border-gray-300 bg-gray-50 text-gray-900"
                 >
                   <option value="none">No priority</option>
@@ -1182,7 +1280,7 @@ export const ExpandedSidebar = ({
                 <button
                   onClick={() => void saveQuickTask()}
                   disabled={!taskDraft.trim()}
-                className="px-2 py-1 text-[11px] font-medium text-white bg-[#FF5F40] hover:bg-[#ea5336] rounded-md disabled:opacity-60"
+                  className="px-2 py-1 text-[11px] font-medium text-white bg-[#FF5F40] hover:bg-[#ea5336] rounded-md disabled:opacity-60"
                 >
                   Add Task
                 </button>
@@ -1202,11 +1300,11 @@ export const ExpandedSidebar = ({
                 onChange={(e) => setNoteDraft(e.target.value)}
                 onKeyDown={(e) => {
                   if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
-                    e.preventDefault()
-                    saveQuickNote()
+                    e.preventDefault();
+                    saveQuickNote();
                   } else if (e.key === 'Escape') {
-                    e.preventDefault()
-                    if (!noteDraft.trim()) setQuickCaptureMode('none')
+                    e.preventDefault();
+                    if (!noteDraft.trim()) setQuickCaptureMode('none');
                   }
                 }}
                 placeholder="Write a quick note... (Cmd/Ctrl+Enter to save)"
@@ -1217,8 +1315,8 @@ export const ExpandedSidebar = ({
                 <div className="flex items-center gap-1.5">
                   <button
                     onClick={() => {
-                      setNoteDraft('')
-                      setQuickCaptureMode('none')
+                      setNoteDraft('');
+                      setQuickCaptureMode('none');
                     }}
                     className="px-2 py-1 text-[11px] font-medium text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-md"
                   >
@@ -1238,7 +1336,9 @@ export const ExpandedSidebar = ({
 
           <div
             className={`overflow-hidden transition-all duration-200 ease-out ${
-              quickCaptureMode === 'event' ? 'max-h-80 opacity-100 mt-2.5' : 'max-h-0 opacity-0 mt-0'
+              quickCaptureMode === 'event'
+                ? 'max-h-80 opacity-100 mt-2.5'
+                : 'max-h-0 opacity-0 mt-0'
             }`}
           >
             <div className="rounded-lg border border-gray-200 bg-white p-2.5 space-y-2">
@@ -1248,8 +1348,8 @@ export const ExpandedSidebar = ({
                 onChange={(e) => setEventDraft(e.target.value)}
                 onKeyDown={(e) => {
                   if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
-                    e.preventDefault()
-                    void saveQuickEvent()
+                    e.preventDefault();
+                    void saveQuickEvent();
                   }
                 }}
                 placeholder="Event title"
@@ -1260,42 +1360,54 @@ export const ExpandedSidebar = ({
                   <select
                     value={eventDateParts.month}
                     onChange={(e) => {
-                      const nextMonth = Number(e.target.value)
-                      const nextDay = Math.min(eventDateParts.day, new Date(eventDateParts.year, nextMonth, 0).getDate())
-                      setEventDate(toDateKey(eventDateParts.year, nextMonth, nextDay))
+                      const nextMonth = Number(e.target.value);
+                      const nextDay = Math.min(
+                        eventDateParts.day,
+                        new Date(eventDateParts.year, nextMonth, 0).getDate()
+                      );
+                      setEventDate(toDateKey(eventDateParts.year, nextMonth, nextDay));
                     }}
                     className="h-8 px-2 text-xs border border-gray-200 rounded-md focus:outline-none focus:border-gray-300 bg-gray-50 text-gray-900"
                   >
                     {monthOptions.map((month) => (
-                      <option key={month.value} value={month.value}>{month.label}</option>
+                      <option key={month.value} value={month.value}>
+                        {month.label}
+                      </option>
                     ))}
                   </select>
                   <select
                     value={eventDateParts.day}
                     onChange={(e) => {
-                      const nextDay = Number(e.target.value)
-                      setEventDate(toDateKey(eventDateParts.year, eventDateParts.month, nextDay))
+                      const nextDay = Number(e.target.value);
+                      setEventDate(toDateKey(eventDateParts.year, eventDateParts.month, nextDay));
                     }}
                     className="h-8 px-2 text-xs border border-gray-200 rounded-md focus:outline-none focus:border-gray-300 bg-gray-50 text-gray-900"
                   >
                     {Array.from({ length: daysInSelectedMonth }).map((_, index) => {
-                      const day = index + 1
+                      const day = index + 1;
                       return (
-                        <option key={day} value={day}>{day}</option>
-                      )
+                        <option key={day} value={day}>
+                          {day}
+                        </option>
+                      );
                     })}
                   </select>
                   <select
                     value={eventDateParts.year}
                     onChange={(e) => {
-                      const nextYear = Number(e.target.value)
-                      const nextDay = Math.min(eventDateParts.day, new Date(nextYear, eventDateParts.month, 0).getDate())
-                      setEventDate(toDateKey(nextYear, eventDateParts.month, nextDay))
+                      const nextYear = Number(e.target.value);
+                      const nextDay = Math.min(
+                        eventDateParts.day,
+                        new Date(nextYear, eventDateParts.month, 0).getDate()
+                      );
+                      setEventDate(toDateKey(nextYear, eventDateParts.month, nextDay));
                     }}
                     className="h-8 px-2 text-xs border border-gray-200 rounded-md focus:outline-none focus:border-gray-300 bg-gray-50 text-gray-900"
                   >
                     {eventYearOptions.map((year) => (
-                      <option key={year} value={year}>{year}</option>
+                      <option key={year} value={year}>
+                        {year}
+                      </option>
                     ))}
                   </select>
                 </div>
@@ -1309,7 +1421,9 @@ export const ExpandedSidebar = ({
                     className="h-7 px-2 text-xs border border-gray-200 rounded-md focus:outline-none focus:border-gray-300 bg-gray-50 text-gray-900"
                   >
                     {timeOptions.map((option) => (
-                      <option key={option.value} value={option.value}>{option.label}</option>
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
                     ))}
                   </select>
                 </div>
@@ -1321,7 +1435,9 @@ export const ExpandedSidebar = ({
                     className="h-7 px-2 text-xs border border-gray-200 rounded-md focus:outline-none focus:border-gray-300 bg-gray-50 text-gray-900"
                   >
                     {timeOptions.map((option) => (
-                      <option key={option.value} value={option.value}>{option.label}</option>
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
                     ))}
                   </select>
                 </div>
@@ -1329,11 +1445,11 @@ export const ExpandedSidebar = ({
               <div className="flex items-center gap-1.5">
                 <button
                   onClick={() => {
-                    setEventDraft('')
-                    setEventDate(todayKey())
-                    setEventStartTime('09:00')
-                    setEventEndTime('10:00')
-                    setQuickCaptureMode('none')
+                    setEventDraft('');
+                    setEventDate(todayKey());
+                    setEventStartTime('09:00');
+                    setEventEndTime('10:00');
+                    setQuickCaptureMode('none');
                   }}
                   className="flex-1 h-7 px-2 text-[11px] font-medium text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-md"
                 >
@@ -1360,26 +1476,31 @@ export const ExpandedSidebar = ({
                   <div className="flex items-start justify-between gap-2">
                     <button
                       onClick={() => {
-                        setNoteDraft(note.body)
-                        setQuickCaptureMode('note')
+                        setNoteDraft(note.body);
+                        setQuickCaptureMode('note');
                       }}
                       className="min-w-0 text-left flex-1"
                     >
                       <p className="text-[11px] font-medium text-gray-900 truncate">{note.title}</p>
                       <p className="text-[10px] text-gray-500 mt-0.5">
-                        {new Date(note.createdAt).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+                        {new Date(note.createdAt).toLocaleString([], {
+                          month: 'short',
+                          day: 'numeric',
+                          hour: 'numeric',
+                          minute: '2-digit',
+                        })}
                       </p>
                     </button>
                     <button
                       onClick={async (e) => {
-                        e.stopPropagation()
+                        e.stopPropagation();
                         try {
-                          await api.deleteNote(note.id)
+                          await api.deleteNote(note.id);
                         } catch (error) {
-                          setSaveError('Could not delete note.')
-                          return
+                          setSaveError('Could not delete note.');
+                          return;
                         }
-                        setQuickNotes((prev) => prev.filter((item) => item.id !== note.id))
+                        setQuickNotes((prev) => prev.filter((item) => item.id !== note.id));
                       }}
                       className="mt-0.5 p-1 rounded text-gray-400 hover:text-red-600 hover:bg-red-50 transition"
                       title="Delete note"
@@ -1394,7 +1515,10 @@ export const ExpandedSidebar = ({
           )}
         </section>
 
-        <section ref={checkinSectionRef} className="bg-white border border-gray-200 rounded-xl p-3.5">
+        <section
+          ref={checkinSectionRef}
+          className="bg-white border border-gray-200 rounded-xl p-3.5"
+        >
           <button
             onClick={() => setIsCheckinExpanded((prev) => !prev)}
             className="w-full flex items-center justify-between"
@@ -1404,14 +1528,22 @@ export const ExpandedSidebar = ({
               <p className="text-xs font-semibold text-gray-900">Daily Check-in</p>
             </div>
             <div className="flex items-center gap-2">
-              {checkinSaved && <span className="text-[10px] text-green-700 font-medium">Saved</span>}
-              {isCheckinExpanded ? <ChevronUp size={14} className="text-gray-500" /> : <ChevronDown size={14} className="text-gray-500" />}
+              {checkinSaved && (
+                <span className="text-[10px] text-green-700 font-medium">Saved</span>
+              )}
+              {isCheckinExpanded ? (
+                <ChevronUp size={14} className="text-gray-500" />
+              ) : (
+                <ChevronDown size={14} className="text-gray-500" />
+              )}
             </div>
           </button>
 
           {!isCheckinExpanded && (
             <p className="mt-2 text-[11px] text-gray-500">
-              {checkinSaved ? 'Saved for today. Click to edit.' : 'Click to add your daily check-in.'}
+              {checkinSaved
+                ? 'Saved for today. Click to edit.'
+                : 'Click to add your daily check-in.'}
             </p>
           )}
 
@@ -1425,8 +1557,8 @@ export const ExpandedSidebar = ({
                   <input
                     value={checkin.finished}
                     onChange={(e) => {
-                      setCheckin((prev) => ({ ...prev, finished: e.target.value }))
-                      setCheckinSaved(false)
+                      setCheckin((prev) => ({ ...prev, finished: e.target.value }));
+                      setCheckinSaved(false);
                     }}
                     placeholder="What did you finish?"
                     className="w-full h-8 px-2.5 text-xs border border-gray-200 rounded-md focus:outline-none focus:border-gray-300 bg-gray-50 text-gray-900 placeholder-gray-500"
@@ -1440,8 +1572,8 @@ export const ExpandedSidebar = ({
                   <input
                     value={checkin.blocked}
                     onChange={(e) => {
-                      setCheckin((prev) => ({ ...prev, blocked: e.target.value }))
-                      setCheckinSaved(false)
+                      setCheckin((prev) => ({ ...prev, blocked: e.target.value }));
+                      setCheckinSaved(false);
                     }}
                     placeholder="What didn't you finish"
                     className="w-full h-8 px-2.5 text-xs border border-gray-200 rounded-md focus:outline-none focus:border-gray-300 bg-gray-50 text-gray-900 placeholder-gray-500"
@@ -1455,8 +1587,8 @@ export const ExpandedSidebar = ({
                   <input
                     value={checkin.firstTaskTomorrow}
                     onChange={(e) => {
-                      setCheckin((prev) => ({ ...prev, firstTaskTomorrow: e.target.value }))
-                      setCheckinSaved(false)
+                      setCheckin((prev) => ({ ...prev, firstTaskTomorrow: e.target.value }));
+                      setCheckinSaved(false);
                     }}
                     placeholder="What's first tomorrow?"
                     className="w-full h-8 px-2.5 text-xs border border-gray-200 rounded-md focus:outline-none focus:border-gray-300 bg-gray-50 text-gray-900 placeholder-gray-500"
@@ -1493,10 +1625,12 @@ export const ExpandedSidebar = ({
 
         <section>
           <div className="flex items-center justify-between mb-2">
-            <h2 className="text-xs font-semibold text-gray-600 uppercase tracking-wider">Project Tracker</h2>
+            <h2 className="text-xs font-semibold text-gray-600 uppercase tracking-wider">
+              Project Tracker
+            </h2>
             <button
               onClick={() => setIsCreatingProject(!isCreatingProject)}
-            className="text-xs font-medium text-[#FF5F40] hover:text-[#ea5336] px-2 py-1 rounded hover:bg-[#fff0eb]"
+              className="text-xs font-medium text-[#FF5F40] hover:text-[#ea5336] px-2 py-1 rounded hover:bg-[#fff0eb]"
             >
               {isCreatingProject ? 'Cancel' : '+ New'}
             </button>
@@ -1509,8 +1643,8 @@ export const ExpandedSidebar = ({
                 onChange={(e) => setNewProjectName(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') {
-                    e.preventDefault()
-                    void createProject()
+                    e.preventDefault();
+                    void createProject();
                   }
                 }}
                 placeholder="Project name"
@@ -1534,22 +1668,26 @@ export const ExpandedSidebar = ({
               <p className="text-xs text-gray-500">No active projects</p>
             ) : (
               projects.map((project) => {
-                const isExpanded = expandedProjectId === project.id
-                const statusKey = normalizeProjectStatus(String(project.status))
-                const statusLabel = projectStatusLabels[statusKey]
-                const statusColor = projectStatusStyles[statusKey]
-                const timelineCompleteness = getTimelineCompleteness(project.start_date ?? null, project.end_date ?? null)
-                const displayCompleteness = timelineCompleteness ?? project.completeness
-                const progressColor = getProgressStateColor(displayCompleteness)
-                const projectAccent = project.color || '#007AFF'
+                const isExpanded = expandedProjectId === project.id;
+                const statusKey = normalizeProjectStatus(String(project.status));
+                const statusLabel = projectStatusLabels[statusKey];
+                const statusColor = projectStatusStyles[statusKey];
+                const displayCompleteness = Math.max(0, Math.min(100, Number(project.completeness) || 0));
+                const progressColor = getProgressStateColor(displayCompleteness);
+                const projectAccent = project.color || '#007AFF';
 
                 return (
                   <div
                     key={project.id}
                     className="bg-white rounded-lg border border-gray-200"
                     onContextMenu={(e) => {
-                      e.preventDefault()
-                      setContextMenu({ type: 'project', id: project.id, x: e.clientX, y: e.clientY })
+                      e.preventDefault();
+                      setContextMenu({
+                        type: 'project',
+                        id: project.id,
+                        x: e.clientX,
+                        y: e.clientY,
+                      });
                     }}
                   >
                     <button
@@ -1562,59 +1700,78 @@ export const ExpandedSidebar = ({
                             className="h-2 w-2 shrink-0 rounded-full border border-black/5"
                             style={{ backgroundColor: projectAccent }}
                           />
-                          <p className="text-xs font-semibold text-gray-900 truncate">{project.name}</p>
+                          <p className="text-xs font-semibold text-gray-900 truncate">
+                            {project.name}
+                          </p>
                         </div>
                         <div
                           onPointerDown={(e) => {
-                            if (timelineCompleteness !== null) return
-                            e.stopPropagation()
-                            const rect = e.currentTarget.getBoundingClientRect()
-                            const percent = Math.round(((e.clientX - rect.left) / rect.width) * 100)
-                            setDraggingProjectId(project.id)
+                            e.stopPropagation();
+                            const rect = e.currentTarget.getBoundingClientRect();
+                            const percent = Math.round(
+                              ((e.clientX - rect.left) / rect.width) * 100
+                            );
+                            setDraggingProjectId(project.id);
                             projectDragRef.current = {
                               projectId: project.id,
                               rectLeft: rect.left,
                               rectWidth: rect.width,
                               pointerId: e.pointerId,
-                            }
-                            setProjectCompletenessLocal(project.id, percent)
-                            e.currentTarget.setPointerCapture(e.pointerId)
+                            };
+                            setProjectCompletenessLocal(project.id, percent);
+                            e.currentTarget.setPointerCapture(e.pointerId);
                           }}
                           onClick={(e) => e.stopPropagation()}
                           className={`mt-2 h-2 rounded-full bg-gray-200 overflow-hidden transition touch-none ${
-                            timelineCompleteness === null ? 'cursor-pointer hover:bg-gray-300' : 'cursor-default'
+                            'cursor-pointer hover:bg-gray-300'
                           }`}
                         >
                           <div
-                            className={`h-full rounded-full ${draggingProjectId === project.id ? '' : 'transition-all'}`}
-                            style={{ width: `${displayCompleteness}%`, backgroundColor: progressColor }}
+                            className={`h-full rounded-full ${
+                              draggingProjectId === project.id ? '' : 'transition-all'
+                            }`}
+                            style={{
+                              width: `${displayCompleteness}%`,
+                              backgroundColor: progressColor,
+                            }}
                           />
                         </div>
                         <div className="mt-2 flex items-center justify-between gap-2">
-                          <p className="text-[10px] text-gray-600">{displayCompleteness}% complete</p>
-                          <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${statusColor}`}>
+                          <p className="text-[10px] text-gray-600">
+                            {displayCompleteness}% complete
+                          </p>
+                          <span
+                            className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${statusColor}`}
+                          >
                             {statusLabel}
                           </span>
                         </div>
                       </div>
                       <ChevronDown
                         size={14}
-                        className={`text-gray-400 transition-transform shrink-0 ml-2 ${isExpanded ? 'rotate-180' : ''}`}
+                        className={`text-gray-400 transition-transform shrink-0 ml-2 ${
+                          isExpanded ? 'rotate-180' : ''
+                        }`}
                       />
                     </button>
 
                     {isExpanded && (
                       <div className="border-t border-gray-200 bg-gray-50 p-3 space-y-2">
                         <div>
-                          <label className="text-[10px] font-semibold uppercase text-gray-600">Project Status</label>
+                          <label className="text-[10px] font-semibold uppercase text-gray-600">
+                            Project Status
+                          </label>
                           <div className="mt-1.5 flex gap-1 flex-wrap">
-                            {(['NotStarted', 'InProgress', 'Paused', 'Completed'] as ProjectStatus[]).map((status) => (
+                            {(
+                              ['NotStarted', 'InProgress', 'Paused', 'Completed'] as ProjectStatus[]
+                            ).map((status) => (
                               <button
                                 key={status}
                                 onClick={() => updateProjectStatus(project.id, status)}
                                 disabled={projectUpdating === project.id}
                                 className={`text-[10px] font-medium px-2 py-1 rounded transition ${
-                                  normalizeProjectStatus(String(project.status)) === normalizeProjectStatus(status)
+                                  normalizeProjectStatus(String(project.status)) ===
+                                  normalizeProjectStatus(status)
                                     ? 'bg-[#FF5F40] text-white'
                                     : 'bg-white border border-gray-200 text-gray-700 hover:border-gray-300'
                                 }`}
@@ -1627,14 +1784,16 @@ export const ExpandedSidebar = ({
                       </div>
                     )}
                   </div>
-                )
+                );
               })
             )}
           </div>
         </section>
 
         <section>
-          <h2 className="text-xs font-semibold text-gray-600 uppercase tracking-wider mb-2">Upcoming</h2>
+          <h2 className="text-xs font-semibold text-gray-600 uppercase tracking-wider mb-2">
+            Upcoming
+          </h2>
           <div className="space-y-2">
             {isLoadingUpcoming ? (
               <SkeletonList count={2} />
@@ -1642,14 +1801,14 @@ export const ExpandedSidebar = ({
               <p className="text-xs text-gray-500">No upcoming events</p>
             ) : (
               upcomingItems.map((item) => {
-                const isExpanded = expandedUpcomingId === item.id
+                const isExpanded = expandedUpcomingId === item.id;
                 return (
                   <button
                     key={item.id}
                     onClick={() => setExpandedUpcomingId(isExpanded ? null : item.id)}
                     onContextMenu={(e) => {
-                      e.preventDefault()
-                      setContextMenu({ type: 'upcoming', id: item.id, x: e.clientX, y: e.clientY })
+                      e.preventDefault();
+                      setContextMenu({ type: 'upcoming', id: item.id, x: e.clientX, y: e.clientY });
                     }}
                     className="w-full rounded-xl border border-gray-200 bg-white p-3 text-left transition hover:bg-gray-50"
                   >
@@ -1662,7 +1821,11 @@ export const ExpandedSidebar = ({
                         )}
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className={`text-[13px] font-semibold leading-5 text-gray-900 ${isExpanded ? '' : 'truncate'}`}>
+                        <p
+                          className={`text-[13px] font-semibold leading-5 text-gray-900 ${
+                            isExpanded ? '' : 'truncate'
+                          }`}
+                        >
                           {item.title}
                         </p>
                         <p className="mt-1 text-[11px] text-gray-600">
@@ -1679,7 +1842,7 @@ export const ExpandedSidebar = ({
                       </div>
                     </div>
                   </button>
-                )
+                );
               })
             )}
           </div>
@@ -1688,149 +1851,157 @@ export const ExpandedSidebar = ({
         {saveError && <p className="text-[11px] text-red-600">{saveError}</p>}
       </div>
 
-      {contextMenu && createPortal(
-        <div
-          className="fixed z-50 bg-white border border-gray-200 rounded-lg shadow-lg py-1 min-w-max"
-          style={{
-            left: `${Math.max(8, Math.min(contextMenu.x, window.innerWidth - sidebarContextMenuWidth - 8))}px`,
-            top: `${Math.max(8, Math.min(contextMenu.y, window.innerHeight - sidebarContextMenuHeight - 8))}px`,
-          }}
-          onClick={(e) => e.stopPropagation()}
-          onMouseDown={(e) => e.stopPropagation()}
-        >
-          {contextMenu.type === 'project' && (
-            <>
-              {expandedProjectId === contextMenu.id ? (
+      {contextMenu &&
+        createPortal(
+          <div
+            className="fixed z-50 bg-white border border-gray-200 rounded-lg shadow-lg py-1 min-w-max"
+            style={{
+              left: `${Math.max(
+                8,
+                Math.min(contextMenu.x, window.innerWidth - sidebarContextMenuWidth - 8)
+              )}px`,
+              top: `${Math.max(
+                8,
+                Math.min(contextMenu.y, window.innerHeight - sidebarContextMenuHeight - 8)
+              )}px`,
+            }}
+            onClick={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            {contextMenu.type === 'project' && (
+              <>
+                {expandedProjectId === contextMenu.id ? (
+                  <button
+                    onClick={() => {
+                      setExpandedProjectId(null);
+                      setContextMenu(null);
+                    }}
+                    className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition flex items-center gap-2"
+                  >
+                    <ChevronUp size={14} />
+                    Collapse
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => {
+                      const project = projects.find((p) => p.id === contextMenu.id);
+                      if (project) {
+                        setExpandedProjectId(contextMenu.id);
+                        setContextMenu(null);
+                      }
+                    }}
+                    className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition flex items-center gap-2"
+                  >
+                    <ChevronDown size={14} />
+                    Expand
+                  </button>
+                )}
                 <button
                   onClick={() => {
-                    setExpandedProjectId(null)
-                    setContextMenu(null)
-                  }}
-                  className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition flex items-center gap-2"
-                >
-                  <ChevronUp size={14} />
-                  Collapse
-                </button>
-              ) : (
-                <button
-                  onClick={() => {
-                    const project = projects.find((p) => p.id === contextMenu.id)
+                    const project = projects.find((p) => p.id === contextMenu.id);
                     if (project) {
-                      setExpandedProjectId(contextMenu.id)
-                      setContextMenu(null)
+                      void window.desktopWindow?.toggleModule('projects', {
+                        kind: 'projects',
+                        focusProjectId: project.id,
+                      });
                     }
+                    setContextMenu(null);
                   }}
-                  className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition flex items-center gap-2"
+                  className="w-full text-left px-4 py-2 text-sm text-[#FF5F40] hover:bg-[#fff0eb] transition flex items-center gap-2"
                 >
-                  <ChevronDown size={14} />
-                  Expand
+                  <Folder size={14} />
+                  Navigate to project
                 </button>
-              )}
-              <button
-                onClick={() => {
-                  const project = projects.find((p) => p.id === contextMenu.id)
-                  if (project) {
-                    void window.desktopWindow?.toggleModule('projects', {
-                      kind: 'projects',
-                      focusProjectId: project.id,
-                    })
-                  }
-                  setContextMenu(null)
-                }}
-                className="w-full text-left px-4 py-2 text-sm text-[#FF5F40] hover:bg-[#fff0eb] transition flex items-center gap-2"
-              >
-                <Folder size={14} />
-                Navigate to project
-              </button>
-              <button
-                onClick={() => {
-                  void deleteProject(contextMenu.id)
-                }}
-                className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition flex items-center gap-2"
-              >
-                <Trash2 size={14} />
-                Delete
-              </button>
-            </>
-          )}
-
-          {contextMenu.type === 'upcoming' && (
-            <>
-              {expandedUpcomingId === contextMenu.id ? (
                 <button
                   onClick={() => {
-                    setExpandedUpcomingId(null)
-                    setContextMenu(null)
+                    void deleteProject(contextMenu.id);
                   }}
-                  className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition flex items-center gap-2"
+                  className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition flex items-center gap-2"
                 >
-                  <ChevronUp size={14} />
-                  Collapse
+                  <Trash2 size={14} />
+                  Delete
                 </button>
-              ) : (
+              </>
+            )}
+
+            {contextMenu.type === 'upcoming' && (
+              <>
+                {expandedUpcomingId === contextMenu.id ? (
+                  <button
+                    onClick={() => {
+                      setExpandedUpcomingId(null);
+                      setContextMenu(null);
+                    }}
+                    className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition flex items-center gap-2"
+                  >
+                    <ChevronUp size={14} />
+                    Collapse
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => {
+                      setExpandedUpcomingId(contextMenu.id);
+                      setContextMenu(null);
+                    }}
+                    className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition flex items-center gap-2"
+                  >
+                    <ChevronDown size={14} />
+                    Expand
+                  </button>
+                )}
                 <button
                   onClick={() => {
-                    setExpandedUpcomingId(contextMenu.id)
-                    setContextMenu(null)
-                  }}
-                  className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition flex items-center gap-2"
-                >
-                  <ChevronDown size={14} />
-                  Expand
-                </button>
-              )}
-              <button
-                onClick={() => {
-                  const event = upcomingItems.find((e) => e.id === contextMenu.id)
-                  if (event) {
-                    void window.desktopWindow?.toggleModule('calendar', event.rawDate)
-                    setContextMenu(null)
-                  }
-                }}
-                className="w-full text-left px-4 py-2 text-sm text-[#FF5F40] hover:bg-[#fff0eb] transition flex items-center gap-2"
-              >
-                <CalendarDays size={14} />
-                Open in Calendar
-              </button>
-              <button
-                onClick={() => {
-                  const targetId = contextMenu.id
-                  const previousItems = upcomingItems
-                  setUpcomingItems((prev) => prev.filter((item) => item.id !== targetId))
-                  setExpandedUpcomingId((current) => (current === targetId ? null : current))
-                  setContextMenu(null)
-                  void (async () => {
-                    try {
-                      await api.deleteEvent(targetId)
-                    } catch (error) {
-                      setUpcomingItems(previousItems)
-                      setSaveError('Could not delete event.')
+                    const event = upcomingItems.find((e) => e.id === contextMenu.id);
+                    if (event) {
+                      void window.desktopWindow?.toggleModule('calendar', event.rawDate);
+                      setContextMenu(null);
                     }
-                  })()
-                }}
-                className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition flex items-center gap-2"
-              >
-                <Trash2 size={14} />
-                Delete Event
-              </button>
-            </>
-          )}
-        </div>,
-        document.body,
-      )}
+                  }}
+                  className="w-full text-left px-4 py-2 text-sm text-[#FF5F40] hover:bg-[#fff0eb] transition flex items-center gap-2"
+                >
+                  <CalendarDays size={14} />
+                  Open in Calendar
+                </button>
+                <button
+                  onClick={() => {
+                    const targetId = contextMenu.id;
+                    const previousItems = upcomingItems;
+                    setUpcomingItems((prev) => prev.filter((item) => item.id !== targetId));
+                    setExpandedUpcomingId((current) => (current === targetId ? null : current));
+                    setContextMenu(null);
+                    void (async () => {
+                      try {
+                        await api.deleteEvent(targetId);
+                      } catch (error) {
+                        setUpcomingItems(previousItems);
+                        setSaveError('Could not delete event.');
+                      }
+                    })();
+                  }}
+                  className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition flex items-center gap-2"
+                >
+                  <Trash2 size={14} />
+                  Delete Event
+                </button>
+              </>
+            )}
+          </div>,
+          document.body
+        )}
 
-      {todayHelpVisible && createPortal(
-        <div
-          className="pointer-events-none fixed z-280 w-48 -translate-x-1/2 -translate-y-full rounded-md border border-gray-200 bg-white px-2 py-1.5 text-[10px] leading-4 text-gray-700 shadow-lg"
-          style={{
-            left: `${Math.max(96, Math.min(todayHelpPosition.x, window.innerWidth - 96))}px`,
-            top: `${Math.max(24, todayHelpPosition.y)}px`,
-          }}
-        >
-          Add your tasks for today. Items save to your profile and reset daily.
-        </div>,
-        document.body,
-      )}
+      {todayHelpVisible &&
+        createPortal(
+          <div
+            className="pointer-events-none fixed z-280 w-48 -translate-x-1/2 -translate-y-full rounded-md border border-gray-200 bg-white px-2 py-1.5 text-[10px] leading-4 text-gray-700 shadow-lg"
+            style={{
+              left: `${Math.max(96, Math.min(todayHelpPosition.x, window.innerWidth - 96))}px`,
+              top: `${Math.max(24, todayHelpPosition.y)}px`,
+            }}
+          >
+            Add your tasks for today. Items save to your profile and reset daily.
+          </div>,
+          document.body
+        )}
 
       <div className="px-5 space-y-3 border-t border-white/20 pt-4">
         <button
@@ -1849,7 +2020,7 @@ export const ExpandedSidebar = ({
         </button>
       </div>
     </div>
-  )
-}
+  );
+};
 
-export default ExpandedSidebar
+export default ExpandedSidebar;

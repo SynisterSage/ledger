@@ -1,26 +1,26 @@
-import { type ReactNode, type CSSProperties, type MouseEvent as ReactMouseEvent } from 'react'
-import { Maximize2, Minus, X } from 'lucide-react'
+import { type ReactNode, type CSSProperties, type MouseEvent as ReactMouseEvent } from 'react';
+import { Maximize2, Minus, X } from 'lucide-react';
 
 type ModuleWindowHeaderProps = {
-  eyebrow?: string
-  title: string
-  subtitle?: string
-  icon: ReactNode
-  onClose: () => void
-  onMinimize?: () => void
-  onToggleFullscreen?: () => void
-  closeLabel?: string
-  minimizeLabel?: string
-  fullscreenLabel?: string
-  actions?: ReactNode
-}
+  eyebrow?: string;
+  title: string;
+  subtitle?: string;
+  icon: ReactNode;
+  onClose: () => void;
+  onMinimize?: () => void;
+  onToggleFullscreen?: () => void;
+  closeLabel?: string;
+  minimizeLabel?: string;
+  fullscreenLabel?: string;
+  actions?: ReactNode;
+};
 
 type AppRegionStyle = CSSProperties & {
-  WebkitAppRegion?: 'drag' | 'no-drag'
-}
+  WebkitAppRegion?: 'drag' | 'no-drag';
+};
 
-const dragRegionStyle: AppRegionStyle = { WebkitAppRegion: 'drag' }
-const noDragRegionStyle: AppRegionStyle = { WebkitAppRegion: 'no-drag' }
+const dragRegionStyle: AppRegionStyle = { WebkitAppRegion: 'drag' };
+const noDragRegionStyle: AppRegionStyle = { WebkitAppRegion: 'no-drag' };
 
 export const ModuleWindowHeader = ({
   eyebrow,
@@ -36,24 +36,31 @@ export const ModuleWindowHeader = ({
   actions,
 }: ModuleWindowHeaderProps) => {
   const controlClassName =
-    'flex h-6 w-6 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-600 transition hover:bg-gray-100 hover:text-gray-900'
+    'flex h-6 w-6 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-600 transition hover:bg-gray-100 hover:text-gray-900';
 
   const handleTitleBarDoubleClick = () => {
     if (onToggleFullscreen) {
-      onToggleFullscreen()
+      onToggleFullscreen();
     }
-  }
+  };
 
-  const triggerOnPrimaryMouseDown = (event: ReactMouseEvent<HTMLButtonElement>, action?: () => void) => {
-    if (!action) return
-    if (event.button !== 0) return
-    event.preventDefault()
-    action()
-  }
+  const triggerOnPrimaryMouseDown = (
+    event: ReactMouseEvent<HTMLButtonElement>,
+    action?: () => void
+  ) => {
+    if (!action) return;
+    if (event.button !== 0) return;
+    event.preventDefault();
+    action();
+  };
 
   return (
     <div className="border-b border-gray-200 bg-white" style={dragRegionStyle}>
-      <div className="h-10 px-4 py-2 flex items-center bg-gray-50 border-b border-gray-200 cursor-default" style={dragRegionStyle} onDoubleClick={handleTitleBarDoubleClick}>
+      <div
+        className="h-10 px-4 py-2 flex items-center bg-gray-50 border-b border-gray-200 cursor-default"
+        style={dragRegionStyle}
+        onDoubleClick={handleTitleBarDoubleClick}
+      >
         <div className="flex items-center gap-1.5" style={noDragRegionStyle}>
           <button
             type="button"
@@ -118,5 +125,5 @@ export const ModuleWindowHeader = ({
         )}
       </div>
     </div>
-  )
-}
+  );
+};

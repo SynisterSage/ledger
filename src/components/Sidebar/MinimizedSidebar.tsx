@@ -1,50 +1,69 @@
-import { BarChart3, CalendarDays, LogOut, ChevronRight, StickyNote, Folder, Search } from 'lucide-react'
-import { useAuthContext } from '../../context/AuthContext'
-import { useSidebar } from '../../context/SidebarContext'
-import { useSearch } from '../../context/SearchContext'
+import {
+  BarChart3,
+  CalendarDays,
+  LogOut,
+  ChevronRight,
+  StickyNote,
+  Folder,
+  Search,
+} from 'lucide-react';
+import { useAuthContext } from '../../context/AuthContext';
+import { useSidebar } from '../../context/SidebarContext';
+import { useSearch } from '../../context/SearchContext';
 
 export const MinimizedSidebar = ({
   onDragHandleMouseDown,
 }: {
-  onDragHandleMouseDown?: (e: React.MouseEvent<HTMLDivElement>) => void
+  onDragHandleMouseDown?: (e: React.MouseEvent<HTMLDivElement>) => void;
 }) => {
-  const { signOut } = useAuthContext()
-  const { collapseSidebar, setState, position } = useSidebar()
-  const { openSearch } = useSearch()
-  const isHorizontal = position === 'top' || position === 'bottom'
-  const iconBase = 'w-10 h-10 rounded-xl transition-colors duration-150 flex items-center justify-center active:scale-95'
-  const neutralIcon = `${iconBase} bg-transparent hover:bg-white/45 text-gray-700`
-  const accentIcon = neutralIcon
-  const actionIcon = `${iconBase} bg-transparent hover:bg-white/45 text-gray-700`
-  const dangerIcon = `${iconBase} bg-transparent hover:bg-red-50 text-red-600`
+  const { signOut } = useAuthContext();
+  const { collapseSidebar, setState, position } = useSidebar();
+  const { openSearch } = useSearch();
+  const isHorizontal = position === 'top' || position === 'bottom';
+  const iconBase =
+    'w-10 h-10 rounded-xl transition-colors duration-150 flex items-center justify-center active:scale-95';
+  const neutralIcon = `${iconBase} bg-transparent hover:bg-white/45 text-gray-700`;
+  const accentIcon = neutralIcon;
+  const actionIcon = `${iconBase} bg-transparent hover:bg-white/45 text-gray-700`;
+  const dangerIcon = `${iconBase} bg-transparent hover:bg-red-50 text-red-600`;
 
   return (
     <div
-      className={`border-gray-200 flex ${isHorizontal ? 'h-16 w-full flex-row items-center justify-between px-4 bg-transparent' : 'h-full w-full flex-col items-center justify-between bg-transparent px-0 py-4'}`}
+      className={`border-gray-200 flex ${
+        isHorizontal
+          ? 'h-16 w-full flex-row items-center justify-between px-4 bg-transparent'
+          : 'h-full w-full flex-col items-center justify-between bg-transparent px-0 py-4'
+      }`}
       onMouseDown={onDragHandleMouseDown}
       style={{ cursor: onDragHandleMouseDown ? 'grab' : 'auto' }}
     >
-      <div className={`${isHorizontal ? 'flex w-full flex-row items-center justify-between' : 'mx-auto flex h-full w-11 flex-col items-center justify-between'} shrink-0`}>
+      <div
+        className={`${
+          isHorizontal
+            ? 'flex w-full flex-row items-center justify-between'
+            : 'mx-auto flex h-full w-11 flex-col items-center justify-between'
+        } shrink-0`}
+      >
         <button
-          type='button'
+          type="button"
           onClick={() => {
-            collapseSidebar()
+            collapseSidebar();
           }}
           onMouseDown={(e) => e.stopPropagation()}
-          aria-label='Collapse sidebar'
+          aria-label="Collapse sidebar"
           className="flex h-11 w-11 items-center justify-center rounded-xl bg-transparent transition-colors duration-150 hover:bg-white/45"
         >
-          <img src='./logo-color.svg' alt='Ledger' className='h-7 w-7' />
+          <img src="./logo-color.svg" alt="Ledger" className="h-7 w-7" />
         </button>
 
         <div className={`flex ${isHorizontal ? 'flex-row gap-3' : 'flex-col gap-4 self-center'}`}>
           <button
-            aria-label='Open search'
+            aria-label="Open search"
             onClick={() => {
-              setState('expanded')
+              setState('expanded');
               window.setTimeout(() => {
-                openSearch()
-              }, 220)
+                openSearch();
+              }, 220);
             }}
             onMouseDown={(e) => e.stopPropagation()}
             className={accentIcon}
@@ -52,9 +71,9 @@ export const MinimizedSidebar = ({
             <Search size={18} />
           </button>
           <button
-            aria-label='Open dashboard'
+            aria-label="Open dashboard"
             onClick={() => {
-              window.desktopWindow?.toggleModule('dashboard')
+              window.desktopWindow?.toggleModule('dashboard');
             }}
             onMouseDown={(e) => e.stopPropagation()}
             className={neutralIcon}
@@ -62,7 +81,7 @@ export const MinimizedSidebar = ({
             <BarChart3 size={18} />
           </button>
           <button
-            aria-label='Open calendar'
+            aria-label="Open calendar"
             onClick={() => window.desktopWindow?.toggleModule('calendar')}
             onMouseDown={(e) => e.stopPropagation()}
             className={accentIcon}
@@ -70,7 +89,7 @@ export const MinimizedSidebar = ({
             <CalendarDays size={18} />
           </button>
           <button
-            aria-label='Open projects'
+            aria-label="Open projects"
             onClick={() => window.desktopWindow?.toggleModule('projects')}
             onMouseDown={(e) => e.stopPropagation()}
             className={accentIcon}
@@ -78,7 +97,7 @@ export const MinimizedSidebar = ({
             <Folder size={18} />
           </button>
           <button
-            aria-label='Open notes'
+            aria-label="Open notes"
             onClick={() => window.desktopWindow?.toggleModule('notes')}
             onMouseDown={(e) => e.stopPropagation()}
             className={accentIcon}
@@ -96,15 +115,11 @@ export const MinimizedSidebar = ({
             <ChevronRight size={20} />
           </button>
 
-          <button
-            onClick={signOut}
-            onMouseDown={(e) => e.stopPropagation()}
-            className={dangerIcon}
-          >
+          <button onClick={signOut} onMouseDown={(e) => e.stopPropagation()} className={dangerIcon}>
             <LogOut size={18} />
           </button>
         </div>
       </div>
     </div>
-  )
-}
+  );
+};

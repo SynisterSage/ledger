@@ -66,6 +66,7 @@ npm run dev
 ## Tier Limits (Freemium)
 
 **Free:**
+
 - 3 projects
 - 50 tasks
 - 100 events

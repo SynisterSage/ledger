@@ -1,218 +1,230 @@
-import { Check, FileText, Calendar} from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
-import { useApi } from '../../hooks/useApi'
-import { useAuthContext } from '../../context/AuthContext'
-import { useWorkspaceContext } from '../../context/WorkspaceContext'
-import { ModuleWindowHeader } from './ModuleWindowHeader'
-import { CloseGuardModal } from './CloseGuardModal'
+import { Check, FileText, Calendar } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { useApi } from '../../hooks/useApi';
+import { useAuthContext } from '../../context/AuthContext';
+import { useWorkspaceContext } from '../../context/WorkspaceContext';
+import { ModuleWindowHeader } from './ModuleWindowHeader';
+import { CloseGuardModal } from './CloseGuardModal';
 
 type FollowUpContext = {
-  eventId: string
-  eventTitle: string
-  projectId: string | null
-  noteId: string | null
-}
+  eventId: string;
+  eventTitle: string;
+  projectId: string | null;
+  noteId: string | null;
+};
 
 const parseFollowUpContext = (value?: string): FollowUpContext | null => {
-  if (!value) return null
-  if (!value.startsWith('ledger-followup|')) return null
-  const [, eventId = '', eventTitle = '', projectId = '', noteId = ''] = value.split('|')
-  if (!eventId) return null
+  if (!value) return null;
+  if (!value.startsWith('ledger-followup|')) return null;
+  const [, eventId = '', eventTitle = '', projectId = '', noteId = ''] = value.split('|');
+  if (!eventId) return null;
   return {
     eventId,
     eventTitle: decodeURIComponent(eventTitle || ''),
     projectId: projectId || null,
     noteId: noteId || null,
-  }
-}
+  };
+};
 
-export const QuickCaptureWindow = ({ kind, context }: { kind: 'quick-task' | 'quick-note' | 'quick-event'; context?: string }) => {
-  const { user } = useAuthContext()
-  const { activeWorkspaceId } = useWorkspaceContext()
-  const api = useApi()
+export const QuickCaptureWindow = ({
+  kind,
+  context,
+}: {
+  kind: 'quick-task' | 'quick-note' | 'quick-event';
+  context?: string;
+}) => {
+  const { user } = useAuthContext();
+  const { activeWorkspaceId } = useWorkspaceContext();
+  const api = useApi();
 
-  const [taskTitle, setTaskTitle] = useState('')
-  const [noteTitle, setNoteTitle] = useState('')
-  const [noteContent, setNoteContent] = useState('')
-  const [eventTitle, setEventTitle] = useState('')
+  const [taskTitle, setTaskTitle] = useState('');
+  const [noteTitle, setNoteTitle] = useState('');
+  const [noteContent, setNoteContent] = useState('');
+  const [eventTitle, setEventTitle] = useState('');
   const [eventDate, setEventDate] = useState(() => {
-    const today = new Date()
-    const year = today.getFullYear()
-    const month = String(today.getMonth() + 1).padStart(2, '0')
-    const day = String(today.getDate()).padStart(2, '0')
-    return `${year}-${month}-${day}`
-  })
-  const [eventTime, setEventTime] = useState('09:00')
-  const [isSaving, setIsSaving] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [showCloseGuardModal, setShowCloseGuardModal] = useState(false)
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = String(today.getMonth() + 1).padStart(2, '0');
+    const day = String(today.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  });
+  const [eventTime, setEventTime] = useState('09:00');
+  const [isSaving, setIsSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [showCloseGuardModal, setShowCloseGuardModal] = useState(false);
 
-  const taskInputRef = useRef<HTMLInputElement>(null)
-  const noteInputRef = useRef<HTMLTextAreaElement>(null)
-  const eventInputRef = useRef<HTMLInputElement>(null)
+  const taskInputRef = useRef<HTMLInputElement>(null);
+  const noteInputRef = useRef<HTMLTextAreaElement>(null);
+  const eventInputRef = useRef<HTMLInputElement>(null);
 
   // Auto-focus on mount
   useEffect(() => {
     const timer = window.setTimeout(() => {
       if (kind === 'quick-task') {
-        taskInputRef.current?.focus()
+        taskInputRef.current?.focus();
       } else if (kind === 'quick-note') {
-        noteInputRef.current?.focus()
+        noteInputRef.current?.focus();
       } else if (kind === 'quick-event') {
-        eventInputRef.current?.focus()
+        eventInputRef.current?.focus();
       }
-    }, 100)
+    }, 100);
 
-    return () => window.clearTimeout(timer)
-  }, [kind])
+    return () => window.clearTimeout(timer);
+  }, [kind]);
 
   const closeWindowNow = () => {
-    void window.desktopWindow?.closeModule(kind as any)
-  }
+    void window.desktopWindow?.closeModule(kind as any);
+  };
 
   const hasUnsavedDraft =
     taskTitle.trim().length > 0 ||
     noteTitle.trim().length > 0 ||
     noteContent.trim().length > 0 ||
-    eventTitle.trim().length > 0
+    eventTitle.trim().length > 0;
 
   const closeWindow = () => {
     if (isSaving || hasUnsavedDraft) {
-      setShowCloseGuardModal(true)
-      return
+      setShowCloseGuardModal(true);
+      return;
     }
-    closeWindowNow()
-  }
+    closeWindowNow();
+  };
 
   const minimizeWindow = () => {
-    void window.desktopWindow?.minimizeModule(kind as any)
-  }
+    void window.desktopWindow?.minimizeModule(kind as any);
+  };
 
   const toggleFullscreen = () => {
-    void window.desktopWindow?.toggleModuleFullscreen(kind as any)
-  }
+    void window.desktopWindow?.toggleModuleFullscreen(kind as any);
+  };
 
   const footer = (onSave: () => void, canSave: boolean) => (
-    <div className='border-t border-gray-200 bg-white p-4'>
-      <div className='flex gap-2'>
+    <div className="border-t border-gray-200 bg-white p-4">
+      <div className="flex gap-2">
         <button
-          type='button'
+          type="button"
           onClick={closeWindow}
-          className='flex-1 rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50'
+          className="flex-1 rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
         >
           Cancel
         </button>
         <button
-          type='button'
+          type="button"
           onClick={onSave}
           disabled={isSaving || !canSave}
-          className='flex-1 rounded-lg bg-[#FF5F40] px-3 py-2 text-sm font-medium text-white hover:bg-[#E54E30] disabled:opacity-50'
+          className="flex-1 rounded-lg bg-[#FF5F40] px-3 py-2 text-sm font-medium text-white hover:bg-[#E54E30] disabled:opacity-50"
         >
           {isSaving ? 'Saving...' : 'Save'}
         </button>
       </div>
     </div>
-  )
+  );
 
   const shellClassName =
-    'grid h-screen w-screen grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden rounded-[28px] border border-gray-200 bg-[#f5f7fb] shadow-[0_24px_80px_rgba(15,23,42,0.08)]'
+    'grid h-screen w-screen grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden rounded-[28px] border border-gray-200 bg-[#f5f7fb] shadow-[0_24px_80px_rgba(15,23,42,0.08)]';
 
   const scrollAreaClassName =
-    'min-h-0 overflow-y-auto overflow-x-hidden p-4 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden'
-  const contextText = context?.trim()
-  const followUpContext = parseFollowUpContext(contextText)
-  const displayContext = followUpContext?.eventTitle ? `Follow-up: ${followUpContext.eventTitle}` : contextText
-  const truncatedContext = displayContext ? (displayContext.length > 80 ? `${displayContext.slice(0, 77)}...` : displayContext) : undefined
+    'min-h-0 overflow-y-auto overflow-x-hidden p-4 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden';
+  const contextText = context?.trim();
+  const followUpContext = parseFollowUpContext(contextText);
+  const displayContext = followUpContext?.eventTitle
+    ? `Follow-up: ${followUpContext.eventTitle}`
+    : contextText;
+  const truncatedContext = displayContext
+    ? displayContext.length > 80
+      ? `${displayContext.slice(0, 77)}...`
+      : displayContext
+    : undefined;
 
   const saveQuickTask = async () => {
     if (!user || !activeWorkspaceId || !taskTitle.trim()) {
-      setError('Task title cannot be empty')
-      return
+      setError('Task title cannot be empty');
+      return;
     }
 
     try {
-      setIsSaving(true)
-      setError(null)
+      setIsSaving(true);
+      setError(null);
       const createdTask = await api.createTask({
         title: taskTitle.trim(),
-        description: followUpContext
-          ? `calendar_followup:${followUpContext.eventId}`
-          : '',
+        description: followUpContext ? `calendar_followup:${followUpContext.eventId}` : '',
         status: 'todo',
         priority: 'medium',
         project_id: followUpContext?.projectId ?? null,
-        notes: followUpContext?.eventTitle ? `Follow-up from calendar: ${followUpContext.eventTitle}` : null,
+        notes: followUpContext?.eventTitle
+          ? `Follow-up from calendar: ${followUpContext.eventTitle}`
+          : null,
         due_date: (() => {
-          const today = new Date()
-          const year = today.getFullYear()
-          const month = String(today.getMonth() + 1).padStart(2, '0')
-          const day = String(today.getDate()).padStart(2, '0')
-          return `${year}-${month}-${day}`
+          const today = new Date();
+          const year = today.getFullYear();
+          const month = String(today.getMonth() + 1).padStart(2, '0');
+          const day = String(today.getDate()).padStart(2, '0');
+          return `${year}-${month}-${day}`;
         })(),
-      })
+      });
 
       if (followUpContext) {
         window.ipcRenderer?.send('calendar:follow-up-created', {
           eventId: followUpContext.eventId,
           eventTitle: followUpContext.eventTitle,
           task: createdTask,
-        })
+        });
       }
-      closeWindow()
+      closeWindow();
     } catch (error) {
-      console.error('Failed to create task:', error)
-      setError('Failed to create task. Please try again.')
+      console.error('Failed to create task:', error);
+      setError('Failed to create task. Please try again.');
     } finally {
-      setIsSaving(false)
+      setIsSaving(false);
     }
-  }
+  };
 
   const saveQuickNote = async () => {
     if (!user || !activeWorkspaceId || !noteTitle.trim()) {
-      setError('Note title cannot be empty')
-      return
+      setError('Note title cannot be empty');
+      return;
     }
 
     try {
-      setIsSaving(true)
-      setError(null)
+      setIsSaving(true);
+      setError(null);
       await api.createNote(noteTitle.trim(), noteContent.trim(), {
         source: 'quick_capture',
-      })
-      closeWindow()
+      });
+      closeWindow();
     } catch (error) {
-      console.error('Failed to create note:', error)
-      setError('Failed to create note. Please try again.')
+      console.error('Failed to create note:', error);
+      setError('Failed to create note. Please try again.');
     } finally {
-      setIsSaving(false)
+      setIsSaving(false);
     }
-  }
+  };
 
   const saveQuickEvent = async () => {
     if (!user || !activeWorkspaceId || !eventTitle.trim()) {
-      setError('Event title cannot be empty')
-      return
+      setError('Event title cannot be empty');
+      return;
     }
 
     try {
-      setIsSaving(true)
-      setError(null)
-      const startDateTime = new Date(`${eventDate}T${eventTime}:00`)
-      const endDateTime = new Date(startDateTime.getTime() + 60 * 60 * 1000) // 1 hour later
+      setIsSaving(true);
+      setError(null);
+      const startDateTime = new Date(`${eventDate}T${eventTime}:00`);
+      const endDateTime = new Date(startDateTime.getTime() + 60 * 60 * 1000); // 1 hour later
 
       await api.createEvent({
         title: eventTitle.trim(),
         start_at: startDateTime.toISOString(),
         end_at: endDateTime.toISOString(),
-      })
-      closeWindow()
+      });
+      closeWindow();
     } catch (error) {
-      console.error('Failed to create event:', error)
-      setError('Failed to create event. Please try again.')
+      console.error('Failed to create event:', error);
+      setError('Failed to create event. Please try again.');
     } finally {
-      setIsSaving(false)
+      setIsSaving(false);
     }
-  }
+  };
 
   if (kind === 'quick-task') {
     return (
@@ -223,44 +235,52 @@ export const QuickCaptureWindow = ({ kind, context }: { kind: 'quick-task' | 'qu
           hasUnsavedChanges={hasUnsavedDraft}
           onCancel={() => setShowCloseGuardModal(false)}
           onCloseWithoutSaving={() => {
-            setShowCloseGuardModal(false)
-            closeWindowNow()
+            setShowCloseGuardModal(false);
+            closeWindowNow();
           }}
           onRetrySaveAndClose={() => {
-            void saveQuickTask()
+            void saveQuickTask();
           }}
         />
-        <ModuleWindowHeader title='Quick Task' icon={<Check size={16} />} onClose={closeWindow} onMinimize={minimizeWindow} onToggleFullscreen={toggleFullscreen} />
+        <ModuleWindowHeader
+          title="Quick Task"
+          icon={<Check size={16} />}
+          onClose={closeWindow}
+          onMinimize={minimizeWindow}
+          onToggleFullscreen={toggleFullscreen}
+        />
 
         {truncatedContext && (
-          <div className='border-b border-gray-200 bg-white px-4 py-2'>
-            <p className='text-[11px] text-gray-500'>From Calendar</p>
-            <p className='mt-0.5 text-xs font-medium text-gray-900 truncate whitespace-nowrap'>{truncatedContext}</p>
+          <div className="border-b border-gray-200 bg-white px-4 py-2">
+            <p className="text-[11px] text-gray-500">From Calendar</p>
+            <p className="mt-0.5 text-xs font-medium text-gray-900 truncate whitespace-nowrap">
+              {truncatedContext}
+            </p>
           </div>
         )}
 
         <div className={scrollAreaClassName}>
-          <div className='space-y-4'>
+          <div className="space-y-4">
             <div>
-              <label className='block text-xs font-medium text-gray-600 mb-1'>Task Title</label>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Task Title</label>
               <input
                 ref={taskInputRef}
-                type='text'
+                type="text"
                 value={taskTitle}
                 onChange={(e) => setTaskTitle(e.target.value)}
-                placeholder='What needs to be done?'
+                placeholder="What needs to be done?"
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault()
-                    void saveQuickTask()
+                    e.preventDefault();
+                    void saveQuickTask();
                   }
                 }}
-                className='w-full rounded-lg border border-gray-200 px-3 py-2 text-sm placeholder:text-gray-400 focus:border-gray-400 focus:bg-white focus:outline-none'
+                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm placeholder:text-gray-400 focus:border-gray-400 focus:bg-white focus:outline-none"
               />
             </div>
 
             {error && (
-              <div className='rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700'>
+              <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
                 {error}
               </div>
             )}
@@ -268,7 +288,7 @@ export const QuickCaptureWindow = ({ kind, context }: { kind: 'quick-task' | 'qu
         </div>
         {footer(() => void saveQuickTask(), Boolean(taskTitle.trim()))}
       </div>
-    )
+    );
   }
 
   if (kind === 'quick-note') {
@@ -280,49 +300,55 @@ export const QuickCaptureWindow = ({ kind, context }: { kind: 'quick-task' | 'qu
           hasUnsavedChanges={hasUnsavedDraft}
           onCancel={() => setShowCloseGuardModal(false)}
           onCloseWithoutSaving={() => {
-            setShowCloseGuardModal(false)
-            closeWindowNow()
+            setShowCloseGuardModal(false);
+            closeWindowNow();
           }}
           onRetrySaveAndClose={() => {
-            void saveQuickNote()
+            void saveQuickNote();
           }}
         />
-        <ModuleWindowHeader title='Quick Note' icon={<FileText size={16} />} onClose={closeWindow} onMinimize={minimizeWindow} onToggleFullscreen={toggleFullscreen} />
+        <ModuleWindowHeader
+          title="Quick Note"
+          icon={<FileText size={16} />}
+          onClose={closeWindow}
+          onMinimize={minimizeWindow}
+          onToggleFullscreen={toggleFullscreen}
+        />
 
         {contextText && (
-          <div className='border-b border-gray-200 bg-white px-4 py-2'>
-            <p className='text-[11px] text-gray-500'>From Calendar</p>
-            <p className='mt-0.5 text-xs font-medium text-gray-900 truncate'>{contextText}</p>
+          <div className="border-b border-gray-200 bg-white px-4 py-2">
+            <p className="text-[11px] text-gray-500">From Calendar</p>
+            <p className="mt-0.5 text-xs font-medium text-gray-900 truncate">{contextText}</p>
           </div>
         )}
 
         <div className={scrollAreaClassName}>
-          <div className='space-y-4'>
+          <div className="space-y-4">
             <div>
-              <label className='block text-xs font-medium text-gray-600 mb-1'>Note Title</label>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Note Title</label>
               <input
-                type='text'
+                type="text"
                 value={noteTitle}
                 onChange={(e) => setNoteTitle(e.target.value)}
-                placeholder='Note title...'
-                className='w-full rounded-lg border border-gray-200 px-3 py-2 text-sm placeholder:text-gray-400 focus:border-gray-400 focus:bg-white focus:outline-none'
+                placeholder="Note title..."
+                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm placeholder:text-gray-400 focus:border-gray-400 focus:bg-white focus:outline-none"
               />
             </div>
 
             <div>
-              <label className='block text-xs font-medium text-gray-600 mb-1'>Content</label>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Content</label>
               <textarea
                 ref={noteInputRef}
                 value={noteContent}
                 onChange={(e) => setNoteContent(e.target.value)}
-                placeholder='Add your notes here...'
+                placeholder="Add your notes here..."
                 rows={4}
-                className='w-full rounded-lg border border-gray-200 px-3 py-2 text-sm placeholder:text-gray-400 focus:border-gray-400 focus:bg-white focus:outline-none resize-none'
+                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm placeholder:text-gray-400 focus:border-gray-400 focus:bg-white focus:outline-none resize-none"
               />
             </div>
 
             {error && (
-              <div className='rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700'>
+              <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
                 {error}
               </div>
             )}
@@ -330,7 +356,7 @@ export const QuickCaptureWindow = ({ kind, context }: { kind: 'quick-task' | 'qu
         </div>
         {footer(() => void saveQuickNote(), Boolean(noteTitle.trim()))}
       </div>
-    )
+    );
   }
 
   if (kind === 'quick-event') {
@@ -342,59 +368,65 @@ export const QuickCaptureWindow = ({ kind, context }: { kind: 'quick-task' | 'qu
           hasUnsavedChanges={hasUnsavedDraft}
           onCancel={() => setShowCloseGuardModal(false)}
           onCloseWithoutSaving={() => {
-            setShowCloseGuardModal(false)
-            closeWindowNow()
+            setShowCloseGuardModal(false);
+            closeWindowNow();
           }}
           onRetrySaveAndClose={() => {
-            void saveQuickEvent()
+            void saveQuickEvent();
           }}
         />
-        <ModuleWindowHeader title='Quick Event' icon={<Calendar size={16} />} onClose={closeWindow} onMinimize={minimizeWindow} onToggleFullscreen={toggleFullscreen} />
+        <ModuleWindowHeader
+          title="Quick Event"
+          icon={<Calendar size={16} />}
+          onClose={closeWindow}
+          onMinimize={minimizeWindow}
+          onToggleFullscreen={toggleFullscreen}
+        />
 
         {contextText && (
-          <div className='border-b border-gray-200 bg-white px-4 py-2'>
-            <p className='text-[11px] text-gray-500'>From Calendar</p>
-            <p className='mt-0.5 text-xs font-medium text-gray-900 truncate'>{contextText}</p>
+          <div className="border-b border-gray-200 bg-white px-4 py-2">
+            <p className="text-[11px] text-gray-500">From Calendar</p>
+            <p className="mt-0.5 text-xs font-medium text-gray-900 truncate">{contextText}</p>
           </div>
         )}
 
         <div className={scrollAreaClassName}>
-          <div className='space-y-4'>
+          <div className="space-y-4">
             <div>
-              <label className='block text-xs font-medium text-gray-600 mb-1'>Event Title</label>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Event Title</label>
               <input
                 ref={eventInputRef}
-                type='text'
+                type="text"
                 value={eventTitle}
                 onChange={(e) => setEventTitle(e.target.value)}
-                placeholder='Event name...'
-                className='w-full rounded-lg border border-gray-200 px-3 py-2 text-sm placeholder:text-gray-400 focus:border-gray-400 focus:bg-white focus:outline-none'
+                placeholder="Event name..."
+                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm placeholder:text-gray-400 focus:border-gray-400 focus:bg-white focus:outline-none"
               />
             </div>
 
-            <div className='grid grid-cols-2 gap-3'>
+            <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className='block text-xs font-medium text-gray-600 mb-1'>Date</label>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Date</label>
                 <input
-                  type='date'
+                  type="date"
                   value={eventDate}
                   onChange={(e) => setEventDate(e.target.value)}
-                  className='w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-gray-400 focus:bg-white focus:outline-none'
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-gray-400 focus:bg-white focus:outline-none"
                 />
               </div>
               <div>
-                <label className='block text-xs font-medium text-gray-600 mb-1'>Time</label>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Time</label>
                 <input
-                  type='time'
+                  type="time"
                   value={eventTime}
                   onChange={(e) => setEventTime(e.target.value)}
-                  className='w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-gray-400 focus:bg-white focus:outline-none'
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-gray-400 focus:bg-white focus:outline-none"
                 />
               </div>
             </div>
 
             {error && (
-              <div className='rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700'>
+              <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
                 {error}
               </div>
             )}
@@ -402,8 +434,8 @@ export const QuickCaptureWindow = ({ kind, context }: { kind: 'quick-task' | 'qu
         </div>
         {footer(() => void saveQuickEvent(), Boolean(eventTitle.trim()))}
       </div>
-    )
+    );
   }
 
-  return null
-}
+  return null;
+};

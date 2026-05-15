@@ -3,11 +3,13 @@
 ## ✅ What's Done
 
 ### Backend (Supabase)
+
 - [x] All database tables created (users, workspaces, tasks, projects, etc.)
 - [x] Row Level Security (RLS) policies configured
 - [x] Database indexes for performance
 
 ### Frontend (App)
+
 - [x] Authentication service (`src/services/auth.ts`)
 - [x] useAuth hook for auth state management
 - [x] AuthContext provider for global auth state
@@ -20,17 +22,20 @@
 ## 📋 Your Checklist (Supabase End)
 
 ### Step 1: Enable Email Auth
+
 - [ ] Go to Supabase Dashboard
 - [ ] Click **Authentication** → **Providers**
 - [ ] Make sure **Email** is enabled (toggle ON)
 - [ ] Confirm SMTP is configured (check "Confirm Signup Required" setting)
 
 ### Step 2: Create the Auto-Signup Trigger
+
 - [ ] Go to **SQL Editor** in Supabase
 - [ ] Copy the trigger SQL from below ⬇️
 - [ ] Run it to create the auto-profile trigger
 
 **SQL Trigger to Run:**
+
 ```sql
 -- Trigger to create user profile on signup
 CREATE OR REPLACE FUNCTION public.handle_new_user()
@@ -38,11 +43,11 @@ RETURNS trigger AS $$
 BEGIN
   INSERT INTO public.users (id, email, full_name)
   VALUES (new.id, new.email, new.raw_user_meta_data->>'full_name');
-  
+
   -- Create default personal workspace
   INSERT INTO public.workspaces (owner_id, name, is_personal)
   VALUES (new.id, 'My Work', true);
-  
+
   RETURN new;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
@@ -55,6 +60,7 @@ CREATE TRIGGER on_auth_user_created
 ```
 
 ### Step 3: (Optional) Enable Google OAuth
+
 - [ ] Go to **Authentication** → **Providers**
 - [ ] Enable **Google**
 - [ ] Add Google OAuth credentials (if you have them)
@@ -70,6 +76,7 @@ npm run dev
 ```
 
 ### Test Flow:
+
 1. **Sign up** with email + password
 2. User profile auto-created in `users` table
 3. Personal workspace "My Work" auto-created
@@ -83,6 +90,7 @@ npm run dev
 ## 🔧 What Happens Behind the Scenes
 
 ### On Sign Up:
+
 1. User enters email, password, full name
 2. Supabase Auth creates auth user
 3. Trigger fires → creates profile in `users` table
@@ -90,12 +98,14 @@ npm run dev
 5. App detects auth change → shows dashboard
 
 ### On Sign In:
+
 1. User enters email + password
 2. Supabase returns session token
 3. App loads user data from `users` table
 4. Shows dashboard with personalized message
 
 ### On Sign Out:
+
 1. Session cleared from Supabase
 2. User state set to null
 3. Redirects to login form
@@ -116,14 +126,17 @@ npm run dev
 ## ⚠️ Troubleshooting
 
 **Q: Sign up doesn't work?**
+
 - Check Supabase Auth is enabled
 - Check trigger was created successfully
 
 **Q: User profile not created?**
+
 - Verify trigger exists in Supabase
 - Check Supabase logs for trigger errors
 
 **Q: Can't see tasks/projects?**
+
 - Make sure personal workspace was created
 - Check RLS policies are correctly set
 

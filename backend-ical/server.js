@@ -170,10 +170,7 @@ app.post('/sync-tokens', async (req, res) => {
   }
 
   try {
-    await supabase
-      .from('calendar_sync_tokens')
-      .delete()
-      .eq('user_id', userId);
+    await supabase.from('calendar_sync_tokens').delete().eq('user_id', userId);
 
     const token = crypto.randomBytes(24).toString('hex');
 

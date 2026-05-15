@@ -1,176 +1,196 @@
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
-import { useAuthContext } from './AuthContext'
-import { DEFAULT_API_URL } from '../config/runtime'
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { useAuthContext } from './AuthContext';
+import { DEFAULT_API_URL } from '../config/runtime';
 
-type WorkspaceRole = 'owner' | 'admin' | 'member' | 'viewer'
+type WorkspaceRole = 'owner' | 'admin' | 'member' | 'viewer';
 
 export type WorkspaceSummary = {
-  id: string
-  name: string
-  description: string | null
-  is_personal: boolean
-  color: string | null
-  owner_id: string
-  created_at: string
-  updated_at: string
-  role: WorkspaceRole
-}
+  id: string;
+  name: string;
+  description: string | null;
+  is_personal: boolean;
+  color: string | null;
+  owner_id: string;
+  created_at: string;
+  updated_at: string;
+  role: WorkspaceRole;
+};
 
 type WorkspaceContextType = {
-  activeWorkspaceId: string | null
-  activeWorkspace: WorkspaceSummary | null
-  workspaces: WorkspaceSummary[]
-  isLoading: boolean
-  error: string | null
-  setActiveWorkspace: (workspaceId: string) => Promise<void>
-  refreshWorkspaces: () => Promise<void>
-}
+  activeWorkspaceId: string | null;
+  activeWorkspace: WorkspaceSummary | null;
+  workspaces: WorkspaceSummary[];
+  isLoading: boolean;
+  error: string | null;
+  setActiveWorkspace: (workspaceId: string) => Promise<void>;
+  refreshWorkspaces: () => Promise<void>;
+};
 
-const WorkspaceContext = createContext<WorkspaceContextType | undefined>(undefined)
+const WorkspaceContext = createContext<WorkspaceContextType | undefined>(undefined);
 
-const API_URL = import.meta.env.VITE_API_URL?.trim() || DEFAULT_API_URL
-const WORKSPACE_STORAGE_KEY = 'ledger:active-workspace-id'
+const API_URL = import.meta.env.VITE_API_URL?.trim() || DEFAULT_API_URL;
+const WORKSPACE_STORAGE_KEY = 'ledger:active-workspace-id';
 
 export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { session, user } = useAuthContext()
-  const [workspaces, setWorkspaces] = useState<WorkspaceSummary[]>([])
+  const { session, user } = useAuthContext();
+  const [workspaces, setWorkspaces] = useState<WorkspaceSummary[]>([]);
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(() => {
-    return window.localStorage.getItem(WORKSPACE_STORAGE_KEY)
-  })
-  const [isLoading, setIsLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+    return window.localStorage.getItem(WORKSPACE_STORAGE_KEY);
+  });
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const authedRequest = useCallback(async (path: string, options: RequestInit = {}) => {
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-      ...(options.headers as Record<string, string>),
-    }
+  const authedRequest = useCallback(
+    async (path: string, options: RequestInit = {}) => {
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        ...(options.headers as Record<string, string>),
+      };
 
-    if (session?.access_token) {
-      headers.Authorization = `Bearer ${session.access_token}`
-    }
+      if (session?.access_token) {
+        headers.Authorization = `Bearer ${session.access_token}`;
+      }
 
-    const response = await fetch(`${API_URL}${path}`, {
-      ...options,
-      headers,
-    })
+      const response = await fetch(`${API_URL}${path}`, {
+        ...options,
+        headers,
+      });
 
-    if (!response.ok) {
-      const body = await response.json().catch(() => ({}))
-      throw new Error(body?.error || 'Workspace request failed')
-    }
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        throw new Error(body?.error || 'Workspace request failed');
+      }
 
-    return response.json()
-  }, [session?.access_token])
+      return response.json();
+    },
+    [session?.access_token]
+  );
 
   const refreshWorkspaces = useCallback(async () => {
     if (!session?.access_token || !user) {
-      setWorkspaces([])
-      setActiveWorkspaceId(null)
-      setIsLoading(false)
-      return
+      setWorkspaces([]);
+      setActiveWorkspaceId(null);
+      setIsLoading(false);
+      return;
     }
 
-    setIsLoading(true)
-    setError(null)
+    setIsLoading(true);
+    setError(null);
 
     try {
       const [workspaceRows, active] = await Promise.all([
         authedRequest('/api/workspaces'),
         authedRequest('/api/workspaces/active'),
-      ])
+      ]);
 
-      const rows = Array.isArray(workspaceRows) ? (workspaceRows as WorkspaceSummary[]) : []
-      const resolvedActiveWorkspaceId = String((active as { workspace_id?: string })?.workspace_id ?? '') || null
+      const rows = Array.isArray(workspaceRows) ? (workspaceRows as WorkspaceSummary[]) : [];
+      const resolvedActiveWorkspaceId =
+        String((active as { workspace_id?: string })?.workspace_id ?? '') || null;
 
-      setWorkspaces(rows)
-      setActiveWorkspaceId(resolvedActiveWorkspaceId)
+      setWorkspaces(rows);
+      setActiveWorkspaceId(resolvedActiveWorkspaceId);
 
       if (resolvedActiveWorkspaceId) {
-        window.localStorage.setItem(WORKSPACE_STORAGE_KEY, resolvedActiveWorkspaceId)
+        window.localStorage.setItem(WORKSPACE_STORAGE_KEY, resolvedActiveWorkspaceId);
       } else {
-        window.localStorage.removeItem(WORKSPACE_STORAGE_KEY)
+        window.localStorage.removeItem(WORKSPACE_STORAGE_KEY);
       }
     } catch (fetchError) {
-      setError(fetchError instanceof Error ? fetchError.message : 'Could not load workspaces')
+      setError(fetchError instanceof Error ? fetchError.message : 'Could not load workspaces');
     } finally {
-      setIsLoading(false)
+      setIsLoading(false);
     }
-  }, [authedRequest, session?.access_token, user])
+  }, [authedRequest, session?.access_token, user]);
 
   useEffect(() => {
-    void refreshWorkspaces()
-  }, [session?.access_token, user])
+    void refreshWorkspaces();
+  }, [session?.access_token, user]);
 
   useEffect(() => {
     const onStorage = (event: StorageEvent) => {
-      if (event.key !== WORKSPACE_STORAGE_KEY) return
-      const nextWorkspaceId = event.newValue ? String(event.newValue).trim() : null
-      setActiveWorkspaceId(nextWorkspaceId || null)
-    }
+      if (event.key !== WORKSPACE_STORAGE_KEY) return;
+      const nextWorkspaceId = event.newValue ? String(event.newValue).trim() : null;
+      setActiveWorkspaceId(nextWorkspaceId || null);
+    };
 
-    window.addEventListener('storage', onStorage)
-    return () => window.removeEventListener('storage', onStorage)
-  }, [])
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, []);
 
   useEffect(() => {
     // Keep workspace in sync across Electron windows where StorageEvent propagation
     // can be inconsistent depending on process/webview boundaries.
     const syncFromStorage = () => {
-      const stored = window.localStorage.getItem(WORKSPACE_STORAGE_KEY)
-      const normalized = stored ? String(stored).trim() : null
-      const next = normalized || null
+      const stored = window.localStorage.getItem(WORKSPACE_STORAGE_KEY);
+      const normalized = stored ? String(stored).trim() : null;
+      const next = normalized || null;
       if (next !== activeWorkspaceId) {
-        setActiveWorkspaceId(next)
+        setActiveWorkspaceId(next);
       }
-    }
+    };
 
-    const timer = window.setInterval(syncFromStorage, 500)
-    return () => window.clearInterval(timer)
-  }, [activeWorkspaceId])
+    const timer = window.setInterval(syncFromStorage, 500);
+    return () => window.clearInterval(timer);
+  }, [activeWorkspaceId]);
 
-  const setActiveWorkspace = useCallback(async (workspaceId: string) => {
-    setError(null)
+  const setActiveWorkspace = useCallback(
+    async (workspaceId: string) => {
+      setError(null);
 
-    const payload = await authedRequest('/api/workspaces/active', {
-      method: 'PATCH',
-      body: JSON.stringify({ workspace_id: workspaceId }),
-    }) as { workspace_id?: string }
+      const payload = (await authedRequest('/api/workspaces/active', {
+        method: 'PATCH',
+        body: JSON.stringify({ workspace_id: workspaceId }),
+      })) as { workspace_id?: string };
 
-    const nextWorkspaceId = String(payload?.workspace_id ?? '').trim()
-    if (!nextWorkspaceId) {
-      throw new Error('Invalid workspace response')
-    }
+      const nextWorkspaceId = String(payload?.workspace_id ?? '').trim();
+      if (!nextWorkspaceId) {
+        throw new Error('Invalid workspace response');
+      }
 
-    setActiveWorkspaceId(nextWorkspaceId)
-    window.localStorage.setItem(WORKSPACE_STORAGE_KEY, nextWorkspaceId)
-    window.dispatchEvent(new CustomEvent('ledger:workspace-changed', { detail: { workspaceId: nextWorkspaceId } }))
-  }, [authedRequest])
+      setActiveWorkspaceId(nextWorkspaceId);
+      window.localStorage.setItem(WORKSPACE_STORAGE_KEY, nextWorkspaceId);
+      window.dispatchEvent(
+        new CustomEvent('ledger:workspace-changed', { detail: { workspaceId: nextWorkspaceId } })
+      );
+    },
+    [authedRequest]
+  );
 
   const activeWorkspace = useMemo(() => {
-    if (!activeWorkspaceId) return null
-    return workspaces.find((workspace) => workspace.id === activeWorkspaceId) ?? null
-  }, [activeWorkspaceId, workspaces])
+    if (!activeWorkspaceId) return null;
+    return workspaces.find((workspace) => workspace.id === activeWorkspaceId) ?? null;
+  }, [activeWorkspaceId, workspaces]);
 
-  const value = useMemo(() => ({
-    activeWorkspaceId,
-    activeWorkspace,
-    workspaces,
-    isLoading,
-    error,
-    setActiveWorkspace,
-    refreshWorkspaces,
-  }), [activeWorkspaceId, activeWorkspace, workspaces, isLoading, error, setActiveWorkspace, refreshWorkspaces])
+  const value = useMemo(
+    () => ({
+      activeWorkspaceId,
+      activeWorkspace,
+      workspaces,
+      isLoading,
+      error,
+      setActiveWorkspace,
+      refreshWorkspaces,
+    }),
+    [
+      activeWorkspaceId,
+      activeWorkspace,
+      workspaces,
+      isLoading,
+      error,
+      setActiveWorkspace,
+      refreshWorkspaces,
+    ]
+  );
 
-  return <WorkspaceContext.Provider value={value}>{children}</WorkspaceContext.Provider>
-}
+  return <WorkspaceContext.Provider value={value}>{children}</WorkspaceContext.Provider>;
+};
 
 export const useWorkspaceContext = () => {
-  const context = useContext(WorkspaceContext)
+  const context = useContext(WorkspaceContext);
   if (!context) {
-    throw new Error('useWorkspaceContext must be used within WorkspaceProvider')
+    throw new Error('useWorkspaceContext must be used within WorkspaceProvider');
   }
-  return context
-}
+  return context;
+};
 
-export default WorkspaceContext
+export default WorkspaceContext;

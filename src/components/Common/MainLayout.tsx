@@ -1,16 +1,16 @@
-import { ReactNode } from 'react'
-import { useSidebar } from '../../context/SidebarContext'
-import { SidebarContainer } from '../Sidebar/SidebarContainer'
+import { ReactNode } from 'react';
+import { useSidebar } from '../../context/SidebarContext';
+import { SidebarContainer } from '../Sidebar/SidebarContainer';
 
 interface MainLayoutProps {
-  children: ReactNode
+  children: ReactNode;
 }
 
 export const MainLayout = ({ children }: MainLayoutProps) => {
-  const { state, isVisible, position } = useSidebar()
-  const isHorizontal = position === 'top' || position === 'bottom'
-  const isFloating = position === 'floating'
-  const shouldShowSidebar = state !== 'fullscreen' && isVisible
+  const { state, isVisible, position } = useSidebar();
+  const isHorizontal = position === 'top' || position === 'bottom';
+  const isFloating = position === 'floating';
+  const shouldShowSidebar = state !== 'fullscreen' && isVisible;
 
   const childrenNode = (
     <div
@@ -20,15 +20,11 @@ export const MainLayout = ({ children }: MainLayoutProps) => {
     >
       {children}
     </div>
-  )
+  );
 
   // Fullscreen mode: no sidebar
   if (state === 'fullscreen') {
-    return (
-      <div className="relative h-screen overflow-hidden bg-transparent">
-        {childrenNode}
-      </div>
-    )
+    return <div className="relative h-screen overflow-hidden bg-transparent">{childrenNode}</div>;
   }
 
   // Floating mode: sidebar floats above everything
@@ -37,14 +33,18 @@ export const MainLayout = ({ children }: MainLayoutProps) => {
       <div className="relative h-screen overflow-hidden bg-transparent">
         {shouldShowSidebar && <SidebarContainer />}
       </div>
-    )
+    );
   }
 
   const sidebarNode = shouldShowSidebar ? (
-    <div className={`${isHorizontal ? 'w-full' : ''} shrink-0 ${position === 'left' || position === 'top' ? 'order-1' : 'order-2'}`}>
+    <div
+      className={`${isHorizontal ? 'w-full' : ''} shrink-0 ${
+        position === 'left' || position === 'top' ? 'order-1' : 'order-2'
+      }`}
+    >
       <SidebarContainer />
     </div>
-  ) : null
+  ) : null;
 
   // Docked positions
   if (isHorizontal) {
@@ -54,7 +54,7 @@ export const MainLayout = ({ children }: MainLayoutProps) => {
         {sidebarNode}
         {childrenNode}
       </div>
-    )
+    );
   } else {
     // Left or right position (vertical layout)
     return (
@@ -62,6 +62,6 @@ export const MainLayout = ({ children }: MainLayoutProps) => {
         {sidebarNode}
         {childrenNode}
       </div>
-    )
+    );
   }
-}
+};

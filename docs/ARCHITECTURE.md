@@ -3,12 +3,15 @@
 ## 1. HIGH-LEVEL OVERVIEW
 
 ### Vision
+
 A macOS Electron app that lives as a persistent sidebar widget on the desktop, expandable to a full dashboard. Users can track work (internships/jobs), school, and personal tasks with time tracking, scheduling, and progress reports.
 
 ### App Name
+
 **Ledger** - A reference to accounting ledgers, tracking your work like a ledger tracks transactions.
 
 ### Tech Stack
+
 - **Frontend**: Electron + React + TypeScript + Tailwind CSS (macOS native styling)
 - **Backend**: Supabase (PostgreSQL + Auth + Real-time Sync)
 - **Database**: PostgreSQL (via Supabase)
@@ -22,6 +25,7 @@ A macOS Electron app that lives as a persistent sidebar widget on the desktop, e
 ## 2. DESIGN SYSTEM
 
 ### Color Palette
+
 ```
 Primary:    #007AFF (macOS blue)
 Secondary:  #5AC8FA (lighter blue)
@@ -34,12 +38,14 @@ Text:       #000000 / #FFFFFF (light/dark mode)
 ```
 
 ### Typography
+
 - Headline: SF Pro Display (24px, bold)
 - Subheading: SF Pro Display (18px, semibold)
 - Body: SF Pro Text (14px, regular)
 - Caption: SF Pro Text (12px, regular)
 
 ### Component Library
+
 - [ ] Button (primary, secondary, ghost, danger)
 - [ ] Input (text, number, time, date, select)
 - [ ] Card (task, project, activity)
@@ -59,6 +65,7 @@ Text:       #000000 / #FFFFFF (light/dark mode)
 ### Core Tables
 
 #### `users`
+
 ```sql
 id: UUID (primary key)
 email: VARCHAR (unique)
@@ -69,6 +76,7 @@ updated_at: TIMESTAMP
 ```
 
 #### `workspaces` (for team mode)
+
 ```sql
 id: UUID
 name: VARCHAR
@@ -79,6 +87,7 @@ updated_at: TIMESTAMP
 ```
 
 #### `workspace_members`
+
 ```sql
 id: UUID
 workspace_id: UUID (fk: workspaces.id)
@@ -88,6 +97,7 @@ joined_at: TIMESTAMP
 ```
 
 #### `categories`
+
 ```sql
 id: UUID
 workspace_id: UUID (fk: workspaces.id)
@@ -99,6 +109,7 @@ created_at: TIMESTAMP
 ```
 
 #### `projects`
+
 ```sql
 id: UUID
 workspace_id: UUID (fk: workspaces.id)
@@ -114,6 +125,7 @@ updated_at: TIMESTAMP
 ```
 
 #### `tasks`
+
 ```sql
 id: UUID
 workspace_id: UUID (fk: workspaces.id)
@@ -131,6 +143,7 @@ updated_at: TIMESTAMP
 ```
 
 #### `time_entries`
+
 ```sql
 id: UUID
 workspace_id: UUID
@@ -147,6 +160,7 @@ updated_at: TIMESTAMP
 ```
 
 #### `goals`
+
 ```sql
 id: UUID
 workspace_id: UUID
@@ -161,6 +175,7 @@ created_at: TIMESTAMP
 ```
 
 #### `notes` (Journal entries)
+
 ```sql
 id: UUID
 workspace_id: UUID
@@ -178,16 +193,19 @@ updated_at: TIMESTAMP
 ## 4. BACKEND (Supabase)
 
 ### Authentication
+
 - Email/password signup + login
 - Google OAuth (optional)
 - Session management via JWT (Supabase handles)
 
 ### Row Level Security (RLS) Policies
+
 - Users can only see their own workspaces
 - Team members can see shared workspace data
 - Personal workspace is private by default
 
 ### Real-time Features (Supabase Realtime)
+
 - Live task updates in team mode
 - Real-time time tracking
 - Goal progress updates
@@ -197,6 +215,7 @@ updated_at: TIMESTAMP
 ## 5. FRONTEND ARCHITECTURE
 
 ### Directory Structure
+
 ```
 src/
 ├── components/
@@ -258,6 +277,7 @@ src/
 ```
 
 ### Key Contexts
+
 - **AuthContext**: User auth state, login/logout
 - **WorkspaceContext**: Current workspace, workspace members
 - **AppContext**: UI state (sidebar expanded?, current view?, etc.)
@@ -267,6 +287,7 @@ src/
 ## 6. WIDGET/SIDEBAR MECHANICS
 
 ### State Flow
+
 ```
 Minimized (30px bar on left)
 ├─ Shows: date, quick stats (tasks due today, time logged)
@@ -286,6 +307,7 @@ Fully expanded (Full app window)
 ```
 
 ### Auto-hide Behavior
+
 - Always-on-top toggle in settings
 - Snap to left side of screen
 - Optional minimize to taskbar on focus loss
@@ -295,6 +317,7 @@ Fully expanded (Full app window)
 ## 7. CORE FEATURES (MVP → v2)
 
 ### MVP (Phase 1)
+
 - [ ] User auth (signup/login)
 - [ ] Personal workspace setup
 - [ ] Basic task CRUD
@@ -303,6 +326,7 @@ Fully expanded (Full app window)
 - [ ] Sidebar widget (compact + semi-expanded views)
 
 ### Phase 2
+
 - [ ] Projects organization
 - [ ] Categories
 - [ ] Recurring tasks
@@ -311,6 +335,7 @@ Fully expanded (Full app window)
 - [ ] Journal/notes
 
 ### Phase 3
+
 - [ ] Team workspaces
 - [ ] Task sharing & assignment
 - [ ] Goals tracking
@@ -322,18 +347,21 @@ Fully expanded (Full app window)
 ## 8. SECURITY CONSIDERATIONS
 
 ### Data Protection
+
 - All data encrypted in transit (HTTPS/TLS)
 - Supabase handles password hashing (bcrypt)
 - JWT tokens expire after 1 hour (Supabase default)
 - Refresh token stored securely in electron-store
 
 ### Privacy
+
 - Personal workspace data never shared by default
 - Users must explicitly invite others to team workspace
 - RLS policies enforce workspace isolation
 - No tracking/analytics without consent
 
 ### Best Practices
+
 - No sensitive data (passwords, tokens) logged to console
 - Secure storage for auth tokens (electron-store with encryption)
 - CORS properly configured on Supabase
@@ -344,6 +372,7 @@ Fully expanded (Full app window)
 ## 9. DEVELOPMENT ROADMAP
 
 ### Week 1: Setup & Auth ✅ (In Progress)
+
 - [x] Electron + React scaffold
 - [x] Tailwind CSS setup
 - [x] Supabase client configured
@@ -351,21 +380,25 @@ Fully expanded (Full app window)
 - [ ] Basic routing
 
 ### Week 2: Sidebar & UI System
+
 - [ ] Design system components
 - [ ] Sidebar toggle logic
 - [ ] Responsive widget states
 
 ### Week 3: Tasks & Core Features
+
 - [ ] Task CRUD
 - [ ] Task list UI
 - [ ] Basic time tracking
 
 ### Week 4: Dashboard & Reports
+
 - [ ] Dashboard layout
 - [ ] Daily/weekly overview
 - [ ] Reports generation
 
 ### Week 5+: Polish & Advanced Features
+
 - [ ] User testing
 - [ ] Performance optimization
 - [ ] Team mode setup
@@ -376,15 +409,18 @@ Fully expanded (Full app window)
 ## 10. DEPLOYMENT & DISTRIBUTION
 
 ### macOS App Distribution
+
 - Option 1: Direct app (.dmg) distribution from website
 - Option 2: Mac App Store
 - Option 3: Homebrew cask
 
 ### Backend (Supabase)
+
 - Already hosted on Supabase cloud
 - No deployment needed (managed service)
 
 ### Versioning & Updates
+
 - Use electron-updater for auto-updates
 - Semantic versioning (v1.0.0, etc.)
 
@@ -406,6 +442,7 @@ Fully expanded (Full app window)
 🔄 Auth system implementation
 
 **Next:**
+
 - Set up Supabase project + SQL migrations
 - Build auth flow
 - Create sidebar widget

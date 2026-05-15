@@ -36,6 +36,7 @@ ledger/
 ```
 
 ## Tech Stack
+
 - **Frontend**: React 18 + TypeScript + Vite
 - **Styling**: Tailwind CSS
 - **Desktop**: Electron (macOS app)
@@ -46,15 +47,18 @@ ledger/
 ## Next Steps
 
 ### 1. Set Up Environment Variables
+
 ```bash
 cp .env.example .env.local
 ```
 
 Then add your Supabase credentials:
+
 - `VITE_SUPABASE_URL` - Your project URL
 - `VITE_SUPABASE_ANON_KEY` - Your anon key
 
 ### 2. (On Your End) Set Up Supabase
+
 1. Create a new Supabase project at https://supabase.com
 2. Run the SQL migrations (we'll create these next)
 3. Configure RLS policies
@@ -64,6 +68,7 @@ Then add your Supabase credentials:
    ```
 
 ### 3. Test the Dev Environment
+
 ```bash
 npm run dev
 ```
@@ -73,16 +78,19 @@ The app should open with Vite dev server + Electron.
 ## File Reference
 
 ### Supabase Configuration
+
 - **Client**: `src/services/supabase.ts`
 - **Types**: `src/types/database.ts`
 - **Env**: `.env.local` (not tracked, see `.env.example`)
 
 ### Design System
+
 - **Colors**: `tailwind.config.ts` (macOS colors)
 - **Typography**: SF Pro (Display/Text)
 - **Base CSS**: `src/index.css`
 
 ### App Entry Points
+
 - **Electron Main**: `electron/main.ts`
 - **React App**: `src/App.tsx`
 - **Styles**: `src/index.css`

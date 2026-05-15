@@ -1,4 +1,4 @@
-import type { Config } from 'tailwindcss'
+import type { Config } from 'tailwindcss';
 
 export default {
   content: ['./index.html', './src/**/*.{js,ts,jsx,tsx}'],
@@ -27,12 +27,10 @@ export default {
         xl: '24px',
       },
       backgroundColor: {
-        'glass': 'rgba(255, 255, 255, 0.7)',
+        glass: 'rgba(255, 255, 255, 0.7)',
         'glass-dark': 'rgba(0, 0, 0, 0.4)',
       },
     },
   },
-  plugins: [
-    require('@tailwindcss/forms'),
-  ],
-} satisfies Config
+  plugins: [require('@tailwindcss/forms')],
+} satisfies Config;

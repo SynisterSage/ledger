@@ -5,8 +5,8 @@ export const SkeletonLoader = () => {
       <div className="h-4 bg-gray-200 rounded w-full"></div>
       <div className="h-4 bg-gray-200 rounded w-5/6"></div>
     </div>
-  )
-}
+  );
+};
 
 export const SkeletonCard = () => {
   return (
@@ -15,8 +15,8 @@ export const SkeletonCard = () => {
       <div className="h-3 bg-gray-100 rounded w-full"></div>
       <div className="h-2 bg-gray-100 rounded w-1/2"></div>
     </div>
-  )
-}
+  );
+};
 
 export const SkeletonList = ({ count = 3 }) => {
   return (
@@ -25,8 +25,8 @@ export const SkeletonList = ({ count = 3 }) => {
         <SkeletonCard key={i} />
       ))}
     </div>
-  )
-}
+  );
+};
 
 // Stats card skeleton for dashboard
 export const SkeletonStatCard = () => {
@@ -39,8 +39,8 @@ export const SkeletonStatCard = () => {
       <div className="mt-4 h-8 bg-gray-200 rounded w-16"></div>
       <div className="mt-1 h-3 bg-gray-100 rounded w-32"></div>
     </div>
-  )
-}
+  );
+};
 
 export const SkeletonStatCards = ({ count = 4 }) => {
   return (
@@ -49,8 +49,8 @@ export const SkeletonStatCards = ({ count = 4 }) => {
         <SkeletonStatCard key={i} />
       ))}
     </div>
-  )
-}
+  );
+};
 
 // Project card skeleton
 export const SkeletonProjectCard = () => {
@@ -65,8 +65,8 @@ export const SkeletonProjectCard = () => {
       </div>
       <div className="mt-3 h-2 rounded-full bg-gray-200"></div>
     </div>
-  )
-}
+  );
+};
 
 // Note/Event card skeleton
 export const SkeletonNoteCard = () => {
@@ -81,8 +81,8 @@ export const SkeletonNoteCard = () => {
         <div className="h-3 bg-gray-200 rounded w-12"></div>
       </div>
     </div>
-  )
-}
+  );
+};
 
 // Task item skeleton (for focus items)
 export const SkeletonTaskItem = () => {
@@ -94,5 +94,5 @@ export const SkeletonTaskItem = () => {
       </div>
       <div className="mt-0.5 h-5 w-5 shrink-0 bg-gray-200 rounded"></div>
     </div>
-  )
-}
+  );
+};

@@ -1,15 +1,15 @@
-import { useEffect } from 'react'
+import { useEffect } from 'react';
 
 type CloseGuardModalProps = {
-  isOpen: boolean
-  isSaving?: boolean
-  hasUnsavedChanges?: boolean
-  title?: string
-  message?: string
-  onCancel: () => void
-  onRetrySaveAndClose?: () => void
-  onCloseWithoutSaving?: () => void
-}
+  isOpen: boolean;
+  isSaving?: boolean;
+  hasUnsavedChanges?: boolean;
+  title?: string;
+  message?: string;
+  onCancel: () => void;
+  onRetrySaveAndClose?: () => void;
+  onCloseWithoutSaving?: () => void;
+};
 
 export const CloseGuardModal = ({
   isOpen,
@@ -22,25 +22,28 @@ export const CloseGuardModal = ({
   onCloseWithoutSaving,
 }: CloseGuardModalProps) => {
   useEffect(() => {
-    if (!isOpen) return
+    if (!isOpen) return;
     const onEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onCancel()
-    }
-    window.addEventListener('keydown', onEscape)
-    return () => window.removeEventListener('keydown', onEscape)
-  }, [isOpen, onCancel])
+      if (event.key === 'Escape') onCancel();
+    };
+    window.addEventListener('keydown', onEscape);
+    return () => window.removeEventListener('keydown', onEscape);
+  }, [isOpen, onCancel]);
 
-  if (!isOpen) return null
+  if (!isOpen) return null;
 
-  const resolvedTitle = title ?? (isSaving ? 'Saving in progress' : 'Unsaved changes')
+  const resolvedTitle = title ?? (isSaving ? 'Saving in progress' : 'Unsaved changes');
   const resolvedMessage =
     message ??
     (isSaving
       ? 'Ledger is still saving your changes. Please wait before closing this window.'
-      : 'Your latest changes have not been saved yet.')
+      : 'Your latest changes have not been saved yet.');
 
   return (
-    <div className="fixed inset-0 z-[180] flex items-center justify-center bg-gray-900/20 p-4" onClick={onCancel}>
+    <div
+      className="fixed inset-0 z-[180] flex items-center justify-center bg-gray-900/20 p-4"
+      onClick={onCancel}
+    >
       <div
         className="w-full max-w-md rounded-2xl border border-gray-200 bg-white p-5 shadow-xl"
         onClick={(event) => event.stopPropagation()}
@@ -77,5 +80,5 @@ export const CloseGuardModal = ({
         </div>
       </div>
     </div>
-  )
-}
+  );
+};

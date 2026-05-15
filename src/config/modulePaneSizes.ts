@@ -1,16 +1,16 @@
 export type PaneSizeSpec = {
-  min: number
-  max: number
-  defaultWidth: number
-  compactWidth: number
-  compactBreakpoint: number
-  compactThreshold: number
-}
+  min: number;
+  max: number;
+  defaultWidth: number;
+  compactWidth: number;
+  compactBreakpoint: number;
+  compactThreshold: number;
+};
 
 export type ModulePaneSizing = {
-  left: PaneSizeSpec
-  right: PaneSizeSpec
-}
+  left: PaneSizeSpec;
+  right: PaneSizeSpec;
+};
 
 export const modulePaneSizing: Record<'calendar' | 'notes' | 'projects', ModulePaneSizing> = {
   calendar: {
@@ -67,15 +67,15 @@ export const modulePaneSizing: Record<'calendar' | 'notes' | 'projects', ModuleP
       compactThreshold: 264,
     },
   },
-}
+};
 
 export const getPaneWidthForViewport = (viewportWidth: number, spec: PaneSizeSpec) =>
-  viewportWidth < spec.compactBreakpoint ? spec.compactWidth : spec.defaultWidth
+  viewportWidth < spec.compactBreakpoint ? spec.compactWidth : spec.defaultWidth;
 
 export const clampPaneWidth = (value: number, viewportWidth: number, spec: PaneSizeSpec) => {
-  const maxWidth = viewportWidth < spec.compactBreakpoint ? spec.compactWidth : spec.max
-  return Math.max(spec.min, Math.min(maxWidth, value))
-}
+  const maxWidth = viewportWidth < spec.compactBreakpoint ? spec.compactWidth : spec.max;
+  return Math.max(spec.min, Math.min(maxWidth, value));
+};
 
 export const isCompactPaneLayout = (viewportWidth: number, spec: PaneSizeSpec) =>
-  viewportWidth < spec.compactBreakpoint
+  viewportWidth < spec.compactBreakpoint;

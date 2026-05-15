@@ -1,9 +1,9 @@
-import { supabase, supabaseConfigError } from './supabase'
-import type { AuthChangeEvent, AuthError, Session, User } from '@supabase/supabase-js'
+import { supabase, supabaseConfigError } from './supabase';
+import type { AuthChangeEvent, AuthError, Session, User } from '@supabase/supabase-js';
 
 export interface AuthResponse {
-  data: { user: User | null; session: Session | null } | null
-  error: AuthError | null
+  data: { user: User | null; session: Session | null } | null;
+  error: AuthError | null;
 }
 
 export const authService = {
@@ -19,8 +19,8 @@ export const authService = {
           full_name: fullName,
         },
       },
-    })
-    return { data, error }
+    });
+    return { data, error };
   },
 
   // Sign in with email and password
@@ -28,8 +28,8 @@ export const authService = {
     const { data, error } = await supabase.auth.signInWithPassword({
       email,
       password,
-    })
-    return { data, error }
+    });
+    return { data, error };
   },
 
   // Sign in with OAuth (Google, GitHub, etc.)
@@ -39,40 +39,40 @@ export const authService = {
       options: {
         redirectTo: `${window.location.origin}/auth/callback`,
       },
-    })
-    return { data, error }
+    });
+    return { data, error };
   },
 
   // Sign out
   async signOut() {
-    const { error } = await supabase.auth.signOut()
-    return { error }
+    const { error } = await supabase.auth.signOut();
+    return { error };
   },
 
   // Get current session
   async getSession(): Promise<Session | null> {
-    const { data } = await supabase.auth.getSession()
-    return data.session
+    const { data } = await supabase.auth.getSession();
+    return data.session;
   },
 
   // Get current user
   async getUser(): Promise<{ user: User | null; error: AuthError | null }> {
-    const { data, error } = await supabase.auth.getUser()
-    return { user: data.user, error }
+    const { data, error } = await supabase.auth.getUser();
+    return { user: data.user, error };
   },
 
   // Reset password
   async resetPassword(email: string) {
-    const { data, error } = await supabase.auth.resetPasswordForEmail(email)
-    return { data, error }
+    const { data, error } = await supabase.auth.resetPasswordForEmail(email);
+    return { data, error };
   },
 
   // Update password
   async updatePassword(newPassword: string) {
     const { data, error } = await supabase.auth.updateUser({
       password: newPassword,
-    })
-    return { data, error }
+    });
+    return { data, error };
   },
 
   // Update profile metadata
@@ -81,16 +81,16 @@ export const authService = {
       data: {
         full_name: fullName ?? '',
       },
-    })
-    return { data, error }
+    });
+    return { data, error };
   },
 
   // Listen to auth changes
   onAuthStateChange(callback: (event: AuthChangeEvent, session: Session | null) => void) {
     return supabase.auth.onAuthStateChange((_event, session) => {
-      callback(_event, session)
-    }).data?.subscription
+      callback(_event, session);
+    }).data?.subscription;
   },
-}
+};
 
-export default authService
+export default authService;

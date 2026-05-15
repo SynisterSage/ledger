@@ -1,0 +1,14 @@
+node_modules
+dist
+dist-electron
+build
+.vscode
+.env
+.env.*
+package-lock.json
+pnpm-lock.yaml
+yarn.lock
+**/coverage
+**/.turbo
+**/.next
+public/runtime-config.js

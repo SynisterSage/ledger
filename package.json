@@ -9,7 +9,9 @@
     "dev:electron": "node scripts/dev-electron.mjs",
     "dev:desktop": "node scripts/dev-desktop.mjs",
     "build": "tsc -p tsconfig.json && vite build && electron-builder",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
   },
   "dependencies": {
     "@lexical/code": "^0.44.0",
@@ -45,6 +47,7 @@
     "electron": "^30.0.1",
     "electron-builder": "^24.13.3",
     "postcss": "^8.5.13",
+    "prettier": "^2.8.8",
     "tailwindcss": "^4.2.4",
     "typescript": "^5.2.2",
     "vite": "^5.1.6",
