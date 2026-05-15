@@ -215,6 +215,7 @@ export const ProjectsWindow = () => {
   const api = useApi();
   const viewportWidth = useViewportWidth();
   const initialFocusProjectId = new URLSearchParams(window.location.search).get('focusProjectId');
+  const initialFocusHandledRef = useRef(false);
   const initialFocusTaskId = new URLSearchParams(window.location.search).get('focusTaskId');
   const autosaveTimerRef = useRef<number | null>(null);
   const isDirtyRef = useRef(false);
@@ -975,11 +976,14 @@ export const ProjectsWindow = () => {
 
   useEffect(() => {
     if (!initialFocusProjectId) return;
+    if (initialFocusHandledRef.current) return;
     if (initialFocusProjectId === '__new__') {
+      initialFocusHandledRef.current = true;
       openCreateProjectComposer();
       return;
     }
     if (!projects.length) return;
+    initialFocusHandledRef.current = true;
     if (selectedProjectId === initialFocusProjectId) return;
     void focusProjectById(initialFocusProjectId);
   }, [

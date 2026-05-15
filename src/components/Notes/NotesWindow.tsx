@@ -10,9 +10,18 @@ import {
   Search,
   StickyNote,
   Trash2,
+  X,
   Zap,
 } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type DragEvent,
+  type MouseEvent,
+} from 'react';
 import { useToast } from '../Common/ToastProvider';
 import { useAuthContext } from '../../context/AuthContext';
 import {
@@ -392,6 +401,10 @@ export const NotesWindow = () => {
   const isEditingRef = useRef(false);
   const isDirtyRef = useRef(false);
   const hydrationNoteIdRef = useRef<string | null>(null);
+  const selectionAnchorNoteIdRef = useRef<string | null>(null);
+  const bulkSidebarSelectionRef = useRef(false);
+  const selectedNoteIdRef = useRef<string | null>(null);
+  const selectedNoteIdsRef = useRef<string[]>([]);
 
   const [notes, setNotes] = useState<NoteRow[]>([]);
   const [noteTree, setNoteTree] = useState<NoteTreeNode[]>([]);
@@ -402,6 +415,7 @@ export const NotesWindow = () => {
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null);
+  const [selectedNoteIds, setSelectedNoteIds] = useState<string[]>([]);
   const [draftTitle, setDraftTitle] = useState('');
   const [draftContent, setDraftContent] = useState('');
   const [draftDate, setDraftDate] = useState(todayKey());
@@ -417,6 +431,7 @@ export const NotesWindow = () => {
   const [isDeleting, setIsDeleting] = useState(false);
   const [showCreateNoteModal, setShowCreateNoteModal] = useState(false);
   const [showExportModal, setShowExportModal] = useState(false);
+  const [exportNoteIds, setExportNoteIds] = useState<string[] | null>(null);
   const [showVersionHistoryModal, setShowVersionHistoryModal] = useState(false);
   const [showCloseGuardModal, setShowCloseGuardModal] = useState(false);
   const [isLoadingVersions, setIsLoadingVersions] = useState(false);
@@ -509,6 +524,16 @@ export const NotesWindow = () => {
     () => notes.find((note) => note.id === selectedNoteId) ?? null,
     [notes, selectedNoteId]
   );
+  const selectedNoteIdSet = useMemo(() => new Set(selectedNoteIds), [selectedNoteIds]);
+
+  useEffect(() => {
+    selectedNoteIdRef.current = selectedNoteId;
+  }, [selectedNoteId]);
+
+  useEffect(() => {
+    selectedNoteIdsRef.current = selectedNoteIds;
+    bulkSidebarSelectionRef.current = selectedNoteIds.length > 1;
+  }, [selectedNoteIds]);
 
   const notesRef = useRef<NoteRow[]>(notes);
   useEffect(() => {
@@ -741,6 +766,121 @@ export const NotesWindow = () => {
     return totalCount;
   }, [notes, sections]);
 
+  const visibleNoteOrder = useMemo(() => {
+    if (search.trim()) {
+      return visibleNotes.map((note) => note.id);
+    }
+
+    const ordered: string[] = [];
+    const visited = new Set<string>();
+    const visibleSectionIds = new Set(visibleSections.map((section) => section.id));
+
+    const pushNote = (note: NoteRow) => {
+      if (visited.has(note.id)) return;
+      visited.add(note.id);
+      ordered.push(note.id);
+
+      if (!expandedNoteIds.has(note.id)) return;
+      const children = notes.filter((child) => child.parent_id === note.id);
+      for (const child of children) pushNote(child);
+    };
+
+    for (const section of orderedSections) {
+      if (!visibleSectionIds.has(section.id)) continue;
+      const sectionRoots = notes.filter(
+        (note) => note.section_id === section.id && !note.parent_id
+      );
+      for (const root of sectionRoots) pushNote(root);
+    }
+
+    const unsortedRoots = notes.filter((note) => !note.section_id && !note.parent_id);
+    for (const root of unsortedRoots) pushNote(root);
+
+    return ordered;
+  }, [expandedNoteIds, notes, orderedSections, search, visibleNotes, visibleSections]);
+
+  const applySidebarSelection = useCallback(
+    (noteId: string, modifiers?: { shiftKey?: boolean; metaKey?: boolean; ctrlKey?: boolean }) => {
+      const orderedIds = visibleNoteOrder;
+      const currentAnchor = selectionAnchorNoteIdRef.current ?? selectedNoteIdRef.current ?? noteId;
+      const isToggle = Boolean(modifiers?.metaKey || modifiers?.ctrlKey);
+      const isRange = Boolean(modifiers?.shiftKey);
+
+      if (isRange && orderedIds.length > 0) {
+        const anchorIndex = orderedIds.indexOf(currentAnchor);
+        const targetIndex = orderedIds.indexOf(noteId);
+        if (anchorIndex >= 0 && targetIndex >= 0) {
+          const [start, end] =
+            anchorIndex <= targetIndex ? [anchorIndex, targetIndex] : [targetIndex, anchorIndex];
+          const nextIds = orderedIds.slice(start, end + 1);
+          bulkSidebarSelectionRef.current = nextIds.length > 1;
+          setSelectedNoteIds(nextIds);
+          return;
+        }
+      }
+
+      if (isToggle) {
+        setSelectedNoteIds((current) => {
+          const next = current.includes(noteId)
+            ? current.filter((id) => id !== noteId)
+            : [...current, noteId];
+          bulkSidebarSelectionRef.current = next.length > 1;
+          if (next.length === 0) {
+            bulkSidebarSelectionRef.current = false;
+            selectionAnchorNoteIdRef.current = null;
+            setSelectedNoteId(null);
+            return next;
+          }
+          setSelectedNoteId(noteId);
+          selectionAnchorNoteIdRef.current = noteId;
+          return next;
+        });
+        return;
+      }
+
+      bulkSidebarSelectionRef.current = false;
+      selectionAnchorNoteIdRef.current = noteId;
+      setSelectedNoteId(noteId);
+      setSelectedNoteIds([noteId]);
+    },
+    [visibleNoteOrder]
+  );
+
+  const handleSidebarNoteContextMenu = useCallback(
+    (note: NoteRow, event: MouseEvent<HTMLButtonElement>) => {
+      event.preventDefault();
+
+      if (!selectedNoteIdSet.has(note.id) || selectedNoteIds.length <= 1) {
+        applySidebarSelection(note.id);
+      }
+
+      setNoteContextMenu({
+        x: event.clientX,
+        y: event.clientY,
+        noteId: note.id,
+      });
+    },
+    [applySidebarSelection, selectedNoteIdSet, selectedNoteIds.length]
+  );
+
+  const closeNoteContextMenu = useCallback(() => {
+    setNoteContextMenu(null);
+  }, []);
+
+  const clearSidebarSelection = useCallback(() => {
+    setSelectedNoteIds([]);
+    setSelectedNoteId(null);
+    selectionAnchorNoteIdRef.current = null;
+    bulkSidebarSelectionRef.current = false;
+  }, []);
+
+  const handleBulkExportSelectedNotes = useCallback(() => {
+    setExportNoteIds(selectedNoteIds.slice());
+    setExportType('notes');
+    setShowExportModal(true);
+    closeNoteContextMenu();
+  }, [closeNoteContextMenu, selectedNoteIds]);
+
   const nodeById = useMemo(() => {
     const map = new Map<string, NoteTreeNode>();
     const walk = (nodes: NoteTreeNode[]) => {
@@ -831,6 +971,72 @@ export const NotesWindow = () => {
       }
     }, 0);
   }, []);
+
+  const handleBulkDeleteSelectedNotes = useCallback(async () => {
+    if (selectedNoteIds.length === 0) return;
+
+    const selectedSet = new Set(selectedNoteIds);
+    const selectedNotes = notes
+      .filter((note) => selectedSet.has(note.id))
+      .slice()
+      .sort((a, b) => (b.depth ?? 0) - (a.depth ?? 0));
+
+    setIsDeleting(true);
+    setError(null);
+
+    try {
+      for (const note of selectedNotes) {
+        await api.deleteNote(note.id);
+      }
+
+      setNotes((prev) => {
+        const next = prev.filter((note) => !selectedSet.has(note.id));
+        const fallback = next[0] ?? null;
+        if (fallback) {
+          setSelectedNoteId(fallback.id);
+          setSelectedNoteIds([fallback.id]);
+          selectionAnchorNoteIdRef.current = fallback.id;
+          syncDraftFromNote(fallback);
+        } else {
+          clearSidebarSelection();
+          setDraftTitle('');
+          setDraftContent('');
+          setDraftDate(todayKey());
+          setDraftMood('');
+          setIsDirty(false);
+        }
+        return next;
+      });
+
+      setNoteTree((prev) => {
+        let next = prev;
+        for (const note of selectedNotes) {
+          next = removeNoteFromTree(next, note.id);
+        }
+        return next;
+      });
+
+      setExpandedNoteIds((prev) => {
+        const next = new Set(prev);
+        for (const noteId of selectedSet) {
+          next.delete(noteId);
+        }
+        return next;
+      });
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : 'Could not delete notes.');
+    } finally {
+      setIsDeleting(false);
+      closeNoteContextMenu();
+    }
+  }, [
+    api,
+    clearSidebarSelection,
+    closeNoteContextMenu,
+    notes,
+    selectedNoteIds,
+    syncDraftFromNote,
+  ]);
 
   const refreshTemplates = useCallback(async () => {
     try {
@@ -981,24 +1187,38 @@ export const NotesWindow = () => {
           ? payload.notes
           : [];
         const tree = Array.isArray(payload) ? [] : Array.isArray(payload?.tree) ? payload.tree : [];
-        const selectedExists = selectedNoteId
-          ? rows.some((note) => note.id === selectedNoteId)
+        const currentEditorNoteId = selectedNoteIdRef.current;
+        const selectedExists = currentEditorNoteId
+          ? rows.some((note) => note.id === currentEditorNoteId)
           : false;
+        const preservedSelection = selectedNoteIdsRef.current.filter((id) =>
+          rows.some((note) => note.id === id)
+        );
         setNotes(rows);
         setNoteTree(tree);
         setExpandedNoteIds(new Set());
 
-        setSelectedNoteId((currentId) => {
-          const currentSelected = currentId
-            ? rows.find((note) => note.id === currentId) ?? null
-            : null;
-
-          if (currentSelected) {
-            return currentSelected.id;
+        if (preservedSelection.length > 1) {
+          const nextSelection = preservedSelection.slice();
+          setSelectedNoteIds(nextSelection);
+          const anchorId = nextSelection[nextSelection.length - 1] ?? nextSelection[0] ?? null;
+          selectionAnchorNoteIdRef.current = anchorId;
+          if (!selectedExists) {
+            setSelectedNoteId(null);
           }
-
-          return null;
-        });
+        } else {
+          const currentSelected = currentEditorNoteId
+            ? rows.find((note) => note.id === currentEditorNoteId) ?? null
+            : null;
+          if (currentSelected) {
+            setSelectedNoteIds([currentSelected.id]);
+            selectionAnchorNoteIdRef.current = currentSelected.id;
+          } else {
+            setSelectedNoteIds([]);
+            selectionAnchorNoteIdRef.current = null;
+            setSelectedNoteId(null);
+          }
+        }
 
         if (
           (rows.length === 0 || !selectedExists) &&
@@ -1023,7 +1243,7 @@ export const NotesWindow = () => {
         setHasLoadedOnce(true);
       }
     },
-    [api, activeWorkspaceId, hasLoadedOnce, selectedNoteId, syncDraftFromNote, user]
+    [api, activeWorkspaceId, hasLoadedOnce, user]
   );
 
   const loadSections = useCallback(async () => {
@@ -1312,6 +1532,10 @@ export const NotesWindow = () => {
         setNotes((prev) => prev.map((note) => (note.id === restored.id ? restored : note)));
         syncDraftFromNote(restored);
         setSelectedNoteId(restored.id);
+        if (!bulkSidebarSelectionRef.current) {
+          setSelectedNoteIds([restored.id]);
+          selectionAnchorNoteIdRef.current = restored.id;
+        }
         const versions = (await api.getNoteVersions(selectedNoteId)) as NoteVersion[];
         setNoteVersions(Array.isArray(versions) ? versions : []);
         setShowVersionHistoryModal(false);
@@ -1321,7 +1545,7 @@ export const NotesWindow = () => {
         setIsRestoringVersionId(null);
       }
     },
-    [api, selectedNoteId, syncDraftFromNote]
+    [api, selectedNoteId, selectedNoteIds.length, syncDraftFromNote]
   );
 
   const openNote = useCallback(
@@ -1332,10 +1556,14 @@ export const NotesWindow = () => {
         if (!saved) return;
       }
       setSelectedNoteId(note.id);
+      if (!bulkSidebarSelectionRef.current) {
+        setSelectedNoteIds([note.id]);
+        selectionAnchorNoteIdRef.current = note.id;
+      }
       syncDraftFromNote(note);
       titleRef.current?.focus();
     },
-    [flushAutosave, isDirty, selectedNoteId, syncDraftFromNote]
+    [flushAutosave, isDirty, selectedNoteId, selectedNoteIds.length, syncDraftFromNote]
   );
 
   const openNoteById = useCallback(
@@ -1364,6 +1592,10 @@ export const NotesWindow = () => {
           return [fetched, ...prev];
         });
         setSelectedNoteId(fetched.id);
+        if (!bulkSidebarSelectionRef.current) {
+          setSelectedNoteIds([fetched.id]);
+          selectionAnchorNoteIdRef.current = fetched.id;
+        }
         syncDraftFromNote(fetched);
       } catch (error) {
         setIsHydratingNote(false);
@@ -1371,7 +1603,17 @@ export const NotesWindow = () => {
         setError(error instanceof Error ? error.message : 'Could not load note.');
       }
     },
-    [api, flushAutosave, isDirty, notes, openNote, syncDraftFromNote]
+    [api, flushAutosave, isDirty, notes, openNote, selectedNoteIds.length, syncDraftFromNote]
+  );
+
+  const handleSidebarNoteClick = useCallback(
+    async (note: NoteRow, shiftKey = false) => {
+      applySidebarSelection(note.id, { shiftKey });
+      if (!shiftKey) {
+        await openNote(note);
+      }
+    },
+    [applySidebarSelection, openNote]
   );
 
   const createChildNote = useCallback(
@@ -1403,6 +1645,10 @@ export const NotesWindow = () => {
           return insertChildIntoTree(prev, parentId, childNode);
         });
         setSelectedNoteId(created.id);
+        if (!bulkSidebarSelectionRef.current) {
+          setSelectedNoteIds([created.id]);
+          selectionAnchorNoteIdRef.current = created.id;
+        }
         syncDraftFromNote(created);
         setExpandedNoteIds((current) => new Set(current).add(parentId));
         setTimeout(() => titleRef.current?.focus(), 0);
@@ -1414,7 +1660,7 @@ export const NotesWindow = () => {
         setIsCreating(false);
       }
     },
-    [api, flushAutosave, isDirty, syncDraftFromNote, user]
+    [api, flushAutosave, isDirty, selectedNoteIds.length, syncDraftFromNote, user]
   );
 
   const createSection = useCallback(
@@ -1466,13 +1712,17 @@ export const NotesWindow = () => {
           });
         });
         setSelectedNoteId(duplicated.id);
+        if (!bulkSidebarSelectionRef.current) {
+          setSelectedNoteIds([duplicated.id]);
+          selectionAnchorNoteIdRef.current = duplicated.id;
+        }
         syncDraftFromNote(duplicated);
         void loadNotes({ silent: true });
       } catch (error) {
         setError(error instanceof Error ? error.message : 'Could not duplicate note.');
       }
     },
-    [api, loadNotes, notes, syncDraftFromNote]
+    [api, loadNotes, notes, selectedNoteIds.length, syncDraftFromNote]
   );
 
   const moveNote = useCallback(
@@ -1781,9 +2031,13 @@ export const NotesWindow = () => {
         const fallback = next[0] ?? null;
         if (fallback) {
           setSelectedNoteId(fallback.id);
+          setSelectedNoteIds([fallback.id]);
+          selectionAnchorNoteIdRef.current = fallback.id;
           syncDraftFromNote(fallback);
         } else {
           setSelectedNoteId(null);
+          setSelectedNoteIds([]);
+          selectionAnchorNoteIdRef.current = null;
           setDraftTitle('');
           setDraftContent('');
           setDraftDate(todayKey());
@@ -1823,14 +2077,18 @@ export const NotesWindow = () => {
         setNotes((prev) => {
           const next = prev.filter((note) => note.id !== noteId);
           const fallback = next[0] ?? null;
-          if (fallback) {
-            setSelectedNoteId(fallback.id);
-            syncDraftFromNote(fallback);
-          } else {
-            setSelectedNoteId(null);
-            setDraftTitle('');
-            setDraftContent('');
-            setDraftDate(todayKey());
+        if (fallback) {
+          setSelectedNoteId(fallback.id);
+          setSelectedNoteIds([fallback.id]);
+          selectionAnchorNoteIdRef.current = fallback.id;
+          syncDraftFromNote(fallback);
+        } else {
+          setSelectedNoteId(null);
+          setSelectedNoteIds([]);
+          selectionAnchorNoteIdRef.current = null;
+          setDraftTitle('');
+          setDraftContent('');
+          setDraftDate(todayKey());
             setDraftMood('');
             setIsDirty(false);
           }
@@ -1927,7 +2185,7 @@ export const NotesWindow = () => {
   useEffect(() => {
     if (!isResizingLeftPane) return;
 
-    const handleMove = (event: MouseEvent) => {
+    const handleMove = (event: globalThis.MouseEvent) => {
       const next = Math.max(LEFT_PANE_MIN_WIDTH, Math.min(LEFT_PANE_MAX_WIDTH, event.clientX));
       setLeftPaneWidth(next);
     };
@@ -1946,7 +2204,7 @@ export const NotesWindow = () => {
   useEffect(() => {
     if (!isResizingRightPane) return;
 
-    const handleMove = (event: MouseEvent) => {
+    const handleMove = (event: globalThis.MouseEvent) => {
       const next = window.innerWidth - event.clientX;
       const clamped = Math.max(RIGHT_PANE_MIN_WIDTH, Math.min(RIGHT_PANE_MAX_WIDTH, next));
       setRightPaneWidth(clamped);
@@ -2009,7 +2267,7 @@ export const NotesWindow = () => {
     if (!isInspectorActionsOpen) return;
 
     const closeMenu = () => setIsInspectorActionsOpen(false);
-    const onPointerDown = (event: MouseEvent) => {
+    const onPointerDown = (event: globalThis.MouseEvent) => {
       if (inspectorActionsRef.current?.contains(event.target as Node)) return;
       closeMenu();
     };
@@ -2097,7 +2355,7 @@ export const NotesWindow = () => {
     if (!isNoteActionsOpen) return;
 
     const closeMenu = () => setIsNoteActionsOpen(false);
-    const onPointerDown = (event: MouseEvent) => {
+    const onPointerDown = (event: globalThis.MouseEvent) => {
       if (noteActionsMenuRef.current?.contains(event.target as Node)) return;
       closeMenu();
     };
@@ -2117,7 +2375,7 @@ export const NotesWindow = () => {
   useEffect(() => {
     if (!showNewMenu) return;
 
-    const onPointerDown = (event: MouseEvent) => {
+    const onPointerDown = (event: globalThis.MouseEvent) => {
       if (newMenuRef.current?.contains(event.target as Node)) return;
       setShowNewMenu(false);
     };
@@ -2352,21 +2610,17 @@ export const NotesWindow = () => {
                   // Search results - flat view
                   <div className="space-y-0.5">
                     {visibleNotes.map((note) => {
-                      const active = note.id === selectedNoteId;
+                      const active = selectedNoteIdSet.has(note.id);
                       const preview = htmlToPlainText(note.content).slice(0, 80) || '—';
 
                       return (
                         <button
                           key={note.id}
-                          onClick={() => void openNote(note)}
-                          onContextMenu={(event) => {
-                            event.preventDefault();
-                            setNoteContextMenu({
-                              x: event.clientX,
-                              y: event.clientY,
-                              noteId: note.id,
-                            });
+                          onMouseDown={(event) => {
+                            if (event.shiftKey) event.preventDefault();
                           }}
+                          onClick={(event) => void handleSidebarNoteClick(note, event.shiftKey)}
+                          onContextMenu={(event) => handleSidebarNoteContextMenu(note, event)}
                           className={`w-full text-left px-3 py-2 rounded text-sm transition ${
                             active
                               ? 'bg-gray-50 text-gray-900'
@@ -2535,7 +2789,7 @@ export const NotesWindow = () => {
                           {!isSectionCollapsed && (
                             <div className="space-y-1 pl-4 mt-0.5">
                               {sectionNotes.map((note) => {
-                                const active = note.id === selectedNoteId;
+                                const active = selectedNoteIdSet.has(note.id);
                                 const preview =
                                   htmlToPlainText(note.content).slice(0, 60) || 'No content';
                                 const isExpanded = expandedNoteIds.has(note.id);
@@ -2549,7 +2803,12 @@ export const NotesWindow = () => {
                                     {/* Note row */}
                                     <div className="flex items-center gap-1 min-w-0">
                                       <button
-                                        onClick={() => void openNote(note)}
+                                        onMouseDown={(event) => {
+                                          if (event.shiftKey) event.preventDefault();
+                                        }}
+                                        onClick={(event) =>
+                                          void handleSidebarNoteClick(note, event.shiftKey)
+                                        }
                                         draggable
                                         onDragStart={() => handleTreeDragStart(note.id)}
                                         onDragEnd={handleTreeDragEnd}
@@ -2561,14 +2820,9 @@ export const NotesWindow = () => {
                                           event.preventDefault();
                                           void handleDropOnNote(note, getDropPosition(event));
                                         }}
-                                        onContextMenu={(event) => {
-                                          event.preventDefault();
-                                          setNoteContextMenu({
-                                            x: event.clientX,
-                                            y: event.clientY,
-                                            noteId: note.id,
-                                          });
-                                        }}
+                                        onContextMenu={(event) =>
+                                          handleSidebarNoteContextMenu(note, event)
+                                        }
                                         className={`flex-1 min-w-0 px-2.5 py-1.5 rounded text-left text-sm transition ${
                                           active
                                             ? 'bg-gray-50 text-gray-900'
@@ -2652,7 +2906,12 @@ export const NotesWindow = () => {
                                             >
                                               <div className="w-5 shrink-0" />
                                               <button
-                                                onClick={() => void openNote(child)}
+                                                onClick={(event) =>
+                                                  void handleSidebarNoteClick(
+                                                    child,
+                                                    event.shiftKey
+                                                  )
+                                                }
                                                 draggable
                                                 onDragStart={() => handleTreeDragStart(child.id)}
                                                 onDragEnd={handleTreeDragEnd}
@@ -2676,7 +2935,7 @@ export const NotesWindow = () => {
                                                   });
                                                 }}
                                                 className={`flex-1 min-w-0 px-2.5 py-1.5 rounded text-left text-xs transition ${
-                                                  selectedNoteId === child.id
+                                                  selectedNoteIdSet.has(child.id)
                                                     ? 'bg-gray-50 text-gray-900'
                                                     : 'bg-transparent hover:bg-gray-50/50 text-gray-600'
                                                 } ${getDropPreviewClasses(dropPreview, child.id)}`}
@@ -2780,7 +3039,7 @@ export const NotesWindow = () => {
                           {!isUnsortedCollapsed && (
                             <div className="space-y-1 pl-3.5 mt-0.5">
                               {unsortedNotes.map((note) => {
-                                const active = note.id === selectedNoteId;
+                                const active = selectedNoteIdSet.has(note.id);
                                 const preview =
                                   htmlToPlainText(note.content).slice(0, 60) || 'No content';
                                 const isExpanded = expandedNoteIds.has(note.id);
@@ -2792,7 +3051,9 @@ export const NotesWindow = () => {
                                   <div key={note.id} className="space-y-1">
                                     <div className="flex items-center gap-1 min-w-0">
                                       <button
-                                        onClick={() => void openNote(note)}
+                                        onClick={(event) =>
+                                          void handleSidebarNoteClick(note, event.shiftKey)
+                                        }
                                         draggable
                                         onDragStart={() => handleTreeDragStart(note.id)}
                                         onDragEnd={handleTreeDragEnd}
@@ -2804,14 +3065,9 @@ export const NotesWindow = () => {
                                           event.preventDefault();
                                           void handleDropOnNote(note, getDropPosition(event));
                                         }}
-                                        onContextMenu={(event) => {
-                                          event.preventDefault();
-                                          setNoteContextMenu({
-                                            noteId: note.id,
-                                            x: event.clientX,
-                                            y: event.clientY,
-                                          });
-                                        }}
+                                        onContextMenu={(event) =>
+                                          handleSidebarNoteContextMenu(note, event)
+                                        }
                                         className={`flex-1 min-w-0 text-left px-2.5 py-1 rounded text-sm transition flex items-center gap-2 ${
                                           active
                                             ? 'bg-gray-50 text-gray-900'
@@ -2885,14 +3141,22 @@ export const NotesWindow = () => {
                                         {notes
                                           .filter((n) => n.parent_id === note.id)
                                           .map((child) => {
-                                            const childActive = child.id === selectedNoteId;
+                                            const childActive = selectedNoteIdSet.has(child.id);
                                             const childPreview =
                                               htmlToPlainText(child.content).slice(0, 50) ||
                                               'No content';
                                             return (
                                               <button
                                                 key={child.id}
-                                                onClick={() => void openNote(child)}
+                                                onMouseDown={(event) => {
+                                                  if (event.shiftKey) event.preventDefault();
+                                                }}
+                                                onClick={(event) =>
+                                                  void handleSidebarNoteClick(
+                                                    child,
+                                                    event.shiftKey
+                                                  )
+                                                }
                                                 draggable
                                                 onDragStart={() => handleTreeDragStart(child.id)}
                                                 onDragEnd={handleTreeDragEnd}
@@ -2907,14 +3171,9 @@ export const NotesWindow = () => {
                                                     getDropPosition(event)
                                                   );
                                                 }}
-                                                onContextMenu={(event) => {
-                                                  event.preventDefault();
-                                                  setNoteContextMenu({
-                                                    noteId: child.id,
-                                                    x: event.clientX,
-                                                    y: event.clientY,
-                                                  });
-                                                }}
+                                                onContextMenu={(event) =>
+                                                  handleSidebarNoteContextMenu(child, event)
+                                                }
                                                 className={`w-full text-left px-2.5 py-1 rounded text-xs transition flex items-center gap-2 ${
                                                   childActive
                                                     ? 'bg-gray-50 text-gray-900'
@@ -3570,7 +3829,10 @@ export const NotesWindow = () => {
                       {recentNotes.map((note) => (
                         <button
                           key={note.id}
-                          onClick={() => void openNote(note)}
+                          onMouseDown={(event) => {
+                            if (event.shiftKey) event.preventDefault();
+                          }}
+                          onClick={(event) => void handleSidebarNoteClick(note, event.shiftKey)}
                           className="flex w-full items-center justify-between gap-3 rounded-lg px-2 py-1.5 text-left text-sm hover:bg-gray-50 transition"
                         >
                           <div className="min-w-0">
@@ -3738,6 +4000,61 @@ export const NotesWindow = () => {
       )}
 
       {noteContextMenu && (
+        (() => {
+          const isBulkSelection =
+            selectedNoteIds.length > 1 && selectedNoteIdSet.has(noteContextMenu.noteId);
+          const selectedCount = selectedNoteIds.length;
+
+          if (isBulkSelection) {
+            return (
+              <div
+                className="fixed z-210 min-w-44 rounded-lg border border-gray-200 bg-white text-gray-900 shadow-lg p-0"
+                style={{
+                  left: Math.max(8, Math.min(noteContextMenu.x, window.innerWidth - 180)),
+                  top: Math.max(8, Math.min(noteContextMenu.y, window.innerHeight - 180)),
+                }}
+                onClick={(e) => e.stopPropagation()}
+                onMouseDown={(e) => e.stopPropagation()}
+              >
+                <div className="px-3 py-2 border-b border-gray-100">
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">
+                    {selectedCount} selected
+                  </p>
+                </div>
+                <button
+                  onClick={() => {
+                    handleBulkExportSelectedNotes();
+                  }}
+                  className="w-full h-9 px-3 rounded-none text-left hover:bg-gray-50 flex items-center gap-3 text-sm transition"
+                >
+                  <Download size={14} className="text-gray-600 shrink-0" />
+                  <span className="font-medium">Export selected</span>
+                </button>
+                <button
+                  onClick={() => {
+                    clearSidebarSelection();
+                    setNoteContextMenu(null);
+                  }}
+                  className="w-full h-9 px-3 rounded-none text-left hover:bg-gray-50 flex items-center gap-3 text-sm transition"
+                >
+                  <X size={14} className="text-gray-600 shrink-0" />
+                  <span className="font-medium">Clear selection</span>
+                </button>
+                <div className="h-px bg-gray-100 my-1" />
+                <button
+                  onClick={() => {
+                    void handleBulkDeleteSelectedNotes();
+                  }}
+                  className="w-full h-9 px-3 rounded-none text-left hover:bg-red-50 flex items-center gap-3 text-sm transition"
+                >
+                  <Trash2 size={14} className="text-red-500 shrink-0" />
+                  <span className="font-medium text-red-600">Delete selected</span>
+                </button>
+              </div>
+            );
+          }
+
+          return (
         <div
           className="fixed z-210 min-w-44 rounded-lg border border-gray-200 bg-white text-gray-900 shadow-lg p-0"
           style={{
@@ -3838,6 +4155,8 @@ export const NotesWindow = () => {
             <span className="font-medium text-red-600">Delete</span>
           </button>
         </div>
+          );
+        })()
       )}
 
       <CreateNoteModal
@@ -3879,9 +4198,12 @@ export const NotesWindow = () => {
 
       <BulkExportModal
         isOpen={showExportModal}
-        onClose={() => setShowExportModal(false)}
+        onClose={() => {
+          setShowExportModal(false);
+          setExportNoteIds(null);
+        }}
         onExport={handleBulkExport}
-        notes={notes}
+        notes={exportNoteIds ? notes.filter((note) => exportNoteIds.includes(note.id)) : notes}
         isMindMapOnly={exportType === 'mindmaps'}
       />
 

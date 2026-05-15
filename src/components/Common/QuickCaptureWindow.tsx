@@ -107,6 +107,21 @@ export const QuickCaptureWindow = ({
     void window.desktopWindow?.closeModule(kind as any);
   };
 
+  const resetTaskDraft = () => setTaskTitle('');
+  const resetNoteDraft = () => {
+    setNoteTitle('');
+    setNoteContent('');
+  };
+  const resetEventDraft = () => {
+    setEventTitle('');
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = String(today.getMonth() + 1).padStart(2, '0');
+    const day = String(today.getDate()).padStart(2, '0');
+    setEventDate(`${year}-${month}-${day}`);
+    setEventTime('09:00');
+  };
+
   const hasUnsavedDraft =
     taskTitle.trim().length > 0 ||
     noteTitle.trim().length > 0 ||
@@ -207,7 +222,9 @@ export const QuickCaptureWindow = ({
           task: createdTask,
         });
       }
-      closeWindow();
+      setShowCloseGuardModal(false);
+      resetTaskDraft();
+      closeWindowNow();
     } catch (error) {
       console.error('Failed to create task:', error);
       setError('Failed to create task. Please try again.');
@@ -228,7 +245,9 @@ export const QuickCaptureWindow = ({
       await api.createNote(noteTitle.trim(), noteContent.trim(), {
         source: 'quick_capture',
       });
-      closeWindow();
+      setShowCloseGuardModal(false);
+      resetNoteDraft();
+      closeWindowNow();
     } catch (error) {
       console.error('Failed to create note:', error);
       setError('Failed to create note. Please try again.');
@@ -256,7 +275,9 @@ export const QuickCaptureWindow = ({
         start_at: startDateTime.toISOString(),
         end_at: endDateTime.toISOString(),
       });
-      closeWindow();
+      setShowCloseGuardModal(false);
+      resetEventDraft();
+      closeWindowNow();
     } catch (error) {
       console.error('Failed to create event:', error);
       setError('Failed to create event. Please try again.');
