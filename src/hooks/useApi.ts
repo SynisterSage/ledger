@@ -258,6 +258,18 @@ export const useApi = () => {
           method: 'PATCH',
           body: JSON.stringify(update),
         }),
+      updateTaskInWorkspace: (
+        id: string,
+        workspaceId: string,
+        update: Record<string, unknown>
+      ) =>
+        request(`/api/tasks/${id}`, {
+          method: 'PATCH',
+          body: JSON.stringify(update),
+          // skip the automatic active workspace header and send the correct workspace header
+          skipWorkspaceHeader: true,
+          headers: { 'X-Workspace-Id': workspaceId },
+        }),
       deleteTask: (id: string) =>
         request(`/api/tasks/${id}`, {
           method: 'DELETE',

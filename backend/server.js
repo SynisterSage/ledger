@@ -108,7 +108,7 @@ const projectStatusAliases = {
 const projectSelectColumns =
   'id, name, description, status, completeness, color, start_date, end_date, created_by, created_at, updated_at';
 const taskSelectColumns =
-  'id, workspace_id, project_id, title, description, notes, due_date, due_time, status, priority, assigned_to, tags, created_at, updated_at';
+  'id, workspace_id, project_id, title, description, notes, due_date, due_time, status, priority, assigned_to, tags, completed_at, created_at, updated_at';
 const workspaceRoleRank = { viewer: 1, member: 2, admin: 3, owner: 4 };
 const workspaceMemberRoles = ['admin', 'member', 'viewer'];
 
@@ -2091,11 +2091,40 @@ app.get('/api/today', authMiddleware, rateLimit('read'), async (req, res) => {
       assigned_to: r.assigned_to ?? null,
       is_today_focus: r.is_today_focus ?? false,
       show_in_today: r.show_in_today ?? false,
+      completed_at: r.completed_at ?? null,
       created_at: r.created_at ?? null,
       updated_at: r.updated_at ?? null,
     }));
 
-    res.json(mapped);
+    // Also fetch completed tasks within the last 24 hours
+    const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const completedResult = await supabase
+      .from('tasks')
+      .select(taskSelectColumns)
+      .in('workspace_id', workspaceIds)
+      .eq('status', 'completed')
+      .gte('completed_at', cutoff)
+      .order('completed_at', { ascending: false })
+      .limit(200);
+
+    if (completedResult.error && !isMissingColumnError(completedResult.error, 'completed_at'))
+      throw completedResult.error;
+
+    const completedRows = completedResult.error ? [] : completedResult.data ?? [];
+
+    const completedMapped = (completedRows || []).map((r) => ({
+      id: r.id,
+      title: r.title,
+      status: r.status,
+      completed_at: r.completed_at ?? null,
+      workspace_id: r.workspace_id,
+      workspace_name: wsById.get(r.workspace_id)?.name ?? null,
+      workspace_color: wsById.get(r.workspace_id)?.color ?? null,
+      project_id: r.project_id ?? null,
+      project_name: r.project_id ? projById.get(r.project_id)?.name ?? null : null,
+    }));
+
+    res.json({ active: mapped, completed: completedMapped });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -2163,6 +2192,14 @@ app.patch('/api/tasks/:id', authMiddleware, rateLimit('write'), async (req, res)
       return res.status(404).json({ error: 'Task not found' });
     }
 
+    // Load existing to detect status transitions
+    const { data: existingTask, error: existingError } = await supabase
+      .from('tasks')
+      .select('id, status, completed_at')
+      .eq('id', req.params.id)
+      .maybeSingle();
+    if (existingError) throw existingError;
+
     const update = {};
     if (req.body?.title !== undefined) {
       const nextTitle = String(req.body.title).trim();
@@ -2199,7 +2236,19 @@ app.patch('/api/tasks/:id', authMiddleware, rateLimit('write'), async (req, res)
       }
       update.project_id = nextProjectId;
     }
-    update.updated_at = new Date().toISOString();
+    const nowIso = new Date().toISOString();
+    update.updated_at = nowIso;
+
+    // Handle completed_at when marking complete within this patch
+    if (req.body?.status !== undefined) {
+      const nextStatus = String(req.body.status);
+      const prevStatus = existingTask?.status ?? null;
+      if (nextStatus === 'completed' && prevStatus !== 'completed') {
+        update.completed_at = nowIso;
+      } else if (nextStatus !== 'completed' && prevStatus === 'completed') {
+        update.completed_at = null;
+      }
+    }
 
     const { data, error } = await supabase
       .from('tasks')

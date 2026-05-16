@@ -204,7 +204,8 @@ export const ExpandedSidebar = ({
     }>
   >([]);
   const [isLoadingToday, setIsLoadingToday] = useState(true);
-  const [completedToday, setCompletedToday] = useState<Array<{ id: string; title: string }>>([]);
+  const [completedToday, setCompletedToday] = useState<Array<any>>([]);
+  const [todayCollapsed, setTodayCollapsed] = useState<boolean>(false);
   const [expandedUpcomingId, setExpandedUpcomingId] = useState<string | null>(null);
   const [draggingProjectId, setDraggingProjectId] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<{
@@ -451,11 +452,14 @@ export const ExpandedSidebar = ({
       try {
         const data = await api.getToday();
         if (cancelled) return;
-        const rows = Array.isArray(data) ? data : [];
-        const active = rows.filter((r: any) => String(r.status ?? '').toLowerCase() !== 'completed');
-        const completed = rows.filter((r: any) => String(r.status ?? '').toLowerCase() === 'completed');
+        const active = Array.isArray(data?.active) ? data.active : [];
+        const completed = Array.isArray(data?.completed) ? data.completed : [];
         setTodayItems(active);
-        setCompletedToday(completed.map((c: any) => ({ id: c.id, title: c.title })));
+        setCompletedToday(completed);
+        // Auto-collapse heuristics: if many active items, collapse the Today pane by default
+        if (!todayCollapsed) {
+          setTodayCollapsed(active.length > 8);
+        }
       } catch (error) {
         console.error('Failed to load Today items:', error);
         setTodayItems([]);
@@ -796,7 +800,12 @@ export const ExpandedSidebar = ({
     setTodayItems((s) => s.filter((t) => t.id !== taskId));
     setCompletedToday((s) => [{ id: item.id, title: item.title }, ...s]);
     try {
-      await api.updateTask(taskId, { status: 'completed' });
+      // Use workspace-aware update so tasks from other workspaces update correctly
+      if (item.workspace_id) {
+        await api.updateTaskInWorkspace(taskId, item.workspace_id, { status: 'completed' });
+      } else {
+        await api.updateTask(taskId, { status: 'completed' });
+      }
     } catch (error) {
       console.error('Failed to complete task:', error);
       setTodayItems(prev);
@@ -1242,44 +1251,122 @@ export const ExpandedSidebar = ({
             <div>
               <p className="text-sm font-semibold text-gray-900">Today</p>
               <p className="text-xs text-gray-500 mt-0.5">
-                {isLoadingToday
-                  ? 'Loading…'
-                  : todayItems.length
-                  ? `${todayItems.filter((t) => String(t.status ?? '').toLowerCase() === 'completed').length}/${todayItems.length} complete`
-                  : 'Nothing needs your attention yet.'}
+                {isLoadingToday ? (
+                  'Loading…'
+                ) : todayItems.length + completedToday.length === 0 ? (
+                  'Nothing needs your attention yet.'
+                ) : (
+                  `${completedToday.length}/${todayItems.length + completedToday.length} complete`
+                )}
               </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setTodayCollapsed((v) => !v)}
+                className="p-1 rounded-md text-gray-500 hover:text-gray-700 hover:bg-gray-50 transition"
+                aria-label={todayCollapsed ? 'Expand Today' : 'Collapse Today'}
+                title={todayCollapsed ? 'Expand Today' : 'Collapse Today'}
+              >
+                {todayCollapsed ? (
+                  <ChevronDown size={16} className="text-gray-500" />
+                ) : (
+                  <ChevronUp size={16} className="text-gray-500" />
+                )}
+              </button>
             </div>
           </div>
 
-          <div className="mt-3 max-h-44 overflow-auto">
-            {isLoadingToday ? (
-              <SkeletonList />
-            ) : todayItems.length === 0 ? (
-              <div className="text-sm text-gray-600">No tasks for Today.</div>
-            ) : (
-              <div className="space-y-2">
-                {todayItems.map((item) => (
-                  <div key={item.id} className="flex items-start gap-3 rounded-md p-2 hover:bg-gray-50">
-                    <button
-                      type="button"
-                      onClick={() => toggleCompleteTask(item.id)}
-                      className="h-6 w-6 rounded-full border border-gray-300 flex items-center justify-center text-gray-600 hover:bg-gray-100"
-                      title="Mark complete"
-                    >
-                      <Check size={14} />
-                    </button>
-                    <div className="min-w-0">
-                      <div className="text-sm text-gray-900 truncate">{item.title}</div>
-                      <div className="text-[11px] text-gray-500 mt-0.5 truncate">
-                        {item.workspace_name ? `${item.workspace_name}` : ''}
-                        {item.project_name ? ` · ${item.project_name}` : ''}
+          {!todayCollapsed && (
+            <div className="mt-3 max-h-44 overflow-auto pr-1">
+              {isLoadingToday ? (
+                <SkeletonList />
+              ) : (
+                <div className="space-y-3">
+                  {(completedToday.length > 0 || todayItems.length === 0) && (
+                    <div className="rounded-lg border border-gray-200 bg-gray-50/80 px-3 py-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="min-w-0">
+                          <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-gray-500">
+                            {completedToday.length > 0 ? 'Completed today' : 'Nothing for Today'}
+                          </div>
+                          <div className="text-xs text-gray-500">
+                            {completedToday.length > 0
+                              ? 'Visible for 24 hours after completion.'
+                              : 'You\'re all caught up for today.'}
+                          </div>
+                        </div>
+                        {completedToday.length > 0 ? (
+                          <div className="rounded-full bg-white px-2 py-0.5 text-[11px] font-medium text-gray-600 ring-1 ring-gray-200">
+                            {completedToday.length}
+                          </div>
+                        ) : null}
                       </div>
+
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={() => window.desktopWindow?.toggleModule('quick-task' as any)}
+                          className="inline-flex items-center gap-1.5 rounded-md border border-gray-200 bg-white px-2.5 py-1 text-xs text-gray-700 hover:bg-gray-50"
+                        >
+                          <Plus size={11} /> Add task
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => window.desktopWindow?.toggleModule('quick-event' as any)}
+                          className="inline-flex items-center gap-1.5 rounded-md border border-gray-200 bg-white px-2.5 py-1 text-xs text-gray-700 hover:bg-gray-50"
+                        >
+                          <CalendarDays size={11} /> Add event
+                        </button>
+                      </div>
+
+                      {completedToday.length > 0 && (
+                        <div className="mt-2 space-y-1.5">
+                          {completedToday.map((item) => (
+                            <div
+                              key={item.id}
+                              className="flex items-center gap-2 rounded-md bg-white px-2 py-1.5 text-xs text-gray-700 ring-1 ring-gray-100"
+                            >
+                              <div className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-gray-100 text-gray-500">
+                                ✓
+                              </div>
+                              <div className="min-w-0 truncate text-gray-900">{item.title}</div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+                  )}
+
+                  {todayItems.length > 0 ? (
+                    <div className="space-y-2">
+                      {todayItems.map((item) => (
+                        <div key={item.id} className="flex items-start gap-3 rounded-md p-2 hover:bg-gray-50">
+                          <button
+                            type="button"
+                            onClick={() => toggleCompleteTask(item.id)}
+                            className="h-6 w-6 flex items-center justify-center shrink-0"
+                            title="Mark complete"
+                          >
+                            <div className="h-5 w-5 rounded-full border border-gray-300 flex items-center justify-center text-gray-600">
+                              <span className="sr-only">Mark complete</span>
+                            </div>
+                          </button>
+                          <div className="min-w-0">
+                            <div className="text-sm text-gray-900 truncate">{item.title}</div>
+                            <div className="text-[11px] text-gray-500 mt-0.5 truncate">
+                              {item.workspace_name ? `${item.workspace_name}` : ''}
+                              {item.project_name ? ` · ${item.project_name}` : ''}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         <div className="grid grid-cols-2 gap-2">
