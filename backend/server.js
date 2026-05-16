@@ -2006,6 +2006,101 @@ app.get('/api/tasks', authMiddleware, rateLimit('read'), async (req, res) => {
   }
 });
 
+app.get('/api/today', authMiddleware, rateLimit('read'), async (req, res) => {
+  try {
+    const workspaceIdsSet = await getUserWorkspaceIds(req.authUser.id);
+    const workspaceIds = Array.from(workspaceIdsSet);
+
+    if (!workspaceIds.length) return res.json([]);
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const todayISO = today.toISOString().slice(0, 10);
+
+    // Primary: tasks due today or overdue (not completed)
+    const dueQuery = supabase
+      .from('tasks')
+      .select(taskSelectColumns)
+      .in('workspace_id', workspaceIds)
+      .or(`due_date.eq.${todayISO},due_date.lt.${todayISO}`)
+      .neq('status', 'completed')
+      .order('due_date', { ascending: true })
+      .limit(500);
+
+    const { data: dueRows, error: dueError } = await dueQuery;
+    if (dueError) throw dueError;
+
+    // Secondary: tasks explicitly shown in Today (if column exists)
+    let explicitRows = [];
+    const explicitResult = await supabase
+      .from('tasks')
+      .select(taskSelectColumns + ', show_in_today, is_today_focus')
+      .in('workspace_id', workspaceIds)
+      .eq('show_in_today', true)
+      .neq('status', 'completed')
+      .limit(500);
+
+    if (!explicitResult.error) {
+      explicitRows = explicitResult.data ?? [];
+    } else if (!isMissingColumnError(explicitResult.error, 'show_in_today')) {
+      // Unexpected error
+      throw explicitResult.error;
+    }
+
+    const combined = [...(dueRows || []), ...(explicitRows || [])];
+
+    // Deduplicate by id
+    const byId = new Map();
+    for (const row of combined) {
+      if (!row || !row.id) continue;
+      if (!byId.has(row.id)) byId.set(row.id, row);
+    }
+
+    const rows = Array.from(byId.values()).slice(0, 500);
+
+    // Fetch workspace and project metadata
+    const wsIds = Array.from(new Set(rows.map((r) => r.workspace_id).filter(Boolean)));
+    const projIds = Array.from(new Set(rows.map((r) => r.project_id).filter(Boolean)));
+
+    const [wsResult, projResult] = await Promise.all([
+      wsIds.length
+        ? supabase.from('workspaces').select('id, name, color').in('id', wsIds)
+        : { data: [] },
+      projIds.length
+        ? supabase.from('projects').select('id, name').in('id', projIds)
+        : { data: [] },
+    ]);
+
+    if (wsResult?.error) throw wsResult.error;
+    if (projResult?.error) throw projResult.error;
+
+    const wsById = new Map((wsResult.data || []).map((w) => [w.id, w]));
+    const projById = new Map((projResult.data || []).map((p) => [p.id, p]));
+
+    const mapped = rows.map((r) => ({
+      id: r.id,
+      title: r.title,
+      status: r.status,
+      due_date: r.due_date ?? null,
+      due_time: r.due_time ?? null,
+      project_id: r.project_id ?? null,
+      project_name: r.project_id ? projById.get(r.project_id)?.name ?? null : null,
+      workspace_id: r.workspace_id,
+      workspace_name: wsById.get(r.workspace_id)?.name ?? null,
+      workspace_color: wsById.get(r.workspace_id)?.color ?? null,
+      assigned_to: r.assigned_to ?? null,
+      is_today_focus: r.is_today_focus ?? false,
+      show_in_today: r.show_in_today ?? false,
+      created_at: r.created_at ?? null,
+      updated_at: r.updated_at ?? null,
+    }));
+
+    res.json(mapped);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 app.post(
   '/api/tasks',
   authMiddleware,
@@ -2247,7 +2342,34 @@ app.get('/api/events', authMiddleware, rateLimit('read'), async (req, res) => {
 
     const { data, error } = await query.order('start_at', { ascending: true }).limit(500);
     if (error) throw error;
-    res.json(data ?? []);
+
+    const rows = Array.isArray(data) ? data : [];
+    const now = Date.now();
+    const overdueEvents = rows.filter((event) => {
+      const isRecurring = String(event.recurrence_rule ?? 'none') !== 'none';
+      const isDone = String(event.status ?? '') === 'done';
+      const endedAt = new Date(event.end_at ?? event.start_at ?? 0).getTime();
+      return !isRecurring && !isDone && Number.isFinite(endedAt) && endedAt < now;
+    });
+
+    if (overdueEvents.length > 0) {
+      await Promise.allSettled(
+        overdueEvents.map((event) =>
+          supabase
+            .from('events')
+            .update({ status: 'done', updated_by: req.authUser.id })
+            .eq('id', event.id)
+        )
+      );
+    }
+
+    res.json(
+      rows.map((event) =>
+        overdueEvents.some((overdue) => overdue.id === event.id)
+          ? { ...event, status: 'done' }
+          : event
+      )
+    );
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -2600,7 +2722,35 @@ app.get('/api/reminders', authMiddleware, rateLimit('read'), async (req, res) =>
     );
 
     if (error) throw error;
-    res.json(data ?? []);
+
+    const rows = Array.isArray(data) ? data : [];
+    const now = Date.now();
+    const overdueReminders = rows.filter((reminder) => {
+      const isDone = Boolean(reminder.is_done);
+      const remindAt = new Date(reminder.remind_at ?? 0).getTime();
+      return !isDone && Number.isFinite(remindAt) && remindAt < now;
+    });
+
+    if (overdueReminders.length > 0) {
+      await Promise.allSettled(
+        overdueReminders.map((reminder) =>
+          withReminderTable((table) =>
+            supabase
+              .from(table)
+              .update({ is_done: true, updated_by: req.authUser.id })
+              .eq('id', reminder.id)
+          )
+        )
+      );
+    }
+
+    res.json(
+      rows.map((reminder) =>
+        overdueReminders.some((overdue) => overdue.id === reminder.id)
+          ? { ...reminder, is_done: true }
+          : reminder
+      )
+    );
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

@@ -7,6 +7,7 @@ const API_URL = import.meta.env.VITE_API_URL?.trim() || DEFAULT_API_URL;
 
 type ApiRequestOptions = RequestInit & {
   skipJson?: boolean;
+  skipWorkspaceHeader?: boolean;
 };
 
 export const useApi = () => {
@@ -57,7 +58,7 @@ export const useApi = () => {
       headers['Authorization'] = `Bearer ${session.access_token}`;
     }
 
-    if (activeWorkspaceId && endpoint.startsWith('/api/')) {
+    if (!options.skipWorkspaceHeader && activeWorkspaceId && endpoint.startsWith('/api/')) {
       headers['X-Workspace-Id'] = activeWorkspaceId;
     }
 
@@ -235,6 +236,8 @@ export const useApi = () => {
           return dedupeById(data);
         });
       },
+      // Today (unified across accessible workspaces)
+      getToday: () => request('/api/today', { skipWorkspaceHeader: true }),
       createTask: (payload: {
         title: string;
         description?: string | null;

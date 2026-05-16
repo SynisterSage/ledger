@@ -37,7 +37,7 @@ import {
   $getSelection,
   $isRangeSelection,
   $createParagraphNode,
-  COMMAND_PRIORITY_EDITOR,
+  COMMAND_PRIORITY_HIGH,
   PASTE_COMMAND,
   DROP_COMMAND,
 } from 'lexical';
@@ -345,6 +345,48 @@ const ToolbarPlugin = () => {
 
 const NOTE_IMAGE_BUCKET = 'note-images';
 
+const fileToDataUrl = (file: File) =>
+  new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result ?? ''));
+    reader.onerror = () => reject(new Error('Could not read image file'));
+    reader.readAsDataURL(file);
+  });
+
+const getImageFilesFromClipboard = (event: ClipboardEvent): File[] => {
+  const directFiles = Array.from(event.clipboardData?.files ?? []).filter((file) =>
+    file.type.startsWith('image/')
+  );
+  if (directFiles.length > 0) return directFiles;
+
+  const itemFiles = Array.from(event.clipboardData?.items ?? [])
+    .filter((item) => item.kind === 'file' && item.type.startsWith('image/'))
+    .map((item, index) => {
+      const file = item.getAsFile();
+      if (!file) return null;
+      if (file.name) return file;
+      const ext = file.type.split('/')[1] || 'png';
+      return new File([file], `pasted-image-${Date.now()}-${index}.${ext}`, { type: file.type });
+    })
+    .filter((file): file is File => Boolean(file));
+
+  return itemFiles;
+};
+
+const getImageFilesFromDataTransfer = (dataTransfer: DataTransfer | null): File[] => {
+  if (!dataTransfer) return [];
+
+  const directFiles = Array.from(dataTransfer.files ?? []).filter((file) =>
+    file.type.startsWith('image/')
+  );
+  if (directFiles.length > 0) return directFiles;
+
+  return Array.from(dataTransfer.items ?? [])
+    .filter((item) => item.kind === 'file' && item.type.startsWith('image/'))
+    .map((item) => item.getAsFile())
+    .filter((file): file is File => Boolean(file));
+};
+
 const ImagePasteDropPlugin = ({ noteId }: { noteId?: string | null }) => {
   const [editor] = useLexicalComposerContext();
   const { activeWorkspaceId } = useWorkspaceContext();
@@ -372,6 +414,7 @@ const ImagePasteDropPlugin = ({ noteId }: { noteId?: string | null }) => {
       const timestamp = Date.now();
       const safeNoteId = noteId ?? 'unassigned';
       const storagePath = `workspaces/${activeWorkspaceId}/notes/${safeNoteId}/images/${timestamp}-${random}.${ext}`;
+      const localDataUrl = await fileToDataUrl(file);
 
       try {
         const { error: uploadError } = await supabase.storage
@@ -383,19 +426,24 @@ const ImagePasteDropPlugin = ({ noteId }: { noteId?: string | null }) => {
           return;
         }
 
-        // TEMP MVP: using public URL for rendering. Replace with signed URL resolution
-        // when moving to private buckets / per-workspace access control.
-        const { data } = supabase.storage.from(NOTE_IMAGE_BUCKET).getPublicUrl(storagePath);
-        const imageUrl = data?.publicUrl;
-        if (!imageUrl) {
-          toast.show('Could not retrieve image URL', { variant: 'error' });
-          return;
-        }
+        // Prefer signed URLs so rendering works for private buckets as well.
+        const { data: signedData, error: signedError } = await supabase.storage
+          .from(NOTE_IMAGE_BUCKET)
+          .createSignedUrl(storagePath, 60 * 60 * 24 * 7);
+
+        const fallbackPublicUrl =
+          supabase.storage.from(NOTE_IMAGE_BUCKET).getPublicUrl(storagePath).data?.publicUrl ?? '';
+
+        const imageUrl = !signedError && signedData?.signedUrl ? signedData.signedUrl : fallbackPublicUrl;
 
         // only insert after successful upload and valid render URL
         editor.update(() => {
           $insertNodes([
-            $createImageNode({ src: imageUrl, altText: file.name || 'Pasted image', storagePath }),
+            $createImageNode({
+              src: imageUrl || localDataUrl,
+              altText: file.name || 'Pasted image',
+              storagePath,
+            }),
             $createParagraphNode(),
           ]);
         });
@@ -404,16 +452,14 @@ const ImagePasteDropPlugin = ({ noteId }: { noteId?: string | null }) => {
         toast.show('Image upload failed', { variant: 'error' });
       }
     },
-    [activeWorkspaceId, editor, noteId]
+    [activeWorkspaceId, editor, noteId, toast]
   );
 
   useEffect(() => {
     return editor.registerCommand(
       PASTE_COMMAND,
       (event: ClipboardEvent) => {
-        const files = Array.from(event.clipboardData?.files ?? []).filter((file) =>
-          file.type.startsWith('image/')
-        );
+        const files = getImageFilesFromClipboard(event);
         if (files.length === 0) return false;
         event.preventDefault();
         for (const file of files) {
@@ -421,7 +467,7 @@ const ImagePasteDropPlugin = ({ noteId }: { noteId?: string | null }) => {
         }
         return true;
       },
-      COMMAND_PRIORITY_EDITOR
+      COMMAND_PRIORITY_HIGH
     );
   }, [editor, uploadAndInsert]);
 
@@ -429,9 +475,7 @@ const ImagePasteDropPlugin = ({ noteId }: { noteId?: string | null }) => {
     return editor.registerCommand(
       DROP_COMMAND,
       (event: DragEvent) => {
-        const files = Array.from(event.dataTransfer?.files ?? []).filter((file) =>
-          file.type.startsWith('image/')
-        );
+        const files = getImageFilesFromDataTransfer(event.dataTransfer);
         if (files.length === 0) return false;
         event.preventDefault();
         for (const file of files) {
@@ -439,9 +483,22 @@ const ImagePasteDropPlugin = ({ noteId }: { noteId?: string | null }) => {
         }
         return true;
       },
-      COMMAND_PRIORITY_EDITOR
+      COMMAND_PRIORITY_HIGH
     );
   }, [editor, uploadAndInsert]);
+
+  useEffect(() => {
+    return editor.registerRootListener((rootElement, prevRootElement) => {
+      const onDragOver = (event: DragEvent) => {
+        const files = getImageFilesFromDataTransfer(event.dataTransfer);
+        if (files.length === 0) return;
+        event.preventDefault();
+      };
+
+      prevRootElement?.removeEventListener('dragover', onDragOver as EventListener);
+      rootElement?.addEventListener('dragover', onDragOver as EventListener);
+    });
+  }, [editor]);
 
   return null;
 };

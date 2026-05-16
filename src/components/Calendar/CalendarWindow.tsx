@@ -677,6 +677,8 @@ export const CalendarWindow = () => {
   );
   const [editCalendarId, setEditCalendarId] = useState('');
   const [editColor, setEditColor] = useState('#93C5FD');
+  const [editProjectId, setEditProjectId] = useState('');
+  const [editNoteId, setEditNoteId] = useState('');
   const [editRecurrence, setEditRecurrence] = useState<'none' | 'daily' | 'weekly' | 'weekdays'>(
     'none'
   );
@@ -1914,6 +1916,8 @@ export const CalendarWindow = () => {
     setEditStatus(source.status ?? 'planned');
     setEditCalendarId(source.calendar_id);
     setEditColor(calendarById.get(source.calendar_id)?.color ?? source.color ?? '#93C5FD');
+    setEditProjectId(source.project_id ?? '');
+    setEditNoteId(source.note_id ?? '');
     setEditRecurrence(source.recurrence_rule ?? 'none');
     setEventNotesDrafts((prev) => ({
       ...prev,
@@ -2060,6 +2064,8 @@ export const CalendarWindow = () => {
       color: resolvedEventColor,
       status: editStatus,
       recurrence_rule: editRecurrence,
+      project_id: editProjectId || null,
+      note_id: editNoteId || null,
       notes: eventNotesDrafts[eventEditorEvent.id] ?? eventEditorEvent.notes ?? null,
     })) as EventRow;
 
@@ -2532,6 +2538,7 @@ export const CalendarWindow = () => {
             <div className="flex items-center gap-1 rounded-full border border-gray-200 bg-gray-50 p-1 shadow-sm">
               <button
                 onClick={() => moveView(-1)}
+                onMouseDown={(e) => e.stopPropagation()}
                 className="h-8 w-8 rounded-full hover:bg-white text-gray-600 flex items-center justify-center"
                 title="Previous period"
               >
@@ -2954,7 +2961,7 @@ export const CalendarWindow = () => {
                                 return (
                                   <div
                                     key={reminder.id}
-                                    className={`text-[10px] rounded px-1.5 py-0.5 truncate ${
+                                    className={`text-[10px] leading-tight rounded px-1.5 py-1 truncate ${
                                       pastReminder ? 'opacity-80' : ''
                                     }`}
                                     style={{
@@ -2996,7 +3003,7 @@ export const CalendarWindow = () => {
                                 return (
                                   <div
                                     key={event.id}
-                                    className={`text-[10px] rounded-md px-2 py-0.5 truncate border shadow-sm ${
+                                    className={`text-[10px] leading-tight rounded-md px-2 py-1 truncate border shadow-sm ${
                                       meta.previewClass
                                     } ${event.status === 'done' ? 'line-through opacity-80' : ''} ${
                                       event.status === 'cancelled' ? 'opacity-65' : ''
@@ -3144,7 +3151,7 @@ export const CalendarWindow = () => {
                                     id: evt.id,
                                   });
                                 }}
-                                className="text-[10px] rounded-md px-2 py-0.5 truncate w-full text-left border shadow-sm"
+                                className="text-[10px] leading-tight rounded-md px-2 py-1 truncate w-full text-left border shadow-sm"
                                 style={{
                                   backgroundColor: pastEvent ? '#F3F4F6' : `${eventColor}18`,
                                   borderColor: pastEvent ? '#E5E7EB' : `${eventColor}44`,
@@ -3334,7 +3341,7 @@ export const CalendarWindow = () => {
                                         id: reminder.id,
                                       });
                                     }}
-                                    className={`relative z-40 block w-full truncate rounded-md border px-2 py-1 text-left text-[10px] shadow-sm ${
+                                    className={`relative z-40 block w-full truncate rounded-md border px-2 py-1.5 text-left text-[10px] leading-tight shadow-sm ${
                                       reminder.is_done ? 'line-through opacity-60' : ''
                                     } ${isPastReminder(reminder) ? 'opacity-80' : ''}`}
                                     style={{
@@ -3397,10 +3404,10 @@ export const CalendarWindow = () => {
                                       id: evt.id,
                                     });
                                   }}
-                                  className="absolute inset-x-1 z-10 overflow-hidden rounded-md border px-2 py-1 text-left text-[10px] shadow-sm"
+                                  className="absolute inset-x-1 z-10 overflow-hidden rounded-md border px-2 py-1.5 text-left text-[10px] leading-tight shadow-sm"
                                   style={{
                                     top: `${Math.max(8, reminderStackHeight + 6)}px`,
-                                    height: `${Math.max(40, durationRows * 64 - 8)}px`,
+                                    height: `${Math.max(40, durationRows * 64 - 12)}px`,
                                     backgroundColor: pastEvent ? '#F3F4F6' : '#FFFFFF',
                                     borderColor: pastEvent ? '#E5E7EB' : `${eventColor}55`,
                                     color: pastEvent ? '#6B7280' : '#1F2937',
@@ -3411,7 +3418,7 @@ export const CalendarWindow = () => {
                                       : `0 0 0 1px ${eventColor}12, 0 1px 2px rgba(15, 23, 42, 0.04)`,
                                   }}
                                 >
-                                  <div className="flex items-start gap-1.5 min-w-0">
+                                  <div className="flex h-full items-start gap-1.5 min-w-0">
                                     <span
                                       className="mt-1 inline-block h-1.5 w-1.5 shrink-0 rounded-full"
                                       style={{ backgroundColor: eventColor }}
@@ -3810,7 +3817,7 @@ export const CalendarWindow = () => {
                               className="h-2 w-2 shrink-0 rounded-full"
                               style={{ backgroundColor: isPastEvent(event) ? '#9CA3AF' : eventColor }}
                             />
-                            <p className="w-16 shrink-0 text-[12px] font-medium text-gray-900">
+                            <p className="w-28 shrink-0 whitespace-nowrap text-[12px] font-medium text-gray-900">
                               {formatEventTimeLabel(event)}
                             </p>
                             <p className={`min-w-0 flex-1 truncate text-[13px] ${isPastEvent(event) ? 'text-gray-500' : 'text-gray-700'}`}>
@@ -3853,10 +3860,12 @@ export const CalendarWindow = () => {
                 {composerMode === 'reminder' ? 'New Reminder' : 'New Event'}
               </h3>
               <button
+                type="button"
                 onClick={(e) => {
                   e.preventDefault();
                   setIsComposerOpen(false);
                 }}
+                onMouseDown={(e) => e.stopPropagation()}
                 className="p-1 rounded hover:bg-gray-100"
               >
                 <X size={14} className="text-gray-600" />
@@ -4284,6 +4293,42 @@ export const CalendarWindow = () => {
                   <option value="done">Done</option>
                   <option value="missed">Missed</option>
                   <option value="cancelled">Cancelled</option>
+                </select>
+                <ChevronDown
+                  size={16}
+                  className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500"
+                />
+              </div>
+              <div className="relative">
+                <select
+                  value={editProjectId}
+                  onChange={(e) => setEditProjectId(e.target.value)}
+                  className="w-full h-9 pr-9 pl-2 text-sm border border-gray-200 rounded-md focus:outline-none focus:border-gray-400 bg-white appearance-none"
+                >
+                  <option value="">None</option>
+                  {projects.map((project) => (
+                    <option key={project.id} value={project.id}>
+                      {project.name}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown
+                  size={16}
+                  className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500"
+                />
+              </div>
+              <div className="relative">
+                <select
+                  value={editNoteId}
+                  onChange={(e) => setEditNoteId(e.target.value)}
+                  className="w-full h-9 pr-9 pl-2 text-sm border border-gray-200 rounded-md focus:outline-none focus:border-gray-400 bg-white appearance-none"
+                >
+                  <option value="">None</option>
+                  {notes.map((note) => (
+                    <option key={note.id} value={note.id}>
+                      {note.title}
+                    </option>
+                  ))}
                 </select>
                 <ChevronDown
                   size={16}

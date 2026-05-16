@@ -12,9 +12,7 @@ import { useSidebar } from '../../context/SidebarContext';
 import { useSearch } from '../../context/SearchContext';
 
 export const MinimizedSidebar = ({
-  onDragHandleMouseDown,
 }: {
-  onDragHandleMouseDown?: (e: React.MouseEvent<HTMLDivElement>) => void;
 }) => {
   const { signOut } = useAuthContext();
   const { collapseSidebar, setState, position } = useSidebar();
@@ -34,8 +32,6 @@ export const MinimizedSidebar = ({
           ? 'h-16 w-full flex-row items-center justify-between px-4 bg-transparent'
           : 'h-full w-full flex-col items-center justify-between bg-transparent px-0 py-4'
       }`}
-      onMouseDown={onDragHandleMouseDown}
-      style={{ cursor: onDragHandleMouseDown ? 'grab' : 'auto' }}
     >
       <div
         className={`${
@@ -53,7 +49,7 @@ export const MinimizedSidebar = ({
           aria-label="Collapse sidebar"
           className="flex h-11 w-11 items-center justify-center rounded-xl bg-transparent transition-colors duration-150 hover:bg-white/45"
         >
-          <img src="./logo-color.svg" alt="Ledger" className="h-7 w-7" />
+          <img src="./logo-color.svg" alt="Ledger" className="h-7 w-7" draggable={false} />
         </button>
 
         <div className={`flex ${isHorizontal ? 'flex-row gap-3' : 'flex-col gap-4 self-center'}`}>

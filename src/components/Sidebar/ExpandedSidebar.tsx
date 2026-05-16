@@ -184,6 +184,27 @@ export const ExpandedSidebar = ({
     }>
   >([]);
   const [isLoadingUpcoming, setIsLoadingUpcoming] = useState(true);
+  const [todayItems, setTodayItems] = useState<
+    Array<{
+      id: string;
+      title: string;
+      status: string;
+      due_date?: string | null;
+      due_time?: string | null;
+      project_id?: string | null;
+      project_name?: string | null;
+      workspace_id?: string | null;
+      workspace_name?: string | null;
+      workspace_color?: string | null;
+      assigned_to?: string | null;
+      is_today_focus?: boolean;
+      show_in_today?: boolean;
+      created_at?: string | null;
+      updated_at?: string | null;
+    }>
+  >([]);
+  const [isLoadingToday, setIsLoadingToday] = useState(true);
+  const [completedToday, setCompletedToday] = useState<Array<{ id: string; title: string }>>([]);
   const [expandedUpcomingId, setExpandedUpcomingId] = useState<string | null>(null);
   const [draggingProjectId, setDraggingProjectId] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<{
@@ -255,7 +276,7 @@ export const ExpandedSidebar = ({
       <div
         ref={dropdownRef}
         style={portalStyle ?? undefined}
-        className="rounded-2xl border bg-white shadow-[0_12px_40px_rgba(15,23,42,0.12)] max-h-56 overflow-auto"
+        className="rounded-2xl border border-gray-200 bg-white shadow-[0_12px_40px_rgba(15,23,42,0.12)] ring-0 outline-none max-h-56 overflow-auto"
       >
         {Array.isArray(workspaces) && workspaces.length > 0 ? (
           workspaces.map((ws) => (
@@ -413,6 +434,46 @@ export const ExpandedSidebar = ({
 
     return () => {
       cancelled = true;
+    };
+  }, [user?.id, activeWorkspaceId]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadToday = async () => {
+      if (!user) {
+        setTodayItems([]);
+        setIsLoadingToday(false);
+        return;
+      }
+
+      setIsLoadingToday(true);
+      try {
+        const data = await api.getToday();
+        if (cancelled) return;
+        const rows = Array.isArray(data) ? data : [];
+        const active = rows.filter((r: any) => String(r.status ?? '').toLowerCase() !== 'completed');
+        const completed = rows.filter((r: any) => String(r.status ?? '').toLowerCase() === 'completed');
+        setTodayItems(active);
+        setCompletedToday(completed.map((c: any) => ({ id: c.id, title: c.title })));
+      } catch (error) {
+        console.error('Failed to load Today items:', error);
+        setTodayItems([]);
+        setCompletedToday([]);
+      } finally {
+        if (!cancelled) setIsLoadingToday(false);
+      }
+    };
+
+    void loadToday();
+
+    const refreshTimer = window.setInterval(() => {
+      void loadToday();
+    }, 60_000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(refreshTimer);
     };
   }, [user?.id, activeWorkspaceId]);
 
@@ -724,6 +785,22 @@ export const ExpandedSidebar = ({
     if (saved) {
       setTaskCaptureSaved(true);
       window.setTimeout(() => setTaskCaptureSaved(false), 1500);
+    }
+  };
+
+  const toggleCompleteTask = async (taskId: string) => {
+    const prev = todayItems.slice();
+    const item = prev.find((t) => t.id === taskId);
+    if (!item) return;
+    // Optimistic update: remove from active list, add to completed
+    setTodayItems((s) => s.filter((t) => t.id !== taskId));
+    setCompletedToday((s) => [{ id: item.id, title: item.title }, ...s]);
+    try {
+      await api.updateTask(taskId, { status: 'completed' });
+    } catch (error) {
+      console.error('Failed to complete task:', error);
+      setTodayItems(prev);
+      setCompletedToday((s) => s.filter((c) => c.id !== taskId));
     }
   };
 
@@ -1158,6 +1235,52 @@ export const ExpandedSidebar = ({
             ⌘K
           </span>
         </button>
+
+        {/* Today unified feed (workspace-aware) */}
+        <div className="mt-3 mb-3 bg-white rounded-lg border border-gray-200 p-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-semibold text-gray-900">Today</p>
+              <p className="text-xs text-gray-500 mt-0.5">
+                {isLoadingToday
+                  ? 'Loading…'
+                  : todayItems.length
+                  ? `${todayItems.filter((t) => String(t.status ?? '').toLowerCase() === 'completed').length}/${todayItems.length} complete`
+                  : 'Nothing needs your attention yet.'}
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-3 max-h-44 overflow-auto">
+            {isLoadingToday ? (
+              <SkeletonList />
+            ) : todayItems.length === 0 ? (
+              <div className="text-sm text-gray-600">No tasks for Today.</div>
+            ) : (
+              <div className="space-y-2">
+                {todayItems.map((item) => (
+                  <div key={item.id} className="flex items-start gap-3 rounded-md p-2 hover:bg-gray-50">
+                    <button
+                      type="button"
+                      onClick={() => toggleCompleteTask(item.id)}
+                      className="h-6 w-6 rounded-full border border-gray-300 flex items-center justify-center text-gray-600 hover:bg-gray-100"
+                      title="Mark complete"
+                    >
+                      <Check size={14} />
+                    </button>
+                    <div className="min-w-0">
+                      <div className="text-sm text-gray-900 truncate">{item.title}</div>
+                      <div className="text-[11px] text-gray-500 mt-0.5 truncate">
+                        {item.workspace_name ? `${item.workspace_name}` : ''}
+                        {item.project_name ? ` · ${item.project_name}` : ''}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
 
         <div className="grid grid-cols-2 gap-2">
           <button

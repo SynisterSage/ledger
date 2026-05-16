@@ -2054,6 +2054,8 @@ function openModuleWindow(
     transparent: true,
     backgroundColor: '#00000000',
     ...getModuleWindowChromeOptions(),
+    // Ensure module popouts can enter/exit fullscreen reliably on Windows and macOS
+    fullscreenable: true,
     minWidth: Math.min(minWidth, initialBounds.width),
     minHeight: Math.min(minHeight, initialBounds.height),
     resizable: !isQuickCapture,
@@ -2093,6 +2095,43 @@ function openModuleWindow(
 
   moduleWin.on('closed', () => {
     moduleWins.delete(kind);
+  });
+
+  // Ensure fullscreen can be exited with Escape or F11 reliably on all platforms.
+  moduleWin.webContents.on('before-input-event', (event, input) => {
+    try {
+      const key = String(input.key ?? '').toLowerCase();
+      const isF11 = key === 'f11';
+      const isEscape = key === 'escape' || key === 'esc';
+      if ((isEscape || isF11) && moduleWin && !moduleWin.isDestroyed() && moduleWin.isFullScreen()) {
+        // Prevent the renderer from also handling it
+        event.preventDefault();
+        moduleWin.setFullScreen(false);
+        moduleWin.show();
+        moduleWin.focus();
+      }
+    } catch (err) {
+      // Non-fatal — ignore
+    }
+  });
+
+  moduleWin.on('enter-full-screen', () => {
+    try {
+      // Ensure the window is visible and focused when entering fullscreen
+      if (!moduleWin.isDestroyed()) {
+        moduleWin.show();
+        moduleWin.focus();
+      }
+    } catch (err) {}
+  });
+
+  moduleWin.on('leave-full-screen', () => {
+    try {
+      if (!moduleWin.isDestroyed()) {
+        moduleWin.show();
+        moduleWin.focus();
+      }
+    } catch (err) {}
   });
 
   if (!isQuickCapture) {

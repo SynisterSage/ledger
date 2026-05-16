@@ -312,17 +312,13 @@ export const SidebarContainer = () => {
 
         {state === 'minimized' && isExpanded && (
           <div className="h-full w-full">
-            <MinimizedSidebar
-              onDragHandleMouseDown={isFloating ? handleDragHandleStart : undefined}
-            />
+            <MinimizedSidebar />
           </div>
         )}
 
         {state === 'minimized' && !isExpanded && (
           <div className="h-full w-full">
-            <CollapsedSidebar
-              onDragHandleMouseDown={isFloating ? handleDragHandleStart : undefined}
-            />
+            <CollapsedSidebar />
           </div>
         )}
       </div>
