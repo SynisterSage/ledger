@@ -248,6 +248,8 @@ export const useApi = () => {
         priority?: string;
         tags?: string[];
         project_id?: string | null;
+        show_in_today?: boolean;
+        is_today_focus?: boolean;
       }) =>
         request('/api/tasks', {
           method: 'POST',
@@ -273,6 +275,12 @@ export const useApi = () => {
       deleteTask: (id: string) =>
         request(`/api/tasks/${id}`, {
           method: 'DELETE',
+        }),
+      deleteTaskInWorkspace: (id: string, workspaceId: string) =>
+        request(`/api/tasks/${id}`, {
+          method: 'DELETE',
+          skipWorkspaceHeader: true,
+          headers: { 'X-Workspace-Id': workspaceId },
         }),
 
       // Calendars

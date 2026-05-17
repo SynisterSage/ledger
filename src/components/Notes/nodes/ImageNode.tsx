@@ -1,10 +1,8 @@
-import React, { useEffect, useState, type JSX } from 'react'
 import {
   DecoratorNode,
   type DOMConversionMap,
   type DOMConversionOutput,
   type DOMExportOutput,
-  type LexicalEditor,
   type LexicalNode,
   type NodeKey,
   type SerializedLexicalNode,
@@ -21,6 +19,10 @@ export type SerializedImageNode = SerializedLexicalNode & {
 }
 
 const NOTE_IMAGE_BUCKET = 'note-images'
+const resolveImageSrc = (src: string, storagePath: string | null) => {
+  if (!storagePath) return src
+  return supabase.storage.from(NOTE_IMAGE_BUCKET).getPublicUrl(storagePath).data?.publicUrl ?? src
+}
 
 const extractStoragePathFromSrc = (src: string): string | null => {
   const value = String(src ?? '').trim()
@@ -52,76 +54,7 @@ function convertImageElement(domNode: Node): DOMConversionOutput | null {
   return { node: $createImageNode({ src, altText, storagePath }) }
 }
 
-function NoteImage({
-  src,
-  altText,
-  storagePath,
-}: {
-  src: string
-  altText: string
-  storagePath?: string | null
-}): JSX.Element {
-  const [resolvedSrc, setResolvedSrc] = useState(src)
-
-  useEffect(() => {
-    let disposed = false
-    let objectUrlToRevoke: string | null = null
-    setResolvedSrc(src)
-
-    if (!storagePath)
-      return () => {
-        disposed = true
-      }
-
-    const resolveUrl = async () => {
-      // Primary path: authenticated download + object URL. This works for private buckets
-      // and avoids relying on public access.
-      const { data: blobData, error: blobError } = await supabase.storage
-        .from(NOTE_IMAGE_BUCKET)
-        .download(storagePath)
-
-      if (!disposed && !blobError && blobData) {
-        objectUrlToRevoke = URL.createObjectURL(blobData)
-        setResolvedSrc(objectUrlToRevoke)
-        return
-      }
-
-      // Fallback: signed URL for projects that disallow direct public object fetch.
-      const { data, error } = await supabase.storage
-        .from(NOTE_IMAGE_BUCKET)
-        .createSignedUrl(storagePath, 60 * 60 * 24 * 7)
-
-      if (disposed) return
-      if (!error && data?.signedUrl) {
-        setResolvedSrc(data.signedUrl)
-        return
-      }
-
-      const publicData = supabase.storage.from(NOTE_IMAGE_BUCKET).getPublicUrl(storagePath).data
-      if (publicData?.publicUrl) {
-        setResolvedSrc(publicData.publicUrl)
-      }
-    }
-
-    void resolveUrl()
-
-    return () => {
-      disposed = true
-      if (objectUrlToRevoke) URL.revokeObjectURL(objectUrlToRevoke)
-    }
-  }, [src, storagePath])
-
-  return (
-    <img
-      src={resolvedSrc}
-      data-storage-path={storagePath ?? undefined}
-      alt={altText || 'Pasted image'}
-      className="my-3 max-h-130 w-auto max-w-full rounded-lg border border-gray-200 object-contain"
-    />
-  )
-}
-
-export class ImageNode extends DecoratorNode<JSX.Element> {
+export class ImageNode extends DecoratorNode<null> {
   __src: string
   __altText: string
   __storagePath: string | null
@@ -178,17 +111,29 @@ export class ImageNode extends DecoratorNode<JSX.Element> {
   }
 
   createDOM(): HTMLElement {
-    const container = document.createElement('div')
-    container.style.display = 'block'
-    return container
+    const img = document.createElement('img')
+    img.src = resolveImageSrc(this.__src, this.__storagePath)
+    img.alt = this.__altText || 'Pasted image'
+    if (this.__storagePath) img.setAttribute('data-storage-path', this.__storagePath)
+    img.className = 'my-3 max-h-[520px] w-auto max-w-full rounded-lg border border-gray-200 object-contain'
+    img.style.display = 'block'
+    return img
   }
 
-  updateDOM(): false {
+  updateDOM(dom: HTMLElement): false {
+    const img = dom as HTMLImageElement
+    img.src = resolveImageSrc(this.__src, this.__storagePath)
+    img.alt = this.__altText || 'Pasted image'
+    if (this.__storagePath) {
+      img.setAttribute('data-storage-path', this.__storagePath)
+    } else {
+      img.removeAttribute('data-storage-path')
+    }
     return false
   }
 
-  decorate(_editor: LexicalEditor): JSX.Element {
-    return <NoteImage src={this.__src} storagePath={this.__storagePath} altText={this.__altText} />
+  decorate(): null {
+    return null
   }
 }
 

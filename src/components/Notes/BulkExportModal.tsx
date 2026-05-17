@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { Download, Loader2, X, Check } from 'lucide-react';
 
 interface BulkExportModalProps {
@@ -95,7 +96,7 @@ export const BulkExportModal = ({
     html: 'HTML',
   };
 
-  return (
+  return createPortal(
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
       onMouseDown={onClose}
@@ -225,6 +226,7 @@ export const BulkExportModal = ({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };

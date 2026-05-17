@@ -10,6 +10,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useAuthContext } from '../../context/AuthContext';
 import {
   modulePaneSizing,
@@ -2198,14 +2199,15 @@ export const ProjectsWindow = () => {
         )}
       </div>
 
-      {taskNotesTask && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/25 p-4"
-          onClick={() => {
-            setTaskNotesTaskId(null);
-            setTaskNotesDraft('');
-          }}
-        >
+      {taskNotesTask &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/25 p-4"
+            onClick={() => {
+              setTaskNotesTaskId(null);
+              setTaskNotesDraft('');
+            }}
+          >
           <div
             className="w-full max-w-xl rounded-2xl border border-gray-200 bg-white shadow-xl"
             onClick={(e) => e.stopPropagation()}
@@ -2245,8 +2247,9 @@ export const ProjectsWindow = () => {
               </div>
             </div>
           </div>
-        </div>
-      )}
+          </div>,
+          document.body
+        )}
 
       {linkedNoteContextMenu && linkedNoteMenuPosition && (
         <div
@@ -2281,11 +2284,12 @@ export const ProjectsWindow = () => {
         </div>
       )}
 
-      {isLinkNoteModalOpen && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/25 p-4"
-          onClick={() => setIsLinkNoteModalOpen(false)}
-        >
+      {isLinkNoteModalOpen &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/25 p-4"
+            onClick={() => setIsLinkNoteModalOpen(false)}
+          >
           <div
             className="w-full max-w-xl rounded-2xl border border-gray-200 bg-white shadow-xl"
             onClick={(e) => e.stopPropagation()}
@@ -2339,8 +2343,9 @@ export const ProjectsWindow = () => {
               </button>
             </div>
           </div>
-        </div>
-      )}
+          </div>,
+          document.body
+        )}
 
       {projectContextMenu && projectMenuPosition && (
         <div

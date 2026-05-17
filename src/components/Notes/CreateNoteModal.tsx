@@ -1,4 +1,5 @@
 import { ChevronRight, FileText, Lightbulb, User, BookOpen, X } from 'lucide-react';
+import { createPortal } from 'react-dom';
 import { useEffect, useMemo, useState } from 'react';
 import { useApi } from '../../hooks/useApi';
 import { TemplateGallery } from './TemplateGallery';
@@ -56,6 +57,29 @@ const QUICK_TEMPLATES = [
     description: 'Title, author, summary, key takeaways, quotes',
   },
 ];
+
+const QUICK_TEMPLATE_FALLBACKS: Record<string, { content: string; content_html: string }> = {
+  'meeting notes': {
+    content: 'Date\nAttendees\nAgenda\nDiscussion\nAction items',
+    content_html:
+      '<p>Date</p><p>Attendees</p><p>Agenda</p><p>Discussion</p><p>Action items</p>',
+  },
+  'project brief': {
+    content: 'Project\nOwner\nDue\nObjective\nSuccess criteria',
+    content_html:
+      '<p>Project</p><p>Owner</p><p>Due</p><p>Objective</p><p>Success criteria</p>',
+  },
+  'daily reflection': {
+    content: 'Wins\nLessons\nBlockers\nTomorrow\'s focus\nMood',
+    content_html:
+      "<p>Wins</p><p>Lessons</p><p>Blockers</p><p>Tomorrow's focus</p><p>Mood</p>",
+  },
+  'book notes': {
+    content: 'Title\nAuthor\nSummary\nKey takeaways\nQuotes',
+    content_html:
+      '<p>Title</p><p>Author</p><p>Summary</p><p>Key takeaways</p><p>Quotes</p>',
+  },
+};
 
 export const CreateNoteModal = ({
   isOpen,
@@ -182,11 +206,39 @@ export const CreateNoteModal = ({
     }
   };
 
+  const handleCreateQuickTemplate = async (name: string, templateId: string | null) => {
+    setIsCreating(true);
+    try {
+      if (templateId) {
+        await handleCreateFromTemplate(templateId);
+        return;
+      }
+
+      const fallback = QUICK_TEMPLATE_FALLBACKS[name.toLowerCase()];
+      if (!fallback) {
+        throw new Error('Template not found');
+      }
+
+      const note = await api.createNote(name, fallback.content, {
+        content_html: fallback.content_html,
+        section_id: defaultSectionId ?? undefined,
+        source: 'template',
+        mode: 'text',
+      });
+      onNoteCreated?.(note);
+      onClose();
+    } catch (error) {
+      console.error('Failed to create note from quick template:', error);
+    } finally {
+      setIsCreating(false);
+    }
+  };
+
   const resolveQuickTemplateId = (name: string) => quickTemplateMap.get(name.toLowerCase()) ?? null;
 
   if (!isOpen) return null;
 
-  return (
+  return createPortal(
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
       onClick={() => !isCreating && onClose()}
@@ -240,8 +292,8 @@ export const CreateNoteModal = ({
                       <button
                         key={id}
                         type="button"
-                        onClick={() => templateId && handleCreateFromTemplate(templateId)}
-                        disabled={isCreating || isLoadingTemplates || !templateId}
+                        onClick={() => void handleCreateQuickTemplate(name, templateId)}
+                        disabled={isCreating || isLoadingTemplates}
                         className="p-3 rounded-lg border border-gray-200 text-left transition hover:bg-gray-50 active:bg-white disabled:opacity-50"
                       >
                         <Icon size={16} className="text-gray-600 mb-2" />
@@ -294,6 +346,7 @@ export const CreateNoteModal = ({
           )}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };

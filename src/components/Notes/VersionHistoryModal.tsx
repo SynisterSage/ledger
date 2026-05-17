@@ -1,5 +1,6 @@
 import { Loader2, RotateCcw, X } from 'lucide-react';
-import { useEffect } from 'react';
+import { createPortal } from 'react-dom';
+import { useEffect, useMemo, useState } from 'react';
 
 type VersionRow = {
   id: string;
@@ -36,6 +37,20 @@ const formatVersionStamp = (value: string) =>
     minute: '2-digit',
   });
 
+const toHumanReason = (reason: string | null | undefined, isCurrent: boolean) => {
+  if (isCurrent) return 'Current';
+  const key = String(reason ?? '').trim().toLowerCase();
+  if (!key) return 'Manual version';
+  if (key === 'autosave_checkpoint') return 'Autosaved';
+  if (key === 'before_edit') return 'Before edit';
+  if (key === 'before_restore' || key === 'restore_before') return 'Before restore';
+  if (key === 'restore') return 'Restored';
+  if (key === 'manual') return 'Manual version';
+  if (key === 'created') return 'Created';
+  if (key === 'before_destructive_overwrite') return 'Before overwrite';
+  return 'Manual version';
+};
+
 export const VersionHistoryModal = ({
   isOpen,
   noteTitle,
@@ -46,6 +61,13 @@ export const VersionHistoryModal = ({
   onRestore,
   resolveActorName,
 }: VersionHistoryModalProps) => {
+  const [selectedVersionId, setSelectedVersionId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    setSelectedVersionId((current) => current ?? (versions[0]?.id ?? null));
+  }, [isOpen, versions]);
+
   useEffect(() => {
     if (!isOpen) return;
     const onEscape = (event: KeyboardEvent) => {
@@ -55,9 +77,22 @@ export const VersionHistoryModal = ({
     return () => window.removeEventListener('keydown', onEscape);
   }, [isOpen, onClose]);
 
+  const selectedVersion = useMemo(() => {
+    if (!versions.length) return null;
+    if (!selectedVersionId) return versions[0] ?? null;
+    return versions.find((version) => version.id === selectedVersionId) ?? versions[0] ?? null;
+  }, [selectedVersionId, versions]);
+
+  const selectedIndex = useMemo(() => {
+    if (!selectedVersion) return -1;
+    return versions.findIndex((version) => version.id === selectedVersion.id);
+  }, [selectedVersion, versions]);
+
+  const selectedIsCurrent = selectedIndex === 0;
+
   if (!isOpen) return null;
 
-  return (
+  return createPortal(
     <div
       className="fixed inset-0 z-220 flex items-center justify-center bg-black/45 p-4"
       onClick={onClose}
@@ -74,6 +109,7 @@ export const VersionHistoryModal = ({
             <p className="mt-1 truncate text-sm font-semibold text-gray-900">
               {noteTitle || 'Untitled note'}
             </p>
+            <p className="mt-1 text-xs text-gray-500">Review and restore previous note snapshots.</p>
           </div>
           <button
             type="button"
@@ -85,7 +121,7 @@ export const VersionHistoryModal = ({
           </button>
         </div>
 
-        <div className="max-h-[calc(84vh-70px)] overflow-auto p-4">
+        <div className="max-h-[calc(84vh-70px)] p-4">
           {isLoading ? (
             <div className="flex items-center justify-center py-12 text-gray-500">
               <Loader2 size={18} className="animate-spin" />
@@ -96,49 +132,101 @@ export const VersionHistoryModal = ({
               No versions available yet.
             </div>
           ) : (
-            <div className="space-y-2">
-              {versions.map((version, index) => {
-                const preview = previewPlainText(version.content_html);
-                const isRestoring = restoringVersionId === version.id;
-                return (
-                  <div
-                    key={version.id}
-                    className="rounded-xl border border-gray-200 bg-white px-3 py-3"
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="text-sm font-semibold text-gray-900">
-                          {index === 0 ? 'Current snapshot' : `Version ${versions.length - index}`}
-                        </p>
-                        <p className="mt-0.5 text-xs text-gray-500">
-                          {formatVersionStamp(version.created_at)} ·{' '}
-                          {resolveActorName(version.versioned_by)} · {version.reason || 'update'}
-                        </p>
-                        <p className="mt-1 truncate text-xs text-gray-600">
-                          {preview || 'No content preview'}
-                        </p>
+            <div className="grid max-h-[calc(84vh-102px)] grid-cols-1 gap-4 overflow-hidden md:grid-cols-[300px_minmax(0,1fr)]">
+              <div className="min-h-0 rounded-xl border border-gray-200">
+                <div className="max-h-full overflow-auto py-1.5">
+                  {versions.map((version, index) => {
+                    const isSelected = selectedVersion?.id === version.id;
+                    const isCurrent = index === 0;
+                    const isRestoring = restoringVersionId === version.id;
+                    return (
+                      <div
+                        key={version.id}
+                        className={`w-full border-b border-gray-100 px-3 py-2.5 transition last:border-b-0 ${
+                          isSelected ? 'bg-gray-100' : 'bg-white hover:bg-gray-50'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setSelectedVersionId(version.id)}
+                            className="min-w-0 flex-1 text-left"
+                          >
+                            <p className="text-sm font-semibold text-gray-900">
+                              {toHumanReason(version.reason, isCurrent)}
+                            </p>
+                            <p className="mt-0.5 text-xs text-gray-500">
+                              {formatVersionStamp(version.created_at)}
+                            </p>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => onRestore(version.id)}
+                            disabled={isCurrent || isRestoring}
+                            className="inline-flex shrink-0 items-center gap-1 rounded-md border border-gray-200 bg-white px-2 py-1 text-[11px] font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:text-gray-400"
+                          >
+                            {isRestoring ? (
+                              <Loader2 size={11} className="animate-spin" />
+                            ) : (
+                              <RotateCcw size={11} />
+                            )}
+                            Restore
+                          </button>
+                        </div>
                       </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="min-h-0 rounded-xl border border-gray-200 bg-white p-4">
+                {selectedVersion ? (
+                  <div className="flex h-full min-h-0 flex-col">
+                    <div className="border-b border-gray-100 pb-3">
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-gray-500">
+                        Preview
+                      </p>
+                      <p className="mt-1 text-base font-semibold text-gray-900">
+                        {toHumanReason(selectedVersion.reason, selectedIsCurrent)}
+                      </p>
+                      <p className="mt-1 text-xs text-gray-500">
+                        {formatVersionStamp(selectedVersion.created_at)} ·{' '}
+                        {resolveActorName(selectedVersion.versioned_by)}
+                      </p>
+                    </div>
+
+                    <div className="mt-3 min-h-0 flex-1 overflow-auto rounded-lg border border-gray-100 bg-gray-50/60 px-3 py-2.5 text-sm leading-6 text-gray-700">
+                      {previewPlainText(selectedVersion.content_html) || 'No content in this version.'}
+                    </div>
+
+                    <div className="mt-3 flex items-center justify-between">
+                      {selectedIsCurrent ? (
+                        <p className="text-xs text-gray-500">This is the current version.</p>
+                      ) : (
+                        <span className="text-xs text-gray-500">Select restore to recover this snapshot.</span>
+                      )}
                       <button
                         type="button"
-                        onClick={() => onRestore(version.id)}
-                        disabled={isRestoring}
-                        className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-60"
+                        onClick={() => onRestore(selectedVersion.id)}
+                        disabled={selectedIsCurrent || restoringVersionId === selectedVersion.id}
+                        className="inline-flex items-center gap-1 rounded-lg bg-gray-900 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-gray-800 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-500"
                       >
-                        {isRestoring ? (
+                        {restoringVersionId === selectedVersion.id ? (
                           <Loader2 size={12} className="animate-spin" />
                         ) : (
                           <RotateCcw size={12} />
                         )}
-                        Restore
+                        Restore this version
                       </button>
                     </div>
                   </div>
-                );
-              })}
+                ) : null}
+              </div>
             </div>
           )}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };

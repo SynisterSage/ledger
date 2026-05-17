@@ -1,7 +1,10 @@
+import type React from 'react';
 import { useSidebar } from '../../context/SidebarContext';
 
 export const CollapsedSidebar = ({
+  onDragHandleMouseDown,
 }: {
+  onDragHandleMouseDown?: (e: React.MouseEvent<HTMLDivElement>) => void;
 }) => {
   const { restoreSidebarView } = useSidebar();
 
@@ -10,7 +13,16 @@ export const CollapsedSidebar = ({
   };
 
   return (
-    <div className="flex h-full w-full items-center justify-center">
+    <div
+      className="flex h-full w-full items-center justify-center"
+      onMouseDown={(e) => {
+        if (!onDragHandleMouseDown) return;
+        if ((e.target as HTMLElement).closest('button, a, input, select, textarea, [role="button"]'))
+          return;
+        onDragHandleMouseDown(e);
+      }}
+      style={{ cursor: onDragHandleMouseDown ? 'grab' : 'auto' }}
+    >
       <button
         type="button"
         onClick={handleClick}

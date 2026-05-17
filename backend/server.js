@@ -186,6 +186,7 @@ const mapNoteResponse = (row) => {
 };
 
 const NOTE_VERSION_LIMIT = 25;
+const NOTE_AUTOSAVE_CHECKPOINT_INTERVAL_MS = 10 * 60 * 1000;
 
 const createNoteVersionSnapshot = async (workspaceId, actorUserId, noteRow, reason = 'update') => {
   if (!noteRow?.id) return;
@@ -209,6 +210,60 @@ const createNoteVersionSnapshot = async (workspaceId, actorUserId, noteRow, reas
     sort_order: toNonNegativeInt(noteRow.sort_order, 0),
     depth: toNonNegativeInt(noteRow.depth, 0),
   };
+
+  const isAutosaveCheckpoint = String(reason) === 'autosave_checkpoint';
+  if (isAutosaveCheckpoint) {
+    const { data: latestRows, error: latestError } = await supabase
+      .from('note_versions')
+      .select(
+        'title, content, content_html, date, mood, source, mode, mind_map_structure, parent_id, section_id, sort_order, depth, reason, created_at'
+      )
+      .eq('workspace_id', workspaceId)
+      .eq('note_id', noteRow.id)
+      .order('created_at', { ascending: false })
+      .limit(1);
+
+    if (latestError) {
+      console.error('[notes] failed to inspect latest note version snapshot', {
+        noteId: noteRow.id,
+        error: latestError.message,
+      });
+    } else {
+      const latest = Array.isArray(latestRows) ? latestRows[0] : null;
+      if (latest) {
+        const normalizeStructure = (value) => {
+          if (value === null || value === undefined) return null;
+          try {
+            return JSON.stringify(value);
+          } catch {
+            return String(value);
+          }
+        };
+
+        const currentStructure = normalizeStructure(payload.mind_map_structure);
+        const latestStructure = normalizeStructure(latest.mind_map_structure);
+        const latestCreatedAt = latest.created_at ? new Date(latest.created_at).getTime() : 0;
+        const now = Date.now();
+        const latestMatchesCurrent =
+          String(latest.title ?? '') === String(payload.title ?? '') &&
+          String(latest.content ?? '') === String(payload.content ?? '') &&
+          normalizeNoteHtml(latest.content_html ?? '') === normalizeNoteHtml(payload.content_html ?? '') &&
+          String(latest.date ?? '') === String(payload.date ?? '') &&
+          String(latest.mood ?? '') === String(payload.mood ?? '') &&
+          String(latest.source ?? '') === String(payload.source ?? '') &&
+          String(latest.mode ?? '') === String(payload.mode ?? '') &&
+          currentStructure === latestStructure &&
+          String(latest.parent_id ?? '') === String(payload.parent_id ?? '') &&
+          String(latest.section_id ?? '') === String(payload.section_id ?? '') &&
+          Number(latest.sort_order ?? 0) === Number(payload.sort_order ?? 0) &&
+          Number(latest.depth ?? 0) === Number(payload.depth ?? 0);
+
+        if (latestMatchesCurrent || (latestCreatedAt && now - latestCreatedAt < NOTE_AUTOSAVE_CHECKPOINT_INTERVAL_MS)) {
+          return;
+        }
+      }
+    }
+  }
 
   const { error: insertError } = await supabase.from('note_versions').insert(payload);
   if (insertError) {
@@ -2158,6 +2213,8 @@ app.post(
       const notes = normalizeNullableText(req.body?.notes);
       const dueDate = normalizeNullableDate(req.body?.due_date, 'due date');
       const dueTime = normalizeNullableText(req.body?.due_time);
+      const showInToday = Boolean(req.body?.show_in_today ?? false);
+      const isTodayFocus = Boolean(req.body?.is_today_focus ?? false);
 
       const { data, error } = await supabase
         .from('tasks')
@@ -2172,8 +2229,10 @@ app.post(
           status: req.body?.status ? String(req.body.status) : 'todo',
           priority: req.body?.priority ? String(req.body.priority) : 'medium',
           tags,
+          show_in_today: showInToday,
+          is_today_focus: isTodayFocus,
         })
-        .select(taskSelectColumns)
+        .select(taskSelectColumns + ', show_in_today, is_today_focus')
         .single();
 
       if (error) throw error;
@@ -2222,6 +2281,9 @@ app.patch('/api/tasks/:id', authMiddleware, rateLimit('write'), async (req, res)
         ? req.body.tags.map((tag) => String(tag).trim()).filter(Boolean)
         : [];
     }
+    if (req.body?.show_in_today !== undefined) update.show_in_today = Boolean(req.body.show_in_today);
+    if (req.body?.is_today_focus !== undefined)
+      update.is_today_focus = Boolean(req.body.is_today_focus);
     if (req.body?.project_id !== undefined) {
       const nextProjectId = req.body.project_id ? String(req.body.project_id) : null;
       if (nextProjectId) {
@@ -2255,7 +2317,7 @@ app.patch('/api/tasks/:id', authMiddleware, rateLimit('write'), async (req, res)
       .update(update)
       .eq('id', req.params.id)
       .eq('workspace_id', workspaceId)
-      .select(taskSelectColumns)
+      .select(taskSelectColumns + ', show_in_today, is_today_focus')
       .single();
 
     if (error) throw error;

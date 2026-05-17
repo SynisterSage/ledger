@@ -17,6 +17,7 @@ import {
   EyeOff,
 } from 'lucide-react';
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import * as rruleModule from 'rrule';
 import { useAuthContext } from '../../context/AuthContext';
 import {
@@ -3846,11 +3847,12 @@ export const CalendarWindow = () => {
         )}
       </div>
 
-      {isComposerOpen && (
-        <div
-          className="fixed inset-0 z-100 bg-black/20 flex items-start justify-center pt-20"
-          onClick={() => setIsComposerOpen(false)}
-        >
+      {isComposerOpen &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-100 bg-black/20 flex items-start justify-center pt-20"
+            onClick={() => setIsComposerOpen(false)}
+          >
           <div
             className="w-105 rounded-xl border border-gray-200 bg-white shadow-xl p-4"
             onClick={(e) => e.stopPropagation()}
@@ -4028,14 +4030,16 @@ export const CalendarWindow = () => {
               </button>
             </div>
           </div>
-        </div>
-      )}
+          </div>,
+          document.body
+        )}
 
-      {isNewCalendarModalOpen && (
-        <div
-          className="fixed inset-0 z-105 bg-black/20 flex items-start justify-center pt-24"
-          onClick={() => setIsNewCalendarModalOpen(false)}
-        >
+      {isNewCalendarModalOpen &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-105 bg-black/20 flex items-start justify-center pt-24"
+            onClick={() => setIsNewCalendarModalOpen(false)}
+          >
           <div
             className="w-96 rounded-xl border border-gray-200 bg-white shadow-xl p-4"
             onClick={(e) => e.stopPropagation()}
@@ -4082,14 +4086,16 @@ export const CalendarWindow = () => {
               </button>
             </div>
           </div>
-        </div>
-      )}
+          </div>,
+          document.body
+        )}
 
-      {isLinkProjectModalOpen && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/25 p-4"
-          onClick={() => setIsLinkProjectModalOpen(false)}
-        >
+      {isLinkProjectModalOpen &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/25 p-4"
+            onClick={() => setIsLinkProjectModalOpen(false)}
+          >
           <div
             className="w-full max-w-xl rounded-2xl border border-gray-200 bg-white shadow-xl"
             onClick={(e) => e.stopPropagation()}
@@ -4144,14 +4150,16 @@ export const CalendarWindow = () => {
               </button>
             </div>
           </div>
-        </div>
-      )}
+          </div>,
+          document.body
+        )}
 
-      {isLinkNoteModalOpen && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/25 p-4"
-          onClick={() => setIsLinkNoteModalOpen(false)}
-        >
+      {isLinkNoteModalOpen &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/25 p-4"
+            onClick={() => setIsLinkNoteModalOpen(false)}
+          >
           <div
             className="w-full max-w-xl rounded-2xl border border-gray-200 bg-white shadow-xl"
             onClick={(e) => e.stopPropagation()}
@@ -4208,17 +4216,19 @@ export const CalendarWindow = () => {
               </button>
             </div>
           </div>
-        </div>
-      )}
+          </div>,
+          document.body
+        )}
 
-      {eventEditorEvent && (
-        <div
-          className="fixed inset-0 z-110 bg-black/20 flex items-start justify-center pt-20"
-          onClick={() => {
-            setEventEditorEvent(null);
-            setConfirmDelete(false);
-          }}
-        >
+      {eventEditorEvent &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-110 bg-black/20 flex items-start justify-center pt-20"
+            onClick={() => {
+              setEventEditorEvent(null);
+              setConfirmDelete(false);
+            }}
+          >
           <div
             className="w-110 rounded-xl border border-gray-200 bg-white shadow-xl p-4"
             onClick={(e) => e.stopPropagation()}
@@ -4424,14 +4434,16 @@ export const CalendarWindow = () => {
               </div>
             </div>
           </div>
-        </div>
-      )}
+          </div>,
+          document.body
+        )}
 
-      {selectedReminder && (
-        <div
-          className="fixed inset-0 z-112 bg-black/20 flex items-start justify-center pt-20"
-          onClick={() => setSelectedReminder(null)}
-        >
+      {selectedReminder &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-112 bg-black/20 flex items-start justify-center pt-20"
+            onClick={() => setSelectedReminder(null)}
+          >
           <div
             className="w-110 rounded-xl border border-gray-200 bg-white shadow-xl p-4"
             onClick={(e) => e.stopPropagation()}
@@ -4526,14 +4538,16 @@ export const CalendarWindow = () => {
               </div>
             </div>
           </div>
-        </div>
-      )}
+          </div>,
+          document.body
+        )}
 
-      {overflowDayKey && (
-        <div
-          className="fixed inset-0 z-111 bg-black/20 flex items-start justify-center pt-20"
-          onClick={() => setOverflowDayKey(null)}
-        >
+      {overflowDayKey &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-111 bg-black/20 flex items-start justify-center pt-20"
+            onClick={() => setOverflowDayKey(null)}
+          >
           <div
             className="w-130 max-h-[72vh] rounded-xl border border-gray-200 bg-white shadow-xl p-4 overflow-auto"
             onClick={(e) => e.stopPropagation()}
@@ -4609,8 +4623,9 @@ export const CalendarWindow = () => {
               </div>
             </div>
           </div>
-        </div>
-      )}
+          </div>,
+          document.body
+        )}
 
       {contextMenu && (
         <div

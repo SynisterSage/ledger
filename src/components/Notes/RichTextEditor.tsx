@@ -426,15 +426,9 @@ const ImagePasteDropPlugin = ({ noteId }: { noteId?: string | null }) => {
           return;
         }
 
-        // Prefer signed URLs so rendering works for private buckets as well.
-        const { data: signedData, error: signedError } = await supabase.storage
-          .from(NOTE_IMAGE_BUCKET)
-          .createSignedUrl(storagePath, 60 * 60 * 24 * 7);
-
-        const fallbackPublicUrl =
+        // Use deterministic public URL so renderer has a stable, immediately displayable src.
+        const imageUrl =
           supabase.storage.from(NOTE_IMAGE_BUCKET).getPublicUrl(storagePath).data?.publicUrl ?? '';
-
-        const imageUrl = !signedError && signedData?.signedUrl ? signedData.signedUrl : fallbackPublicUrl;
 
         // only insert after successful upload and valid render URL
         editor.update(() => {

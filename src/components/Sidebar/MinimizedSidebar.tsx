@@ -7,12 +7,15 @@ import {
   Folder,
   Search,
 } from 'lucide-react';
+import type React from 'react';
 import { useAuthContext } from '../../context/AuthContext';
 import { useSidebar } from '../../context/SidebarContext';
 import { useSearch } from '../../context/SearchContext';
 
 export const MinimizedSidebar = ({
+  onDragHandleMouseDown,
 }: {
+  onDragHandleMouseDown?: (e: React.MouseEvent<HTMLDivElement>) => void;
 }) => {
   const { signOut } = useAuthContext();
   const { collapseSidebar, setState, position } = useSidebar();
@@ -27,6 +30,13 @@ export const MinimizedSidebar = ({
 
   return (
     <div
+      onMouseDown={(e) => {
+        if (!onDragHandleMouseDown) return;
+        if ((e.target as HTMLElement).closest('button, a, input, select, textarea, [role="button"]'))
+          return;
+        onDragHandleMouseDown(e);
+      }}
+      style={{ cursor: onDragHandleMouseDown ? 'grab' : 'auto' }}
       className={`border-gray-200 flex ${
         isHorizontal
           ? 'h-16 w-full flex-row items-center justify-between px-4 bg-transparent'

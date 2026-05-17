@@ -1,3 +1,4 @@
+import { createPortal } from 'react-dom';
 import { useEffect } from 'react';
 
 type CloseGuardModalProps = {
@@ -39,9 +40,9 @@ export const CloseGuardModal = ({
       ? 'Ledger is still saving your changes. Please wait before closing this window.'
       : 'Your latest changes have not been saved yet.');
 
-  return (
+  return createPortal(
     <div
-      className="fixed inset-0 z-[180] flex items-center justify-center bg-gray-900/20 p-4"
+      className="fixed inset-0 z-180 flex items-center justify-center bg-gray-900/20 p-4"
       onClick={onCancel}
     >
       <div
@@ -79,6 +80,7 @@ export const CloseGuardModal = ({
           )}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };

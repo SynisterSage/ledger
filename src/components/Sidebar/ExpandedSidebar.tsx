@@ -10,10 +10,10 @@ import {
   Folder,
   LogOut,
   Plus,
+  RotateCcw,
   Settings,
   StickyNote,
   Trash2,
-  CircleHelp,
   Search,
 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
@@ -39,6 +39,34 @@ type QuickNote = {
 };
 type QuickCaptureMode = 'none' | 'task' | 'note' | 'event';
 type ProjectStatus = 'NotStarted' | 'InProgress' | 'Paused' | 'Completed';
+type TodayTask = {
+  id: string;
+  title: string;
+  status: string;
+  due_date?: string | null;
+  due_time?: string | null;
+  project_id?: string | null;
+  project_name?: string | null;
+  workspace_id?: string | null;
+  workspace_name?: string | null;
+  workspace_color?: string | null;
+  assigned_to?: string | null;
+  is_today_focus?: boolean;
+  show_in_today?: boolean;
+  created_at?: string | null;
+  updated_at?: string | null;
+};
+type CompletedTodayTask = {
+  id: string;
+  title: string;
+  status?: string;
+  completed_at?: string | null;
+  workspace_id?: string | null;
+  workspace_name?: string | null;
+  workspace_color?: string | null;
+  project_id?: string | null;
+  project_name?: string | null;
+};
 
 const normalizeProjectNameKey = (value: unknown) =>
   String(value ?? '')
@@ -134,7 +162,6 @@ export const ExpandedSidebar = ({
   const firstName = fullName ? fullName.split(' ')[0] : user?.email?.split('@')[0] ?? 'User';
 
   const [focusItems, setFocusItems] = useState<FocusItem[]>([]);
-  const [newFocusText, setNewFocusText] = useState('');
   const [checkin, setCheckin] = useState({
     finished: '',
     blocked: '',
@@ -149,6 +176,8 @@ export const ExpandedSidebar = ({
   const [taskPriority, setTaskPriority] = useState<'none' | 'high' | 'medium' | 'low'>('none');
   const [taskTag, setTaskTag] = useState('');
   const [taskCaptureSaved, setTaskCaptureSaved] = useState(false);
+  const [todayQuickDraft, setTodayQuickDraft] = useState('');
+  const [todayQuickSaving, setTodayQuickSaving] = useState(false);
   const [noteDraft, setNoteDraft] = useState('');
   const [quickNotes, setQuickNotes] = useState<QuickNote[]>([]);
   const [eventDraft, setEventDraft] = useState('');
@@ -184,45 +213,42 @@ export const ExpandedSidebar = ({
     }>
   >([]);
   const [isLoadingUpcoming, setIsLoadingUpcoming] = useState(true);
-  const [todayItems, setTodayItems] = useState<
-    Array<{
-      id: string;
-      title: string;
-      status: string;
-      due_date?: string | null;
-      due_time?: string | null;
-      project_id?: string | null;
-      project_name?: string | null;
-      workspace_id?: string | null;
-      workspace_name?: string | null;
-      workspace_color?: string | null;
-      assigned_to?: string | null;
-      is_today_focus?: boolean;
-      show_in_today?: boolean;
-      created_at?: string | null;
-      updated_at?: string | null;
-    }>
-  >([]);
+  const [todayItems, setTodayItems] = useState<TodayTask[]>([]);
   const [isLoadingToday, setIsLoadingToday] = useState(true);
-  const [completedToday, setCompletedToday] = useState<Array<any>>([]);
-  const [todayCollapsed, setTodayCollapsed] = useState<boolean>(false);
+  const [completedToday, setCompletedToday] = useState<CompletedTodayTask[]>([]);
+  const TODAY_COLLAPSE_STORAGE_KEY = 'ledger:sidebar:today-collapsed:v1';
+  const TODAY_HELP_TEXT = 'Your working list for today: what to do now, and what got done.';
+
+  const loadTodayCollapsedPreference = () => {
+    try {
+      const saved = window.localStorage.getItem(TODAY_COLLAPSE_STORAGE_KEY);
+      if (saved === null) return true;
+      return saved === '1';
+    } catch {
+      return true;
+    }
+  };
+
+  const [todayCollapsed, setTodayCollapsed] = useState<boolean>(() => loadTodayCollapsedPreference());
+  const [completedTodayExpanded, setCompletedTodayExpanded] = useState<boolean>(false);
+  const [todayHelpOpen, setTodayHelpOpen] = useState(false);
+  const [todayHelpPopoverStyle, setTodayHelpPopoverStyle] = useState<React.CSSProperties | null>(
+    null
+  );
   const [expandedUpcomingId, setExpandedUpcomingId] = useState<string | null>(null);
   const [draggingProjectId, setDraggingProjectId] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<{
-    type: 'project' | 'upcoming';
+    type: 'project' | 'upcoming' | 'today-active' | 'today-completed';
     id: string;
     x: number;
     y: number;
   } | null>(null);
-  const [todayHelpVisible, setTodayHelpVisible] = useState(false);
-  const [todayHelpPosition, setTodayHelpPosition] = useState<{ x: number; y: number }>({
-    x: 0,
-    y: 0,
-  });
-  const todayHelpButtonRef = useRef<HTMLButtonElement | null>(null);
   const taskCaptureRef = useRef<HTMLInputElement | null>(null);
   const noteCaptureRef = useRef<HTMLTextAreaElement | null>(null);
   const eventCaptureRef = useRef<HTMLInputElement | null>(null);
+  const todayHelpButtonRef = useRef<HTMLButtonElement | null>(null);
+  const todayHelpPopoverRef = useRef<HTMLDivElement | null>(null);
+  const todayHelpCloseTimerRef = useRef<number | null>(null);
   const checkinSectionRef = useRef<HTMLElement | null>(null);
   const checkinSavedTimerRef = useRef<number | null>(null);
   const projectDragRef = useRef<{
@@ -231,8 +257,8 @@ export const ExpandedSidebar = ({
     rectWidth: number;
     pointerId: number;
   } | null>(null);
-  const sidebarContextMenuWidth = 188;
-  const sidebarContextMenuHeight = 132;
+  const sidebarContextMenuWidth = 196;
+  const sidebarContextMenuHeight = 176;
 
   const normalizeProjectStatus = (status: string): ProjectSemanticStatus => {
     const value = status.toLowerCase();
@@ -456,10 +482,7 @@ export const ExpandedSidebar = ({
         const completed = Array.isArray(data?.completed) ? data.completed : [];
         setTodayItems(active);
         setCompletedToday(completed);
-        // Auto-collapse heuristics: if many active items, collapse the Today pane by default
-        if (!todayCollapsed) {
-          setTodayCollapsed(active.length > 8);
-        }
+        setCompletedTodayExpanded(false);
       } catch (error) {
         console.error('Failed to load Today items:', error);
         setTodayItems([]);
@@ -717,6 +740,60 @@ export const ExpandedSidebar = ({
   }, []);
 
   useEffect(() => {
+    if (!todayHelpOpen || !todayHelpButtonRef.current) {
+      setTodayHelpPopoverStyle(null);
+      return;
+    }
+
+    const updateTodayHelpPosition = () => {
+      const rect = todayHelpButtonRef.current?.getBoundingClientRect();
+      if (!rect) return;
+
+      const preferredWidth = 196;
+      const topGap = 6;
+      const centerX = rect.left + rect.width / 2;
+      const left = Math.max(
+        12,
+        Math.min(window.innerWidth - preferredWidth - 12, centerX - preferredWidth / 2)
+      );
+      const top = Math.max(12, rect.top - topGap);
+
+      setTodayHelpPopoverStyle({
+        position: 'fixed',
+        left: `${left}px`,
+        top: `${top}px`,
+        transform: 'translateY(-100%)',
+        width: `${preferredWidth}px`,
+        zIndex: 30000,
+      });
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setTodayHelpOpen(false);
+    };
+
+    updateTodayHelpPosition();
+    window.addEventListener('resize', updateTodayHelpPosition);
+    window.addEventListener('scroll', updateTodayHelpPosition, true);
+    document.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      window.removeEventListener('resize', updateTodayHelpPosition);
+      window.removeEventListener('scroll', updateTodayHelpPosition, true);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [todayHelpOpen]);
+
+  useEffect(() => {
+    return () => {
+      if (todayHelpCloseTimerRef.current !== null) {
+        window.clearTimeout(todayHelpCloseTimerRef.current);
+        todayHelpCloseTimerRef.current = null;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
     const syncToNextDay = () => {
       const currentDay = todayKey();
       if (todayBucketRef.current === currentDay) return;
@@ -782,23 +859,26 @@ export const ExpandedSidebar = ({
     return true;
   };
 
-  const toggleFocusDone = async (id: string) => {
-    const next = focusItems.map((item) => (item.id === id ? { ...item, done: !item.done } : item));
-    setFocusItems(next);
-    const saved = await saveDaily({ focusItems: next });
-    if (saved) {
-      setTaskCaptureSaved(true);
-      window.setTimeout(() => setTaskCaptureSaved(false), 1500);
-    }
-  };
-
   const toggleCompleteTask = async (taskId: string) => {
     const prev = todayItems.slice();
     const item = prev.find((t) => t.id === taskId);
     if (!item) return;
     // Optimistic update: remove from active list, add to completed
     setTodayItems((s) => s.filter((t) => t.id !== taskId));
-    setCompletedToday((s) => [{ id: item.id, title: item.title }, ...s]);
+    setCompletedToday((s) => [
+      {
+        id: item.id,
+        title: item.title,
+        status: 'completed',
+        workspace_id: item.workspace_id ?? null,
+        workspace_name: item.workspace_name ?? null,
+        workspace_color: item.workspace_color ?? null,
+        project_id: item.project_id ?? null,
+        project_name: item.project_name ?? null,
+        completed_at: new Date().toISOString(),
+      },
+      ...s,
+    ]);
     try {
       // Use workspace-aware update so tasks from other workspaces update correctly
       if (item.workspace_id) {
@@ -813,20 +893,63 @@ export const ExpandedSidebar = ({
     }
   };
 
-  const addFocusItem = async () => {
-    const text = newFocusText.trim();
-    if (!text) return;
+  const deleteTodayTask = async (taskId: string) => {
+    const previous = todayItems;
+    const target = previous.find((task) => task.id === taskId);
+    if (!target) return;
 
-    const next = [...focusItems, { id: `f-${Date.now()}`, text, done: false }];
-    setFocusItems(next);
-    setNewFocusText('');
-    await saveDaily({ focusItems: next });
+    setTodayItems((list) => list.filter((task) => task.id !== taskId));
+    setContextMenu(null);
+
+    try {
+      if (target.workspace_id) {
+        await api.deleteTaskInWorkspace(taskId, target.workspace_id);
+      } else {
+        await api.deleteTask(taskId);
+      }
+    } catch (error) {
+      setTodayItems(previous);
+      setSaveError('Could not delete task.');
+    }
   };
 
-  const removeFocusItem = async (id: string) => {
-    const next = focusItems.filter((item) => item.id !== id);
-    setFocusItems(next);
-    await saveDaily({ focusItems: next });
+  const resetCompletedTask = async (taskId: string) => {
+    const completedSnapshot = completedToday;
+    const activeSnapshot = todayItems;
+    const target = completedSnapshot.find((task) => task.id === taskId);
+    if (!target) return;
+
+    setCompletedToday((list) => list.filter((task) => task.id !== taskId));
+    setTodayItems((list) => [
+      {
+        id: target.id,
+        title: target.title,
+        status: 'todo',
+        workspace_id: target.workspace_id ?? null,
+        workspace_name: target.workspace_name ?? null,
+        workspace_color: target.workspace_color ?? null,
+        project_id: target.project_id ?? null,
+        project_name: target.project_name ?? null,
+        show_in_today: true,
+      },
+      ...list,
+    ]);
+    setContextMenu(null);
+
+    try {
+      if (target.workspace_id) {
+        await api.updateTaskInWorkspace(taskId, target.workspace_id, {
+          status: 'todo',
+          show_in_today: true,
+        });
+      } else {
+        await api.updateTask(taskId, { status: 'todo', show_in_today: true });
+      }
+    } catch (error) {
+      setCompletedToday(completedSnapshot);
+      setTodayItems(activeSnapshot);
+      setSaveError('Could not reset task.');
+    }
   };
 
   const saveCheckin = async () => {
@@ -914,13 +1037,58 @@ export const ExpandedSidebar = ({
 
     const tagLabel = taskTag.trim() ? `#${taskTag.trim().replace(/^#/, '')}` : '';
     const text = [priorityLabel, tagLabel, base].filter(Boolean).join(' ');
-    const next = [...focusItems, { id: `f-${Date.now()}`, text, done: false }];
-    setFocusItems(next);
     setTaskDraft('');
     setTaskPriority('none');
     setTaskTag('');
     setQuickCaptureMode('none');
-    await saveDaily({ focusItems: next });
+
+    const created = await api.createTask({
+      title: text,
+      status: 'todo',
+      priority: taskPriority === 'none' ? 'medium' : taskPriority,
+      due_date: todayKey(),
+      show_in_today: true,
+    });
+
+    if (created && typeof created === 'object') {
+      setTodayItems((prev) => [created as any, ...prev]);
+      setTaskCaptureSaved(true);
+      window.setTimeout(() => setTaskCaptureSaved(false), 1500);
+    }
+  };
+
+  const saveTodayQuickTask = async () => {
+    const base = todayQuickDraft.trim();
+    if (!base || todayQuickSaving) return;
+
+    setTodayQuickSaving(true);
+    try {
+      const created = await api.createTask({
+        title: base,
+        status: 'todo',
+        due_date: todayKey(),
+        show_in_today: true,
+      });
+
+      if (created && typeof created === 'object') {
+        setTodayItems((prev) => [created as any, ...prev]);
+        setTodayQuickDraft('');
+      }
+    } finally {
+      setTodayQuickSaving(false);
+    }
+  };
+
+  const toggleTodayCollapsed = () => {
+    setTodayCollapsed((current) => {
+      const next = !current;
+      try {
+        window.localStorage.setItem(TODAY_COLLAPSE_STORAGE_KEY, next ? '1' : '0');
+      } catch {
+        // No-op when storage is unavailable.
+      }
+      return next;
+    });
   };
 
   const saveQuickEvent = async () => {
@@ -1100,19 +1268,6 @@ export const ExpandedSidebar = ({
     }
   };
 
-  const completedCount = focusItems.filter((item) => item.done).length;
-
-  const showTodayHelp = () => {
-    const rect = todayHelpButtonRef.current?.getBoundingClientRect();
-    if (!rect) return;
-    setTodayHelpPosition({
-      x: rect.left + rect.width / 2,
-      y: rect.top - 8,
-    });
-    setTodayHelpVisible(true);
-  };
-
-  const hideTodayHelp = () => setTodayHelpVisible(false);
   const eventDateParts = parseDateKey(eventDate);
   const daysInSelectedMonth = new Date(eventDateParts.year, eventDateParts.month, 0).getDate();
   const currentYear = new Date().getFullYear();
@@ -1245,130 +1400,6 @@ export const ExpandedSidebar = ({
           </span>
         </button>
 
-        {/* Today unified feed (workspace-aware) */}
-        <div className="mt-3 mb-3 bg-white rounded-lg border border-gray-200 p-3">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-semibold text-gray-900">Today</p>
-              <p className="text-xs text-gray-500 mt-0.5">
-                {isLoadingToday ? (
-                  'Loading…'
-                ) : todayItems.length + completedToday.length === 0 ? (
-                  'Nothing needs your attention yet.'
-                ) : (
-                  `${completedToday.length}/${todayItems.length + completedToday.length} complete`
-                )}
-              </p>
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setTodayCollapsed((v) => !v)}
-                className="p-1 rounded-md text-gray-500 hover:text-gray-700 hover:bg-gray-50 transition"
-                aria-label={todayCollapsed ? 'Expand Today' : 'Collapse Today'}
-                title={todayCollapsed ? 'Expand Today' : 'Collapse Today'}
-              >
-                {todayCollapsed ? (
-                  <ChevronDown size={16} className="text-gray-500" />
-                ) : (
-                  <ChevronUp size={16} className="text-gray-500" />
-                )}
-              </button>
-            </div>
-          </div>
-
-          {!todayCollapsed && (
-            <div className="mt-3 max-h-44 overflow-auto pr-1">
-              {isLoadingToday ? (
-                <SkeletonList />
-              ) : (
-                <div className="space-y-3">
-                  {(completedToday.length > 0 || todayItems.length === 0) && (
-                    <div className="rounded-lg border border-gray-200 bg-gray-50/80 px-3 py-2">
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="min-w-0">
-                          <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-gray-500">
-                            {completedToday.length > 0 ? 'Completed today' : 'Nothing for Today'}
-                          </div>
-                          <div className="text-xs text-gray-500">
-                            {completedToday.length > 0
-                              ? 'Visible for 24 hours after completion.'
-                              : 'You\'re all caught up for today.'}
-                          </div>
-                        </div>
-                        {completedToday.length > 0 ? (
-                          <div className="rounded-full bg-white px-2 py-0.5 text-[11px] font-medium text-gray-600 ring-1 ring-gray-200">
-                            {completedToday.length}
-                          </div>
-                        ) : null}
-                      </div>
-
-                      <div className="mt-2 flex flex-wrap gap-2">
-                        <button
-                          type="button"
-                          onClick={() => window.desktopWindow?.toggleModule('quick-task' as any)}
-                          className="inline-flex items-center gap-1.5 rounded-md border border-gray-200 bg-white px-2.5 py-1 text-xs text-gray-700 hover:bg-gray-50"
-                        >
-                          <Plus size={11} /> Add task
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => window.desktopWindow?.toggleModule('quick-event' as any)}
-                          className="inline-flex items-center gap-1.5 rounded-md border border-gray-200 bg-white px-2.5 py-1 text-xs text-gray-700 hover:bg-gray-50"
-                        >
-                          <CalendarDays size={11} /> Add event
-                        </button>
-                      </div>
-
-                      {completedToday.length > 0 && (
-                        <div className="mt-2 space-y-1.5">
-                          {completedToday.map((item) => (
-                            <div
-                              key={item.id}
-                              className="flex items-center gap-2 rounded-md bg-white px-2 py-1.5 text-xs text-gray-700 ring-1 ring-gray-100"
-                            >
-                              <div className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-gray-100 text-gray-500">
-                                ✓
-                              </div>
-                              <div className="min-w-0 truncate text-gray-900">{item.title}</div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {todayItems.length > 0 ? (
-                    <div className="space-y-2">
-                      {todayItems.map((item) => (
-                        <div key={item.id} className="flex items-start gap-3 rounded-md p-2 hover:bg-gray-50">
-                          <button
-                            type="button"
-                            onClick={() => toggleCompleteTask(item.id)}
-                            className="h-6 w-6 flex items-center justify-center shrink-0"
-                            title="Mark complete"
-                          >
-                            <div className="h-5 w-5 rounded-full border border-gray-300 flex items-center justify-center text-gray-600">
-                              <span className="sr-only">Mark complete</span>
-                            </div>
-                          </button>
-                          <div className="min-w-0">
-                            <div className="text-sm text-gray-900 truncate">{item.title}</div>
-                            <div className="text-[11px] text-gray-500 mt-0.5 truncate">
-                              {item.workspace_name ? `${item.workspace_name}` : ''}
-                              {item.project_name ? ` · ${item.project_name}` : ''}
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : null}
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-
         <div className="grid grid-cols-2 gap-2">
           <button
             onClick={() => window.desktopWindow?.toggleModule('dashboard')}
@@ -1402,99 +1433,219 @@ export const ExpandedSidebar = ({
       </div>
 
       <div className="flex-1 min-h-0 overflow-y-auto px-5 py-4 space-y-5">
-        <section>
-          <div className="flex items-center justify-between mb-2">
-            <div className="flex items-center gap-1.5">
-              <h2 className="text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                Today's Tasks
-              </h2>
-              <div className="relative z-30">
+        {/* Today unified feed (workspace-aware) */}
+        <section className="rounded-lg border border-gray-200 bg-white p-3 space-y-3">
+          <button
+            type="button"
+            onClick={toggleTodayCollapsed}
+            className="flex w-full items-start justify-between gap-3 text-left"
+          >
+            <div className="min-w-0 flex-1 space-y-0.5">
+              <div className="flex items-center gap-2">
+                <p className="text-sm font-semibold tracking-tight text-gray-900">Today</p>
                 <button
                   ref={todayHelpButtonRef}
-                  aria-label="Today tasks help"
-                  className="text-gray-400 hover:text-gray-600 transition"
-                  onMouseEnter={showTodayHelp}
-                  onMouseLeave={hideTodayHelp}
-                  onFocus={showTodayHelp}
-                  onBlur={hideTodayHelp}
+                  type="button"
+                  onMouseEnter={() => {
+                    if (todayHelpCloseTimerRef.current !== null) {
+                      window.clearTimeout(todayHelpCloseTimerRef.current);
+                      todayHelpCloseTimerRef.current = null;
+                    }
+                    setTodayHelpOpen(true);
+                  }}
+                  onMouseLeave={() => {
+                    if (todayHelpCloseTimerRef.current !== null) {
+                      window.clearTimeout(todayHelpCloseTimerRef.current);
+                    }
+                    todayHelpCloseTimerRef.current = window.setTimeout(() => {
+                      setTodayHelpOpen(false);
+                      todayHelpCloseTimerRef.current = null;
+                    }, 120);
+                  }}
+                  onFocus={() => setTodayHelpOpen(true)}
+                  onBlur={() => setTodayHelpOpen(false)}
+                  className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-gray-200 text-[10px] font-semibold text-gray-500 transition hover:border-gray-300 hover:bg-gray-50 hover:text-gray-700"
+                  aria-label="What is Today?"
+                  title="What is Today?"
                 >
-                  <CircleHelp size={12} />
+                  ?
                 </button>
               </div>
+              <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-gray-500">
+                <span className="shrink-0">
+                  {todayItems.length} active · {completedToday.length} completed
+                </span>
+              </div>
+              {!todayCollapsed && (
+                <p className="text-[11px] text-gray-500">Operational queue for today.</p>
+              )}
             </div>
-            <span className="text-[10px] text-gray-500">
-              {completedCount}/{focusItems.length}
-            </span>
-          </div>
+            <ChevronDown
+              size={14}
+              className={`mt-0.5 shrink-0 text-gray-400 transition-transform ${
+                todayCollapsed ? 'rotate-180' : ''
+              }`}
+            />
+          </button>
 
-          <div className="bg-white border border-gray-200 rounded-lg p-3 space-y-2">
-            <div className="flex items-center gap-2">
-              <input
-                value={newFocusText}
-                onChange={(e) => setNewFocusText(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    void addFocusItem();
+          {!todayCollapsed && (
+            <>
+              <div className="flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-2.5 py-2">
+                <input
+                  value={todayQuickDraft}
+                  onChange={(e) => setTodayQuickDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      void saveTodayQuickTask();
+                    }
+                  }}
+                  placeholder="Add task for today..."
+                  className="flex-1 bg-transparent px-0.5 text-[12px] text-gray-900 placeholder:text-gray-400 focus:outline-none"
+                  disabled={todayQuickSaving || isLoadingToday}
+                />
+                <button
+                  onClick={() => void saveTodayQuickTask()}
+                  className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-700 transition hover:bg-gray-50 disabled:opacity-60"
+                  title="Add to Today"
+                  disabled={todayQuickSaving || isLoadingToday || !todayQuickDraft.trim()}
+                >
+                  <Plus size={12} />
+                </button>
+              </div>
+
+              <div className="flex items-center justify-between px-0.5">
+                <p className="text-[10px] text-gray-500">Press Enter or + to add</p>
+                <p
+                  className={`text-[10px] text-green-700 transition-opacity duration-200 ${
+                    taskCaptureSaved ? 'opacity-100' : 'opacity-0'
+                  }`}
+                >
+                  Added
+                </p>
+              </div>
+
+              {isLoadingToday && todayItems.length === 0 && completedToday.length === 0 ? (
+                <SkeletonList />
+              ) : (
+                <>
+                  {todayItems.length > 0 && (
+                    <div className="space-y-0.5">
+                      {todayItems.map((item) => (
+                        <div
+                          key={item.id}
+                          onContextMenu={(e) => {
+                            e.preventDefault();
+                            setContextMenu({
+                              type: 'today-active',
+                              id: item.id,
+                              x: e.clientX,
+                              y: e.clientY,
+                            });
+                          }}
+                          className="flex items-start gap-2 rounded-lg px-1.5 py-1.5 transition hover:bg-gray-50"
+                        >
+                          <button
+                            type="button"
+                            onClick={() => toggleCompleteTask(item.id)}
+                            className="mt-px flex h-5 w-5 shrink-0 items-center justify-center"
+                            title="Mark complete"
+                          >
+                            <div className="flex h-4.5 w-4.5 items-center justify-center rounded-full border border-gray-300 text-gray-600">
+                              <span className="sr-only">Mark complete</span>
+                            </div>
+                          </button>
+                          <div className="min-w-0">
+                            <div className="truncate text-[12px] leading-5 text-gray-900">
+                              {item.title}
+                            </div>
+                            <div className="truncate text-[10px] text-gray-500">
+                              {item.workspace_name ? `${item.workspace_name}` : ''}
+                              {item.project_name ? ` · ${item.project_name}` : ''}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {completedToday.length > 0 && (
+                    <div className="pt-0">
+                      <button
+                        type="button"
+                        onClick={() => setCompletedTodayExpanded((value) => !value)}
+                        className="flex w-full items-center justify-between rounded-lg px-1.5 py-1 text-left hover:bg-gray-50"
+                      >
+                        <span className="text-[11px] font-medium text-gray-500">
+                          Completed · {completedToday.length}
+                        </span>
+                        <ChevronDown
+                          size={14}
+                          className={`text-gray-400 transition-transform ${
+                            completedTodayExpanded ? 'rotate-180' : ''
+                          }`}
+                        />
+                      </button>
+
+                      {(completedToday.length <= 2 || completedTodayExpanded) && (
+                        <div className="mt-0.5 space-y-0.5 pl-2">
+                          {completedToday.map((item) => (
+                            <div
+                              key={item.id}
+                              onContextMenu={(e) => {
+                                e.preventDefault();
+                                setContextMenu({
+                                  type: 'today-completed',
+                                  id: item.id,
+                                  x: e.clientX,
+                                  y: e.clientY,
+                                });
+                              }}
+                              className="flex items-center gap-2 text-[11px] text-gray-600"
+                            >
+                              <div className="flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full bg-gray-100 text-gray-500">
+                                ✓
+                              </div>
+                              <div className="min-w-0 truncate text-gray-700">{item.title}</div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </>
+              )}
+            </>
+          )}
+        </section>
+
+        {todayHelpOpen && typeof document !== 'undefined'
+          ? createPortal(
+              <div
+                ref={todayHelpPopoverRef}
+                style={todayHelpPopoverStyle ?? undefined}
+                onMouseEnter={() => {
+                  if (todayHelpCloseTimerRef.current !== null) {
+                    window.clearTimeout(todayHelpCloseTimerRef.current);
+                    todayHelpCloseTimerRef.current = null;
                   }
                 }}
-                placeholder="Add a task for today"
-                className="flex-1 h-8 px-2 text-xs border border-gray-200 rounded-md focus:outline-none focus:border-gray-300 bg-gray-50 text-gray-900 placeholder-gray-500"
-                disabled={isLoadingDaily}
-              />
-              <button
-                onClick={() => void addFocusItem()}
-                className="h-8 w-8 rounded-md bg-[#FF5F40] text-white flex items-center justify-center hover:bg-[#ea5336] disabled:opacity-60"
-                title="Add task"
-                disabled={isLoadingDaily}
+                onMouseLeave={() => {
+                  if (todayHelpCloseTimerRef.current !== null) {
+                    window.clearTimeout(todayHelpCloseTimerRef.current);
+                  }
+                  todayHelpCloseTimerRef.current = window.setTimeout(() => {
+                    setTodayHelpOpen(false);
+                    todayHelpCloseTimerRef.current = null;
+                  }, 120);
+                }}
+                className="rounded-lg border border-gray-200 bg-white px-2.5 py-2 shadow-[0_10px_20px_rgba(15,23,42,0.12)]"
               >
-                <Plus size={13} />
-              </button>
-            </div>
-
-            <div className="flex items-center justify-between">
-              <p className="text-[11px] text-gray-500">Press Enter or + to add</p>
-              <p
-                className={`text-[11px] text-green-700 transition-opacity duration-200 ${
-                  taskCaptureSaved ? 'opacity-100' : 'opacity-0'
-                }`}
-              >
-                {isLoadingDaily ? 'Loading today tasks...' : 'Added to Today'}
-              </p>
-            </div>
-
-            {focusItems.map((item) => (
-              <div key={item.id} className="w-full flex items-start gap-2">
-                <button
-                  onClick={() => void toggleFocusDone(item.id)}
-                  className="flex-1 min-w-0 text-left flex items-start gap-2"
-                >
-                  <span
-                    className={`mt-0.5 inline-flex h-4 w-4 shrink-0 flex-none items-center justify-center rounded-full border leading-none ${
-                      item.done ? 'bg-green-500 border-green-500' : 'border-gray-400 bg-white/60'
-                    }`}
-                  >
-                    {item.done && <Check size={11} className="text-white" />}
-                  </span>
-                  <p
-                    className={`min-w-0 flex-1 text-xs leading-5 ${
-                      item.done ? 'text-gray-400 line-through' : 'text-gray-800'
-                    }`}
-                  >
-                    {item.text}
-                  </p>
-                </button>
-                <button
-                  onClick={() => void removeFocusItem(item.id)}
-                  className="mt-0.5 p-1 rounded-md text-gray-500 hover:text-red-600 hover:bg-red-400/20 transition"
-                  title="Delete focus item"
-                >
-                  <Trash2 size={12} />
-                </button>
-              </div>
-            ))}
-          </div>
-        </section>
+                <p className="text-[11px] leading-4 text-gray-600">{TODAY_HELP_TEXT}</p>
+              </div>,
+              document.body
+            )
+          : null}
 
         <section>
           <h2 className="text-xs font-semibold text-gray-600 uppercase tracking-wider mb-2">
@@ -2291,20 +2442,34 @@ export const ExpandedSidebar = ({
                 </button>
               </>
             )}
-          </div>,
-          document.body
-        )}
 
-      {todayHelpVisible &&
-        createPortal(
-          <div
-            className="pointer-events-none fixed z-280 w-48 -translate-x-1/2 -translate-y-full rounded-md border border-gray-200 bg-white px-2 py-1.5 text-[10px] leading-4 text-gray-700 shadow-lg"
-            style={{
-              left: `${Math.max(96, Math.min(todayHelpPosition.x, window.innerWidth - 96))}px`,
-              top: `${Math.max(24, todayHelpPosition.y)}px`,
-            }}
-          >
-            Add your tasks for today. Items save to your profile and reset daily.
+            {contextMenu.type === 'today-active' && (
+              <>
+                <button
+                  onClick={() => {
+                    void deleteTodayTask(contextMenu.id);
+                  }}
+                  className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition flex items-center gap-2"
+                >
+                  <Trash2 size={14} />
+                  Delete task
+                </button>
+              </>
+            )}
+
+            {contextMenu.type === 'today-completed' && (
+              <>
+                <button
+                  onClick={() => {
+                    void resetCompletedTask(contextMenu.id);
+                  }}
+                  className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition flex items-center gap-2"
+                >
+                  <RotateCcw size={14} />
+                  Reset to active
+                </button>
+              </>
+            )}
           </div>,
           document.body
         )}

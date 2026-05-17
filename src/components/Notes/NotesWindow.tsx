@@ -516,6 +516,27 @@ export const NotesWindow = () => {
     { id: 'daily-reflection', name: 'Daily Reflection' },
     { id: 'book-notes', name: 'Book Notes' },
   ];
+  const quickTemplateFallbacks: Record<string, { content: string; content_html: string }> = {
+    'meeting notes': {
+      content: 'Date\nAttendees\nAgenda\nDiscussion\nAction items',
+      content_html:
+        '<p>Date</p><p>Attendees</p><p>Agenda</p><p>Discussion</p><p>Action items</p>',
+    },
+    'project brief': {
+      content: 'Project\nOwner\nDue\nObjective\nSuccess criteria',
+      content_html:
+        '<p>Project</p><p>Owner</p><p>Due</p><p>Objective</p><p>Success criteria</p>',
+    },
+    'daily reflection': {
+      content: 'Wins\nLessons\nBlockers\nTomorrow\'s focus\nMood',
+      content_html:
+        "<p>Wins</p><p>Lessons</p><p>Blockers</p><p>Tomorrow's focus</p><p>Mood</p>",
+    },
+    'book notes': {
+      content: 'Title\nAuthor\nSummary\nKey takeaways\nQuotes',
+      content_html: '<p>Title</p><p>Author</p><p>Summary</p><p>Key takeaways</p><p>Quotes</p>',
+    },
+  };
 
   const areSidePanelsCollapsed = isLeftPaneCollapsed && isRightPaneCollapsed;
   const isCompactLayout = viewportWidth < modulePaneSizing.notes.left.compactBreakpoint;
@@ -1115,6 +1136,62 @@ export const NotesWindow = () => {
     [workspaceTemplates]
   );
 
+  const handleQuickTemplate = useCallback(
+    async (templateName: string) => {
+      if (isCreating) return;
+
+      const resolvedTemplateId = resolveTemplateIdByName(templateName);
+      setIsCreating(true);
+
+      try {
+        if (resolvedTemplateId) {
+          const note = await api.createNoteFromTemplate(resolvedTemplateId);
+          setNotes((prev) => [note as NoteRow, ...prev]);
+          setNoteTree((prev) => [
+            {
+              ...(note as NoteRow),
+              depth: (note as NoteRow).depth ?? 0,
+              children: [],
+            },
+            ...prev,
+          ]);
+          setSelectedNoteId(note.id);
+          syncDraftFromNote(note as NoteRow);
+          setTimeout(() => titleRef.current?.focus(), 0);
+          return;
+        }
+
+        const fallback = quickTemplateFallbacks[templateName.toLowerCase()];
+        if (!fallback) {
+          throw new Error('Template not found');
+        }
+
+        const note = await api.createNote(templateName, fallback.content, {
+          content_html: fallback.content_html,
+          source: 'template',
+          mode: 'text',
+        });
+        setNotes((prev) => [note as NoteRow, ...prev]);
+        setNoteTree((prev) => [
+          {
+            ...(note as NoteRow),
+            depth: (note as NoteRow).depth ?? 0,
+            children: [],
+          },
+          ...prev,
+        ]);
+        setSelectedNoteId(note.id);
+        syncDraftFromNote(note as NoteRow);
+        setTimeout(() => titleRef.current?.focus(), 0);
+      } catch (error) {
+        setError(error instanceof Error ? error.message : 'Failed to create note');
+      } finally {
+        setIsCreating(false);
+      }
+    },
+    [api, isCreating, resolveTemplateIdByName, syncDraftFromNote]
+  );
+
   useEffect(() => {
     isDirtyRef.current = isDirty;
   }, [isDirty]);
@@ -1354,12 +1431,12 @@ export const NotesWindow = () => {
           console.error('[notes] safety check failed', e);
         }
 
-        // autosave checkpoint throttling: at most one autosave checkpoint every 3 minutes per note
+        // autosave checkpoint throttling: keep revision history calm in production
         try {
           const now = Date.now();
           const last = lastAutosaveCheckpointRef.current.get(selectedNoteId) ?? 0;
-          const THREE_MIN = 3 * 60 * 1000;
-          if (!last || now - last >= THREE_MIN) {
+          const TEN_MIN = 10 * 60 * 1000;
+          if (!last || now - last >= TEN_MIN) {
             try {
               await api.createNoteVersion(selectedNoteId, { reason: 'autosave_checkpoint' });
               lastAutosaveCheckpointRef.current.set(selectedNoteId, now);
@@ -3265,40 +3342,12 @@ export const NotesWindow = () => {
                     {quickTemplates.map((template) => (
                       <button
                         key={template.id}
-                        onClick={() => {
-                          const handleTemplate = async () => {
-                            if (isDirty) {
-                              const saved = await flushAutosave();
-                              if (!saved) return;
-                            }
-                            setIsCreating(true);
-                            try {
-                              const resolvedTemplateId = resolveTemplateIdByName(template.name);
-                              if (!resolvedTemplateId) {
-                                throw new Error('Template not found');
-                              }
-                              const note = await api.createNoteFromTemplate(resolvedTemplateId);
-                              setNotes((prev) => [note as NoteRow, ...prev]);
-                              setNoteTree((prev) => [
-                                {
-                                  ...(note as NoteRow),
-                                  depth: (note as NoteRow).depth ?? 0,
-                                  children: [],
-                                },
-                                ...prev,
-                              ]);
-                              setSelectedNoteId(note.id);
-                              syncDraftFromNote(note as NoteRow);
-                              setTimeout(() => titleRef.current?.focus(), 0);
-                            } catch (err) {
-                              setError(
-                                err instanceof Error ? err.message : 'Failed to create note'
-                              );
-                            } finally {
-                              setIsCreating(false);
-                            }
-                          };
-                          void handleTemplate();
+                        onClick={async () => {
+                          if (isDirty) {
+                            const saved = await flushAutosave();
+                            if (!saved) return;
+                          }
+                          void handleQuickTemplate(template.name);
                         }}
                         className="w-full text-left px-2.5 py-1 rounded text-sm text-gray-700 bg-transparent hover:bg-gray-50 transition truncate"
                       >
@@ -3479,7 +3528,7 @@ export const NotesWindow = () => {
                         isEditingRef.current = false;
                       }}
                       placeholder="Untitled note"
-                      className="w-full text-4xl font-semibold tracking-tight text-gray-900 placeholder:text-gray-300 focus:outline-none bg-transparent"
+                      className="block w-full bg-transparent py-1.5 text-4xl font-semibold leading-tight tracking-tight text-gray-900 placeholder:text-gray-300 focus:outline-none"
                     />
                     <div className="flex items-center rounded-lg border border-gray-200 bg-white p-0.5 shrink-0">
                       <button
