@@ -740,7 +740,6 @@ export const SettingsWindow = () => {
       const payload = (await api.createWorkspaceInvitation(activeWorkspaceId, {
         email: email || null,
         role: inviteRole,
-        origin: window.location.origin,
       })) as { invite_url?: string; invite_token?: string };
 
       setInviteEmail('');

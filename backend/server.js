@@ -464,10 +464,7 @@ const generateInviteToken = () => crypto.randomBytes(32).toString('base64url');
 const normalizeInviteOrigin = (value) => {
   const origin = String(value ?? '').trim();
   if (/^https?:\/\/[^/\s]+$/i.test(origin)) return origin.replace(/\/$/, '');
-  return (process.env.APP_URL || process.env.VITE_APP_URL || 'http://127.0.0.1:5173').replace(
-    /\/$/,
-    ''
-  );
+  return null;
 };
 
 const mapWorkspaceInvite = (row, nowIso = new Date().toISOString()) => {
@@ -1588,6 +1585,12 @@ app.post(
       });
 
       const appOrigin = normalizeInviteOrigin(req.body?.origin || req.get('origin'));
+      if (!appOrigin) {
+        return res.status(400).json({
+          error:
+            'Invite base URL is required. Set VITE_INVITE_BASE_URL or send the request origin.',
+        });
+      }
       const inviteUrl = `${appOrigin}/invite/${encodeURIComponent(token)}`;
 
       res.json({
