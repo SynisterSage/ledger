@@ -107,6 +107,19 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   }, [session?.access_token, user]);
 
   useEffect(() => {
+    const handleWorkspacesChanged = () => {
+      void refreshWorkspaces();
+    };
+
+    window.addEventListener('ledger:workspaces-changed', handleWorkspacesChanged as EventListener);
+    return () =>
+      window.removeEventListener(
+        'ledger:workspaces-changed',
+        handleWorkspacesChanged as EventListener
+      );
+  }, [refreshWorkspaces]);
+
+  useEffect(() => {
     const onStorage = (event: StorageEvent) => {
       if (event.key !== WORKSPACE_STORAGE_KEY) return;
       const nextWorkspaceId = event.newValue ? String(event.newValue).trim() : null;
@@ -152,6 +165,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       window.dispatchEvent(
         new CustomEvent('ledger:workspace-changed', { detail: { workspaceId: nextWorkspaceId } })
       );
+      window.dispatchEvent(new CustomEvent('ledger:workspaces-changed'));
     },
     [authedRequest]
   );

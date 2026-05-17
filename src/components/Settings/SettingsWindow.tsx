@@ -9,6 +9,7 @@ import {
   Settings,
   Wind,
 } from 'lucide-react';
+import { createPortal } from 'react-dom';
 import { type CSSProperties, useEffect, useMemo, useRef, useState } from 'react';
 import { useAuthContext } from '../../context/AuthContext';
 import { useSidebar } from '../../context/SidebarContext';
@@ -161,8 +162,11 @@ const selectChevronStyle: CSSProperties = {
   backgroundSize: '14px 14px',
 };
 
-const primaryActionButtonClass =
-  'h-9 rounded-xl bg-[#FF5F40] px-4 text-sm font-medium text-white transition hover:bg-[#ea5336] disabled:opacity-60';
+const compactFieldClassName =
+  'h-9 rounded-xl border border-gray-200 bg-gray-50/80 px-3 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 focus:border-gray-300 focus:bg-white focus:ring-4 focus:ring-gray-100 disabled:opacity-60';
+
+const compactSelectClassName =
+  'h-9 appearance-none rounded-xl border border-gray-200 bg-gray-50/80 px-3 pr-8 text-sm text-gray-900 outline-none transition focus:border-gray-300 focus:bg-white focus:ring-4 focus:ring-gray-100 disabled:opacity-60';
 
 const ToggleField = ({
   id,
@@ -226,14 +230,10 @@ export const SettingsWindow = () => {
   const [activeSection, setActiveSection] = useState<SettingsSectionId>('account');
 
   const [preferences, setPreferences] = useState<UserPreferences>(defaultPrefs);
-  const [isLoadingSettings, setIsLoadingSettings] = useState(true);
   const [isSavingPrefs, setIsSavingPrefs] = useState(false);
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
-  const [isSavingSidebar, setIsSavingSidebar] = useState(false);
-  const [sidebarSaveStatus, setSidebarSaveStatus] = useState<string | null>(null);
 
   const [fullName, setFullName] = useState('');
-  const [initialFullName, setInitialFullName] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [isUpdatingPassword, setIsUpdatingPassword] = useState(false);
@@ -246,7 +246,7 @@ export const SettingsWindow = () => {
   const [workspaceCreateType, setWorkspaceCreateType] = useState<'team' | 'personal'>('team');
   const [isCreatingWorkspace, setIsCreatingWorkspace] = useState(false);
   const [workspaceCreateStatus, setWorkspaceCreateStatus] = useState<string | null>(null);
-  const [isWorkspaceManageOpen, setIsWorkspaceManageOpen] = useState(false);
+  const [isWorkspaceManageModalOpen, setIsWorkspaceManageModalOpen] = useState(false);
   const [workspaceEditName, setWorkspaceEditName] = useState('');
   const [workspaceEditDescription, setWorkspaceEditDescription] = useState('');
   const [workspaceEditStatus, setWorkspaceEditStatus] = useState<string | null>(null);
@@ -254,9 +254,9 @@ export const SettingsWindow = () => {
   const [isSavingWorkspace, setIsSavingWorkspace] = useState(false);
   const [showCloseGuardModal, setShowCloseGuardModal] = useState(false);
   const [workspaceDeleteConfirm, setWorkspaceDeleteConfirm] = useState('');
-  const [workspaceDeleteStatus, setWorkspaceDeleteStatus] = useState<string | null>(null);
   const [workspaceDeleteError, setWorkspaceDeleteError] = useState<string | null>(null);
   const [isDeletingWorkspace, setIsDeletingWorkspace] = useState(false);
+  const [isWorkspaceDeleteModalOpen, setIsWorkspaceDeleteModalOpen] = useState(false);
   const [workspaceMembers, setWorkspaceMembers] = useState<WorkspaceMember[]>([]);
   const [workspaceInvitations, setWorkspaceInvitations] = useState<WorkspaceInvitation[]>([]);
   const [workspaceUserRole, setWorkspaceUserRole] = useState<WorkspaceRole>('member');
@@ -271,6 +271,11 @@ export const SettingsWindow = () => {
   const [inviteCopyStatus, setInviteCopyStatus] = useState<string | null>(null);
   const [isSendingInvite, setIsSendingInvite] = useState(false);
   const inviteEmailRef = useRef<HTMLInputElement | null>(null);
+  const autosaveTimerRef = useRef<number | null>(null);
+  const autosaveTokenRef = useRef(0);
+  const lastSavedSettingsRef = useRef<string>('');
+  const lastSavedFullNameRef = useRef<string>('');
+  const settingsHydratedRef = useRef(false);
 
   const sidebarPositionOptions: Array<{
     value: SidebarPosition;
@@ -329,6 +334,12 @@ export const SettingsWindow = () => {
 
     let cancelled = false;
 
+    const buildSettingsSnapshot = (nextFullName: string, nextPreferences: UserPreferences) =>
+      JSON.stringify({
+        full_name: nextFullName,
+        preferences: nextPreferences,
+      });
+
     const loadSettings = async () => {
       try {
         const payload = (await api.getUserSettings()) as {
@@ -351,13 +362,15 @@ export const SettingsWindow = () => {
             user?.email?.split('@')[0] ||
             ''
         );
-        setInitialFullName(
-          nextFullName ||
-            (user?.user_metadata?.full_name as string | undefined)?.trim() ||
-            user?.email?.split('@')[0] ||
-            ''
-        );
         saveCachedPreferences(nextPreferences);
+        const hydratedFullName =
+          nextFullName ||
+          (user?.user_metadata?.full_name as string | undefined)?.trim() ||
+          user?.email?.split('@')[0] ||
+          '';
+        lastSavedSettingsRef.current = buildSettingsSnapshot(hydratedFullName, nextPreferences);
+        lastSavedFullNameRef.current = hydratedFullName;
+        settingsHydratedRef.current = true;
 
         const cachedLooksReal = JSON.stringify(cachedPrefs) !== JSON.stringify(defaultPrefs);
         const serverLooksUnset =
@@ -374,11 +387,11 @@ export const SettingsWindow = () => {
         const seedName =
           String(user?.user_metadata?.full_name ?? '').trim() || user?.email?.split('@')[0] || '';
         setFullName(seedName);
-        setInitialFullName(seedName);
+        lastSavedSettingsRef.current = buildSettingsSnapshot(seedName, cachedPrefs);
+        lastSavedFullNameRef.current = seedName;
+        settingsHydratedRef.current = true;
       } finally {
-        if (!cancelled) {
-          setIsLoadingSettings(false);
-        }
+        // Initial load only hydrates state; persistence now happens automatically.
       }
     };
 
@@ -408,69 +421,6 @@ export const SettingsWindow = () => {
     return candidate.split(' ')[0];
   }, [fullName]);
 
-  const handleSavePrefs = async () => {
-    setIsSavingPrefs(true);
-    setSaveStatus(null);
-
-    try {
-      const nextFullName = fullName.trim() || null;
-      const nextPreferences = {
-        ...preferences,
-      };
-
-      await api.updateUserSettings({
-        full_name: nextFullName,
-        preferences: nextPreferences,
-      });
-
-      if (String(nextFullName ?? '') !== initialFullName) {
-        try {
-          await authService.updateProfile(nextFullName);
-        } catch (authError) {
-          console.warn('Profile metadata sync failed', authError);
-        }
-      }
-
-      saveCachedPreferences(nextPreferences);
-      await window.desktopWindow?.applySidebarPreferences(sidebarPreferences);
-      setInitialFullName(nextFullName ?? '');
-      setSaveStatus('Settings saved.');
-    } catch {
-      setSaveStatus('Could not save settings.');
-    } finally {
-      setIsSavingPrefs(false);
-    }
-  };
-
-  const handleSaveSidebarSettings = async () => {
-    setIsSavingSidebar(true);
-    setSidebarSaveStatus(null);
-
-    try {
-      await window.desktopWindow?.applySidebarPreferences(sidebarPreferences);
-      await api.updateUserSettings({
-        full_name: fullName.trim() || null,
-        preferences: {
-          ...preferences,
-          sidebarDefaults: {
-            position: sidebarPreferences.position,
-            opacity: sidebarPreferences.opacity,
-            blur: sidebarPreferences.blur,
-            defaultState: sidebarPreferences.defaultState,
-            alwaysOnTop: sidebarPreferences.alwaysOnTop,
-            autoHide: sidebarPreferences.autoHide,
-            floatingDockEnabled: sidebarPreferences.floatingDockEnabled,
-          },
-        },
-      });
-      setSidebarSaveStatus('Sidebar settings saved.');
-    } catch {
-      setSidebarSaveStatus('Could not save sidebar settings.');
-    } finally {
-      setIsSavingSidebar(false);
-    }
-  };
-
   const handleResetSidebarSettings = () => {
     setPosition(defaultSidebarPreferences.position);
     setOpacity(defaultSidebarPreferences.opacity);
@@ -478,8 +428,72 @@ export const SettingsWindow = () => {
     setAlwaysOnTop(defaultSidebarPreferences.alwaysOnTop);
     setAutoHide(defaultSidebarPreferences.autoHide);
     setFloatingDockEnabled(defaultSidebarPreferences.floatingDockEnabled);
-    setSidebarSaveStatus('Sidebar settings reset to defaults.');
+    setSaveStatus('Sidebar settings reset to defaults.');
   };
+
+  useEffect(() => {
+    if (!settingsHydratedRef.current) return;
+
+    const nextFullName = fullName.trim() || null;
+    const nextPreferences = { ...preferences };
+
+    const nextSnapshot = JSON.stringify({
+      full_name: nextFullName,
+      preferences: nextPreferences,
+    });
+
+    if (nextSnapshot === lastSavedSettingsRef.current) {
+      return;
+    }
+
+    if (autosaveTimerRef.current !== null) {
+      window.clearTimeout(autosaveTimerRef.current);
+    }
+
+    const saveToken = ++autosaveTokenRef.current;
+    setIsSavingPrefs(true);
+    setSaveStatus('Saving automatically...');
+
+    autosaveTimerRef.current = window.setTimeout(() => {
+      autosaveTimerRef.current = null;
+      void (async () => {
+        try {
+          await api.updateUserSettings({
+            full_name: nextFullName,
+            preferences: nextPreferences,
+          });
+
+          if (String(nextFullName ?? '') !== lastSavedFullNameRef.current) {
+            try {
+              await authService.updateProfile(nextFullName);
+            } catch (authError) {
+              console.warn('Profile metadata sync failed', authError);
+            }
+          }
+
+          saveCachedPreferences(nextPreferences);
+
+          if (saveToken !== autosaveTokenRef.current) return;
+          lastSavedSettingsRef.current = nextSnapshot;
+          lastSavedFullNameRef.current = nextFullName ?? '';
+          setSaveStatus('Saved automatically.');
+        } catch {
+          if (saveToken !== autosaveTokenRef.current) return;
+          setSaveStatus('Could not save automatically.');
+        } finally {
+          if (saveToken !== autosaveTokenRef.current) return;
+          setIsSavingPrefs(false);
+        }
+      })();
+    }, 450);
+
+    return () => {
+      if (autosaveTimerRef.current !== null) {
+        window.clearTimeout(autosaveTimerRef.current);
+        autosaveTimerRef.current = null;
+      }
+    };
+  }, [api, fullName, preferences]);
 
   const handleUpdatePassword = async () => {
     setPasswordError(null);
@@ -518,6 +532,7 @@ export const SettingsWindow = () => {
     try {
       await setActiveWorkspace(workspaceId);
       await refreshWorkspaces();
+      window.dispatchEvent(new CustomEvent('ledger:workspaces-changed'));
       setWorkspaceStatus('Active workspace updated.');
     } catch (err) {
       setWorkspaceStatus(err instanceof Error ? err.message : 'Could not switch workspace.');
@@ -550,6 +565,7 @@ export const SettingsWindow = () => {
       setWorkspaceCreateType('team');
 
       await refreshWorkspaces();
+      window.dispatchEvent(new CustomEvent('ledger:workspaces-changed'));
       setWorkspaceCreateStatus('Workspace created and activated. Next step: invite teammates.');
       window.setTimeout(() => {
         inviteEmailRef.current?.focus();
@@ -568,23 +584,25 @@ export const SettingsWindow = () => {
       setWorkspaceEditName('');
       setWorkspaceEditDescription('');
       setWorkspaceDeleteConfirm('');
-      setIsWorkspaceManageOpen(false);
+      setIsWorkspaceManageModalOpen(false);
+      setIsWorkspaceDeleteModalOpen(false);
       return;
     }
 
     setWorkspaceEditName(activeWorkspace.name);
     setWorkspaceEditDescription(activeWorkspace.description ?? '');
     setWorkspaceDeleteConfirm('');
-    setIsWorkspaceManageOpen(false);
+    setIsWorkspaceManageModalOpen(false);
+    setIsWorkspaceDeleteModalOpen(false);
   }, [activeWorkspace]);
 
   const handleUpdateWorkspace = async () => {
-    if (!activeWorkspaceId) return;
+    if (!activeWorkspaceId) return false;
 
     const name = workspaceEditName.trim();
     if (!name) {
       setWorkspaceEditError('Workspace name is required');
-      return;
+      return false;
     }
 
     setWorkspaceEditError(null);
@@ -597,37 +615,102 @@ export const SettingsWindow = () => {
         description: workspaceEditDescription.trim() || null,
       });
       await refreshWorkspaces();
+      window.dispatchEvent(new CustomEvent('ledger:workspaces-changed'));
       setWorkspaceEditStatus('Workspace details saved.');
+      return true;
     } catch (err) {
       setWorkspaceEditError(err instanceof Error ? err.message : 'Could not save workspace');
+      return false;
     } finally {
       setIsSavingWorkspace(false);
     }
   };
 
   const handleDeleteWorkspace = async () => {
-    if (!activeWorkspaceId || !activeWorkspace) return;
+    if (!activeWorkspaceId || !activeWorkspace) return false;
 
     if (workspaceDeleteConfirm.trim() !== activeWorkspace.name.trim()) {
       setWorkspaceDeleteError('Type the workspace name to confirm deletion.');
-      return;
+      return false;
     }
 
     setWorkspaceDeleteError(null);
-    setWorkspaceDeleteStatus(null);
     setIsDeletingWorkspace(true);
 
     try {
       await api.deleteWorkspace(activeWorkspaceId);
-      setWorkspaceDeleteStatus('Workspace deleted.');
       setWorkspaceDeleteConfirm('');
       await refreshWorkspaces();
+      window.dispatchEvent(new CustomEvent('ledger:workspaces-changed'));
+      return true;
     } catch (err) {
       setWorkspaceDeleteError(err instanceof Error ? err.message : 'Could not delete workspace');
+      return false;
     } finally {
       setIsDeletingWorkspace(false);
     }
   };
+
+  const activeWorkspaceKindLabel = activeWorkspace?.is_personal
+    ? 'Personal workspace'
+    : 'Team workspace';
+
+  const openWorkspaceManageModal = () => {
+    if (!activeWorkspace) return;
+
+    setWorkspaceEditName(activeWorkspace.name);
+    setWorkspaceEditDescription(activeWorkspace.description ?? '');
+    setWorkspaceEditStatus(null);
+    setWorkspaceEditError(null);
+    setIsWorkspaceManageModalOpen(true);
+  };
+
+  const closeWorkspaceManageModal = () => {
+    setIsWorkspaceManageModalOpen(false);
+  };
+
+  const openWorkspaceDeleteModal = () => {
+    setWorkspaceDeleteConfirm('');
+    setWorkspaceDeleteError(null);
+    setIsWorkspaceDeleteModalOpen(true);
+  };
+
+  const closeWorkspaceDeleteModal = () => {
+    setIsWorkspaceDeleteModalOpen(false);
+    setWorkspaceDeleteConfirm('');
+    setWorkspaceDeleteError(null);
+  };
+
+  const submitWorkspaceDeleteConfirmation = async () => {
+    const succeeded = await handleDeleteWorkspace();
+    if (succeeded) {
+      closeWorkspaceDeleteModal();
+      closeWorkspaceManageModal();
+    }
+  };
+
+  const handleSaveWorkspaceChanges = async () => {
+    const succeeded = await handleUpdateWorkspace();
+    if (succeeded) {
+      closeWorkspaceManageModal();
+    }
+  };
+
+  useEffect(() => {
+    if (!isWorkspaceManageModalOpen && !isWorkspaceDeleteModalOpen) return;
+
+    const onEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      if (isWorkspaceDeleteModalOpen) {
+        closeWorkspaceDeleteModal();
+        return;
+      }
+      closeWorkspaceManageModal();
+    };
+
+    window.addEventListener('keydown', onEscape);
+    return () => window.removeEventListener('keydown', onEscape);
+  }, [isWorkspaceDeleteModalOpen, isWorkspaceManageModalOpen]);
 
   useEffect(() => {
     if (activeSection !== 'workspace' || !activeWorkspaceId) return;
@@ -794,7 +877,7 @@ export const SettingsWindow = () => {
   };
 
   const attemptCloseSettings = () => {
-    if (isSavingPrefs || isSavingSidebar || isSavingWorkspace) {
+    if (isSavingPrefs || isSavingWorkspace) {
       setShowCloseGuardModal(true);
       return;
     }
@@ -989,27 +1072,27 @@ export const SettingsWindow = () => {
                     Defaults used across dashboard and modules.
                   </p>
 
-                  <div className="mt-4 rounded-2xl border border-gray-200 bg-white p-4">
-                    <div className="flex items-start justify-between gap-3">
+                  <div className="mt-4 border-t border-gray-100 pt-4">
+                    <div className="flex items-start justify-between gap-4">
                       <div>
-                        <p className="text-xs uppercase tracking-wider text-gray-500">
+                        <p className="text-[10px] font-medium uppercase tracking-[0.18em] text-gray-400">
                           Create workspace
                         </p>
-                        <h3 className="mt-1 text-sm font-semibold text-gray-900">
-                          Start a new place for Ledger data
+                        <h3 className="mt-1 text-[15px] font-semibold leading-5 text-gray-900">
+                          Create a focused space for work
                         </h3>
-                        <p className="mt-1 text-xs text-gray-600">
-                          Create a personal or team workspace.
+                        <p className="mt-0.5 text-xs leading-5 text-gray-500">
+                          Start a personal or team workspace for Ledger data.
                         </p>
                       </div>
                     </div>
 
-                    <div className="mt-3 grid gap-2 md:grid-cols-[1fr_auto]">
+                    <div className="mt-3 grid gap-3 md:grid-cols-[minmax(0,1fr)_176px]">
                       <input
                         value={workspaceCreateName}
                         onChange={(e) => setWorkspaceCreateName(e.target.value)}
                         placeholder="Workspace name"
-                        className="h-10 rounded-xl border border-gray-200 bg-gray-50 px-3 text-sm text-gray-900 outline-none focus:border-gray-300 focus:ring-4 focus:ring-gray-100"
+                        className={compactFieldClassName}
                         aria-label="Workspace name"
                       />
                       <select
@@ -1017,7 +1100,7 @@ export const SettingsWindow = () => {
                         onChange={(e) =>
                           setWorkspaceCreateType(e.target.value as 'team' | 'personal')
                         }
-                        className="h-10 appearance-none rounded-xl border border-gray-200 bg-gray-50 px-3 pr-8 text-sm text-gray-900 outline-none focus:border-gray-300 focus:ring-4 focus:ring-gray-100"
+                        className={compactSelectClassName}
                         style={selectChevronStyle}
                         aria-label="Workspace type"
                       >
@@ -1026,180 +1109,76 @@ export const SettingsWindow = () => {
                       </select>
                     </div>
 
-                    <div className="mt-2">
+                    <div className="mt-3">
                       <textarea
                         value={workspaceCreateDescription}
                         onChange={(e) => setWorkspaceCreateDescription(e.target.value)}
                         placeholder="Optional description"
-                        className="min-h-24 w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-900 outline-none focus:border-gray-300 focus:ring-4 focus:ring-gray-100"
+                        className="min-h-14 w-full resize-none rounded-xl border border-gray-200 bg-gray-50/80 px-3 py-2 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 focus:border-gray-300 focus:bg-white focus:ring-4 focus:ring-gray-100"
                         aria-label="Workspace description"
                       />
                     </div>
 
-                    <div className="mt-3 flex items-center justify-end gap-3">
+                    <div className="mt-2.5 flex items-center justify-between gap-3">
+                      <div className="min-h-5">
+                        {workspaceCreateStatus && (
+                          <p className="text-xs text-green-700">{workspaceCreateStatus}</p>
+                        )}
+                      </div>
                       <button
                         onClick={() => void handleCreateWorkspace()}
                         disabled={isCreatingWorkspace || !workspaceCreateName.trim()}
-                        className="h-10 rounded-xl bg-[#FF5F40] px-4 text-sm font-medium text-white transition hover:bg-[#ea5336] disabled:opacity-60"
+                        className="h-8 rounded-lg bg-[#FF5F40] px-3 text-xs font-medium text-white transition hover:bg-[#ea5336] disabled:opacity-60"
                       >
                         {isCreatingWorkspace ? 'Creating...' : 'Create workspace'}
                       </button>
                     </div>
-
-                    {workspaceCreateStatus && (
-                      <div className="mt-3 rounded-xl border border-green-200 bg-green-50 px-3 py-2">
-                        <p className="text-xs font-medium text-green-800">
-                          {workspaceCreateStatus}
-                        </p>
-                      </div>
-                    )}
                   </div>
 
-                  <div className="mt-4 rounded-2xl border border-gray-200 bg-white p-4">
-                    <div className="flex items-center justify-between gap-3">
-                      <div>
-                        <p className="text-xs uppercase tracking-wider text-gray-500">
+                  <div className="mt-4 border-t border-gray-100 pt-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="text-[10px] font-medium uppercase tracking-[0.18em] text-gray-400">
                           Active workspace
                         </p>
-                        <p className="mt-1 text-sm font-semibold text-gray-900">
+                        <p className="mt-1 text-[15px] font-semibold leading-5 text-gray-900">
                           {activeWorkspace?.name ?? 'No workspace selected'}
                         </p>
-                        <p className="mt-1 text-xs text-gray-600">
-                          This workspace keeps your dashboard, projects, calendar, notes, and
-                          settings separated from other teams.
+                        <p className="mt-0.5 text-xs leading-5 text-gray-500">
+                          {activeWorkspaceKindLabel}
+                        </p>
+                        <p className="mt-2 max-w-xl text-xs leading-5 text-gray-600">
+                          This workspace keeps dashboard, projects, calendar, notes, and settings
+                          separated.
                         </p>
                       </div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex shrink-0 items-center gap-2">
                         <button
                           onClick={() => void refreshWorkspaces()}
                           disabled={isLoadingWorkspaces || isSwitchingWorkspace}
-                          className="h-9 rounded-xl border border-gray-200 bg-white px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-100 disabled:opacity-60"
+                          className="h-8 rounded-lg border border-gray-200 bg-white px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-50 disabled:opacity-60"
                         >
                           Refresh
                         </button>
                         {canManageWorkspace ? (
                           <button
-                            onClick={() => setIsWorkspaceManageOpen((prev) => !prev)}
-                            className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-gray-200 bg-white px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-100"
+                            onClick={openWorkspaceManageModal}
+                            className="h-8 rounded-lg border border-gray-200 bg-white px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-50"
                           >
-                            <Settings size={13} />
-                            {isWorkspaceManageOpen ? 'Close' : 'Manage'}
+                            Manage
                           </button>
                         ) : (
-                          <span className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs font-medium text-gray-500">
+                          <span className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-medium text-gray-500">
                             Owner only
                           </span>
                         )}
                       </div>
                     </div>
 
-                    {isWorkspaceManageOpen && canManageWorkspace && (
-                      <div className="mt-3 rounded-2xl border border-gray-200 bg-white p-4">
-                        <div className="flex items-center justify-between gap-3">
-                          <div>
-                            <p className="text-xs uppercase tracking-wider text-gray-500">
-                              Workspace management
-                            </p>
-                            <h3 className="mt-1 text-sm font-semibold text-gray-900">
-                              Edit details or delete
-                            </h3>
-                          </div>
-                          <button
-                            onClick={() => setIsWorkspaceManageOpen(false)}
-                            className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-1.5 text-xs font-medium text-gray-600 transition hover:bg-gray-100"
-                          >
-                            Done
-                          </button>
-                        </div>
-
-                        <div className="mt-3 grid gap-3 md:grid-cols-2">
-                          <div className="rounded-2xl border border-gray-200 bg-white p-3">
-                            <p className="text-xs font-medium uppercase tracking-wider text-gray-500">
-                              Details
-                            </p>
-                            <div className="mt-2 space-y-2">
-                              <input
-                                value={workspaceEditName}
-                                onChange={(e) => setWorkspaceEditName(e.target.value)}
-                                disabled={!canManageWorkspace || isSavingWorkspace}
-                                placeholder="Workspace name"
-                                className="h-10 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm text-gray-900 outline-none focus:border-gray-300 focus:ring-4 focus:ring-gray-100 disabled:opacity-60"
-                                aria-label="Edit workspace name"
-                              />
-                              <textarea
-                                value={workspaceEditDescription}
-                                onChange={(e) => setWorkspaceEditDescription(e.target.value)}
-                                disabled={!canManageWorkspace || isSavingWorkspace}
-                                placeholder="Optional description"
-                                className="min-h-20 w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 outline-none focus:border-gray-300 focus:ring-4 focus:ring-gray-100 disabled:opacity-60"
-                                aria-label="Edit workspace description"
-                              />
-                            </div>
-
-                            <div className="mt-3 flex items-center gap-2">
-                              <button
-                                onClick={() => void handleUpdateWorkspace()}
-                                disabled={!canManageWorkspace || isSavingWorkspace}
-                                className="h-9 rounded-xl bg-[#FF5F40] px-3 text-sm font-medium text-white transition hover:bg-[#ea5336] disabled:opacity-60"
-                              >
-                                {isSavingWorkspace ? 'Saving...' : 'Save'}
-                              </button>
-                              {workspaceEditStatus && (
-                                <p className="text-xs text-green-700">{workspaceEditStatus}</p>
-                              )}
-                            </div>
-
-                            {workspaceEditError && (
-                              <p className="mt-2 text-xs text-red-700">{workspaceEditError}</p>
-                            )}
-                          </div>
-
-                          <div className="rounded-2xl border border-gray-200 bg-white p-3">
-                            <p className="text-xs font-medium uppercase tracking-wider text-red-600">
-                              Delete
-                            </p>
-                            <p className="mt-2 text-xs leading-5 text-gray-600">
-                              Remove this workspace and everything inside it.
-                            </p>
-
-                            <input
-                              value={workspaceDeleteConfirm}
-                              onChange={(e) => setWorkspaceDeleteConfirm(e.target.value)}
-                              disabled={workspaceUserRole !== 'owner' || isDeletingWorkspace}
-                              placeholder={activeWorkspace?.name ?? 'Workspace name'}
-                              className="mt-3 h-10 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm text-gray-900 outline-none focus:border-gray-300 focus:ring-4 focus:ring-gray-100 disabled:opacity-60"
-                              aria-label="Confirm workspace deletion"
-                            />
-
-                            <div className="mt-3 flex items-center gap-2">
-                              <button
-                                onClick={() => void handleDeleteWorkspace()}
-                                disabled={
-                                  workspaceUserRole !== 'owner' ||
-                                  isDeletingWorkspace ||
-                                  workspaceDeleteConfirm.trim() !== activeWorkspace?.name?.trim()
-                                }
-                                className="h-9 rounded-xl bg-red-600 px-3 text-sm font-medium text-white transition hover:bg-red-700 disabled:opacity-60"
-                              >
-                                {isDeletingWorkspace ? 'Deleting...' : 'Delete'}
-                              </button>
-                              {workspaceDeleteStatus && (
-                                <p className="text-xs text-green-700">{workspaceDeleteStatus}</p>
-                              )}
-                            </div>
-
-                            {workspaceDeleteError && (
-                              <p className="mt-2 text-xs text-red-700">{workspaceDeleteError}</p>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
-                    <div className="mt-3">
+                    <div className="mt-4">
                       <label
                         htmlFor="settings-active-workspace"
-                        className="mb-2 block text-sm font-medium text-gray-700"
+                        className="mb-2 block text-xs font-medium text-gray-500"
                       >
                         Switch workspace
                       </label>
@@ -1210,7 +1189,7 @@ export const SettingsWindow = () => {
                         disabled={
                           isLoadingWorkspaces || isSwitchingWorkspace || workspaces.length === 0
                         }
-                        className="h-10 w-full appearance-none rounded-xl border border-gray-200 bg-white px-3 pr-9 text-sm text-gray-900 outline-none focus:border-gray-300 focus:ring-4 focus:ring-gray-100 disabled:opacity-60"
+                        className="h-9 w-full appearance-none rounded-xl border border-gray-200 bg-gray-50/80 px-3 pr-9 text-sm text-gray-900 outline-none transition focus:border-gray-300 focus:bg-white focus:ring-4 focus:ring-gray-100 disabled:opacity-60"
                         style={selectChevronStyle}
                       >
                         {workspaces.length === 0 && (
@@ -1312,26 +1291,30 @@ export const SettingsWindow = () => {
                   </div>
 
                   <div className="mt-4 rounded-2xl border border-gray-200 bg-white p-4">
-                    <h3 className="text-sm font-semibold text-gray-900">Invite members</h3>
-                    <p className="mt-1 text-xs text-gray-600">
-                      Create a manual invite link for the selected workspace.
-                    </p>
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="min-w-0">
+                        <h3 className="text-sm font-semibold text-gray-900">Invite members</h3>
+                        <p className="mt-1 text-xs text-gray-600">
+                          Invite someone to this workspace.
+                        </p>
+                      </div>
+                    </div>
 
-                    <div className="mt-3 grid gap-2 md:grid-cols-[1fr_140px_auto]">
+                    <div className="mt-3 grid gap-2 md:grid-cols-[minmax(0,1fr)_148px_auto]">
                       <input
                         ref={inviteEmailRef}
                         value={inviteEmail}
                         onChange={(e) => setInviteEmail(e.target.value)}
                         placeholder="name@example.com"
                         disabled={!canManageWorkspace || isSendingInvite}
-                        className="h-9 rounded-lg border border-gray-200 bg-gray-50 px-3 text-sm text-gray-900 outline-none focus:border-gray-300 focus:ring-4 focus:ring-gray-100 disabled:opacity-60"
+                        className="h-9 rounded-xl border border-gray-200 bg-gray-50/80 px-3 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 focus:border-gray-300 focus:bg-white focus:ring-4 focus:ring-gray-100 disabled:opacity-60"
                         aria-label="Invite email optional"
                       />
                       <select
                         value={inviteRole}
                         onChange={(e) => setInviteRole(e.target.value as 'admin' | 'member')}
                         disabled={!canManageWorkspace || isSendingInvite}
-                        className="h-9 appearance-none rounded-lg border border-gray-200 bg-gray-50 px-2 pr-8 text-sm text-gray-900 outline-none focus:border-gray-300 focus:ring-4 focus:ring-gray-100 disabled:opacity-60"
+                        className="h-9 appearance-none rounded-xl border border-gray-200 bg-gray-50/80 px-3 pr-8 text-sm text-gray-900 outline-none transition focus:border-gray-300 focus:bg-white focus:ring-4 focus:ring-gray-100 disabled:opacity-60"
                         style={selectChevronStyle}
                         aria-label="Invite role"
                       >
@@ -1341,18 +1324,17 @@ export const SettingsWindow = () => {
                       <button
                         onClick={() => void handleCreateInvitation()}
                         disabled={!canManageWorkspace || isSendingInvite}
-                        className="h-9 rounded-lg bg-[#FF5F40] px-3 text-sm font-medium text-white transition hover:bg-[#ea5336] disabled:opacity-60"
+                        className="h-9 rounded-xl border border-gray-200 bg-white px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-50 disabled:opacity-60"
                       >
                         {isSendingInvite ? 'Creating...' : 'Create invite'}
                       </button>
                     </div>
-                    <p className="mt-2 text-xs text-gray-500">
-                      Email is optional. Copy this link and send it manually. Email invites can be
-                      added later.
+                    <p className="mt-2 text-xs leading-5 text-gray-500">
+                      Optional email. Invite links can be copied and shared manually.
                     </p>
 
                     {(inviteLink || inviteToken) && (
-                      <div className="mt-3 rounded-xl border border-gray-200 bg-gray-50 p-3">
+                      <div className="mt-3 rounded-xl border border-gray-200 bg-gray-50/70 p-3">
                         <p className="text-xs font-medium text-gray-700">Invite link</p>
                         <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center">
                           {inviteLink && (
@@ -1376,43 +1358,48 @@ export const SettingsWindow = () => {
                       </div>
                     )}
 
-                    <div className="mt-3 space-y-2">
-                      {workspaceInvitations.length === 0 ? (
-                        <p className="text-xs text-gray-500">No invitations yet.</p>
-                      ) : (
-                        workspaceInvitations.map((invite) => (
-                          <div
-                            key={invite.id}
-                            className="grid grid-cols-[1fr_auto_auto] items-center gap-2 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2"
-                          >
-                            <div className="min-w-0">
-                              <p className="truncate text-sm font-medium text-gray-900">
-                                {invite.invited_email}
-                              </p>
-                              <p className="text-xs text-gray-600">
-                                {invite.role} · {invite.status}
-                              </p>
-                            </div>
-                            <p className="text-[11px] text-gray-500">
-                              {new Date(invite.expires_at).toLocaleDateString([], {
-                                month: 'short',
-                                day: 'numeric',
-                              })}
-                            </p>
-                            <button
-                              onClick={() => void handleRevokeInvitation(invite.id)}
-                              disabled={
-                                !canManageWorkspace ||
-                                invite.status !== 'pending' ||
-                                invitationActionId === invite.id
-                              }
-                              className="h-8 rounded-lg border border-gray-200 bg-white px-2 text-xs font-medium text-gray-700 transition hover:bg-gray-100 disabled:opacity-50"
+                    <div className="mt-3">
+                      <p className="text-[10px] font-medium uppercase tracking-[0.18em] text-gray-400">
+                        Recent invites
+                      </p>
+                      <div className="mt-2 space-y-2">
+                        {workspaceInvitations.length === 0 ? (
+                          <p className="text-xs text-gray-500">No pending invites.</p>
+                        ) : (
+                          workspaceInvitations.map((invite) => (
+                            <div
+                              key={invite.id}
+                              className="grid grid-cols-[1fr_auto_auto] items-center gap-2 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2"
                             >
-                              Revoke
-                            </button>
-                          </div>
-                        ))
-                      )}
+                              <div className="min-w-0">
+                                <p className="truncate text-sm font-medium text-gray-900">
+                                  {invite.invited_email}
+                                </p>
+                                <p className="text-xs text-gray-600">
+                                  {invite.role} · {invite.status}
+                                </p>
+                              </div>
+                              <p className="text-[11px] text-gray-500">
+                                {new Date(invite.expires_at).toLocaleDateString([], {
+                                  month: 'short',
+                                  day: 'numeric',
+                                })}
+                              </p>
+                              <button
+                                onClick={() => void handleRevokeInvitation(invite.id)}
+                                disabled={
+                                  !canManageWorkspace ||
+                                  invite.status !== 'pending' ||
+                                  invitationActionId === invite.id
+                                }
+                                className="h-8 rounded-lg border border-gray-200 bg-white px-2 text-xs font-medium text-gray-700 transition hover:bg-gray-100 disabled:opacity-50"
+                              >
+                                Revoke
+                              </button>
+                            </div>
+                          ))
+                        )}
+                      </div>
                     </div>
                   </div>
 
@@ -1678,7 +1665,7 @@ export const SettingsWindow = () => {
                       <p className="mt-2 text-xs text-gray-600">(Range: 70% - 95%)</p>
                     </div>
 
-                    <div className="flex items-center justify-between gap-3">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                       <button
                         onClick={handleResetSidebarSettings}
                         type="button"
@@ -1686,17 +1673,12 @@ export const SettingsWindow = () => {
                       >
                         Reset to Defaults
                       </button>
-                      <button
-                        onClick={() => void handleSaveSidebarSettings()}
-                        type="button"
-                        disabled={isSavingSidebar}
-                        className="h-9 rounded-xl bg-[#FF5F40] px-4 text-sm font-medium text-white transition hover:bg-[#ea5336] disabled:opacity-60"
-                      >
-                        {isSavingSidebar ? 'Saving...' : 'Save Settings'}
-                      </button>
+                      <p className="text-xs text-gray-600">Changes save automatically.</p>
                     </div>
-                    {sidebarSaveStatus && (
-                      <p className="text-xs text-gray-700">{sidebarSaveStatus}</p>
+                    {saveStatus && (
+                      <p className="mt-2 text-xs text-gray-700" role="status">
+                        {saveStatus}
+                      </p>
                     )}
                   </div>
                 </section>
@@ -1801,20 +1783,13 @@ export const SettingsWindow = () => {
 
               {activeSection !== 'sidebar' && activeSection !== 'shortcuts' && (
                 <section className="rounded-2xl border border-gray-200 bg-white p-5">
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <h2 className="text-sm font-semibold text-gray-900">Save settings</h2>
-                      <p className="mt-1 text-xs text-gray-600">
-                        Changes sync to your account and workspace defaults.
-                      </p>
-                    </div>
-                    <button
-                      onClick={() => void handleSavePrefs()}
-                      disabled={isLoadingSettings || isSavingPrefs}
-                      className={primaryActionButtonClass}
-                    >
-                      {isSavingPrefs ? 'Saving...' : 'Save Settings'}
-                    </button>
+                  <div>
+                    <h2 className="text-sm font-semibold text-gray-900">
+                      Changes save automatically
+                    </h2>
+                    <p className="mt-1 text-xs text-gray-600">
+                      Your account and workspace defaults update as you edit them.
+                    </p>
                   </div>
                   {saveStatus && (
                     <p className="mt-3 text-xs text-gray-700" role="status">
@@ -1824,6 +1799,209 @@ export const SettingsWindow = () => {
                 </section>
               )}
             </div>
+
+            {isWorkspaceManageModalOpen &&
+              activeWorkspace &&
+              createPortal(
+                <div
+                  className="fixed inset-0 z-180 flex items-center justify-center bg-gray-900/20 p-4"
+                  onMouseDown={closeWorkspaceManageModal}
+                >
+                  <div
+                    role="dialog"
+                    aria-modal="true"
+                    aria-labelledby="workspace-manage-title"
+                    className="w-full max-w-155 rounded-2xl border border-gray-200 bg-white shadow-[0_24px_70px_rgba(15,23,42,0.12)]"
+                    onMouseDown={(event) => event.stopPropagation()}
+                  >
+                    <div className="flex items-start justify-between gap-4 px-5 pt-5">
+                      <div>
+                        <p className="text-[10px] font-medium uppercase tracking-[0.18em] text-gray-400">
+                          Workspace settings
+                        </p>
+                        <h3
+                          id="workspace-manage-title"
+                          className="mt-1 text-lg font-semibold text-gray-900"
+                        >
+                          {activeWorkspace.name}
+                        </h3>
+                        <p className="mt-0.5 text-xs text-gray-500">{activeWorkspaceKindLabel}</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={closeWorkspaceManageModal}
+                        className="rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xs font-medium text-gray-600 transition hover:bg-gray-50"
+                      >
+                        Close
+                      </button>
+                    </div>
+
+                    <div className="mt-4 border-t border-gray-100 px-5 pt-4">
+                      <label
+                        htmlFor="workspace-edit-name"
+                        className="mb-2 block text-xs font-medium text-gray-500"
+                      >
+                        Name
+                      </label>
+                      <input
+                        id="workspace-edit-name"
+                        value={workspaceEditName}
+                        onChange={(e) => setWorkspaceEditName(e.target.value)}
+                        disabled={!canManageWorkspace || isSavingWorkspace}
+                        className="h-9 w-full rounded-xl border border-gray-200 bg-gray-50/80 px-3 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 focus:border-gray-300 focus:bg-white focus:ring-4 focus:ring-gray-100 disabled:opacity-60"
+                        aria-label="Edit workspace name"
+                      />
+                    </div>
+
+                    <div className="mt-3 px-5">
+                      <label
+                        htmlFor="workspace-edit-description"
+                        className="mb-2 block text-xs font-medium text-gray-500"
+                      >
+                        Description
+                      </label>
+                      <textarea
+                        id="workspace-edit-description"
+                        value={workspaceEditDescription}
+                        onChange={(e) => setWorkspaceEditDescription(e.target.value)}
+                        disabled={!canManageWorkspace || isSavingWorkspace}
+                        className="min-h-20 w-full resize-none rounded-xl border border-gray-200 bg-gray-50/80 px-3 py-2 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 focus:border-gray-300 focus:bg-white focus:ring-4 focus:ring-gray-100 disabled:opacity-60"
+                        aria-label="Edit workspace description"
+                      />
+                    </div>
+
+                    <div className="mt-4 border-t border-gray-100 px-5 pt-4">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-xs font-medium uppercase tracking-wider text-gray-500">
+                            Danger zone
+                          </p>
+                          <p className="mt-1 text-xs text-gray-600">
+                            Delete this workspace and all data inside it.
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={openWorkspaceDeleteModal}
+                          disabled={workspaceUserRole !== 'owner' || isDeletingWorkspace}
+                          className="h-8 rounded-lg border border-red-200 bg-white px-3 text-xs font-medium text-red-700 transition hover:bg-red-50 disabled:opacity-50"
+                        >
+                          Delete workspace
+                        </button>
+                      </div>
+                    </div>
+
+                    {(workspaceEditError || workspaceEditStatus) && (
+                      <p className="px-5 pt-3 text-xs text-gray-700" role="status">
+                        {workspaceEditError || workspaceEditStatus}
+                      </p>
+                    )}
+
+                    <div className="mt-5 flex items-center justify-end gap-2 border-t border-gray-100 px-5 py-4">
+                      <button
+                        type="button"
+                        onClick={closeWorkspaceManageModal}
+                        className="h-8 rounded-lg border border-gray-200 bg-white px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-50"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void handleSaveWorkspaceChanges()}
+                        disabled={!canManageWorkspace || isSavingWorkspace}
+                        className="h-8 rounded-lg bg-[#FF5F40] px-3 text-xs font-medium text-white transition hover:bg-[#ea5336] disabled:opacity-60"
+                      >
+                        {isSavingWorkspace ? 'Saving...' : 'Save changes'}
+                      </button>
+                    </div>
+                  </div>
+                </div>,
+                document.body
+              )}
+
+            {isWorkspaceDeleteModalOpen &&
+              activeWorkspace &&
+              createPortal(
+                <div
+                  className="fixed inset-0 z-190 flex items-center justify-center bg-gray-900/20 p-4"
+                  onMouseDown={closeWorkspaceDeleteModal}
+                >
+                  <div
+                    role="dialog"
+                    aria-modal="true"
+                    aria-labelledby="workspace-delete-title"
+                    className="w-full max-w-130 rounded-2xl border border-gray-200 bg-white shadow-[0_24px_70px_rgba(15,23,42,0.12)]"
+                    onMouseDown={(event) => event.stopPropagation()}
+                  >
+                    <div className="px-5 pt-5">
+                      <p className="text-[10px] font-medium uppercase tracking-[0.18em] text-gray-400">
+                        Danger zone
+                      </p>
+                      <h3
+                        id="workspace-delete-title"
+                        className="mt-1 text-lg font-semibold text-gray-900"
+                      >
+                        Delete workspace
+                      </h3>
+                      <p className="mt-1 text-sm text-gray-600">
+                        Type{' '}
+                        <span className="font-medium text-gray-900">{activeWorkspace.name}</span> to
+                        confirm deletion.
+                      </p>
+                    </div>
+
+                    <div className="mt-4 border-t border-gray-100 px-5 pt-4">
+                      <label
+                        htmlFor="workspace-delete-confirm"
+                        className="mb-2 block text-xs font-medium text-gray-500"
+                      >
+                        Workspace name
+                      </label>
+                      <input
+                        id="workspace-delete-confirm"
+                        value={workspaceDeleteConfirm}
+                        onChange={(e) => setWorkspaceDeleteConfirm(e.target.value)}
+                        disabled={workspaceUserRole !== 'owner' || isDeletingWorkspace}
+                        placeholder={activeWorkspace.name}
+                        className="h-9 w-full rounded-xl border border-gray-200 bg-gray-50/80 px-3 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 focus:border-gray-300 focus:bg-white focus:ring-4 focus:ring-gray-100 disabled:opacity-60"
+                        aria-label="Confirm workspace deletion"
+                      />
+                      <p className="mt-2 text-xs text-gray-500">
+                        This removes the workspace and all data inside it.
+                      </p>
+                    </div>
+
+                    {workspaceDeleteError && (
+                      <p className="px-5 pt-3 text-xs text-red-700" role="alert">
+                        {workspaceDeleteError}
+                      </p>
+                    )}
+
+                    <div className="mt-5 flex items-center justify-end gap-2 border-t border-gray-100 px-5 py-4">
+                      <button
+                        type="button"
+                        onClick={closeWorkspaceDeleteModal}
+                        className="h-8 rounded-lg border border-gray-200 bg-white px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-50"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void submitWorkspaceDeleteConfirmation()}
+                        disabled={
+                          workspaceUserRole !== 'owner' ||
+                          isDeletingWorkspace ||
+                          workspaceDeleteConfirm.trim() !== activeWorkspace.name.trim()
+                        }
+                        className="h-8 rounded-lg border border-red-200 bg-white px-3 text-xs font-medium text-red-700 transition hover:bg-red-50 disabled:opacity-50"
+                      >
+                        {isDeletingWorkspace ? 'Deleting...' : 'Delete workspace'}
+                      </button>
+                    </div>
+                  </div>
+                </div>,
+                document.body
+              )}
           </main>
         </div>
       </div>
