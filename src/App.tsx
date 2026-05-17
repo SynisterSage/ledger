@@ -1790,6 +1790,7 @@ function AppShell() {
   const [inviteFlowNotice, setInviteFlowNotice] = useState<string | null>(null);
   const [inviteWorkspaceName, setInviteWorkspaceName] = useState<string | null>(null);
   const [onboardingWorkspaceName, setOnboardingWorkspaceName] = useState('');
+  const [onboardingMode, setOnboardingMode] = useState<'create' | 'join'>('create');
   const [onboardingInviteValue, setOnboardingInviteValue] = useState('');
   const [isJoiningWorkspace, setIsJoiningWorkspace] = useState(false);
   const [onboardingInviteError, setOnboardingInviteError] = useState<string | null>(null);
@@ -2368,45 +2369,135 @@ function AppShell() {
           style={noDragRegionStyle}
         >
           <div className="w-full max-w-97.5">
-            <div className="mb-7 text-center">
+            <div className="mb-6 text-center">
               <img src="./logo-color.svg" alt="Ledger" className="mx-auto mb-4 h-12 w-12" />
               <h2 className="text-[28px] font-semibold leading-tight text-gray-950">
                 Welcome to Ledger
               </h2>
               <p className="mt-2 text-sm leading-6 text-gray-500">
-                Join a workspace with an invite, or create your own first workspace.
+                Create a workspace or join one with an invite code.
               </p>
             </div>
-            <div className="mb-7 space-y-3.5">
-              <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
-                <div className="mb-3">
-                  <h3 className="text-sm font-semibold text-gray-950">Join workspace</h3>
-                  <p className="mt-1 text-xs leading-5 text-gray-500">
-                    Paste an invite code or the full invite link you received.
-                  </p>
-                </div>
-                <div className="space-y-2.5">
-                  <label className="block text-left">
-                    <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.16em] text-gray-500">
-                      Invite code or link
-                    </span>
-                    <input
-                      value={onboardingInviteValue}
-                      onChange={(event) => {
-                        setOnboardingInviteValue(event.target.value);
-                        if (onboardingInviteError) {
-                          setOnboardingInviteError(null);
-                        }
+
+            <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+              {onboardingMode === 'create' ? (
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-left">
+                      <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.16em] text-gray-500">
+                        Workspace name
+                      </span>
+                      <input
+                        value={onboardingWorkspaceName}
+                        onChange={(event) => setOnboardingWorkspaceName(event.target.value)}
+                        placeholder="My Workspace"
+                        className="h-11 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm text-gray-900 outline-none focus:border-gray-300"
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setOnboardingMode('join');
+                        setOnboardingInviteError(null);
+                        setOnboardingError(null);
                       }}
-                      placeholder="https://ledger.app/invite/..."
-                      className="h-11 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm text-gray-900 outline-none focus:border-gray-300"
-                    />
-                  </label>
+                      className="mt-2 text-xs font-medium text-[#FF5F40] hover:text-[#ea5336]"
+                    >
+                      Have an invite code? Join a workspace
+                    </button>
+                  </div>
+
+                  <div className="flex items-start gap-3 rounded-xl bg-gray-50 px-3 py-2">
+                    <CheckCircle2 size={18} className="mt-0.5 text-green-600" />
+                    <p className="text-sm text-gray-700">
+                      You can invite teammates later from workspace settings.
+                    </p>
+                  </div>
+
+                  {onboardingError ? (
+                    <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                      {onboardingError}
+                    </div>
+                  ) : null}
+
+                  <button
+                    disabled={isSavingOnboarding}
+                    onClick={async () => {
+                      if (!user || isSavingOnboarding) return;
+                      if (!workspaceName) {
+                        setOnboardingError('Workspace name is required.');
+                        return;
+                      }
+                      setIsSavingOnboarding(true);
+                      setOnboardingError(null);
+                      try {
+                        if (activeWorkspaceId) {
+                          await api.updateWorkspace(activeWorkspaceId, { name: workspaceName });
+                        }
+                        await api.completeOnboarding();
+                        await refreshWorkspaces();
+                        setPostAuthStage('ready');
+                      } catch (error) {
+                        setOnboardingError(
+                          error instanceof Error ? error.message : 'Could not complete onboarding.'
+                        );
+                      } finally {
+                        setIsSavingOnboarding(false);
+                      }
+                    }}
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-[#FF5F40] px-4 py-3 text-sm font-semibold text-white shadow-[0_10px_24px_rgba(255,95,64,0.24)] transition-colors hover:bg-[#ea5336] disabled:opacity-60"
+                  >
+                    {isSavingOnboarding ? (
+                      <>
+                        <Loader2 size={18} className="animate-spin" />
+                        Saving...
+                      </>
+                    ) : (
+                      <>
+                        Continue to Ledger
+                        <ArrowRight size={16} />
+                      </>
+                    )}
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-left">
+                      <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.16em] text-gray-500">
+                        Invite code or link
+                      </span>
+                      <input
+                        value={onboardingInviteValue}
+                        onChange={(event) => {
+                          setOnboardingInviteValue(event.target.value);
+                          if (onboardingInviteError) {
+                            setOnboardingInviteError(null);
+                          }
+                        }}
+                        placeholder="https://ledger.app/invite/..."
+                        className="h-11 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm text-gray-900 outline-none focus:border-gray-300"
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setOnboardingMode('create');
+                        setOnboardingInviteError(null);
+                        setOnboardingError(null);
+                      }}
+                      className="mt-2 text-xs font-medium text-[#FF5F40] hover:text-[#ea5336]"
+                    >
+                      Back to create a workspace
+                    </button>
+                  </div>
+
                   {onboardingInviteError ? (
                     <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
                       {onboardingInviteError}
                     </div>
                   ) : null}
+
                   <button
                     disabled={isJoiningWorkspace}
                     onClick={async () => {
@@ -2444,11 +2535,11 @@ function AppShell() {
                         setIsJoiningWorkspace(false);
                       }
                     }}
-                    className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-[#111827] px-4 text-sm font-semibold text-white transition-colors hover:bg-[#0b1220] disabled:opacity-60"
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-[#111827] px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-[#0b1220] disabled:opacity-60"
                   >
                     {isJoiningWorkspace ? (
                       <>
-                        <Loader2 size={16} className="animate-spin" />
+                        <Loader2 size={18} className="animate-spin" />
                         Joining...
                       </>
                     ) : (
@@ -2459,76 +2550,8 @@ function AppShell() {
                     )}
                   </button>
                 </div>
-              </div>
-              <div className="flex items-center gap-3 px-1">
-                <div className="h-px flex-1 bg-gray-200" />
-                <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-gray-400">
-                  Or create one
-                </span>
-                <div className="h-px flex-1 bg-gray-200" />
-              </div>
-              <label className="block text-left">
-                <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.16em] text-gray-500">
-                  Workspace name
-                </span>
-                <input
-                  value={onboardingWorkspaceName}
-                  onChange={(event) => setOnboardingWorkspaceName(event.target.value)}
-                  placeholder="My Workspace"
-                  className="h-11 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm text-gray-900 outline-none focus:border-gray-300"
-                />
-              </label>
-              <div className="flex items-start gap-3">
-                <CheckCircle2 size={18} className="text-green-600 mt-0.5" />
-                <p className="text-sm text-gray-700">
-                  You can also invite teammates later from dashboard settings.
-                </p>
-              </div>
-            </div>
-            {onboardingError ? (
-              <div className="mb-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-                {onboardingError}
-              </div>
-            ) : null}
-            <button
-              disabled={isSavingOnboarding}
-              onClick={async () => {
-                if (!user || isSavingOnboarding) return;
-                if (!workspaceName) {
-                  setOnboardingError('Workspace name is required.');
-                  return;
-                }
-                setIsSavingOnboarding(true);
-                setOnboardingError(null);
-                try {
-                  if (activeWorkspaceId) {
-                    await api.updateWorkspace(activeWorkspaceId, { name: workspaceName });
-                  }
-                  await api.completeOnboarding();
-                  await refreshWorkspaces();
-                  setPostAuthStage('ready');
-                } catch (error) {
-                  setOnboardingError(
-                    error instanceof Error ? error.message : 'Could not complete onboarding.'
-                  );
-                } finally {
-                  setIsSavingOnboarding(false);
-                }
-              }}
-              className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-[#FF5F40] px-4 py-3 text-sm font-semibold text-white shadow-[0_10px_24px_rgba(255,95,64,0.24)] transition-colors hover:bg-[#ea5336] disabled:opacity-60"
-            >
-              {isSavingOnboarding ? (
-                <>
-                  <Loader2 size={18} className="animate-spin" />
-                  Saving...
-                </>
-              ) : (
-                <>
-                  Continue to Ledger
-                  <ArrowRight size={16} />
-                </>
               )}
-            </button>
+            </div>
           </div>
         </div>
       </div>

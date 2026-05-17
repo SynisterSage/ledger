@@ -49,6 +49,13 @@ export const authService = {
     return { error };
   },
 
+  // Refresh the current session
+  async refreshSession(): Promise<Session | null> {
+    const { data, error } = await supabase.auth.refreshSession();
+    if (error) return null;
+    return data.session;
+  },
+
   // Get current session
   async getSession(): Promise<Session | null> {
     const { data } = await supabase.auth.getSession();

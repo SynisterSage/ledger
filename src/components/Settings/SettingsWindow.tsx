@@ -53,10 +53,15 @@ type WorkspaceInvitation = {
   role: 'admin' | 'member';
   status: 'pending' | 'accepted' | 'expired';
   expires_at: string;
+  token?: string | null;
   invited_by?: string;
   created_by?: string;
   created_at: string;
 };
+
+type InviteModalState = {
+  id: string;
+} | null;
 
 type SettingsSectionId =
   | 'account'
@@ -270,6 +275,7 @@ export const SettingsWindow = () => {
   const [inviteToken, setInviteToken] = useState<string | null>(null);
   const [inviteCopyStatus, setInviteCopyStatus] = useState<string | null>(null);
   const [isSendingInvite, setIsSendingInvite] = useState(false);
+  const [inviteModal, setInviteModal] = useState<InviteModalState>(null);
   const inviteEmailRef = useRef<HTMLInputElement | null>(null);
   const autosaveTimerRef = useRef<number | null>(null);
   const autosaveTokenRef = useRef(0);
@@ -864,6 +870,31 @@ export const SettingsWindow = () => {
     }
   };
 
+  const selectedInvite = inviteModal
+    ? workspaceInvitations.find((invite) => invite.id === inviteModal.id) ?? null
+    : null;
+
+  const getInviteUrl = (invite: WorkspaceInvitation) => {
+    const token = invite.token?.trim();
+    if (!token) return null;
+    const baseUrl = import.meta.env.VITE_INVITE_BASE_URL?.trim() || window.location.origin;
+    return `${baseUrl.replace(/\/$/, '')}/invite/${encodeURIComponent(token)}`;
+  };
+
+  const handleCopySelectedInviteLink = async () => {
+    if (!selectedInvite) return;
+    const inviteUrl = getInviteUrl(selectedInvite);
+    if (!inviteUrl) return;
+
+    try {
+      await navigator.clipboard.writeText(inviteUrl);
+      setWorkspaceAdminError(null);
+      setWorkspaceStatus('Invite link copied.');
+    } catch {
+      setWorkspaceAdminError('Copy failed. Select the link manually.');
+    }
+  };
+
   const handleRevokeInvitation = async (invitationId: string) => {
     if (!activeWorkspaceId) return;
     setWorkspaceAdminError(null);
@@ -878,6 +909,9 @@ export const SettingsWindow = () => {
         ? (invitesPayload as { invitations: WorkspaceInvitation[] }).invitations
         : [];
       setWorkspaceInvitations(nextInvites);
+      if (inviteModal?.id === invitationId) {
+        setInviteModal(null);
+      }
     } catch (err) {
       setWorkspaceAdminError(err instanceof Error ? err.message : 'Could not revoke invitation');
     } finally {
@@ -1395,15 +1429,11 @@ export const SettingsWindow = () => {
                                 })}
                               </p>
                               <button
-                                onClick={() => void handleRevokeInvitation(invite.id)}
-                                disabled={
-                                  !canManageWorkspace ||
-                                  invite.status !== 'pending' ||
-                                  invitationActionId === invite.id
-                                }
+                                onClick={() => setInviteModal({ id: invite.id })}
+                                disabled={!canManageWorkspace}
                                 className="h-8 rounded-lg border border-gray-200 bg-white px-2 text-xs font-medium text-gray-700 transition hover:bg-gray-100 disabled:opacity-50"
                               >
-                                Revoke
+                                Manage
                               </button>
                             </div>
                           ))
@@ -1417,6 +1447,99 @@ export const SettingsWindow = () => {
                       {workspaceAdminError}
                     </p>
                   )}
+
+                  {inviteModal && selectedInvite && typeof document !== 'undefined'
+                    ? createPortal(
+                        <div className="fixed inset-0 z-90 flex items-center justify-center bg-black/25 px-4">
+                          <div className="w-full max-w-md rounded-2xl border border-gray-200 bg-white p-4 shadow-2xl">
+                            <div className="flex items-start justify-between gap-4">
+                              <div>
+                                <h4 className="text-sm font-semibold text-gray-950">
+                                  Manage invite
+                                </h4>
+                                <p className="mt-1 text-xs text-gray-500">
+                                  {selectedInvite.invited_email}
+                                </p>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => setInviteModal(null)}
+                                className="rounded-lg border border-gray-200 bg-white px-2 py-1 text-xs font-medium text-gray-600 hover:bg-gray-50"
+                              >
+                                Close
+                              </button>
+                            </div>
+
+                            <div className="mt-4 space-y-3">
+                              <div className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2">
+                                <div className="flex items-center justify-between gap-2">
+                                  <div>
+                                    <p className="text-[10px] font-medium uppercase tracking-[0.18em] text-gray-400">
+                                      Status
+                                    </p>
+                                    <p className="text-sm font-medium text-gray-900">
+                                      {selectedInvite.status}
+                                    </p>
+                                  </div>
+                                  <div className="text-right">
+                                    <p className="text-[10px] font-medium uppercase tracking-[0.18em] text-gray-400">
+                                      Role
+                                    </p>
+                                    <p className="text-sm font-medium text-gray-900">
+                                      {selectedInvite.role}
+                                    </p>
+                                  </div>
+                                </div>
+                                <p className="mt-2 text-[11px] text-gray-500">
+                                  Expires{' '}
+                                  {new Date(selectedInvite.expires_at).toLocaleDateString([], {
+                                    month: 'short',
+                                    day: 'numeric',
+                                  })}
+                                </p>
+                              </div>
+
+                              {selectedInvite.status === 'pending' ? (
+                                <div className="rounded-xl border border-gray-200 bg-white p-3">
+                                  <p className="text-[10px] font-medium uppercase tracking-[0.18em] text-gray-400">
+                                    Invite link
+                                  </p>
+                                  <p className="mt-2 break-all rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-700">
+                                    {getInviteUrl(selectedInvite) ?? 'No link available'}
+                                  </p>
+                                  <div className="mt-3 flex gap-2">
+                                    <button
+                                      type="button"
+                                      onClick={() => void handleCopySelectedInviteLink()}
+                                      disabled={!getInviteUrl(selectedInvite)}
+                                      className="inline-flex h-9 flex-1 items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-50 disabled:opacity-50"
+                                    >
+                                      <Copy size={14} />
+                                      Copy link
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => void handleRevokeInvitation(selectedInvite.id)}
+                                      disabled={invitationActionId === selectedInvite.id}
+                                      className="inline-flex h-9 flex-1 items-center justify-center rounded-xl border border-red-200 bg-red-50 px-3 text-xs font-medium text-red-700 transition hover:bg-red-100 disabled:opacity-50"
+                                    >
+                                      {invitationActionId === selectedInvite.id
+                                        ? 'Revoking...'
+                                        : 'Revoke'}
+                                    </button>
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-600">
+                                  This invite is no longer pending.
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>,
+                        document.body
+                      )
+                    : null}
 
                   <div className="mt-5 grid gap-4 md:grid-cols-2">
                     <div>

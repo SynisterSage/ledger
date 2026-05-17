@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { useAuthContext } from '../context/AuthContext';
 import { useWorkspaceContext } from '../context/WorkspaceContext';
 import { DEFAULT_API_URL } from '../config/runtime';
+import authService from '../services/auth';
 
 const API_URL = import.meta.env.VITE_API_URL?.trim() || DEFAULT_API_URL;
 const INVITE_BASE_URL = import.meta.env.VITE_INVITE_BASE_URL?.trim() || window.location.origin;
@@ -50,38 +51,63 @@ export const useApi = () => {
   };
 
   const request = async (endpoint: string, options: ApiRequestOptions = {}) => {
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-      ...(options.headers as Record<string, string>),
+    const buildHeaders = (token: string | null) => {
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        ...(options.headers as Record<string, string>),
+      };
+
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      if (!options.skipWorkspaceHeader && activeWorkspaceId && endpoint.startsWith('/api/')) {
+        headers['X-Workspace-Id'] = activeWorkspaceId;
+      }
+
+      if (endpoint.includes('/api/daily-accountability')) {
+        headers['X-Ledger-Day-Key'] = localDayKey();
+      }
+
+      return headers;
     };
 
-    if (session?.access_token) {
-      headers['Authorization'] = `Bearer ${session.access_token}`;
+    const executeRequest = async (token: string | null) => {
+      const response = await fetch(`${API_URL}${endpoint}`, {
+        ...options,
+        headers: buildHeaders(token),
+      });
+
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        throw new Error(error.error || 'Request failed');
+      }
+
+      if (options.skipJson) {
+        return null;
+      }
+
+      return response.json();
+    };
+
+    const currentToken = session?.access_token ?? null;
+
+    try {
+      return await executeRequest(currentToken);
+    } catch (error) {
+      const isUnauthorized = error instanceof Error && /invalid token|missing token|401/i.test(error.message);
+      if (!isUnauthorized || !currentToken) {
+        throw error;
+      }
+
+      const refreshedSession = await authService.refreshSession();
+      const refreshedToken = refreshedSession?.access_token ?? null;
+      if (!refreshedToken || refreshedToken === currentToken) {
+        throw error;
+      }
+
+      return executeRequest(refreshedToken);
     }
-
-    if (!options.skipWorkspaceHeader && activeWorkspaceId && endpoint.startsWith('/api/')) {
-      headers['X-Workspace-Id'] = activeWorkspaceId;
-    }
-
-    if (endpoint.includes('/api/daily-accountability')) {
-      headers['X-Ledger-Day-Key'] = localDayKey();
-    }
-
-    const response = await fetch(`${API_URL}${endpoint}`, {
-      ...options,
-      headers,
-    });
-
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error || 'Request failed');
-    }
-
-    if (options.skipJson) {
-      return null;
-    }
-
-    return response.json();
   };
 
   return useMemo(

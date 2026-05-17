@@ -479,6 +479,7 @@ const mapWorkspaceInvite = (row, nowIso = new Date().toISOString()) => {
     expires_at: row.expires_at,
     accepted_at: row.accepted_at ?? null,
     accepted_by: row.accepted_by ?? null,
+    token: row.token ?? null,
     invited_by: row.created_by,
     created_by: row.created_by,
     created_at: row.created_at,
