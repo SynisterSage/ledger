@@ -120,6 +120,19 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   }, [refreshWorkspaces]);
 
   useEffect(() => {
+    const handleMembershipChanged = () => {
+      void refreshWorkspaces();
+    };
+
+    window.addEventListener('ledger:membership-changed', handleMembershipChanged as EventListener);
+    return () =>
+      window.removeEventListener(
+        'ledger:membership-changed',
+        handleMembershipChanged as EventListener
+      );
+  }, [refreshWorkspaces]);
+
+  useEffect(() => {
     const onStorage = (event: StorageEvent) => {
       if (event.key !== WORKSPACE_STORAGE_KEY) return;
       const nextWorkspaceId = event.newValue ? String(event.newValue).trim() : null;

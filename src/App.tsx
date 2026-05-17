@@ -72,6 +72,39 @@ const getInviteTokenFromLocation = () => {
   return new URLSearchParams(window.location.search).get('token')?.trim() || null;
 };
 
+const getInviteTokenFromInput = (value: string) => {
+  const raw = value.trim();
+  if (!raw) return null;
+
+  const pathMatch = raw.match(/\/invite\/([^/?#]+)/i);
+  if (pathMatch?.[1]) {
+    const token = decodeURIComponent(pathMatch[1]).trim();
+    if (token) return token;
+  }
+
+  const queryTokenMatch = raw.match(/[?&]token=([^&#]+)/i);
+  if (queryTokenMatch?.[1]) {
+    const token = decodeURIComponent(queryTokenMatch[1]).trim();
+    if (token) return token;
+  }
+
+  try {
+    const url = new URL(raw);
+    const urlPathMatch = url.pathname.match(/\/invite\/([^/?#]+)/i);
+    if (urlPathMatch?.[1]) {
+      const token = decodeURIComponent(urlPathMatch[1]).trim();
+      if (token) return token;
+    }
+
+    const tokenParam = url.searchParams.get('token')?.trim();
+    if (tokenParam) return tokenParam;
+  } catch {
+    // Fall through to raw token handling.
+  }
+
+  return raw;
+};
+
 function AuthStatusScreen({ title, subtitle }: { title: string; subtitle: string }) {
   return (
     <div
@@ -249,7 +282,7 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
         }
 
         const [dailyData, todayData, projectData, upcomingData, noteData, taskData] =
-          await Promise.all([
+          await Promise.allSettled([
             api.getDailyAccountability(),
             api.getToday(),
             api.getProjects(),
@@ -260,12 +293,15 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
 
         if (cancelled) return;
 
-        const row = dailyData as {
-          focus_items?: Array<{ id: string; text: string; done: boolean }> | null;
-          checkin_finished?: string | null;
-          checkin_blocked?: string | null;
-          checkin_first_task_tomorrow?: string | null;
-        } | null;
+        const row =
+          dailyData.status === 'fulfilled'
+            ? (dailyData.value as {
+                focus_items?: Array<{ id: string; text: string; done: boolean }> | null;
+                checkin_finished?: string | null;
+                checkin_blocked?: string | null;
+                checkin_first_task_tomorrow?: string | null;
+              } | null)
+            : null;
 
         setDaily({
           focusItems: Array.isArray(row?.focus_items) ? row!.focus_items : [],
@@ -274,60 +310,85 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
           firstTaskTomorrow: row?.checkin_first_task_tomorrow ?? '',
         });
 
-        const activeToday = Array.isArray((todayData as { active?: unknown[] } | null)?.active)
-          ? (todayData as { active: Array<(typeof todayTasks)[number]> }).active
+        const activeToday =
+          todayData.status === 'fulfilled' &&
+          Array.isArray((todayData.value as { active?: unknown[] } | null)?.active)
+            ? (todayData.value as { active: Array<(typeof todayTasks)[number]> }).active
           : [];
 
         setTodayTasks(activeToday);
 
-        const normalizedNotes = Array.isArray(noteData)
-          ? (noteData as Array<{ id: string; title: string; content: string; updated_at: string }>)
-          : Array.isArray(
-              (
-                noteData as {
-                  notes?: Array<{ id: string; title: string; content: string; updated_at: string }>;
-                } | null
-              )?.notes
-            )
-          ? (
-              noteData as {
-                notes: Array<{ id: string; title: string; content: string; updated_at: string }>;
-              }
-            ).notes
-          : [];
+        const normalizedNotes =
+          noteData.status === 'fulfilled'
+            ? Array.isArray(noteData.value)
+              ? (noteData.value as Array<{
+                  id: string;
+                  title: string;
+                  content: string;
+                  updated_at: string;
+                }>)
+              : Array.isArray(
+                  (
+                    noteData.value as {
+                      notes?: Array<{
+                        id: string;
+                        title: string;
+                        content: string;
+                        updated_at: string;
+                      }>;
+                    } | null
+                  )?.notes
+                )
+              ? (
+                  noteData.value as {
+                    notes: Array<{
+                      id: string;
+                      title: string;
+                      content: string;
+                      updated_at: string;
+                    }>;
+                  }
+                ).notes
+              : []
+            : [];
 
         setProjects(
-          (
-            (projectData ?? []) as Array<{
-              id: string;
-              name: string;
-              status: string;
-              completeness: number;
-            }>
-          ).slice(0, 4)
+          projectData.status === 'fulfilled'
+            ? (
+                (projectData.value ?? []) as Array<{
+                  id: string;
+                  name: string;
+                  status: string;
+                  completeness: number;
+                }>
+              ).slice(0, 4)
+            : []
         );
         setUpcoming(
-          (
-            (upcomingData ?? []) as Array<{
-              id: string;
-              title: string;
-              start_at: string;
-              end_at: string;
-              color?: string;
-            }>
-          ).slice(0, 4)
+          upcomingData.status === 'fulfilled'
+            ? (
+                (upcomingData.value ?? []) as Array<{
+                  id: string;
+                  title: string;
+                  start_at: string;
+                  end_at: string;
+                  color?: string;
+                }>
+              ).slice(0, 4)
+            : []
         );
         setNotes(normalizedNotes.slice(0, 4));
-        const rawTasks = Array.isArray(taskData)
-          ? (taskData as Array<{
-              id: string;
-              title: string;
-              status?: string | null;
-              description?: string | null;
-              notes?: string | null;
-              updated_at?: string;
-            }>)
-          : [];
+        const rawTasks =
+          taskData.status === 'fulfilled' && Array.isArray(taskData.value)
+            ? (taskData.value as Array<{
+                id: string;
+                title: string;
+                status?: string | null;
+                description?: string | null;
+                notes?: string | null;
+                updated_at?: string;
+              }>)
+            : [];
         const calendarFollowUps = rawTasks
           .filter((task) => String(task.description ?? '').startsWith('calendar_followup:'))
           .map((task) => {
@@ -352,6 +413,18 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
           .slice(0, 8);
         setFollowUpTasks(calendarFollowUps);
         hasLoadedDashboardRef.current = true;
+        const failedSections = [
+          dailyData.status === 'rejected' ? 'daily check-in' : null,
+          todayData.status === 'rejected' ? 'today feed' : null,
+          projectData.status === 'rejected' ? 'projects' : null,
+          upcomingData.status === 'rejected' ? 'upcoming events' : null,
+          noteData.status === 'rejected' ? 'notes' : null,
+          taskData.status === 'rejected' ? 'follow-ups' : null,
+        ].filter(Boolean);
+
+        if (failedSections.length > 0 && isInitialLoad) {
+          setDashboardError(`Some dashboard sections could not load: ${failedSections.join(', ')}.`);
+        }
       } catch (error) {
         if (!cancelled) {
           if (isInitialLoad) {
@@ -1717,6 +1790,9 @@ function AppShell() {
   const [inviteFlowNotice, setInviteFlowNotice] = useState<string | null>(null);
   const [inviteWorkspaceName, setInviteWorkspaceName] = useState<string | null>(null);
   const [onboardingWorkspaceName, setOnboardingWorkspaceName] = useState('');
+  const [onboardingInviteValue, setOnboardingInviteValue] = useState('');
+  const [isJoiningWorkspace, setIsJoiningWorkspace] = useState(false);
+  const [onboardingInviteError, setOnboardingInviteError] = useState<string | null>(null);
   const [onboardingError, setOnboardingError] = useState<string | null>(null);
   const handledInviteTokenRef = useRef<string | null>(null);
   const postAuthBootstrapUserRef = useRef<string | null>(null);
@@ -2017,7 +2093,8 @@ function AppShell() {
     return () => {
       cancelled = true;
     };
-  }, [pendingInviteToken, api, user]);
+    // Validate the invite once per token. Re-checking after auth can race the accept call.
+  }, [pendingInviteToken, api]);
 
   useEffect(() => {
     if (!pendingInviteToken) {
@@ -2297,10 +2374,99 @@ function AppShell() {
                 Welcome to Ledger
               </h2>
               <p className="mt-2 text-sm leading-6 text-gray-500">
-                Quick setup for your first workspace and team flow.
+                Join a workspace with an invite, or create your own first workspace.
               </p>
             </div>
             <div className="mb-7 space-y-3.5">
+              <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+                <div className="mb-3">
+                  <h3 className="text-sm font-semibold text-gray-950">Join workspace</h3>
+                  <p className="mt-1 text-xs leading-5 text-gray-500">
+                    Paste an invite code or the full invite link you received.
+                  </p>
+                </div>
+                <div className="space-y-2.5">
+                  <label className="block text-left">
+                    <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.16em] text-gray-500">
+                      Invite code or link
+                    </span>
+                    <input
+                      value={onboardingInviteValue}
+                      onChange={(event) => {
+                        setOnboardingInviteValue(event.target.value);
+                        if (onboardingInviteError) {
+                          setOnboardingInviteError(null);
+                        }
+                      }}
+                      placeholder="https://ledger.app/invite/..."
+                      className="h-11 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm text-gray-900 outline-none focus:border-gray-300"
+                    />
+                  </label>
+                  {onboardingInviteError ? (
+                    <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                      {onboardingInviteError}
+                    </div>
+                  ) : null}
+                  <button
+                    disabled={isJoiningWorkspace}
+                    onClick={async () => {
+                      if (!user || isJoiningWorkspace) return;
+
+                      const token = getInviteTokenFromInput(onboardingInviteValue);
+                      if (!token) {
+                        setOnboardingInviteError('Invite code is required.');
+                        return;
+                      }
+
+                      setIsJoiningWorkspace(true);
+                      setOnboardingInviteError(null);
+                      setOnboardingError(null);
+                      try {
+                        const result = (await api.acceptWorkspaceInvitation(token)) as {
+                          success?: boolean;
+                          already_member?: boolean;
+                          workspace_id?: string;
+                        };
+
+                        await api.completeOnboarding();
+                        await refreshWorkspaces();
+
+                        if (result?.already_member) {
+                          setOnboardingInviteError(null);
+                        }
+
+                        setPostAuthStage('ready');
+                      } catch (error) {
+                        setOnboardingInviteError(
+                          error instanceof Error ? error.message : 'Could not join workspace.'
+                        );
+                      } finally {
+                        setIsJoiningWorkspace(false);
+                      }
+                    }}
+                    className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-[#111827] px-4 text-sm font-semibold text-white transition-colors hover:bg-[#0b1220] disabled:opacity-60"
+                  >
+                    {isJoiningWorkspace ? (
+                      <>
+                        <Loader2 size={16} className="animate-spin" />
+                        Joining...
+                      </>
+                    ) : (
+                      <>
+                        Join workspace
+                        <ArrowRight size={16} />
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+              <div className="flex items-center gap-3 px-1">
+                <div className="h-px flex-1 bg-gray-200" />
+                <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-gray-400">
+                  Or create one
+                </span>
+                <div className="h-px flex-1 bg-gray-200" />
+              </div>
               <label className="block text-left">
                 <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.16em] text-gray-500">
                   Workspace name
@@ -2315,7 +2481,7 @@ function AppShell() {
               <div className="flex items-start gap-3">
                 <CheckCircle2 size={18} className="text-green-600 mt-0.5" />
                 <p className="text-sm text-gray-700">
-                  You can invite teammates later from dashboard settings.
+                  You can also invite teammates later from dashboard settings.
                 </p>
               </div>
             </div>

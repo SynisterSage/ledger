@@ -1435,10 +1435,16 @@ export const ExpandedSidebar = ({
       <div className="flex-1 min-h-0 overflow-y-auto px-5 py-4 space-y-5">
         {/* Today unified feed (workspace-aware) */}
         <section className="rounded-lg border border-gray-200 bg-white p-3 space-y-3">
-          <button
-            type="button"
+          <div
+            role="button"
+            tabIndex={0}
             onClick={toggleTodayCollapsed}
-            className="flex w-full items-start justify-between gap-3 text-left"
+            onKeyDown={(event) => {
+              if (event.key !== 'Enter' && event.key !== ' ') return;
+              event.preventDefault();
+              toggleTodayCollapsed();
+            }}
+            className="flex w-full items-start justify-between gap-3 text-left outline-none"
           >
             <div className="min-w-0 flex-1 space-y-0.5">
               <div className="flex items-center gap-2">
@@ -1486,7 +1492,7 @@ export const ExpandedSidebar = ({
                 todayCollapsed ? 'rotate-180' : ''
               }`}
             />
-          </button>
+          </div>
 
           {!todayCollapsed && (
             <>

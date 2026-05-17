@@ -1424,6 +1424,15 @@ app.delete(
         return res.status(404).json({ error: 'Member not found' });
       }
 
+      const targetUserResult = await supabase
+        .from('users')
+        .select('email')
+        .eq('id', targetUserId)
+        .maybeSingle();
+
+      if (targetUserResult.error) throw targetUserResult.error;
+
+      const targetEmail = normalizeEmail(targetUserResult.data?.email) || null;
       const currentRole = String(existing.data.role ?? '').toLowerCase();
       if (access.role !== 'owner' && currentRole === 'admin') {
         return res.status(403).json({ error: 'Only owners can remove admin members' });
@@ -1436,6 +1445,25 @@ app.delete(
         .eq('user_id', targetUserId);
 
       if (removed.error) throw removed.error;
+
+      const removedInviteByAcceptedBy = await supabase
+        .from('workspace_invites')
+        .delete()
+        .eq('workspace_id', workspaceId)
+        .eq('accepted_by', targetUserId);
+
+      if (removedInviteByAcceptedBy.error) throw removedInviteByAcceptedBy.error;
+
+      if (targetEmail) {
+        const removedInviteByEmail = await supabase
+          .from('workspace_invites')
+          .delete()
+          .eq('workspace_id', workspaceId)
+          .eq('email', targetEmail);
+
+        if (removedInviteByEmail.error) throw removedInviteByEmail.error;
+      }
+
       await writeWorkspaceAuditLog({
         workspaceId,
         actorUserId: req.authUser.id,

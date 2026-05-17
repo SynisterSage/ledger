@@ -784,6 +784,7 @@ export const SettingsWindow = () => {
         ? (membersPayload as { members: WorkspaceMember[] }).members
         : [];
       setWorkspaceMembers(nextMembers);
+      window.dispatchEvent(new CustomEvent('ledger:membership-changed'));
     } catch (err) {
       setWorkspaceAdminError(err instanceof Error ? err.message : 'Could not update member role');
     } finally {
@@ -802,7 +803,15 @@ export const SettingsWindow = () => {
       const nextMembers = Array.isArray((membersPayload as { members?: unknown[] })?.members)
         ? (membersPayload as { members: WorkspaceMember[] }).members
         : [];
+      const invitesPayload = await api.getWorkspaceInvitations(activeWorkspaceId);
+      const nextInvites = Array.isArray(
+        (invitesPayload as { invitations?: unknown[] })?.invitations
+      )
+        ? (invitesPayload as { invitations: WorkspaceInvitation[] }).invitations
+        : [];
       setWorkspaceMembers(nextMembers);
+      setWorkspaceInvitations(nextInvites);
+      window.dispatchEvent(new CustomEvent('ledger:membership-changed'));
     } catch (err) {
       setWorkspaceAdminError(err instanceof Error ? err.message : 'Could not remove member');
     } finally {
