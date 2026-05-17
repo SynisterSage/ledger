@@ -1154,6 +1154,121 @@ For any shared mutation:
 
 ---
 
+## Notes Safety + Revision Guardrails
+
+### P0 data-loss prevention for note open flows
+
+When opening a note from anywhere (Calendar link, Project link, sidebar focus, IPC focus):
+
+- navigate by `note_id` and fetch full note by id
+- do not write on open
+- do not autosave while note is hydrating
+- only autosave after hydration completes and user actually edits
+- never treat missing content during loading as intentional empty content
+
+If unsure, prefer a brief loading state over risky optimistic write behavior.
+
+### Revision history should be useful, not noisy
+
+Version snapshots must be production-throttled:
+
+- session checkpoint on first edit in a session is allowed (`before_edit`)
+- autosave checkpoints should be sparse (target ~10 min, not every few minutes)
+- server should skip autosave snapshot when it is duplicate/no-op against latest snapshot
+- keep meaningful restore points (`before_destructive_overwrite`, `restore_before`, delete snapshots)
+
+Do not spam revision rows with near-identical autosave entries.
+
+### Version History UI rules
+
+Version history modal should be:
+
+- compact list + preview (not giant stacked cards)
+- human-readable labels (`Autosaved`, `Before edit`, `Current`, etc.)
+- minimal restore affordances, not noisy repeated controls
+- metadata-focused, not technical/internal jargon (`autosave_checkpoint`, etc.)
+
+---
+
+## Notes Editor + Template Guardrails
+
+### Lexical image behavior
+
+For pasted/dropped images:
+
+- upload to storage first
+- insert stable URL (`note-images` path) into editor node
+- avoid base64 persistence in `content_html`
+- ensure image node import/export survives HTML round-trip
+- prefer deterministic rendering path over fragile async-only decorator rendering
+
+### Template gallery behavior
+
+Template gallery is browse/select focused:
+
+- search + filters + compact list
+- clear `Preset` vs `Custom` distinction via subtle metadata
+- no inline heavy edit form in gallery body
+- avoid low-value noise labels like `Unused` in row metadata
+- keep create-custom as a clean footer action
+
+---
+
+## Calendar Rendering Guardrails
+
+### Timed events vs all-day events
+
+- all-day events should not render in timed `00:00` slots
+- timed events should render with real duration in day/week grids
+- if event spans multiple hours, visual block must communicate duration clearly
+
+### Reminder and event lane behavior
+
+- reminders should not be visually buried under long event blocks
+- avoid grid lines cutting through reminder/event text content
+- right-click targets must remain reachable when events/reminders overlap
+- deleting/editing events should update center pane immediately (no refresh-only hydration)
+
+---
+
+## UI Interaction Guardrails (Cross-Module)
+
+- close-on-outside-click and `Esc` should be consistent for modals/popovers/menus
+- context menus should close on scroll/resize/escape
+- keep destructive actions red only where destructive
+- avoid duplicate controls that conflict across sidebar vs pop-outs
+
+For save/close flows in pop-outs:
+
+- if saving is in progress or dirty state exists, block close or show close-guard modal
+- after successful save+close, close must not loop back into unsaved guard
+
+---
+
+## Pre-Ship Verification Checklist (Required for Risky UI/Data Changes)
+
+Before marking a fix complete, verify:
+
+1. Data integrity
+- create/update/delete/restore behaves correctly after refresh
+- no cross-workspace leakage
+
+2. State sync
+- left pane, center pane, and right pane stay in sync
+- optimistic UI resolves correctly after API response
+
+3. Input behavior
+- keyboard and mouse interactions both work (`click`, `double-click`, `right-click`, `Esc`)
+
+4. Rendering
+- no clipping/overlay regressions
+- scroll containers and sticky sections behave correctly
+
+5. Type safety
+- run `npx tsc -p tsconfig.json --noEmit`
+
+---
+
 ## Prompts / Agent Behavior
 
 When asked to implement a Ledger feature, do not only provide UI instructions.

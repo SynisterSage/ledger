@@ -147,11 +147,14 @@ export const useApi = () => {
         }),
       createWorkspaceInvitation: (
         workspaceId: string,
-        payload: { email: string; role?: 'admin' | 'member' | 'viewer' }
+        payload: { email?: string | null; role?: 'admin' | 'member'; origin?: string }
       ) =>
         request(`/api/workspaces/${workspaceId}/invitations`, {
           method: 'POST',
-          body: JSON.stringify(payload),
+          body: JSON.stringify({
+            ...payload,
+            origin: payload.origin ?? window.location.origin,
+          }),
         }),
       revokeWorkspaceInvitation: (workspaceId: string, invitationId: string) =>
         request(`/api/workspaces/${workspaceId}/invitations/${invitationId}`, {
@@ -161,6 +164,10 @@ export const useApi = () => {
         request('/api/invitations/accept', {
           method: 'POST',
           body: JSON.stringify({ token }),
+        }),
+      getWorkspaceInvitation: (token: string) =>
+        request(`/api/invitations/${encodeURIComponent(token)}`, {
+          skipWorkspaceHeader: true,
         }),
 
       // Projects
@@ -260,11 +267,7 @@ export const useApi = () => {
           method: 'PATCH',
           body: JSON.stringify(update),
         }),
-      updateTaskInWorkspace: (
-        id: string,
-        workspaceId: string,
-        update: Record<string, unknown>
-      ) =>
+      updateTaskInWorkspace: (id: string, workspaceId: string, update: Record<string, unknown>) =>
         request(`/api/tasks/${id}`, {
           method: 'PATCH',
           body: JSON.stringify(update),

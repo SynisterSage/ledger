@@ -2707,7 +2707,14 @@ export const NotesWindow = () => {
                           <div className="flex items-center gap-2 min-w-0">
                             <StickyNote size={12} className="text-gray-400 shrink-0" />
                             <div className="min-w-0 flex-1">
-                              <p className="font-medium truncate text-sm leading-5">
+                              <p
+                                className="font-medium truncate text-sm leading-5"
+                                onDoubleClick={(event) => {
+                                  event.preventDefault();
+                                  event.stopPropagation();
+                                  beginInlineRename(note.id);
+                                }}
+                              >
                                 {note.title || 'Untitled'}
                               </p>
                               <p className="text-xs text-gray-400 truncate">{preview}</p>
@@ -2828,7 +2835,14 @@ export const NotesWindow = () => {
                               className={`h-1.5 w-1.5 rounded-full shrink-0 ${sectionColor.dot}`}
                             />
                             <Folder size={14} className="text-gray-500 shrink-0" />
-                            <span className="flex-1 truncate">
+                            <span
+                              className="flex-1 truncate"
+                              onDoubleClick={(event) => {
+                                event.preventDefault();
+                                event.stopPropagation();
+                                beginInlineSectionRename(section.id);
+                              }}
+                            >
                               {renamingSectionId === section.id ? (
                                 <input
                                   ref={renameSectionInputRef}
@@ -2938,7 +2952,14 @@ export const NotesWindow = () => {
                                                 className="w-full bg-transparent font-medium text-gray-900 outline-none"
                                               />
                                             ) : (
-                                              <p className="font-medium truncate text-sm leading-5">
+                                              <p
+                                                className="font-medium truncate text-sm leading-5"
+                                                onDoubleClick={(event) => {
+                                                  event.preventDefault();
+                                                  event.stopPropagation();
+                                                  beginInlineRename(note.id);
+                                                }}
+                                              >
                                                 {note.title || 'Untitled'}
                                               </p>
                                             )}
@@ -3182,7 +3203,14 @@ export const NotesWindow = () => {
                                               className="w-full bg-transparent font-medium text-gray-900 outline-none"
                                             />
                                           ) : (
-                                            <p className="font-medium truncate leading-5">
+                                            <p
+                                              className="font-medium truncate leading-5"
+                                              onDoubleClick={(event) => {
+                                                event.preventDefault();
+                                                event.stopPropagation();
+                                                beginInlineRename(note.id);
+                                              }}
+                                            >
                                               {note.title || 'Untitled'}
                                             </p>
                                           )}
@@ -3286,9 +3314,16 @@ export const NotesWindow = () => {
                                                       className="w-full bg-transparent font-medium text-gray-900 outline-none"
                                                     />
                                                   ) : (
-                                                    <p className="font-medium truncate leading-5">
-                                                      {child.title || 'Untitled'}
-                                                    </p>
+                                                  <p
+                                                    className="font-medium truncate leading-5"
+                                                    onDoubleClick={(event) => {
+                                                      event.preventDefault();
+                                                      event.stopPropagation();
+                                                      beginInlineRename(child.id);
+                                                    }}
+                                                  >
+                                                    {child.title || 'Untitled'}
+                                                  </p>
                                                   )}
                                                   <p className="text-xs text-gray-500 truncate">
                                                     {childPreview}

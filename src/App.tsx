@@ -59,6 +59,19 @@ const dragRegionStyle = { WebkitAppRegion: 'drag' } as CSSProperties & { WebkitA
 const noDragRegionStyle = { WebkitAppRegion: 'no-drag' } as CSSProperties & {
   WebkitAppRegion: 'no-drag';
 };
+
+const getInviteTokenFromLocation = () => {
+  const pathMatch = window.location.pathname.match(/^\/invite\/([^/?#]+)/);
+  if (pathMatch?.[1]) {
+    const token = decodeURIComponent(pathMatch[1]).trim();
+    if (token) {
+      window.history.replaceState({}, '', `/?token=${encodeURIComponent(token)}`);
+      return token;
+    }
+  }
+  return new URLSearchParams(window.location.search).get('token')?.trim() || null;
+};
+
 function AuthStatusScreen({ title, subtitle }: { title: string; subtitle: string }) {
   return (
     <div
@@ -235,14 +248,15 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
           setDashboardError(null);
         }
 
-        const [dailyData, todayData, projectData, upcomingData, noteData, taskData] = await Promise.all([
-          api.getDailyAccountability(),
-          api.getToday(),
-          api.getProjects(),
-          api.getUpcomingEvents(),
-          api.getNotes(),
-          api.getTasks(),
-        ]);
+        const [dailyData, todayData, projectData, upcomingData, noteData, taskData] =
+          await Promise.all([
+            api.getDailyAccountability(),
+            api.getToday(),
+            api.getProjects(),
+            api.getUpcomingEvents(),
+            api.getNotes(),
+            api.getTasks(),
+          ]);
 
         if (cancelled) return;
 
@@ -261,7 +275,7 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
         });
 
         const activeToday = Array.isArray((todayData as { active?: unknown[] } | null)?.active)
-          ? ((todayData as { active: Array<typeof todayTasks[number]> }).active)
+          ? (todayData as { active: Array<(typeof todayTasks)[number]> }).active
           : [];
 
         setTodayTasks(activeToday);
@@ -483,29 +497,39 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
     day: 'numeric',
   });
 
-  const summaryText = `${focusTasks.length} focus priorit${focusTasks.length === 1 ? 'y' : 'ies'} · ${activeTodayTasks.length} active task${activeTodayTasks.length === 1 ? '' : 's'} · ${upcoming.length} upcoming · ${recentNotes.length} recent notes · ${activeProjects} active project${activeProjects === 1 ? '' : 's'}`;
+  const summaryText = `${focusTasks.length} focus priorit${
+    focusTasks.length === 1 ? 'y' : 'ies'
+  } · ${activeTodayTasks.length} active task${activeTodayTasks.length === 1 ? '' : 's'} · ${
+    upcoming.length
+  } upcoming · ${recentNotes.length} recent notes · ${activeProjects} active project${
+    activeProjects === 1 ? '' : 's'
+  }`;
 
   const refreshTodayTasks = async () => {
     const data = await api.getToday();
     const active = Array.isArray((data as { active?: unknown[] } | null)?.active)
-      ? ((data as { active: Array<{
-          id: string;
-          title: string;
-          status: string;
-          due_date?: string | null;
-          due_time?: string | null;
-          project_id?: string | null;
-          project_name?: string | null;
-          workspace_id?: string | null;
-          workspace_name?: string | null;
-          workspace_color?: string | null;
-          assigned_to?: string | null;
-          is_today_focus?: boolean;
-          show_in_today?: boolean;
-          completed_at?: string | null;
-          created_at?: string | null;
-          updated_at?: string | null;
-        }> }).active)
+      ? (
+          data as {
+            active: Array<{
+              id: string;
+              title: string;
+              status: string;
+              due_date?: string | null;
+              due_time?: string | null;
+              project_id?: string | null;
+              project_name?: string | null;
+              workspace_id?: string | null;
+              workspace_name?: string | null;
+              workspace_color?: string | null;
+              assigned_to?: string | null;
+              is_today_focus?: boolean;
+              show_in_today?: boolean;
+              completed_at?: string | null;
+              created_at?: string | null;
+              updated_at?: string | null;
+            }>;
+          }
+        ).active
       : [];
     setTodayTasks(active);
   };
@@ -1346,7 +1370,9 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
               <div className="max-h-[60vh] overflow-auto p-4 space-y-2">
                 {activeTodayTasks.length === 0 ? (
                   <div className="rounded-2xl border border-dashed border-gray-200 bg-gray-50 p-5">
-                    <p className="text-sm font-medium text-gray-800">No Today items to choose from.</p>
+                    <p className="text-sm font-medium text-gray-800">
+                      No Today items to choose from.
+                    </p>
                   </div>
                 ) : (
                   activeTodayTasks.map((task) => (
@@ -1681,14 +1707,15 @@ function AppShell() {
   const [isAuthExiting, setIsAuthExiting] = useState(false);
   const [postAuthStage, setPostAuthStage] = useState<PostAuthStage>('idle');
   const [isSavingOnboarding, setIsSavingOnboarding] = useState(false);
-  const [pendingInviteToken, setPendingInviteToken] = useState<string | null>(() => {
-    const token = new URLSearchParams(window.location.search).get('token')?.trim();
-    return token || null;
-  });
+  const [pendingInviteToken, setPendingInviteToken] = useState<string | null>(() =>
+    getInviteTokenFromLocation()
+  );
   const [inviteFlowStatus, setInviteFlowStatus] = useState<
-    'idle' | 'awaiting-auth' | 'processing' | 'error'
+    'idle' | 'checking' | 'awaiting-auth' | 'processing' | 'accepted' | 'already-member' | 'error'
   >('idle');
   const [inviteFlowError, setInviteFlowError] = useState<string | null>(null);
+  const [inviteFlowNotice, setInviteFlowNotice] = useState<string | null>(null);
+  const [inviteWorkspaceName, setInviteWorkspaceName] = useState<string | null>(null);
   const [onboardingWorkspaceName, setOnboardingWorkspaceName] = useState('');
   const [onboardingError, setOnboardingError] = useState<string | null>(null);
   const handledInviteTokenRef = useRef<string | null>(null);
@@ -1964,12 +1991,50 @@ function AppShell() {
       return;
     }
 
+    let cancelled = false;
+
+    const loadInvite = async () => {
+      try {
+        setInviteFlowStatus('checking');
+        setInviteFlowError(null);
+
+        const payload = (await api.getWorkspaceInvitation(pendingInviteToken)) as {
+          invitation?: { workspace_name?: string | null };
+        };
+
+        if (cancelled) return;
+        setInviteWorkspaceName(payload.invitation?.workspace_name ?? 'Workspace');
+        setInviteFlowStatus(user ? 'idle' : 'awaiting-auth');
+      } catch (error) {
+        if (cancelled) return;
+        setInviteFlowStatus('error');
+        setInviteFlowError(error instanceof Error ? error.message : 'Invalid invitation.');
+      }
+    };
+
+    void loadInvite();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [pendingInviteToken, api, user]);
+
+  useEffect(() => {
+    if (!pendingInviteToken) {
+      setInviteFlowStatus((current) => (current === 'error' ? current : 'idle'));
+      return;
+    }
+
     if (isLoading) return;
 
     if (!user) {
-      setInviteFlowStatus('awaiting-auth');
+      if (inviteFlowStatus !== 'error') {
+        setInviteFlowStatus('awaiting-auth');
+      }
       return;
     }
+
+    if (inviteFlowStatus === 'checking' || inviteFlowStatus === 'error') return;
 
     if (handledInviteTokenRef.current === pendingInviteToken) {
       return;
@@ -1984,11 +2049,20 @@ function AppShell() {
         setInviteFlowStatus('processing');
         setInviteFlowError(null);
 
-        await api.acceptWorkspaceInvitation(pendingInviteToken);
+        const payload = (await api.acceptWorkspaceInvitation(pendingInviteToken)) as {
+          already_member?: boolean;
+        };
+        await api.completeOnboarding();
         await refreshWorkspaces();
 
         if (cancelled) return;
-        setInviteFlowStatus('idle');
+        setPostAuthStage('ready');
+        setInviteFlowStatus(payload.already_member ? 'already-member' : 'accepted');
+        setInviteFlowNotice(
+          payload.already_member
+            ? "You're already a member. Switched to that workspace."
+            : 'Workspace invite accepted.'
+        );
       } catch (error) {
         if (cancelled) return;
         setInviteFlowStatus('error');
@@ -1996,14 +2070,7 @@ function AppShell() {
       } finally {
         if (cancelled) return;
 
-        const params = new URLSearchParams(window.location.search);
-        params.delete('token');
-        const query = params.toString();
-        window.history.replaceState(
-          {},
-          '',
-          `${window.location.pathname}${query ? `?${query}` : ''}${window.location.hash}`
-        );
+        window.history.replaceState({}, '', '/');
         setPendingInviteToken(null);
       }
     };
@@ -2013,7 +2080,7 @@ function AppShell() {
     return () => {
       cancelled = true;
     };
-  }, [pendingInviteToken, isLoading, user, api, refreshWorkspaces]);
+  }, [pendingInviteToken, isLoading, user, api, refreshWorkspaces, inviteFlowStatus]);
 
   useEffect(() => {
     if (postAuthStage !== 'onboarding') return;
@@ -2133,6 +2200,16 @@ function AppShell() {
     return <AuthStatusScreen title="Configuration issue" subtitle={authError.message} />;
   }
 
+  if (inviteFlowStatus === 'checking') {
+    return (
+      <AuthStatusScreen title="Checking invitation" subtitle="Validating this workspace invite." />
+    );
+  }
+
+  if (inviteFlowStatus === 'error' && pendingInviteToken && inviteFlowError) {
+    return <AuthStatusScreen title="Invite unavailable" subtitle={inviteFlowError} />;
+  }
+
   if (inviteFlowStatus === 'processing') {
     return (
       <AuthStatusScreen
@@ -2170,7 +2247,11 @@ function AppShell() {
           style={noDragRegionStyle}
         >
           <LoginForm
-            notice={pendingInviteToken ? 'Sign in to accept your workspace invitation.' : null}
+            notice={
+              pendingInviteToken
+                ? `Sign in to accept your ${inviteWorkspaceName ?? 'workspace'} invitation.`
+                : null
+            }
           />
         </div>
       </div>
@@ -2300,6 +2381,11 @@ function AppShell() {
 
   return (
     <>
+      {inviteFlowNotice && (
+        <div className="mx-auto mt-4 w-full max-w-3xl rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
+          {inviteFlowNotice}
+        </div>
+      )}
       {inviteFlowStatus === 'error' && inviteFlowError && (
         <div className="mx-auto mt-4 w-full max-w-3xl rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
           {inviteFlowError}

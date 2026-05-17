@@ -1,4 +1,4 @@
-import { Pencil, Plus, Search, Trash2, X } from 'lucide-react'
+import { MoreHorizontal, Plus, Search, Trash2 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useWorkspaceContext } from '../../context/WorkspaceContext'
 import { useApi } from '../../hooks/useApi'
@@ -26,14 +26,9 @@ export const TemplateGallery = ({ onSelectTemplate, onCreateCustom }: TemplateGa
 
   const [templates, setTemplates] = useState<Template[]>([])
   const [searchQuery, setSearchQuery] = useState('')
-  const [selectedCategory, setSelectedCategory] = useState<string | null>(null)
+  const [selectedFilter, setSelectedFilter] = useState<string>('all')
   const [isLoading, setIsLoading] = useState(true)
-  const [editingTemplate, setEditingTemplate] = useState<Template | null>(null)
-  const [editName, setEditName] = useState('')
-  const [editDescription, setEditDescription] = useState('')
-  const [editCategory, setEditCategory] = useState('personal')
-  const [isSavingTemplate, setIsSavingTemplate] = useState(false)
-  const [isDeletingTemplate, setIsDeletingTemplate] = useState(false)
+  const [rowMenuTemplateId, setRowMenuTemplateId] = useState<string | null>(null)
 
   const loadTemplates = useCallback(async () => {
     if (!activeWorkspaceId) return
@@ -63,21 +58,54 @@ export const TemplateGallery = ({ onSelectTemplate, onCreateCustom }: TemplateGa
   }, [activeWorkspaceId, loadTemplates])
 
   useEffect(() => {
-    if (!editingTemplate) return
-    setEditName(editingTemplate.name)
-    setEditDescription(editingTemplate.description ?? '')
-    setEditCategory(editingTemplate.category || 'personal')
-  }, [editingTemplate])
+    if (!rowMenuTemplateId) return
+    const close = () => setRowMenuTemplateId(null)
+    const onEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') close()
+    }
+    window.addEventListener('mousedown', close)
+    window.addEventListener('scroll', close, true)
+    window.addEventListener('resize', close)
+    window.addEventListener('keydown', onEscape)
+    return () => {
+      window.removeEventListener('mousedown', close)
+      window.removeEventListener('scroll', close, true)
+      window.removeEventListener('resize', close)
+      window.removeEventListener('keydown', onEscape)
+    }
+  }, [rowMenuTemplateId])
 
   const categories = useMemo(() => {
-    const set = new Set<string>()
-    templates.forEach((t) => set.add(t.category || 'personal'))
-    return Array.from(set).sort()
+    const set = new Set<string>(['meeting', 'personal', 'project', 'reading'])
+    templates.forEach((t) => set.add((t.category || 'personal').toLowerCase()))
+    return Array.from(set).sort((a, b) => a.localeCompare(b))
   }, [templates])
+
+  const filters = useMemo(
+    () => [
+      { key: 'all', label: 'All' },
+      { key: 'presets', label: 'Presets' },
+      { key: 'custom', label: 'Custom' },
+      ...categories.map((category) => ({
+        key: `cat:${category}`,
+        label: category.charAt(0).toUpperCase() + category.slice(1),
+      })),
+    ],
+    [categories]
+  )
 
   const filteredTemplates = useMemo(() => {
     let result = [...templates]
-    if (selectedCategory) result = result.filter((t) => t.category === selectedCategory)
+
+    if (selectedFilter === 'presets') {
+      result = result.filter((t) => t.is_system)
+    } else if (selectedFilter === 'custom') {
+      result = result.filter((t) => !t.is_system)
+    } else if (selectedFilter.startsWith('cat:')) {
+      const category = selectedFilter.slice(4)
+      result = result.filter((t) => (t.category || 'personal').toLowerCase() === category)
+    }
+
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase()
       result = result.filter(
@@ -90,59 +118,19 @@ export const TemplateGallery = ({ onSelectTemplate, onCreateCustom }: TemplateGa
       if (b.usage_count !== a.usage_count) return b.usage_count - a.usage_count
       return a.name.localeCompare(b.name)
     })
-  }, [templates, searchQuery, selectedCategory])
+  }, [templates, searchQuery, selectedFilter])
 
   const dispatchTemplatesUpdated = useCallback(() => {
     window.dispatchEvent(new CustomEvent('templates:updated'))
   }, [])
-
-  const handleSaveTemplate = useCallback(async () => {
-    if (!editingTemplate) return
-    const name = editName.trim()
-    if (!name) {
-      toast.show('Template name is required', { variant: 'error' })
-      return
-    }
-
-    setIsSavingTemplate(true)
-    try {
-      await api.updateTemplate(editingTemplate.id, {
-        name,
-        description: editDescription.trim() ? editDescription.trim() : null,
-        category: editCategory.trim() || 'personal',
-      })
-      setEditingTemplate(null)
-      await loadTemplates()
-      dispatchTemplatesUpdated()
-      toast.show('Template updated', { variant: 'success' })
-    } catch (error) {
-      console.error('Failed to update template:', error)
-      toast.show(error instanceof Error ? error.message : 'Could not update template', {
-        variant: 'error',
-      })
-    } finally {
-      setIsSavingTemplate(false)
-    }
-  }, [
-    api,
-    dispatchTemplatesUpdated,
-    editCategory,
-    editDescription,
-    editName,
-    editingTemplate,
-    loadTemplates,
-    toast,
-  ])
 
   const handleDeleteTemplate = useCallback(
     async (template: Template) => {
       const ok = window.confirm(`Delete template “${template.name}”? This cannot be undone.`)
       if (!ok) return
 
-      setIsDeletingTemplate(true)
       try {
         await api.deleteTemplate(template.id)
-        if (editingTemplate?.id === template.id) setEditingTemplate(null)
         await loadTemplates()
         dispatchTemplatesUpdated()
         toast.show('Template deleted', { variant: 'success' })
@@ -151,86 +139,13 @@ export const TemplateGallery = ({ onSelectTemplate, onCreateCustom }: TemplateGa
         toast.show(error instanceof Error ? error.message : 'Could not delete template', {
           variant: 'error',
         })
-      } finally {
-        setIsDeletingTemplate(false)
       }
     },
-    [api, dispatchTemplatesUpdated, editingTemplate, loadTemplates, toast]
+    [api, dispatchTemplatesUpdated, loadTemplates, toast]
   )
 
   return (
-    <div className="flex max-h-[66vh] min-h-0 flex-col gap-3 bg-white">
-      {editingTemplate && (
-        <div className="space-y-3 rounded-xl border border-gray-200 bg-white p-3.5">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gray-500">
-                Edit custom template
-              </p>
-              <p className="mt-1 text-xs text-gray-600">Update name, description, or category.</p>
-            </div>
-            <button
-              type="button"
-              onClick={() => setEditingTemplate(null)}
-              className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-500 hover:bg-gray-50"
-            >
-              <X size={13} />
-            </button>
-          </div>
-
-          <div className="grid gap-2.5 md:grid-cols-2">
-            <label className="space-y-1">
-              <span className="text-xs font-medium text-gray-600">Name</span>
-              <input
-                value={editName}
-                onChange={(event) => setEditName(event.target.value)}
-                className="h-8 w-full rounded-lg border border-gray-200 bg-white px-3 text-sm outline-none focus:border-gray-300"
-              />
-            </label>
-            <label className="space-y-1">
-              <span className="text-xs font-medium text-gray-600">Category</span>
-              <input
-                value={editCategory}
-                onChange={(event) => setEditCategory(event.target.value)}
-                placeholder="personal"
-                className="h-8 w-full rounded-lg border border-gray-200 bg-white px-3 text-sm outline-none focus:border-gray-300"
-              />
-            </label>
-          </div>
-
-          <label className="block space-y-1">
-            <span className="text-xs font-medium text-gray-600">Description</span>
-            <textarea
-              value={editDescription}
-              onChange={(event) => setEditDescription(event.target.value)}
-              rows={2}
-              className="w-full rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm outline-none focus:border-gray-300"
-              placeholder="Optional description"
-            />
-          </label>
-
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={handleSaveTemplate}
-              disabled={isSavingTemplate}
-              className="inline-flex items-center gap-2 rounded-lg bg-gray-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-gray-800 disabled:opacity-60"
-            >
-              Save changes
-            </button>
-            <button
-              type="button"
-              onClick={() => editingTemplate && handleDeleteTemplate(editingTemplate)}
-              disabled={isDeletingTemplate}
-              className="inline-flex items-center gap-2 rounded-lg border border-red-200 bg-white px-3 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50 disabled:opacity-60"
-            >
-              <Trash2 size={13} />
-              Delete
-            </button>
-          </div>
-        </div>
-      )}
-
+    <div className="flex max-h-[66vh] min-h-0 flex-col gap-2 bg-white">
       <div className="space-y-2 shrink-0">
         <div className="relative">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
@@ -244,27 +159,17 @@ export const TemplateGallery = ({ onSelectTemplate, onCreateCustom }: TemplateGa
         </div>
 
         <div className="flex flex-wrap gap-1">
-          <button
-            onClick={() => setSelectedCategory(null)}
-            className={`rounded-full px-2.5 py-1 text-[11px] font-medium transition ${
-              selectedCategory === null
-                ? 'bg-gray-900 text-white'
-                : 'bg-[#f3f4f6] text-gray-600 hover:bg-gray-200'
-            }`}
-          >
-            All
-          </button>
-          {categories.map((cat) => (
+          {filters.map((filter) => (
             <button
-              key={cat}
-              onClick={() => setSelectedCategory(cat)}
+              key={filter.key}
+              onClick={() => setSelectedFilter(filter.key)}
               className={`rounded-full px-2.5 py-1 text-[11px] font-medium transition ${
-                selectedCategory === cat
+                selectedFilter === filter.key
                   ? 'bg-gray-900 text-white'
                   : 'bg-[#f3f4f6] text-gray-600 hover:bg-gray-200'
               }`}
             >
-              {cat.charAt(0).toUpperCase() + cat.slice(1)}
+              {filter.label}
             </button>
           ))}
         </div>
@@ -286,12 +191,12 @@ export const TemplateGallery = ({ onSelectTemplate, onCreateCustom }: TemplateGa
         ) : filteredTemplates.length === 0 ? (
           <div className="py-8 text-center text-gray-500">
             <p className="text-sm">No templates found</p>
-            {onCreateCustom && templates.length === 0 && (
+            {onCreateCustom && (
               <button
                 onClick={onCreateCustom}
                 className="mt-3 text-sm font-medium text-[#FF5F40] hover:underline"
               >
-                Create your first template
+                Create custom template
               </button>
             )}
           </div>
@@ -300,91 +205,87 @@ export const TemplateGallery = ({ onSelectTemplate, onCreateCustom }: TemplateGa
             {filteredTemplates.map((template) => (
               <div
                 key={template.id}
-                className="group relative rounded-lg border border-gray-200 bg-white px-3.5 py-2.5 text-left transition hover:border-[#f3d7be] hover:shadow-[0_2px_8px_rgba(15,23,42,0.04)]"
+                className="group relative rounded-lg border border-gray-200 bg-white px-3 py-2 text-left transition hover:border-gray-300 hover:bg-gray-50/50 hover:shadow-[0_1px_4px_rgba(15,23,42,0.04)]"
               >
                 <button
                   type="button"
                   onClick={() => onSelectTemplate(template.id)}
                   className="block w-full text-left"
                 >
-                  <div className="flex items-start gap-2 pr-14">
+                  <div className="flex items-start gap-2 pr-10">
                     <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-1.5">
-                        <h3 className="truncate text-sm font-semibold leading-5 text-gray-900">
-                          {template.name}
-                        </h3>
-                        <span
-                          className={`inline-flex shrink-0 items-center rounded-full border px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.04em] leading-none ${
-                            template.is_system
-                              ? 'border-gray-200 bg-gray-100 text-gray-600'
-                              : 'border-[#ffd8cc] bg-[#fff3ee] text-[#e85a3d]'
-                          }`}
-                        >
-                          {template.is_system ? 'Built-in' : 'Custom'}
-                        </span>
-                      </div>
-                      <p className="mt-0.5 truncate text-xs leading-4 text-gray-500">
+                      <h3 className="truncate text-sm font-semibold leading-5 text-gray-900">
+                        {template.name}
+                      </h3>
+                      <p className="mt-0.5 truncate text-xs leading-4 text-gray-600">
                         {template.description?.trim() || 'No description'}
                       </p>
+                      <p className="mt-1 text-[11px] text-gray-500">
+                        <span className="capitalize">{template.category || 'personal'}</span>
+                        <span className="mx-1.5">·</span>
+                        <span>{template.is_system ? 'Preset' : 'Custom'}</span>
+                      </p>
                     </div>
-                  </div>
-                  <div className="mt-1.5 flex items-center justify-between text-[11px] text-gray-500">
-                    <span className="capitalize">{template.category}</span>
-                    {template.usage_count > 0 ? (
-                      <span>Used {template.usage_count}x</span>
-                    ) : (
-                      <span className="text-gray-400">Unused</span>
-                    )}
                   </div>
                 </button>
 
                 {!template.is_system && (
-                  <div className="absolute right-2 top-2 flex items-center gap-1 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100">
+                  <div className="absolute right-2 top-2">
                     <button
                       type="button"
-                      onClick={() => setEditingTemplate(template)}
-                      className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-600 transition hover:border-gray-300 hover:bg-gray-50"
-                      aria-label={`Edit template ${template.name}`}
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        setRowMenuTemplateId((current) =>
+                          current === template.id ? null : template.id
+                        )
+                      }}
+                      className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-gray-200 bg-white text-gray-500 hover:bg-gray-50"
+                      aria-label={`Template actions for ${template.name}`}
                     >
-                      <Pencil size={12} />
+                      <MoreHorizontal size={12} />
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => void handleDeleteTemplate(template)}
-                      className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-red-200 bg-white text-red-600 transition hover:border-red-300 hover:bg-red-50"
-                      aria-label={`Delete template ${template.name}`}
-                    >
-                      <Trash2 size={12} />
-                    </button>
+                    {rowMenuTemplateId === template.id && (
+                      <div
+                        className="absolute right-0 top-7 z-30 min-w-34 overflow-hidden rounded-lg border border-gray-200 bg-white py-1 shadow-lg"
+                        onClick={(event) => event.stopPropagation()}
+                        onMouseDown={(event) => event.stopPropagation()}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setRowMenuTemplateId(null)
+                            void handleDeleteTemplate(template)
+                          }}
+                          className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-red-600 hover:bg-red-50"
+                        >
+                          <Trash2 size={12} className="text-red-500" />
+                          Delete
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
             ))}
-
-            {onCreateCustom && (
-              <button
-                onClick={onCreateCustom}
-                className="w-full rounded-lg border border-gray-200 bg-white px-3.5 py-2.5 text-left transition hover:border-gray-300 hover:bg-gray-50"
-              >
-                <div className="flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-2.5">
-                    <span className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-[#ffd8cc] text-[#FF5F40]">
-                      <Plus size={13} />
-                    </span>
-                    <div>
-                      <p className="text-sm font-medium text-gray-800">Create custom template</p>
-                      <p className="text-[11px] leading-4 text-gray-500">
-                        Save your own reusable format
-                      </p>
-                    </div>
-                  </div>
-                  <span className="text-xs font-medium text-gray-400">New</span>
-                </div>
-              </button>
-            )}
           </div>
         )}
       </div>
+
+      {onCreateCustom && (
+        <button
+          type="button"
+          onClick={onCreateCustom}
+          className="mt-1 flex shrink-0 items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-left transition hover:bg-gray-50"
+        >
+          <span className="inline-flex h-5 w-5 items-center justify-center rounded-md border border-[#ffd8cc] text-[#FF5F40]">
+            <Plus size={12} />
+          </span>
+          <div>
+            <p className="text-sm font-medium text-gray-800">Create custom template</p>
+            <p className="text-[11px] text-gray-500">Save your own reusable note format.</p>
+          </div>
+        </button>
+      )}
     </div>
   )
 }

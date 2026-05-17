@@ -4,6 +4,7 @@ import {
   ChevronsDown,
   ChevronsUp,
   CircleAlert,
+  Copy,
   Loader2,
   Settings,
   Wind,
@@ -46,11 +47,13 @@ type WorkspaceMember = {
 
 type WorkspaceInvitation = {
   id: string;
+  email?: string | null;
   invited_email: string;
-  role: 'admin' | 'member' | 'viewer';
-  status: 'pending' | 'accepted' | 'revoked' | 'expired';
+  role: 'admin' | 'member';
+  status: 'pending' | 'accepted' | 'expired';
   expires_at: string;
-  invited_by: string;
+  invited_by?: string;
+  created_by?: string;
   created_at: string;
 };
 
@@ -262,9 +265,10 @@ export const SettingsWindow = () => {
   const [memberActionId, setMemberActionId] = useState<string | null>(null);
   const [invitationActionId, setInvitationActionId] = useState<string | null>(null);
   const [inviteEmail, setInviteEmail] = useState('');
-  const [inviteRole, setInviteRole] = useState<'admin' | 'member' | 'viewer'>('member');
+  const [inviteRole, setInviteRole] = useState<'admin' | 'member'>('member');
   const [inviteLink, setInviteLink] = useState<string | null>(null);
   const [inviteToken, setInviteToken] = useState<string | null>(null);
+  const [inviteCopyStatus, setInviteCopyStatus] = useState<string | null>(null);
   const [isSendingInvite, setIsSendingInvite] = useState(false);
   const inviteEmailRef = useRef<HTMLInputElement | null>(null);
 
@@ -726,19 +730,17 @@ export const SettingsWindow = () => {
   const handleCreateInvitation = async () => {
     if (!activeWorkspaceId) return;
     const email = inviteEmail.trim();
-    if (!email) {
-      setWorkspaceAdminError('Invite email is required');
-      return;
-    }
 
     setWorkspaceAdminError(null);
     setWorkspaceStatus(null);
+    setInviteCopyStatus(null);
     setIsSendingInvite(true);
 
     try {
       const payload = (await api.createWorkspaceInvitation(activeWorkspaceId, {
-        email,
+        email: email || null,
         role: inviteRole,
+        origin: window.location.origin,
       })) as { invite_url?: string; invite_token?: string };
 
       setInviteEmail('');
@@ -757,6 +759,17 @@ export const SettingsWindow = () => {
       setWorkspaceAdminError(err instanceof Error ? err.message : 'Could not create invitation');
     } finally {
       setIsSendingInvite(false);
+    }
+  };
+
+  const handleCopyInvitationLink = async () => {
+    if (!inviteLink) return;
+
+    try {
+      await navigator.clipboard.writeText(inviteLink);
+      setInviteCopyStatus('Copied.');
+    } catch {
+      setInviteCopyStatus('Copy failed. Select the link manually.');
     }
   };
 
@@ -1300,9 +1313,9 @@ export const SettingsWindow = () => {
                   </div>
 
                   <div className="mt-4 rounded-2xl border border-gray-200 bg-white p-4">
-                    <h3 className="text-sm font-semibold text-gray-900">Invitations</h3>
+                    <h3 className="text-sm font-semibold text-gray-900">Invite members</h3>
                     <p className="mt-1 text-xs text-gray-600">
-                      Invite teammates by email and set a default role.
+                      Create a manual invite link for the selected workspace.
                     </p>
 
                     <div className="mt-3 grid gap-2 md:grid-cols-[1fr_140px_auto]">
@@ -1310,16 +1323,14 @@ export const SettingsWindow = () => {
                         ref={inviteEmailRef}
                         value={inviteEmail}
                         onChange={(e) => setInviteEmail(e.target.value)}
-                        placeholder="name@company.com"
+                        placeholder="name@example.com"
                         disabled={!canManageWorkspace || isSendingInvite}
                         className="h-9 rounded-lg border border-gray-200 bg-gray-50 px-3 text-sm text-gray-900 outline-none focus:border-gray-300 focus:ring-4 focus:ring-gray-100 disabled:opacity-60"
-                        aria-label="Invite email"
+                        aria-label="Invite email optional"
                       />
                       <select
                         value={inviteRole}
-                        onChange={(e) =>
-                          setInviteRole(e.target.value as 'admin' | 'member' | 'viewer')
-                        }
+                        onChange={(e) => setInviteRole(e.target.value as 'admin' | 'member')}
                         disabled={!canManageWorkspace || isSendingInvite}
                         className="h-9 appearance-none rounded-lg border border-gray-200 bg-gray-50 px-2 pr-8 text-sm text-gray-900 outline-none focus:border-gray-300 focus:ring-4 focus:ring-gray-100 disabled:opacity-60"
                         style={selectChevronStyle}
@@ -1327,25 +1338,41 @@ export const SettingsWindow = () => {
                       >
                         <option value="member">member</option>
                         <option value="admin">admin</option>
-                        <option value="viewer">viewer</option>
                       </select>
                       <button
                         onClick={() => void handleCreateInvitation()}
                         disabled={!canManageWorkspace || isSendingInvite}
                         className="h-9 rounded-lg bg-[#FF5F40] px-3 text-sm font-medium text-white transition hover:bg-[#ea5336] disabled:opacity-60"
                       >
-                        {isSendingInvite ? 'Sending...' : 'Send invite'}
+                        {isSendingInvite ? 'Creating...' : 'Create invite'}
                       </button>
                     </div>
+                    <p className="mt-2 text-xs text-gray-500">
+                      Email is optional. Copy this link and send it manually. Email invites can be
+                      added later.
+                    </p>
 
                     {(inviteLink || inviteToken) && (
                       <div className="mt-3 rounded-xl border border-gray-200 bg-gray-50 p-3">
-                        <p className="text-xs font-medium text-gray-700">Latest invite link</p>
-                        {inviteLink && (
-                          <p className="mt-1 break-all text-xs text-gray-600">{inviteLink}</p>
-                        )}
-                        {inviteToken && (
-                          <p className="mt-1 text-[11px] text-gray-500">Token: {inviteToken}</p>
+                        <p className="text-xs font-medium text-gray-700">Invite link</p>
+                        <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center">
+                          {inviteLink && (
+                            <p className="min-w-0 flex-1 break-all rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs text-gray-700">
+                              {inviteLink}
+                            </p>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => void handleCopyInvitationLink()}
+                            disabled={!inviteLink}
+                            className="inline-flex h-9 items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-100 disabled:opacity-50"
+                          >
+                            <Copy size={14} />
+                            Copy link
+                          </button>
+                        </div>
+                        {inviteCopyStatus && (
+                          <p className="mt-2 text-xs text-gray-600">{inviteCopyStatus}</p>
                         )}
                       </div>
                     )}
