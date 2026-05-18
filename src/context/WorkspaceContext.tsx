@@ -30,6 +30,7 @@ const WorkspaceContext = createContext<WorkspaceContextType | undefined>(undefin
 
 const API_URL = import.meta.env.VITE_API_URL?.trim() || DEFAULT_API_URL;
 const WORKSPACE_STORAGE_KEY = 'ledger:active-workspace-id';
+const WORKSPACE_NAME_STORAGE_KEY = 'ledger:active-workspace-name';
 
 export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { session, user } = useAuthContext();
@@ -77,23 +78,56 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     setIsLoading(true);
     setError(null);
 
+    const previousActiveWorkspaceId = activeWorkspaceId;
+
     try {
-      const [workspaceRows, active] = await Promise.all([
+      const [workspaceRowsResult, activeResult] = await Promise.allSettled([
         authedRequest('/api/workspaces'),
         authedRequest('/api/workspaces/active'),
       ]);
 
-      const rows = Array.isArray(workspaceRows) ? (workspaceRows as WorkspaceSummary[]) : [];
+      const rows =
+        workspaceRowsResult.status === 'fulfilled' && Array.isArray(workspaceRowsResult.value)
+          ? (workspaceRowsResult.value as WorkspaceSummary[])
+          : [];
+
+      const activeWorkspaceFromApi =
+        activeResult.status === 'fulfilled'
+          ? String((activeResult.value as { workspace_id?: string })?.workspace_id ?? '').trim() ||
+            null
+          : null;
+
+      const storedWorkspaceId = window.localStorage.getItem(WORKSPACE_STORAGE_KEY)?.trim() || null;
+
+      const previousIsValid =
+        !!previousActiveWorkspaceId &&
+        rows.some((workspace) => workspace.id === previousActiveWorkspaceId);
+      const storedIsValid = !!storedWorkspaceId && rows.some((workspace) => workspace.id === storedWorkspaceId);
+      const apiIsValid = !!activeWorkspaceFromApi && rows.some((workspace) => workspace.id === activeWorkspaceFromApi);
+
       const resolvedActiveWorkspaceId =
-        String((active as { workspace_id?: string })?.workspace_id ?? '') || null;
+        rows.length === 0
+          ? null
+          : apiIsValid
+          ? activeWorkspaceFromApi
+          : previousIsValid
+          ? previousActiveWorkspaceId
+          : storedIsValid
+          ? storedWorkspaceId
+          : rows[0]?.id ?? null;
 
       setWorkspaces(rows);
       setActiveWorkspaceId(resolvedActiveWorkspaceId);
 
       if (resolvedActiveWorkspaceId) {
         window.localStorage.setItem(WORKSPACE_STORAGE_KEY, resolvedActiveWorkspaceId);
+        const resolvedActiveWorkspaceName = rows.find((workspace) => workspace.id === resolvedActiveWorkspaceId)?.name?.trim() || '';
+        if (resolvedActiveWorkspaceName) {
+          window.localStorage.setItem(WORKSPACE_NAME_STORAGE_KEY, resolvedActiveWorkspaceName);
+        }
       } else {
         window.localStorage.removeItem(WORKSPACE_STORAGE_KEY);
+        window.localStorage.removeItem(WORKSPACE_NAME_STORAGE_KEY);
       }
     } catch (fetchError) {
       setError(fetchError instanceof Error ? fetchError.message : 'Could not load workspaces');
@@ -175,6 +209,11 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
       setActiveWorkspaceId(nextWorkspaceId);
       window.localStorage.setItem(WORKSPACE_STORAGE_KEY, nextWorkspaceId);
+      const nextWorkspaceName =
+        workspaces.find((workspace) => workspace.id === nextWorkspaceId)?.name?.trim() || '';
+      if (nextWorkspaceName) {
+        window.localStorage.setItem(WORKSPACE_NAME_STORAGE_KEY, nextWorkspaceName);
+      }
       window.dispatchEvent(
         new CustomEvent('ledger:workspace-changed', { detail: { workspaceId: nextWorkspaceId } })
       );

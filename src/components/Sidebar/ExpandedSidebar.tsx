@@ -40,32 +40,44 @@ type QuickNote = {
 type QuickCaptureMode = 'none' | 'task' | 'note' | 'event';
 type ProjectStatus = 'NotStarted' | 'InProgress' | 'Paused' | 'Completed';
 type TodayTask = {
+  kind: 'task' | 'reminder';
   id: string;
   title: string;
   status: string;
   due_date?: string | null;
   due_time?: string | null;
+  remind_at?: string | null;
   project_id?: string | null;
   project_name?: string | null;
+  note_id?: string | null;
+  note_title?: string | null;
+  calendar_id?: string | null;
+  calendar_name?: string | null;
   workspace_id?: string | null;
   workspace_name?: string | null;
   workspace_color?: string | null;
   assigned_to?: string | null;
   is_today_focus?: boolean;
   show_in_today?: boolean;
+  is_done?: boolean;
+  completed_at?: string | null;
   created_at?: string | null;
   updated_at?: string | null;
 };
 type CompletedTodayTask = {
+  kind: 'task' | 'reminder';
   id: string;
   title: string;
   status?: string;
   completed_at?: string | null;
+  remind_at?: string | null;
   workspace_id?: string | null;
   workspace_name?: string | null;
   workspace_color?: string | null;
   project_id?: string | null;
   project_name?: string | null;
+  note_id?: string | null;
+  note_title?: string | null;
 };
 
 const normalizeProjectNameKey = (value: unknown) =>
@@ -80,6 +92,69 @@ const htmlToPlainText = (value: string) =>
     .replace(/&nbsp;/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
+
+const formatTodayTaskWorkspace = (item: {
+  workspace_name?: string | null;
+  project_name?: string | null;
+  note_title?: string | null;
+  calendar_name?: string | null;
+  kind?: 'task' | 'reminder';
+  remind_at?: string | null;
+}) => {
+  const parts = [
+    item.workspace_name,
+    item.project_name,
+    item.note_title ? `Note: ${item.note_title}` : null,
+    item.calendar_name ? `Calendar: ${item.calendar_name}` : null,
+  ].filter(Boolean);
+
+  if (item.kind === 'reminder' && item.remind_at) {
+    const remindAt = new Date(item.remind_at);
+    if (!Number.isNaN(remindAt.getTime())) {
+      parts.push(
+        remindAt.toLocaleDateString([], {
+          month: 'short',
+          day: 'numeric',
+        })
+      );
+    }
+  }
+
+  return parts.join(' · ');
+};
+
+const getTodayTaskSortAt = (item: {
+  kind?: 'task' | 'reminder';
+  due_date?: string | null;
+  due_time?: string | null;
+  remind_at?: string | null;
+  created_at?: string | null;
+}) => {
+  if (item.kind === 'reminder' && item.remind_at) {
+    const ts = new Date(item.remind_at).getTime();
+    if (Number.isFinite(ts)) return ts;
+  }
+
+  if (item.due_date) {
+    const time = item.due_time ? `${item.due_time}:00` : '09:00:00';
+    const ts = new Date(`${item.due_date}T${time}`).getTime();
+    if (Number.isFinite(ts)) return ts;
+  }
+
+  if (item.created_at) {
+    const ts = new Date(item.created_at).getTime();
+    if (Number.isFinite(ts)) return ts;
+  }
+
+  return Number.MAX_SAFE_INTEGER;
+};
+
+const sortTodayTasks = <T extends { kind?: 'task' | 'reminder'; title?: string }>(items: T[]) =>
+  [...items].sort((a, b) => {
+    const diff = getTodayTaskSortAt(a) - getTodayTaskSortAt(b);
+    if (diff !== 0) return diff;
+    return String(a.title ?? '').localeCompare(String(b.title ?? ''));
+  });
 
 const todayKey = () => {
   const now = new Date();
@@ -230,7 +305,7 @@ export const ExpandedSidebar = ({
   };
 
   const [todayCollapsed, setTodayCollapsed] = useState<boolean>(() => loadTodayCollapsedPreference());
-  const [completedTodayExpanded, setCompletedTodayExpanded] = useState<boolean>(false);
+  const [completedTodayExpanded, setCompletedTodayExpanded] = useState(false);
   const [todayHelpOpen, setTodayHelpOpen] = useState(false);
   const [todayHelpPopoverStyle, setTodayHelpPopoverStyle] = useState<React.CSSProperties | null>(
     null
@@ -240,6 +315,7 @@ export const ExpandedSidebar = ({
   const [contextMenu, setContextMenu] = useState<{
     type: 'project' | 'upcoming' | 'today-active' | 'today-completed';
     id: string;
+    kind?: 'task' | 'reminder';
     x: number;
     y: number;
   } | null>(null);
@@ -273,6 +349,21 @@ export const ExpandedSidebar = ({
     const buttonRef = useRef<HTMLButtonElement | null>(null);
     const dropdownRef = useRef<HTMLDivElement | null>(null);
     const [portalStyle, setPortalStyle] = useState<React.CSSProperties | null>(null);
+    const storedWorkspaceId =
+      typeof window !== 'undefined'
+        ? window.localStorage.getItem('ledger:active-workspace-id')?.trim() || null
+        : null;
+    const storedWorkspaceName =
+      typeof window !== 'undefined'
+        ? window.localStorage.getItem('ledger:active-workspace-name')?.trim() || null
+        : null;
+    const resolvedActiveWorkspace =
+      activeWorkspace ??
+      workspaces.find((workspace) => workspace.id === activeWorkspaceId) ??
+      workspaces.find((workspace) => workspace.id === storedWorkspaceId) ??
+      null;
+    const resolvedActiveWorkspaceLabel =
+      resolvedActiveWorkspace?.name ?? storedWorkspaceName ?? (storedWorkspaceId ? 'Workspace' : 'No workspace');
 
     useEffect(() => {
       const handleClickOutside = (e: MouseEvent) => {
@@ -329,7 +420,9 @@ export const ExpandedSidebar = ({
             </button>
           ))
         ) : (
-          <div className="px-3 py-2 text-sm text-gray-500">No workspaces</div>
+          <div className="px-3 py-2 text-sm text-gray-500">
+            {storedWorkspaceId ? 'Loading workspaces...' : 'No workspaces'}
+          </div>
         )}
       </div>
     );
@@ -345,7 +438,7 @@ export const ExpandedSidebar = ({
           }}
           className="w-full text-left text-[11px] font-medium text-gray-600 truncate flex items-center justify-between gap-2"
         >
-          <span className="truncate">{activeWorkspace ? activeWorkspace.name : 'No workspace'}</span>
+          <span className="truncate">{resolvedActiveWorkspaceLabel}</span>
           <ChevronDown size={14} className="text-gray-500 shrink-0" />
         </button>
 
@@ -478,11 +571,28 @@ export const ExpandedSidebar = ({
       try {
         const data = await api.getToday();
         if (cancelled) return;
-        const active = Array.isArray(data?.active) ? data.active : [];
-        const completed = Array.isArray(data?.completed) ? data.completed : [];
-        setTodayItems(active);
-        setCompletedToday(completed);
-        setCompletedTodayExpanded(false);
+        const activeTasks = Array.isArray(data?.active) ? (data.active as TodayTask[]) : [];
+        const activeReminders = Array.isArray(data?.reminders)
+          ? (data.reminders as TodayTask[])
+          : [];
+        const completedTasks = Array.isArray(data?.completed)
+          ? (data.completed as CompletedTodayTask[])
+          : [];
+        const completedReminders = Array.isArray(data?.completed_reminders)
+          ? (data.completed_reminders as CompletedTodayTask[])
+          : [];
+        setTodayItems(
+          sortTodayTasks([
+            ...activeTasks.map((item) => ({ ...item, kind: 'task' as const })),
+            ...activeReminders.map((item) => ({ ...item, kind: 'reminder' as const })),
+          ])
+        );
+        setCompletedToday(
+          sortTodayTasks([
+            ...completedTasks.map((item) => ({ ...item, kind: 'task' as const })),
+            ...completedReminders.map((item) => ({ ...item, kind: 'reminder' as const })),
+          ])
+        );
       } catch (error) {
         console.error('Failed to load Today items:', error);
         setTodayItems([]);
@@ -859,14 +969,15 @@ export const ExpandedSidebar = ({
     return true;
   };
 
-  const toggleCompleteTask = async (taskId: string) => {
+  const toggleCompleteTodayItem = async (taskId: string) => {
     const prev = todayItems.slice();
     const item = prev.find((t) => t.id === taskId);
     if (!item) return;
-    // Optimistic update: remove from active list, add to completed
+
     setTodayItems((s) => s.filter((t) => t.id !== taskId));
     setCompletedToday((s) => [
       {
+        kind: item.kind,
         id: item.id,
         title: item.title,
         status: 'completed',
@@ -875,25 +986,30 @@ export const ExpandedSidebar = ({
         workspace_color: item.workspace_color ?? null,
         project_id: item.project_id ?? null,
         project_name: item.project_name ?? null,
+        note_id: item.note_id ?? null,
+        note_title: item.note_title ?? null,
+        remind_at: item.remind_at ?? null,
         completed_at: new Date().toISOString(),
       },
       ...s,
     ]);
+
     try {
-      // Use workspace-aware update so tasks from other workspaces update correctly
-      if (item.workspace_id) {
+      if (item.kind === 'reminder') {
+        await api.updateReminder(taskId, { is_done: true });
+      } else if (item.workspace_id) {
         await api.updateTaskInWorkspace(taskId, item.workspace_id, { status: 'completed' });
       } else {
         await api.updateTask(taskId, { status: 'completed' });
       }
     } catch (error) {
-      console.error('Failed to complete task:', error);
+      console.error('Failed to complete today item:', error);
       setTodayItems(prev);
       setCompletedToday((s) => s.filter((c) => c.id !== taskId));
     }
   };
 
-  const deleteTodayTask = async (taskId: string) => {
+  const deleteTodayItem = async (taskId: string) => {
     const previous = todayItems;
     const target = previous.find((task) => task.id === taskId);
     if (!target) return;
@@ -902,7 +1018,9 @@ export const ExpandedSidebar = ({
     setContextMenu(null);
 
     try {
-      if (target.workspace_id) {
+      if (target.kind === 'reminder') {
+        await api.deleteReminder(taskId);
+      } else if (target.workspace_id) {
         await api.deleteTaskInWorkspace(taskId, target.workspace_id);
       } else {
         await api.deleteTask(taskId);
@@ -913,7 +1031,7 @@ export const ExpandedSidebar = ({
     }
   };
 
-  const resetCompletedTask = async (taskId: string) => {
+  const resetCompletedTodayItem = async (taskId: string) => {
     const completedSnapshot = completedToday;
     const activeSnapshot = todayItems;
     const target = completedSnapshot.find((task) => task.id === taskId);
@@ -922,6 +1040,7 @@ export const ExpandedSidebar = ({
     setCompletedToday((list) => list.filter((task) => task.id !== taskId));
     setTodayItems((list) => [
       {
+        kind: target.kind,
         id: target.id,
         title: target.title,
         status: 'todo',
@@ -930,6 +1049,9 @@ export const ExpandedSidebar = ({
         workspace_color: target.workspace_color ?? null,
         project_id: target.project_id ?? null,
         project_name: target.project_name ?? null,
+        note_id: target.note_id ?? null,
+        note_title: target.note_title ?? null,
+        remind_at: target.remind_at ?? null,
         show_in_today: true,
       },
       ...list,
@@ -937,7 +1059,9 @@ export const ExpandedSidebar = ({
     setContextMenu(null);
 
     try {
-      if (target.workspace_id) {
+      if (target.kind === 'reminder') {
+        await api.updateReminder(taskId, { is_done: false });
+      } else if (target.workspace_id) {
         await api.updateTaskInWorkspace(taskId, target.workspace_id, {
           status: 'todo',
           show_in_today: true,
@@ -1051,7 +1175,7 @@ export const ExpandedSidebar = ({
     });
 
     if (created && typeof created === 'object') {
-      setTodayItems((prev) => [created as any, ...prev]);
+      setTodayItems((prev) => [{ ...(created as any), kind: 'task' as const }, ...prev]);
       setTaskCaptureSaved(true);
       window.setTimeout(() => setTaskCaptureSaved(false), 1500);
     }
@@ -1071,13 +1195,15 @@ export const ExpandedSidebar = ({
       });
 
       if (created && typeof created === 'object') {
-        setTodayItems((prev) => [created as any, ...prev]);
+        setTodayItems((prev) => [{ ...(created as any), kind: 'task' as const }, ...prev]);
         setTodayQuickDraft('');
       }
     } finally {
       setTodayQuickSaving(false);
     }
   };
+
+  const todayTotalCount = todayItems.length + completedToday.length;
 
   const toggleTodayCollapsed = () => {
     setTodayCollapsed((current) => {
@@ -1479,7 +1605,7 @@ export const ExpandedSidebar = ({
               </div>
               <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-gray-500">
                 <span className="shrink-0">
-                  {todayItems.length} active · {completedToday.length} completed
+                  {todayTotalCount > 0 ? `${completedToday.length}/${todayTotalCount} complete` : 'Nothing yet'}
                 </span>
               </div>
               {!todayCollapsed && (
@@ -1545,6 +1671,7 @@ export const ExpandedSidebar = ({
                             setContextMenu({
                               type: 'today-active',
                               id: item.id,
+                              kind: item.kind,
                               x: e.clientX,
                               y: e.clientY,
                             });
@@ -1553,7 +1680,7 @@ export const ExpandedSidebar = ({
                         >
                           <button
                             type="button"
-                            onClick={() => toggleCompleteTask(item.id)}
+                            onClick={() => void toggleCompleteTodayItem(item.id)}
                             className="mt-px flex h-5 w-5 shrink-0 items-center justify-center"
                             title="Mark complete"
                           >
@@ -1561,13 +1688,20 @@ export const ExpandedSidebar = ({
                               <span className="sr-only">Mark complete</span>
                             </div>
                           </button>
-                          <div className="min-w-0">
+                          <div className="min-w-0 flex-1">
                             <div className="truncate text-[12px] leading-5 text-gray-900">
                               {item.title}
                             </div>
-                            <div className="truncate text-[10px] text-gray-500">
-                              {item.workspace_name ? `${item.workspace_name}` : ''}
-                              {item.project_name ? ` · ${item.project_name}` : ''}
+                            <div className="flex min-w-0 items-center gap-1.5 truncate text-[10px] text-gray-500">
+                              <span
+                                className="h-1.5 w-1.5 shrink-0 rounded-full"
+                                style={{
+                                  backgroundColor: item.workspace_color || '#CBD5E1',
+                                }}
+                              />
+                              <span className="truncate">
+                                {formatTodayTaskWorkspace(item) || item.workspace_name || 'Workspace'}
+                              </span>
                             </div>
                           </div>
                         </div>
@@ -1579,8 +1713,8 @@ export const ExpandedSidebar = ({
                     <div className="pt-0">
                       <button
                         type="button"
-                        onClick={() => setCompletedTodayExpanded((value) => !value)}
-                        className="flex w-full items-center justify-between rounded-lg px-1.5 py-1 text-left hover:bg-gray-50"
+                        onClick={() => setCompletedTodayExpanded((prev) => !prev)}
+                        className="flex w-full items-center justify-between rounded-lg px-1.5 py-1 text-left hover:bg-gray-50 transition"
                       >
                         <span className="text-[11px] font-medium text-gray-500">
                           Completed · {completedToday.length}
@@ -1592,10 +1726,9 @@ export const ExpandedSidebar = ({
                           }`}
                         />
                       </button>
-
-                      {(completedToday.length <= 2 || completedTodayExpanded) && (
-                        <div className="mt-0.5 space-y-0.5 pl-2">
-                          {completedToday.map((item) => (
+                      {completedTodayExpanded && (
+                        <div className="mt-1 space-y-1">
+                          {sortTodayTasks(completedToday).map((item) => (
                             <div
                               key={item.id}
                               onContextMenu={(e) => {
@@ -1603,16 +1736,39 @@ export const ExpandedSidebar = ({
                                 setContextMenu({
                                   type: 'today-completed',
                                   id: item.id,
+                                  kind: item.kind,
                                   x: e.clientX,
                                   y: e.clientY,
                                 });
                               }}
-                              className="flex items-center gap-2 text-[11px] text-gray-600"
+                              className="flex items-start gap-2 rounded-lg px-1.5 py-1.5 transition hover:bg-gray-50"
                             >
-                              <div className="flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full bg-gray-100 text-gray-500">
-                                ✓
+                              <button
+                                type="button"
+                                onClick={() => void toggleCompleteTodayItem(item.id)}
+                                className="mt-px flex h-5 w-5 shrink-0 items-center justify-center"
+                                title="Mark incomplete"
+                              >
+                                <div className="flex h-4.5 w-4.5 items-center justify-center rounded-full border border-green-600 bg-green-50 text-green-600">
+                                  <Check size={12} />
+                                </div>
+                              </button>
+                              <div className="min-w-0 flex-1">
+                                <div className="truncate text-[12px] leading-5 text-gray-600 line-through">
+                                  {item.title}
+                                </div>
+                                <div className="flex min-w-0 items-center gap-1.5 truncate text-[10px] text-gray-500">
+                                  <span
+                                    className="h-1.5 w-1.5 shrink-0 rounded-full"
+                                    style={{
+                                      backgroundColor: item.workspace_color || '#CBD5E1',
+                                    }}
+                                  />
+                                  <span className="truncate">
+                                    {formatTodayTaskWorkspace(item) || item.workspace_name || 'Workspace'}
+                                  </span>
+                                </div>
                               </div>
-                              <div className="min-w-0 truncate text-gray-700">{item.title}</div>
                             </div>
                           ))}
                         </div>
@@ -2453,12 +2609,12 @@ export const ExpandedSidebar = ({
               <>
                 <button
                   onClick={() => {
-                    void deleteTodayTask(contextMenu.id);
+                    void deleteTodayItem(contextMenu.id);
                   }}
                   className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition flex items-center gap-2"
                 >
                   <Trash2 size={14} />
-                  Delete task
+                  Delete {contextMenu.kind === 'reminder' ? 'reminder' : 'task'}
                 </button>
               </>
             )}
@@ -2467,7 +2623,7 @@ export const ExpandedSidebar = ({
               <>
                 <button
                   onClick={() => {
-                    void resetCompletedTask(contextMenu.id);
+                    void resetCompletedTodayItem(contextMenu.id);
                   }}
                   className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition flex items-center gap-2"
                 >

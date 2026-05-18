@@ -109,6 +109,8 @@ const projectSelectColumns =
   'id, name, description, status, completeness, color, start_date, end_date, created_by, created_at, updated_at';
 const taskSelectColumns =
   'id, workspace_id, project_id, title, description, notes, due_date, due_time, status, priority, assigned_to, tags, completed_at, created_at, updated_at';
+const reminderSelectColumns =
+  'id, workspace_id, calendar_id, project_id, note_id, title, remind_at, is_done, notes, color, created_at, updated_at';
 const workspaceRoleRank = { viewer: 1, member: 2, admin: 3, owner: 4 };
 const workspaceMemberRoles = ['admin', 'member', 'viewer'];
 
@@ -2193,6 +2195,9 @@ app.get('/api/today', authMiddleware, rateLimit('read'), async (req, res) => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const todayISO = today.toISOString().slice(0, 10);
+    const todayEnd = new Date(today);
+    todayEnd.setHours(23, 59, 59, 999);
+    const todayEndISO = todayEnd.toISOString();
 
     // Primary: tasks due today or overdue (not completed)
     let dueRows = [];
@@ -2276,6 +2281,7 @@ app.get('/api/today', authMiddleware, rateLimit('read'), async (req, res) => {
     const projById = new Map((projResult.data || []).map((p) => [p.id, p]));
 
     const mapped = rows.map((r) => ({
+      kind: 'task',
       id: r.id,
       title: r.title,
       status: r.status,
@@ -2290,6 +2296,83 @@ app.get('/api/today', authMiddleware, rateLimit('read'), async (req, res) => {
       is_today_focus: r.is_today_focus ?? false,
       show_in_today: r.show_in_today ?? false,
       completed_at: r.completed_at ?? null,
+      created_at: r.created_at ?? null,
+      updated_at: r.updated_at ?? null,
+    }));
+
+    // Also fetch reminders due today/overdue and not done.
+    const { data: reminderData, error: reminderError } = await withReminderTable((table) =>
+      supabase
+        .from(table)
+        .select(reminderSelectColumns)
+        .in('workspace_id', workspaceIds)
+        .eq('is_done', false)
+        .lte('remind_at', todayEndISO)
+        .order('remind_at', { ascending: true })
+        .limit(500)
+    );
+
+    if (reminderError) throw reminderError;
+
+    const reminderRows = Array.isArray(reminderData) ? reminderData : [];
+    const reminderWorkspaceIds = Array.from(
+      new Set(reminderRows.map((r) => r.workspace_id).filter(Boolean))
+    );
+    const reminderProjectIds = Array.from(
+      new Set(reminderRows.map((r) => r.project_id).filter(Boolean))
+    );
+    const reminderNoteIds = Array.from(new Set(reminderRows.map((r) => r.note_id).filter(Boolean)));
+    const reminderCalendarIds = Array.from(
+      new Set(reminderRows.map((r) => r.calendar_id).filter(Boolean))
+    );
+
+    const [reminderWsResult, reminderProjResult, reminderNoteResult, reminderCalendarResult] =
+      await Promise.all([
+        reminderWorkspaceIds.length
+          ? supabase.from('workspaces').select('id, name, color').in('id', reminderWorkspaceIds)
+          : { data: [] },
+        reminderProjectIds.length
+          ? supabase.from('projects').select('id, name').in('id', reminderProjectIds)
+          : { data: [] },
+        reminderNoteIds.length
+          ? supabase.from('notes').select('id, title').in('id', reminderNoteIds)
+          : { data: [] },
+        reminderCalendarIds.length
+          ? supabase.from('calendars').select('id, name, color').in('id', reminderCalendarIds)
+          : { data: [] },
+      ]);
+
+    if (reminderWsResult?.error) throw reminderWsResult.error;
+    if (reminderProjResult?.error) throw reminderProjResult.error;
+    if (reminderNoteResult?.error) throw reminderNoteResult.error;
+    if (reminderCalendarResult?.error) throw reminderCalendarResult.error;
+
+    const reminderWsById = new Map((reminderWsResult.data || []).map((w) => [w.id, w]));
+    const reminderProjById = new Map((reminderProjResult.data || []).map((p) => [p.id, p]));
+    const reminderNoteById = new Map((reminderNoteResult.data || []).map((n) => [n.id, n]));
+    const reminderCalendarById = new Map(
+      (reminderCalendarResult.data || []).map((c) => [c.id, c])
+    );
+
+    const reminders = reminderRows.map((r) => ({
+      kind: 'reminder',
+      id: r.id,
+      title: r.title,
+      status: r.is_done ? 'completed' : 'todo',
+      remind_at: r.remind_at ?? null,
+      project_id: r.project_id ?? null,
+      project_name: r.project_id ? reminderProjById.get(r.project_id)?.name ?? null : null,
+      note_id: r.note_id ?? null,
+      note_title: r.note_id ? reminderNoteById.get(r.note_id)?.title ?? null : null,
+      calendar_id: r.calendar_id ?? null,
+      calendar_name: r.calendar_id ? reminderCalendarById.get(r.calendar_id)?.name ?? null : null,
+      workspace_id: r.workspace_id,
+      workspace_name: reminderWsById.get(r.workspace_id)?.name ?? null,
+      workspace_color: reminderWsById.get(r.workspace_id)?.color ?? null,
+      assigned_to: null,
+      is_today_focus: false,
+      show_in_today: true,
+      completed_at: null,
       created_at: r.created_at ?? null,
       updated_at: r.updated_at ?? null,
     }));
@@ -2311,6 +2394,7 @@ app.get('/api/today', authMiddleware, rateLimit('read'), async (req, res) => {
     const completedRows = completedResult.error ? [] : completedResult.data ?? [];
 
     const completedMapped = (completedRows || []).map((r) => ({
+      kind: 'task',
       id: r.id,
       title: r.title,
       status: r.status,
@@ -2322,7 +2406,81 @@ app.get('/api/today', authMiddleware, rateLimit('read'), async (req, res) => {
       project_name: r.project_id ? projById.get(r.project_id)?.name ?? null : null,
     }));
 
-    res.json({ active: mapped, completed: completedMapped });
+    const completedReminderResult = await withReminderTable((table) =>
+      supabase
+        .from(table)
+        .select(reminderSelectColumns)
+        .in('workspace_id', workspaceIds)
+        .eq('is_done', true)
+        .gte('updated_at', cutoff)
+        .order('updated_at', { ascending: false })
+        .limit(200)
+    );
+
+    if (completedReminderResult.error) throw completedReminderResult.error;
+
+    const completedReminderRows = Array.isArray(completedReminderResult.data)
+      ? completedReminderResult.data
+      : [];
+    const completedReminderWorkspaceIds = Array.from(
+      new Set(completedReminderRows.map((r) => r.workspace_id).filter(Boolean))
+    );
+    const completedReminderProjectIds = Array.from(
+      new Set(completedReminderRows.map((r) => r.project_id).filter(Boolean))
+    );
+    const completedReminderNoteIds = Array.from(
+      new Set(completedReminderRows.map((r) => r.note_id).filter(Boolean))
+    );
+
+    const [completedReminderWsResult, completedReminderProjResult, completedReminderNoteResult] =
+      await Promise.all([
+        completedReminderWorkspaceIds.length
+          ? supabase
+              .from('workspaces')
+              .select('id, name, color')
+              .in('id', completedReminderWorkspaceIds)
+          : { data: [] },
+        completedReminderProjectIds.length
+          ? supabase.from('projects').select('id, name').in('id', completedReminderProjectIds)
+          : { data: [] },
+        completedReminderNoteIds.length
+          ? supabase.from('notes').select('id, title').in('id', completedReminderNoteIds)
+          : { data: [] },
+      ]);
+
+    if (completedReminderWsResult?.error) throw completedReminderWsResult.error;
+    if (completedReminderProjResult?.error) throw completedReminderProjResult.error;
+    if (completedReminderNoteResult?.error) throw completedReminderNoteResult.error;
+
+    const completedReminderWsById = new Map(
+      (completedReminderWsResult.data || []).map((w) => [w.id, w])
+    );
+    const completedReminderProjById = new Map(
+      (completedReminderProjResult.data || []).map((p) => [p.id, p])
+    );
+    const completedReminderNoteById = new Map(
+      (completedReminderNoteResult.data || []).map((n) => [n.id, n])
+    );
+
+    const completedReminders = completedReminderRows.map((r) => ({
+      kind: 'reminder',
+      id: r.id,
+      title: r.title,
+      status: 'completed',
+      completed_at: r.updated_at ?? null,
+      remind_at: r.remind_at ?? null,
+      workspace_id: r.workspace_id,
+      workspace_name: completedReminderWsById.get(r.workspace_id)?.name ?? null,
+      workspace_color: completedReminderWsById.get(r.workspace_id)?.color ?? null,
+      project_id: r.project_id ?? null,
+      project_name: r.project_id ? completedReminderProjById.get(r.project_id)?.name ?? null : null,
+      note_id: r.note_id ?? null,
+      note_title: r.note_id ? completedReminderNoteById.get(r.note_id)?.title ?? null : null,
+      calendar_id: r.calendar_id ?? null,
+      calendar_name: null,
+    }));
+
+    res.json({ active: mapped, reminders, completed: completedMapped, completed_reminders: completedReminders });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

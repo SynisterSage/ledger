@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { ModalOverlay } from '../Common/ModalOverlay';
 import { useAuthContext } from '../../context/AuthContext';
 import {
   modulePaneSizing,
@@ -2284,68 +2285,60 @@ export const ProjectsWindow = () => {
         </div>
       )}
 
-      {isLinkNoteModalOpen &&
-        createPortal(
-          <div
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/25 p-4"
-            onClick={() => setIsLinkNoteModalOpen(false)}
-          >
-          <div
-            className="w-full max-w-xl rounded-2xl border border-gray-200 bg-white shadow-xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="border-b border-gray-100 px-5 py-4">
-              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500">
-                Link note
-              </p>
-              <p className="mt-1 text-base font-semibold text-gray-900">
-                Attach a workspace note to this project
-              </p>
-            </div>
-            <div className="space-y-3 p-5">
-              <input
-                type="text"
-                value={linkNotesSearch}
-                onChange={(e) => setLinkNotesSearch(e.target.value)}
-                placeholder="Search notes"
-                className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-900 outline-none focus:border-gray-300"
-              />
-              <div className="max-h-80 overflow-auto rounded-lg border border-gray-200 bg-white">
-                {isLoadingLinkableNotes ? (
-                  <p className="p-3 text-sm text-gray-500">Loading notes…</p>
-                ) : filteredLinkableNotes.length === 0 ? (
-                  <p className="p-3 text-sm text-gray-500">No available notes to link.</p>
-                ) : (
-                  filteredLinkableNotes.map((note) => (
-                    <button
-                      key={note.id}
-                      type="button"
-                      disabled={isLinkingNote}
-                      onClick={() => void linkNoteToProject(note.id)}
-                      className="w-full border-b border-gray-100 px-3 py-2 text-left last:border-b-0 hover:bg-gray-50 disabled:opacity-50"
-                    >
-                      <p className="truncate text-sm font-medium text-gray-900">{note.title}</p>
-                      <p className="truncate text-xs text-gray-500">
-                        {note.preview || 'No content'}
-                      </p>
-                    </button>
-                  ))
-                )}
-              </div>
-            </div>
-            <div className="flex items-center justify-end border-t border-gray-100 px-5 py-3">
-              <button
-                type="button"
-                onClick={() => setIsLinkNoteModalOpen(false)}
-                className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
-              >
-                Close
-              </button>
-            </div>
+      <ModalOverlay
+        isOpen={isLinkNoteModalOpen}
+        onClose={() => setIsLinkNoteModalOpen(false)}
+        classNameContainer="w-full max-w-xl rounded-2xl border border-gray-200 bg-white shadow-xl"
+      >
+        <div className="border-b border-gray-100 px-5 py-4">
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500">
+            Link note
+          </p>
+          <p className="mt-1 text-base font-semibold text-gray-900">
+            Attach a workspace note to this project
+          </p>
+        </div>
+        <div className="space-y-3 p-5">
+          <input
+            type="text"
+            value={linkNotesSearch}
+            onChange={(e) => setLinkNotesSearch(e.target.value)}
+            placeholder="Search notes"
+            className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-900 outline-none focus:border-gray-300"
+          />
+          <div className="max-h-80 overflow-auto rounded-lg border border-gray-200 bg-white">
+            {isLoadingLinkableNotes ? (
+              <p className="p-3 text-sm text-gray-500">Loading notes…</p>
+            ) : filteredLinkableNotes.length === 0 ? (
+              <p className="p-3 text-sm text-gray-500">No available notes to link.</p>
+            ) : (
+              filteredLinkableNotes.map((note) => (
+                <button
+                  key={note.id}
+                  type="button"
+                  disabled={isLinkingNote}
+                  onClick={() => void linkNoteToProject(note.id)}
+                  className="w-full border-b border-gray-100 px-3 py-2 text-left last:border-b-0 hover:bg-gray-50 disabled:opacity-50"
+                >
+                  <p className="truncate text-sm font-medium text-gray-900">{note.title}</p>
+                  <p className="truncate text-xs text-gray-500">
+                    {note.preview || 'No content'}
+                  </p>
+                </button>
+              ))
+            )}
           </div>
-          </div>,
-          document.body
-        )}
+        </div>
+        <div className="flex items-center justify-end border-t border-gray-100 px-5 py-3">
+          <button
+            type="button"
+            onClick={() => setIsLinkNoteModalOpen(false)}
+            className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+          >
+            Close
+          </button>
+        </div>
+      </ModalOverlay>
 
       {projectContextMenu && projectMenuPosition && (
         <div

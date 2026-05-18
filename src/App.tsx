@@ -24,6 +24,7 @@ import { useSidebar } from './context/SidebarContext';
 import { MainLayout } from './components/Common/MainLayout';
 import { ModuleWindowHeader } from './components/Common/ModuleWindowHeader';
 import { CloseGuardModal } from './components/Common/CloseGuardModal';
+import { ModalOverlay } from './components/Common/ModalOverlay';
 import LoginForm from './components/Common/LoginForm';
 import CalendarWindow from './components/Calendar/CalendarWindow';
 import NotesWindow from './components/Notes/NotesWindow';
@@ -116,6 +117,36 @@ const getInviteTokenFromInput = (value: string) => {
   }
 
   return raw;
+};
+
+const todayKey = () => new Date().toISOString().slice(0, 10);
+
+type CompletedFocusTask = {
+  id: string;
+  title: string;
+  workspace_name?: string | null;
+  project_name?: string | null;
+  due_date?: string | null;
+  due_time?: string | null;
+  completed_at: string;
+};
+
+const DASHBOARD_COMPLETED_FOCUS_STORAGE_KEY = 'ledger:dashboard:completed-focus:v1';
+
+const loadCompletedFocusTasks = (): CompletedFocusTask[] => {
+  try {
+    const raw = window.localStorage.getItem(DASHBOARD_COMPLETED_FOCUS_STORAGE_KEY);
+    if (!raw) return [];
+
+    const parsed = JSON.parse(raw) as
+      | { day?: string; items?: CompletedFocusTask[] | null }
+      | null;
+
+    if (parsed?.day !== todayKey()) return [];
+    return Array.isArray(parsed.items) ? parsed.items : [];
+  } catch {
+    return [];
+  }
 };
 
 function AuthStatusScreen({ title, subtitle }: { title: string; subtitle: string }) {
@@ -273,6 +304,10 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
   const [isSavingFocusTask, setIsSavingFocusTask] = useState(false);
   const [showCloseGuardModal, setShowCloseGuardModal] = useState(false);
   const [focusActionId, setFocusActionId] = useState<string | null>(null);
+  const [completedFocusTasks, setCompletedFocusTasks] = useState<CompletedFocusTask[]>(() =>
+    loadCompletedFocusTasks()
+  );
+  const [completedFocusExpanded, setCompletedFocusExpanded] = useState<boolean>(false);
   const [isFocusPickerOpen, setIsFocusPickerOpen] = useState(false);
   const [isNewFocusModalOpen, setIsNewFocusModalOpen] = useState(false);
   const [expandedTimelineIds, setExpandedTimelineIds] = useState<Set<string>>(new Set());
@@ -286,6 +321,7 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
     | null
   >(null);
   const hasLoadedDashboardRef = useRef(false);
+  const dashboardDayRef = useRef(todayKey());
 
   useEffect(() => {
     const handleSidebarStateChanged = (
@@ -302,6 +338,37 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
       window.ipcRenderer?.off('sidebar:state-changed', handleSidebarStateChanged);
     };
   }, [setState]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        DASHBOARD_COMPLETED_FOCUS_STORAGE_KEY,
+        JSON.stringify({ day: todayKey(), items: completedFocusTasks })
+      );
+    } catch {
+      // No-op when storage is unavailable.
+    }
+  }, [completedFocusTasks]);
+
+  useEffect(() => {
+    const syncCompletedFocusDay = () => {
+      const currentDay = todayKey();
+      if (dashboardDayRef.current === currentDay) return;
+
+      dashboardDayRef.current = currentDay;
+      setCompletedFocusTasks([]);
+      setCompletedFocusExpanded(false);
+      try {
+        window.localStorage.removeItem(DASHBOARD_COMPLETED_FOCUS_STORAGE_KEY);
+      } catch {
+        // No-op when storage is unavailable.
+      }
+    };
+
+    syncCompletedFocusDay();
+    const timer = window.setInterval(syncCompletedFocusDay, 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     if (!user || !activeWorkspaceId) {
@@ -708,12 +775,36 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
     const task = todayTasks.find((item) => item.id === taskId);
     if (!task) return;
 
+    const previousTodayTasks = todayTasks;
+    const previousCompletedFocusTasks = completedFocusTasks;
+    const completedAt = new Date().toISOString();
+    const completedItem: CompletedFocusTask = {
+      id: task.id,
+      title: task.title,
+      workspace_name: task.workspace_name ?? null,
+      project_name: task.project_name ?? null,
+      due_date: task.due_date ?? null,
+      due_time: task.due_time ?? null,
+      completed_at: completedAt,
+    };
+
+    setTodayTasks((prev) => prev.filter((item) => item.id !== taskId));
+    setCompletedFocusTasks((prev) => {
+      const next = [completedItem, ...prev.filter((item) => item.id !== taskId)];
+      setCompletedFocusExpanded(false);
+      return next;
+    });
     setFocusActionId(taskId);
     try {
       await api.updateTaskInWorkspace(taskId, task.workspace_id ?? activeWorkspaceId ?? '', {
         status: 'completed',
       });
       await refreshTodayTasks();
+    } catch (error) {
+      console.error('Failed to complete focus task:', error);
+      setTodayTasks(previousTodayTasks);
+      setCompletedFocusTasks(previousCompletedFocusTasks);
+      setCompletedFocusExpanded(false);
     } finally {
       setFocusActionId(null);
     }
@@ -958,7 +1049,7 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
               </p>
             </div>
 
-            <div className="flex items-end justify-between gap-6 border-b border-gray-200 pb-8">
+            <div className="flex flex-col gap-6 border-b border-gray-200 pb-8 sm:flex-row sm:items-end sm:justify-between">
               <div className="space-y-2">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[#64748B]">
                   {todayLabel}
@@ -978,7 +1069,7 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
                   </div>
                 )}
               </div>
-              <div className="flex flex-wrap justify-end gap-6">
+              <div className="flex flex-wrap gap-6 sm:justify-end">
                 {[
                   {
                     label: 'Task',
@@ -1021,10 +1112,10 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
             </div>
           )}
 
-          <div className="grid gap-16 xl:grid-cols-[minmax(0,1fr)_320px]">
+          <div className="grid gap-12 lg:grid-cols-[minmax(0,1fr)_320px]">
             <main className="space-y-14">
               <section ref={todayTasksRef} className="space-y-6">
-                <div className="flex items-baseline justify-between gap-6">
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-baseline sm:justify-between sm:gap-6">
                   <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[#64748B]">
                     Focus
                   </p>
@@ -1099,31 +1190,74 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
                         </div>
                       )}
                     </div>
+
+                    {completedFocusTasks.length > 0 && (
+                      <div className="space-y-3">
+                        <button
+                          type="button"
+                          onClick={() => setCompletedFocusExpanded((current) => !current)}
+                          className="flex w-full items-center justify-between rounded-2xl px-0 py-1 text-left"
+                        >
+                          <span className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[#64748B]">
+                            Completed · {completedFocusTasks.length}
+                          </span>
+                          <ChevronDown
+                            size={14}
+                            className={`text-[#94A3B8] transition-transform ${
+                              completedFocusExpanded ? 'rotate-180' : 'rotate-0'
+                            }`}
+                          />
+                        </button>
+
+                        {completedFocusExpanded && (
+                          <div className="space-y-2">
+                            {completedFocusTasks.map((task) => (
+                              <div
+                                key={task.id}
+                                className="flex items-start gap-3 rounded-2xl border border-gray-100 bg-gray-50 px-3 py-2.5"
+                              >
+                                <div className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-gray-200 bg-white text-[11px] text-[#64748B]">
+                                  ✓
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                  <p className="text-sm font-medium text-[#64748B] line-through decoration-gray-300">
+                                    {task.title}
+                                  </p>
+                                  <p className="mt-1 text-xs text-[#94A3B8]">
+                                    {task.project_name || task.workspace_name || 'Workspace task'}
+                                    {task.due_date ? ` · Due ${task.due_date}` : ''}
+                                    {task.due_time ? ` · ${task.due_time}` : ''}
+                                  </p>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </>
                 )}
               </section>
 
-              <div className="grid gap-16 md:grid-cols-2">
+              <div className="grid gap-12 lg:grid-cols-2">
                 <section
                   className="space-y-6"
                   onContextMenu={(event) => openContextMenu(event, { type: 'checkin' })}
                 >
-                <div className="flex items-center justify-between">
-                  <div>
+                  <div className="flex items-center justify-between gap-4">
                     <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#64748B]">
                       Review
                     </p>
+                    <button
+                      onClick={() => {
+                        void window.desktopWindow?.openCheckin();
+                        setState('expanded');
+                      }}
+                      className="rounded-full border border-gray-200 bg-white px-3 py-2 text-xs font-medium text-[#111827] hover:bg-gray-50"
+                    >
+                      Open check-in
+                    </button>
                   </div>
-                  <button
-                    onClick={() => {
-                      void window.desktopWindow?.openCheckin();
-                      setState('expanded');
-                    }}
-                    className="rounded-full border border-gray-200 bg-white px-3 py-2 text-xs font-medium text-[#111827] hover:bg-gray-50"
-                  >
-                    Open check-in
-                  </button>
-                </div>
                 <div className="space-y-8">
                   {[
                     { label: 'Finished', value: daily.finished || 'Nothing yet' },
@@ -1198,7 +1332,7 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
               </div>
             </main>
 
-            <aside className="xl:sticky xl:top-0 xl:self-start xl:pl-12 border-l border-gray-200">
+            <aside className="border-t border-gray-200 pt-8 lg:sticky lg:top-0 lg:self-start lg:border-l lg:border-t-0 lg:pl-12 lg:pt-0">
               <section ref={followUpsRef} className="space-y-6">
                 <div className="space-y-10">
                   <div className="space-y-6">
@@ -1397,136 +1531,120 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
           </div>
         </div>
       </div>
-      {isFocusPickerOpen &&
-        createPortal(
-          <div
-            className="fixed inset-0 z-150 flex items-center justify-center bg-black/35 px-4 py-8"
-            onClick={() => setIsFocusPickerOpen(false)}
-          >
-            <div
-              className="w-full max-w-xl rounded-2xl border border-gray-200 bg-white shadow-2xl"
-              onClick={(event) => event.stopPropagation()}
-            >
-              <div className="border-b border-gray-100 px-5 py-4">
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">
-                  Add from Today
-                </p>
-                <p className="mt-1 text-sm text-gray-600">
-                  Pick up to three priorities from today&apos;s queue.
-                </p>
-              </div>
-              <div className="max-h-[60vh] overflow-auto p-4 space-y-2">
-                {activeTodayTasks.length === 0 ? (
-                  <div className="rounded-2xl border border-dashed border-gray-200 bg-gray-50 p-5">
-                    <p className="text-sm font-medium text-gray-800">
-                      No Today items to choose from.
+      <ModalOverlay
+        isOpen={isFocusPickerOpen}
+        onClose={() => setIsFocusPickerOpen(false)}
+        classNameContainer="w-full max-w-xl rounded-2xl border border-gray-200 bg-white shadow-2xl"
+      >
+        <div className="border-b border-gray-100 px-5 py-4">
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">
+            Add from Today
+          </p>
+          <p className="mt-1 text-sm text-gray-600">
+            Pick up to three priorities from today&apos;s queue.
+          </p>
+        </div>
+        <div className="max-h-[60vh] overflow-auto p-4 space-y-2">
+          {activeTodayTasks.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-gray-200 bg-gray-50 p-5">
+              <p className="text-sm font-medium text-gray-800">
+                No Today items to choose from.
+              </p>
+            </div>
+          ) : (
+            activeTodayTasks.map((task) => (
+              <button
+                key={task.id}
+                type="button"
+                onClick={() => void addTodayTaskToFocus(task.id)}
+                disabled={focusTasks.length >= 3 || focusActionId === task.id}
+                className="w-full rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3 text-left transition hover:bg-white disabled:opacity-50"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium text-gray-950">{task.title}</p>
+                    <p className="mt-1 truncate text-xs text-gray-500">
+                      {task.project_name || task.workspace_name || 'Workspace task'}
+                      {task.due_date ? ` · Due ${task.due_date}` : ''}
                     </p>
                   </div>
-                ) : (
-                  activeTodayTasks.map((task) => (
-                    <button
-                      key={task.id}
-                      type="button"
-                      onClick={() => void addTodayTaskToFocus(task.id)}
-                      disabled={focusTasks.length >= 3 || focusActionId === task.id}
-                      className="w-full rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3 text-left transition hover:bg-white disabled:opacity-50"
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <p className="truncate text-sm font-medium text-gray-950">{task.title}</p>
-                          <p className="mt-1 truncate text-xs text-gray-500">
-                            {task.project_name || task.workspace_name || 'Workspace task'}
-                            {task.due_date ? ` · Due ${task.due_date}` : ''}
-                          </p>
-                        </div>
-                        <span className="shrink-0 rounded-full border border-gray-200 bg-white px-2 py-1 text-[11px] font-medium text-gray-600">
-                          Add
-                        </span>
-                      </div>
-                    </button>
-                  ))
-                )}
-              </div>
-              <div className="flex items-center justify-end border-t border-gray-100 px-5 py-3">
-                <button
-                  type="button"
-                  onClick={() => setIsFocusPickerOpen(false)}
-                  className="rounded-full border border-gray-200 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
-                >
-                  Close
-                </button>
-              </div>
-            </div>
-          </div>,
-          document.body
-        )}
-      {isNewFocusModalOpen &&
-        createPortal(
-          <div
-            className="fixed inset-0 z-150 flex items-center justify-center bg-black/35 px-4 py-8"
+                  <span className="shrink-0 rounded-full border border-gray-200 bg-white px-2 py-1 text-[11px] font-medium text-gray-600">
+                    Add
+                  </span>
+                </div>
+              </button>
+            ))
+          )}
+        </div>
+        <div className="flex items-center justify-end border-t border-gray-100 px-5 py-3">
+          <button
+            type="button"
+            onClick={() => setIsFocusPickerOpen(false)}
+            className="rounded-full border border-gray-200 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+          >
+            Close
+          </button>
+        </div>
+      </ModalOverlay>
+      <ModalOverlay
+        isOpen={isNewFocusModalOpen}
+        onClose={() => {
+          setIsNewFocusModalOpen(false);
+          setFocusDraftTitle('');
+        }}
+        classNameContainer="w-full max-w-lg rounded-2xl border border-gray-200 bg-white shadow-2xl"
+      >
+        <div className="border-b border-gray-100 px-5 py-4">
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">
+            New focus
+          </p>
+          <p className="mt-1 text-sm text-gray-600">
+            Create a new priority and keep it in Today.
+          </p>
+        </div>
+        <div className="space-y-3 p-5">
+          <input
+            value={focusDraftTitle}
+            onChange={(event) => setFocusDraftTitle(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.preventDefault();
+                void createNewFocusTask();
+              }
+              if (event.key === 'Escape') {
+                event.preventDefault();
+                setIsNewFocusModalOpen(false);
+                setFocusDraftTitle('');
+              }
+            }}
+            placeholder="e.g. Submit posters for critique file"
+            className="w-full rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-900 outline-none focus:border-gray-300"
+          />
+          <p className="text-xs text-gray-500">
+            This creates a Today task and marks it as a focus priority.
+          </p>
+        </div>
+        <div className="flex items-center justify-end gap-2 border-t border-gray-100 px-5 py-3">
+          <button
+            type="button"
             onClick={() => {
               setIsNewFocusModalOpen(false);
               setFocusDraftTitle('');
             }}
+            className="rounded-full border border-gray-200 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
           >
-            <div
-              className="w-full max-w-lg rounded-2xl border border-gray-200 bg-white shadow-2xl"
-              onClick={(event) => event.stopPropagation()}
-            >
-              <div className="border-b border-gray-100 px-5 py-4">
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">
-                  New focus
-                </p>
-                <p className="mt-1 text-sm text-gray-600">
-                  Create a new priority and keep it in Today.
-                </p>
-              </div>
-              <div className="space-y-3 p-5">
-                <input
-                  value={focusDraftTitle}
-                  onChange={(event) => setFocusDraftTitle(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter') {
-                      event.preventDefault();
-                      void createNewFocusTask();
-                    }
-                    if (event.key === 'Escape') {
-                      event.preventDefault();
-                      setIsNewFocusModalOpen(false);
-                      setFocusDraftTitle('');
-                    }
-                  }}
-                  placeholder="e.g. Submit posters for critique file"
-                  className="w-full rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-900 outline-none focus:border-gray-300"
-                />
-                <p className="text-xs text-gray-500">
-                  This creates a Today task and marks it as a focus priority.
-                </p>
-              </div>
-              <div className="flex items-center justify-end gap-2 border-t border-gray-100 px-5 py-3">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsNewFocusModalOpen(false);
-                    setFocusDraftTitle('');
-                  }}
-                  className="rounded-full border border-gray-200 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void createNewFocusTask()}
-                  disabled={!focusDraftTitle.trim() || isSavingFocusTask || focusTasks.length >= 3}
-                  className="rounded-full bg-gray-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-50"
-                >
-                  Add focus
-                </button>
-              </div>
-            </div>
-          </div>,
-          document.body
-        )}
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={() => void createNewFocusTask()}
+            disabled={!focusDraftTitle.trim() || isSavingFocusTask || focusTasks.length >= 3}
+            className="rounded-full bg-gray-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-50"
+          >
+            Add focus
+          </button>
+        </div>
+      </ModalOverlay>
       {dashboardContextMenu &&
         createPortal(
           <div
@@ -1565,35 +1683,6 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
             )}
             {dashboardContextMenu.type === 'timeline' && (
               <>
-                {expandedTimelineIds.has(dashboardContextMenu.eventId) ? (
-                  <button
-                    onClick={() => {
-                      setExpandedTimelineIds((prev) => {
-                        const next = new Set(prev);
-                        next.delete(dashboardContextMenu.eventId);
-                        return next;
-                      });
-                      setDashboardContextMenu(null);
-                    }}
-                    className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
-                  >
-                    <ChevronUp size={14} />
-                    Collapse
-                  </button>
-                ) : (
-                  <button
-                    onClick={() => {
-                      setExpandedTimelineIds((prev) =>
-                        new Set(prev).add(dashboardContextMenu.eventId)
-                      );
-                      setDashboardContextMenu(null);
-                    }}
-                    className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
-                  >
-                    <ChevronDown size={14} />
-                    Expand
-                  </button>
-                )}
                 <button
                   onClick={() => {
                     const event = upcoming.find((item) => item.id === dashboardContextMenu.eventId);

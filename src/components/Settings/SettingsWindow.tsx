@@ -9,8 +9,8 @@ import {
   Settings,
   Wind,
 } from 'lucide-react';
-import { createPortal } from 'react-dom';
 import { type CSSProperties, useEffect, useMemo, useRef, useState } from 'react';
+import { ModalOverlay } from '../Common/ModalOverlay';
 import { useAuthContext } from '../../context/AuthContext';
 import { useSidebar } from '../../context/SidebarContext';
 import {
@@ -537,11 +537,19 @@ export const SettingsWindow = () => {
     setIsSwitchingWorkspace(true);
     try {
       await setActiveWorkspace(workspaceId);
+      // Clear any stale admin data
+      setWorkspaceMembers([]);
+      setWorkspaceInvitations([]);
+      setWorkspaceAdminError(null);
       await refreshWorkspaces();
       window.dispatchEvent(new CustomEvent('ledger:workspaces-changed'));
       setWorkspaceStatus('Active workspace updated.');
     } catch (err) {
       setWorkspaceStatus(err instanceof Error ? err.message : 'Could not switch workspace.');
+      // If switching fails, try to recover by refreshing the list
+      await refreshWorkspaces().catch(() => {
+        // Silently fail - UI will show empty workspaces
+      });
     } finally {
       setIsSwitchingWorkspace(false);
     }
@@ -560,17 +568,33 @@ export const SettingsWindow = () => {
     setIsCreatingWorkspace(true);
 
     try {
-      await api.createWorkspace({
+      const createdWorkspace = (await api.createWorkspace({
         name,
         description: workspaceCreateDescription.trim() || null,
         is_personal: workspaceCreateType === 'personal',
-      });
+      })) as { id?: string };
+
+      const newWorkspaceId = createdWorkspace?.id;
 
       setWorkspaceCreateName('');
       setWorkspaceCreateDescription('');
       setWorkspaceCreateType('team');
 
+      if (newWorkspaceId) {
+        window.localStorage.setItem('ledger:active-workspace-id', newWorkspaceId);
+        window.localStorage.setItem('ledger:active-workspace-name', name);
+      }
+
+      if (newWorkspaceId) {
+        try {
+          await setActiveWorkspace(newWorkspaceId);
+        } catch {
+          // Silently fail - user can manually switch
+        }
+      }
+
       await refreshWorkspaces();
+      
       window.dispatchEvent(new CustomEvent('ledger:workspaces-changed'));
       setWorkspaceCreateStatus('Workspace created and activated. Next step: invite teammates.');
       window.setTimeout(() => {
@@ -643,10 +667,31 @@ export const SettingsWindow = () => {
     setWorkspaceDeleteError(null);
     setIsDeletingWorkspace(true);
 
+    const nextWorkspace = workspaces.find((workspace) => workspace.id !== activeWorkspaceId) ?? null;
+
     try {
       await api.deleteWorkspace(activeWorkspaceId);
       setWorkspaceDeleteConfirm('');
+
+      if (nextWorkspace) {
+        window.localStorage.setItem('ledger:active-workspace-id', nextWorkspace.id);
+        window.localStorage.setItem('ledger:active-workspace-name', nextWorkspace.name);
+
+        try {
+          await setActiveWorkspace(nextWorkspace.id);
+          setWorkspaceMembers([]);
+          setWorkspaceInvitations([]);
+          setWorkspaceAdminError(null);
+        } catch (switchErr) {
+          console.warn('Could not auto-select workspace after deletion', switchErr);
+        }
+      } else {
+        window.localStorage.removeItem('ledger:active-workspace-id');
+        window.localStorage.removeItem('ledger:active-workspace-name');
+      }
+
       await refreshWorkspaces();
+      
       window.dispatchEvent(new CustomEvent('ledger:workspaces-changed'));
       return true;
     } catch (err) {
@@ -761,9 +806,13 @@ export const SettingsWindow = () => {
         }
       } catch (err) {
         if (cancelled) return;
-        setWorkspaceAdminError(
-          err instanceof Error ? err.message : 'Could not load workspace members'
-        );
+        // Gracefully handle errors loading workspace data (e.g., workspace deleted, no permission)
+        const errorMsg = err instanceof Error ? err.message : 'Could not load workspace members';
+        if (!errorMsg.includes('403') && !errorMsg.includes('404')) {
+          setWorkspaceAdminError(errorMsg);
+        }
+        setWorkspaceMembers([]);
+        setWorkspaceInvitations([]);
       } finally {
         if (!cancelled) {
           setIsLoadingWorkspaceAdmin(false);
@@ -1448,98 +1497,95 @@ export const SettingsWindow = () => {
                     </p>
                   )}
 
-                  {inviteModal && selectedInvite && typeof document !== 'undefined'
-                    ? createPortal(
-                        <div className="fixed inset-0 z-90 flex items-center justify-center bg-black/25 px-4">
-                          <div className="w-full max-w-md rounded-2xl border border-gray-200 bg-white p-4 shadow-2xl">
-                            <div className="flex items-start justify-between gap-4">
-                              <div>
-                                <h4 className="text-sm font-semibold text-gray-950">
-                                  Manage invite
-                                </h4>
-                                <p className="mt-1 text-xs text-gray-500">
-                                  {selectedInvite.invited_email}
-                                </p>
-                              </div>
-                              <button
-                                type="button"
-                                onClick={() => setInviteModal(null)}
-                                className="rounded-lg border border-gray-200 bg-white px-2 py-1 text-xs font-medium text-gray-600 hover:bg-gray-50"
-                              >
-                                Close
-                              </button>
-                            </div>
+                  <ModalOverlay
+                    isOpen={!!inviteModal && !!selectedInvite}
+                    onClose={() => setInviteModal(null)}
+                    classNameContainer="w-full max-w-md rounded-2xl border border-gray-200 bg-white p-4 shadow-2xl"
+                  >
+                    <div className="flex items-start justify-between gap-4">
+                      <div>
+                        <h4 className="text-sm font-semibold text-gray-950">
+                          Manage invite
+                        </h4>
+                        <p className="mt-1 text-xs text-gray-500">
+                          {selectedInvite?.invited_email}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setInviteModal(null)}
+                        className="rounded-lg border border-gray-200 bg-white px-2 py-1 text-xs font-medium text-gray-600 hover:bg-gray-50"
+                      >
+                        Close
+                      </button>
+                    </div>
 
-                            <div className="mt-4 space-y-3">
-                              <div className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2">
-                                <div className="flex items-center justify-between gap-2">
-                                  <div>
-                                    <p className="text-[10px] font-medium uppercase tracking-[0.18em] text-gray-400">
-                                      Status
-                                    </p>
-                                    <p className="text-sm font-medium text-gray-900">
-                                      {selectedInvite.status}
-                                    </p>
-                                  </div>
-                                  <div className="text-right">
-                                    <p className="text-[10px] font-medium uppercase tracking-[0.18em] text-gray-400">
-                                      Role
-                                    </p>
-                                    <p className="text-sm font-medium text-gray-900">
-                                      {selectedInvite.role}
-                                    </p>
-                                  </div>
-                                </div>
-                                <p className="mt-2 text-[11px] text-gray-500">
-                                  Expires{' '}
-                                  {new Date(selectedInvite.expires_at).toLocaleDateString([], {
-                                    month: 'short',
-                                    day: 'numeric',
-                                  })}
-                                </p>
-                              </div>
-
-                              {selectedInvite.status === 'pending' ? (
-                                <div className="rounded-xl border border-gray-200 bg-white p-3">
-                                  <p className="text-[10px] font-medium uppercase tracking-[0.18em] text-gray-400">
-                                    Invite link
-                                  </p>
-                                  <p className="mt-2 break-all rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-700">
-                                    {getInviteUrl(selectedInvite) ?? 'No link available'}
-                                  </p>
-                                  <div className="mt-3 flex gap-2">
-                                    <button
-                                      type="button"
-                                      onClick={() => void handleCopySelectedInviteLink()}
-                                      disabled={!getInviteUrl(selectedInvite)}
-                                      className="inline-flex h-9 flex-1 items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-50 disabled:opacity-50"
-                                    >
-                                      <Copy size={14} />
-                                      Copy link
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => void handleRevokeInvitation(selectedInvite.id)}
-                                      disabled={invitationActionId === selectedInvite.id}
-                                      className="inline-flex h-9 flex-1 items-center justify-center rounded-xl border border-red-200 bg-red-50 px-3 text-xs font-medium text-red-700 transition hover:bg-red-100 disabled:opacity-50"
-                                    >
-                                      {invitationActionId === selectedInvite.id
-                                        ? 'Revoking...'
-                                        : 'Revoke'}
-                                    </button>
-                                  </div>
-                                </div>
-                              ) : (
-                                <div className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-600">
-                                  This invite is no longer pending.
-                                </div>
-                              )}
-                            </div>
+                    <div className="mt-4 space-y-3">
+                      <div className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2">
+                        <div className="flex items-center justify-between gap-2">
+                          <div>
+                            <p className="text-[10px] font-medium uppercase tracking-[0.18em] text-gray-400">
+                              Status
+                            </p>
+                            <p className="text-sm font-medium text-gray-900">
+                              {selectedInvite?.status}
+                            </p>
                           </div>
-                        </div>,
-                        document.body
-                      )
-                    : null}
+                          <div className="text-right">
+                            <p className="text-[10px] font-medium uppercase tracking-[0.18em] text-gray-400">
+                              Role
+                            </p>
+                            <p className="text-sm font-medium text-gray-900">
+                              {selectedInvite?.role}
+                            </p>
+                          </div>
+                        </div>
+                        <p className="mt-2 text-[11px] text-gray-500">
+                          Expires{' '}
+                          {selectedInvite && new Date(selectedInvite.expires_at).toLocaleDateString([], {
+                            month: 'short',
+                            day: 'numeric',
+                          })}
+                        </p>
+                      </div>
+
+                      {selectedInvite?.status === 'pending' ? (
+                        <div className="rounded-xl border border-gray-200 bg-white p-3">
+                          <p className="text-[10px] font-medium uppercase tracking-[0.18em] text-gray-400">
+                            Invite link
+                          </p>
+                          <p className="mt-2 break-all rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-700">
+                            {getInviteUrl(selectedInvite) ?? 'No link available'}
+                          </p>
+                          <div className="mt-3 flex gap-2">
+                            <button
+                              type="button"
+                              onClick={() => void handleCopySelectedInviteLink()}
+                              disabled={!getInviteUrl(selectedInvite)}
+                              className="inline-flex h-9 flex-1 items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-50 disabled:opacity-50"
+                            >
+                              <Copy size={14} />
+                              Copy link
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void handleRevokeInvitation(selectedInvite.id)}
+                              disabled={invitationActionId === selectedInvite.id}
+                              className="inline-flex h-9 flex-1 items-center justify-center rounded-xl border border-red-200 bg-red-50 px-3 text-xs font-medium text-red-700 transition hover:bg-red-100 disabled:opacity-50"
+                            >
+                              {invitationActionId === selectedInvite.id
+                                ? 'Revoking...'
+                                : 'Revoke'}
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-600">
+                          This invite is no longer pending.
+                        </div>
+                      )}
+                    </div>
+                  </ModalOverlay>
 
                   <div className="mt-5 grid gap-4 md:grid-cols-2">
                     <div>
@@ -1932,208 +1978,184 @@ export const SettingsWindow = () => {
               )}
             </div>
 
-            {isWorkspaceManageModalOpen &&
-              activeWorkspace &&
-              createPortal(
-                <div
-                  className="fixed inset-0 z-180 flex items-center justify-center bg-gray-900/20 p-4"
-                  onMouseDown={closeWorkspaceManageModal}
-                >
-                  <div
-                    role="dialog"
-                    aria-modal="true"
-                    aria-labelledby="workspace-manage-title"
-                    className="w-full max-w-155 rounded-2xl border border-gray-200 bg-white shadow-[0_24px_70px_rgba(15,23,42,0.12)]"
-                    onMouseDown={(event) => event.stopPropagation()}
+            <ModalOverlay
+              isOpen={isWorkspaceManageModalOpen && !!activeWorkspace}
+              onClose={closeWorkspaceManageModal}
+              classNameContainer="w-full max-w-155 rounded-2xl border border-gray-200 bg-white shadow-[0_24px_70px_rgba(15,23,42,0.12)]"
+            >
+              <div className="flex items-start justify-between gap-4 px-5 pt-5">
+                <div>
+                  <p className="text-[10px] font-medium uppercase tracking-[0.18em] text-gray-400">
+                    Workspace settings
+                  </p>
+                  <h3
+                    id="workspace-manage-title"
+                    className="mt-1 text-lg font-semibold text-gray-900"
                   >
-                    <div className="flex items-start justify-between gap-4 px-5 pt-5">
-                      <div>
-                        <p className="text-[10px] font-medium uppercase tracking-[0.18em] text-gray-400">
-                          Workspace settings
-                        </p>
-                        <h3
-                          id="workspace-manage-title"
-                          className="mt-1 text-lg font-semibold text-gray-900"
-                        >
-                          {activeWorkspace.name}
-                        </h3>
-                        <p className="mt-0.5 text-xs text-gray-500">{activeWorkspaceKindLabel}</p>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={closeWorkspaceManageModal}
-                        className="rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xs font-medium text-gray-600 transition hover:bg-gray-50"
-                      >
-                        Close
-                      </button>
-                    </div>
+                    {activeWorkspace?.name}
+                  </h3>
+                  <p className="mt-0.5 text-xs text-gray-500">{activeWorkspaceKindLabel}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={closeWorkspaceManageModal}
+                  className="rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xs font-medium text-gray-600 transition hover:bg-gray-50"
+                >
+                  Close
+                </button>
+              </div>
 
-                    <div className="mt-4 border-t border-gray-100 px-5 pt-4">
-                      <label
-                        htmlFor="workspace-edit-name"
-                        className="mb-2 block text-xs font-medium text-gray-500"
-                      >
-                        Name
-                      </label>
-                      <input
-                        id="workspace-edit-name"
-                        value={workspaceEditName}
-                        onChange={(e) => setWorkspaceEditName(e.target.value)}
-                        disabled={!canManageWorkspace || isSavingWorkspace}
-                        className="h-9 w-full rounded-xl border border-gray-200 bg-gray-50/80 px-3 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 focus:border-gray-300 focus:bg-white focus:ring-4 focus:ring-gray-100 disabled:opacity-60"
-                        aria-label="Edit workspace name"
-                      />
-                    </div>
+              <div className="mt-4 border-t border-gray-100 px-5 pt-4">
+                <label
+                  htmlFor="workspace-edit-name"
+                  className="mb-2 block text-xs font-medium text-gray-500"
+                >
+                  Name
+                </label>
+                <input
+                  id="workspace-edit-name"
+                  value={workspaceEditName}
+                  onChange={(e) => setWorkspaceEditName(e.target.value)}
+                  disabled={!canManageWorkspace || isSavingWorkspace}
+                  className="h-9 w-full rounded-xl border border-gray-200 bg-gray-50/80 px-3 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 focus:border-gray-300 focus:bg-white focus:ring-4 focus:ring-gray-100 disabled:opacity-60"
+                  aria-label="Edit workspace name"
+                />
+              </div>
 
-                    <div className="mt-3 px-5">
-                      <label
-                        htmlFor="workspace-edit-description"
-                        className="mb-2 block text-xs font-medium text-gray-500"
-                      >
-                        Description
-                      </label>
-                      <textarea
-                        id="workspace-edit-description"
-                        value={workspaceEditDescription}
-                        onChange={(e) => setWorkspaceEditDescription(e.target.value)}
-                        disabled={!canManageWorkspace || isSavingWorkspace}
-                        className="min-h-20 w-full resize-none rounded-xl border border-gray-200 bg-gray-50/80 px-3 py-2 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 focus:border-gray-300 focus:bg-white focus:ring-4 focus:ring-gray-100 disabled:opacity-60"
-                        aria-label="Edit workspace description"
-                      />
-                    </div>
+              <div className="mt-3 px-5">
+                <label
+                  htmlFor="workspace-edit-description"
+                  className="mb-2 block text-xs font-medium text-gray-500"
+                >
+                  Description
+                </label>
+                <textarea
+                  id="workspace-edit-description"
+                  value={workspaceEditDescription}
+                  onChange={(e) => setWorkspaceEditDescription(e.target.value)}
+                  disabled={!canManageWorkspace || isSavingWorkspace}
+                  className="min-h-20 w-full resize-none rounded-xl border border-gray-200 bg-gray-50/80 px-3 py-2 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 focus:border-gray-300 focus:bg-white focus:ring-4 focus:ring-gray-100 disabled:opacity-60"
+                  aria-label="Edit workspace description"
+                />
+              </div>
 
-                    <div className="mt-4 border-t border-gray-100 px-5 pt-4">
-                      <div className="flex items-center justify-between gap-3">
-                        <div>
-                          <p className="text-xs font-medium uppercase tracking-wider text-gray-500">
-                            Danger zone
-                          </p>
-                          <p className="mt-1 text-xs text-gray-600">
-                            Delete this workspace and all data inside it.
-                          </p>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={openWorkspaceDeleteModal}
-                          disabled={workspaceUserRole !== 'owner' || isDeletingWorkspace}
-                          className="h-8 rounded-lg border border-red-200 bg-white px-3 text-xs font-medium text-red-700 transition hover:bg-red-50 disabled:opacity-50"
-                        >
-                          Delete workspace
-                        </button>
-                      </div>
-                    </div>
-
-                    {(workspaceEditError || workspaceEditStatus) && (
-                      <p className="px-5 pt-3 text-xs text-gray-700" role="status">
-                        {workspaceEditError || workspaceEditStatus}
-                      </p>
-                    )}
-
-                    <div className="mt-5 flex items-center justify-end gap-2 border-t border-gray-100 px-5 py-4">
-                      <button
-                        type="button"
-                        onClick={closeWorkspaceManageModal}
-                        className="h-8 rounded-lg border border-gray-200 bg-white px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-50"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => void handleSaveWorkspaceChanges()}
-                        disabled={!canManageWorkspace || isSavingWorkspace}
-                        className="h-8 rounded-lg bg-[#FF5F40] px-3 text-xs font-medium text-white transition hover:bg-[#ea5336] disabled:opacity-60"
-                      >
-                        {isSavingWorkspace ? 'Saving...' : 'Save changes'}
-                      </button>
-                    </div>
+              <div className="mt-4 border-t border-gray-100 px-5 pt-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-medium uppercase tracking-wider text-gray-500">
+                      Danger zone
+                    </p>
+                    <p className="mt-1 text-xs text-gray-600">
+                      Delete this workspace and all data inside it.
+                    </p>
                   </div>
-                </div>,
-                document.body
+                  <button
+                    type="button"
+                    onClick={openWorkspaceDeleteModal}
+                    disabled={workspaceUserRole !== 'owner' || isDeletingWorkspace}
+                    className="h-8 rounded-lg border border-red-200 bg-white px-3 text-xs font-medium text-red-700 transition hover:bg-red-50 disabled:opacity-50"
+                  >
+                    Delete workspace
+                  </button>
+                </div>
+              </div>
+
+              {(workspaceEditError || workspaceEditStatus) && (
+                <p className="px-5 pt-3 text-xs text-gray-700" role="status">
+                  {workspaceEditError || workspaceEditStatus}
+                </p>
               )}
 
-            {isWorkspaceDeleteModalOpen &&
-              activeWorkspace &&
-              createPortal(
-                <div
-                  className="fixed inset-0 z-190 flex items-center justify-center bg-gray-900/20 p-4"
-                  onMouseDown={closeWorkspaceDeleteModal}
+              <div className="mt-5 flex items-center justify-end gap-2 border-t border-gray-100 px-5 py-4">
+                <button
+                  type="button"
+                  onClick={closeWorkspaceManageModal}
+                  className="h-8 rounded-lg border border-gray-200 bg-white px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-50"
                 >
-                  <div
-                    role="dialog"
-                    aria-modal="true"
-                    aria-labelledby="workspace-delete-title"
-                    className="w-full max-w-130 rounded-2xl border border-gray-200 bg-white shadow-[0_24px_70px_rgba(15,23,42,0.12)]"
-                    onMouseDown={(event) => event.stopPropagation()}
-                  >
-                    <div className="px-5 pt-5">
-                      <p className="text-[10px] font-medium uppercase tracking-[0.18em] text-gray-400">
-                        Danger zone
-                      </p>
-                      <h3
-                        id="workspace-delete-title"
-                        className="mt-1 text-lg font-semibold text-gray-900"
-                      >
-                        Delete workspace
-                      </h3>
-                      <p className="mt-1 text-sm text-gray-600">
-                        Type{' '}
-                        <span className="font-medium text-gray-900">{activeWorkspace.name}</span> to
-                        confirm deletion.
-                      </p>
-                    </div>
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleSaveWorkspaceChanges()}
+                  disabled={!canManageWorkspace || isSavingWorkspace}
+                  className="h-8 rounded-lg bg-[#FF5F40] px-3 text-xs font-medium text-white transition hover:bg-[#ea5336] disabled:opacity-60"
+                >
+                  {isSavingWorkspace ? 'Saving...' : 'Save changes'}
+                </button>
+              </div>
+            </ModalOverlay>
 
-                    <div className="mt-4 border-t border-gray-100 px-5 pt-4">
-                      <label
-                        htmlFor="workspace-delete-confirm"
-                        className="mb-2 block text-xs font-medium text-gray-500"
-                      >
-                        Workspace name
-                      </label>
-                      <input
-                        id="workspace-delete-confirm"
-                        value={workspaceDeleteConfirm}
-                        onChange={(e) => setWorkspaceDeleteConfirm(e.target.value)}
-                        disabled={workspaceUserRole !== 'owner' || isDeletingWorkspace}
-                        placeholder={activeWorkspace.name}
-                        className="h-9 w-full rounded-xl border border-gray-200 bg-gray-50/80 px-3 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 focus:border-gray-300 focus:bg-white focus:ring-4 focus:ring-gray-100 disabled:opacity-60"
-                        aria-label="Confirm workspace deletion"
-                      />
-                      <p className="mt-2 text-xs text-gray-500">
-                        This removes the workspace and all data inside it.
-                      </p>
-                    </div>
+            <ModalOverlay
+              isOpen={isWorkspaceDeleteModalOpen && !!activeWorkspace}
+              onClose={closeWorkspaceDeleteModal}
+              classNameContainer="w-full max-w-130 rounded-2xl border border-gray-200 bg-white shadow-[0_24px_70px_rgba(15,23,42,0.12)]"
+            >
+              <div className="px-5 pt-5">
+                <p className="text-[10px] font-medium uppercase tracking-[0.18em] text-gray-400">
+                  Danger zone
+                </p>
+                <h3
+                  id="workspace-delete-title"
+                  className="mt-1 text-lg font-semibold text-gray-900"
+                >
+                  Delete workspace
+                </h3>
+                <p className="mt-1 text-sm text-gray-600">
+                  Type{' '}
+                  <span className="font-medium text-gray-900">{activeWorkspace?.name}</span> to
+                  confirm deletion.
+                </p>
+              </div>
 
-                    {workspaceDeleteError && (
-                      <p className="px-5 pt-3 text-xs text-red-700" role="alert">
-                        {workspaceDeleteError}
-                      </p>
-                    )}
+              <div className="mt-4 border-t border-gray-100 px-5 pt-4">
+                <label
+                  htmlFor="workspace-delete-confirm"
+                  className="mb-2 block text-xs font-medium text-gray-500"
+                >
+                  Workspace name
+                </label>
+                <input
+                  id="workspace-delete-confirm"
+                  value={workspaceDeleteConfirm}
+                  onChange={(e) => setWorkspaceDeleteConfirm(e.target.value)}
+                  disabled={workspaceUserRole !== 'owner' || isDeletingWorkspace}
+                  placeholder={activeWorkspace?.name}
+                  className="h-9 w-full rounded-xl border border-gray-200 bg-gray-50/80 px-3 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 focus:border-gray-300 focus:bg-white focus:ring-4 focus:ring-gray-100 disabled:opacity-60"
+                  aria-label="Confirm workspace deletion"
+                />
+                <p className="mt-2 text-xs text-gray-500">
+                  This removes the workspace and all data inside it.
+                </p>
+              </div>
 
-                    <div className="mt-5 flex items-center justify-end gap-2 border-t border-gray-100 px-5 py-4">
-                      <button
-                        type="button"
-                        onClick={closeWorkspaceDeleteModal}
-                        className="h-8 rounded-lg border border-gray-200 bg-white px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-50"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => void submitWorkspaceDeleteConfirmation()}
-                        disabled={
-                          workspaceUserRole !== 'owner' ||
-                          isDeletingWorkspace ||
-                          workspaceDeleteConfirm.trim() !== activeWorkspace.name.trim()
-                        }
-                        className="h-8 rounded-lg border border-red-200 bg-white px-3 text-xs font-medium text-red-700 transition hover:bg-red-50 disabled:opacity-50"
-                      >
-                        {isDeletingWorkspace ? 'Deleting...' : 'Delete workspace'}
-                      </button>
-                    </div>
-                  </div>
-                </div>,
-                document.body
+              {workspaceDeleteError && (
+                <p className="px-5 pt-3 text-xs text-red-700" role="alert">
+                  {workspaceDeleteError}
+                </p>
               )}
+
+              <div className="mt-5 flex items-center justify-end gap-2 border-t border-gray-100 px-5 py-4">
+                <button
+                  type="button"
+                  onClick={closeWorkspaceDeleteModal}
+                  className="h-8 rounded-lg border border-gray-200 bg-white px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void submitWorkspaceDeleteConfirmation()}
+                  disabled={
+                    workspaceUserRole !== 'owner' ||
+                    isDeletingWorkspace ||
+                    workspaceDeleteConfirm.trim() !== activeWorkspace?.name?.trim()
+                  }
+                  className="h-8 rounded-lg border border-red-200 bg-white px-3 text-xs font-medium text-red-700 transition hover:bg-red-50 disabled:opacity-50"
+                >
+                  {isDeletingWorkspace ? 'Deleting...' : 'Delete workspace'}
+                </button>
+              </div>
+            </ModalOverlay>
           </main>
         </div>
       </div>

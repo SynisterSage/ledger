@@ -17,7 +17,7 @@ import {
   EyeOff,
 } from 'lucide-react';
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
+import { ModalOverlay } from '../Common/ModalOverlay';
 import * as rruleModule from 'rrule';
 import { useAuthContext } from '../../context/AuthContext';
 import {
@@ -4090,135 +4090,119 @@ export const CalendarWindow = () => {
           document.body
         )}
 
-      {isLinkProjectModalOpen &&
-        createPortal(
-          <div
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/25 p-4"
+      <ModalOverlay
+        isOpen={isLinkProjectModalOpen}
+        onClose={() => setIsLinkProjectModalOpen(false)}
+        classNameContainer="w-full max-w-xl rounded-2xl border border-gray-200 bg-white shadow-xl"
+      >
+        <div className="border-b border-gray-100 px-5 py-4">
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500">
+            Link project
+          </p>
+          <p className="mt-1 text-base font-semibold text-gray-900">
+            Attach this event to a project
+          </p>
+        </div>
+        <div className="space-y-3 p-5">
+          <input
+            type="text"
+            value={linkProjectsSearch}
+            onChange={(e) => setLinkProjectsSearch(e.target.value)}
+            placeholder="Search projects"
+            className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-900 outline-none focus:border-gray-300"
+          />
+          <div className="max-h-80 overflow-auto rounded-lg border border-gray-200 bg-white">
+            {isLoadingLinkProjects ? (
+              <p className="p-3 text-sm text-gray-500">Loading projects…</p>
+            ) : linkProjects.filter((p) =>
+                p.name.toLowerCase().includes(linkProjectsSearch.toLowerCase())
+              ).length === 0 ? (
+              <p className="p-3 text-sm text-gray-500">No projects found.</p>
+            ) : (
+              linkProjects
+                .filter((p) => p.name.toLowerCase().includes(linkProjectsSearch.toLowerCase()))
+                .map((project) => (
+                  <button
+                    key={project.id}
+                    type="button"
+                    disabled={isLinkingProject}
+                    onClick={() => void linkEventToProject(project.id)}
+                    className="w-full border-b border-gray-100 px-3 py-2 text-left last:border-b-0 hover:bg-gray-50 disabled:opacity-50"
+                  >
+                    <p className="truncate text-sm font-medium text-gray-900">{project.name}</p>
+                  </button>
+                ))
+            )}
+          </div>
+        </div>
+        <div className="flex items-center justify-end border-t border-gray-100 px-5 py-3">
+          <button
+            type="button"
             onClick={() => setIsLinkProjectModalOpen(false)}
+            className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
           >
-          <div
-            className="w-full max-w-xl rounded-2xl border border-gray-200 bg-white shadow-xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="border-b border-gray-100 px-5 py-4">
-              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500">
-                Link project
-              </p>
-              <p className="mt-1 text-base font-semibold text-gray-900">
-                Attach this event to a project
-              </p>
-            </div>
-            <div className="space-y-3 p-5">
-              <input
-                type="text"
-                value={linkProjectsSearch}
-                onChange={(e) => setLinkProjectsSearch(e.target.value)}
-                placeholder="Search projects"
-                className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-900 outline-none focus:border-gray-300"
-              />
-              <div className="max-h-80 overflow-auto rounded-lg border border-gray-200 bg-white">
-                {isLoadingLinkProjects ? (
-                  <p className="p-3 text-sm text-gray-500">Loading projects…</p>
-                ) : linkProjects.filter((p) =>
-                    p.name.toLowerCase().includes(linkProjectsSearch.toLowerCase())
-                  ).length === 0 ? (
-                  <p className="p-3 text-sm text-gray-500">No projects found.</p>
-                ) : (
-                  linkProjects
-                    .filter((p) => p.name.toLowerCase().includes(linkProjectsSearch.toLowerCase()))
-                    .map((project) => (
-                      <button
-                        key={project.id}
-                        type="button"
-                        disabled={isLinkingProject}
-                        onClick={() => void linkEventToProject(project.id)}
-                        className="w-full border-b border-gray-100 px-3 py-2 text-left last:border-b-0 hover:bg-gray-50 disabled:opacity-50"
-                      >
-                        <p className="truncate text-sm font-medium text-gray-900">{project.name}</p>
-                      </button>
-                    ))
-                )}
-              </div>
-            </div>
-            <div className="flex items-center justify-end border-t border-gray-100 px-5 py-3">
-              <button
-                type="button"
-                onClick={() => setIsLinkProjectModalOpen(false)}
-                className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
-              >
-                Close
-              </button>
-            </div>
-          </div>
-          </div>,
-          document.body
-        )}
+            Close
+          </button>
+        </div>
+      </ModalOverlay>
 
-      {isLinkNoteModalOpen &&
-        createPortal(
-          <div
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/25 p-4"
-            onClick={() => setIsLinkNoteModalOpen(false)}
-          >
-          <div
-            className="w-full max-w-xl rounded-2xl border border-gray-200 bg-white shadow-xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="border-b border-gray-100 px-5 py-4">
-              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500">
-                Link note
-              </p>
-              <p className="mt-1 text-base font-semibold text-gray-900">
-                Attach this event to a note
-              </p>
-            </div>
-            <div className="space-y-3 p-5">
-              <input
-                type="text"
-                value={linkNotesSearch}
-                onChange={(e) => setLinkNotesSearch(e.target.value)}
-                placeholder="Search notes"
-                className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-900 outline-none focus:border-gray-300"
-              />
-              <div className="max-h-80 overflow-auto rounded-lg border border-gray-200 bg-white">
-                {isLoadingLinkNotes ? (
-                  <p className="p-3 text-sm text-gray-500">Loading notes…</p>
-                ) : linkNotes.filter((note) =>
-                    note.title.toLowerCase().includes(linkNotesSearch.toLowerCase())
-                  ).length === 0 ? (
-                  <p className="p-3 text-sm text-gray-500">No notes found.</p>
-                ) : (
-                  linkNotes
-                    .filter((note) =>
-                      note.title.toLowerCase().includes(linkNotesSearch.toLowerCase())
-                    )
-                    .map((note) => (
-                      <button
-                        key={note.id}
-                        type="button"
-                        disabled={isLinkingNote}
-                        onClick={() => void linkEventToNote(note.id)}
-                        className="w-full border-b border-gray-100 px-3 py-2 text-left last:border-b-0 hover:bg-gray-50 disabled:opacity-50"
-                      >
-                        <p className="truncate text-sm font-medium text-gray-900">{note.title}</p>
-                      </button>
-                    ))
-                )}
-              </div>
-            </div>
-            <div className="flex items-center justify-end border-t border-gray-100 px-5 py-3">
-              <button
-                type="button"
-                onClick={() => setIsLinkNoteModalOpen(false)}
-                className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
-              >
-                Close
-              </button>
-            </div>
+      <ModalOverlay
+        isOpen={isLinkNoteModalOpen}
+        onClose={() => setIsLinkNoteModalOpen(false)}
+        classNameContainer="w-full max-w-xl rounded-2xl border border-gray-200 bg-white shadow-xl"
+      >
+        <div className="border-b border-gray-100 px-5 py-4">
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500">
+            Link note
+          </p>
+          <p className="mt-1 text-base font-semibold text-gray-900">
+            Attach this event to a note
+          </p>
+        </div>
+        <div className="space-y-3 p-5">
+          <input
+            type="text"
+            value={linkNotesSearch}
+            onChange={(e) => setLinkNotesSearch(e.target.value)}
+            placeholder="Search notes"
+            className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-900 outline-none focus:border-gray-300"
+          />
+          <div className="max-h-80 overflow-auto rounded-lg border border-gray-200 bg-white">
+            {isLoadingLinkNotes ? (
+              <p className="p-3 text-sm text-gray-500">Loading notes…</p>
+            ) : linkNotes.filter((note) =>
+                note.title.toLowerCase().includes(linkNotesSearch.toLowerCase())
+              ).length === 0 ? (
+              <p className="p-3 text-sm text-gray-500">No notes found.</p>
+            ) : (
+              linkNotes
+                .filter((note) =>
+                  note.title.toLowerCase().includes(linkNotesSearch.toLowerCase())
+                )
+                .map((note) => (
+                  <button
+                    key={note.id}
+                    type="button"
+                    disabled={isLinkingNote}
+                    onClick={() => void linkEventToNote(note.id)}
+                    className="w-full border-b border-gray-100 px-3 py-2 text-left last:border-b-0 hover:bg-gray-50 disabled:opacity-50"
+                  >
+                    <p className="truncate text-sm font-medium text-gray-900">{note.title}</p>
+                  </button>
+                ))
+            )}
           </div>
-          </div>,
-          document.body
-        )}
+        </div>
+        <div className="flex items-center justify-end border-t border-gray-100 px-5 py-3">
+          <button
+            type="button"
+            onClick={() => setIsLinkNoteModalOpen(false)}
+            className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+          >
+            Close
+          </button>
+        </div>
+      </ModalOverlay>
 
       {eventEditorEvent &&
         createPortal(
