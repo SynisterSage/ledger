@@ -104,6 +104,9 @@ export type Database = {
           priority: 'low' | 'medium' | 'high' | 'urgent';
           assigned_to: string | null;
           tags: string[];
+          show_in_today: boolean;
+          is_today_focus: boolean;
+          completed_at: string | null;
           created_at: string;
           updated_at: string;
         };

@@ -8,6 +8,7 @@ import {
   Folder,
   Loader2,
   MoreHorizontal,
+  Plus,
   StickyNote,
   Trash2,
   X,
@@ -58,6 +59,18 @@ const moduleFocusTaskId = windowParams.get('focusTaskId')?.trim() ?? '';
 const dragRegionStyle = { WebkitAppRegion: 'drag' } as CSSProperties & { WebkitAppRegion: 'drag' };
 const noDragRegionStyle = { WebkitAppRegion: 'no-drag' } as CSSProperties & {
   WebkitAppRegion: 'no-drag';
+};
+const OPEN_LEDGER_URL = (
+  import.meta.env.VITE_LEDGER_OPEN_URL?.trim() || window.location.origin
+).replace(/\/$/, '');
+
+const buildOpenLedgerUrl = (workspaceName?: string | null) => {
+  const target = new URL(OPEN_LEDGER_URL, window.location.origin);
+  const name = workspaceName?.trim();
+  if (name) {
+    target.searchParams.set('workspace', name);
+  }
+  return target.toString();
 };
 
 const getInviteTokenFromLocation = () => {
@@ -135,6 +148,44 @@ function AuthStatusScreen({ title, subtitle }: { title: string; subtitle: string
             <Loader2 size={15} className="animate-spin" />
             <span className="text-xs font-medium">Loading</span>
           </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function InviteSuccessScreen({
+  workspaceName,
+  onOpenLedger,
+}: {
+  workspaceName: string;
+  onOpenLedger: () => void;
+}) {
+  return (
+    <div
+      className="relative flex min-h-screen items-center justify-center bg-transparent p-3 text-gray-900"
+      style={dragRegionStyle}
+    >
+      <div className="absolute inset-3 rounded-[28px] border border-white/60 bg-[#f5f5f7] shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]" />
+      <div className="relative z-10 flex min-h-[calc(100vh-1.5rem)] items-center justify-center px-8">
+        <div className="w-full max-w-sm rounded-[28px] border border-gray-200 bg-white px-6 py-7 text-center shadow-[0_18px_50px_rgba(15,23,42,0.08)]">
+          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-[#fff0eb]">
+            <CheckCircle2 size={24} className="text-[#FF5F40]" />
+          </div>
+          <h2 className="mt-5 text-[28px] font-semibold leading-tight text-gray-950">
+            Joined {workspaceName}
+          </h2>
+          <p className="mt-2 text-sm leading-6 text-gray-500">
+            You’re now a member of this workspace.
+          </p>
+          <button
+            type="button"
+            onClick={onOpenLedger}
+            className="mt-6 inline-flex h-11 w-full items-center justify-center gap-2 rounded-2xl bg-[#FF5F40] px-4 text-sm font-semibold text-white shadow-[0_10px_24px_rgba(255,95,64,0.24)] transition-colors hover:bg-[#ea5336]"
+          >
+            Open Ledger
+            <ArrowRight size={16} />
+          </button>
         </div>
       </div>
     </div>
@@ -556,9 +607,6 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
 
   const focusTasks = todayTasks.filter((task) => task.is_today_focus);
   const activeTodayTasks = todayTasks.filter((task) => !task.is_today_focus);
-  const activeProjects = projects.filter((project) =>
-    String(project.status).toLowerCase().includes('progress')
-  ).length;
   const recentNotes = notes;
   const firstName =
     (user?.user_metadata?.full_name as string | undefined)?.trim()?.split(' ')[0] ||
@@ -570,14 +618,12 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
     day: 'numeric',
   });
 
-  const summaryText = `${focusTasks.length} focus priorit${
-    focusTasks.length === 1 ? 'y' : 'ies'
-  } · ${activeTodayTasks.length} active task${activeTodayTasks.length === 1 ? '' : 's'} · ${
-    upcoming.length
-  } upcoming · ${recentNotes.length} recent notes · ${activeProjects} active project${
-    activeProjects === 1 ? '' : 's'
-  }`;
-
+  const summaryItems = [
+    { label: 'focus', value: focusTasks.length, accent: true },
+    { label: 'tasks', value: activeTodayTasks.length },
+    { label: 'upcoming', value: upcoming.length },
+    { label: recentNotes.length === 1 ? 'note' : 'notes', value: recentNotes.length },
+  ];
   const refreshTodayTasks = async () => {
     const data = await api.getToday();
     const active = Array.isArray((data as { active?: unknown[] } | null)?.active)
@@ -673,8 +719,11 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
     }
   };
 
-  const openModule = (kind: 'calendar' | 'notes' | 'projects') => {
-    void window.desktopWindow?.toggleModule(kind);
+  const openModule = (
+    kind: 'calendar' | 'notes' | 'projects',
+    focus?: string | ModuleFocusPayload
+  ) => {
+    void window.desktopWindow?.toggleModule(kind, focus);
   };
 
   const openContextMenu = (
@@ -846,7 +895,7 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
 
   return (
     <div
-      className="flex h-screen flex-col overflow-hidden rounded-[28px] border border-gray-200 bg-[#f6f7f9] shadow-[0_24px_80px_rgba(15,23,42,0.08)]"
+      className="flex h-screen flex-col overflow-hidden rounded-[28px] border border-gray-200 bg-white shadow-none"
       style={{ scrollbarGutter: 'stable' }}
     >
       <CloseGuardModal
@@ -892,56 +941,79 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
           void window.desktopWindow?.toggleModuleFullscreen('dashboard');
         }}
         onClose={attemptCloseDashboard}
-        actions={
-          <>
-            <button
-              onClick={() => window.desktopWindow?.toggleModule('calendar')}
-              className="px-3 py-2 bg-white hover:bg-gray-50 text-gray-800 border border-gray-200 rounded-lg flex items-center gap-2 transition-colors text-sm font-medium"
-            >
-              <CalendarDays size={15} />
-              Calendar
-            </button>
-            <button
-              onClick={() => window.desktopWindow?.toggleModule('projects')}
-              className="px-3 py-2 bg-white hover:bg-gray-50 text-gray-800 border border-gray-200 rounded-lg flex items-center gap-2 transition-colors text-sm font-medium"
-            >
-              <Folder size={15} />
-              Projects
-            </button>
-            <button
-              onClick={() => window.desktopWindow?.toggleModule('notes')}
-              className="px-3 py-2 bg-white hover:bg-gray-50 text-gray-800 border border-gray-200 rounded-lg flex items-center gap-2 transition-colors text-sm font-medium"
-            >
-              <StickyNote size={15} />
-              Notes
-            </button>
-          </>
-        }
       />
 
-      <div className="flex-1 min-h-0 overflow-auto p-8" style={{ scrollbarGutter: 'stable' }}>
-        <div className="mx-auto max-w-7xl space-y-5">
-          <div>
-            <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-500">
-                Today
-              </p>
-              <h2 className="mt-2 text-2xl font-semibold tracking-tight text-gray-950">
+      <div
+        className="flex-1 min-h-0 overflow-auto bg-white px-6 py-8"
+        style={{ scrollbarGutter: 'stable' }}
+      >
+        <div className="mx-auto max-w-6xl space-y-10">
+          <header className="max-w-3xl space-y-8">
+            <div className="space-y-1.5">
+              <h2 className="text-[34px] font-normal leading-tight tracking-tight text-[#111827]">
                 Good to see you, {firstName}
               </h2>
-              <p className="mt-1 max-w-2xl text-sm leading-6 text-gray-600">
+              <p className="text-lg font-light text-[#64748B]">
                 What needs your attention today?
               </p>
-              <p className="mt-1 text-sm text-gray-500">{todayLabel}</p>
             </div>
-          </div>
 
-          {!isLoadingDashboard && (
-            <div className="rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-700 shadow-sm">
-              <span className="font-medium text-gray-900">Today</span>
-              <span className="ml-2 text-gray-600">{summaryText}</span>
+            <div className="flex items-end justify-between gap-6 border-b border-gray-200 pb-8">
+              <div className="space-y-2">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[#64748B]">
+                  {todayLabel}
+                </p>
+                {!isLoadingDashboard && (
+                  <div className="flex flex-wrap items-center gap-4 text-[11px] text-[#64748B]">
+                    {summaryItems.map((item) => (
+                      <span key={item.label} className="flex items-center gap-1.5">
+                        <span
+                          className={item.accent ? 'font-semibold text-[#FF5F40]' : 'font-medium'}
+                        >
+                          {item.value}
+                        </span>
+                        {item.label}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div className="flex flex-wrap justify-end gap-6">
+                {[
+                  {
+                    label: 'Task',
+                    action: () => window.desktopWindow?.toggleModule('quick-task' as any),
+                  },
+                  {
+                    label: 'Note',
+                    action: () => window.desktopWindow?.toggleModule('quick-note' as any),
+                  },
+                  {
+                    label: 'Event',
+                    action: () => window.desktopWindow?.toggleModule('quick-event' as any),
+                  },
+                  {
+                    label: 'Project',
+                    action: () =>
+                      window.desktopWindow?.toggleModule('projects', {
+                        kind: 'projects',
+                        focusProjectId: '__new__',
+                      }),
+                  },
+                ].map(({ label, action }) => (
+                  <button
+                    key={label}
+                    type="button"
+                    onClick={() => void action()}
+                    className="inline-flex items-center gap-1.5 text-xs font-medium text-[#64748B] transition hover:text-[#FF5F40]"
+                  >
+                    <Plus size={14} />
+                    {label}
+                  </button>
+                ))}
+              </div>
             </div>
-          )}
+          </header>
 
           {dashboardError && (
             <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
@@ -949,86 +1021,65 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
             </div>
           )}
 
-          <div className="grid gap-6 xl:grid-cols-[2fr_1fr]">
-            <div className="space-y-6">
-              <section
-                ref={todayTasksRef}
-                className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm"
-              >
-                <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-500">
-                      Focus
-                    </p>
-                    <h3 className="mt-1 text-lg font-semibold text-gray-950">Focus</h3>
-                    <p className="mt-1 text-sm text-gray-500">
-                      Choose up to three priorities that matter today.
-                    </p>
+          <div className="grid gap-16 xl:grid-cols-[minmax(0,1fr)_320px]">
+            <main className="space-y-14">
+              <section ref={todayTasksRef} className="space-y-6">
+                <div className="flex items-baseline justify-between gap-6">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[#64748B]">
+                    Focus
+                  </p>
+                  <div className="flex gap-4">
+                    <button
+                      type="button"
+                      onClick={() => setIsFocusPickerOpen(true)}
+                      disabled={focusTasks.length >= 3 || activeTodayTasks.length === 0}
+                      className="text-[11px] font-medium text-[#FF5F40] transition hover:underline disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      + Add from Today
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setIsNewFocusModalOpen(true)}
+                      disabled={focusTasks.length >= 3}
+                      className="text-[11px] font-medium text-[#FF5F40] transition hover:underline disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      + New focus
+                    </button>
                   </div>
-                  <span className="rounded-full border border-gray-200 bg-gray-50 px-3 py-1.5 text-xs font-medium text-gray-600">
-                    {focusTasks.length}/3
-                  </span>
                 </div>
 
                 {isLoadingDashboard ? (
-                  <div className="mt-5 space-y-3">
+                  <div className="space-y-3 border-y border-gray-200 py-10">
                     {Array.from({ length: 3 }).map((_, i) => (
                       <SkeletonTaskItem key={i} />
                     ))}
                   </div>
                 ) : (
                   <>
-                    <div className="mt-5 flex flex-wrap gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setIsFocusPickerOpen(true)}
-                        disabled={focusTasks.length >= 3 || activeTodayTasks.length === 0}
-                        className="inline-flex items-center gap-2 rounded-full border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        + Add from Today
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setIsNewFocusModalOpen(true)}
-                        disabled={focusTasks.length >= 3}
-                        className="inline-flex items-center gap-2 rounded-full border border-gray-200 bg-gray-900 px-3 py-2 text-sm font-medium text-white transition hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        + New focus
-                      </button>
-                    </div>
-
-                    <div className="mt-5 space-y-3">
+                    <div className="border-y border-gray-200 py-10">
                       {focusTasks.length === 0 ? (
-                        <div className="rounded-2xl border border-dashed border-gray-200 bg-gray-50 px-4 py-4">
-                          <p className="text-sm font-medium text-gray-800">No focus set yet.</p>
-                          <p className="mt-1 text-sm text-gray-500">
-                            Choose from Today or create a new focus item.
-                          </p>
-                        </div>
+                        <p className="text-sm font-light italic text-[#64748B]">No focus set yet.</p>
                       ) : (
-                        focusTasks.map((task, index) => (
-                          <div
-                            key={task.id}
-                            className="rounded-2xl border border-gray-200 bg-gray-50 px-4 py-4"
-                          >
-                            <div className="flex items-start gap-3">
-                              <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-gray-200 bg-white text-xs font-semibold text-gray-700">
+                        <div className="space-y-4">
+                          {focusTasks.map((task, index) => (
+                            <div key={task.id} className="group flex items-start gap-4">
+                              <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-gray-200 text-[11px] font-medium text-[#64748B]">
                                 {index + 1}
                               </div>
-                              <div className="min-w-0 flex-1 space-y-1">
-                                <p className="text-sm font-medium text-gray-950">{task.title}</p>
-                                <p className="text-xs text-gray-500">
+                              <div className="min-w-0 flex-1">
+                                <p className="text-sm font-medium text-[#111827]">{task.title}</p>
+                                <p className="mt-1 text-xs text-[#64748B]">
                                   {task.project_name || task.workspace_name || 'Workspace task'}
                                   {task.due_date ? ` · Due ${task.due_date}` : ''}
                                   {task.due_time ? ` · ${task.due_time}` : ''}
                                 </p>
                               </div>
-                              <div className="flex items-center gap-1.5">
+                              <div className="flex items-center gap-2 opacity-100 transition sm:opacity-0 sm:group-hover:opacity-100">
                                 <button
                                   type="button"
                                   onClick={() => void toggleFocusDone(task.id)}
                                   disabled={focusActionId === task.id}
-                                  className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-600 transition hover:bg-gray-50 disabled:opacity-50"
+                                  className="text-[#64748B] transition hover:text-[#111827] disabled:opacity-50"
                                   title="Mark complete"
                                 >
                                   <CheckCircle2 size={14} />
@@ -1037,86 +1088,43 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
                                   type="button"
                                   onClick={() => void removeTaskFromFocus(task.id)}
                                   disabled={focusActionId === task.id}
-                                  className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-500 transition hover:bg-gray-50 hover:text-red-600 disabled:opacity-50"
+                                  className="text-[#64748B] transition hover:text-[#111827] disabled:opacity-50"
                                   title="Remove from focus"
                                 >
-                                  <Trash2 size={13} />
+                                  <Trash2 size={14} />
                                 </button>
                               </div>
                             </div>
-                          </div>
-                        ))
+                          ))}
+                        </div>
                       )}
                     </div>
                   </>
                 )}
               </section>
 
-              <section
-                className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm"
-                onContextMenu={(event) => openContextMenu(event, { type: 'checkin' })}
-              >
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-500">
-                  Capture
-                </p>
-                <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">
-                  {[
-                    {
-                      label: 'Task',
-                      icon: CheckCircle2,
-                      action: () => window.desktopWindow?.toggleModule('quick-task' as any),
-                    },
-                    {
-                      label: 'Note',
-                      icon: StickyNote,
-                      action: () => window.desktopWindow?.toggleModule('quick-note' as any),
-                    },
-                    {
-                      label: 'Event',
-                      icon: CalendarDays,
-                      action: () => window.desktopWindow?.toggleModule('quick-event' as any),
-                    },
-                    {
-                      label: 'Project',
-                      icon: Folder,
-                      action: () =>
-                        window.desktopWindow?.toggleModule('projects', {
-                          kind: 'projects',
-                          focusProjectId: '__new__',
-                        }),
-                    },
-                  ].map(({ label, icon: Icon, action }) => (
-                    <button
-                      key={label}
-                      onClick={() => void action()}
-                      className="flex h-20 items-center justify-center gap-2 rounded-xl border border-gray-200 bg-gray-50 text-sm font-medium text-gray-800 transition hover:border-gray-300 hover:bg-white"
-                    >
-                      <Icon size={16} className="text-gray-500" />
-                      {label}
-                    </button>
-                  ))}
-                </div>
-              </section>
-
-              <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+              <div className="grid gap-16 md:grid-cols-2">
+                <section
+                  className="space-y-6"
+                  onContextMenu={(event) => openContextMenu(event, { type: 'checkin' })}
+                >
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-500">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#64748B]">
                       Review
                     </p>
-                    <h3 className="mt-1 text-lg font-semibold text-gray-950">Daily check-in</h3>
                   </div>
                   <button
                     onClick={() => {
                       void window.desktopWindow?.openCheckin();
                       setState('expanded');
                     }}
-                    className="rounded-full border border-gray-200 bg-gray-50 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-100"
+                    className="rounded-full border border-gray-200 bg-white px-3 py-2 text-xs font-medium text-[#111827] hover:bg-gray-50"
                   >
                     Open check-in
                   </button>
                 </div>
-                <div className="mt-4 divide-y divide-gray-100 rounded-xl border border-gray-200 bg-gray-50">
+                <div className="space-y-8">
                   {[
                     { label: 'Finished', value: daily.finished || 'Nothing yet' },
                     { label: 'Blocked', value: daily.blocked || 'No blockers' },
@@ -1125,45 +1133,34 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
                       value: daily.firstTaskTomorrow || 'Not set yet',
                     },
                   ].map((item) => (
-                    <div
-                      key={item.label}
-                      className="flex items-start justify-between gap-4 px-4 py-3"
-                    >
-                      <p className="shrink-0 text-sm text-gray-500">{item.label}</p>
-                      <p className="text-right text-sm font-medium leading-6 text-gray-900">
-                        {item.value}
-                      </p>
+                    <div key={item.label} className="space-y-2">
+                      <p className="text-[11px] font-semibold text-[#64748B]">{item.label}</p>
+                      <p className="text-sm font-light leading-6 text-[#64748B]">{item.value}</p>
                     </div>
                   ))}
                 </div>
               </section>
 
-              <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+              <section className="space-y-6">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-500">
-                      Recent
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#64748B]">
+                      Recent Notes
                     </p>
-                    <h3 className="mt-1 text-lg font-semibold text-gray-950">Notes</h3>
                   </div>
                   <button
                     onClick={() => openModule('notes')}
-                    className="rounded-full border border-gray-200 bg-gray-50 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-100"
+                    className="rounded-full border border-gray-200 bg-white px-3 py-2 text-xs font-medium text-[#111827] hover:bg-gray-50"
                   >
                     Open notes
                   </button>
                 </div>
 
-                <div className="mt-4 divide-y divide-gray-100">
+                <div className="space-y-1">
                   {isLoadingDashboard ? (
                     Array.from({ length: 2 }).map((_, i) => <SkeletonNoteCard key={i} />)
                   ) : recentNotes.length === 0 ? (
-                    <div className="rounded-2xl border border-dashed border-gray-200 bg-gray-50 p-5">
-                      <p className="text-sm font-medium text-gray-800">No notes yet.</p>
-                      <p className="mt-1 text-sm text-gray-500">
-                        Capture a thought, meeting note, or plan from the sidebar.
-                      </p>
-                    </div>
+                    <p className="text-sm font-light italic text-[#64748B]">No notes yet.</p>
                   ) : (
                     recentNotes.map((note) => (
                       <button
@@ -1171,254 +1168,232 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
                         onContextMenu={(event) =>
                           openContextMenu(event, { type: 'note', noteId: note.id })
                         }
-                        onClick={() => openModule('notes')}
-                        className="w-full rounded-lg px-2 py-3 text-left transition hover:bg-gray-50"
+                        onClick={() => openModule('notes', { kind: 'notes', focusNoteId: note.id })}
+                        className="group flex w-full flex-col gap-1.5 border-b border-gray-200 pb-5 pt-3 text-left first:pt-0"
                       >
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <p className="text-sm font-medium text-gray-900 truncate">
-                              {note.title}
-                            </p>
-                            <p className="mt-1 line-clamp-2 text-sm text-gray-600">
-                              {htmlToPlainText(note.content) || 'No content yet'}
-                            </p>
-                            {expandedNoteIds.has(note.id) && (
-                              <p className="mt-2 text-sm text-gray-700 whitespace-pre-wrap wrap-break-word">
-                                {htmlToPlainText(note.content) || 'No content yet'}
-                              </p>
-                            )}
-                          </div>
-                          <p className="shrink-0 text-[11px] text-gray-500">
+                        <div className="flex items-baseline justify-between gap-4">
+                          <span className="truncate text-sm font-medium text-[#111827] group-hover:text-[#FF5F40]">
+                            {note.title}
+                          </span>
+                          <span className="shrink-0 text-[10px] uppercase tracking-[0.14em] text-[#94A3B8]">
                             {new Date(note.updated_at).toLocaleDateString([], {
                               month: 'short',
                               day: 'numeric',
                             })}
-                          </p>
+                          </span>
                         </div>
+                        <p className="line-clamp-1 text-xs font-light text-[#94A3B8]">
+                          {htmlToPlainText(note.content) || 'No content yet'}
+                        </p>
+                        {expandedNoteIds.has(note.id) && (
+                          <p className="text-sm text-[#4B5563] whitespace-pre-wrap wrap-break-word">
+                            {htmlToPlainText(note.content) || 'No content yet'}
+                          </p>
+                        )}
                       </button>
                     ))
                   )}
                 </div>
               </section>
-            </div>
+              </div>
+            </main>
 
-            <div className="space-y-6">
-              <section
-                ref={followUpsRef}
-                className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm"
-              >
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-500">
+            <aside className="xl:sticky xl:top-0 xl:self-start xl:pl-12 border-l border-gray-200">
+              <section ref={followUpsRef} className="space-y-6">
+                <div className="space-y-10">
+                  <div className="space-y-6">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[#64748B]">
                       Follow-ups
                     </p>
-                    <h3 className="mt-1 text-lg font-semibold text-gray-950">From Calendar</h3>
-                  </div>
-                </div>
-                <div className="mt-4 space-y-2">
-                  {followUpTasks.length === 0 ? (
-                    <div className="rounded-2xl border border-dashed border-gray-200 bg-gray-50 p-5">
-                      <p className="text-sm font-medium text-gray-800">No follow-up tasks yet.</p>
-                      <p className="mt-1 text-sm text-gray-500">
-                        Create one from Calendar event context.
-                      </p>
-                    </div>
-                  ) : (
-                    followUpTasks.map((task) => {
-                      const isFocused = focusedTaskId === task.id;
-                      const statusLabel = task.status === 'done' ? 'Done' : 'Todo';
-                      return (
-                        <button
-                          key={task.id}
-                          onContextMenu={(event) =>
-                            openContextMenu(event, { type: 'followup', taskId: task.id })
-                          }
-                          onClick={() =>
-                            void window.desktopWindow?.toggleModule(
-                              'calendar',
-                              task.eventId
-                                ? {
-                                    kind: 'calendar',
-                                    focusContext: `focus-event:${task.eventId}`,
-                                  }
-                                : {
-                                    kind: 'calendar',
-                                  }
-                            )
-                          }
-                          className={`w-full rounded-xl border px-4 py-3 text-left transition ${
-                            isFocused
-                              ? 'border-orange-200 bg-orange-50 ring-1 ring-orange-200'
-                              : 'border-gray-200 bg-gray-50 hover:bg-white'
-                          }`}
-                        >
-                          <div className="flex items-center justify-between gap-3">
-                            <p className="min-w-0 truncate text-sm font-medium text-gray-900">
-                              {task.title}
-                            </p>
-                            <div className="flex items-center gap-2">
-                              <span className="shrink-0 text-xs text-gray-500">{statusLabel}</span>
+                    <div className="mt-3 space-y-2">
+                      {followUpTasks.length === 0 ? (
+                        <p className="text-sm font-light text-[#64748B]">No follow-ups yet.</p>
+                      ) : (
+                        followUpTasks.map((task) => {
+                          const isFocused = focusedTaskId === task.id;
+                          const statusLabel = task.status === 'done' ? 'Done' : 'Todo';
+                          return (
+                            <div
+                              key={task.id}
+                              onContextMenu={(event) =>
+                                openContextMenu(event, { type: 'followup', taskId: task.id })
+                              }
+                              className={`flex items-start gap-3 px-0 py-3 transition ${
+                                isFocused ? 'bg-gray-50' : 'hover:bg-white'
+                              }`}
+                            >
                               <button
                                 type="button"
-                                onClick={(event) => {
-                                  event.stopPropagation();
-                                  void markFollowUpDone(task.id);
-                                }}
-                                className="rounded px-1.5 py-0.5 text-[11px] text-gray-600 hover:bg-white hover:text-gray-900"
+                                onClick={() =>
+                                  void window.desktopWindow?.toggleModule(
+                                    'calendar',
+                                    task.eventId
+                                      ? {
+                                          kind: 'calendar',
+                                          focusContext: `focus-event:${task.eventId}`,
+                                        }
+                                      : {
+                                          kind: 'calendar',
+                                        }
+                                  )
+                                }
+                                className="min-w-0 flex-1 text-left"
+                              >
+                                <p className="truncate text-sm font-medium text-[#111827]">
+                                  {task.title}
+                                </p>
+                                <p className="mt-1 truncate text-xs text-[#64748B]">
+                                  {task.eventTitle ? `Event: ${task.eventTitle}` : statusLabel}
+                                </p>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => void markFollowUpDone(task.id)}
+                                className="shrink-0 rounded-full px-2 py-1 text-[11px] font-medium text-[#64748B] hover:bg-gray-50 hover:text-[#111827]"
                               >
                                 {task.status === 'done' ? 'Undo' : 'Done'}
                               </button>
                             </div>
-                          </div>
-                          {task.eventTitle && (
-                            <p className="mt-1 truncate text-xs text-gray-500">
-                              Event: {task.eventTitle}
-                            </p>
-                          )}
-                        </button>
-                      );
-                    })
-                  )}
-                </div>
-              </section>
-
-              <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-500">
-                      Upcoming
-                    </p>
-                    <h3 className="mt-1 text-lg font-semibold text-gray-950">Timeline</h3>
-                  </div>
-                  <button
-                    onClick={() => openModule('calendar')}
-                    className="rounded-full border border-gray-200 bg-gray-50 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-100"
-                  >
-                    Open calendar
-                  </button>
-                </div>
-
-                <div className="mt-4 space-y-2">
-                  {isLoadingDashboard ? (
-                    Array.from({ length: 3 }).map((_, i) => <SkeletonNoteCard key={i} />)
-                  ) : upcoming.length === 0 ? (
-                    <div className="rounded-2xl border border-dashed border-gray-200 bg-gray-50 p-5">
-                      <p className="text-sm font-medium text-gray-800">No upcoming events today.</p>
-                      <p className="mt-1 text-sm text-gray-500">
-                        Add events or reminders to build your timeline.
-                      </p>
+                          );
+                        })
+                      )}
                     </div>
-                  ) : (
-                    upcoming.map((item) => {
-                      const start = new Date(item.start_at);
-                      const isExpanded = expandedTimelineIds.has(item.id);
-                      const timeLabel = start.toLocaleTimeString([], {
-                        hour: 'numeric',
-                        minute: '2-digit',
-                      });
-                      const dayLabel =
-                        start.toDateString() === new Date().toDateString()
-                          ? 'Today'
-                          : start.toLocaleDateString([], { month: 'short', day: 'numeric' });
-                      return (
-                        <button
-                          key={item.id}
-                          onContextMenu={(event) =>
-                            openContextMenu(event, { type: 'timeline', eventId: item.id })
-                          }
-                          onClick={() => openModule('calendar')}
-                          className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-left transition hover:bg-white"
-                        >
-                          <div className="flex items-center justify-between gap-3">
-                            <p
-                              className={`${
-                                isExpanded ? '' : 'truncate'
-                              } text-sm font-medium text-gray-900`}
+                  </div>
+
+                  <div className="h-px w-12 bg-gray-200" />
+
+                  <div className="space-y-6">
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[#64748B]">
+                        Upcoming
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => openModule('calendar')}
+                        className="text-xs font-medium text-[#FF5F40] hover:underline"
+                      >
+                        Calendar
+                      </button>
+                    </div>
+                    <div className="mt-3 space-y-2">
+                      {isLoadingDashboard ? (
+                        Array.from({ length: 3 }).map((_, i) => <SkeletonNoteCard key={i} />)
+                      ) : upcoming.length === 0 ? (
+                        <p className="text-sm font-light text-[#64748B]">
+                          No upcoming events today.
+                        </p>
+                      ) : (
+                        upcoming.map((item) => {
+                          const start = new Date(item.start_at);
+                          const isExpanded = expandedTimelineIds.has(item.id);
+                          const timeLabel = start.toLocaleTimeString([], {
+                            hour: 'numeric',
+                            minute: '2-digit',
+                          });
+                          const dayLabel =
+                            start.toDateString() === new Date().toDateString()
+                              ? 'Today'
+                              : start.toLocaleDateString([], { month: 'short', day: 'numeric' });
+                          return (
+                            <button
+                              key={item.id}
+                              onContextMenu={(event) =>
+                                openContextMenu(event, { type: 'timeline', eventId: item.id })
+                              }
+                              onClick={() => openModule('calendar')}
+                              className="w-full rounded-lg px-0 py-3 text-left transition hover:bg-white"
                             >
-                              {item.title}
-                            </p>
-                            <p className="shrink-0 text-xs text-gray-500">{dayLabel}</p>
-                          </div>
-                          <p className="mt-1 text-xs text-gray-600">{timeLabel}</p>
-                        </button>
-                      );
-                    })
-                  )}
-                </div>
-              </section>
-
-              <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-500">
-                      Projects
-                    </p>
-                    <h3 className="mt-1 text-lg font-semibold text-gray-950">Needs attention</h3>
-                  </div>
-                  <button
-                    onClick={() => openModule('projects')}
-                    className="rounded-full border border-gray-200 bg-gray-50 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-100"
-                  >
-                    Open projects
-                  </button>
-                </div>
-
-                <div className="mt-4 space-y-2">
-                  {isLoadingDashboard ? (
-                    Array.from({ length: 3 }).map((_, i) => <SkeletonProjectCard key={i} />)
-                  ) : attentionProjects.length === 0 ? (
-                    <div className="rounded-2xl border border-dashed border-gray-200 bg-gray-50 p-5">
-                      <p className="text-sm font-medium text-gray-800">
-                        No projects need attention.
-                      </p>
-                      <p className="mt-1 text-sm text-gray-500">
-                        Your active projects are on track.
-                      </p>
+                              <div className="flex items-start justify-between gap-3">
+                                <p
+                                  className={`${
+                                    isExpanded ? '' : 'truncate'
+                                  } text-sm font-medium text-[#111827]`}
+                                >
+                                  {item.title}
+                                </p>
+                                <p className="shrink-0 text-xs text-[#64748B]">{dayLabel}</p>
+                              </div>
+                              <p className="mt-1 text-xs text-[#64748B]">{timeLabel}</p>
+                            </button>
+                          );
+                        })
+                      )}
                     </div>
-                  ) : (
-                    attentionProjects.map((project) => {
-                      const status = String(project.status).toLowerCase();
-                      const label = status.includes('complete')
-                        ? 'Completed'
-                        : status.includes('progress')
-                        ? 'In progress'
-                        : status.includes('pause')
-                        ? 'Paused'
-                        : 'Not started';
-                      const due = (project as { end_date?: string | null }).end_date;
-                      const dueLabel = due
-                        ? `Due ${new Date(due).toLocaleDateString([], {
-                            month: 'short',
-                            day: 'numeric',
-                          })}`
-                        : 'No due date';
+                  </div>
 
-                      return (
-                        <button
-                          key={project.id}
-                          onContextMenu={(event) =>
-                            openContextMenu(event, { type: 'project', projectId: project.id })
-                          }
-                          onClick={() => openModule('projects')}
-                          className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-left transition hover:bg-white"
-                        >
-                          <p className="truncate text-sm font-medium text-gray-900">
-                            {project.name}
-                          </p>
-                          <p className="mt-1 flex items-center gap-2 text-xs text-gray-600">
-                            <Circle size={8} className="fill-current text-[#FF5F40]" />
-                            <span>{label}</span>
-                            <span>·</span>
-                            <span>{Math.max(0, Math.min(100, project.completeness))}%</span>
-                          </p>
-                          <p className="mt-1 text-xs text-gray-500">{dueLabel}</p>
-                        </button>
-                      );
-                    })
-                  )}
+                  <div className="h-px w-12 bg-gray-200" />
+
+                  <div className="space-y-6">
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[#64748B]">
+                        Projects
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => openModule('projects')}
+                        className="text-xs font-medium text-[#FF5F40] hover:underline"
+                      >
+                        Projects
+                      </button>
+                    </div>
+                    <div className="mt-3 space-y-2">
+                      {isLoadingDashboard ? (
+                        Array.from({ length: 3 }).map((_, i) => <SkeletonProjectCard key={i} />)
+                      ) : attentionProjects.length === 0 ? (
+                        <p className="text-sm font-light text-[#64748B]">
+                          No projects need attention.
+                        </p>
+                      ) : (
+                        attentionProjects.map((project) => {
+                          const status = String(project.status).toLowerCase();
+                          const label = status.includes('complete')
+                            ? 'Completed'
+                            : status.includes('progress')
+                            ? 'In progress'
+                            : status.includes('pause')
+                            ? 'Paused'
+                            : 'Not started';
+                          const due = (project as { end_date?: string | null }).end_date;
+                          const dueLabel = due
+                            ? `Due ${new Date(due).toLocaleDateString([], {
+                                month: 'short',
+                                day: 'numeric',
+                              })}`
+                            : 'No due date';
+
+                          return (
+                            <button
+                              key={project.id}
+                              onContextMenu={(event) =>
+                                openContextMenu(event, { type: 'project', projectId: project.id })
+                              }
+                              onClick={() =>
+                                openModule('projects', {
+                                  kind: 'projects',
+                                  focusProjectId: project.id,
+                                })
+                              }
+                              className="w-full rounded-lg px-0 py-3 text-left transition hover:bg-white"
+                            >
+                              <p className="truncate text-sm font-medium text-[#111827]">
+                                {project.name}
+                              </p>
+                              <p className="mt-1 flex items-center gap-2 text-xs text-[#64748B]">
+                                <Circle size={8} className="fill-current text-[#FF5F40]" />
+                                <span>{label}</span>
+                                <span>·</span>
+                                <span>{Math.max(0, Math.min(100, project.completeness))}%</span>
+                              </p>
+                              <p className="mt-1 text-xs text-[#64748B]">{dueLabel}</p>
+                            </button>
+                          );
+                        })
+                      )}
+                    </div>
+                  </div>
                 </div>
               </section>
-            </div>
+            </aside>
           </div>
         </div>
       </div>
@@ -2293,6 +2268,22 @@ function AppShell() {
       <AuthStatusScreen
         title="Accepting invitation"
         subtitle="Joining your workspace and syncing access."
+      />
+    );
+  }
+
+  const isDesktopRenderer = Boolean(window.desktopWindow);
+  const shouldShowInviteSuccess =
+    !isDesktopRenderer &&
+    (inviteFlowStatus === 'accepted' || inviteFlowStatus === 'already-member');
+
+  if (shouldShowInviteSuccess) {
+    return (
+      <InviteSuccessScreen
+        workspaceName={inviteWorkspaceName ?? 'workspace'}
+        onOpenLedger={() => {
+          window.location.assign(buildOpenLedgerUrl(inviteWorkspaceName));
+        }}
       />
     );
   }
