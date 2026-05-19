@@ -121,6 +121,45 @@ const getInviteTokenFromInput = (value: string) => {
 
 const todayKey = () => new Date().toISOString().slice(0, 10);
 
+const getExpiryMetadata = (hoursAhead = 24) => {
+  const expiresAt = new Date(Date.now() + hoursAhead * 60 * 60 * 1000);
+  const year = expiresAt.getFullYear();
+  const month = String(expiresAt.getMonth() + 1).padStart(2, '0');
+  const day = String(expiresAt.getDate()).padStart(2, '0');
+  const hour = String(expiresAt.getHours()).padStart(2, '0');
+  const minute = String(expiresAt.getMinutes()).padStart(2, '0');
+
+  return {
+    due_date: `${year}-${month}-${day}`,
+    due_time: `${hour}:${minute}`,
+  };
+};
+
+const formatExpiryCounter = (task: {
+  due_date?: string | null;
+  due_time?: string | null;
+}) => {
+  if (!task.due_date) return null;
+
+  const dueAt = task.due_time
+    ? new Date(`${task.due_date}T${task.due_time.length === 5 ? `${task.due_time}:00` : task.due_time}`)
+    : new Date(`${task.due_date}T23:59:59`);
+
+  if (Number.isNaN(dueAt.getTime())) return null;
+
+  const diffMs = dueAt.getTime() - Date.now();
+  if (diffMs <= 0) return 'Expires now';
+
+  const minutes = Math.max(1, Math.round(diffMs / 60000));
+  if (minutes < 60) return `Expires in ${minutes}m`;
+
+  const hours = Math.max(1, Math.round(diffMs / 3600000));
+  if (hours < 24) return `Expires in ${hours}h`;
+
+  const days = Math.max(1, Math.round(diffMs / 86400000));
+  return `Expires in ${days}d`;
+};
+
 type CompletedFocusTask = {
   id: string;
   title: string;
@@ -212,7 +251,7 @@ function InviteSuccessScreen({
           <button
             type="button"
             onClick={onOpenLedger}
-            className="mt-6 inline-flex h-11 w-full items-center justify-center gap-2 rounded-2xl bg-[#FF5F40] px-4 text-sm font-semibold text-white shadow-[0_10px_24px_rgba(255,95,64,0.24)] transition-colors hover:bg-[#ea5336]"
+            className="mt-6 inline-flex h-11 w-full items-center justify-center gap-2 rounded-2xl bg-[#FF5F40] px-4 text-sm font-semibold text-white shadow-[0_6px_14px_rgba(255,95,64,0.08)] transition-colors hover:bg-[#ea5336]"
           >
             Open Ledger
             <ArrowRight size={16} />
@@ -244,6 +283,7 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
   const [todayTasks, setTodayTasks] = useState<
     Array<{
       id: string;
+      client_id?: string | null;
       title: string;
       status: string;
       due_date?: string | null;
@@ -312,6 +352,11 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
   const [isNewFocusModalOpen, setIsNewFocusModalOpen] = useState(false);
   const [expandedTimelineIds, setExpandedTimelineIds] = useState<Set<string>>(new Set());
   const [expandedNoteIds, setExpandedNoteIds] = useState<Set<string>>(new Set());
+  const getWorkspaceTaskMetadata = () => ({
+    workspace_id: activeWorkspaceId ?? null,
+    workspace_name: activeWorkspace?.name?.trim() || null,
+    workspace_color: activeWorkspace?.color ?? null,
+  });
   const [dashboardContextMenu, setDashboardContextMenu] = useState<
     | { x: number; y: number; type: 'followup'; taskId: string }
     | { x: number; y: number; type: 'timeline'; eventId: string }
@@ -724,21 +769,183 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
     const title = focusDraftTitle.trim();
     if (!title || isSavingFocusTask || focusTasks.length >= 3) return;
 
+    const tempId = `focus-task-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const dueAt = getExpiryMetadata(24);
+    const optimisticTask = {
+      id: tempId,
+      title,
+      status: 'todo',
+      ...dueAt,
+      show_in_today: true,
+      is_today_focus: true,
+      created_at: new Date().toISOString(),
+      ...getWorkspaceTaskMetadata(),
+    };
+    setTodayTasks((prev) => [optimisticTask, ...prev]);
     setIsSavingFocusTask(true);
     try {
-      await api.createTask({
+      const created = await api.createTask({
         title,
         status: 'todo',
         show_in_today: true,
         is_today_focus: true,
+        ...dueAt,
       });
+      if (created && typeof created === 'object') {
+        const createdTask = created as { id?: string; workspace_id?: string | null; workspace_name?: string | null; workspace_color?: string | null };
+        const createdId = createdTask.id ?? tempId;
+        setTodayTasks((prev) => [
+          {
+            ...optimisticTask,
+            ...createdTask,
+            id: createdId,
+            ...getWorkspaceTaskMetadata(),
+          },
+          ...prev.filter((item) => item.id !== tempId && item.id !== createdId),
+        ]);
+      }
       setFocusDraftTitle('');
       setIsNewFocusModalOpen(false);
       await refreshTodayTasks();
+    } catch (error) {
+      setTodayTasks((prev) => prev.filter((item) => item.id !== tempId));
+      setDashboardError(error instanceof Error ? error.message : 'Could not create task.');
     } finally {
       setIsSavingFocusTask(false);
     }
   };
+
+  useEffect(() => {
+    const handleTaskCreated = (
+      _event: unknown,
+      detail: {
+        source?: string;
+        client_id?: string;
+        optimistic?: boolean;
+        rollback?: boolean;
+        task?: {
+          id?: string;
+          title?: string;
+          workspace_id?: string | null;
+          workspace_name?: string | null;
+          workspace_color?: string | null;
+          is_today_focus?: boolean;
+          show_in_today?: boolean;
+          due_date?: string | null;
+          due_time?: string | null;
+          created_at?: string | null;
+        };
+      }
+    ) => {
+
+      if (detail?.source !== 'sidebar') return;
+      if (!detail.task?.id || !detail.task?.title) return;
+      const clientId = detail.client_id ?? null;
+      if (detail.rollback) {
+        setTodayTasks((prev) =>
+          prev.filter((item) => item.id !== detail.task?.id && item.client_id !== clientId)
+        );
+        return;
+      }
+      if (!detail.task.is_today_focus) return;
+      if (detail.task.workspace_id && detail.task.workspace_id !== activeWorkspaceId) return;
+      const taskId = detail.task.id;
+
+      const nextTask = {
+        id: taskId,
+        client_id: clientId,
+        title: detail.task.title,
+        status: 'todo',
+        due_date: detail.task.due_date ?? todayKey(),
+        due_time: detail.task.due_time ?? null,
+        project_id: null,
+        project_name: null,
+        workspace_id: detail.task.workspace_id ?? activeWorkspaceId ?? null,
+        workspace_name: detail.task.workspace_name ?? activeWorkspace?.name?.trim() ?? null,
+        workspace_color: detail.task.workspace_color ?? activeWorkspace?.color ?? null,
+        is_today_focus: true,
+        show_in_today: true,
+        created_at: detail.task.created_at ?? new Date().toISOString(),
+      };
+
+      setTodayTasks((prev) => [
+        nextTask,
+        ...prev.filter(
+          (item) => item.id !== taskId && (clientId ? item.client_id !== clientId : true)
+        ),
+      ]);
+    };
+
+    window.ipcRenderer?.on('dashboard:today-task-created', handleTaskCreated);
+    return () => {
+      window.ipcRenderer?.off('dashboard:today-task-created', handleTaskCreated);
+    };
+  }, [activeWorkspace?.color, activeWorkspace?.name, activeWorkspaceId]);
+
+  useEffect(() => {
+    const handleTaskDeleted = (
+      _event: unknown,
+      detail: {
+        source?: string;
+        client_id?: string;
+        optimistic?: boolean;
+        rollback?: boolean;
+        task?: {
+          id?: string;
+          title?: string;
+          workspace_id?: string | null;
+          workspace_name?: string | null;
+          workspace_color?: string | null;
+          is_today_focus?: boolean;
+          show_in_today?: boolean;
+          due_date?: string | null;
+          due_time?: string | null;
+          created_at?: string | null;
+        };
+      }
+    ) => {
+      if (detail?.source !== 'sidebar') return;
+      if (!detail.task?.id) return;
+      const clientId = detail.client_id ?? null;
+
+      if (detail.rollback) {
+        const restoredTask = {
+          id: detail.task.id,
+          client_id: clientId,
+          title: detail.task.title ?? 'Untitled task',
+          status: 'todo',
+          due_date: detail.task.due_date ?? todayKey(),
+          due_time: detail.task.due_time ?? null,
+          project_id: null,
+          project_name: null,
+          workspace_id: detail.task.workspace_id ?? activeWorkspaceId ?? null,
+          workspace_name: detail.task.workspace_name ?? activeWorkspace?.name?.trim() ?? null,
+          workspace_color: detail.task.workspace_color ?? activeWorkspace?.color ?? null,
+          is_today_focus: true,
+          show_in_today: true,
+          created_at: detail.task.created_at ?? new Date().toISOString(),
+        };
+
+        setTodayTasks((prev) => [
+          restoredTask,
+          ...prev.filter(
+            (item) =>
+              item.id !== restoredTask.id && (clientId ? item.client_id !== clientId : true)
+          ),
+        ]);
+        return;
+      }
+
+      setTodayTasks((prev) =>
+        prev.filter((item) => item.id !== detail.task?.id && (clientId ? item.client_id !== clientId : true))
+      );
+    };
+
+    window.ipcRenderer?.on('dashboard:today-task-deleted', handleTaskDeleted);
+    return () => {
+      window.ipcRenderer?.off('dashboard:today-task-deleted', handleTaskDeleted);
+    };
+  }, [activeWorkspace?.color, activeWorkspace?.name, activeWorkspaceId]);
 
   const addTodayTaskToFocus = async (taskId: string) => {
     const task = todayTasks.find((item) => item.id === taskId);
@@ -1152,41 +1359,45 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
                         <p className="text-sm font-light italic text-[#64748B]">No focus set yet.</p>
                       ) : (
                         <div className="space-y-4">
-                          {focusTasks.map((task, index) => (
-                            <div key={task.id} className="group flex items-start gap-4">
-                              <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-gray-200 text-[11px] font-medium text-[#64748B]">
-                                {index + 1}
+                          {focusTasks.map((task, index) => {
+                            const expiryLabel = formatExpiryCounter(task);
+                            return (
+                              <div key={task.id} className="group flex items-start gap-3">
+                                <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-gray-200 text-[11px] font-medium text-[#64748B]">
+                                  {index + 1}
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                  <p className="text-[13px] font-medium leading-5 text-[#111827]">
+                                    {task.title}
+                                  </p>
+                                  <p className="mt-0.5 text-[11px] leading-4 text-[#64748B]">
+                                    {task.project_name || task.workspace_name || 'Workspace task'}
+                                    {expiryLabel ? ` · ${expiryLabel}` : ''}
+                                  </p>
+                                </div>
+                                <div className="flex items-center gap-2 opacity-100 transition sm:opacity-0 sm:group-hover:opacity-100">
+                                  <button
+                                    type="button"
+                                    onClick={() => void toggleFocusDone(task.id)}
+                                    disabled={focusActionId === task.id}
+                                    className="text-[#64748B] transition hover:text-[#111827] disabled:opacity-50"
+                                    title="Mark complete"
+                                  >
+                                    <CheckCircle2 size={14} />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => void removeTaskFromFocus(task.id)}
+                                    disabled={focusActionId === task.id}
+                                    className="text-[#64748B] transition hover:text-[#111827] disabled:opacity-50"
+                                    title="Remove from focus"
+                                  >
+                                    <Trash2 size={14} />
+                                  </button>
+                                </div>
                               </div>
-                              <div className="min-w-0 flex-1">
-                                <p className="text-sm font-medium text-[#111827]">{task.title}</p>
-                                <p className="mt-1 text-xs text-[#64748B]">
-                                  {task.project_name || task.workspace_name || 'Workspace task'}
-                                  {task.due_date ? ` · Due ${task.due_date}` : ''}
-                                  {task.due_time ? ` · ${task.due_time}` : ''}
-                                </p>
-                              </div>
-                              <div className="flex items-center gap-2 opacity-100 transition sm:opacity-0 sm:group-hover:opacity-100">
-                                <button
-                                  type="button"
-                                  onClick={() => void toggleFocusDone(task.id)}
-                                  disabled={focusActionId === task.id}
-                                  className="text-[#64748B] transition hover:text-[#111827] disabled:opacity-50"
-                                  title="Mark complete"
-                                >
-                                  <CheckCircle2 size={14} />
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => void removeTaskFromFocus(task.id)}
-                                  disabled={focusActionId === task.id}
-                                  className="text-[#64748B] transition hover:text-[#111827] disabled:opacity-50"
-                                  title="Remove from focus"
-                                >
-                                  <Trash2 size={14} />
-                                </button>
-                              </div>
-                            </div>
-                          ))}
+                            );
+                          })}
                         </div>
                       )}
                     </div>
@@ -1211,26 +1422,28 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
 
                         {completedFocusExpanded && (
                           <div className="space-y-2">
-                            {completedFocusTasks.map((task) => (
-                              <div
-                                key={task.id}
-                                className="flex items-start gap-3 rounded-2xl border border-gray-100 bg-gray-50 px-3 py-2.5"
-                              >
-                                <div className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-gray-200 bg-white text-[11px] text-[#64748B]">
-                                  ✓
+                            {completedFocusTasks.map((task) => {
+                              const expiryLabel = formatExpiryCounter(task);
+                              return (
+                                <div
+                                  key={task.id}
+                                  className="flex items-start gap-3 rounded-2xl border border-gray-100 bg-gray-50 px-3 py-2"
+                                >
+                                  <div className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-gray-200 bg-white text-[11px] text-[#64748B]">
+                                    ✓
+                                  </div>
+                                  <div className="min-w-0 flex-1">
+                                    <p className="text-[13px] font-medium leading-5 text-[#64748B] line-through decoration-gray-300">
+                                      {task.title}
+                                    </p>
+                                    <p className="mt-0.5 text-[11px] leading-4 text-[#94A3B8]">
+                                      {task.project_name || task.workspace_name || 'Workspace task'}
+                                      {expiryLabel ? ` · ${expiryLabel}` : ''}
+                                    </p>
+                                  </div>
                                 </div>
-                                <div className="min-w-0 flex-1">
-                                  <p className="text-sm font-medium text-[#64748B] line-through decoration-gray-300">
-                                    {task.title}
-                                  </p>
-                                  <p className="mt-1 text-xs text-[#94A3B8]">
-                                    {task.project_name || task.workspace_name || 'Workspace task'}
-                                    {task.due_date ? ` · Due ${task.due_date}` : ''}
-                                    {task.due_time ? ` · ${task.due_time}` : ''}
-                                  </p>
-                                </div>
-                              </div>
-                            ))}
+                              );
+                            })}
                           </div>
                         )}
                       </div>
@@ -1435,7 +1648,7 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
                                 openContextMenu(event, { type: 'timeline', eventId: item.id })
                               }
                               onClick={() => openModule('calendar')}
-                              className="w-full rounded-lg px-0 py-3 text-left transition hover:bg-white"
+                              className="w-full rounded-lg px-2 py-3 text-left transition-colors hover:bg-gray-50 active:bg-gray-100"
                             >
                               <div className="flex items-start justify-between gap-3">
                                 <p
@@ -1507,7 +1720,7 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
                                   focusProjectId: project.id,
                                 })
                               }
-                              className="w-full rounded-lg px-0 py-3 text-left transition hover:bg-white"
+                              className="w-full rounded-lg px-2 py-3 text-left transition-colors hover:bg-gray-50 active:bg-gray-100"
                             >
                               <p className="truncate text-sm font-medium text-[#111827]">
                                 {project.name}
@@ -1558,14 +1771,14 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
                 type="button"
                 onClick={() => void addTodayTaskToFocus(task.id)}
                 disabled={focusTasks.length >= 3 || focusActionId === task.id}
-                className="w-full rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3 text-left transition hover:bg-white disabled:opacity-50"
+                className="w-full rounded-2xl border border-gray-200 bg-gray-50 px-3 py-2.5 text-left transition hover:bg-white disabled:opacity-50"
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <p className="truncate text-sm font-medium text-gray-950">{task.title}</p>
-                    <p className="mt-1 truncate text-xs text-gray-500">
+                    <p className="truncate text-[13px] font-medium text-gray-950">{task.title}</p>
+                    <p className="mt-0.5 truncate text-[11px] text-gray-500">
                       {task.project_name || task.workspace_name || 'Workspace task'}
-                      {task.due_date ? ` · Due ${task.due_date}` : ''}
+                      {formatExpiryCounter(task) ? ` · ${formatExpiryCounter(task)}` : ''}
                     </p>
                   </div>
                   <span className="shrink-0 rounded-full border border-gray-200 bg-white px-2 py-1 text-[11px] font-medium text-gray-600">
@@ -1899,8 +2112,14 @@ function AppShell() {
       event.preventDefault();
       if (!user || isLoading || !isVisible) return;
 
+      const isHorizontal = sidebarPreferences.position === 'top' || sidebarPreferences.position === 'bottom';
+
       if (state === 'expanded') {
-        collapseToRail();
+        if (isHorizontal) {
+          collapseSidebar();
+        } else {
+          collapseToRail();
+        }
         return;
       }
 
@@ -1916,16 +2135,7 @@ function AppShell() {
       event.preventDefault();
       if (!user || isLoading || !isVisible) return;
 
-      if (state === 'expanded') {
-        collapseToRail();
-        return;
-      }
-
-      if (!isExpanded) {
-        setIsExpanded(true);
-      } else {
-        collapseSidebar();
-      }
+      collapseToRail();
     };
 
     window.addEventListener('keydown', handleSidebarExpandShortcut);
@@ -2525,7 +2735,7 @@ function AppShell() {
                         setIsSavingOnboarding(false);
                       }
                     }}
-                    className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-[#FF5F40] px-4 py-3 text-sm font-semibold text-white shadow-[0_10px_24px_rgba(255,95,64,0.24)] transition-colors hover:bg-[#ea5336] disabled:opacity-60"
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-[#FF5F40] px-4 py-3 text-sm font-semibold text-white shadow-[0_6px_14px_rgba(255,95,64,0.08)] transition-colors hover:bg-[#ea5336] disabled:opacity-60"
                   >
                     {isSavingOnboarding ? (
                       <>

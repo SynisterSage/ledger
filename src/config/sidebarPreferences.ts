@@ -62,13 +62,6 @@ export const loadSidebarPreferences = (): SidebarPreferences => {
         })
       | null;
 
-    // ExpandedSidebar only supports vertical positions (left/right/floating)
-    // Reset to default if horizontal position is stored
-    if (parsed?.position === 'top' || parsed?.position === 'bottom') {
-      window.localStorage.removeItem(SIDEBAR_PREFERENCES_STORAGE_KEY);
-      return defaultSidebarPreferences;
-    }
-
     const legacyVisible = (parsed as { isVisible?: boolean } | null)?.isVisible;
     const legacyExpanded = (parsed as { isExpanded?: boolean } | null)?.isExpanded;
     const legacyRestoreView: SidebarPreferences['collapsedRestoreView'] =

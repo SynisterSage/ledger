@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useMemo, useState, useRef } from 'react';
 import { useSidebar } from '../../context/SidebarContext';
 import { MinimizedSidebar } from './MinimizedSidebar';
 import { ExpandedSidebar } from './ExpandedSidebar';
@@ -11,6 +11,7 @@ export const SidebarContainer = () => {
     isExpanded,
     position,
     opacity,
+    blur,
     autoHide,
     collapseSidebar,
     restoreSidebarView,
@@ -23,8 +24,19 @@ export const SidebarContainer = () => {
   const autoHideFadeTimerRef = useRef<number | null>(null);
   const autoHideCollapseTimerRef = useRef<number | null>(null);
   const [isAutoHideFading, setIsAutoHideFading] = useState(false);
+  const prefersReducedMotion = useMemo(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return false;
+    return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  }, []);
   const AUTO_HIDE_DELAY_MS = 3000;
   const AUTO_HIDE_FADE_MS = 300;
+  const motionDurationMs = prefersReducedMotion ? 0 : 100;
+  const motionClass = prefersReducedMotion
+    ? ''
+    : 'transition-[width,height,opacity,transform] duration-[100ms] ease-[cubic-bezier(0.22,1,0.36,1)]';
+  const contentMotionClass = prefersReducedMotion
+    ? ''
+    : 'transition-[opacity,transform] duration-[100ms] ease-[cubic-bezier(0.22,1,0.36,1)] will-change-[opacity,transform]';
 
   useEffect(() => {
     if (!autoHide) {
@@ -87,17 +99,32 @@ export const SidebarContainer = () => {
   const shellSizeClasses =
     state === 'expanded'
       ? isHorizontal
-        ? 'w-full h-16'
+        ? 'w-auto h-[144px]'
         : 'w-80 h-full'
       : isExpanded
       ? isHorizontal
-        ? 'w-full h-16'
+        ? 'w-auto h-[60px]'
         : 'w-16 h-full'
+      : isHorizontal
+      ? 'w-auto h-[60px]'
       : 'w-16 h-16';
   const shellRadiusClass = isCollapsedIconMode ? 'rounded-[22px]' : 'rounded-[28px]';
   const shellClipRadius = isCollapsedIconMode ? '22px' : '28px';
   const shellOverflowClass =
     state === 'minimized' && isExpanded ? 'overflow-visible' : 'overflow-hidden';
+  const isGlassShell = state === 'expanded' || (state === 'minimized' && isExpanded);
+  const platformClass =
+    typeof navigator !== 'undefined' && navigator.platform.toLowerCase().includes('win')
+      ? 'platform-windows'
+      : typeof navigator !== 'undefined' && navigator.platform.toLowerCase().includes('mac')
+      ? 'platform-macos'
+      : '';
+  const shellSurfaceClass =
+    isGlassShell
+      ? blur
+        ? `sidebar-glass ${platformClass}`
+        : `sidebar-glass sidebar-glass--solid ${platformClass}`
+      : 'border border-[rgba(255,255,255,0.55)] shadow-[0_10px_28px_rgba(15,23,42,0.16)] outline outline-[rgba(15,23,42,0.08)]';
 
   const scheduleAutoHideHide = () => {
     if (!autoHide) return;
@@ -280,28 +307,46 @@ export const SidebarContainer = () => {
 
   const shellStyle: React.CSSProperties = {
     opacity: autoHide && !isHovered && isAutoHideFading ? 0 : 1,
-    backgroundColor: `rgba(248, 249, 251, ${Math.max(0.7, Math.min(0.95, opacity))})`,
+    width: isHorizontal
+      ? state === 'expanded'
+        ? 'min(1120px, calc(100vw - 32px))'
+        : 'min(1120px, calc(100vw - 32px))'
+      : undefined,
+    height: isHorizontal ? (state === 'expanded' ? '144px' : '60px') : undefined,
+    backgroundColor:
+      isGlassShell
+        ? undefined
+        : `rgba(248, 249, 251, ${Math.max(0.7, Math.min(0.95, opacity))})`,
+    ['--sidebar-glass-white-alpha' as string]: Math.min(0.97, Math.max(0.9, opacity + 0.08)),
+    ['--sidebar-glass-cream-alpha' as string]: Math.min(0.92, Math.max(0.84, opacity + 0.02)),
     clipPath: `inset(0 round ${shellClipRadius})`,
     contain: 'paint',
     transitionProperty:
-      isDragging && isFloating
+        isDragging && isFloating
         ? 'opacity'
-        : 'opacity, background-color, box-shadow, border-color, outline-color',
-    transitionDuration: isDragging && isFloating ? '0ms' : '140ms',
-    transitionTimingFunction: 'ease-out',
+        : 'opacity, transform, width, height',
+    transitionDuration: isDragging && isFloating ? '0ms' : `${motionDurationMs}ms`,
+    transitionTimingFunction: 'cubic-bezier(0.22, 1, 0.36, 1)',
+    willChange: isDragging && isFloating ? 'opacity' : 'width, height, opacity, transform',
   };
 
-  return (
-    <div
-      style={shellStyle}
-      onMouseEnter={handleMouseEnter}
-      onMouseLeave={handleMouseLeave}
-      className={`relative ${shellOverflowClass} ${shellRadiusClass} border border-[rgba(255,255,255,0.55)] shadow-[0_10px_28px_rgba(15,23,42,0.16)] outline outline-[rgba(15,23,42,0.08)] ${shellSizeClasses} transition-[width,height,opacity,border-color,outline-color,box-shadow] duration-180 ease-out ${
-        autoHide && !isHovered && !isDragging ? 'shadow-sm' : ''
-      } ${hydrationClass}`}
-    >
-      <div className="relative z-10 h-full w-full">
-        {state === 'expanded' && (
+  const renderSidebarContent = (
+    currentState: Exclude<typeof state, 'fullscreen'>,
+    currentIsExpanded: boolean,
+    isActiveLayer: boolean
+  ) => {
+    const layerClass = isActiveLayer
+      ? 'relative z-10 opacity-100 translate-y-0'
+      : 'absolute inset-0 pointer-events-none opacity-0 translate-y-[3px]';
+    const contentStateClass =
+      currentState === 'expanded' ? 'translate-y-0 scale-[1]' : 'translate-y-[1px] scale-[0.996]';
+
+    return (
+      <div
+        aria-hidden={!isActiveLayer}
+        className={`h-full w-full ${contentMotionClass} ${layerClass} ${contentStateClass}`}
+      >
+        {currentState === 'expanded' && (
           <div className="h-full min-h-0 w-full">
             <ExpandedSidebar
               onDragHandleMouseDown={isFloating ? handleDragHandleStart : undefined}
@@ -310,18 +355,41 @@ export const SidebarContainer = () => {
           </div>
         )}
 
-        {state === 'minimized' && isExpanded && (
+        {currentState === 'minimized' && currentIsExpanded && (
           <div className="h-full w-full">
             <MinimizedSidebar onDragHandleMouseDown={isFloating ? handleDragHandleStart : undefined} />
           </div>
         )}
 
-        {state === 'minimized' && !isExpanded && (
+        {currentState === 'minimized' && !currentIsExpanded && (
           <div className="h-full w-full">
             <CollapsedSidebar onDragHandleMouseDown={isFloating ? handleDragHandleStart : undefined} />
           </div>
         )}
       </div>
+    );
+  };
+
+  return (
+    <div
+      style={shellStyle}
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
+      className={`relative ${shellOverflowClass} ${shellRadiusClass} ${shellSurfaceClass} ${shellSizeClasses} ${
+        prefersReducedMotion ? '' : motionClass
+      } ${autoHide && !isHovered && !isDragging ? 'shadow-sm' : ''} ${hydrationClass}`}
+    >
+      {renderSidebarContent(state as Exclude<typeof state, 'fullscreen'>, isExpanded, state === 'expanded')}
+      {renderSidebarContent(
+        'minimized',
+        true,
+        state === 'minimized' && isExpanded
+      )}
+      {renderSidebarContent(
+        'minimized',
+        false,
+        state === 'minimized' && !isExpanded
+      )}
     </div>
   );
 };

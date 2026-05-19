@@ -98,29 +98,30 @@ export const BulkExportModal = ({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
-      onMouseDown={onClose}
+      className="fixed inset-0 z-50 isolate"
     >
-      <div
-        className="w-full max-w-md rounded-2xl border border-gray-200 bg-white shadow-lg"
-        onMouseDown={(event) => event.stopPropagation()}
-      >
-        {/* Header */}
-        <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
-          <div className="flex items-center gap-2">
-            <Download size={18} className="text-gray-600" />
-            <h2 className="text-lg font-semibold text-gray-900">
-              Export {isMindMapOnly ? 'Mind Maps' : 'Notes'}
-            </h2>
+      <div className="absolute inset-0 bg-black/50" onMouseDown={onClose} />
+      <div className="relative z-10 flex h-full w-full items-center justify-center p-4">
+        <div
+          className="w-full max-w-md rounded-2xl border border-gray-200 bg-white shadow-lg"
+          onMouseDown={(event) => event.stopPropagation()}
+        >
+          {/* Header */}
+          <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
+            <div className="flex items-center gap-2">
+              <Download size={18} className="text-gray-600" />
+              <h2 className="text-lg font-semibold text-gray-900">
+                Export {isMindMapOnly ? 'Mind Maps' : 'Notes'}
+              </h2>
+            </div>
+            <button
+              onClick={onClose}
+              className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100"
+              aria-label="Close"
+            >
+              <X size={16} />
+            </button>
           </div>
-          <button
-            onClick={onClose}
-            className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100"
-            aria-label="Close"
-          >
-            <X size={16} />
-          </button>
-        </div>
 
         {/* Content */}
         <div className="px-6 py-4 space-y-4">
@@ -198,32 +199,33 @@ export const BulkExportModal = ({
           )}
         </div>
 
-        {/* Footer */}
-        <div className="flex gap-3 border-t border-gray-100 px-6 py-3">
-          <button
-            onClick={onClose}
-            disabled={isExporting}
-            className="flex-1 rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleExport}
-            disabled={isExporting || selectedRelevantCount === 0}
-            className="flex-1 flex items-center justify-center gap-2 rounded-lg bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-50"
-          >
-            {isExporting ? (
-              <>
-                <Loader2 size={16} className="animate-spin" />
-                Exporting...
-              </>
-            ) : (
-              <>
-                <Download size={16} />
-                Export ({selectedRelevantCount})
-              </>
-            )}
-          </button>
+          {/* Footer */}
+          <div className="flex gap-3 border-t border-gray-100 px-6 py-3">
+            <button
+              onClick={onClose}
+              disabled={isExporting}
+              className="flex-1 rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleExport}
+              disabled={isExporting || selectedRelevantCount === 0}
+              className="flex-1 flex items-center justify-center gap-2 rounded-lg bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-50"
+            >
+              {isExporting ? (
+                <>
+                  <Loader2 size={16} className="animate-spin" />
+                  Exporting...
+                </>
+              ) : (
+                <>
+                  <Download size={16} />
+                  Export ({selectedRelevantCount})
+                </>
+              )}
+            </button>
+          </div>
         </div>
       </div>
     </div>,

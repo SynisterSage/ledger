@@ -100,6 +100,9 @@ contextBridge.exposeInMainWorld('desktopWindow', {
   toggleModuleFullscreen(kind: ModuleWindowKind) {
     return ipcRenderer.invoke('window:toggle-module-fullscreen', kind);
   },
+  setHasShadow(enabled: boolean) {
+    return ipcRenderer.invoke('window:set-has-shadow', enabled);
+  },
   openExternal(url: string) {
     return ipcRenderer.invoke('window:open-external', url);
   },

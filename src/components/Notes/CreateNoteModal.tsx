@@ -240,88 +240,89 @@ export const CreateNoteModal = ({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
-      onClick={() => !isCreating && onClose()}
+      className="fixed inset-0 z-50 isolate"
     >
-      <div
-        className="bg-white rounded-xl shadow-lg max-w-190 w-full mx-4 max-h-[88vh] overflow-y-auto border border-gray-200"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Header */}
-        <div className="sticky top-0 bg-white/95 backdrop-blur border-b border-gray-200 px-5 py-3 flex items-center justify-between">
-          <h2 className="font-semibold text-gray-900">
-            {step === 'main' && 'Create Note'}
-            {step === 'gallery' && 'Browse Templates'}
-            {step === 'custom-form' && 'Create Custom Template'}
-          </h2>
-          <button
-            onClick={onClose}
-            disabled={isCreating}
-            className="text-gray-400 hover:text-gray-600 disabled:opacity-50"
-          >
-            <X size={20} />
-          </button>
-        </div>
+      <div className="absolute inset-0 bg-black/50" onClick={() => !isCreating && onClose()} />
+      <div className="relative z-10 flex h-full w-full items-center justify-center p-4">
+        <div
+          className="bg-white rounded-xl shadow-lg max-w-190 w-full mx-4 max-h-[88vh] overflow-y-auto border border-gray-200"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Header */}
+          <div className="sticky top-0 bg-white/95 backdrop-blur border-b border-gray-200 px-5 py-3 flex items-center justify-between">
+            <h2 className="font-semibold text-gray-900">
+              {step === 'main' && 'Create Note'}
+              {step === 'gallery' && 'Browse Templates'}
+              {step === 'custom-form' && 'Create Custom Template'}
+            </h2>
+            <button
+              onClick={onClose}
+              disabled={isCreating}
+              className="text-gray-400 hover:text-gray-600 disabled:opacity-50"
+            >
+              <X size={20} />
+            </button>
+          </div>
 
-        {/* Body */}
-        <div className="p-5">
-          {step === 'main' && (
-            <div className="space-y-4">
-              {/* Blank note */}
-              <button
-                type="button"
-                onClick={handleCreateBlank}
-                disabled={isCreating}
-                className="w-full flex items-center gap-4 p-4 rounded-lg border border-gray-200 text-left transition hover:bg-gray-50 active:bg-white disabled:opacity-50"
-              >
-                <FileText size={20} className="text-gray-400" />
-                <div className="flex-1">
-                  <p className="font-medium text-gray-900">Blank Note</p>
-                  <p className="text-sm text-gray-500">Start with an empty canvas</p>
-                </div>
-                <ChevronRight size={18} className="text-gray-400" />
-              </button>
+          {/* Body */}
+          <div className="p-5">
+            {step === 'main' && (
+              <div className="space-y-4">
+                {/* Blank note */}
+                <button
+                  type="button"
+                  onClick={handleCreateBlank}
+                  disabled={isCreating}
+                  className="w-full flex items-center gap-4 p-4 rounded-lg border border-gray-200 text-left transition hover:bg-gray-50 active:bg-white disabled:opacity-50"
+                >
+                  <FileText size={20} className="text-gray-400" />
+                  <div className="flex-1">
+                    <p className="font-medium text-gray-900">Blank Note</p>
+                    <p className="text-sm text-gray-500">Start with an empty canvas</p>
+                  </div>
+                  <ChevronRight size={18} className="text-gray-400" />
+                </button>
 
-              {/* Quick templates */}
-              <div className="space-y-2">
-                <p className="text-xs font-semibold text-gray-600 uppercase">Quick Templates</p>
-                <div className="grid grid-cols-2 gap-2">
-                  {QUICK_TEMPLATES.map(({ id, name, icon: Icon, description }) => {
-                    const templateId = resolveQuickTemplateId(name);
-                    return (
-                      <button
-                        key={id}
-                        type="button"
-                        onClick={() => void handleCreateQuickTemplate(name, templateId)}
-                        disabled={isCreating || isLoadingTemplates}
-                        className="p-3 rounded-lg border border-gray-200 text-left transition hover:bg-gray-50 active:bg-white disabled:opacity-50"
-                      >
-                        <Icon size={16} className="text-gray-600 mb-2" />
-                        <p className="font-medium text-sm text-gray-900">{name}</p>
-                        <p className="text-xs text-gray-500 line-clamp-1 mt-0.5">{description}</p>
-                      </button>
-                    );
-                  })}
+                {/* Quick templates */}
+                <div className="space-y-2">
+                  <p className="text-xs font-semibold text-gray-600 uppercase">Quick Templates</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {QUICK_TEMPLATES.map(({ id, name, icon: Icon, description }) => {
+                      const templateId = resolveQuickTemplateId(name);
+                      return (
+                        <button
+                          key={id}
+                          type="button"
+                          onClick={() => void handleCreateQuickTemplate(name, templateId)}
+                          disabled={isCreating || isLoadingTemplates}
+                          className="p-3 rounded-lg border border-gray-200 text-left transition hover:bg-gray-50 active:bg-white disabled:opacity-50"
+                        >
+                          <Icon size={16} className="text-gray-600 mb-2" />
+                          <p className="font-medium text-sm text-gray-900">{name}</p>
+                          <p className="text-xs text-gray-500 line-clamp-1 mt-0.5">{description}</p>
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
+
+                {/* Browse all templates */}
+                <button
+                  type="button"
+                  onClick={() => setStep('gallery')}
+                  className="w-full flex items-center gap-4 p-4 rounded-lg border border-gray-200 text-left transition hover:bg-gray-50 active:bg-white"
+                >
+                  <div className="w-5 h-5 rounded border-2 border-gray-400 flex items-center justify-center">
+                    <div className="w-2 h-2 bg-gray-400 rounded-full" />
+                  </div>
+                  <div className="flex-1">
+                    <p className="font-medium text-gray-900">Browse All Templates</p>
+                    <p className="text-sm text-gray-500">View the complete gallery</p>
+                  </div>
+                  <ChevronRight size={18} className="text-gray-400" />
+                </button>
               </div>
-
-              {/* Browse all templates */}
-              <button
-                type="button"
-                onClick={() => setStep('gallery')}
-                className="w-full flex items-center gap-4 p-4 rounded-lg border border-gray-200 text-left transition hover:bg-gray-50 active:bg-white"
-              >
-                <div className="w-5 h-5 rounded border-2 border-gray-400 flex items-center justify-center">
-                  <div className="w-2 h-2 bg-gray-400 rounded-full" />
-                </div>
-                <div className="flex-1">
-                  <p className="font-medium text-gray-900">Browse All Templates</p>
-                  <p className="text-sm text-gray-500">View the complete gallery</p>
-                </div>
-                <ChevronRight size={18} className="text-gray-400" />
-              </button>
-            </div>
-          )}
+            )}
 
           {step === 'gallery' && (
             <div className="min-h-0 overflow-hidden">
@@ -344,6 +345,7 @@ export const CreateNoteModal = ({
               </button>
             </div>
           )}
+          </div>
         </div>
       </div>
     </div>,

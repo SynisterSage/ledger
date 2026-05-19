@@ -38,7 +38,7 @@ export const MainLayout = ({ children }: MainLayoutProps) => {
 
   const sidebarNode = shouldShowSidebar ? (
     <div
-      className={`${isHorizontal ? 'w-full' : ''} shrink-0 ${
+      className={`${isHorizontal ? 'w-full flex justify-center' : ''} shrink-0 ${
         position === 'left' || position === 'top' ? 'order-1' : 'order-2'
       }`}
     >

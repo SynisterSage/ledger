@@ -235,6 +235,24 @@ export const ExpandedSidebar = ({
   const isHorizontal = position === 'top' || position === 'bottom';
   const fullName = (user?.user_metadata?.full_name as string | undefined)?.trim() ?? '';
   const firstName = fullName ? fullName.split(' ')[0] : user?.email?.split('@')[0] ?? 'User';
+  const getWorkspaceTaskMetadata = () => ({
+    workspace_id: activeWorkspaceId ?? null,
+    workspace_name: activeWorkspace?.name?.trim() || null,
+    workspace_color: activeWorkspace?.color ?? null,
+  });
+  const getTaskExpiryMetadata = (hoursAhead = 24) => {
+    const expiresAt = new Date(Date.now() + hoursAhead * 60 * 60 * 1000);
+    const year = expiresAt.getFullYear();
+    const month = String(expiresAt.getMonth() + 1).padStart(2, '0');
+    const day = String(expiresAt.getDate()).padStart(2, '0');
+    const hour = String(expiresAt.getHours()).padStart(2, '0');
+    const minute = String(expiresAt.getMinutes()).padStart(2, '0');
+
+    return {
+      due_date: `${year}-${month}-${day}`,
+      due_time: `${hour}:${minute}`,
+    };
+  };
 
   const [focusItems, setFocusItems] = useState<FocusItem[]>([]);
   const [checkin, setCheckin] = useState({
@@ -310,6 +328,14 @@ export const ExpandedSidebar = ({
   const [todayHelpPopoverStyle, setTodayHelpPopoverStyle] = useState<React.CSSProperties | null>(
     null
   );
+  const [todayDockPopoverOpen, setTodayDockPopoverOpen] = useState(false);
+  const [todayDockPopoverStyle, setTodayDockPopoverStyle] = useState<React.CSSProperties | null>(
+    null
+  );
+  const [quickCapturePopoverOpen, setQuickCapturePopoverOpen] = useState(false);
+  const [quickCapturePopoverStyle, setQuickCapturePopoverStyle] = useState<React.CSSProperties | null>(
+    null
+  );
   const [expandedUpcomingId, setExpandedUpcomingId] = useState<string | null>(null);
   const [draggingProjectId, setDraggingProjectId] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<{
@@ -324,6 +350,10 @@ export const ExpandedSidebar = ({
   const eventCaptureRef = useRef<HTMLInputElement | null>(null);
   const todayHelpButtonRef = useRef<HTMLButtonElement | null>(null);
   const todayHelpPopoverRef = useRef<HTMLDivElement | null>(null);
+  const todayDockButtonRef = useRef<HTMLButtonElement | null>(null);
+  const todayDockPopoverRef = useRef<HTMLDivElement | null>(null);
+  const quickCaptureButtonRef = useRef<HTMLButtonElement | null>(null);
+  const quickCapturePopoverRef = useRef<HTMLDivElement | null>(null);
   const todayHelpCloseTimerRef = useRef<number | null>(null);
   const checkinSectionRef = useRef<HTMLElement | null>(null);
   const checkinSavedTimerRef = useRef<number | null>(null);
@@ -344,7 +374,7 @@ export const ExpandedSidebar = ({
     return 'not_started';
   };
 
-  const WorkspaceSwitcher = () => {
+  const WorkspaceSwitcher = ({ compact = false }: { compact?: boolean }) => {
     const [open, setOpen] = useState(false);
     const buttonRef = useRef<HTMLButtonElement | null>(null);
     const dropdownRef = useRef<HTMLDivElement | null>(null);
@@ -428,7 +458,7 @@ export const ExpandedSidebar = ({
     );
 
     return (
-      <div className="relative inline-block w-full">
+      <div className={compact ? 'relative inline-block' : 'relative inline-block w-full'}>
         <button
           ref={buttonRef}
           type="button"
@@ -436,10 +466,16 @@ export const ExpandedSidebar = ({
             e.stopPropagation();
             setOpen((v) => !v);
           }}
-          className="w-full text-left text-[11px] font-medium text-gray-600 truncate flex items-center justify-between gap-2"
+          className={
+            compact
+              ? 'inline-flex h-9 max-w-45 items-center gap-1.5 rounded-full border border-gray-200 bg-white px-3 text-left shadow-sm transition hover:border-gray-300 hover:bg-gray-50'
+              : 'flex w-full items-center justify-between gap-2 truncate text-left text-[11px] font-medium text-gray-600'
+          }
         >
-          <span className="truncate">{resolvedActiveWorkspaceLabel}</span>
-          <ChevronDown size={14} className="text-gray-500 shrink-0" />
+          <span className={compact ? 'truncate text-[12px] font-medium text-gray-700' : 'truncate'}>
+            {resolvedActiveWorkspaceLabel}
+          </span>
+          <ChevronDown size={compact ? 13 : 14} className="shrink-0 text-gray-500" />
         </button>
 
         {open && typeof document !== 'undefined'
@@ -895,6 +931,121 @@ export const ExpandedSidebar = ({
   }, [todayHelpOpen]);
 
   useEffect(() => {
+    if (!todayDockPopoverOpen || !todayDockButtonRef.current) {
+      setTodayDockPopoverStyle(null);
+      return;
+    }
+
+    const updateTodayDockPosition = () => {
+      const rect = todayDockButtonRef.current?.getBoundingClientRect();
+      if (!rect) return;
+
+      const preferredWidth = 340;
+      const gap = 10;
+      const centeredLeft = rect.left + rect.width / 2 - preferredWidth / 2;
+      const left = Math.max(12, Math.min(window.innerWidth - preferredWidth - 12, centeredLeft));
+      const isBottomDock = position === 'bottom';
+      const top = isBottomDock ? rect.top - gap : rect.bottom + gap;
+
+      setTodayDockPopoverStyle({
+        position: 'fixed',
+        left: `${left}px`,
+        top: isBottomDock ? `${top}px` : `${top}px`,
+        transform: isBottomDock ? 'translateY(-100%)' : 'none',
+        width: `${preferredWidth}px`,
+        maxHeight: '360px',
+        zIndex: 30000,
+      });
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setTodayDockPopoverOpen(false);
+    };
+
+    updateTodayDockPosition();
+    window.addEventListener('resize', updateTodayDockPosition);
+    window.addEventListener('scroll', updateTodayDockPosition, true);
+    document.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      window.removeEventListener('resize', updateTodayDockPosition);
+      window.removeEventListener('scroll', updateTodayDockPosition, true);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [position, todayDockPopoverOpen]);
+
+  useEffect(() => {
+    if (!todayDockPopoverOpen) return;
+
+    const handlePointerDown = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (todayDockButtonRef.current?.contains(target)) return;
+      if (todayDockPopoverRef.current?.contains(target)) return;
+      setTodayDockPopoverOpen(false);
+    };
+
+    document.addEventListener('mousedown', handlePointerDown);
+    return () => document.removeEventListener('mousedown', handlePointerDown);
+  }, [todayDockPopoverOpen]);
+
+  useEffect(() => {
+    if (!quickCapturePopoverOpen || !quickCaptureButtonRef.current) {
+      setQuickCapturePopoverStyle(null);
+      return;
+    }
+
+    const updateQuickCapturePosition = () => {
+      const rect = quickCaptureButtonRef.current?.getBoundingClientRect();
+      if (!rect) return;
+
+      const preferredWidth = 250;
+      const gap = 10;
+      const centeredLeft = rect.left + rect.width / 2 - preferredWidth / 2;
+      const left = Math.max(12, Math.min(window.innerWidth - preferredWidth - 12, centeredLeft));
+      const isBottomDock = position === 'bottom';
+      const top = isBottomDock ? rect.top - gap : rect.bottom + gap;
+
+      setQuickCapturePopoverStyle({
+        position: 'fixed',
+        left: `${left}px`,
+        top: `${top}px`,
+        transform: isBottomDock ? 'translateY(-100%)' : 'none',
+        width: `${preferredWidth}px`,
+        zIndex: 30000,
+      });
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setQuickCapturePopoverOpen(false);
+    };
+
+    updateQuickCapturePosition();
+    window.addEventListener('resize', updateQuickCapturePosition);
+    window.addEventListener('scroll', updateQuickCapturePosition, true);
+    document.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      window.removeEventListener('resize', updateQuickCapturePosition);
+      window.removeEventListener('scroll', updateQuickCapturePosition, true);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [position, quickCapturePopoverOpen]);
+
+  useEffect(() => {
+    if (!quickCapturePopoverOpen) return;
+
+    const handlePointerDown = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (quickCaptureButtonRef.current?.contains(target)) return;
+      if (quickCapturePopoverRef.current?.contains(target)) return;
+      setQuickCapturePopoverOpen(false);
+    };
+
+    document.addEventListener('mousedown', handlePointerDown);
+    return () => document.removeEventListener('mousedown', handlePointerDown);
+  }, [quickCapturePopoverOpen]);
+
+  useEffect(() => {
     return () => {
       if (todayHelpCloseTimerRef.current !== null) {
         window.clearTimeout(todayHelpCloseTimerRef.current);
@@ -1014,8 +1165,27 @@ export const ExpandedSidebar = ({
     const target = previous.find((task) => task.id === taskId);
     if (!target) return;
 
+    const clientId = (target as TodayTask & { client_id?: string | null }).client_id ?? null;
     setTodayItems((list) => list.filter((task) => task.id !== taskId));
     setContextMenu(null);
+    window.ipcRenderer?.send('dashboard:today-task-deleted', {
+      source: 'sidebar',
+      optimistic: true,
+      client_id: clientId,
+      task: {
+        ...target,
+        id: target.id,
+        title: target.title,
+        workspace_id: target.workspace_id ?? null,
+        workspace_name: target.workspace_name ?? null,
+        workspace_color: target.workspace_color ?? null,
+        is_today_focus: target.is_today_focus ?? false,
+        show_in_today: target.show_in_today ?? false,
+        due_date: target.due_date ?? null,
+        due_time: target.due_time ?? null,
+        created_at: target.created_at ?? null,
+      },
+    });
 
     try {
       if (target.kind === 'reminder') {
@@ -1027,6 +1197,24 @@ export const ExpandedSidebar = ({
       }
     } catch (error) {
       setTodayItems(previous);
+      window.ipcRenderer?.send('dashboard:today-task-deleted', {
+        source: 'sidebar',
+        rollback: true,
+        client_id: clientId,
+        task: {
+          ...target,
+          id: target.id,
+          title: target.title,
+          workspace_id: target.workspace_id ?? null,
+          workspace_name: target.workspace_name ?? null,
+          workspace_color: target.workspace_color ?? null,
+          is_today_focus: target.is_today_focus ?? false,
+          show_in_today: target.show_in_today ?? false,
+          due_date: target.due_date ?? null,
+          due_time: target.due_time ?? null,
+          created_at: target.created_at ?? null,
+        },
+      });
       setSaveError('Could not delete task.');
     }
   };
@@ -1161,23 +1349,68 @@ export const ExpandedSidebar = ({
 
     const tagLabel = taskTag.trim() ? `#${taskTag.trim().replace(/^#/, '')}` : '';
     const text = [priorityLabel, tagLabel, base].filter(Boolean).join(' ');
+    const tempId = `task-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const dueAt = getTaskExpiryMetadata(24);
+    const optimisticTask: TodayTask = {
+      id: tempId,
+      kind: 'task',
+      title: text,
+      status: 'todo',
+      ...dueAt,
+      show_in_today: true,
+      created_at: new Date().toISOString(),
+      ...getWorkspaceTaskMetadata(),
+    };
+    setTodayItems((prev) => [optimisticTask, ...prev]);
     setTaskDraft('');
     setTaskPriority('none');
     setTaskTag('');
     setQuickCaptureMode('none');
 
-    const created = await api.createTask({
-      title: text,
-      status: 'todo',
-      priority: taskPriority === 'none' ? 'medium' : taskPriority,
-      due_date: todayKey(),
-      show_in_today: true,
-    });
+    try {
+      const created = await api.createTask({
+        title: text,
+        status: 'todo',
+        priority: taskPriority === 'none' ? 'medium' : taskPriority,
+        ...dueAt,
+        show_in_today: true,
+        is_today_focus: false,
+      });
 
-    if (created && typeof created === 'object') {
-      setTodayItems((prev) => [{ ...(created as any), kind: 'task' as const }, ...prev]);
+      if (created && typeof created === 'object') {
+        const createdTask = created as Partial<TodayTask> & { id?: string };
+        const createdId = createdTask.id ?? tempId;
+        setTodayItems((prev) => [
+          {
+            ...optimisticTask,
+            ...createdTask,
+            id: createdId,
+            kind: 'task' as const,
+            ...getWorkspaceTaskMetadata(),
+          },
+          ...prev.filter((item) => item.id !== tempId && item.id !== createdId),
+        ]);
+        window.dispatchEvent(
+          new CustomEvent('ledger:task-created', {
+            detail: {
+              source: 'sidebar',
+              task: {
+                ...optimisticTask,
+                ...createdTask,
+                id: createdId,
+                kind: 'task' as const,
+                is_today_focus: false,
+                ...getWorkspaceTaskMetadata(),
+              },
+            },
+          })
+        );
+      }
       setTaskCaptureSaved(true);
       window.setTimeout(() => setTaskCaptureSaved(false), 1500);
+    } catch (error) {
+      setTodayItems((prev) => prev.filter((item) => item.id !== tempId));
+      setSaveError(error instanceof Error ? error.message : 'Could not save task.');
     }
   };
 
@@ -1186,18 +1419,83 @@ export const ExpandedSidebar = ({
     if (!base || todayQuickSaving) return;
 
     setTodayQuickSaving(true);
+    const tempId = `today-task-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const dueAt = getTaskExpiryMetadata(24);
+    const optimisticTask: TodayTask = {
+      id: tempId,
+      kind: 'task',
+      title: base,
+      status: 'todo',
+      ...dueAt,
+      show_in_today: true,
+      created_at: new Date().toISOString(),
+      ...getWorkspaceTaskMetadata(),
+    };
+    setTodayItems((prev) => [optimisticTask, ...prev]);
+    window.ipcRenderer?.send('dashboard:today-task-created', {
+      source: 'sidebar',
+      optimistic: true,
+      client_id: tempId,
+      task: {
+        ...optimisticTask,
+        id: tempId,
+        kind: 'task' as const,
+        is_today_focus: true,
+        ...getWorkspaceTaskMetadata(),
+      },
+    });
     try {
       const created = await api.createTask({
         title: base,
         status: 'todo',
-        due_date: todayKey(),
+        ...dueAt,
         show_in_today: true,
+        is_today_focus: true,
       });
 
       if (created && typeof created === 'object') {
-        setTodayItems((prev) => [{ ...(created as any), kind: 'task' as const }, ...prev]);
-        setTodayQuickDraft('');
+        const createdTask = created as Partial<TodayTask> & { id?: string };
+        const createdId = createdTask.id ?? tempId;
+        setTodayItems((prev) => [
+          {
+            ...optimisticTask,
+            ...createdTask,
+            id: createdId,
+            kind: 'task' as const,
+            ...getWorkspaceTaskMetadata(),
+          },
+          ...prev.filter((item) => item.id !== tempId && item.id !== createdId),
+        ]);
+        window.ipcRenderer?.send('dashboard:today-task-created', {
+          source: 'sidebar',
+          optimistic: false,
+          client_id: tempId,
+          task: {
+            ...optimisticTask,
+            ...createdTask,
+            id: createdId,
+            kind: 'task' as const,
+            is_today_focus: true,
+            ...getWorkspaceTaskMetadata(),
+          },
+        });
       }
+      setTodayQuickDraft('');
+    } catch (error) {
+      setTodayItems((prev) => prev.filter((item) => item.id !== tempId));
+      window.ipcRenderer?.send('dashboard:today-task-created', {
+        source: 'sidebar',
+        rollback: true,
+        client_id: tempId,
+        task: {
+          id: tempId,
+          title: base,
+          kind: 'task' as const,
+          is_today_focus: true,
+          ...getWorkspaceTaskMetadata(),
+        },
+      });
+      setSaveError(error instanceof Error ? error.message : 'Could not save task.');
     } finally {
       setTodayQuickSaving(false);
     }
@@ -1454,6 +1752,310 @@ export const ExpandedSidebar = ({
     };
   }, [draggingProjectId, projects]);
 
+  const activeProjectCount = projects.filter(
+    (project) => normalizeProjectStatus(String(project.status)) !== 'completed'
+  ).length;
+  const horizontalTodaySummary =
+    todayTotalCount > 0 ? `${completedToday.length}/${todayTotalCount} complete` : 'Nothing yet';
+
+  if (isHorizontal) {
+    const isTopDock = position === 'top';
+    const CollapseChevron = isTopDock ? ChevronUp : ChevronDown;
+
+    return (
+      <div className="flex h-full w-full flex-col items-center gap-1.25 p-1.25">
+        <div className="flex h-15 w-full items-center gap-2 rounded-3xl border border-white/40 bg-white/78 px-2.5 shadow-[0_10px_30px_rgba(15,23,42,0.08)] backdrop-blur-sm">
+          <div className="flex shrink-0 items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => {
+                onCollapseRequest?.();
+                collapseToRail();
+              }}
+              onMouseDown={(e) => e.stopPropagation()}
+              className="flex h-8 w-8 items-center justify-center rounded-xl transition hover:bg-white/60"
+              title="Collapse sidebar"
+            >
+              <img src="./logo-color.svg" alt="Ledger" className="h-7 w-7" />
+            </button>
+            <WorkspaceSwitcher compact />
+          </div>
+
+          <button
+            type="button"
+            onClick={openSearch}
+            className="flex h-8 w-[320px] min-w-65 max-w-85 items-center justify-between gap-2 rounded-2xl border border-gray-200 bg-white px-3 text-left shadow-sm transition hover:border-gray-300 hover:bg-gray-50"
+          >
+            <span className="flex min-w-0 items-center gap-2 text-[11px] text-gray-500">
+              <Search size={14} className="shrink-0 text-gray-400" />
+              <span className="truncate">Search...</span>
+            </span>
+            <span className="shrink-0 rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.16em] text-gray-500">
+              ⌘K
+            </span>
+          </button>
+
+          <div className="flex items-center gap-1 shrink-0">
+            {[
+              { label: 'Dashboard', icon: BarChart3, action: () => window.desktopWindow?.toggleModule('dashboard') },
+              { label: 'Projects', icon: Folder, action: () => window.desktopWindow?.toggleModule('projects') },
+              { label: 'Notes', icon: StickyNote, action: () => window.desktopWindow?.toggleModule('notes') },
+              { label: 'Calendar', icon: CalendarDays, action: () => window.desktopWindow?.toggleModule('calendar') },
+            ].map((item) => (
+              <button
+                key={item.label}
+                onClick={item.action}
+                className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-transparent text-gray-700 transition hover:border-gray-200 hover:bg-white/70 hover:text-gray-900"
+                title={item.label}
+                aria-label={item.label}
+              >
+                <item.icon size={14} />
+              </button>
+            ))}
+          </div>
+
+          <div className="ml-auto flex items-center gap-0.5 shrink-0">
+            <button
+              onClick={() => window.desktopWindow?.toggleModule('settings')}
+              className="inline-flex h-9 w-9 items-center justify-center rounded-xl transition hover:bg-white/60 text-gray-700"
+              title="Settings"
+              aria-label="Open settings"
+            >
+              <Settings size={14} />
+            </button>
+            <button
+              ref={quickCaptureButtonRef}
+              onClick={() => {
+                setTodayDockPopoverOpen(false);
+                setQuickCapturePopoverOpen((current) => !current);
+              }}
+              className="inline-flex h-9 w-9 items-center justify-center rounded-xl transition hover:bg-white/60 text-gray-700"
+              title="Quick capture"
+              aria-label="Quick capture"
+            >
+              <Plus size={14} />
+            </button>
+            <button
+              onClick={() => {
+                onCollapseRequest?.();
+                collapseToRail();
+              }}
+              className="inline-flex h-9 w-9 items-center justify-center rounded-xl transition hover:bg-white/60 text-gray-700"
+              title="Collapse"
+              aria-label="Collapse sidebar"
+            >
+              <CollapseChevron size={16} />
+            </button>
+            <button
+              onClick={signOut}
+              className="inline-flex h-9 w-9 items-center justify-center rounded-xl transition hover:bg-red-50 text-red-600"
+              title="Sign out"
+              aria-label="Sign out"
+            >
+              <LogOut size={14} />
+            </button>
+          </div>
+        </div>
+
+        <div className="flex w-full flex-1 min-h-0 items-center gap-2 rounded-[18px] border border-gray-200/70 bg-white/60 px-3 shadow-[0_4px_12px_rgba(15,23,42,0.04)]">
+          <button
+            ref={todayDockButtonRef}
+            type="button"
+            onClick={() => {
+              setQuickCapturePopoverOpen(false);
+              setTodayDockPopoverOpen((current) => !current);
+            }}
+            className="inline-flex shrink-0 items-center gap-2 rounded-full px-2 py-1.5 text-[13px] transition hover:bg-gray-50"
+          >
+            <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-gray-500">
+              Today
+            </span>
+            <span className="font-semibold text-gray-900">{horizontalTodaySummary}</span>
+          </button>
+
+          <span className="text-gray-300">•</span>
+
+          <button
+            type="button"
+            onClick={() => window.desktopWindow?.openCheckin()}
+            className="inline-flex shrink-0 items-center gap-2 rounded-full px-2 py-1.5 text-[13px] transition hover:bg-gray-50"
+          >
+            <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-gray-500">
+              Check-in
+            </span>
+            <span className="font-medium text-gray-900">
+              {checkin.finished.trim()
+                ? 'Saved'
+                : checkin.blocked.trim()
+                ? 'Blocked'
+                : 'Not started'}
+            </span>
+          </button>
+
+          <span className="text-gray-300">•</span>
+
+          <button
+            type="button"
+            onClick={() => window.desktopWindow?.toggleModule('calendar')}
+            className="inline-flex shrink-0 items-center gap-2 rounded-full px-2 py-1.5 text-[13px] transition hover:bg-gray-50"
+          >
+            <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-gray-500">
+              Upcoming
+            </span>
+            <span className="font-medium text-gray-900">{upcomingItems.length}</span>
+          </button>
+
+          <span className="text-gray-300">•</span>
+
+          <button
+            type="button"
+            onClick={() => window.desktopWindow?.toggleModule('projects')}
+            className="inline-flex shrink-0 items-center gap-2 rounded-full px-2 py-1.5 text-[13px] transition hover:bg-gray-50"
+          >
+            <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-gray-500">
+              Projects
+            </span>
+            <span className="font-medium text-gray-900">{activeProjectCount} active</span>
+          </button>
+
+          <div className="ml-auto">
+            <button
+              type="button"
+              onClick={() => window.desktopWindow?.toggleModule('dashboard')}
+              className="inline-flex items-center rounded-full border border-[#FF5F40] bg-[#FF5F40] px-3.5 py-1.5 text-[13px] font-semibold text-white transition hover:bg-[#f25538]"
+            >
+              Open Dashboard
+            </button>
+          </div>
+        </div>
+
+        {todayDockPopoverOpen && typeof document !== 'undefined'
+          ? createPortal(
+              <div
+                ref={todayDockPopoverRef}
+                style={todayDockPopoverStyle ?? undefined}
+                onMouseDown={(e) => e.stopPropagation()}
+                className="rounded-2xl border border-gray-200 bg-white p-3 shadow-[0_18px_40px_rgba(15,23,42,0.16)]"
+              >
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.22em] text-gray-500">
+                      Today
+                    </p>
+                    <p className="mt-1 text-sm text-gray-600">{horizontalTodaySummary}</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setTodayDockPopoverOpen(false)}
+                    className="rounded-lg px-2 py-1 text-xs text-gray-500 hover:bg-gray-50"
+                  >
+                    Close
+                  </button>
+                </div>
+                <div className="mt-3 max-h-70 space-y-1.5 overflow-auto pr-1">
+                  {todayItems.length > 0 ? (
+                    todayItems.map((item) => (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => void toggleCompleteTodayItem(item.id)}
+                        className="flex w-full items-start gap-2 rounded-xl px-2 py-2 text-left transition hover:bg-gray-50"
+                      >
+                        <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-gray-300" />
+                        <span className="min-w-0">
+                          <span className="block truncate text-sm text-gray-900">{item.title}</span>
+                          <span className="block truncate text-[11px] text-gray-500">
+                            {formatTodayTaskWorkspace(item) || item.workspace_name || 'Workspace'}
+                          </span>
+                        </span>
+                      </button>
+                    ))
+                  ) : (
+                    <p className="px-2 py-3 text-sm text-gray-500">Nothing needs your attention yet.</p>
+                  )}
+
+                  {completedToday.length > 0 && (
+                    <div className="pt-2">
+                      <p className="px-2 text-[10px] font-semibold uppercase tracking-[0.2em] text-gray-400">
+                        Completed today
+                      </p>
+                      {sortTodayTasks(completedToday).slice(0, 4).map((item) => (
+                        <div
+                          key={item.id}
+                          className="mt-1 flex items-start gap-2 rounded-xl px-2 py-2 text-left"
+                        >
+                          <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-green-500" />
+                          <span className="min-w-0">
+                            <span className="block truncate text-sm text-gray-500 line-through">
+                              {item.title}
+                            </span>
+                            <span className="block truncate text-[11px] text-gray-400">
+                              {formatTodayTaskWorkspace(item) || item.workspace_name || 'Workspace'}
+                            </span>
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>,
+              document.body
+            )
+          : null}
+
+        {quickCapturePopoverOpen && typeof document !== 'undefined'
+          ? createPortal(
+              <div
+                ref={quickCapturePopoverRef}
+                style={quickCapturePopoverStyle ?? undefined}
+                onMouseDown={(e) => e.stopPropagation()}
+                className="rounded-2xl border border-gray-200 bg-white p-3 shadow-[0_18px_40px_rgba(15,23,42,0.16)]"
+              >
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.22em] text-gray-500">
+                      Quick Capture
+                    </p>
+                    <p className="mt-1 text-sm text-gray-600">Create something fast.</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setQuickCapturePopoverOpen(false)}
+                    className="rounded-lg px-2 py-1 text-xs text-gray-500 hover:bg-gray-50"
+                  >
+                    Close
+                  </button>
+                </div>
+                <div className="mt-3 grid grid-cols-3 gap-2">
+                  <button
+                    onClick={() => window.desktopWindow?.toggleModule('quick-task')}
+                    className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-xs font-medium text-gray-700 transition hover:bg-gray-100"
+                  >
+                    Task
+                  </button>
+                  <button
+                    onClick={() => window.desktopWindow?.toggleModule('quick-note')}
+                    className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-xs font-medium text-gray-700 transition hover:bg-gray-100"
+                  >
+                    Note
+                  </button>
+                  <button
+                    onClick={() => window.desktopWindow?.toggleModule('quick-event')}
+                    className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-xs font-medium text-gray-700 transition hover:bg-gray-100"
+                  >
+                    Event
+                  </button>
+                </div>
+              </div>,
+              document.body
+            )
+          : null}
+
+      </div>
+
+    );
+  }
+
   return (
     <div
       className={`flex h-full min-h-0 w-full bg-transparent ${
@@ -1506,7 +2108,7 @@ export const ExpandedSidebar = ({
             title="Settings"
             aria-label="Open settings"
           >
-            <Settings size={16} />
+            <Settings size={15} />
           </button>
         </div>
       </div>
@@ -1517,8 +2119,8 @@ export const ExpandedSidebar = ({
           onClick={openSearch}
           className="mb-3 flex h-10 w-full items-center justify-between gap-3 rounded-2xl border border-gray-200 bg-white px-3 text-left shadow-sm transition hover:border-gray-300 hover:bg-gray-50"
         >
-          <span className="flex min-w-0 items-center gap-2 text-sm text-gray-500">
-            <Search size={15} className="shrink-0 text-gray-400" />
+          <span className="flex min-w-0 items-center gap-2 text-[13px] text-gray-500">
+            <Search size={14} className="shrink-0 text-gray-400" />
             <span className="truncate">Search everything...</span>
           </span>
           <span className="shrink-0 rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.16em] text-gray-500">
@@ -1676,7 +2278,7 @@ export const ExpandedSidebar = ({
                               y: e.clientY,
                             });
                           }}
-                          className="flex items-start gap-2 rounded-lg px-1.5 py-1.5 transition hover:bg-gray-50"
+                          className="flex items-start gap-1.5 rounded-lg px-1 py-1 transition hover:bg-gray-50"
                         >
                           <button
                             type="button"
@@ -1689,10 +2291,10 @@ export const ExpandedSidebar = ({
                             </div>
                           </button>
                           <div className="min-w-0 flex-1">
-                            <div className="truncate text-[12px] leading-5 text-gray-900">
+                            <div className="truncate text-[11px] leading-4 text-gray-900">
                               {item.title}
                             </div>
-                            <div className="flex min-w-0 items-center gap-1.5 truncate text-[10px] text-gray-500">
+                            <div className="flex min-w-0 items-center gap-1.5 truncate text-[9px] text-gray-500">
                               <span
                                 className="h-1.5 w-1.5 shrink-0 rounded-full"
                                 style={{
@@ -1741,7 +2343,7 @@ export const ExpandedSidebar = ({
                                   y: e.clientY,
                                 });
                               }}
-                              className="flex items-start gap-2 rounded-lg px-1.5 py-1.5 transition hover:bg-gray-50"
+                                className="flex items-start gap-1.5 rounded-lg px-1 py-1 transition hover:bg-gray-50"
                             >
                               <button
                                 type="button"
@@ -1754,10 +2356,10 @@ export const ExpandedSidebar = ({
                                 </div>
                               </button>
                               <div className="min-w-0 flex-1">
-                                <div className="truncate text-[12px] leading-5 text-gray-600 line-through">
+                                  <div className="truncate text-[11px] leading-4 text-gray-600 line-through">
                                   {item.title}
                                 </div>
-                                <div className="flex min-w-0 items-center gap-1.5 truncate text-[10px] text-gray-500">
+                                  <div className="flex min-w-0 items-center gap-1.5 truncate text-[9px] text-gray-500">
                                   <span
                                     className="h-1.5 w-1.5 shrink-0 rounded-full"
                                     style={{
@@ -2248,14 +2850,14 @@ export const ExpandedSidebar = ({
             </h2>
             <button
               onClick={() => setIsCreatingProject(!isCreatingProject)}
-              className="text-xs font-medium text-[#FF5F40] hover:text-[#ea5336] px-2 py-1 rounded hover:bg-[#fff0eb]"
+              className="text-xs font-medium text-[#FF5F40] hover:text-[#ea5336] px-2 py-1 rounded hover:bg-gray-50"
             >
               {isCreatingProject ? 'Cancel' : '+ New'}
             </button>
           </div>
 
           {isCreatingProject && (
-            <div className="bg-white rounded-lg border border-gray-200 p-3 mb-2 space-y-2">
+            <div className="bg-white rounded-lg border border-gray-200 p-3 mb-2 space-y-2 overflow-hidden">
               <input
                 value={newProjectName}
                 onChange={(e) => setNewProjectName(e.target.value)}
@@ -2297,7 +2899,7 @@ export const ExpandedSidebar = ({
                 return (
                   <div
                     key={project.id}
-                    className="bg-white rounded-lg border border-gray-200"
+                    className="bg-white rounded-lg border border-gray-200 overflow-hidden"
                     onContextMenu={(e) => {
                       e.preventDefault();
                       setContextMenu({
@@ -2310,7 +2912,7 @@ export const ExpandedSidebar = ({
                   >
                     <button
                       onClick={() => setExpandedProjectId(isExpanded ? null : project.id)}
-                      className="w-full text-left p-3 flex items-start justify-between hover:bg-gray-50 transition"
+                      className="w-full text-left p-3 flex items-start justify-between bg-white transition hover:bg-gray-50"
                     >
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
@@ -2374,7 +2976,7 @@ export const ExpandedSidebar = ({
                     </button>
 
                     {isExpanded && (
-                      <div className="border-t border-gray-200 bg-gray-50 p-3 space-y-2">
+                      <div className="border-t border-gray-200 bg-white p-3 space-y-2">
                         <div>
                           <label className="text-[10px] font-semibold uppercase text-gray-600">
                             Project Status
@@ -2391,7 +2993,7 @@ export const ExpandedSidebar = ({
                                   normalizeProjectStatus(String(project.status)) ===
                                   normalizeProjectStatus(status)
                                     ? 'bg-[#FF5F40] text-white'
-                                    : 'bg-white border border-gray-200 text-gray-700 hover:border-gray-300'
+                                    : 'bg-gray-50 border border-gray-200 text-gray-700 hover:bg-gray-100 hover:border-gray-300'
                                 }`}
                               >
                                 {projectStatusLabels[normalizeProjectStatus(status)]}
@@ -2525,7 +3127,7 @@ export const ExpandedSidebar = ({
                     }
                     setContextMenu(null);
                   }}
-                  className="w-full text-left px-4 py-2 text-sm text-[#FF5F40] hover:bg-[#fff0eb] transition flex items-center gap-2"
+                  className="w-full text-left px-4 py-2 text-sm text-[#FF5F40] hover:bg-gray-50 transition flex items-center gap-2"
                 >
                   <Folder size={14} />
                   Navigate to project
@@ -2575,7 +3177,7 @@ export const ExpandedSidebar = ({
                       setContextMenu(null);
                     }
                   }}
-                  className="w-full text-left px-4 py-2 text-sm text-[#FF5F40] hover:bg-[#fff0eb] transition flex items-center gap-2"
+                  className="w-full text-left px-4 py-2 text-sm text-[#FF5F40] hover:bg-gray-50 transition flex items-center gap-2"
                 >
                   <CalendarDays size={14} />
                   Open in Calendar
@@ -2648,7 +3250,7 @@ export const ExpandedSidebar = ({
           onClick={signOut}
           className="w-full px-3 py-2 text-sm font-medium text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition flex items-center justify-center gap-2"
         >
-          <LogOut size={16} />
+          <LogOut size={15} />
           Sign Out
         </button>
       </div>

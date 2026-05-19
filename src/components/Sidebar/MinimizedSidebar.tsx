@@ -3,9 +3,12 @@ import {
   CalendarDays,
   LogOut,
   ChevronRight,
+  ChevronUp,
+  ChevronDown,
   StickyNote,
   Folder,
   Search,
+  Plus,
 } from 'lucide-react';
 import type React from 'react';
 import { useAuthContext } from '../../context/AuthContext';
@@ -21,6 +24,8 @@ export const MinimizedSidebar = ({
   const { collapseSidebar, setState, position } = useSidebar();
   const { openSearch } = useSearch();
   const isHorizontal = position === 'top' || position === 'bottom';
+  const isTopDock = position === 'top';
+  const ExpandChevron = isHorizontal ? (isTopDock ? ChevronDown : ChevronUp) : ChevronRight;
   const iconBase =
     'w-10 h-10 rounded-xl transition-colors duration-150 flex items-center justify-center active:scale-95';
   const neutralIcon = `${iconBase} bg-transparent hover:bg-white/45 text-gray-700`;
@@ -39,7 +44,7 @@ export const MinimizedSidebar = ({
       style={{ cursor: onDragHandleMouseDown ? 'grab' : 'auto' }}
       className={`border-gray-200 flex ${
         isHorizontal
-          ? 'h-16 w-full flex-row items-center justify-between px-4 bg-transparent'
+          ? 'h-full w-full flex-row items-center justify-between px-4 bg-transparent'
           : 'h-full w-full flex-col items-center justify-between bg-transparent px-0 py-4'
       }`}
     >
@@ -110,6 +115,14 @@ export const MinimizedSidebar = ({
           >
             <StickyNote size={18} />
           </button>
+          <button
+            aria-label="Open quick capture"
+            onClick={() => window.desktopWindow?.toggleModule('quick-task')}
+            onMouseDown={(e) => e.stopPropagation()}
+            className={accentIcon}
+          >
+            <Plus size={18} />
+          </button>
         </div>
 
         <div className={`flex items-center ${isHorizontal ? 'flex-row gap-3' : 'flex-col gap-3'}`}>
@@ -118,7 +131,7 @@ export const MinimizedSidebar = ({
             onMouseDown={(e) => e.stopPropagation()}
             className={actionIcon}
           >
-            <ChevronRight size={20} />
+            <ExpandChevron size={20} />
           </button>
 
           <button onClick={signOut} onMouseDown={(e) => e.stopPropagation()} className={dangerIcon}>

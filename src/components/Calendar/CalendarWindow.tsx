@@ -17,6 +17,7 @@ import {
   EyeOff,
 } from 'lucide-react';
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { ModalOverlay } from '../Common/ModalOverlay';
 import * as rruleModule from 'rrule';
 import { useAuthContext } from '../../context/AuthContext';

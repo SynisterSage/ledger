@@ -116,7 +116,7 @@ export const LoginForm: React.FC<LoginProps> = ({ onSuccess, notice }) => {
           <button
             type="submit"
             disabled={isLoading}
-            className="mt-1 flex w-full items-center justify-center gap-2 rounded-lg bg-[#FF5F40] py-2.5 text-sm font-semibold text-white shadow-[0_10px_24px_rgba(255,95,64,0.24)] transition-colors hover:bg-[#ea5336] disabled:cursor-not-allowed disabled:opacity-50"
+            className="mt-1 flex w-full items-center justify-center gap-2 rounded-lg bg-[#FF5F40] py-2.5 text-sm font-semibold text-white shadow-[0_6px_14px_rgba(255,95,64,0.08)] transition-colors hover:bg-[#ea5336] disabled:cursor-not-allowed disabled:opacity-50"
           >
             {isLoading && <Loader2 size={16} className="animate-spin" />}
             {isSignUp ? 'Create Account' : 'Sign In'}

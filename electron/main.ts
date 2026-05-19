@@ -15,7 +15,7 @@ import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import fs from 'node:fs';
-import { defaultSidebarPreferences } from '../src/config/sidebarPreferences';
+import { defaultSidebarPreferences, type SidebarPosition } from '../src/config/sidebarPreferences';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const execFileAsync = promisify(execFile);
@@ -457,7 +457,7 @@ type FloatingDockTarget = {
 let sidebarWin: BrowserWindow | null = null;
 const moduleWins = new Map<ModuleWindowKind, BrowserWindow>();
 let currentSidebarMode: SidebarWindowMode = 'auth';
-let currentSidebarPosition: 'left' | 'right' | 'floating' = 'right';
+let currentSidebarPosition: SidebarPosition = 'right';
 let currentFloatingPosition = { ...defaultSidebarPreferences.floatingPosition };
 let currentSidebarPreferences = { ...defaultSidebarPreferences };
 let currentFloatingDockTarget: FloatingDockTarget | null = null;
@@ -478,7 +478,7 @@ const moduleWindowBoundsMemory = new Map<
   ModuleWindowKind,
   {
     bounds: Electron.Rectangle;
-    sidebarPosition: 'left' | 'right' | 'floating';
+    sidebarPosition: SidebarPosition;
   }
 >();
 
@@ -486,6 +486,10 @@ const WINDOW_MARGIN = 16;
 const RAIL_SIZE = 64;
 const COLLAPSED_SIZE = 64;
 const EXPANDED_WIDTH = 320;
+const HORIZONTAL_DOCK_WIDTH = 1120;
+const HORIZONTAL_DOCK_HEIGHT = 144;
+const HORIZONTAL_COLLAPSED_WIDTH = 1120;
+const HORIZONTAL_COLLAPSED_HEIGHT = 60;
 const FLOATING_EXPANDED_HEIGHT = 760;
 const FLOATING_RAIL_HEIGHT = 520;
 const MIN_DOCK_HEIGHT = {
@@ -568,12 +572,34 @@ function getModuleWindowChromeOptions() {
 
 function getDockedBounds(
   width: number,
-  position: 'left' | 'right' | 'floating' = currentSidebarPosition
+  position: SidebarPosition = currentSidebarPosition
 ) {
   const { x, y, width: workWidth, height: workHeight } = screen.getPrimaryDisplay().workArea;
   const minHeight = Math.min(MIN_DOCK_HEIGHT.expanded, workHeight - WINDOW_MARGIN * 2);
   const maxHeight = workHeight - WINDOW_MARGIN * 2;
   const height = Math.max(minHeight, Math.min(maxHeight, maxHeight));
+
+  if (position === 'top' || position === 'bottom') {
+    const targetWidth = Math.min(HORIZONTAL_DOCK_WIDTH, workWidth - WINDOW_MARGIN * 2);
+    const targetHeight = Math.min(
+      HORIZONTAL_DOCK_HEIGHT,
+      Math.max(1, workHeight - WINDOW_MARGIN * 2)
+    );
+    const width = Math.max(1, targetWidth);
+    const height = Math.max(1, targetHeight);
+    const dockY =
+      position === 'top' ? y + WINDOW_MARGIN : y + workHeight - height - WINDOW_MARGIN;
+
+    return clampRectToWorkArea(
+      {
+        x: x + Math.round((workWidth - width) / 2),
+        y: dockY,
+        width,
+        height,
+      },
+      screen.getPrimaryDisplay().workArea
+    );
+  }
 
   if (position === 'left') {
     return {
@@ -594,10 +620,27 @@ function getDockedBounds(
 
 function getCollapsedBounds(
   size: number,
-  position: 'left' | 'right' | 'floating' = currentSidebarPosition
+  position: SidebarPosition = currentSidebarPosition
 ) {
   const { x, y, width: workWidth, height: workHeight } = screen.getPrimaryDisplay().workArea;
   const safeSize = Math.min(size, workWidth - WINDOW_MARGIN * 2, workHeight - WINDOW_MARGIN * 2);
+
+  if (position === 'top' || position === 'bottom') {
+    const width = Math.min(HORIZONTAL_COLLAPSED_WIDTH, workWidth - WINDOW_MARGIN * 2);
+    const height = Math.min(HORIZONTAL_COLLAPSED_HEIGHT, workHeight - WINDOW_MARGIN * 2);
+    const dockY =
+      position === 'top' ? y + WINDOW_MARGIN : y + workHeight - height - WINDOW_MARGIN;
+
+    return clampRectToWorkArea(
+      {
+        x: x + Math.round((workWidth - width) / 2),
+        y: dockY,
+        width,
+        height,
+      },
+      screen.getPrimaryDisplay().workArea
+    );
+  }
 
   if (position === 'left') {
     return {
@@ -1034,7 +1077,7 @@ function applyFloatingDockTargetBounds(targetBounds: Rect, side: DockSide) {
   currentFloatingDockMisses = 0;
   const nextBounds = getDockedBoundsForTarget(targetBounds, side, currentSidebarMode);
   if (rectsMatch(sidebarWin.getBounds(), nextBounds)) return;
-  if (!setSidebarBounds(nextBounds)) return;
+  if (!setSidebarBounds(nextBounds, true)) return;
   currentFloatingPosition = { x: nextBounds.x, y: nextBounds.y };
 }
 
@@ -1716,7 +1759,7 @@ function applySidebarWindowMode(mode: SidebarWindowMode) {
     sidebarWin.setAlwaysOnTop(false);
     sidebarWin.setResizable(true);
     setWindowButtonVisibility(sidebarWin, true);
-    setSidebarBounds(bounds);
+    setSidebarBounds(bounds, true);
     return;
   }
 
@@ -1728,13 +1771,18 @@ function applySidebarWindowMode(mode: SidebarWindowMode) {
     sidebarWin.setAlwaysOnTop(false);
     sidebarWin.setResizable(false);
     setWindowButtonVisibility(sidebarWin, false);
-    setSidebarBounds(bounds);
+    setSidebarBounds(bounds, true);
     return;
   }
 
+  const isHorizontalDock = currentSidebarPosition === 'top' || currentSidebarPosition === 'bottom';
   const bounds =
     currentSidebarPosition === 'floating'
       ? getFloatingBounds(mode)
+      : isHorizontalDock
+      ? mode === 'expanded'
+        ? getDockedBounds(HORIZONTAL_DOCK_WIDTH)
+        : getCollapsedBounds(HORIZONTAL_COLLAPSED_HEIGHT)
       : mode === 'compact'
       ? getCollapsedBounds(COLLAPSED_SIZE)
       : mode === 'minimized'
@@ -1743,7 +1791,7 @@ function applySidebarWindowMode(mode: SidebarWindowMode) {
   sidebarWin.setAlwaysOnTop(sidebarAlwaysOnTop, 'screen-saver');
   sidebarWin.setResizable(false);
   setWindowButtonVisibility(sidebarWin, false);
-  setSidebarBounds(bounds);
+  setSidebarBounds(bounds, true);
 }
 
 function applySidebarAlwaysOnTop(alwaysOnTop: boolean) {
@@ -2115,6 +2163,23 @@ function openModuleWindow(
     }
   });
 
+  // Handle renderer requests to toggle native window shadow for this window
+  // Remove any previous handler before registering to avoid duplicate-registration errors
+  try {
+    ipcMain.removeHandler('window:set-has-shadow');
+  } catch (e) {}
+  ipcMain.handle('window:set-has-shadow', (event, enabled: boolean) => {
+    try {
+      const win = BrowserWindow.fromWebContents(event.sender);
+      if (win && !win.isDestroyed() && typeof (win as any).setHasShadow === 'function') {
+        (win as any).setHasShadow(Boolean(enabled));
+      }
+    } catch (err) {
+      console.error('Failed to set window shadow:', err);
+    }
+    return true;
+  });
+
   moduleWin.on('enter-full-screen', () => {
     try {
       // Ensure the window is visible and focused when entering fullscreen
@@ -2225,6 +2290,8 @@ ipcMain.handle(
     const hasPositionChange =
       preferences.position === 'left' ||
       preferences.position === 'right' ||
+      preferences.position === 'top' ||
+      preferences.position === 'bottom' ||
       preferences.position === 'floating';
     const hasFloatingPositionChange = Boolean(preferences.floatingPosition);
     const hasDockToggleChange = typeof preferences.floatingDockEnabled === 'boolean';
@@ -2239,7 +2306,12 @@ ipcMain.handle(
       hasViewStateChange ||
       hasHiddenStateChange;
 
-    if (preferences.position === 'left' || preferences.position === 'right') {
+    if (
+      preferences.position === 'left' ||
+      preferences.position === 'right' ||
+      preferences.position === 'top' ||
+      preferences.position === 'bottom'
+    ) {
       currentSidebarPosition = preferences.position;
       clearCurrentFloatingDockTarget();
       stopFloatingDockTracking();
@@ -2280,9 +2352,9 @@ ipcMain.handle(
     ) {
       applySidebarWindowMode(currentSidebarMode);
       if (
-        currentSidebarPosition === 'floating' &&
-        currentFloatingDockTarget &&
-        currentSidebarPreferences.floatingDockEnabled !== false
+      currentSidebarPosition === 'floating' &&
+      currentFloatingDockTarget &&
+      currentSidebarPreferences.floatingDockEnabled !== false
       ) {
         if (
           !floatingDockNativeTracker &&
@@ -2445,6 +2517,64 @@ ipcMain.on(
     const dashboardWin = moduleWins.get('dashboard');
     if (!dashboardWin || dashboardWin.isDestroyed()) return;
     dashboardWin.webContents.send('daily:checkin-updated', payload);
+  }
+);
+
+ipcMain.on(
+  'dashboard:today-task-created',
+  (
+    _event,
+    payload: {
+      source?: string;
+      client_id?: string;
+      optimistic?: boolean;
+      rollback?: boolean;
+      task?: {
+        id?: string;
+        title?: string;
+        workspace_id?: string | null;
+        workspace_name?: string | null;
+        workspace_color?: string | null;
+        is_today_focus?: boolean;
+        show_in_today?: boolean;
+        due_date?: string | null;
+        due_time?: string | null;
+        created_at?: string | null;
+      };
+    }
+  ) => {
+    const dashboardWin = moduleWins.get('dashboard');
+    if (!dashboardWin || dashboardWin.isDestroyed()) return;
+    dashboardWin.webContents.send('dashboard:today-task-created', payload);
+  }
+);
+
+ipcMain.on(
+  'dashboard:today-task-deleted',
+  (
+    _event,
+    payload: {
+      source?: string;
+      client_id?: string;
+      optimistic?: boolean;
+      rollback?: boolean;
+      task?: {
+        id?: string;
+        title?: string;
+        workspace_id?: string | null;
+        workspace_name?: string | null;
+        workspace_color?: string | null;
+        is_today_focus?: boolean;
+        show_in_today?: boolean;
+        due_date?: string | null;
+        due_time?: string | null;
+        created_at?: string | null;
+      };
+    }
+  ) => {
+    const dashboardWin = moduleWins.get('dashboard');
+    if (!dashboardWin || dashboardWin.isDestroyed()) return;
+    dashboardWin.webContents.send('dashboard:today-task-deleted', payload);
   }
 );
 

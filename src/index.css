@@ -15,6 +15,123 @@ body {
   background-color: transparent;
 }
 
+/* Window / modal radius variables — used to keep modal backdrops
+   visually consistent with the rounded Electron BrowserWindow. */
+:root {
+  --window-radius: 28px;
+  --modal-backdrop-radius: var(--window-radius);
+}
+
+/* When a modal is open, hide the app shell border/shadow and match body background
+   to the modal backdrop color so transparent window edges don't reveal a mismatched
+   background or border. This helps avoid corner artifacts in rounded Electron windows. */
+body.has-modal-open {
+  background-color: rgba(17, 24, 39, 0.45) !important;
+}
+
+body.has-modal-open #root > * {
+  border: none !important;
+  box-shadow: none !important;
+  outline: none !important;
+}
+
+.sidebar-glass {
+  isolation: isolate;
+  background:
+    linear-gradient(
+      135deg,
+      rgba(255, 255, 255, var(--sidebar-glass-white-alpha, 0.93)),
+      rgba(255, 255, 255, var(--sidebar-glass-cream-alpha, 0.88))
+    );
+  border: 1px solid rgba(255, 255, 255, 0.8);
+  outline: 1px solid rgba(17, 24, 39, 0.05);
+  box-shadow:
+    0 30px 90px rgba(17, 24, 39, 0.24),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    inset 0 -1px 0 rgba(17, 24, 39, 0.05);
+  -webkit-backdrop-filter: blur(36px) saturate(0.9);
+  backdrop-filter: blur(36px) saturate(0.9);
+}
+
+.sidebar-glass::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 18% 8%, rgba(255, 255, 255, 0.65), transparent 30%),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.3), transparent 42%);
+  opacity: 0.75;
+}
+
+.platform-macos.sidebar-glass {
+  -webkit-backdrop-filter: blur(40px) saturate(0.92);
+  backdrop-filter: blur(40px) saturate(0.92);
+}
+
+.platform-windows.sidebar-glass {
+  background:
+    linear-gradient(
+      135deg,
+      rgba(255, 255, 255, 0.97),
+      rgba(255, 255, 255, 0.93)
+    );
+  border-color: rgba(17, 24, 39, 0.06);
+  outline-color: rgba(255, 255, 255, 0.6);
+  box-shadow:
+    0 26px 76px rgba(17, 24, 39, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.92);
+  -webkit-backdrop-filter: blur(30px) saturate(0.94);
+  backdrop-filter: blur(30px) saturate(0.94);
+}
+
+.sidebar-glass--solid {
+  background: rgba(255, 255, 255, 0.96);
+  border-color: rgba(17, 24, 39, 0.06);
+  box-shadow:
+    0 20px 58px rgba(17, 24, 39, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.92);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+.sidebar-glass--solid::before {
+  opacity: 0.28;
+}
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .sidebar-glass {
+    background:
+      linear-gradient(
+        135deg,
+        rgba(255, 255, 255, 0.97),
+        rgba(255, 255, 255, 0.93)
+      );
+    border-color: rgba(17, 24, 39, 0.06);
+    box-shadow:
+      0 26px 76px rgba(17, 24, 39, 0.18),
+      inset 0 1px 0 rgba(255, 255, 255, 0.92);
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .sidebar-glass {
+    background: rgba(255, 255, 255, 0.97);
+    border-color: rgba(17, 24, 39, 0.06);
+    box-shadow:
+      0 20px 58px rgba(17, 24, 39, 0.18),
+      inset 0 1px 0 rgba(255, 255, 255, 0.92);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+
+  .sidebar-glass::before {
+    opacity: 0.22;
+  }
+}
+
 /* Focus states */
 input:focus,
 button:focus {

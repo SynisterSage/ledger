@@ -111,7 +111,7 @@ export const ModuleWindowHeader = ({
                 {eyebrow}
               </p>
             )}
-            <h1 className="truncate text-[25px] font-semibold leading-[1.05] tracking-tight text-gray-900">
+            <h1 className="truncate text-[25px] font-semibold leading-[1.15] tracking-tight text-gray-900">
               {title}
             </h1>
             {subtitle && <p className="truncate text-xs leading-tight text-gray-500">{subtitle}</p>}

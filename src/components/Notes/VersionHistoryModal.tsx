@@ -94,136 +94,138 @@ export const VersionHistoryModal = ({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-220 flex items-center justify-center bg-black/45 p-4"
-      onClick={onClose}
+      className="fixed inset-0 z-220 isolate"
     >
-      <div
-        className="w-full max-w-3xl max-h-[84vh] overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-xl"
-        onClick={(event) => event.stopPropagation()}
-      >
-        <div className="sticky top-0 z-10 flex items-center justify-between border-b border-gray-200 bg-white px-5 py-4">
-          <div className="min-w-0">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-gray-500">
-              Version history
-            </p>
-            <p className="mt-1 truncate text-sm font-semibold text-gray-900">
-              {noteTitle || 'Untitled note'}
-            </p>
-            <p className="mt-1 text-xs text-gray-500">Review and restore previous note snapshots.</p>
+      <div className="absolute inset-0 bg-black/45" onClick={onClose} />
+      <div className="relative z-10 flex h-full w-full items-center justify-center p-4">
+        <div
+          className="w-full max-w-3xl max-h-[84vh] overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-xl"
+          onClick={(event) => event.stopPropagation()}
+        >
+          <div className="sticky top-0 z-10 flex items-center justify-between border-b border-gray-200 bg-white px-5 py-4">
+            <div className="min-w-0">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-gray-500">
+                Version history
+              </p>
+              <p className="mt-1 truncate text-sm font-semibold text-gray-900">
+                {noteTitle || 'Untitled note'}
+              </p>
+              <p className="mt-1 text-xs text-gray-500">Review and restore previous note snapshots.</p>
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              className="relative z-20 inline-flex h-8 w-8 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
+              aria-label="Close version history"
+            >
+              <X size={16} />
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="relative z-20 inline-flex h-8 w-8 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
-            aria-label="Close version history"
-          >
-            <X size={16} />
-          </button>
-        </div>
 
-        <div className="max-h-[calc(84vh-70px)] p-4">
-          {isLoading ? (
-            <div className="flex items-center justify-center py-12 text-gray-500">
-              <Loader2 size={18} className="animate-spin" />
-              <span className="ml-2 text-sm">Loading versions…</span>
-            </div>
-          ) : versions.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-gray-200 p-6 text-sm text-gray-500">
-              No versions available yet.
-            </div>
-          ) : (
-            <div className="grid max-h-[calc(84vh-102px)] grid-cols-1 gap-4 overflow-hidden md:grid-cols-[300px_minmax(0,1fr)]">
-              <div className="min-h-0 rounded-xl border border-gray-200">
-                <div className="max-h-full overflow-auto py-1.5">
-                  {versions.map((version, index) => {
-                    const isSelected = selectedVersion?.id === version.id;
-                    const isCurrent = index === 0;
-                    const isRestoring = restoringVersionId === version.id;
-                    return (
-                      <div
-                        key={version.id}
-                        className={`w-full border-b border-gray-100 px-3 py-2.5 transition last:border-b-0 ${
-                          isSelected ? 'bg-gray-100' : 'bg-white hover:bg-gray-50'
-                        }`}
-                      >
-                        <div className="flex items-start justify-between gap-2">
-                          <button
-                            type="button"
-                            onClick={() => setSelectedVersionId(version.id)}
-                            className="min-w-0 flex-1 text-left"
-                          >
-                            <p className="text-sm font-semibold text-gray-900">
-                              {toHumanReason(version.reason, isCurrent)}
-                            </p>
-                            <p className="mt-0.5 text-xs text-gray-500">
-                              {formatVersionStamp(version.created_at)}
-                            </p>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => onRestore(version.id)}
-                            disabled={isCurrent || isRestoring}
-                            className="inline-flex shrink-0 items-center gap-1 rounded-md border border-gray-200 bg-white px-2 py-1 text-[11px] font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:text-gray-400"
-                          >
-                            {isRestoring ? (
-                              <Loader2 size={11} className="animate-spin" />
-                            ) : (
-                              <RotateCcw size={11} />
-                            )}
-                            Restore
-                          </button>
+          <div className="max-h-[calc(84vh-70px)] p-4">
+            {isLoading ? (
+              <div className="flex items-center justify-center py-12 text-gray-500">
+                <Loader2 size={18} className="animate-spin" />
+                <span className="ml-2 text-sm">Loading versions…</span>
+              </div>
+            ) : versions.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-gray-200 p-6 text-sm text-gray-500">
+                No versions available yet.
+              </div>
+            ) : (
+              <div className="grid max-h-[calc(84vh-102px)] grid-cols-1 gap-4 overflow-hidden md:grid-cols-[300px_minmax(0,1fr)]">
+                <div className="min-h-0 rounded-xl border border-gray-200">
+                  <div className="max-h-full overflow-auto py-1.5">
+                    {versions.map((version, index) => {
+                      const isSelected = selectedVersion?.id === version.id;
+                      const isCurrent = index === 0;
+                      const isRestoring = restoringVersionId === version.id;
+                      return (
+                        <div
+                          key={version.id}
+                          className={`w-full border-b border-gray-100 px-3 py-2.5 transition last:border-b-0 ${
+                            isSelected ? 'bg-gray-100' : 'bg-white hover:bg-gray-50'
+                          }`}
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setSelectedVersionId(version.id)}
+                              className="min-w-0 flex-1 text-left"
+                            >
+                              <p className="text-sm font-semibold text-gray-900">
+                                {toHumanReason(version.reason, isCurrent)}
+                              </p>
+                              <p className="mt-0.5 text-xs text-gray-500">
+                                {formatVersionStamp(version.created_at)}
+                              </p>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => onRestore(version.id)}
+                              disabled={isCurrent || isRestoring}
+                              className="inline-flex shrink-0 items-center gap-1 rounded-md border border-gray-200 bg-white px-2 py-1 text-[11px] font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:text-gray-400"
+                            >
+                              {isRestoring ? (
+                                <Loader2 size={11} className="animate-spin" />
+                              ) : (
+                                <RotateCcw size={11} />
+                              )}
+                              Restore
+                            </button>
+                          </div>
                         </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="min-h-0 rounded-xl border border-gray-200 bg-white p-4">
+                  {selectedVersion ? (
+                    <div className="flex h-full min-h-0 flex-col">
+                      <div className="border-b border-gray-100 pb-3">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-gray-500">
+                          Preview
+                        </p>
+                        <p className="mt-1 text-base font-semibold text-gray-900">
+                          {toHumanReason(selectedVersion.reason, selectedIsCurrent)}
+                        </p>
+                        <p className="mt-1 text-xs text-gray-500">
+                          {formatVersionStamp(selectedVersion.created_at)} ·{' '}
+                          {resolveActorName(selectedVersion.versioned_by)}
+                        </p>
                       </div>
-                    );
-                  })}
+
+                      <div className="mt-3 min-h-0 flex-1 overflow-auto rounded-lg border border-gray-100 bg-gray-50/60 px-3 py-2.5 text-sm leading-6 text-gray-700">
+                        {previewPlainText(selectedVersion.content_html) || 'No content in this version.'}
+                      </div>
+
+                      <div className="mt-3 flex items-center justify-between">
+                        {selectedIsCurrent ? (
+                          <p className="text-xs text-gray-500">This is the current version.</p>
+                        ) : (
+                          <span className="text-xs text-gray-500">Select restore to recover this snapshot.</span>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => onRestore(selectedVersion.id)}
+                          disabled={selectedIsCurrent || restoringVersionId === selectedVersion.id}
+                          className="inline-flex items-center gap-1 rounded-lg bg-gray-900 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-gray-800 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-500"
+                        >
+                          {restoringVersionId === selectedVersion.id ? (
+                            <Loader2 size={12} className="animate-spin" />
+                          ) : (
+                            <RotateCcw size={12} />
+                          )}
+                          Restore this version
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
               </div>
-
-              <div className="min-h-0 rounded-xl border border-gray-200 bg-white p-4">
-                {selectedVersion ? (
-                  <div className="flex h-full min-h-0 flex-col">
-                    <div className="border-b border-gray-100 pb-3">
-                      <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-gray-500">
-                        Preview
-                      </p>
-                      <p className="mt-1 text-base font-semibold text-gray-900">
-                        {toHumanReason(selectedVersion.reason, selectedIsCurrent)}
-                      </p>
-                      <p className="mt-1 text-xs text-gray-500">
-                        {formatVersionStamp(selectedVersion.created_at)} ·{' '}
-                        {resolveActorName(selectedVersion.versioned_by)}
-                      </p>
-                    </div>
-
-                    <div className="mt-3 min-h-0 flex-1 overflow-auto rounded-lg border border-gray-100 bg-gray-50/60 px-3 py-2.5 text-sm leading-6 text-gray-700">
-                      {previewPlainText(selectedVersion.content_html) || 'No content in this version.'}
-                    </div>
-
-                    <div className="mt-3 flex items-center justify-between">
-                      {selectedIsCurrent ? (
-                        <p className="text-xs text-gray-500">This is the current version.</p>
-                      ) : (
-                        <span className="text-xs text-gray-500">Select restore to recover this snapshot.</span>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => onRestore(selectedVersion.id)}
-                        disabled={selectedIsCurrent || restoringVersionId === selectedVersion.id}
-                        className="inline-flex items-center gap-1 rounded-lg bg-gray-900 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-gray-800 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-500"
-                      >
-                        {restoringVersionId === selectedVersion.id ? (
-                          <Loader2 size={12} className="animate-spin" />
-                        ) : (
-                          <RotateCcw size={12} />
-                        )}
-                        Restore this version
-                      </button>
-                    </div>
-                  </div>
-                ) : null}
-              </div>
-            </div>
-          )}
+            )}
+          </div>
         </div>
       </div>
     </div>,

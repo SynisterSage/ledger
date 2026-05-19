@@ -1,4 +1,4 @@
-import { ReactNode } from 'react';
+import { ReactNode, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 
 export interface ModalOverlayProps {
@@ -24,24 +24,64 @@ export const ModalOverlay = ({
   closeOnBackdropClick = true,
 }: ModalOverlayProps) => {
   if (!isOpen) return null;
-
   const handleBackdropClick = (event: React.MouseEvent) => {
     if (closeOnBackdropClick && event.target === event.currentTarget) {
       onClose();
     }
   };
 
+  // Use CSS variables so the backdrop radius matches the app/window radius.
+  // The outer wrapper clips the absolute backdrop so corners are clean inside rounded windows.
+  const wrapperStyle: React.CSSProperties = {
+    borderRadius: 'var(--modal-backdrop-radius, 28px)',
+    overflow: 'hidden',
+    // Expand slightly to cover 1px window borders/antialiasing artifacts.
+    position: 'fixed',
+    top: 'calc(-1px)',
+    left: 'calc(-1px)',
+    right: 'calc(-1px)',
+    bottom: 'calc(-1px)',
+    // Ensure overlay sits above shadows and outlines
+    boxShadow: 'none',
+  };
+
+  useEffect(() => {
+    document.body.classList.add('has-modal-open');
+    // Hide native window shadow while modal is open to avoid corner artifacts
+    void (async () => {
+      try {
+        await (window as any).desktopWindow?.setHasShadow?.(false);
+      } catch {}
+    })();
+
+    return () => {
+      document.body.classList.remove('has-modal-open');
+      void (async () => {
+        try {
+          await (window as any).desktopWindow?.setHasShadow?.(true);
+        } catch {}
+      })();
+    };
+  }, []);
+
   return createPortal(
     <div
-      className={`fixed inset-0 z-9999 flex items-center justify-center bg-black/35 p-4 ${classNameBackdrop}`}
-      onClick={handleBackdropClick}
+      className={`fixed inset-0 z-9999 isolate ${classNameBackdrop}`}
+      style={wrapperStyle}
     >
       <div
-        className={classNameContainer}
-        onClick={(event) => event.stopPropagation()}
-        onMouseDown={(event) => event.stopPropagation()}
-      >
-        {children}
+        className="absolute inset-0"
+        style={{ backgroundColor: 'rgba(17,24,39,0.45)' }}
+        onClick={handleBackdropClick}
+      />
+      <div className="relative z-10 flex h-full w-full items-center justify-center p-4">
+        <div
+          className={classNameContainer}
+          onClick={(event) => event.stopPropagation()}
+          onMouseDown={(event) => event.stopPropagation()}
+        >
+          {children}
+        </div>
       </div>
     </div>,
     document.body
