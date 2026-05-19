@@ -2051,6 +2051,7 @@ function AppShell() {
     sidebarPreferences,
     collapseSidebar,
     collapseToRail,
+    restoreSidebarView,
   } = useSidebar();
   const { openSearch } = useSearch();
   const [uiMode, setUiMode] = useState<'auth' | 'app'>(user ? 'app' : 'auth');
@@ -2075,6 +2076,10 @@ function AppShell() {
   const handledInviteTokenRef = useRef<string | null>(null);
   const postAuthBootstrapUserRef = useRef<string | null>(null);
   const ensuredVisibleOnBootRef = useRef(false);
+  const sidebarModeRef = useRef<'auth' | 'minimized' | 'compact' | 'expanded' | 'fullscreen' | null>(
+    null
+  );
+  const sidebarModeTimerRef = useRef<number | null>(null);
 
   // Initialize workspace for authenticated users
   useWorkspaceInit();
@@ -2110,7 +2115,15 @@ function AppShell() {
       if (event.key.toLowerCase() !== 'e') return;
 
       event.preventDefault();
-      if (!user || isLoading || !isVisible) return;
+      if (!user || isLoading) return;
+
+      // If the sidebar is hidden, show and expand it.
+      if (!isVisible) {
+        setIsVisible(true);
+        setState('expanded');
+        setIsExpanded(true);
+        return;
+      }
 
       const isHorizontal = sidebarPreferences.position === 'top' || sidebarPreferences.position === 'bottom';
 
@@ -2133,16 +2146,42 @@ function AppShell() {
       if (event.key.toLowerCase() !== 'c') return;
 
       event.preventDefault();
-      if (!user || isLoading || !isVisible) return;
+      if (!user || isLoading) return;
 
-      collapseToRail();
+      // Toggle the compact collapsed square state.
+      if (state === 'minimized' && !isExpanded && isVisible) {
+        restoreSidebarView();
+        return;
+      }
+
+      // If hidden, show it first, then collapse to the compact square state.
+      if (!isVisible) setIsVisible(true);
+
+      collapseSidebar();
+    };
+
+    // Fallback renderer-level toggle for Cmd/Ctrl+Shift+B to toggle visibility.
+    const handleSidebarToggleVisibility = (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey)) return;
+      if (!event.shiftKey) return;
+      if (event.key.toLowerCase() !== 'b') return;
+
+      event.preventDefault();
+      if (!user || isLoading) return;
+
+      // Toggle visibility via the preload API; main process also registers a globalShortcut.
+      void window.desktopWindow?.setVisible(!isVisible).catch(() => {
+        // ignore
+      });
     };
 
     window.addEventListener('keydown', handleSidebarExpandShortcut);
     window.addEventListener('keydown', handleSidebarCollapseShortcut);
+    window.addEventListener('keydown', handleSidebarToggleVisibility);
     return () => {
       window.removeEventListener('keydown', handleSidebarExpandShortcut);
       window.removeEventListener('keydown', handleSidebarCollapseShortcut);
+      window.removeEventListener('keydown', handleSidebarToggleVisibility);
     };
   }, [isExpanded, isLoading, isVisible, setIsExpanded, setState, state, user]);
 
@@ -2532,16 +2571,43 @@ function AppShell() {
       postAuthStage === 'loading' ||
       postAuthStage === 'onboarding';
 
-    const mode = isCenteredFlow
+    const mode: 'auth' | 'minimized' | 'compact' | 'expanded' | 'fullscreen' = isCenteredFlow
       ? 'auth'
       : state === 'expanded'
       ? 'expanded'
       : isExpanded
       ? 'minimized'
       : 'compact';
-    window.desktopWindow?.setMode(mode).catch(() => {
-      // No-op outside Electron (browser dev mode)
-    });
+
+    if (sidebarModeTimerRef.current !== null) {
+      window.clearTimeout(sidebarModeTimerRef.current);
+      sidebarModeTimerRef.current = null;
+    }
+
+    const applyMode = () => {
+      sidebarModeRef.current = mode;
+      window.desktopWindow?.setMode(mode).catch(() => {
+        // No-op outside Electron (browser dev mode)
+      });
+    };
+
+    const shouldDelayNativeShrink =
+      sidebarModeRef.current === 'expanded' && mode !== 'expanded' && mode !== 'auth';
+
+    if (shouldDelayNativeShrink) {
+      sidebarModeTimerRef.current = window.setTimeout(() => {
+        applyMode();
+        sidebarModeTimerRef.current = null;
+      }, 60);
+      return () => {
+        if (sidebarModeTimerRef.current !== null) {
+          window.clearTimeout(sidebarModeTimerRef.current);
+          sidebarModeTimerRef.current = null;
+        }
+      };
+    }
+
+    applyMode();
   }, [isExpanded, isLoading, state, effectiveUiMode, postAuthStage]);
 
   if (isLoading) {

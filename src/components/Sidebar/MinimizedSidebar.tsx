@@ -8,7 +8,6 @@ import {
   StickyNote,
   Folder,
   Search,
-  Plus,
 } from 'lucide-react';
 import type React from 'react';
 import { useAuthContext } from '../../context/AuthContext';
@@ -62,9 +61,9 @@ export const MinimizedSidebar = ({
           }}
           onMouseDown={(e) => e.stopPropagation()}
           aria-label="Collapse sidebar"
-          className="flex h-11 w-11 items-center justify-center rounded-xl bg-transparent transition-colors duration-150 hover:bg-white/45"
+          className="flex h-11 w-11 items-center justify-center rounded-[18px] border border-white/70 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)] transition-colors duration-150 hover:bg-white focus:outline-none focus-visible:outline-none focus-visible:ring-0"
         >
-          <img src="./logo-color.svg" alt="Ledger" className="h-7 w-7" draggable={false} />
+          <img src="./logo-color.svg" alt="Ledger" className="h-7 w-7 opacity-100" draggable={false} />
         </button>
 
         <div className={`flex ${isHorizontal ? 'flex-row gap-3' : 'flex-col gap-4 self-center'}`}>
@@ -115,14 +114,7 @@ export const MinimizedSidebar = ({
           >
             <StickyNote size={18} />
           </button>
-          <button
-            aria-label="Open quick capture"
-            onClick={() => window.desktopWindow?.toggleModule('quick-task')}
-            onMouseDown={(e) => e.stopPropagation()}
-            className={accentIcon}
-          >
-            <Plus size={18} />
-          </button>
+          
         </div>
 
         <div className={`flex items-center ${isHorizontal ? 'flex-row gap-3' : 'flex-col gap-3'}`}>

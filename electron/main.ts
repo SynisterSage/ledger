@@ -1077,7 +1077,7 @@ function applyFloatingDockTargetBounds(targetBounds: Rect, side: DockSide) {
   currentFloatingDockMisses = 0;
   const nextBounds = getDockedBoundsForTarget(targetBounds, side, currentSidebarMode);
   if (rectsMatch(sidebarWin.getBounds(), nextBounds)) return;
-  if (!setSidebarBounds(nextBounds, true)) return;
+  if (!setSidebarBounds(nextBounds)) return;
   currentFloatingPosition = { x: nextBounds.x, y: nextBounds.y };
 }
 
@@ -1747,8 +1747,9 @@ function resolveModuleBounds(kind: ModuleWindowKind): Electron.Rectangle {
   return clampRectToWorkArea(getCenteredBoundsInWorkArea(width, height, workArea), workArea);
 }
 
-function applySidebarWindowMode(mode: SidebarWindowMode) {
+function applySidebarWindowMode(mode: SidebarWindowMode, animate = true) {
   if (!sidebarWin || sidebarWin.isDestroyed()) return;
+  const previousMode = currentSidebarMode;
   currentSidebarMode = mode;
 
   if (mode === 'fullscreen') {
@@ -1791,7 +1792,8 @@ function applySidebarWindowMode(mode: SidebarWindowMode) {
   sidebarWin.setAlwaysOnTop(sidebarAlwaysOnTop, 'screen-saver');
   sidebarWin.setResizable(false);
   setWindowButtonVisibility(sidebarWin, false);
-  setSidebarBounds(bounds, true);
+  const isOpeningSidebar = mode === 'expanded' && previousMode !== 'expanded';
+  setSidebarBounds(bounds, animate && !isOpeningSidebar);
 }
 
 function applySidebarAlwaysOnTop(alwaysOnTop: boolean) {
@@ -2296,14 +2298,12 @@ ipcMain.handle(
     const hasFloatingPositionChange = Boolean(preferences.floatingPosition);
     const hasDockToggleChange = typeof preferences.floatingDockEnabled === 'boolean';
     const hasDockThresholdChange = typeof preferences.floatingDockThreshold === 'number';
-    const hasViewStateChange = typeof preferences.isExpanded === 'boolean';
     const hasHiddenStateChange = typeof preferences.isHidden === 'boolean';
     const hasModeRelevantChange =
       hasPositionChange ||
       hasFloatingPositionChange ||
       hasDockToggleChange ||
       hasDockThresholdChange ||
-      hasViewStateChange ||
       hasHiddenStateChange;
 
     if (
@@ -2338,7 +2338,7 @@ ipcMain.handle(
       clearCurrentFloatingDockTarget();
       stopFloatingDockTracking();
       // Ensure we don't keep stale dock-shaped bounds after dock is disabled.
-      applySidebarWindowMode(currentSidebarMode);
+      applySidebarWindowMode(currentSidebarMode, !hasPositionChange);
     }
     currentSidebarPreferences = {
       ...currentSidebarPreferences,
@@ -2350,7 +2350,7 @@ ipcMain.handle(
       currentSidebarMode !== 'auth' &&
       currentSidebarMode !== 'fullscreen'
     ) {
-      applySidebarWindowMode(currentSidebarMode);
+      applySidebarWindowMode(currentSidebarMode, !hasPositionChange);
       if (
       currentSidebarPosition === 'floating' &&
       currentFloatingDockTarget &&

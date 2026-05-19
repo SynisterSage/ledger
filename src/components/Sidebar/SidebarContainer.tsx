@@ -34,9 +34,14 @@ export const SidebarContainer = () => {
   const motionClass = prefersReducedMotion
     ? ''
     : 'transition-[width,height,opacity,transform] duration-[100ms] ease-[cubic-bezier(0.22,1,0.36,1)]';
-  const contentMotionClass = prefersReducedMotion
-    ? ''
-    : 'transition-[opacity,transform] duration-[100ms] ease-[cubic-bezier(0.22,1,0.36,1)] will-change-[opacity,transform]';
+  const targetContentView = useMemo(
+    () => ({ state, isExpanded }),
+    [state, isExpanded]
+  );
+  const [contentView, setContentView] = useState(targetContentView);
+  const contentSwapTimerRef = useRef<number | null>(null);
+  const lastPositionRef = useRef(position);
+  const didMountRef = useRef(false);
 
   useEffect(() => {
     if (!autoHide) {
@@ -88,8 +93,33 @@ export const SidebarContainer = () => {
       if (autoHideCollapseTimerRef.current !== null) {
         window.clearTimeout(autoHideCollapseTimerRef.current);
       }
+      if (contentSwapTimerRef.current !== null) {
+        window.clearTimeout(contentSwapTimerRef.current);
+      }
     };
   }, []);
+
+  useEffect(() => {
+    const positionChanged = lastPositionRef.current !== position;
+    lastPositionRef.current = position;
+
+    if (contentSwapTimerRef.current !== null) {
+      window.clearTimeout(contentSwapTimerRef.current);
+      contentSwapTimerRef.current = null;
+    }
+
+    if (!didMountRef.current || prefersReducedMotion || positionChanged || state !== 'expanded') {
+      didMountRef.current = true;
+      setContentView(targetContentView);
+      return;
+    }
+
+    // Let the shell resize first; mounting expanded content during the first frame is the slow path.
+    contentSwapTimerRef.current = window.setTimeout(() => {
+      setContentView(targetContentView);
+      contentSwapTimerRef.current = null;
+    }, 45);
+  }, [position, prefersReducedMotion, state, targetContentView]);
 
   if (!isVisible || state === 'fullscreen') return null;
 
@@ -108,8 +138,8 @@ export const SidebarContainer = () => {
       : isHorizontal
       ? 'w-auto h-[60px]'
       : 'w-16 h-16';
-  const shellRadiusClass = isCollapsedIconMode ? 'rounded-[22px]' : 'rounded-[28px]';
-  const shellClipRadius = isCollapsedIconMode ? '22px' : '28px';
+  const shellRadiusClass = isCollapsedIconMode ? 'rounded-[24px]' : 'rounded-[28px]';
+  const shellClipRadius = isCollapsedIconMode ? '24px' : '28px';
   const shellOverflowClass =
     state === 'minimized' && isExpanded ? 'overflow-visible' : 'overflow-hidden';
   const isGlassShell = state === 'expanded' || (state === 'minimized' && isExpanded);
@@ -124,6 +154,8 @@ export const SidebarContainer = () => {
       ? blur
         ? `sidebar-glass ${platformClass}`
         : `sidebar-glass sidebar-glass--solid ${platformClass}`
+      : isCollapsedIconMode
+      ? 'sidebar-glass-icon'
       : 'border border-[rgba(255,255,255,0.55)] shadow-[0_10px_28px_rgba(15,23,42,0.16)] outline outline-[rgba(15,23,42,0.08)]';
 
   const scheduleAutoHideHide = () => {
@@ -332,19 +364,11 @@ export const SidebarContainer = () => {
 
   const renderSidebarContent = (
     currentState: Exclude<typeof state, 'fullscreen'>,
-    currentIsExpanded: boolean,
-    isActiveLayer: boolean
+    currentIsExpanded: boolean
   ) => {
-    const layerClass = isActiveLayer
-      ? 'relative z-10 opacity-100 translate-y-0'
-      : 'absolute inset-0 pointer-events-none opacity-0 translate-y-[3px]';
-    const contentStateClass =
-      currentState === 'expanded' ? 'translate-y-0 scale-[1]' : 'translate-y-[1px] scale-[0.996]';
-
     return (
       <div
-        aria-hidden={!isActiveLayer}
-        className={`h-full w-full ${contentMotionClass} ${layerClass} ${contentStateClass}`}
+        className="h-full w-full"
       >
         {currentState === 'expanded' && (
           <div className="h-full min-h-0 w-full">
@@ -379,16 +403,9 @@ export const SidebarContainer = () => {
         prefersReducedMotion ? '' : motionClass
       } ${autoHide && !isHovered && !isDragging ? 'shadow-sm' : ''} ${hydrationClass}`}
     >
-      {renderSidebarContent(state as Exclude<typeof state, 'fullscreen'>, isExpanded, state === 'expanded')}
       {renderSidebarContent(
-        'minimized',
-        true,
-        state === 'minimized' && isExpanded
-      )}
-      {renderSidebarContent(
-        'minimized',
-        false,
-        state === 'minimized' && !isExpanded
+        contentView.state as Exclude<typeof state, 'fullscreen'>,
+        contentView.isExpanded
       )}
     </div>
   );

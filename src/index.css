@@ -66,6 +66,21 @@ body.has-modal-open #root > * {
   opacity: 0.75;
 }
 
+.sidebar-glass > * {
+  position: relative;
+  z-index: 1;
+}
+
+.sidebar-glass-icon {
+  background: rgba(255, 255, 255, 0.82);
+  border: 1px solid rgba(255, 255, 255, 0.58);
+  box-shadow:
+    0 14px 38px rgba(17, 24, 39, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.82);
+  -webkit-backdrop-filter: blur(26px) saturate(0.92);
+  backdrop-filter: blur(26px) saturate(0.92);
+}
+
 .platform-macos.sidebar-glass {
   -webkit-backdrop-filter: blur(40px) saturate(0.92);
   backdrop-filter: blur(40px) saturate(0.92);

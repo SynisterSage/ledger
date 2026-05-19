@@ -332,10 +332,7 @@ export const ExpandedSidebar = ({
   const [todayDockPopoverStyle, setTodayDockPopoverStyle] = useState<React.CSSProperties | null>(
     null
   );
-  const [quickCapturePopoverOpen, setQuickCapturePopoverOpen] = useState(false);
-  const [quickCapturePopoverStyle, setQuickCapturePopoverStyle] = useState<React.CSSProperties | null>(
-    null
-  );
+  
   const [expandedUpcomingId, setExpandedUpcomingId] = useState<string | null>(null);
   const [draggingProjectId, setDraggingProjectId] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<{
@@ -352,8 +349,7 @@ export const ExpandedSidebar = ({
   const todayHelpPopoverRef = useRef<HTMLDivElement | null>(null);
   const todayDockButtonRef = useRef<HTMLButtonElement | null>(null);
   const todayDockPopoverRef = useRef<HTMLDivElement | null>(null);
-  const quickCaptureButtonRef = useRef<HTMLButtonElement | null>(null);
-  const quickCapturePopoverRef = useRef<HTMLDivElement | null>(null);
+  
   const todayHelpCloseTimerRef = useRef<number | null>(null);
   const checkinSectionRef = useRef<HTMLElement | null>(null);
   const checkinSavedTimerRef = useRef<number | null>(null);
@@ -988,62 +984,7 @@ export const ExpandedSidebar = ({
     return () => document.removeEventListener('mousedown', handlePointerDown);
   }, [todayDockPopoverOpen]);
 
-  useEffect(() => {
-    if (!quickCapturePopoverOpen || !quickCaptureButtonRef.current) {
-      setQuickCapturePopoverStyle(null);
-      return;
-    }
-
-    const updateQuickCapturePosition = () => {
-      const rect = quickCaptureButtonRef.current?.getBoundingClientRect();
-      if (!rect) return;
-
-      const preferredWidth = 250;
-      const gap = 10;
-      const centeredLeft = rect.left + rect.width / 2 - preferredWidth / 2;
-      const left = Math.max(12, Math.min(window.innerWidth - preferredWidth - 12, centeredLeft));
-      const isBottomDock = position === 'bottom';
-      const top = isBottomDock ? rect.top - gap : rect.bottom + gap;
-
-      setQuickCapturePopoverStyle({
-        position: 'fixed',
-        left: `${left}px`,
-        top: `${top}px`,
-        transform: isBottomDock ? 'translateY(-100%)' : 'none',
-        width: `${preferredWidth}px`,
-        zIndex: 30000,
-      });
-    };
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setQuickCapturePopoverOpen(false);
-    };
-
-    updateQuickCapturePosition();
-    window.addEventListener('resize', updateQuickCapturePosition);
-    window.addEventListener('scroll', updateQuickCapturePosition, true);
-    document.addEventListener('keydown', handleKeyDown);
-
-    return () => {
-      window.removeEventListener('resize', updateQuickCapturePosition);
-      window.removeEventListener('scroll', updateQuickCapturePosition, true);
-      document.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [position, quickCapturePopoverOpen]);
-
-  useEffect(() => {
-    if (!quickCapturePopoverOpen) return;
-
-    const handlePointerDown = (event: MouseEvent) => {
-      const target = event.target as Node;
-      if (quickCaptureButtonRef.current?.contains(target)) return;
-      if (quickCapturePopoverRef.current?.contains(target)) return;
-      setQuickCapturePopoverOpen(false);
-    };
-
-    document.addEventListener('mousedown', handlePointerDown);
-    return () => document.removeEventListener('mousedown', handlePointerDown);
-  }, [quickCapturePopoverOpen]);
+  
 
   useEffect(() => {
     return () => {
@@ -1776,7 +1717,7 @@ export const ExpandedSidebar = ({
               className="flex h-8 w-8 items-center justify-center rounded-xl transition hover:bg-white/60"
               title="Collapse sidebar"
             >
-              <img src="./logo-color.svg" alt="Ledger" className="h-7 w-7" />
+              <img src="./logo-color.svg" alt="Ledger" className="h-7 w-7 opacity-100" />
             </button>
             <WorkspaceSwitcher compact />
           </div>
@@ -1824,18 +1765,6 @@ export const ExpandedSidebar = ({
               <Settings size={14} />
             </button>
             <button
-              ref={quickCaptureButtonRef}
-              onClick={() => {
-                setTodayDockPopoverOpen(false);
-                setQuickCapturePopoverOpen((current) => !current);
-              }}
-              className="inline-flex h-9 w-9 items-center justify-center rounded-xl transition hover:bg-white/60 text-gray-700"
-              title="Quick capture"
-              aria-label="Quick capture"
-            >
-              <Plus size={14} />
-            </button>
-            <button
               onClick={() => {
                 onCollapseRequest?.();
                 collapseToRail();
@@ -1857,12 +1786,11 @@ export const ExpandedSidebar = ({
           </div>
         </div>
 
-        <div className="flex w-full flex-1 min-h-0 items-center gap-2 rounded-[18px] border border-gray-200/70 bg-white/60 px-3 shadow-[0_4px_12px_rgba(15,23,42,0.04)]">
+        <div className="flex w-full flex-1 min-h-0 items-center gap-2 rounded-[20px] border border-gray-200/70 bg-white px-3 shadow-[0_4px_12px_rgba(15,23,42,0.04)]">
           <button
             ref={todayDockButtonRef}
             type="button"
             onClick={() => {
-              setQuickCapturePopoverOpen(false);
               setTodayDockPopoverOpen((current) => !current);
             }}
             className="inline-flex shrink-0 items-center gap-2 rounded-full px-2 py-1.5 text-[13px] transition hover:bg-gray-50"
@@ -2003,53 +1931,7 @@ export const ExpandedSidebar = ({
             )
           : null}
 
-        {quickCapturePopoverOpen && typeof document !== 'undefined'
-          ? createPortal(
-              <div
-                ref={quickCapturePopoverRef}
-                style={quickCapturePopoverStyle ?? undefined}
-                onMouseDown={(e) => e.stopPropagation()}
-                className="rounded-2xl border border-gray-200 bg-white p-3 shadow-[0_18px_40px_rgba(15,23,42,0.16)]"
-              >
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-[0.22em] text-gray-500">
-                      Quick Capture
-                    </p>
-                    <p className="mt-1 text-sm text-gray-600">Create something fast.</p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setQuickCapturePopoverOpen(false)}
-                    className="rounded-lg px-2 py-1 text-xs text-gray-500 hover:bg-gray-50"
-                  >
-                    Close
-                  </button>
-                </div>
-                <div className="mt-3 grid grid-cols-3 gap-2">
-                  <button
-                    onClick={() => window.desktopWindow?.toggleModule('quick-task')}
-                    className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-xs font-medium text-gray-700 transition hover:bg-gray-100"
-                  >
-                    Task
-                  </button>
-                  <button
-                    onClick={() => window.desktopWindow?.toggleModule('quick-note')}
-                    className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-xs font-medium text-gray-700 transition hover:bg-gray-100"
-                  >
-                    Note
-                  </button>
-                  <button
-                    onClick={() => window.desktopWindow?.toggleModule('quick-event')}
-                    className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-xs font-medium text-gray-700 transition hover:bg-gray-100"
-                  >
-                    Event
-                  </button>
-                </div>
-              </div>,
-              document.body
-            )
-          : null}
+        
 
       </div>
 
@@ -2063,7 +1945,7 @@ export const ExpandedSidebar = ({
       }`}
     >
       <div
-        className="px-5 pb-2 border-b border-white/20"
+        className="relative z-10 px-5 pb-2 border-b border-white/20 bg-white"
         onMouseDown={(e) => {
           if (!onDragHandleMouseDown) return;
           if (
@@ -2075,9 +1957,9 @@ export const ExpandedSidebar = ({
         style={{ cursor: onDragHandleMouseDown ? 'grab' : 'auto' }}
       >
         <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-3 rounded-2xl px-2 py-1 text-left">
+          <div className="flex items-center gap-3 rounded-2xl bg-white px-2 py-1 text-left">
             <img src="./logo-color.svg" alt="Ledger" className="h-8 w-8" />
-            <h1 className="text-2xl font-bold text-gray-900">Ledger</h1>
+            <h1 className="text-2xl font-bold text-gray-950">Ledger</h1>
           </div>
           <button
             type="button"
@@ -2093,9 +1975,9 @@ export const ExpandedSidebar = ({
           </button>
         </div>
 
-        <div className="bg-white rounded-lg p-3 border border-gray-200 flex items-start justify-between">
+        <div className="bg-white rounded-lg p-3 border border-gray-200 flex items-start justify-between opacity-100">
           <div>
-            <p className="text-sm font-semibold text-gray-900">{firstName}</p>
+            <p className="text-sm font-semibold text-gray-900 opacity-100">{firstName}</p>
             <div className="mt-0.5">
               <WorkspaceSwitcher />
             </div>
