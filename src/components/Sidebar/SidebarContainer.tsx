@@ -30,6 +30,9 @@ export const SidebarContainer = () => {
   }, []);
   const AUTO_HIDE_DELAY_MS = 3000;
   const AUTO_HIDE_FADE_MS = 300;
+  const isFloating = position === 'floating';
+  const isHorizontal = position === 'top' || position === 'bottom';
+  const isCollapsedIconMode = state === 'minimized' && !isExpanded;
   const motionDurationMs = prefersReducedMotion ? 0 : 100;
   const motionClass = prefersReducedMotion
     ? ''
@@ -123,9 +126,6 @@ export const SidebarContainer = () => {
 
   if (!isVisible || state === 'fullscreen') return null;
 
-  const isFloating = position === 'floating';
-  const isHorizontal = position === 'top' || position === 'bottom';
-  const isCollapsedIconMode = state === 'minimized' && !isExpanded;
   const shellSizeClasses =
     state === 'expanded'
       ? isHorizontal
@@ -336,6 +336,7 @@ export const SidebarContainer = () => {
 
   // keep layout width/height but hide visually until hydration completes to avoid flashes
   const hydrationClass = isHydrated ? '' : 'opacity-0 pointer-events-none';
+  const shouldDisableShellMotion = (isDragging && isFloating) || isHorizontal;
 
   const shellStyle: React.CSSProperties = {
     opacity: autoHide && !isHovered && isAutoHideFading ? 0 : 1,
@@ -354,12 +355,15 @@ export const SidebarContainer = () => {
     clipPath: `inset(0 round ${shellClipRadius})`,
     contain: 'paint',
     transitionProperty:
-        isDragging && isFloating
+      isDragging && isFloating
+        ? 'opacity'
+        : isHorizontal
         ? 'opacity'
         : 'opacity, transform, width, height',
-    transitionDuration: isDragging && isFloating ? '0ms' : `${motionDurationMs}ms`,
+    transitionDuration: shouldDisableShellMotion ? '0ms' : `${motionDurationMs}ms`,
     transitionTimingFunction: 'cubic-bezier(0.22, 1, 0.36, 1)',
-    willChange: isDragging && isFloating ? 'opacity' : 'width, height, opacity, transform',
+    willChange:
+      shouldDisableShellMotion ? 'opacity' : 'width, height, opacity, transform',
   };
 
   const renderSidebarContent = (
@@ -400,7 +404,7 @@ export const SidebarContainer = () => {
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
       className={`relative ${shellOverflowClass} ${shellRadiusClass} ${shellSurfaceClass} ${shellSizeClasses} ${
-        prefersReducedMotion ? '' : motionClass
+        prefersReducedMotion || isHorizontal ? '' : motionClass
       } ${autoHide && !isHovered && !isDragging ? 'shadow-sm' : ''} ${hydrationClass}`}
     >
       {renderSidebarContent(

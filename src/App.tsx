@@ -2160,30 +2160,13 @@ function AppShell() {
       collapseSidebar();
     };
 
-    // Fallback renderer-level toggle for Cmd/Ctrl+Shift+B to toggle visibility.
-    const handleSidebarToggleVisibility = (event: KeyboardEvent) => {
-      if (!(event.metaKey || event.ctrlKey)) return;
-      if (!event.shiftKey) return;
-      if (event.key.toLowerCase() !== 'b') return;
-
-      event.preventDefault();
-      if (!user || isLoading) return;
-
-      // Toggle visibility via the preload API; main process also registers a globalShortcut.
-      void window.desktopWindow?.setVisible(!isVisible).catch(() => {
-        // ignore
-      });
-    };
-
     window.addEventListener('keydown', handleSidebarExpandShortcut);
     window.addEventListener('keydown', handleSidebarCollapseShortcut);
-    window.addEventListener('keydown', handleSidebarToggleVisibility);
     return () => {
       window.removeEventListener('keydown', handleSidebarExpandShortcut);
       window.removeEventListener('keydown', handleSidebarCollapseShortcut);
-      window.removeEventListener('keydown', handleSidebarToggleVisibility);
     };
-  }, [isExpanded, isLoading, isVisible, setIsExpanded, setState, state, user]);
+  }, [isExpanded, isLoading, setIsExpanded, setState, state, user]);
 
   useEffect(() => {
     const handleModuleNavigation = (event: KeyboardEvent) => {
@@ -2591,8 +2574,13 @@ function AppShell() {
       });
     };
 
+    const isHorizontalSidebar =
+      sidebarPreferences.position === 'top' || sidebarPreferences.position === 'bottom';
     const shouldDelayNativeShrink =
-      sidebarModeRef.current === 'expanded' && mode !== 'expanded' && mode !== 'auth';
+      !isHorizontalSidebar &&
+      sidebarModeRef.current === 'expanded' &&
+      mode !== 'expanded' &&
+      mode !== 'auth';
 
     if (shouldDelayNativeShrink) {
       sidebarModeTimerRef.current = window.setTimeout(() => {
@@ -2608,7 +2596,7 @@ function AppShell() {
     }
 
     applyMode();
-  }, [isExpanded, isLoading, state, effectiveUiMode, postAuthStage]);
+  }, [isExpanded, isLoading, state, effectiveUiMode, postAuthStage, sidebarPreferences.position]);
 
   if (isLoading) {
     return <AuthStatusScreen title="Loading" subtitle="Preparing Ledger." />;

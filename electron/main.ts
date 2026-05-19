@@ -1793,7 +1793,7 @@ function applySidebarWindowMode(mode: SidebarWindowMode, animate = true) {
   sidebarWin.setResizable(false);
   setWindowButtonVisibility(sidebarWin, false);
   const isOpeningSidebar = mode === 'expanded' && previousMode !== 'expanded';
-  setSidebarBounds(bounds, animate && !isOpeningSidebar);
+  setSidebarBounds(bounds, animate && (!isOpeningSidebar || isHorizontalDock));
 }
 
 function applySidebarAlwaysOnTop(alwaysOnTop: boolean) {
@@ -2350,7 +2350,17 @@ ipcMain.handle(
       currentSidebarMode !== 'auth' &&
       currentSidebarMode !== 'fullscreen'
     ) {
-      applySidebarWindowMode(currentSidebarMode, !hasPositionChange);
+      // If position changed, delay the bounds update to sync with CSS animation.
+      // React animates for 100ms with cubic-bezier(0.22, 1, 0.36, 1).
+      // Update bounds after CSS completes so both animations finish together.
+      if (hasPositionChange) {
+        setTimeout(() => {
+          applySidebarWindowMode(currentSidebarMode, true);
+        }, 115);
+      } else {
+        applySidebarWindowMode(currentSidebarMode, true);
+      }
+
       if (
       currentSidebarPosition === 'floating' &&
       currentFloatingDockTarget &&
