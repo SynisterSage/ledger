@@ -33,14 +33,12 @@ export const LoginForm: React.FC<LoginProps> = ({ onSuccess, notice }) => {
     return window.sessionStorage.getItem(PRELOGIN_SPLASH_STORAGE_KEY) !== 'true';
   });
   const [isSplashDismissing, setIsSplashDismissing] = useState(false);
-  const [isWelcomeVideoUnavailable, setIsWelcomeVideoUnavailable] = useState(false);
   const [activeLoopLayer, setActiveLoopLayer] = useState<0 | 1>(0);
   const preloginSplashDoneRef = useRef(false);
   const preloginSplashVideoRef = useRef<HTMLVideoElement | null>(null);
   const videoRefs = useRef<[HTMLVideoElement | null, HTMLVideoElement | null]>([null, null]);
   const loopSwapTimerRef = useRef<number | null>(null);
   const splashDismissTimerRef = useRef<number | null>(null);
-  const splashRevealTimerRef = useRef<number | null>(null);
   const { signIn, signUp, isLoading } = useAuth();
 
   const handleCloseWindow = () => {
@@ -57,24 +55,16 @@ export const LoginForm: React.FC<LoginProps> = ({ onSuccess, notice }) => {
     if (preloginSplashDoneRef.current) return;
     preloginSplashDoneRef.current = true;
     setIsSplashDismissing(true);
+    setIsIntroReady(true);
 
     if (splashDismissTimerRef.current !== null) {
       window.clearTimeout(splashDismissTimerRef.current);
-    }
-    if (splashRevealTimerRef.current !== null) {
-      window.clearTimeout(splashRevealTimerRef.current);
     }
 
     splashDismissTimerRef.current = window.setTimeout(() => {
       window.sessionStorage.setItem(PRELOGIN_SPLASH_STORAGE_KEY, 'true');
       setShowPreLoginSplash(false);
       setIsSplashDismissing(false);
-      setIsIntroReady(false);
-
-      splashRevealTimerRef.current = window.setTimeout(() => {
-        setIsIntroReady(true);
-        splashRevealTimerRef.current = null;
-      }, 40);
 
       splashDismissTimerRef.current = null;
     }, 210);
@@ -117,17 +107,15 @@ export const LoginForm: React.FC<LoginProps> = ({ onSuccess, notice }) => {
 
   useEffect(() => {
     if (showPreLoginSplash || isSplashDismissing) return;
+    if (isIntroReady) return;
+
     if (prefersReducedMotion) {
       setIsIntroReady(true);
       return;
     }
 
-    const timer = window.setTimeout(() => {
-      setIsIntroReady(true);
-    }, 140);
-
-    return () => window.clearTimeout(timer);
-  }, [prefersReducedMotion, showPreLoginSplash, isSplashDismissing]);
+    setIsIntroReady(true);
+  }, [isIntroReady, prefersReducedMotion, showPreLoginSplash, isSplashDismissing]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -183,9 +171,6 @@ export const LoginForm: React.FC<LoginProps> = ({ onSuccess, notice }) => {
       }
       if (splashDismissTimerRef.current !== null) {
         window.clearTimeout(splashDismissTimerRef.current);
-      }
-      if (splashRevealTimerRef.current !== null) {
-        window.clearTimeout(splashRevealTimerRef.current);
       }
     };
   }, []);
@@ -247,7 +232,7 @@ export const LoginForm: React.FC<LoginProps> = ({ onSuccess, notice }) => {
             prefersReducedMotion ? '' : shouldPlayAuthIntro ? 'ledger-auth-left-enter' : 'opacity-0'
           }`}
         >
-          {prefersReducedMotion || isWelcomeVideoUnavailable ? (
+          {prefersReducedMotion ? (
             <div className="flex h-full min-h-full items-center justify-center bg-[#F9FBFA]">
               <img src="./logo-color.svg" alt="Ledger" className="h-16 w-16" />
             </div>
@@ -267,9 +252,6 @@ export const LoginForm: React.FC<LoginProps> = ({ onSuccess, notice }) => {
                   muted
                   playsInline
                   preload="auto"
-                  onError={() => {
-                    setIsWelcomeVideoUnavailable(true);
-                  }}
                   onEnded={queueLoopSwap}
                   onTimeUpdate={(event) => {
                     if (layer !== activeLoopLayer) return;
