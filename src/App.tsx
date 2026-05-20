@@ -2371,6 +2371,7 @@ function AppShell() {
   const [onboardingSidebarPosition, setOnboardingSidebarPosition] =
     useState<SidebarPosition>('right');
   const [onboardingError, setOnboardingError] = useState<string | null>(null);
+  const onboardingResetUserRef = useRef<string | null>(null);
   const handledInviteTokenRef = useRef<string | null>(null);
   const postAuthBootstrapUserRef = useRef<string | null>(null);
   const ensuredVisibleOnBootRef = useRef(false);
@@ -2726,11 +2727,9 @@ function AppShell() {
         const payload = (await api.acceptWorkspaceInvitation(pendingInviteToken)) as {
           already_member?: boolean;
         };
-        await api.completeOnboarding();
         await refreshWorkspaces();
 
         if (cancelled) return;
-        setPostAuthStage('ready');
         setInviteFlowStatus(payload.already_member ? 'already-member' : 'accepted');
         setInviteFlowNotice(
           payload.already_member
@@ -2755,6 +2754,25 @@ function AppShell() {
       cancelled = true;
     };
   }, [pendingInviteToken, isLoading, user, api, refreshWorkspaces, inviteFlowStatus]);
+
+  useEffect(() => {
+    if (postAuthStage !== 'onboarding') {
+      onboardingResetUserRef.current = null;
+      return;
+    }
+
+    const currentUserId = user?.id ?? null;
+    if (onboardingResetUserRef.current === currentUserId) return;
+    onboardingResetUserRef.current = currentUserId;
+
+    setOnboardingStep('welcome');
+    setOnboardingWorkspaceName('My Workspace');
+    setOnboardingMode('create');
+    setOnboardingInviteValue('');
+    setOnboardingSidebarPosition('right');
+    setOnboardingError(null);
+    setIsSavingOnboarding(false);
+  }, [postAuthStage, user?.id]);
 
   useEffect(() => {
     const userId = user?.id ?? null;
@@ -2977,10 +2995,9 @@ function AppShell() {
   if (!user) {
     return (
       <div
-        className="relative flex h-screen items-center justify-center bg-transparent p-3"
+        className="relative h-screen w-screen overflow-hidden bg-[#f5f5f7]"
         style={dragRegionStyle}
       >
-        <div className="absolute inset-3 rounded-[28px] border border-white/60 bg-[#f5f5f7] shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]" />
         <button
           type="button"
           onClick={() => {
@@ -2993,7 +3010,7 @@ function AppShell() {
           <X size={16} />
         </button>
         <div
-          className={`relative z-10 transform transition-all duration-250 ease-out ${
+          className={`relative z-10 w-full transform transition-all duration-250 ease-out ${
             isAuthExiting
               ? 'opacity-0 scale-95 translate-y-2'
               : 'opacity-100 scale-100 translate-y-0'
