@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { Mail, Lock, Loader2 } from 'lucide-react';
+import type { CSSProperties } from 'react';
+import { Mail, Lock, Loader2, X } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 
 interface LoginProps {
@@ -8,6 +9,12 @@ interface LoginProps {
 }
 
 const PRELOGIN_SPLASH_STORAGE_KEY = 'ledger:prelogin-splash-seen:v1';
+const dragRegionStyle = { WebkitAppRegion: 'drag' } as CSSProperties & {
+  WebkitAppRegion: 'drag';
+};
+const noDragRegionStyle = { WebkitAppRegion: 'no-drag' } as CSSProperties & {
+  WebkitAppRegion: 'no-drag';
+};
 
 export const LoginForm: React.FC<LoginProps> = ({ onSuccess, notice }) => {
   const [email, setEmail] = useState('');
@@ -25,12 +32,56 @@ export const LoginForm: React.FC<LoginProps> = ({ onSuccess, notice }) => {
     if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return false;
     return window.sessionStorage.getItem(PRELOGIN_SPLASH_STORAGE_KEY) !== 'true';
   });
+  const [isSplashDismissing, setIsSplashDismissing] = useState(false);
   const [activeLoopLayer, setActiveLoopLayer] = useState<0 | 1>(0);
   const preloginSplashDoneRef = useRef(false);
   const preloginSplashVideoRef = useRef<HTMLVideoElement | null>(null);
   const videoRefs = useRef<[HTMLVideoElement | null, HTMLVideoElement | null]>([null, null]);
   const loopSwapTimerRef = useRef<number | null>(null);
+  const splashDismissTimerRef = useRef<number | null>(null);
+  const splashRevealTimerRef = useRef<number | null>(null);
   const { signIn, signUp, isLoading } = useAuth();
+  const isWindows =
+    typeof navigator !== 'undefined' &&
+    typeof navigator.platform === 'string' &&
+    navigator.platform.toLowerCase().includes('win');
+
+  const handleCloseWindow = () => {
+    void window.desktopWindow?.quitApp();
+  };
+
+  const triggerOnPrimaryMouseDown = (event: React.MouseEvent<HTMLButtonElement>) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    handleCloseWindow();
+  };
+
+  const finishPreLoginSplash = () => {
+    if (preloginSplashDoneRef.current) return;
+    preloginSplashDoneRef.current = true;
+    setIsSplashDismissing(true);
+
+    if (splashDismissTimerRef.current !== null) {
+      window.clearTimeout(splashDismissTimerRef.current);
+    }
+    if (splashRevealTimerRef.current !== null) {
+      window.clearTimeout(splashRevealTimerRef.current);
+    }
+
+    splashDismissTimerRef.current = window.setTimeout(() => {
+      window.sessionStorage.setItem(PRELOGIN_SPLASH_STORAGE_KEY, 'true');
+      setShowPreLoginSplash(false);
+      setIsSplashDismissing(false);
+      setIsIntroReady(false);
+
+      splashRevealTimerRef.current = window.setTimeout(() => {
+        setIsIntroReady(true);
+        splashRevealTimerRef.current = null;
+      }, 40);
+
+      splashDismissTimerRef.current = null;
+    }, 210);
+  };
 
   useEffect(() => {
     const mediaQuery = window.matchMedia?.('(prefers-reduced-motion: reduce)');
@@ -45,25 +96,21 @@ export const LoginForm: React.FC<LoginProps> = ({ onSuccess, notice }) => {
   useEffect(() => {
     if (!showPreLoginSplash) return;
 
-    const finishSplash = () => {
-      if (preloginSplashDoneRef.current) return;
-      preloginSplashDoneRef.current = true;
-      window.sessionStorage.setItem(PRELOGIN_SPLASH_STORAGE_KEY, 'true');
-      setShowPreLoginSplash(false);
-    };
+    window.sessionStorage.setItem(PRELOGIN_SPLASH_STORAGE_KEY, 'true');
 
-    const handleKeyDown = () => finishSplash();
-    const handlePointerDown = () => finishSplash();
-    const handleError = () => finishSplash();
+    const handleKeyDown = () => finishPreLoginSplash();
+    const handlePointerDown = () => finishPreLoginSplash();
+    const handleError = () => finishPreLoginSplash();
     const splashVideo = preloginSplashVideoRef.current;
+    const fallbackDelay = isWindows ? 1600 : 5000;
 
     window.addEventListener('keydown', handleKeyDown, { once: true });
     window.addEventListener('pointerdown', handlePointerDown, { once: true });
     splashVideo?.addEventListener('error', handleError, { once: true });
 
     const fallbackTimer = window.setTimeout(() => {
-      finishSplash();
-    }, 5000);
+      finishPreLoginSplash();
+    }, fallbackDelay);
 
     return () => {
       window.clearTimeout(fallbackTimer);
@@ -71,32 +118,21 @@ export const LoginForm: React.FC<LoginProps> = ({ onSuccess, notice }) => {
       window.removeEventListener('pointerdown', handlePointerDown);
       splashVideo?.removeEventListener('error', handleError);
     };
-  }, [showPreLoginSplash]);
+  }, [isWindows, showPreLoginSplash]);
 
   useEffect(() => {
-    if (showPreLoginSplash) {
-      setIsIntroReady(false);
-      return;
-    }
-
+    if (showPreLoginSplash || isSplashDismissing) return;
     if (prefersReducedMotion) {
       setIsIntroReady(true);
       return;
     }
 
-    let firstFrame = 0;
-    let secondFrame = 0;
-    firstFrame = window.requestAnimationFrame(() => {
-      secondFrame = window.requestAnimationFrame(() => {
-        setIsIntroReady(true);
-      });
-    });
+    const timer = window.setTimeout(() => {
+      setIsIntroReady(true);
+    }, 140);
 
-    return () => {
-      window.cancelAnimationFrame(firstFrame);
-      window.cancelAnimationFrame(secondFrame);
-    };
-  }, [prefersReducedMotion, showPreLoginSplash]);
+    return () => window.clearTimeout(timer);
+  }, [prefersReducedMotion, showPreLoginSplash, isSplashDismissing]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -150,56 +186,80 @@ export const LoginForm: React.FC<LoginProps> = ({ onSuccess, notice }) => {
       if (loopSwapTimerRef.current !== null) {
         window.clearTimeout(loopSwapTimerRef.current);
       }
+      if (splashDismissTimerRef.current !== null) {
+        window.clearTimeout(splashDismissTimerRef.current);
+      }
+      if (splashRevealTimerRef.current !== null) {
+        window.clearTimeout(splashRevealTimerRef.current);
+      }
     };
   }, []);
 
-  const splashOverlayVisible = showPreLoginSplash && !prefersReducedMotion;
+  const splashOverlayVisible = (showPreLoginSplash || isSplashDismissing) && !prefersReducedMotion;
+  const shouldPlayAuthIntro = isIntroReady && !prefersReducedMotion;
 
   return (
     <div className="relative h-screen w-screen overflow-hidden bg-[#F9FBFA]">
+      {!splashOverlayVisible && (
+        <button
+          type="button"
+          onMouseDown={triggerOnPrimaryMouseDown}
+          onClick={handleCloseWindow}
+          aria-label="Close"
+          className="absolute right-6 top-7 z-30 inline-flex h-8 w-8 items-center justify-center rounded-full border border-black/5 bg-white/60 text-gray-500 transition hover:bg-white/90 hover:text-gray-900"
+          style={noDragRegionStyle}
+        >
+          <X size={16} />
+        </button>
+      )}
+
+      {!splashOverlayVisible && (
+        <div
+          className="absolute inset-x-0 top-0 z-20 h-11"
+          style={dragRegionStyle}
+          aria-hidden="true"
+        />
+      )}
+
       <div
         className={`absolute inset-0 z-20 bg-[#F9FBFA] transition-opacity duration-200 ease-out ${
-          splashOverlayVisible ? 'opacity-100' : 'pointer-events-none opacity-0'
+          showPreLoginSplash && !isSplashDismissing
+            ? 'opacity-100'
+            : 'pointer-events-none opacity-0'
         }`}
         aria-hidden={!splashOverlayVisible}
       >
         <div className="absolute inset-0 flex items-center justify-center p-8 sm:p-12">
-          <video
-            ref={preloginSplashVideoRef}
-            className="h-full w-full max-h-[72vh] max-w-[min(72vw,760px)] object-contain object-center"
-            src="./preload-splash.mp4"
-            autoPlay
-            muted
-            playsInline
-            preload="auto"
-            onEnded={() => {
-              if (preloginSplashDoneRef.current) return;
-              preloginSplashDoneRef.current = true;
-              window.sessionStorage.setItem(PRELOGIN_SPLASH_STORAGE_KEY, 'true');
-              setShowPreLoginSplash(false);
-            }}
-            onError={() => {
-              if (preloginSplashDoneRef.current) return;
-              preloginSplashDoneRef.current = true;
-              window.sessionStorage.setItem(PRELOGIN_SPLASH_STORAGE_KEY, 'true');
-              setShowPreLoginSplash(false);
-            }}
-          />
+          {isWindows ? (
+            <div className="flex h-full w-full max-h-[72vh] max-w-[min(72vw,760px)] items-center justify-center rounded-[28px] bg-[#F9FBFA]">
+              <div className="flex flex-col items-center gap-4 text-center">
+                <img src="./logo-color.svg" alt="Ledger" className="h-18 w-18" />
+                <div className="space-y-1">
+                  <p className="text-[22px] font-semibold leading-tight text-gray-950">Ledger</p>
+                  <p className="text-sm leading-6 text-gray-500">Your day, beside your work.</p>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <video
+              ref={preloginSplashVideoRef}
+              className="h-full w-full max-h-[72vh] max-w-[min(72vw,760px)] object-contain object-center"
+              src="./preload-splash.mp4"
+              autoPlay
+              muted
+              playsInline
+              preload="auto"
+              onEnded={finishPreLoginSplash}
+              onError={finishPreLoginSplash}
+            />
+          )}
         </div>
       </div>
 
-      <div
-        className={`relative z-10 grid h-full min-h-screen w-full overflow-hidden bg-[#F9FBFA] transition-opacity duration-200 ease-out min-[820px]:grid-cols-[0.42fr_0.58fr] ${
-          splashOverlayVisible ? 'opacity-0' : 'opacity-100'
-        }`}
-      >
+      <div className="relative z-10 grid h-full min-h-screen w-full overflow-hidden bg-[#F9FBFA] min-[820px]:grid-cols-[0.42fr_0.58fr]">
         <div
           className={`relative hidden overflow-hidden bg-[#F9FBFA] min-[820px]:block ${
-            prefersReducedMotion
-              ? ''
-              : `transform-gpu transition-[opacity,transform] duration-700 ease-[cubic-bezier(0.22,1,0.36,1)] ${
-                  isIntroReady ? 'opacity-100 translate-x-0' : 'opacity-0 -translate-x-5'
-                }`
+            prefersReducedMotion ? '' : shouldPlayAuthIntro ? 'ledger-auth-left-enter' : 'opacity-0'
           }`}
         >
           {prefersReducedMotion ? (
@@ -250,11 +310,7 @@ export const LoginForm: React.FC<LoginProps> = ({ onSuccess, notice }) => {
 
         <div
           className={`flex min-h-screen items-center justify-center bg-[#F9FBFA] px-7 py-10 sm:px-10 min-[820px]:px-16 ${
-            prefersReducedMotion
-              ? ''
-              : `transform-gpu transition-[opacity,transform,filter] duration-700 ease-[cubic-bezier(0.22,1,0.36,1)] ${
-                  isIntroReady ? 'opacity-100 translate-x-0 blur-0' : 'opacity-0 translate-x-8 blur-[2px]'
-                }`
+            prefersReducedMotion ? '' : shouldPlayAuthIntro ? 'ledger-auth-pane-enter' : 'opacity-0'
           }`}
         >
           <div className="w-full max-w-90">
@@ -262,9 +318,9 @@ export const LoginForm: React.FC<LoginProps> = ({ onSuccess, notice }) => {
               className={`mb-8 ${
                 prefersReducedMotion
                   ? ''
-                  : `transform-gpu transition-[opacity,transform] duration-500 ease-out delay-75 ${
-                      isIntroReady ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-3'
-                    }`
+                  : shouldPlayAuthIntro
+                  ? 'ledger-auth-header-enter'
+                  : 'opacity-0'
               }`}
             >
               <div className="mb-5 flex items-center gap-3">
@@ -281,9 +337,9 @@ export const LoginForm: React.FC<LoginProps> = ({ onSuccess, notice }) => {
               className={`space-y-3 ${
                 prefersReducedMotion
                   ? ''
-                  : `transform-gpu transition-[opacity,transform] duration-700 ease-[cubic-bezier(0.22,1,0.36,1)] delay-100 ${
-                      isIntroReady ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-5'
-                    }`
+                  : shouldPlayAuthIntro
+                  ? 'ledger-auth-form-enter'
+                  : 'opacity-0'
               }`}
             >
               {notice && (

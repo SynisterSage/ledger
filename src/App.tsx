@@ -2993,21 +2993,7 @@ function AppShell() {
   // Show login if not authenticated
   if (!user) {
     return (
-      <div
-        className="relative h-screen w-screen overflow-hidden bg-[#f5f5f7]"
-        style={dragRegionStyle}
-      >
-        <button
-          type="button"
-          onClick={() => {
-            void window.desktopWindow?.quitApp();
-          }}
-          aria-label="Close"
-          className="absolute right-6 top-7 z-20 inline-flex h-8 w-8 items-center justify-center rounded-full border border-black/5 bg-white/60 text-gray-500 transition hover:bg-white/90 hover:text-gray-900"
-          style={noDragRegionStyle}
-        >
-          <X size={16} />
-        </button>
+      <div className="relative h-screen w-screen overflow-hidden bg-[#f5f5f7]">
         <div
           className={`relative z-10 w-full transform transition-all duration-250 ease-out ${
             isAuthExiting
