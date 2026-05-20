@@ -30,6 +30,7 @@ interface ImportMeta {
 interface Window {
   __LEDGER_RUNTIME__?: {
     apiUrl?: string;
+    ledgerWebUrl?: string;
     supabaseUrl?: string;
     supabasePublishableKey?: string;
   };

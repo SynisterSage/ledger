@@ -15,8 +15,15 @@ const supabase = createClient(supabaseUrl, supabaseServiceRole, {
   auth: { persistSession: false },
 });
 
+const captureRawBody = (req, _res, buffer) => {
+  if (buffer?.length) {
+    req.rawBody = buffer.toString('utf8');
+  }
+};
+
 app.use(cors());
-app.use(express.json({ limit: '256kb' }));
+app.use(express.json({ limit: '256kb', verify: captureRawBody }));
+app.use(express.urlencoded({ extended: false, limit: '256kb', verify: captureRawBody }));
 
 const TIER_LIMITS = {
   free: { projects: 3, events: 100, notes: 100, reminders: 100 },
@@ -538,6 +545,14 @@ const isMissingColumnError = (error, columnName) => {
   );
 };
 
+const isMissingRelationError = (error, relationName) => {
+  const message = String(error?.message ?? '').toLowerCase();
+  return (
+    (error?.code === '42P01' || message.includes('does not exist')) &&
+    message.includes(String(relationName).toLowerCase())
+  );
+};
+
 const isMissingTaskTodayColumnError = (error) =>
   isMissingColumnError(error, 'show_in_today') || isMissingColumnError(error, 'is_today_focus');
 
@@ -733,6 +748,161 @@ const resolveWorkspaceIdForRequest = async (req) => {
   return resolveWorkspaceId(req.authUser.id, requestedWorkspaceId);
 };
 
+const getSlackRedirectUri = () => {
+  const explicit = process.env.SLACK_REDIRECT_URI?.trim();
+  if (explicit) return explicit;
+
+  const publicBackendUrl = process.env.PUBLIC_BACKEND_URL?.trim();
+  if (publicBackendUrl) {
+    return `${publicBackendUrl.replace(/\/$/, '')}/api/integrations/slack/oauth/callback`;
+  }
+
+  return null;
+};
+
+const getSlackStateSecret = () =>
+  process.env.SLACK_SIGNING_SECRET?.trim() || supabaseServiceRole || 'ledger-slack-dev-state';
+
+const base64UrlEncode = (value) => Buffer.from(value).toString('base64url');
+
+const createSlackOAuthState = ({ workspaceId, installedBy }) => {
+  const payload = {
+    workspace_id: workspaceId,
+    installed_by: installedBy,
+    nonce: crypto.randomBytes(16).toString('hex'),
+    iat: Math.floor(Date.now() / 1000),
+  };
+  const encodedPayload = base64UrlEncode(JSON.stringify(payload));
+  const signature = crypto
+    .createHmac('sha256', getSlackStateSecret())
+    .update(encodedPayload)
+    .digest('base64url');
+  return `${encodedPayload}.${signature}`;
+};
+
+const verifySlackOAuthState = (state) => {
+  const [encodedPayload, signature] = String(state ?? '').split('.');
+  if (!encodedPayload || !signature) return null;
+
+  const expected = crypto
+    .createHmac('sha256', getSlackStateSecret())
+    .update(encodedPayload)
+    .digest('base64url');
+
+  const expectedBuffer = Buffer.from(expected);
+  const actualBuffer = Buffer.from(signature);
+  if (
+    expectedBuffer.length !== actualBuffer.length ||
+    !crypto.timingSafeEqual(expectedBuffer, actualBuffer)
+  ) {
+    return null;
+  }
+
+  const payload = safeJson(Buffer.from(encodedPayload, 'base64url').toString('utf8'), null);
+  const issuedAt = Number(payload?.iat ?? 0);
+  if (!payload?.workspace_id || !payload?.installed_by || !issuedAt) return null;
+  if (Math.floor(Date.now() / 1000) - issuedAt > 10 * 60) return null;
+  return payload;
+};
+
+const buildSlackAuthorizeUrl = ({ workspaceId, installedBy }) => {
+  const clientId = process.env.SLACK_CLIENT_ID?.trim();
+  const redirectUri = getSlackRedirectUri();
+  if (!clientId || !redirectUri) {
+    const error = new Error('Slack OAuth is not configured');
+    error.statusCode = 500;
+    throw error;
+  }
+
+  const params = new URLSearchParams({
+    client_id: clientId,
+    scope: 'commands,chat:write',
+    redirect_uri: redirectUri,
+    state: createSlackOAuthState({ workspaceId, installedBy }),
+  });
+  return `https://slack.com/oauth/v2/authorize?${params.toString()}`;
+};
+
+const verifySlackRequest = (req) => {
+  const signingSecret = process.env.SLACK_SIGNING_SECRET?.trim();
+  if (!signingSecret) return false;
+
+  const timestamp = String(req.headers['x-slack-request-timestamp'] ?? '');
+  const signature = String(req.headers['x-slack-signature'] ?? '');
+  const timestampSeconds = Number(timestamp);
+  if (!timestamp || !signature || !Number.isFinite(timestampSeconds)) return false;
+
+  const nowSeconds = Math.floor(Date.now() / 1000);
+  if (Math.abs(nowSeconds - timestampSeconds) > 60 * 5) return false;
+
+  const rawBody = req.rawBody ?? '';
+  const base = `v0:${timestamp}:${rawBody}`;
+  const expected = `v0=${crypto.createHmac('sha256', signingSecret).update(base).digest('hex')}`;
+  const expectedBuffer = Buffer.from(expected);
+  const actualBuffer = Buffer.from(signature);
+  return (
+    expectedBuffer.length === actualBuffer.length &&
+    crypto.timingSafeEqual(expectedBuffer, actualBuffer)
+  );
+};
+
+const protectIntegrationTokenForStorage = (token) => {
+  // TODO: replace with envelope encryption before production Slack installs.
+  return token || null;
+};
+
+const parseSlackMessageTimestamp = (timestamp) => {
+  const seconds = Number.parseFloat(String(timestamp ?? ''));
+  if (!Number.isFinite(seconds)) return null;
+  return new Date(seconds * 1000).toISOString();
+};
+
+const saveSlackMessageCapture = async (payload) => {
+  const teamId = payload?.team?.id ?? payload?.team?.enterprise_id ?? null;
+  if (!teamId) throw new Error('Slack payload missing team id');
+
+  const accountResult = await supabase
+    .from('integration_accounts')
+    .select('id, workspace_id')
+    .eq('provider', 'slack')
+    .eq('provider_team_id', teamId)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (accountResult.error) throw accountResult.error;
+  const account = accountResult.data;
+  if (!account?.workspace_id) throw new Error('Slack workspace is not connected to Ledger');
+
+  const message = payload?.message ?? {};
+  const channel = payload?.channel ?? {};
+  const user = payload?.user ?? {};
+  const messageTs = message.ts ?? payload?.message_ts ?? null;
+  const threadTs = message.thread_ts ?? payload?.thread_ts ?? null;
+  const externalId = [teamId, channel.id, messageTs].filter(Boolean).join(':') || null;
+  // TODO: call Slack chat.getPermalink when the shortcut payload does not include a permalink.
+  const externalUrl = message.permalink ?? message.url ?? null;
+
+  const insertResult = await supabase.from('external_sources').insert({
+    workspace_id: account.workspace_id,
+    provider: 'slack',
+    integration_account_id: account.id,
+    external_id: externalId,
+    external_url: externalUrl,
+    source_type: 'message',
+    channel_id: channel.id ?? null,
+    channel_name: channel.name ?? null,
+    author_id: message.user ?? user.id ?? null,
+    author_name: message.username ?? user.username ?? user.name ?? null,
+    captured_text: message.text ?? null,
+    captured_at: parseSlackMessageTimestamp(messageTs ?? threadTs),
+    raw_payload: payload,
+    created_by: null,
+  });
+
+  if (insertResult.error) throw insertResult.error;
+};
+
 const withWorkspaceContext = async (req, res, next) => {
   try {
     const workspaceId = await resolveWorkspaceIdForRequest(req);
@@ -901,6 +1071,199 @@ const quotaGuard = (resource) => async (req, res, next) => {
 };
 
 app.get('/health', (req, res) => res.json({ status: 'ok' }));
+
+app.get('/api/integrations/slack/status', authMiddleware, rateLimit('read'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    const result = await supabase
+      .from('integration_accounts')
+      .select('id, provider_team_id, provider_team_name, bot_user_id, scopes, updated_at')
+      .eq('workspace_id', workspaceId)
+      .eq('provider', 'slack')
+      .order('updated_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (result.error) {
+      if (isMissingRelationError(result.error, 'integration_accounts')) {
+        return res.json({ connected: false });
+      }
+      throw result.error;
+    }
+
+    if (!result.data?.id) {
+      return res.json({ connected: false });
+    }
+
+    res.json({
+      connected: true,
+      team_id: result.data.provider_team_id ?? null,
+      team_name: result.data.provider_team_name ?? null,
+      bot_user_id: result.data.bot_user_id ?? null,
+      scopes: result.data.scopes ?? [],
+      updated_at: result.data.updated_at ?? null,
+    });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({ error: error.message });
+  }
+});
+
+app.get('/api/integrations/slack/captures', authMiddleware, rateLimit('read'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    const result = await supabase
+      .from('external_sources')
+      .select(
+        'id, external_url, channel_name, author_name, captured_text, captured_at, created_at'
+      )
+      .eq('workspace_id', workspaceId)
+      .eq('provider', 'slack')
+      .order('created_at', { ascending: false })
+      .limit(5);
+
+    if (result.error) {
+      if (isMissingRelationError(result.error, 'external_sources')) {
+        return res.json([]);
+      }
+      throw result.error;
+    }
+
+    res.json(result.data ?? []);
+  } catch (error) {
+    res.status(error.statusCode || 500).json({ error: error.message });
+  }
+});
+
+app.get('/api/integrations/slack/install-url', authMiddleware, rateLimit('read'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    await requireWorkspaceAccess(req.authUser.id, workspaceId, 'admin');
+    res.json({
+      url: buildSlackAuthorizeUrl({ workspaceId, installedBy: req.authUser.id }),
+    });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({ error: error.message });
+  }
+});
+
+app.get('/api/integrations/slack/install', authMiddleware, rateLimit('read'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    await requireWorkspaceAccess(req.authUser.id, workspaceId, 'admin');
+    res.redirect(buildSlackAuthorizeUrl({ workspaceId, installedBy: req.authUser.id }));
+  } catch (error) {
+    res.status(error.statusCode || 500).json({ error: error.message });
+  }
+});
+
+app.get('/api/integrations/slack/oauth/callback', rateLimit('auth'), async (req, res) => {
+  try {
+    const code = String(req.query?.code ?? '').trim();
+    const state = String(req.query?.state ?? '').trim();
+    if (!code) return res.status(400).send('Missing Slack OAuth code');
+
+    const statePayload = verifySlackOAuthState(state);
+    if (!statePayload) return res.status(400).send('Invalid Slack OAuth state');
+
+    const clientId = process.env.SLACK_CLIENT_ID?.trim();
+    const clientSecret = process.env.SLACK_CLIENT_SECRET?.trim();
+    const redirectUri = getSlackRedirectUri();
+    if (!clientId || !clientSecret || !redirectUri) {
+      return res.status(500).send('Slack OAuth is not configured');
+    }
+
+    await requireWorkspaceAccess(
+      statePayload.installed_by,
+      statePayload.workspace_id,
+      'admin'
+    );
+
+    const tokenResponse = await fetch('https://slack.com/api/oauth.v2.access', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        client_id: clientId,
+        client_secret: clientSecret,
+        code,
+        redirect_uri: redirectUri,
+      }),
+    });
+    const tokenPayload = await tokenResponse.json();
+    if (!tokenPayload?.ok) {
+      return res
+        .status(400)
+        .send(`Slack OAuth failed: ${tokenPayload?.error ?? 'unknown_error'}`);
+    }
+
+    const teamId = tokenPayload.team?.id ?? null;
+    const teamName = tokenPayload.team?.name ?? null;
+    if (!teamId) return res.status(400).send('Slack OAuth response missing team id');
+
+    const scopes = String(tokenPayload.scope ?? '')
+      .split(',')
+      .map((scope) => scope.trim())
+      .filter(Boolean);
+
+    const existing = await supabase
+      .from('integration_accounts')
+      .select('id')
+      .eq('workspace_id', statePayload.workspace_id)
+      .eq('provider', 'slack')
+      .eq('provider_team_id', teamId)
+      .maybeSingle();
+
+    if (existing.error) throw existing.error;
+
+    const accountPayload = {
+      workspace_id: statePayload.workspace_id,
+      provider: 'slack',
+      provider_team_id: teamId,
+      provider_team_name: teamName,
+      provider_user_id: tokenPayload.authed_user?.id ?? null,
+      bot_user_id: tokenPayload.bot_user_id ?? null,
+      access_token_encrypted: protectIntegrationTokenForStorage(tokenPayload.access_token),
+      refresh_token_encrypted: protectIntegrationTokenForStorage(tokenPayload.refresh_token),
+      scopes,
+      installed_by: statePayload.installed_by,
+      updated_at: new Date().toISOString(),
+    };
+
+    const accountResult = existing.data?.id
+      ? await supabase
+          .from('integration_accounts')
+          .update(accountPayload)
+          .eq('id', existing.data.id)
+      : await supabase.from('integration_accounts').insert(accountPayload);
+
+    if (accountResult.error) throw accountResult.error;
+
+    const redirectUrl =
+      process.env.SLACK_SETTINGS_REDIRECT_URL?.trim() || 'ledger://settings/integrations';
+    res.redirect(redirectUrl);
+  } catch (error) {
+    console.error('Slack OAuth callback failed', error);
+    res.status(error.statusCode || 500).send(error.message || 'Slack OAuth callback failed');
+  }
+});
+
+app.post('/api/integrations/slack/interactivity', rateLimit('write'), async (req, res) => {
+  if (!verifySlackRequest(req)) {
+    return res.status(401).send('Invalid Slack signature');
+  }
+
+  const payload = safeJson(req.body?.payload, null);
+  if (!payload) return res.status(400).send('Missing Slack payload');
+
+  if (payload.callback_id !== 'save_to_ledger') {
+    return res.status(200).json({ response_type: 'ephemeral', text: 'Unsupported Ledger action.' });
+  }
+
+  res.status(200).json({ response_type: 'ephemeral', text: 'Saved to Ledger.' });
+
+  void saveSlackMessageCapture(payload).catch((error) => {
+    console.error('Slack capture failed', error);
+  });
+});
 
 app.get('/api/user/onboarding', authMiddleware, rateLimit('read'), async (req, res) => {
   try {

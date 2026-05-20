@@ -10,7 +10,7 @@ Express.js API for Ledger - handles quota enforcement, validation, and Supabase 
 cd backend
 npm install
 cp .env.example .env.local
-# Add your Supabase credentials to .env.local
+# Add your Supabase credentials and Slack app values to .env.local
 npm run dev
 ```
 
@@ -19,6 +19,17 @@ npm run dev
 - `VITE_SUPABASE_URL` - Your Supabase project URL
 - `SUPABASE_SERVICE_ROLE_KEY` - Service role key (backend only, full permissions)
 - `PORT` - Server port (default: 3000)
+- `PUBLIC_BACKEND_URL` - Public HTTPS backend URL for integration callbacks during local testing or production
+- `SLACK_CLIENT_ID` - Slack app client id
+- `SLACK_CLIENT_SECRET` - Slack app client secret
+- `SLACK_SIGNING_SECRET` - Slack request signing secret
+- `SLACK_REDIRECT_URI` - Slack OAuth callback URL
+- `SLACK_APP_ID` - Slack app id
+- `SLACK_SETTINGS_REDIRECT_URL` - Optional post-install redirect back to Ledger settings
+
+Create the backend env file from `backend/.env.example`. Slack secrets stay on the server and are not exposed to the renderer.
+
+For production Slack setup, point callbacks at `https://api.ledgerworkspace.com/api/integrations/slack/...`.
 
 ### Deployment to Render
 
@@ -28,6 +39,7 @@ npm run dev
 4. Add environment variables:
    - `VITE_SUPABASE_URL`
    - `SUPABASE_SERVICE_ROLE_KEY`
+   - Slack variables above if Slack integration is enabled
 5. Build command: `cd backend && npm install`
 6. Start command: `cd backend && npm start`
 

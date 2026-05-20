@@ -197,6 +197,23 @@ export const useApi = () => {
           skipWorkspaceHeader: true,
         }),
 
+      // Integrations
+      getSlackIntegrationStatus: (workspaceId: string) =>
+        request(`/api/integrations/slack/status?workspaceId=${encodeURIComponent(workspaceId)}`, {
+          skipWorkspaceHeader: true,
+        }),
+      getSlackCaptures: (workspaceId: string) =>
+        request(`/api/integrations/slack/captures?workspaceId=${encodeURIComponent(workspaceId)}`, {
+          skipWorkspaceHeader: true,
+        }),
+      getSlackInstallUrl: (workspaceId: string) =>
+        request(
+          `/api/integrations/slack/install-url?workspaceId=${encodeURIComponent(workspaceId)}`,
+          {
+            skipWorkspaceHeader: true,
+          }
+        ),
+
       // Projects
       getProjects: (options?: { includeCompleted?: boolean }) => {
         const params = new URLSearchParams();

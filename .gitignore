@@ -16,7 +16,7 @@ dist-ssr
 .env
 .env.local
 .env.*.local
-.env.example
+backend/.env.local
 .sql
 
 # Editor directories and files

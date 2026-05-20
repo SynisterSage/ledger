@@ -59,6 +59,25 @@ type WorkspaceInvitation = {
   created_at: string;
 };
 
+type SlackIntegrationStatus = {
+  connected: boolean;
+  team_id?: string | null;
+  team_name?: string | null;
+  bot_user_id?: string | null;
+  scopes?: string[];
+  updated_at?: string | null;
+};
+
+type SlackCapturePreview = {
+  id: string;
+  external_url?: string | null;
+  channel_name?: string | null;
+  author_name?: string | null;
+  captured_text?: string | null;
+  captured_at?: string | null;
+  created_at: string;
+};
+
 type InviteModalState = {
   id: string;
 } | null;
@@ -67,6 +86,7 @@ type SettingsSectionId =
   | 'account'
   | 'workspace'
   | 'calendar'
+  | 'integrations'
   | 'sidebar'
   | 'shortcuts'
   | 'accessibility';
@@ -74,6 +94,7 @@ const sectionOrder: Array<{ id: SettingsSectionId; label: string; description: s
   { id: 'account', label: 'Account', description: 'Identity and security' },
   { id: 'workspace', label: 'Workspace', description: 'Display and behavior defaults' },
   { id: 'calendar', label: 'Calendar', description: 'Event and reminder defaults' },
+  { id: 'integrations', label: 'Integrations', description: 'Connect external signals' },
   { id: 'sidebar', label: 'Sidebar', description: 'Docking, visibility, and placement' },
   { id: 'shortcuts', label: 'Keyboard Shortcuts', description: 'Quick reference for actions' },
   { id: 'accessibility', label: 'Accessibility', description: 'Comfort and readability options' },
@@ -276,6 +297,11 @@ export const SettingsWindow = () => {
   const [inviteCopyStatus, setInviteCopyStatus] = useState<string | null>(null);
   const [isSendingInvite, setIsSendingInvite] = useState(false);
   const [inviteModal, setInviteModal] = useState<InviteModalState>(null);
+  const [slackStatus, setSlackStatus] = useState<SlackIntegrationStatus | null>(null);
+  const [slackCaptures, setSlackCaptures] = useState<SlackCapturePreview[]>([]);
+  const [isLoadingSlackStatus, setIsLoadingSlackStatus] = useState(false);
+  const [isConnectingSlack, setIsConnectingSlack] = useState(false);
+  const [slackError, setSlackError] = useState<string | null>(null);
   const inviteEmailRef = useRef<HTMLInputElement | null>(null);
   const autosaveTimerRef = useRef<number | null>(null);
   const autosaveTokenRef = useRef(0);
@@ -605,6 +631,70 @@ export const SettingsWindow = () => {
     } finally {
       setIsCreatingWorkspace(false);
     }
+  };
+
+  useEffect(() => {
+    if (activeSection !== 'integrations' || !activeWorkspaceId) return;
+
+    let cancelled = false;
+    setIsLoadingSlackStatus(true);
+    setSlackError(null);
+
+    void (async () => {
+      try {
+        const [statusPayload, capturesPayload] = await Promise.all([
+          api.getSlackIntegrationStatus(activeWorkspaceId) as Promise<SlackIntegrationStatus>,
+          api.getSlackCaptures(activeWorkspaceId) as Promise<SlackCapturePreview[]>,
+        ]);
+        if (!cancelled) {
+          setSlackStatus(statusPayload);
+          setSlackCaptures(Array.isArray(capturesPayload) ? capturesPayload : []);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setSlackStatus({ connected: false });
+          setSlackCaptures([]);
+          setSlackError(
+            err instanceof Error ? err.message : 'Could not load Slack connection status.'
+          );
+        }
+      } finally {
+        if (!cancelled) setIsLoadingSlackStatus(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeSection, activeWorkspaceId, api]);
+
+  const handleConnectSlack = async () => {
+    if (!activeWorkspaceId) {
+      setSlackError('Select a workspace before connecting Slack.');
+      return;
+    }
+
+    setIsConnectingSlack(true);
+    setSlackError(null);
+    try {
+      const payload = (await api.getSlackInstallUrl(activeWorkspaceId)) as { url?: string };
+      const url = String(payload?.url ?? '').trim();
+      if (!url) throw new Error('Slack install URL was not returned.');
+
+      await openExternalUrl(url);
+    } catch (err) {
+      setSlackError(err instanceof Error ? err.message : 'Could not start Slack connection.');
+    } finally {
+      setIsConnectingSlack(false);
+    }
+  };
+
+  const openExternalUrl = async (url: string) => {
+    if (window.desktopWindow?.openExternal) {
+      await window.desktopWindow.openExternal(url);
+      return;
+    }
+    window.open(url, '_blank', 'noopener,noreferrer');
   };
 
   const canManageWorkspace = workspaceUserRole === 'owner' || workspaceUserRole === 'admin';
@@ -1705,6 +1795,145 @@ export const SettingsWindow = () => {
                   </div>
                 </section>
               )}
+
+              {activeSection === 'integrations' && (
+                <section
+                  className="rounded-2xl border border-gray-200 bg-white p-5"
+                  aria-labelledby="settings-integrations"
+                >
+                  <h2 id="settings-integrations" className="text-lg font-semibold text-gray-900">
+                    Integrations
+                  </h2>
+                  <p className="mt-1 text-sm text-gray-600">
+                    Connect external signals that should become intentional Ledger captures.
+                  </p>
+
+                  <div className="mt-5 rounded-2xl border border-gray-200 bg-gray-50/70 p-4">
+                    <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-3">
+                          <span className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-[#FF5F40] text-sm font-semibold text-white shadow-sm">
+                            S
+                          </span>
+                          <div>
+                            <h3 className="text-sm font-semibold text-gray-950">Slack</h3>
+                            <p className="mt-0.5 text-xs leading-5 text-gray-600">
+                              Save Slack messages to Ledger as tasks, notes, reminders, and project
+                              context.
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="mt-4 rounded-xl border border-gray-200 bg-white px-3 py-2">
+                          <p className="text-[10px] font-medium uppercase tracking-[0.18em] text-gray-400">
+                            Status
+                          </p>
+                          <p className="mt-1 text-sm font-medium text-gray-900">
+                            {isLoadingSlackStatus
+                              ? 'Checking connection...'
+                              : slackStatus?.connected
+                                ? `Connected to ${slackStatus.team_name || 'Slack'}`
+                                : 'Not connected'}
+                          </p>
+                          {slackStatus?.connected && slackStatus.updated_at && (
+                            <p className="mt-1 text-xs text-gray-500">
+                              Updated{' '}
+                              {new Date(slackStatus.updated_at).toLocaleDateString([], {
+                                month: 'short',
+                                day: 'numeric',
+                              })}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex shrink-0 flex-col items-stretch gap-2 sm:min-w-36">
+                        <button
+                          type="button"
+                          onClick={() => void handleConnectSlack()}
+                          disabled={isConnectingSlack || !activeWorkspaceId}
+                          className="h-9 rounded-xl bg-[#FF5F40] px-4 text-sm font-medium text-white transition hover:bg-[#ea5336] disabled:opacity-60"
+                        >
+                          {isConnectingSlack
+                            ? 'Opening...'
+                            : slackStatus?.connected
+                              ? 'Reconnect Slack'
+                              : 'Connect Slack'}
+                        </button>
+                        {slackStatus?.connected && (
+                          <button
+                            type="button"
+                            disabled
+                            className="h-9 rounded-xl border border-gray-200 bg-white px-4 text-sm font-medium text-gray-400"
+                            title="Disconnect will be added after the first capture flow ships."
+                          >
+                            Disconnect TODO
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {slackError && (
+                      <p className="mt-3 flex items-center gap-1.5 text-xs text-red-700">
+                        <CircleAlert size={12} />
+                        {slackError}
+                      </p>
+                    )}
+
+                    <div className="mt-4 rounded-xl border border-gray-200 bg-white p-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="text-[10px] font-medium uppercase tracking-[0.18em] text-gray-400">
+                          Latest Slack captures
+                        </p>
+                        <span className="text-[11px] text-gray-400">
+                          {slackCaptures.length} shown
+                        </span>
+                      </div>
+                      <div className="mt-2 space-y-2">
+                        {slackCaptures.length === 0 ? (
+                          <p className="text-xs leading-5 text-gray-500">
+                            Captured Slack messages will appear here until the dedicated capture
+                            inbox ships.
+                          </p>
+                        ) : (
+                          slackCaptures.map((capture) => (
+                            <div
+                              key={capture.id}
+                              className="flex items-start justify-between gap-3 rounded-lg border border-gray-100 bg-gray-50 px-3 py-2"
+                            >
+                              <div className="min-w-0">
+                                <p className="truncate text-sm font-medium text-gray-900">
+                                  {capture.captured_text || 'Slack message'}
+                                </p>
+                                <p className="mt-0.5 truncate text-[11px] text-gray-500">
+                                  From Slack
+                                  {capture.channel_name ? ` · #${capture.channel_name}` : ''}
+                                  {capture.author_name ? ` · ${capture.author_name}` : ''}
+                                </p>
+                              </div>
+                              {capture.external_url && (
+                                <button
+                                  type="button"
+                                  onClick={() => void openExternalUrl(capture.external_url || '')}
+                                  className="shrink-0 text-[11px] font-medium text-[#FF5F40] hover:text-[#d84b31]"
+                                >
+                                  Open
+                                </button>
+                              )}
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
+
+                    <p className="mt-3 text-xs leading-5 text-gray-500">
+                      Phase 1 only stores intentional Slack message captures. Ledger will not sync
+                      channel history or read every message.
+                    </p>
+                  </div>
+                </section>
+              )}
+
               {activeSection === 'sidebar' && (
                 <section
                   className="rounded-2xl border border-gray-200 bg-white p-5"
@@ -1959,7 +2188,9 @@ export const SettingsWindow = () => {
                 </section>
               )}
 
-              {activeSection !== 'sidebar' && activeSection !== 'shortcuts' && (
+              {activeSection !== 'sidebar' &&
+                activeSection !== 'shortcuts' &&
+                activeSection !== 'integrations' && (
                 <section className="rounded-2xl border border-gray-200 bg-white p-5">
                   <div>
                     <h2 className="text-sm font-semibold text-gray-900">

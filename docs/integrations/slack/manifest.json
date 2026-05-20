@@ -1,0 +1,42 @@
+{
+  "display_information": {
+    "name": "Ledger",
+    "description": "Save Slack messages to Ledger as tasks, notes, reminders, and events.",
+    "background_color": "#FF5F40"
+  },
+  "features": {
+    "bot_user": {
+      "display_name": "Ledger",
+      "always_online": false
+    },
+    "shortcuts": [
+      {
+        "name": "Save to Ledger",
+        "type": "message",
+        "callback_id": "save_to_ledger",
+        "description": "Save this Slack message to Ledger."
+      }
+    ]
+  },
+  "oauth_config": {
+    "redirect_urls": [
+      "https://api.ledgerworkspace.com/api/integrations/slack/oauth/callback"
+    ],
+    "scopes": {
+      "bot": [
+        "commands",
+        "chat:write"
+      ]
+    }
+  },
+  "settings": {
+    "interactivity": {
+      "is_enabled": true,
+      "request_url": "https://api.ledgerworkspace.com/api/integrations/slack/interactivity"
+    },
+    "org_deploy_enabled": false,
+    "socket_mode_enabled": false,
+    "is_hosted": false,
+    "token_rotation_enabled": false
+  }
+}
