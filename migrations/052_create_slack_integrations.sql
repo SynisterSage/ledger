@@ -92,7 +92,7 @@ CREATE POLICY "Admins can manage workspace integration accounts"
       FROM public.workspace_members wm
       WHERE wm.workspace_id = integration_accounts.workspace_id
         AND wm.user_id = auth.uid()
-        AND wm.role IN ('owner', 'admin')
+        AND wm.role = 'admin'
     )
   )
   WITH CHECK (
@@ -102,7 +102,7 @@ CREATE POLICY "Admins can manage workspace integration accounts"
       FROM public.workspace_members wm
       WHERE wm.workspace_id = integration_accounts.workspace_id
         AND wm.user_id = auth.uid()
-        AND wm.role IN ('owner', 'admin')
+        AND wm.role = 'admin'
     )
   );
 
@@ -126,7 +126,7 @@ CREATE POLICY "Users can manage workspace external sources"
       FROM public.workspace_members wm
       WHERE wm.workspace_id = external_sources.workspace_id
         AND wm.user_id = auth.uid()
-        AND wm.role IN ('owner', 'admin', 'member')
+        AND wm.role IN ('admin', 'member')
     )
   )
   WITH CHECK (
@@ -136,6 +136,6 @@ CREATE POLICY "Users can manage workspace external sources"
       FROM public.workspace_members wm
       WHERE wm.workspace_id = external_sources.workspace_id
         AND wm.user_id = auth.uid()
-        AND wm.role IN ('owner', 'admin', 'member')
+        AND wm.role IN ('admin', 'member')
     )
   );

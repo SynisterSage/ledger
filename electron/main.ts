@@ -19,6 +19,18 @@ import { defaultSidebarPreferences, type SidebarPosition } from '../src/config/s
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const execFileAsync = promisify(execFile);
+const LEDGER_PROTOCOL = 'ledger';
+const SETTINGS_SECTIONS = new Set([
+  'account',
+  'workspace',
+  'calendar',
+  'integrations',
+  'sidebar',
+  'shortcuts',
+  'accessibility',
+]);
+
+let pendingLedgerProtocolUrl: string | null = null;
 
 if (process.platform === 'win32') {
   // Command buffer / GPUControl errors on some Windows drivers can freeze
@@ -44,6 +56,89 @@ const dockLog = (message: string) => {
 };
 
 const require = createRequire(import.meta.url);
+
+const isSettingsSection = (value: string | null | undefined): value is string =>
+  SETTINGS_SECTIONS.has(String(value ?? '').toLowerCase());
+
+const extractLedgerProtocolUrl = (argv: string[]) =>
+  argv.find((value) => String(value ?? '').toLowerCase().startsWith(`${LEDGER_PROTOCOL}://`)) ??
+  null;
+
+const registerLedgerProtocol = () => {
+  try {
+    if (process.platform === 'win32' && process.defaultApp) {
+      app.setAsDefaultProtocolClient(LEDGER_PROTOCOL, process.execPath, [
+        path.resolve(process.argv[1]),
+      ]);
+      return;
+    }
+
+    app.setAsDefaultProtocolClient(LEDGER_PROTOCOL);
+  } catch (error) {
+    console.warn('[electron] Failed to register ledger:// protocol', error);
+  }
+};
+
+const handleLedgerProtocolUrl = (url: string) => {
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== `${LEDGER_PROTOCOL}:`) return;
+
+    const host = parsed.hostname.toLowerCase();
+    const pathnameParts = parsed.pathname.split('/').filter(Boolean);
+    const sectionCandidate =
+      host === 'settings' ? pathnameParts[0] : pathnameParts[0] === 'settings' ? pathnameParts[1] : null;
+    const section = isSettingsSection(sectionCandidate) ? sectionCandidate : 'integrations';
+
+    if (host === 'settings' || pathnameParts[0] === 'settings') {
+      if (!sidebarWin || sidebarWin.isDestroyed()) {
+        createSidebarWindow();
+      } else {
+        if (!sidebarWin.isVisible()) sidebarWin.show();
+        sidebarWin.focus();
+      }
+      openModuleWindow('settings', null, null, null, null, null, section);
+    }
+  } catch (error) {
+    console.warn('[electron] Failed to handle ledger protocol URL', error);
+  }
+};
+
+const processPendingLedgerProtocolUrl = () => {
+  if (!pendingLedgerProtocolUrl) return;
+  const url = pendingLedgerProtocolUrl;
+  pendingLedgerProtocolUrl = null;
+  handleLedgerProtocolUrl(url);
+};
+
+const singleInstanceLock = app.requestSingleInstanceLock();
+if (!singleInstanceLock) {
+  app.quit();
+}
+
+app.on('second-instance', (_event, argv) => {
+  const deepLinkUrl = extractLedgerProtocolUrl(argv);
+  if (deepLinkUrl) {
+    pendingLedgerProtocolUrl = deepLinkUrl;
+    if (app.isReady()) {
+      processPendingLedgerProtocolUrl();
+    }
+    return;
+  }
+
+  if (sidebarWin && !sidebarWin.isDestroyed()) {
+    if (!sidebarWin.isVisible()) sidebarWin.show();
+    sidebarWin.focus();
+  }
+});
+
+app.on('open-url', (event, url) => {
+  event.preventDefault();
+  pendingLedgerProtocolUrl = url;
+  if (app.isReady()) {
+    processPendingLedgerProtocolUrl();
+  }
+});
 
 type Spellchecker = {
   correct: (word: string) => boolean;
@@ -2142,7 +2237,8 @@ function sendModuleFocus(
   focusProjectId?: string | null,
   focusNoteId?: string | null,
   focusTaskId?: string | null,
-  focusContext?: string | null
+  focusContext?: string | null,
+  focusSection?: string | null
 ) {
   const existing = moduleWins.get(kind);
   if (existing && !existing.isDestroyed()) {
@@ -2161,6 +2257,9 @@ function sendModuleFocus(
     if (focusContext) {
       existing.webContents.send('module:focus-context', { kind, focusContext });
     }
+    if (kind === 'settings' && focusSection) {
+      existing.webContents.send('settings:focus-section', { section: focusSection });
+    }
   }
 }
 
@@ -2170,13 +2269,22 @@ function openModuleWindow(
   focusProjectId?: string | null,
   focusNoteId?: string | null,
   focusTaskId?: string | null,
-  focusContext?: string | null
+  focusContext?: string | null,
+  focusSection?: string | null
 ) {
   const existing = moduleWins.get(kind);
   if (existing && !existing.isDestroyed()) {
     existing.show();
     existing.focus();
-    sendModuleFocus(kind, focusDate, focusProjectId, focusNoteId, focusTaskId, focusContext);
+    sendModuleFocus(
+      kind,
+      focusDate,
+      focusProjectId,
+      focusNoteId,
+      focusTaskId,
+      focusContext,
+      focusSection
+    );
     return;
   }
 
@@ -2319,14 +2427,25 @@ function openModuleWindow(
   const focusNoteQuery = focusNoteId ? `&focusNoteId=${encodeURIComponent(focusNoteId)}` : '';
   const focusTaskQuery = focusTaskId ? `&focusTaskId=${encodeURIComponent(focusTaskId)}` : '';
   const focusContextQuery = focusContext ? `&focusContext=${encodeURIComponent(focusContext)}` : '';
+  const focusSectionQuery = kind === 'settings' && focusSection
+    ? `&section=${encodeURIComponent(focusSection)}`
+    : '';
   moduleWin.webContents.once('did-finish-load', () => {
     moduleWin.show();
     moduleWin.focus();
-    sendModuleFocus(kind, focusDate, focusProjectId, focusNoteId, focusTaskId, focusContext);
+    sendModuleFocus(
+      kind,
+      focusDate,
+      focusProjectId,
+      focusNoteId,
+      focusTaskId,
+      focusContext,
+      focusSection
+    );
   });
   try {
     const moduleUrl = getRendererUrl(
-      `?window=module&module=${kind}${focusDateQuery}${focusProjectQuery}${focusNoteQuery}${focusTaskQuery}${focusContextQuery}`
+      `?window=module&module=${kind}${focusDateQuery}${focusProjectQuery}${focusNoteQuery}${focusTaskQuery}${focusContextQuery}${focusSectionQuery}`
     );
     moduleWin.loadURL(moduleUrl);
   } catch (err) {
@@ -2737,7 +2856,9 @@ function setupTouchBar() {
 }
 
 app.whenReady().then(() => {
+  registerLedgerProtocol();
   createSidebarWindow();
+  processPendingLedgerProtocolUrl();
 
   // Setup Touch Bar for macOS
   setTimeout(() => setupTouchBar(), 500);

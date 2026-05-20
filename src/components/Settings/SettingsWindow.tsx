@@ -100,6 +100,24 @@ const sectionOrder: Array<{ id: SettingsSectionId; label: string; description: s
   { id: 'accessibility', label: 'Accessibility', description: 'Comfort and readability options' },
 ];
 
+const isSettingsSection = (value: string | null | undefined): value is SettingsSectionId => {
+  const section = String(value ?? '').trim().toLowerCase();
+  return (
+    section === 'account' ||
+    section === 'workspace' ||
+    section === 'calendar' ||
+    section === 'integrations' ||
+    section === 'sidebar' ||
+    section === 'shortcuts' ||
+    section === 'accessibility'
+  );
+};
+
+const getInitialSettingsSection = (): SettingsSectionId => {
+  const section = new URLSearchParams(window.location.search).get('section');
+  return isSettingsSection(section) ? section : 'account';
+};
+
 const shortcutSections: Array<{
   id: string;
   title: string;
@@ -253,7 +271,7 @@ export const SettingsWindow = () => {
     isLoading: isLoadingWorkspaces,
     error: workspaceError,
   } = useWorkspaceContext();
-  const [activeSection, setActiveSection] = useState<SettingsSectionId>('account');
+  const [activeSection, setActiveSection] = useState<SettingsSectionId>(getInitialSettingsSection());
 
   const [preferences, setPreferences] = useState<UserPreferences>(defaultPrefs);
   const [isSavingPrefs, setIsSavingPrefs] = useState(false);
@@ -301,6 +319,7 @@ export const SettingsWindow = () => {
   const [slackCaptures, setSlackCaptures] = useState<SlackCapturePreview[]>([]);
   const [isLoadingSlackStatus, setIsLoadingSlackStatus] = useState(false);
   const [isConnectingSlack, setIsConnectingSlack] = useState(false);
+  const [isDisconnectingSlack, setIsDisconnectingSlack] = useState(false);
   const [slackError, setSlackError] = useState<string | null>(null);
   const inviteEmailRef = useRef<HTMLInputElement | null>(null);
   const autosaveTimerRef = useRef<number | null>(null);
@@ -446,6 +465,19 @@ export const SettingsWindow = () => {
       // No-op outside Electron (browser dev mode)
     });
   }, [sidebarPreferences]);
+
+  useEffect(() => {
+    const handleFocusSection = (_event: unknown, payload: { section?: string | null }) => {
+      if (isSettingsSection(payload?.section)) {
+        setActiveSection(payload.section);
+      }
+    };
+
+    window.ipcRenderer?.on('settings:focus-section', handleFocusSection);
+    return () => {
+      window.ipcRenderer?.off('settings:focus-section', handleFocusSection);
+    };
+  }, []);
 
   const firstName = useMemo(() => {
     const candidate = fullName.trim();
@@ -686,6 +718,29 @@ export const SettingsWindow = () => {
       setSlackError(err instanceof Error ? err.message : 'Could not start Slack connection.');
     } finally {
       setIsConnectingSlack(false);
+    }
+  };
+
+  const handleDisconnectSlack = async () => {
+    if (!activeWorkspaceId) {
+      setSlackError('Select a workspace before disconnecting Slack.');
+      return;
+    }
+
+    const confirmed = window.confirm(
+      'Disconnect Slack from this workspace? Existing captures will remain in Ledger.'
+    );
+    if (!confirmed) return;
+
+    setIsDisconnectingSlack(true);
+    setSlackError(null);
+    try {
+      await api.disconnectSlackIntegration(activeWorkspaceId);
+      setSlackStatus({ connected: false });
+    } catch (err) {
+      setSlackError(err instanceof Error ? err.message : 'Could not disconnect Slack.');
+    } finally {
+      setIsDisconnectingSlack(false);
     }
   };
 
@@ -1863,11 +1918,11 @@ export const SettingsWindow = () => {
                         {slackStatus?.connected && (
                           <button
                             type="button"
-                            disabled
-                            className="h-9 rounded-xl border border-gray-200 bg-white px-4 text-sm font-medium text-gray-400"
-                            title="Disconnect will be added after the first capture flow ships."
+                            onClick={() => void handleDisconnectSlack()}
+                            disabled={isDisconnectingSlack || !activeWorkspaceId}
+                            className="h-9 rounded-xl border border-gray-200 bg-white px-4 text-sm font-medium text-gray-700 transition hover:bg-gray-50 disabled:opacity-60"
                           >
-                            Disconnect TODO
+                            {isDisconnectingSlack ? 'Disconnecting...' : 'Disconnect'}
                           </button>
                         )}
                       </div>

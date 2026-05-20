@@ -1134,6 +1134,30 @@ app.get('/api/integrations/slack/captures', authMiddleware, rateLimit('read'), a
   }
 });
 
+app.delete('/api/integrations/slack/disconnect', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    await requireWorkspaceAccess(req.authUser.id, workspaceId, 'admin');
+
+    const result = await supabase
+      .from('integration_accounts')
+      .delete()
+      .eq('workspace_id', workspaceId)
+      .eq('provider', 'slack');
+
+    if (result.error) {
+      if (isMissingRelationError(result.error, 'integration_accounts')) {
+        return res.json({ connected: false });
+      }
+      throw result.error;
+    }
+
+    res.json({ connected: false });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({ error: error.message });
+  }
+});
+
 app.get('/api/integrations/slack/install-url', authMiddleware, rateLimit('read'), async (req, res) => {
   try {
     const workspaceId = await resolveWorkspaceIdForRequest(req);

@@ -213,6 +213,11 @@ export const useApi = () => {
             skipWorkspaceHeader: true,
           }
         ),
+      disconnectSlackIntegration: (workspaceId: string) =>
+        request(`/api/integrations/slack/disconnect?workspaceId=${encodeURIComponent(workspaceId)}`, {
+          method: 'DELETE',
+          skipWorkspaceHeader: true,
+        }),
 
       // Projects
       getProjects: (options?: { includeCompleted?: boolean }) => {
