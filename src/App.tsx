@@ -2393,6 +2393,7 @@ function AppShell() {
   const sidebarModeTimerRef = useRef<number | null>(null);
   const [showAuthenticatedShell, setShowAuthenticatedShell] = useState(false);
   const [hasShownLoginOnce, setHasShownLoginOnce] = useState(false);
+  const authNativeWindowPinnedRef = useRef(false);
 
   // Initialize workspace for authenticated users
   useWorkspaceInit();
@@ -2680,6 +2681,10 @@ function AppShell() {
   }
 
   useEffect(() => {
+    if (!user) {
+      authNativeWindowPinnedRef.current = false;
+    }
+
     if (user && uiMode !== 'app') {
       setUiMode('app');
       setIsAuthExiting(false);
@@ -2692,6 +2697,21 @@ function AppShell() {
       setPostAuthStage('idle');
     }
   }, [user, isLoading, uiMode]);
+
+  useEffect(() => {
+    if (isModuleWindow) return;
+    if (isLoading) return;
+    if (user) return;
+    if (authNativeWindowPinnedRef.current) return;
+
+    authNativeWindowPinnedRef.current = true;
+    void window.desktopWindow?.setMode('auth').catch(() => {
+      // No-op outside Electron (browser dev mode)
+    });
+    void window.desktopWindow?.setVisible(true).catch(() => {
+      // No-op outside Electron (browser dev mode)
+    });
+  }, [isLoading, isModuleWindow, user]);
 
   useEffect(() => {
     if (!pendingInviteToken) {
@@ -2953,6 +2973,7 @@ function AppShell() {
     }
 
     const applyMode = () => {
+      if (sidebarModeRef.current === mode) return;
       sidebarModeRef.current = mode;
       window.desktopWindow?.setMode(mode).catch(() => {
         // No-op outside Electron (browser dev mode)

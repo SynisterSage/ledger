@@ -21,6 +21,11 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const execFileAsync = promisify(execFile);
 
 if (process.platform === 'win32') {
+  // Command buffer / GPUControl errors on some Windows drivers can freeze
+  // transparent-window video surfaces into gray frames.
+  // Force software rendering for stable auth splash + login video playback.
+  app.disableHardwareAcceleration();
+
   // Transparent windows + hardware video surfaces can trigger Skia mailbox errors
   // on some Windows GPU/driver combos. Disabling DirectComposition stabilizes
   // auth video playback without changing macOS behavior.
