@@ -3005,7 +3005,7 @@ function AppShell() {
   // Show login if not authenticated
   if (!user) {
     return (
-      <div className="relative h-screen w-screen overflow-hidden bg-[#f5f5f7]">
+      <div className="relative h-screen w-screen overflow-hidden bg-transparent">
         <div
           className={`relative z-10 w-full transform transition-all duration-250 ease-out ${
             isAuthExiting

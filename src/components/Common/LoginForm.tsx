@@ -41,10 +41,6 @@ export const LoginForm: React.FC<LoginProps> = ({ onSuccess, notice }) => {
   const splashDismissTimerRef = useRef<number | null>(null);
   const splashRevealTimerRef = useRef<number | null>(null);
   const { signIn, signUp, isLoading } = useAuth();
-  const isWindows =
-    typeof navigator !== 'undefined' &&
-    typeof navigator.platform === 'string' &&
-    navigator.platform.toLowerCase().includes('win');
 
   const handleCloseWindow = () => {
     void window.desktopWindow?.quitApp();
@@ -102,7 +98,7 @@ export const LoginForm: React.FC<LoginProps> = ({ onSuccess, notice }) => {
     const handlePointerDown = () => finishPreLoginSplash();
     const handleError = () => finishPreLoginSplash();
     const splashVideo = preloginSplashVideoRef.current;
-    const fallbackDelay = isWindows ? 1600 : 5000;
+    const fallbackDelay = 5000;
 
     window.addEventListener('keydown', handleKeyDown, { once: true });
     window.addEventListener('pointerdown', handlePointerDown, { once: true });
@@ -118,7 +114,7 @@ export const LoginForm: React.FC<LoginProps> = ({ onSuccess, notice }) => {
       window.removeEventListener('pointerdown', handlePointerDown);
       splashVideo?.removeEventListener('error', handleError);
     };
-  }, [isWindows, showPreLoginSplash]);
+  }, [showPreLoginSplash]);
 
   useEffect(() => {
     if (showPreLoginSplash || isSplashDismissing) return;
@@ -199,48 +195,39 @@ export const LoginForm: React.FC<LoginProps> = ({ onSuccess, notice }) => {
   const shouldPlayAuthIntro = isIntroReady && !prefersReducedMotion;
 
   return (
-    <div className="relative h-screen w-screen overflow-hidden bg-[#F9FBFA]">
-      {!splashOverlayVisible && (
-        <button
-          type="button"
-          onMouseDown={triggerOnPrimaryMouseDown}
-          onClick={handleCloseWindow}
-          aria-label="Close"
-          className="absolute right-6 top-7 z-30 inline-flex h-8 w-8 items-center justify-center rounded-full border border-black/5 bg-white/60 text-gray-500 transition hover:bg-white/90 hover:text-gray-900"
-          style={noDragRegionStyle}
-        >
-          <X size={16} />
-        </button>
-      )}
+    <div className="relative h-screen w-screen overflow-hidden bg-transparent p-3">
+      <div className="absolute inset-3 rounded-[28px] border border-white/60 bg-[#f5f5f7] shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]" />
+      <div className="relative z-10 h-full w-full overflow-hidden rounded-[28px] bg-[#F9FBFA]">
+        {!splashOverlayVisible && (
+          <button
+            type="button"
+            onMouseDown={triggerOnPrimaryMouseDown}
+            onClick={handleCloseWindow}
+            aria-label="Close"
+            className="absolute right-6 top-7 z-30 inline-flex h-8 w-8 items-center justify-center rounded-full border border-black/5 bg-white/60 text-gray-500 transition hover:bg-white/90 hover:text-gray-900"
+            style={noDragRegionStyle}
+          >
+            <X size={16} />
+          </button>
+        )}
 
-      {!splashOverlayVisible && (
+        {!splashOverlayVisible && (
+          <div
+            className="absolute inset-x-0 top-0 z-20 h-11"
+            style={dragRegionStyle}
+            aria-hidden="true"
+          />
+        )}
+
         <div
-          className="absolute inset-x-0 top-0 z-20 h-11"
-          style={dragRegionStyle}
-          aria-hidden="true"
-        />
-      )}
-
-      <div
-        className={`absolute inset-0 z-20 bg-[#F9FBFA] transition-opacity duration-200 ease-out ${
-          showPreLoginSplash && !isSplashDismissing
-            ? 'opacity-100'
-            : 'pointer-events-none opacity-0'
-        }`}
-        aria-hidden={!splashOverlayVisible}
-      >
-        <div className="absolute inset-0 flex items-center justify-center p-8 sm:p-12">
-          {isWindows ? (
-            <div className="flex h-full w-full max-h-[72vh] max-w-[min(72vw,760px)] items-center justify-center rounded-[28px] bg-[#F9FBFA]">
-              <div className="flex flex-col items-center gap-4 text-center">
-                <img src="./logo-color.svg" alt="Ledger" className="h-18 w-18" />
-                <div className="space-y-1">
-                  <p className="text-[22px] font-semibold leading-tight text-gray-950">Ledger</p>
-                  <p className="text-sm leading-6 text-gray-500">Your day, beside your work.</p>
-                </div>
-              </div>
-            </div>
-          ) : (
+          className={`absolute inset-0 z-20 bg-[#F9FBFA] transition-opacity duration-200 ease-out ${
+            showPreLoginSplash && !isSplashDismissing
+              ? 'opacity-100'
+              : 'pointer-events-none opacity-0'
+          }`}
+          aria-hidden={!splashOverlayVisible}
+        >
+          <div className="absolute inset-0 flex items-center justify-center p-8 sm:p-12">
             <video
               ref={preloginSplashVideoRef}
               className="h-full w-full max-h-[72vh] max-w-[min(72vw,760px)] object-contain object-center"
@@ -252,18 +239,17 @@ export const LoginForm: React.FC<LoginProps> = ({ onSuccess, notice }) => {
               onEnded={finishPreLoginSplash}
               onError={finishPreLoginSplash}
             />
-          )}
+          </div>
         </div>
-      </div>
 
-      <div className="relative z-10 grid h-full min-h-screen w-full overflow-hidden bg-[#F9FBFA] min-[820px]:grid-cols-[0.42fr_0.58fr]">
+        <div className="relative z-10 grid h-full min-h-full w-full overflow-hidden bg-[#F9FBFA] min-[820px]:grid-cols-[0.42fr_0.58fr]">
         <div
           className={`relative hidden overflow-hidden bg-[#F9FBFA] min-[820px]:block ${
             prefersReducedMotion ? '' : shouldPlayAuthIntro ? 'ledger-auth-left-enter' : 'opacity-0'
           }`}
         >
           {prefersReducedMotion ? (
-            <div className="flex h-full min-h-screen items-center justify-center bg-[#F9FBFA]">
+            <div className="flex h-full min-h-full items-center justify-center bg-[#F9FBFA]">
               <img src="./logo-color.svg" alt="Ledger" className="h-16 w-16" />
             </div>
           ) : (
@@ -309,7 +295,7 @@ export const LoginForm: React.FC<LoginProps> = ({ onSuccess, notice }) => {
         </div>
 
         <div
-          className={`flex min-h-screen items-center justify-center bg-[#F9FBFA] px-7 py-10 sm:px-10 min-[820px]:px-16 ${
+          className={`flex h-full min-h-full items-center justify-center bg-[#F9FBFA] px-7 py-10 sm:px-10 min-[820px]:px-16 ${
             prefersReducedMotion ? '' : shouldPlayAuthIntro ? 'ledger-auth-pane-enter' : 'opacity-0'
           }`}
         >
@@ -437,6 +423,7 @@ export const LoginForm: React.FC<LoginProps> = ({ onSuccess, notice }) => {
             </form>
           </div>
         </div>
+      </div>
       </div>
     </div>
   );
