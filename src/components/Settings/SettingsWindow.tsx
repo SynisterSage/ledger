@@ -321,6 +321,7 @@ export const SettingsWindow = () => {
   const [isConnectingSlack, setIsConnectingSlack] = useState(false);
   const [isDisconnectingSlack, setIsDisconnectingSlack] = useState(false);
   const [slackError, setSlackError] = useState<string | null>(null);
+  const [slackRefreshToken, setSlackRefreshToken] = useState(0);
   const inviteEmailRef = useRef<HTMLInputElement | null>(null);
   const autosaveTimerRef = useRef<number | null>(null);
   const autosaveTokenRef = useRef(0);
@@ -470,6 +471,9 @@ export const SettingsWindow = () => {
     const handleFocusSection = (_event: unknown, payload: { section?: string | null }) => {
       if (isSettingsSection(payload?.section)) {
         setActiveSection(payload.section);
+        if (payload.section === 'integrations') {
+          setSlackRefreshToken((value) => value + 1);
+        }
       }
     };
 
@@ -698,7 +702,7 @@ export const SettingsWindow = () => {
     return () => {
       cancelled = true;
     };
-  }, [activeSection, activeWorkspaceId, api]);
+  }, [activeSection, activeWorkspaceId, api, slackRefreshToken]);
 
   const handleConnectSlack = async () => {
     if (!activeWorkspaceId) {

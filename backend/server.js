@@ -864,21 +864,26 @@ const buildSlackInstallCompleteHtml = ({ teamName }) => {
         font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       }
       body {
-        display: grid;
-        place-items: center;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+        box-sizing: border-box;
       }
       .card {
-        width: min(560px, calc(100vw - 32px));
+        width: min(460px, 100%);
         border: 1px solid var(--border);
-        border-radius: 24px;
+        border-radius: 28px;
         background: var(--card);
-        box-shadow: 0 24px 70px rgba(17, 24, 39, 0.12);
-        padding: 28px;
+        box-shadow: 0 18px 50px rgba(17, 24, 39, 0.08);
+        padding: 32px 28px;
+        text-align: center;
       }
       h1 {
-        margin: 0 0 8px;
-        font-size: 28px;
-        line-height: 1.1;
+        margin: 0;
+        font-size: clamp(24px, 4vw, 30px);
+        line-height: 1.12;
+        letter-spacing: -0.03em;
       }
       p {
         margin: 0;
@@ -886,29 +891,24 @@ const buildSlackInstallCompleteHtml = ({ teamName }) => {
         line-height: 1.6;
         font-size: 15px;
       }
-      .badge {
-        display: inline-flex;
-        align-items: center;
-        gap: 8px;
-        margin-bottom: 18px;
-        padding: 8px 12px;
-        border-radius: 999px;
-        background: rgba(255, 95, 64, 0.09);
-        color: var(--accent);
+      .eyebrow {
+        margin-bottom: 14px;
+        font-size: 12px;
         font-weight: 600;
-        font-size: 13px;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        color: var(--accent);
       }
       .actions {
         display: flex;
-        gap: 12px;
-        margin-top: 24px;
-        flex-wrap: wrap;
+        justify-content: center;
+        margin-top: 28px;
       }
       .button {
         appearance: none;
         border: 0;
-        border-radius: 14px;
-        padding: 12px 16px;
+        border-radius: 999px;
+        padding: 12px 18px;
         font: inherit;
         font-weight: 600;
         cursor: pointer;
@@ -917,31 +917,26 @@ const buildSlackInstallCompleteHtml = ({ teamName }) => {
       .button.primary {
         background: var(--accent);
         color: white;
-      }
-      .button.secondary {
-        background: white;
-        color: var(--text);
-        border: 1px solid var(--border);
+        box-shadow: 0 12px 24px rgba(255, 95, 64, 0.18);
       }
       .fineprint {
         margin-top: 14px;
         font-size: 12px;
       }
-      code {
-        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      .subcopy {
+        margin-top: 12px;
       }
     </style>
   </head>
   <body>
     <main class="card">
-      <div class="badge">Connected in Ledger</div>
+      <div class="eyebrow">Ledger connected</div>
       <h1>Slack connected${safeTeamName}</h1>
-      <p>Ledger saved your Slack workspace connection. The desktop app should open to Settings automatically.</p>
+      <p class="subcopy">Your Slack workspace is now linked to Ledger.</p>
       <div class="actions">
         <a class="button primary" href="ledger://settings/integrations">Open Ledger</a>
-        <a class="button secondary" href="${publicBackendUrl}">Back to Ledger</a>
       </div>
-      <p class="fineprint">If the app does not open, use the button above or return to Ledger manually.</p>
+      <p class="fineprint">If the app does not open, use the button above.</p>
     </main>
     <script>
       setTimeout(() => {
