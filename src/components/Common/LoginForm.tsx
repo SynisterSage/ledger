@@ -33,11 +33,8 @@ export const LoginForm: React.FC<LoginProps> = ({ onSuccess, notice }) => {
     return window.sessionStorage.getItem(PRELOGIN_SPLASH_STORAGE_KEY) !== 'true';
   });
   const [isSplashDismissing, setIsSplashDismissing] = useState(false);
-  const [activeLoopLayer, setActiveLoopLayer] = useState<0 | 1>(0);
   const preloginSplashDoneRef = useRef(false);
   const preloginSplashVideoRef = useRef<HTMLVideoElement | null>(null);
-  const videoRefs = useRef<[HTMLVideoElement | null, HTMLVideoElement | null]>([null, null]);
-  const loopSwapTimerRef = useRef<number | null>(null);
   const splashDismissTimerRef = useRef<number | null>(null);
   const { signIn, signUp, isLoading } = useAuth();
 
@@ -133,42 +130,8 @@ export const LoginForm: React.FC<LoginProps> = ({ onSuccess, notice }) => {
     }
   };
 
-  const queueLoopSwap = () => {
-    if (loopSwapTimerRef.current !== null || prefersReducedMotion) return;
-
-    const currentLayer = activeLoopLayer;
-    const nextLayer = currentLayer === 0 ? 1 : 0;
-    const currentVideo = videoRefs.current[currentLayer];
-    const nextVideo = videoRefs.current[nextLayer];
-    if (!currentVideo || !nextVideo) return;
-
-    try {
-      nextVideo.currentTime = 0;
-    } catch {
-      // Ignore brief seek race conditions while the clip is loading.
-    }
-
-    void nextVideo.play().catch(() => {
-      // Ignore autoplay restrictions or brief decoder stalls.
-    });
-
-    loopSwapTimerRef.current = window.setTimeout(() => {
-      setActiveLoopLayer(nextLayer);
-      try {
-        currentVideo.pause();
-        currentVideo.currentTime = 0;
-      } catch {
-        // No-op.
-      }
-      loopSwapTimerRef.current = null;
-    }, 280);
-  };
-
   useEffect(() => {
     return () => {
-      if (loopSwapTimerRef.current !== null) {
-        window.clearTimeout(loopSwapTimerRef.current);
-      }
       if (splashDismissTimerRef.current !== null) {
         window.clearTimeout(splashDismissTimerRef.current);
       }
@@ -214,7 +177,7 @@ export const LoginForm: React.FC<LoginProps> = ({ onSuccess, notice }) => {
           <div className="absolute inset-0 flex items-center justify-center p-8 sm:p-12">
             <video
               ref={preloginSplashVideoRef}
-              className="h-full w-full max-h-[72vh] max-w-[min(72vw,760px)] object-contain object-center"
+              className="h-full w-full max-h-[60vh] max-w-[min(60vw,620px)] object-contain object-center"
               src="./preload-splash.mp4"
               autoPlay
               muted
@@ -237,35 +200,15 @@ export const LoginForm: React.FC<LoginProps> = ({ onSuccess, notice }) => {
               <img src="./logo-color.svg" alt="Ledger" className="h-16 w-16" />
             </div>
           ) : (
-            <>
-              {[0, 1].map((layer) => (
-                <video
-                  key={layer}
-                  ref={(element) => {
-                    videoRefs.current[layer as 0 | 1] = element;
-                  }}
-                  className={`absolute inset-0 h-full w-full object-cover object-[25%_center] transition-opacity duration-300 ease-out ${
-                    activeLoopLayer === layer ? 'opacity-100' : 'opacity-0'
-                  }`}
-                  src="./welcome-vid.mp4"
-                  autoPlay={layer === 0}
-                  muted
-                  playsInline
-                  preload="auto"
-                  onEnded={queueLoopSwap}
-                  onTimeUpdate={(event) => {
-                    if (layer !== activeLoopLayer) return;
-                    const video = event.currentTarget;
-                    if (video.duration && Number.isFinite(video.duration)) {
-                      const remaining = video.duration - video.currentTime;
-                      if (remaining > 0 && remaining < 0.7) {
-                        queueLoopSwap();
-                      }
-                    }
-                  }}
-                />
-              ))}
-            </>
+            <video
+              className="absolute inset-0 h-full w-full object-cover object-[25%_center]"
+              src="./welcome-vid.mp4"
+              autoPlay
+              muted
+              playsInline
+              preload="auto"
+              loop
+            />
           )}
           <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(17,24,39,0.04),rgba(17,24,39,0.34)),linear-gradient(135deg,rgba(255,255,255,0.12),rgba(249,251,250,0.12))]" />
           <div className="absolute bottom-0 left-0 right-0 p-8 text-white">

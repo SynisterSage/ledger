@@ -2530,6 +2530,15 @@ function AppShell() {
   useEffect(() => {
     const handleSidebarVisibilityChanged = (_event: unknown, payload: { isVisible?: boolean }) => {
       if (typeof payload?.isVisible !== 'boolean') return;
+
+      // Keep auth flow stable: never accept a hidden sidebar state while signed out.
+      if (!user && payload.isVisible === false) {
+        void window.desktopWindow?.setVisible(true).catch(() => {
+          // No-op outside Electron (browser dev mode)
+        });
+        return;
+      }
+
       setIsVisible(payload.isVisible);
     };
 
@@ -2537,7 +2546,7 @@ function AppShell() {
     return () => {
       window.ipcRenderer?.off('sidebar:visibility-changed', handleSidebarVisibilityChanged);
     };
-  }, [setIsVisible]);
+  }, [setIsVisible, user]);
 
   useEffect(() => {
     const handleOpenCheckin = () => {
@@ -2576,10 +2585,12 @@ function AppShell() {
   useEffect(() => {
     if (isModuleWindow) return;
     if (isLoading) return;
-    window.desktopWindow?.setVisible(isVisible).catch(() => {
+
+    const desiredVisibility = !user ? true : isVisible;
+    window.desktopWindow?.setVisible(desiredVisibility).catch(() => {
       // No-op outside Electron (browser dev mode)
     });
-  }, [isLoading, isVisible]);
+  }, [isLoading, isVisible, user]);
 
   useEffect(() => {
     if (isLoading) return;
