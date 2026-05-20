@@ -2392,6 +2392,7 @@ function AppShell() {
   );
   const sidebarModeTimerRef = useRef<number | null>(null);
   const [showAuthenticatedShell, setShowAuthenticatedShell] = useState(false);
+  const [hasShownLoginOnce, setHasShownLoginOnce] = useState(false);
 
   // Initialize workspace for authenticated users
   useWorkspaceInit();
@@ -2587,6 +2588,17 @@ function AppShell() {
 
     setIsVisible(true);
   }, [isLoading, isVisible, setIsVisible, uiMode]);
+
+  useEffect(() => {
+    if (user) {
+      setHasShownLoginOnce(false);
+      return;
+    }
+
+    if (!isLoading) {
+      setHasShownLoginOnce(true);
+    }
+  }, [isLoading, user]);
 
   useEffect(() => {
     if (isModuleWindow) return;
@@ -2910,6 +2922,7 @@ function AppShell() {
     if (isLoading) return;
 
     const isCenteredFlow =
+      !user ||
       effectiveUiMode === 'auth' ||
       postAuthStage === 'idle' ||
       postAuthStage === 'loading' ||
@@ -2957,9 +2970,19 @@ function AppShell() {
     }
 
     applyMode();
-  }, [isExpanded, isLoading, state, effectiveUiMode, postAuthStage, sidebarPreferences.position]);
+  }, [
+    effectiveUiMode,
+    isExpanded,
+    isLoading,
+    postAuthStage,
+    sidebarPreferences.position,
+    state,
+    user,
+  ]);
 
-  if (isLoading) {
+  const shouldShowBootLoading = isLoading && (Boolean(user) || !hasShownLoginOnce);
+
+  if (shouldShowBootLoading) {
     return <AuthStatusScreen title="Loading" subtitle="Preparing Ledger." />;
   }
 

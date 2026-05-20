@@ -33,6 +33,7 @@ export const LoginForm: React.FC<LoginProps> = ({ onSuccess, notice }) => {
     return window.sessionStorage.getItem(PRELOGIN_SPLASH_STORAGE_KEY) !== 'true';
   });
   const [isSplashDismissing, setIsSplashDismissing] = useState(false);
+  const [isWelcomeVideoUnavailable, setIsWelcomeVideoUnavailable] = useState(false);
   const [activeLoopLayer, setActiveLoopLayer] = useState<0 | 1>(0);
   const preloginSplashDoneRef = useRef(false);
   const preloginSplashVideoRef = useRef<HTMLVideoElement | null>(null);
@@ -91,8 +92,6 @@ export const LoginForm: React.FC<LoginProps> = ({ onSuccess, notice }) => {
 
   useEffect(() => {
     if (!showPreLoginSplash) return;
-
-    window.sessionStorage.setItem(PRELOGIN_SPLASH_STORAGE_KEY, 'true');
 
     const handleKeyDown = () => finishPreLoginSplash();
     const handlePointerDown = () => finishPreLoginSplash();
@@ -248,7 +247,7 @@ export const LoginForm: React.FC<LoginProps> = ({ onSuccess, notice }) => {
             prefersReducedMotion ? '' : shouldPlayAuthIntro ? 'ledger-auth-left-enter' : 'opacity-0'
           }`}
         >
-          {prefersReducedMotion ? (
+          {prefersReducedMotion || isWelcomeVideoUnavailable ? (
             <div className="flex h-full min-h-full items-center justify-center bg-[#F9FBFA]">
               <img src="./logo-color.svg" alt="Ledger" className="h-16 w-16" />
             </div>
@@ -268,6 +267,9 @@ export const LoginForm: React.FC<LoginProps> = ({ onSuccess, notice }) => {
                   muted
                   playsInline
                   preload="auto"
+                  onError={() => {
+                    setIsWelcomeVideoUnavailable(true);
+                  }}
                   onEnded={queueLoopSwap}
                   onTimeUpdate={(event) => {
                     if (layer !== activeLoopLayer) return;
