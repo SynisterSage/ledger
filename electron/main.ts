@@ -20,6 +20,13 @@ import { defaultSidebarPreferences, type SidebarPosition } from '../src/config/s
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const execFileAsync = promisify(execFile);
 
+if (process.platform === 'win32') {
+  // Transparent windows + hardware video surfaces can trigger Skia mailbox errors
+  // on some Windows GPU/driver combos. Disabling DirectComposition stabilizes
+  // auth video playback without changing macOS behavior.
+  app.commandLine.appendSwitch('disable-features', 'DirectComposition');
+}
+
 // File-based logging for dock debugging (disabled unless LEDGER_DOCK_DEBUG=1)
 const logFile = path.join(app.getPath('userData'), 'dock-debug.log');
 const dockDebugEnabled = process.env.LEDGER_DOCK_DEBUG === '1';
@@ -1880,6 +1887,15 @@ function applySidebarOpacity(_opacity: number) {
 
 function applySidebarVisibility(isVisible: boolean) {
   if (!sidebarWin || sidebarWin.isDestroyed()) return;
+
+  if (currentSidebarMode === 'auth' && !isVisible) {
+    sidebarIsVisible = true;
+    if (!sidebarWin.isVisible()) {
+      sidebarWin.show();
+    }
+    sidebarWin.webContents.send('sidebar:visibility-changed', { isVisible: true });
+    return;
+  }
 
   if (allLedgerWindowsHidden && isVisible) {
     allLedgerWindowsHidden = false;

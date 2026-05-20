@@ -166,28 +166,28 @@ export const LoginForm: React.FC<LoginProps> = ({ onSuccess, notice }) => {
           />
         )}
 
-        <div
-          className={`absolute inset-0 z-20 bg-[#F9FBFA] transition-opacity duration-200 ease-out ${
-            showPreLoginSplash && !isSplashDismissing
-              ? 'opacity-100'
-              : 'pointer-events-none opacity-0'
-          }`}
-          aria-hidden={!splashOverlayVisible}
-        >
-          <div className="absolute inset-0 flex items-center justify-center p-8 sm:p-12">
-            <video
-              ref={preloginSplashVideoRef}
-              className="h-full w-full max-h-[60vh] max-w-[min(60vw,620px)] object-contain object-center"
-              src="./preload-splash.mp4"
-              autoPlay
-              muted
-              playsInline
-              preload="auto"
-              onEnded={finishPreLoginSplash}
-              onError={finishPreLoginSplash}
-            />
+        {(showPreLoginSplash || isSplashDismissing) && (
+          <div
+            className={`absolute inset-0 z-20 bg-[#F9FBFA] transition-opacity duration-200 ease-out ${
+              showPreLoginSplash && !isSplashDismissing ? 'opacity-100' : 'pointer-events-none opacity-0'
+            }`}
+            aria-hidden={!splashOverlayVisible}
+          >
+            <div className="absolute inset-0 flex items-center justify-center p-8 sm:p-12">
+              <video
+                ref={preloginSplashVideoRef}
+                className="h-full w-full max-h-[60vh] max-w-[min(60vw,620px)] object-contain object-center"
+                src="./preload-splash.mp4"
+                autoPlay
+                muted
+                playsInline
+                preload="auto"
+                onEnded={finishPreLoginSplash}
+                onError={finishPreLoginSplash}
+              />
+            </div>
           </div>
-        </div>
+        )}
 
         <div className="relative z-10 grid h-full min-h-full w-full overflow-hidden bg-[#F9FBFA] min-[820px]:grid-cols-[0.42fr_0.58fr]">
         <div
