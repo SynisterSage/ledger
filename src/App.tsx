@@ -70,7 +70,6 @@ const noDragRegionStyle = { WebkitAppRegion: 'no-drag' } as CSSProperties & {
 const OPEN_LEDGER_URL = (
   import.meta.env.VITE_LEDGER_OPEN_URL?.trim() || window.location.origin
 ).replace(/\/$/, '');
-
 const buildOpenLedgerUrl = (workspaceName?: string | null) => {
   const target = new URL(OPEN_LEDGER_URL, window.location.origin);
   const name = workspaceName?.trim();
