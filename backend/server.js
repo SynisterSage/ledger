@@ -1061,7 +1061,7 @@ const saveSlackMessageCapture = async (payload) => {
     .upsert(
       {
         workspace_id: account.workspace_id,
-        user_id: payload?.user?.id ?? account?.installed_by ?? null,
+        user_id: account?.installed_by ?? null,
         source: 'slack',
         source_id: sourceId,
         source_url: externalUrl,
