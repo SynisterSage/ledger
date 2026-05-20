@@ -3406,7 +3406,9 @@ export const CalendarWindow = () => {
                                       id: evt.id,
                                     });
                                   }}
-                                  className="absolute inset-x-1 z-10 overflow-hidden rounded-md border px-2 py-1.5 text-left text-[10px] leading-tight shadow-sm"
+                                  className={`absolute inset-x-1 z-10 rounded-md border text-left text-[10px] leading-tight shadow-sm flex flex-col ${
+                                    durationRows > 1 ? 'p-2' : 'px-2 py-1.5'
+                                  }`}
                                   style={{
                                     top: `${Math.max(8, reminderStackHeight + 6)}px`,
                                     height: `${Math.max(40, durationRows * 64 - 12)}px`,
@@ -3415,33 +3417,34 @@ export const CalendarWindow = () => {
                                     color: pastEvent ? '#6B7280' : '#1F2937',
                                     boxSizing: 'border-box',
                                     lineHeight: 1.2,
+                                    overflow: 'hidden',
                                     boxShadow: pastEvent
                                       ? 'none'
                                       : `0 0 0 1px ${eventColor}12, 0 1px 2px rgba(15, 23, 42, 0.04)`,
                                   }}
                                 >
-                                  <div className="flex h-full items-start gap-1.5 min-w-0">
+                                  <div className="flex gap-1.5 min-w-0">
                                     <span
-                                      className="mt-1 inline-block h-1.5 w-1.5 shrink-0 rounded-full"
+                                      className="h-1.5 w-1.5 rounded-full shrink-0 mt-0.5"
                                       style={{ backgroundColor: eventColor }}
                                     />
                                     <div className="min-w-0 flex-1">
                                       <div className="flex items-start gap-1 min-w-0">
                                         {evt.status === 'done' && (
-                                          <span className="mt-0.5 text-green-600 shrink-0 text-[12px] leading-none">
+                                          <span className="text-green-600 shrink-0 text-[10px] leading-none font-semibold -mt-0.5">
                                             ✓
                                           </span>
                                         )}
                                         {evt.project_id && (
                                           <Folder
                                             size={8}
-                                            className="mt-0.5 shrink-0 text-gray-500"
+                                            className="shrink-0 text-gray-500"
                                           />
                                         )}
-                                        <span className="min-w-0 truncate font-medium">{evt.title}</span>
+                                        <span className={`font-medium ${durationRows > 1 ? 'line-clamp-3' : 'truncate'}`}>{evt.title}</span>
                                       </div>
                                       {durationRows > 1 && (
-                                        <div className="mt-0.5 text-[9px] text-gray-500">
+                                        <div className={`text-[9px] text-gray-500 ${durationRows > 1 ? 'mt-1' : 'mt-0.5'}`}>
                                           {formatEventTimeRangeLabel(evt)}
                                         </div>
                                       )}
@@ -3537,10 +3540,15 @@ export const CalendarWindow = () => {
                               className="mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full"
                               style={{ backgroundColor: selectedColor }}
                             />
-                            <div className="min-w-0">
-                              <p className="text-[14px] font-semibold leading-5 text-gray-900">
-                                {selectedEventPreview.title}
-                              </p>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-start gap-2">
+                                <p className="text-[14px] font-semibold leading-5 text-gray-900 flex-1">
+                                  {selectedEventPreview.title}
+                                </p>
+                                {selectedEventPreview.status === 'done' && (
+                                  <span className="text-green-600 text-[14px] leading-none shrink-0 font-semibold">✓</span>
+                                )}
+                              </div>
                               <p className="mt-1 text-[13px] text-gray-600">
                                 {formatEventDateTimeLabel(selectedEventPreview)}
                               </p>

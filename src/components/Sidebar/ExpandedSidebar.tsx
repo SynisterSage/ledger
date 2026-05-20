@@ -156,6 +156,16 @@ const sortTodayTasks = <T extends { kind?: 'task' | 'reminder'; title?: string }
     return String(a.title ?? '').localeCompare(String(b.title ?? ''));
   });
 
+const isUpcomingEventActive = (event: {
+  status?: string | null;
+  start_at?: string | null;
+  end_at?: string | null;
+}) => {
+  if (String(event.status ?? '').toLowerCase() === 'done') return false;
+  const endAt = new Date(event.end_at ?? event.start_at ?? 0).getTime();
+  return Number.isFinite(endAt) && endAt > Date.now();
+};
+
 const todayKey = () => {
   const now = new Date();
   const year = now.getFullYear();
@@ -817,6 +827,9 @@ export const ExpandedSidebar = ({
           return {
             id: e.id,
             title: e.title,
+            status: e.status ?? null,
+            start_at: e.start_at ?? null,
+            end_at: e.end_at ?? null,
             type: 'event' as const,
             dueDate: dateDisplay,
             rawDate: eventDateISO,
@@ -827,10 +840,14 @@ export const ExpandedSidebar = ({
           };
         });
 
-        eventItems.sort((a: { sortAt: number }, b: { sortAt: number }) => a.sortAt - b.sortAt);
+        const activeEventItems = eventItems
+          .filter((item: { status?: string | null; start_at?: string | null; end_at?: string | null }) =>
+            isUpcomingEventActive(item)
+          )
+          .sort((a: { sortAt: number }, b: { sortAt: number }) => a.sortAt - b.sortAt);
 
         if (!cancelled) {
-          setUpcomingItems(eventItems.slice(0, 5));
+          setUpcomingItems(activeEventItems.slice(0, 5));
         }
       } catch (error) {
         console.error('Failed to load upcoming:', error);
@@ -1945,7 +1962,7 @@ export const ExpandedSidebar = ({
       }`}
     >
       <div
-        className="relative z-10 px-5 pb-2 border-b border-white/20 bg-white"
+        className="relative z-10 px-5 pb-2 border-b border-white/20 bg-transparent"
         onMouseDown={(e) => {
           if (!onDragHandleMouseDown) return;
           if (

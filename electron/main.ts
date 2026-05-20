@@ -473,6 +473,7 @@ let macAccessibilityPrompted = false;
 let lastSidebarToggleAt = 0;
 let allLedgerWindowsHidden = false;
 let sidebarWasVisibleBeforeHideAll = false;
+let sidebarBoundsAnimationTimer: NodeJS.Timeout | null = null;
 const moduleKindsVisibleBeforeHideAll = new Set<ModuleWindowKind>();
 const moduleWindowBoundsMemory = new Map<
   ModuleWindowKind,
@@ -1085,10 +1086,72 @@ function rectsMatch(a: Rect, b: Rect) {
   return a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height;
 }
 
+function cancelSidebarBoundsAnimation() {
+  if (sidebarBoundsAnimationTimer !== null) {
+    clearTimeout(sidebarBoundsAnimationTimer);
+    sidebarBoundsAnimationTimer = null;
+  }
+}
+
+function easeOutCubic(t: number) {
+  const clamped = Math.max(0, Math.min(1, t));
+  return 1 - Math.pow(1 - clamped, 3);
+}
+
+function animateSidebarBounds(bounds: Rect) {
+  if (!sidebarWin || sidebarWin.isDestroyed()) return false;
+  cancelSidebarBoundsAnimation();
+
+  const startBounds = sidebarWin.getBounds();
+  if (rectsMatch(startBounds, bounds)) return true;
+
+  const durationMs = 140;
+  const startAt = Date.now();
+
+  const step = () => {
+    if (!sidebarWin || sidebarWin.isDestroyed()) {
+      cancelSidebarBoundsAnimation();
+      return;
+    }
+
+    const elapsed = Date.now() - startAt;
+    const progress = easeOutCubic(elapsed / durationMs);
+    const nextBounds = {
+      x: Math.round(startBounds.x + (bounds.x - startBounds.x) * progress),
+      y: Math.round(startBounds.y + (bounds.y - startBounds.y) * progress),
+      width: Math.round(startBounds.width + (bounds.width - startBounds.width) * progress),
+      height: Math.round(startBounds.height + (bounds.height - startBounds.height) * progress),
+    };
+
+    sidebarWin.setBounds(nextBounds, false);
+
+    if (elapsed < durationMs) {
+      sidebarBoundsAnimationTimer = setTimeout(step, 16);
+      return;
+    }
+
+    sidebarBoundsAnimationTimer = null;
+    sidebarWin.setBounds(bounds, false);
+  };
+
+  step();
+  return true;
+}
+
 function setSidebarBounds(bounds: Rect, animate = false) {
   try {
     if (!sidebarWin || sidebarWin.isDestroyed()) return false;
-    sidebarWin.setBounds(bounds, animate);
+    if (!animate) {
+      cancelSidebarBoundsAnimation();
+      sidebarWin.setBounds(bounds, false);
+      return true;
+    }
+
+    if (process.platform === 'win32') {
+      return animateSidebarBounds(bounds);
+    }
+
+    sidebarWin.setBounds(bounds, true);
     return true;
   } catch {
     return false;
@@ -1354,6 +1417,7 @@ async function getFloatingDockTargetAtCursor(): Promise<DockTargetResult | null>
     const sidebarBounds = sidebarWin?.getBounds();
     if (!sidebarBounds) return null;
     const threshold = currentSidebarPreferences.floatingDockThreshold;
+    const snapDistance = Math.max(8, Math.floor(threshold * 1.5));
 
     if (process.platform === 'win32') {
       const script = `
@@ -1384,7 +1448,7 @@ $sidebarTop = ${Math.floor(sidebarBounds.y)}
 $sidebarRight = ${Math.floor(sidebarBounds.x + sidebarBounds.width)}
 $sidebarBottom = ${Math.floor(sidebarBounds.y + sidebarBounds.height)}
 $sidebarHeight = ${Math.floor(sidebarBounds.height)}
-$threshold = ${Math.floor(threshold)}
+$threshold = ${Math.floor(snapDistance)}
 $script:result = $null
 $script:bestScore = [Double]::PositiveInfinity
 [Win32]::EnumWindows({
@@ -1407,7 +1471,7 @@ $script:bestScore = [Double]::PositiveInfinity
   elseif ($sidebarTop -gt $rect.Bottom) { $verticalGap = $sidebarTop - $rect.Bottom }
 
   $minimumOverlap = [Math]::Min(96, [Math]::Max(32, [Math]::Floor($sidebarHeight * 0.18)))
-  if ($verticalOverlap -lt $minimumOverlap -and $verticalGap -gt ($threshold * 2)) { return $true }
+  if ($verticalOverlap -lt $minimumOverlap -and $verticalGap -gt $threshold) { return $true }
 
   $dockLeftDistance = [Math]::Abs($sidebarRight - $rect.Left)
   $dockRightDistance = [Math]::Abs($sidebarLeft - $rect.Right)
@@ -1417,7 +1481,7 @@ $script:bestScore = [Double]::PositiveInfinity
     $side = "right"
     $edgeDistance = $dockRightDistance
   }
-  if ($edgeDistance -gt ($threshold * 2)) { return $true }
+  if ($edgeDistance -gt $threshold) { return $true }
 
   $verticalPenalty = if ($verticalOverlap -gt 0) { 0 } else { $verticalGap }
   $score = $edgeDistance + ($verticalPenalty * 0.5) - ($verticalOverlap * 0.01)
@@ -1464,7 +1528,7 @@ if ($script:result) { Write-Output $script:result }
     }
 
     if (process.platform === 'darwin') {
-      return getMacAccessibilityDockTargetAtCursor(sidebarBounds, threshold);
+      return getMacAccessibilityDockTargetAtCursor(sidebarBounds, snapDistance);
     }
   } catch (error) {
     console.warn('[electron] Could not determine foreground app bounds:', error);
@@ -1618,10 +1682,11 @@ async function dockFloatingSidebarToTarget() {
 
   const currentBounds = sidebarWin.getBounds();
   const threshold = currentSidebarPreferences.floatingDockThreshold;
+  const snapDistance = Math.max(8, Math.floor(threshold * 1.5));
   const leftDistance = Math.abs(currentBounds.x - (target.bounds.x - currentBounds.width));
   const rightDistance = Math.abs(currentBounds.x - (target.bounds.x + target.bounds.width));
   const nearestDistance = Math.min(leftDistance, rightDistance);
-  if (nearestDistance > threshold * 2) {
+  if (nearestDistance > snapDistance) {
     clearCurrentFloatingDockTarget();
     stopFloatingDockTracking();
     return null;
@@ -2018,12 +2083,24 @@ function createSidebarWindow() {
           if (sidebarWin.isMinimized()) {
             sidebarWin.restore();
           }
-          // Reset to docked state to ensure valid bounds
-          const dockedBounds = getDockedBounds(EXPANDED_WIDTH);
-          sidebarWin.setBounds(dockedBounds);
+          const nextBounds =
+            currentSidebarMode === 'auth'
+              ? getCenteredBoundsForCurrentSidebarDisplay(AUTH_WIDTH, AUTH_HEIGHT)
+              : currentSidebarMode === 'fullscreen'
+              ? getCenteredBounds(DASHBOARD_WIDTH, DASHBOARD_HEIGHT)
+              : currentSidebarMode === 'minimized'
+              ? currentSidebarPosition === 'top' || currentSidebarPosition === 'bottom'
+                ? getCollapsedBounds(HORIZONTAL_COLLAPSED_HEIGHT)
+                : currentSidebarPreferences.isExpanded
+                ? getDockedBounds(RAIL_SIZE)
+                : getCollapsedBounds(COLLAPSED_SIZE)
+              : currentSidebarPosition === 'top' || currentSidebarPosition === 'bottom'
+              ? getDockedBounds(HORIZONTAL_DOCK_WIDTH)
+              : getDockedBounds(EXPANDED_WIDTH);
+          sidebarWin.setBounds(nextBounds);
           sidebarWin.show();
           sidebarWin.focus();
-          console.log('[electron][sidebar] window bounds reset:', dockedBounds);
+          console.log('[electron][sidebar] window bounds reset:', nextBounds);
         }
       } catch (err) {
         console.error('[electron][sidebar] did-finish-load handler error', err);
@@ -2350,16 +2427,7 @@ ipcMain.handle(
       currentSidebarMode !== 'auth' &&
       currentSidebarMode !== 'fullscreen'
     ) {
-      // If position changed, delay the bounds update to sync with CSS animation.
-      // React animates for 100ms with cubic-bezier(0.22, 1, 0.36, 1).
-      // Update bounds after CSS completes so both animations finish together.
-      if (hasPositionChange) {
-        setTimeout(() => {
-          applySidebarWindowMode(currentSidebarMode, true);
-        }, 115);
-      } else {
-        applySidebarWindowMode(currentSidebarMode, true);
-      }
+      applySidebarWindowMode(currentSidebarMode, true);
 
       if (
       currentSidebarPosition === 'floating' &&

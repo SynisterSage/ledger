@@ -39,8 +39,14 @@ import {
 } from './components/Common/Skeleton';
 import { useSearch } from './context/SearchContext';
 import { QuickCaptureWindow } from './components/Common/QuickCaptureWindow';
+import {
+  saveSidebarPreferences,
+  type SidebarPosition,
+} from './config/sidebarPreferences';
 
 type PostAuthStage = 'idle' | 'loading' | 'onboarding' | 'ready';
+type OnboardingStep = 'welcome' | 'workspace' | 'position';
+type OnboardingWorkspaceMode = 'create' | 'join';
 type ModuleKind =
   | 'calendar'
   | 'notes'
@@ -121,6 +127,16 @@ const getInviteTokenFromInput = (value: string) => {
 
 const todayKey = () => new Date().toISOString().slice(0, 10);
 
+const isUpcomingEventActive = (event: {
+  status?: string | null;
+  start_at?: string | null;
+  end_at?: string | null;
+}) => {
+  if (String(event.status ?? '').toLowerCase() === 'done') return false;
+  const endAt = new Date(event.end_at ?? event.start_at ?? 0).getTime();
+  return Number.isFinite(endAt) && endAt > Date.now();
+};
+
 const getExpiryMetadata = (hoursAhead = 24) => {
   const expiresAt = new Date(Date.now() + hoursAhead * 60 * 60 * 1000);
   const year = expiresAt.getFullYear();
@@ -188,10 +204,20 @@ const loadCompletedFocusTasks = (): CompletedFocusTask[] => {
   }
 };
 
-function AuthStatusScreen({ title, subtitle }: { title: string; subtitle: string }) {
+function AuthStatusScreen({
+  title,
+  subtitle,
+  isExiting = false,
+}: {
+  title: string;
+  subtitle: string;
+  isExiting?: boolean;
+}) {
   return (
     <div
-      className="relative min-h-screen overflow-hidden bg-transparent p-3 text-gray-900"
+      className={`relative min-h-screen overflow-hidden bg-transparent p-3 text-gray-900 transition-all duration-150 ease-out ${
+        isExiting ? 'opacity-0 scale-[0.985] translate-y-1' : 'opacity-100 scale-100 translate-y-0'
+      }`}
       style={dragRegionStyle}
     >
       <div className="absolute inset-3 rounded-[28px] border border-white/60 bg-[#f5f5f7] shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]" />
@@ -256,6 +282,273 @@ function InviteSuccessScreen({
             Open Ledger
             <ArrowRight size={16} />
           </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function OnboardingFlow({
+  step,
+  mode,
+  workspaceName,
+  inviteValue,
+  selectedPosition,
+  isSaving,
+  error,
+  onStepChange,
+  onModeChange,
+  onWorkspaceNameChange,
+  onInviteValueChange,
+  onPositionChange,
+  onWorkspaceSubmit,
+  onOpenLedger,
+}: {
+  step: OnboardingStep;
+  mode: OnboardingWorkspaceMode;
+  workspaceName: string;
+  inviteValue: string;
+  selectedPosition: SidebarPosition;
+  isSaving: boolean;
+  error: string | null;
+  onStepChange: (step: OnboardingStep) => void;
+  onModeChange: (mode: OnboardingWorkspaceMode) => void;
+  onWorkspaceNameChange: (value: string) => void;
+  onInviteValueChange: (value: string) => void;
+  onPositionChange: (position: SidebarPosition) => void;
+  onWorkspaceSubmit: () => Promise<void>;
+  onOpenLedger: (position: SidebarPosition) => Promise<void>;
+}) {
+  const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia?.('(prefers-reduced-motion: reduce)');
+    if (!mediaQuery) return;
+
+    const updatePreference = () => setPrefersReducedMotion(mediaQuery.matches);
+    updatePreference();
+    mediaQuery.addEventListener?.('change', updatePreference);
+    return () => mediaQuery.removeEventListener?.('change', updatePreference);
+  }, []);
+
+  const positionOptions: Array<{ value: SidebarPosition; label: string }> = [
+    { value: 'right', label: 'Right' },
+    { value: 'left', label: 'Left' },
+    { value: 'bottom', label: 'Bottom' },
+    { value: 'top', label: 'Top' },
+  ];
+
+  return (
+    <div
+      className="relative min-h-screen overflow-hidden bg-transparent p-3 text-[#111827]"
+      style={dragRegionStyle}
+    >
+      <div className="absolute inset-3 rounded-[28px] border border-white/70 bg-[#f5f5f7] shadow-[inset_0_1px_0_rgba(255,255,255,0.9)]" />
+      <button
+        type="button"
+        onClick={() => {
+          void window.desktopWindow?.quitApp();
+        }}
+        aria-label="Close"
+        className="absolute right-6 top-7 z-20 inline-flex h-8 w-8 items-center justify-center rounded-full border border-black/5 bg-white/70 text-gray-500 transition hover:bg-white hover:text-gray-900"
+        style={noDragRegionStyle}
+      >
+        <X size={16} />
+      </button>
+
+      <div
+        className="relative z-10 flex min-h-[calc(100vh-1.5rem)] items-center justify-center px-5 py-8 sm:px-8"
+        style={noDragRegionStyle}
+      >
+        <div
+          className={`w-full transition-all duration-150 ease-out ${
+            step === 'welcome' ? 'max-w-4xl' : 'max-w-lg'
+          }`}
+        >
+          {step === 'welcome' ? (
+            <div className="grid items-center gap-10 md:grid-cols-[1.18fr_0.82fr]">
+              <div className="overflow-hidden rounded-[26px] bg-white/80 shadow-[0_24px_70px_rgba(17,24,39,0.12)]">
+                {prefersReducedMotion ? (
+                  <div className="flex aspect-video items-center justify-center bg-[#fffaf5]">
+                    <img src="./logo-color.svg" alt="Ledger" className="h-16 w-16" />
+                  </div>
+                ) : (
+                  <video
+                    className="block aspect-video h-full w-full object-cover"
+                    src="./onboarding-vid.mp4"
+                    autoPlay
+                    muted
+                    loop
+                    playsInline
+                    preload="auto"
+                  />
+                )}
+              </div>
+
+              <div className="text-center md:text-left">
+                <img src="./logo-color.svg" alt="Ledger" className="mx-auto mb-6 h-11 w-11 md:mx-0" />
+                <h1 className="text-[34px] font-semibold leading-tight text-gray-950 sm:text-[40px]">
+                  Welcome to Ledger
+                </h1>
+                <p className="mt-3 text-xl text-gray-600">Your day, beside your work.</p>
+                <p className="mt-4 max-w-sm text-sm leading-6 text-gray-500 md:max-w-none">
+                  Capture notes, tasks, events, and follow-ups without leaving your flow.
+                </p>
+                <div className="mt-8 flex flex-col items-center gap-3 sm:flex-row md:items-start">
+                  <button
+                    type="button"
+                    onClick={() => onStepChange('workspace')}
+                    className="inline-flex h-11 items-center justify-center rounded-full bg-[#FF5F40] px-6 text-sm font-semibold text-white shadow-[0_10px_24px_rgba(255,95,64,0.18)] transition hover:bg-[#ea5336]"
+                  >
+                    Get started
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onStepChange('workspace')}
+                    className="inline-flex h-11 items-center justify-center rounded-full px-4 text-sm font-medium text-gray-500 transition hover:text-gray-900"
+                  >
+                    Skip
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : null}
+
+          {step === 'workspace' ? (
+            <div className="mx-auto rounded-[28px] bg-white/72 p-7 shadow-[0_24px_70px_rgba(17,24,39,0.10)] backdrop-blur-xl">
+              <div className="mb-7">
+                <img src="./logo-color.svg" alt="Ledger" className="mb-5 h-10 w-10" />
+                <h1 className="text-[30px] font-semibold leading-tight text-gray-950">
+                  {mode === 'create' ? 'Create your workspace' : 'Join a workspace'}
+                </h1>
+                <p className="mt-3 max-w-md text-sm leading-6 text-gray-500">
+                  {mode === 'create'
+                    ? 'A workspace keeps your notes, projects, calendar, and daily focus together.'
+                    : 'Paste an invite code or link to join an existing Ledger workspace.'}
+                </p>
+              </div>
+
+              <label className="block">
+                <span className="mb-2 block text-sm font-medium text-gray-700">
+                  {mode === 'create' ? 'Workspace name' : 'Invite code or link'}
+                </span>
+                <input
+                  value={mode === 'create' ? workspaceName : inviteValue}
+                  onChange={(event) =>
+                    mode === 'create'
+                      ? onWorkspaceNameChange(event.target.value)
+                      : onInviteValueChange(event.target.value)
+                  }
+                  placeholder={mode === 'create' ? 'My Workspace' : 'https://ledger.app/invite/...'}
+                  className="h-12 w-full rounded-2xl border border-gray-200 bg-white px-4 text-[15px] text-gray-950 outline-none transition focus:border-gray-300 focus:ring-4 focus:ring-gray-100"
+                />
+              </label>
+
+              <button
+                type="button"
+                onClick={() => onModeChange(mode === 'create' ? 'join' : 'create')}
+                className="mt-3 text-sm font-medium text-[#FF5F40] transition hover:text-[#ea5336]"
+              >
+                {mode === 'create' ? 'Have an invite? Join a workspace' : 'Back to create a workspace'}
+              </button>
+
+              {error ? (
+                <div className="mt-5 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                  {error}
+                </div>
+              ) : null}
+
+              <button
+                type="button"
+                disabled={isSaving}
+                onClick={() => {
+                  void onWorkspaceSubmit();
+                }}
+                className="mt-7 inline-flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-[#FF5F40] px-5 text-sm font-semibold text-white shadow-[0_10px_24px_rgba(255,95,64,0.16)] transition hover:bg-[#ea5336] disabled:opacity-60"
+              >
+                {isSaving ? <Loader2 size={17} className="animate-spin" /> : null}
+                {isSaving ? (mode === 'create' ? 'Creating...' : 'Joining...') : mode === 'create' ? 'Continue' : 'Join workspace'}
+              </button>
+            </div>
+          ) : null}
+
+          {step === 'position' ? (
+            <div className="mx-auto rounded-[28px] bg-white/72 p-7 shadow-[0_24px_70px_rgba(17,24,39,0.10)] backdrop-blur-xl">
+              <div className="mb-7">
+                <img src="./logo-color.svg" alt="Ledger" className="mb-5 h-10 w-10" />
+                <h1 className="text-[30px] font-semibold leading-tight text-gray-950">
+                  Where should Ledger live?
+                </h1>
+                <p className="mt-3 max-w-md text-sm leading-6 text-gray-500">
+                  Choose a starting position. You can change this anytime.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                {positionOptions.map((option) => {
+                  const isSelected = selectedPosition === option.value;
+                  return (
+                    <button
+                      key={option.value}
+                      type="button"
+                      onClick={() => onPositionChange(option.value)}
+                      className={`group flex h-20 items-center gap-3 rounded-2xl border px-4 text-left transition ${
+                        isSelected
+                          ? 'border-[#FF5F40]/45 bg-[#fff7f2] text-gray-950 shadow-[0_8px_18px_rgba(255,95,64,0.08)]'
+                          : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:bg-gray-50'
+                      }`}
+                    >
+                      <span className="relative h-9 w-11 rounded-lg border border-gray-200 bg-white">
+                        <span
+                          className={`absolute rounded-sm bg-[#FF5F40] ${
+                            option.value === 'right'
+                              ? 'right-1 top-1 h-7 w-2'
+                              : option.value === 'left'
+                              ? 'left-1 top-1 h-7 w-2'
+                              : option.value === 'top'
+                              ? 'left-1 top-1 h-2 w-9'
+                              : 'bottom-1 left-1 h-2 w-9'
+                          }`}
+                        />
+                      </span>
+                      <span className="text-sm font-semibold">{option.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {error ? (
+                <div className="mt-5 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                  {error}
+                </div>
+              ) : null}
+
+              <div className="mt-7 flex flex-col gap-3 sm:flex-row">
+                <button
+                  type="button"
+                  disabled={isSaving}
+                  onClick={() => {
+                    void onOpenLedger(selectedPosition);
+                  }}
+                  className="inline-flex h-12 flex-1 items-center justify-center gap-2 rounded-2xl bg-[#FF5F40] px-5 text-sm font-semibold text-white shadow-[0_10px_24px_rgba(255,95,64,0.16)] transition hover:bg-[#ea5336] disabled:opacity-60"
+                >
+                  {isSaving ? <Loader2 size={17} className="animate-spin" /> : null}
+                  {isSaving ? 'Opening...' : 'Open Ledger'}
+                </button>
+                <button
+                  type="button"
+                  disabled={isSaving}
+                  onClick={() => {
+                    onPositionChange('right');
+                    void onOpenLedger('right');
+                  }}
+                  className="inline-flex h-12 items-center justify-center rounded-2xl px-4 text-sm font-medium text-gray-500 transition hover:text-gray-900 disabled:opacity-60"
+                >
+                  Decide later
+                </button>
+              </div>
+            </div>
+          ) : null}
         </div>
       </div>
     </div>
@@ -536,8 +829,11 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
                   start_at: string;
                   end_at: string;
                   color?: string;
+                  status?: string | null;
                 }>
-              ).slice(0, 4)
+              )
+                .filter(isUpcomingEventActive)
+                .slice(0, 4)
             : []
         );
         setNotes(normalizedNotes.slice(0, 4));
@@ -2052,6 +2348,7 @@ function AppShell() {
     collapseSidebar,
     collapseToRail,
     restoreSidebarView,
+    setPosition,
   } = useSidebar();
   const { openSearch } = useSearch();
   const [uiMode, setUiMode] = useState<'auth' | 'app'>(user ? 'app' : 'auth');
@@ -2067,19 +2364,22 @@ function AppShell() {
   const [inviteFlowError, setInviteFlowError] = useState<string | null>(null);
   const [inviteFlowNotice, setInviteFlowNotice] = useState<string | null>(null);
   const [inviteWorkspaceName, setInviteWorkspaceName] = useState<string | null>(null);
-  const [onboardingWorkspaceName, setOnboardingWorkspaceName] = useState('');
-  const [onboardingMode, setOnboardingMode] = useState<'create' | 'join'>('create');
+  const [onboardingStep, setOnboardingStep] = useState<OnboardingStep>('welcome');
+  const [onboardingWorkspaceName, setOnboardingWorkspaceName] = useState('My Workspace');
+  const [onboardingMode, setOnboardingMode] = useState<OnboardingWorkspaceMode>('create');
   const [onboardingInviteValue, setOnboardingInviteValue] = useState('');
-  const [isJoiningWorkspace, setIsJoiningWorkspace] = useState(false);
-  const [onboardingInviteError, setOnboardingInviteError] = useState<string | null>(null);
+  const [onboardingSidebarPosition, setOnboardingSidebarPosition] =
+    useState<SidebarPosition>('right');
   const [onboardingError, setOnboardingError] = useState<string | null>(null);
   const handledInviteTokenRef = useRef<string | null>(null);
   const postAuthBootstrapUserRef = useRef<string | null>(null);
   const ensuredVisibleOnBootRef = useRef(false);
+  const authTransitionTimerRef = useRef<number | null>(null);
   const sidebarModeRef = useRef<'auth' | 'minimized' | 'compact' | 'expanded' | 'fullscreen' | null>(
     null
   );
   const sidebarModeTimerRef = useRef<number | null>(null);
+  const [showAuthenticatedShell, setShowAuthenticatedShell] = useState(false);
 
   // Initialize workspace for authenticated users
   useWorkspaceInit();
@@ -2457,17 +2757,15 @@ function AppShell() {
   }, [pendingInviteToken, isLoading, user, api, refreshWorkspaces, inviteFlowStatus]);
 
   useEffect(() => {
-    if (postAuthStage !== 'onboarding') return;
-    if (onboardingWorkspaceName.trim()) return;
-    const suggested = activeWorkspace?.name?.trim() || 'My Workspace';
-    setOnboardingWorkspaceName(suggested);
-  }, [activeWorkspace?.name, onboardingWorkspaceName, postAuthStage]);
-
-  useEffect(() => {
     const userId = user?.id ?? null;
 
     if (!userId) {
       postAuthBootstrapUserRef.current = null;
+      if (authTransitionTimerRef.current !== null) {
+        window.clearTimeout(authTransitionTimerRef.current);
+        authTransitionTimerRef.current = null;
+      }
+      setShowAuthenticatedShell(false);
       return;
     }
 
@@ -2508,6 +2806,40 @@ function AppShell() {
       window.clearTimeout(fallbackTimer);
     };
   }, [effectiveUiMode, isLoading, user?.id]);
+
+  useEffect(() => {
+    if (isModuleWindow) return;
+
+    if (!user || isLoading || postAuthStage !== 'ready') {
+      if (authTransitionTimerRef.current !== null) {
+        window.clearTimeout(authTransitionTimerRef.current);
+        authTransitionTimerRef.current = null;
+      }
+      setShowAuthenticatedShell(false);
+      setIsAuthExiting(false);
+      return;
+    }
+
+    if (showAuthenticatedShell) return;
+
+    setIsAuthExiting(true);
+    if (authTransitionTimerRef.current !== null) {
+      window.clearTimeout(authTransitionTimerRef.current);
+    }
+
+    authTransitionTimerRef.current = window.setTimeout(() => {
+      setShowAuthenticatedShell(true);
+      setIsAuthExiting(false);
+      authTransitionTimerRef.current = null;
+    }, 150);
+
+    return () => {
+      if (authTransitionTimerRef.current !== null) {
+        window.clearTimeout(authTransitionTimerRef.current);
+        authTransitionTimerRef.current = null;
+      }
+    };
+  }, [isLoading, isModuleWindow, postAuthStage, showAuthenticatedShell, user]);
 
   useEffect(() => {
     if (isModuleWindow) return;
@@ -2683,222 +3015,112 @@ function AppShell() {
   if (postAuthStage === 'idle' || postAuthStage === 'loading') {
     return (
       <AuthStatusScreen
-        title="Preparing your workspace"
-        subtitle="Loading your account and workspace context."
+        title="Preparing workspace"
+        subtitle="Loading your sidebar, notes, projects, and calendar."
       />
     );
   }
 
   if (postAuthStage === 'onboarding') {
-    const workspaceName = onboardingWorkspaceName.trim();
+    const completeWorkspaceSetup = async () => {
+      if (!user || isSavingOnboarding) return;
+
+      setIsSavingOnboarding(true);
+      setOnboardingError(null);
+
+      try {
+        if (onboardingMode === 'create') {
+          const workspaceName = onboardingWorkspaceName.trim();
+          if (!workspaceName) {
+            setOnboardingError('Workspace name is required.');
+            return;
+          }
+
+          if (activeWorkspaceId && activeWorkspace?.is_personal && activeWorkspace.owner_id === user.id) {
+            await api.updateWorkspace(activeWorkspaceId, { name: workspaceName });
+          } else {
+            await api.createWorkspace({
+              name: workspaceName,
+              is_personal: true,
+              color: '#FF5F40',
+            });
+          }
+        } else {
+          const token = getInviteTokenFromInput(onboardingInviteValue);
+          if (!token) {
+            setOnboardingError('Invite code is required.');
+            return;
+          }
+
+          await api.acceptWorkspaceInvitation(token);
+        }
+
+        await refreshWorkspaces();
+        setOnboardingStep('position');
+      } catch (error) {
+        setOnboardingError(
+          error instanceof Error
+            ? error.message
+            : onboardingMode === 'create'
+            ? 'Could not create workspace.'
+            : 'Could not join workspace.'
+        );
+      } finally {
+        setIsSavingOnboarding(false);
+      }
+    };
+
+    const openLedgerFromOnboarding = async (position: SidebarPosition) => {
+      if (isSavingOnboarding) return;
+
+      setIsSavingOnboarding(true);
+      setOnboardingError(null);
+
+      try {
+        setPosition(position);
+        saveSidebarPreferences({ ...sidebarPreferences, position });
+        await window.desktopWindow?.applySidebarPreferences({ position }).catch(() => undefined);
+        await api.completeOnboarding();
+        await refreshWorkspaces();
+        setPostAuthStage('ready');
+      } catch (error) {
+        setOnboardingError(
+          error instanceof Error ? error.message : 'Could not open Ledger.'
+        );
+      } finally {
+        setIsSavingOnboarding(false);
+      }
+    };
+
     return (
-      <div
-        className="relative min-h-screen overflow-hidden bg-transparent p-3 text-gray-900"
-        style={dragRegionStyle}
-      >
-        <div className="absolute inset-3 rounded-[28px] border border-white/60 bg-[#f5f5f7] shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]" />
-        <button
-          type="button"
-          onClick={() => {
-            void window.desktopWindow?.quitApp();
-          }}
-          aria-label="Close"
-          className="absolute right-6 top-7 z-20 inline-flex h-8 w-8 items-center justify-center rounded-full border border-black/5 bg-white/60 text-gray-500 transition hover:bg-white/90 hover:text-gray-900"
-          style={noDragRegionStyle}
-        >
-          <X size={16} />
-        </button>
-        <div
-          className="relative z-10 flex min-h-[calc(100vh-1.5rem)] items-center justify-center px-8"
-          style={noDragRegionStyle}
-        >
-          <div className="w-full max-w-97.5">
-            <div className="mb-6 text-center">
-              <img src="./logo-color.svg" alt="Ledger" className="mx-auto mb-4 h-12 w-12" />
-              <h2 className="text-[28px] font-semibold leading-tight text-gray-950">
-                Welcome to Ledger
-              </h2>
-              <p className="mt-2 text-sm leading-6 text-gray-500">
-                Create a workspace or join one with an invite code.
-              </p>
-            </div>
-
-            <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
-              {onboardingMode === 'create' ? (
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-left">
-                      <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.16em] text-gray-500">
-                        Workspace name
-                      </span>
-                      <input
-                        value={onboardingWorkspaceName}
-                        onChange={(event) => setOnboardingWorkspaceName(event.target.value)}
-                        placeholder="My Workspace"
-                        className="h-11 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm text-gray-900 outline-none focus:border-gray-300"
-                      />
-                    </label>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setOnboardingMode('join');
-                        setOnboardingInviteError(null);
-                        setOnboardingError(null);
-                      }}
-                      className="mt-2 text-xs font-medium text-[#FF5F40] hover:text-[#ea5336]"
-                    >
-                      Have an invite code? Join a workspace
-                    </button>
-                  </div>
-
-                  <div className="flex items-start gap-3 rounded-xl bg-gray-50 px-3 py-2">
-                    <CheckCircle2 size={18} className="mt-0.5 text-green-600" />
-                    <p className="text-sm text-gray-700">
-                      You can invite teammates later from workspace settings.
-                    </p>
-                  </div>
-
-                  {onboardingError ? (
-                    <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-                      {onboardingError}
-                    </div>
-                  ) : null}
-
-                  <button
-                    disabled={isSavingOnboarding}
-                    onClick={async () => {
-                      if (!user || isSavingOnboarding) return;
-                      if (!workspaceName) {
-                        setOnboardingError('Workspace name is required.');
-                        return;
-                      }
-                      setIsSavingOnboarding(true);
-                      setOnboardingError(null);
-                      try {
-                        if (activeWorkspaceId) {
-                          await api.updateWorkspace(activeWorkspaceId, { name: workspaceName });
-                        }
-                        await api.completeOnboarding();
-                        await refreshWorkspaces();
-                        setPostAuthStage('ready');
-                      } catch (error) {
-                        setOnboardingError(
-                          error instanceof Error ? error.message : 'Could not complete onboarding.'
-                        );
-                      } finally {
-                        setIsSavingOnboarding(false);
-                      }
-                    }}
-                    className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-[#FF5F40] px-4 py-3 text-sm font-semibold text-white shadow-[0_6px_14px_rgba(255,95,64,0.08)] transition-colors hover:bg-[#ea5336] disabled:opacity-60"
-                  >
-                    {isSavingOnboarding ? (
-                      <>
-                        <Loader2 size={18} className="animate-spin" />
-                        Saving...
-                      </>
-                    ) : (
-                      <>
-                        Continue to Ledger
-                        <ArrowRight size={16} />
-                      </>
-                    )}
-                  </button>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-left">
-                      <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.16em] text-gray-500">
-                        Invite code or link
-                      </span>
-                      <input
-                        value={onboardingInviteValue}
-                        onChange={(event) => {
-                          setOnboardingInviteValue(event.target.value);
-                          if (onboardingInviteError) {
-                            setOnboardingInviteError(null);
-                          }
-                        }}
-                        placeholder="https://ledger.app/invite/..."
-                        className="h-11 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm text-gray-900 outline-none focus:border-gray-300"
-                      />
-                    </label>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setOnboardingMode('create');
-                        setOnboardingInviteError(null);
-                        setOnboardingError(null);
-                      }}
-                      className="mt-2 text-xs font-medium text-[#FF5F40] hover:text-[#ea5336]"
-                    >
-                      Back to create a workspace
-                    </button>
-                  </div>
-
-                  {onboardingInviteError ? (
-                    <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-                      {onboardingInviteError}
-                    </div>
-                  ) : null}
-
-                  <button
-                    disabled={isJoiningWorkspace}
-                    onClick={async () => {
-                      if (!user || isJoiningWorkspace) return;
-
-                      const token = getInviteTokenFromInput(onboardingInviteValue);
-                      if (!token) {
-                        setOnboardingInviteError('Invite code is required.');
-                        return;
-                      }
-
-                      setIsJoiningWorkspace(true);
-                      setOnboardingInviteError(null);
-                      setOnboardingError(null);
-                      try {
-                        const result = (await api.acceptWorkspaceInvitation(token)) as {
-                          success?: boolean;
-                          already_member?: boolean;
-                          workspace_id?: string;
-                        };
-
-                        await api.completeOnboarding();
-                        await refreshWorkspaces();
-
-                        if (result?.already_member) {
-                          setOnboardingInviteError(null);
-                        }
-
-                        setPostAuthStage('ready');
-                      } catch (error) {
-                        setOnboardingInviteError(
-                          error instanceof Error ? error.message : 'Could not join workspace.'
-                        );
-                      } finally {
-                        setIsJoiningWorkspace(false);
-                      }
-                    }}
-                    className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-[#111827] px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-[#0b1220] disabled:opacity-60"
-                  >
-                    {isJoiningWorkspace ? (
-                      <>
-                        <Loader2 size={18} className="animate-spin" />
-                        Joining...
-                      </>
-                    ) : (
-                      <>
-                        Join workspace
-                        <ArrowRight size={16} />
-                      </>
-                    )}
-                  </button>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
+      <OnboardingFlow
+        step={onboardingStep}
+        mode={onboardingMode}
+        workspaceName={onboardingWorkspaceName}
+        inviteValue={onboardingInviteValue}
+        selectedPosition={onboardingSidebarPosition}
+        isSaving={isSavingOnboarding}
+        error={onboardingError}
+        onStepChange={(nextStep) => {
+          setOnboardingError(null);
+          setOnboardingStep(nextStep);
+        }}
+        onModeChange={(nextMode) => {
+          setOnboardingError(null);
+          setOnboardingMode(nextMode);
+        }}
+        onWorkspaceNameChange={(value) => {
+          setOnboardingError(null);
+          setOnboardingWorkspaceName(value);
+        }}
+        onInviteValueChange={(value) => {
+          setOnboardingError(null);
+          setOnboardingInviteValue(value);
+        }}
+        onPositionChange={setOnboardingSidebarPosition}
+        onWorkspaceSubmit={completeWorkspaceSetup}
+        onOpenLedger={openLedgerFromOnboarding}
+      />
     );
   }
 
@@ -2906,8 +3128,19 @@ function AppShell() {
   if (postAuthStage !== 'ready') {
     return (
       <AuthStatusScreen
-        title="Preparing your workspace"
-        subtitle="Loading your account and workspace context."
+        title="Preparing workspace"
+        subtitle="Loading your sidebar, notes, projects, and calendar."
+        isExiting={isAuthExiting}
+      />
+    );
+  }
+
+  if (!showAuthenticatedShell) {
+    return (
+      <AuthStatusScreen
+        title="Preparing workspace"
+        subtitle="Loading your sidebar, notes, projects, and calendar."
+        isExiting={isAuthExiting}
       />
     );
   }

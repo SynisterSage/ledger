@@ -2880,22 +2880,30 @@ app.get('/api/events', authMiddleware, rateLimit('read'), async (req, res) => {
 app.get('/api/events/upcoming', authMiddleware, rateLimit('read'), async (req, res) => {
   try {
     const workspaceId = await resolveWorkspaceIdForRequest(req);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const end = new Date(today);
+    const now = new Date();
+    const end = new Date(now);
     end.setDate(end.getDate() + 30);
 
     const { data, error } = await supabase
       .from('events')
       .select('id, title, start_at, end_at, all_day, calendar_id, color, status, recurrence_rule')
       .eq('workspace_id', workspaceId)
-      .gte('start_at', today.toISOString())
+      .gte('start_at', now.toISOString())
       .lte('start_at', end.toISOString())
       .order('start_at', { ascending: true })
       .limit(20);
 
     if (error) throw error;
-    res.json(data ?? []);
+    const rows = Array.isArray(data) ? data : [];
+    const filtered = rows.filter((event) => {
+      const isDone = String(event.status ?? '') === 'done';
+      if (isDone) return false;
+
+      const endAt = new Date(event.end_at ?? event.start_at ?? 0).getTime();
+      return Number.isFinite(endAt) && endAt > now.getTime();
+    });
+
+    res.json(filtered);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
