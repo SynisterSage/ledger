@@ -335,6 +335,7 @@ function OnboardingFlow({
     { value: 'left', label: 'Left' },
     { value: 'bottom', label: 'Bottom' },
     { value: 'top', label: 'Top' },
+    { value: 'floating', label: 'Floating' },
   ];
 
   return (
@@ -486,12 +487,15 @@ function OnboardingFlow({
               <div className="grid grid-cols-2 gap-3">
                 {positionOptions.map((option) => {
                   const isSelected = selectedPosition === option.value;
+                  const isFloating = option.value === 'floating';
                   return (
                     <button
                       key={option.value}
                       type="button"
                       onClick={() => onPositionChange(option.value)}
                       className={`group flex h-20 items-center gap-3 rounded-2xl border px-4 text-left transition ${
+                        isFloating ? 'col-span-2' : ''
+                      } ${
                         isSelected
                           ? 'border-[#FF5F40]/45 bg-[#fff7f2] text-gray-950 shadow-[0_8px_18px_rgba(255,95,64,0.08)]'
                           : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:bg-gray-50'
@@ -506,9 +510,17 @@ function OnboardingFlow({
                               ? 'left-1 top-1 h-7 w-2'
                               : option.value === 'top'
                               ? 'left-1 top-1 h-2 w-9'
-                              : 'bottom-1 left-1 h-2 w-9'
+                              : option.value === 'bottom'
+                              ? 'bottom-1 left-1 h-2 w-9'
+                              : 'left-1.5 top-1.5 h-6 w-8 rounded-md opacity-95'
                           }`}
                         />
+                        {option.value === 'floating' ? (
+                          <>
+                            <span className="absolute left-2 top-2 h-1 w-1 rounded-full bg-white/90" />
+                            <span className="absolute right-2 top-2 h-1 w-1 rounded-full bg-white/90" />
+                          </>
+                        ) : null}
                       </span>
                       <span className="text-sm font-semibold">{option.label}</span>
                     </button>
