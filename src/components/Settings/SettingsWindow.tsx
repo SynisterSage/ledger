@@ -68,16 +68,6 @@ type SlackIntegrationStatus = {
   updated_at?: string | null;
 };
 
-type SlackCapturePreview = {
-  id: string;
-  external_url?: string | null;
-  channel_name?: string | null;
-  author_name?: string | null;
-  captured_text?: string | null;
-  captured_at?: string | null;
-  created_at: string;
-};
-
 type InviteModalState = {
   id: string;
 } | null;
@@ -316,7 +306,6 @@ export const SettingsWindow = () => {
   const [isSendingInvite, setIsSendingInvite] = useState(false);
   const [inviteModal, setInviteModal] = useState<InviteModalState>(null);
   const [slackStatus, setSlackStatus] = useState<SlackIntegrationStatus | null>(null);
-  const [slackCaptures, setSlackCaptures] = useState<SlackCapturePreview[]>([]);
   const [isLoadingSlackStatus, setIsLoadingSlackStatus] = useState(false);
   const [isConnectingSlack, setIsConnectingSlack] = useState(false);
   const [isDisconnectingSlack, setIsDisconnectingSlack] = useState(false);
@@ -678,18 +667,15 @@ export const SettingsWindow = () => {
 
     void (async () => {
       try {
-        const [statusPayload, capturesPayload] = await Promise.all([
-          api.getSlackIntegrationStatus(activeWorkspaceId) as Promise<SlackIntegrationStatus>,
-          api.getSlackCaptures(activeWorkspaceId) as Promise<SlackCapturePreview[]>,
-        ]);
+        const statusPayload = (await api.getSlackIntegrationStatus(
+          activeWorkspaceId
+        )) as SlackIntegrationStatus;
         if (!cancelled) {
           setSlackStatus(statusPayload);
-          setSlackCaptures(Array.isArray(capturesPayload) ? capturesPayload : []);
         }
       } catch (err) {
         if (!cancelled) {
           setSlackStatus({ connected: false });
-          setSlackCaptures([]);
           setSlackError(
             err instanceof Error ? err.message : 'Could not load Slack connection status.'
           );
@@ -1939,55 +1925,9 @@ export const SettingsWindow = () => {
                       </p>
                     )}
 
-                    <div className="mt-4 rounded-xl border border-gray-200 bg-white p-3">
-                      <div className="flex items-center justify-between gap-3">
-                        <p className="text-[10px] font-medium uppercase tracking-[0.18em] text-gray-400">
-                          Latest Slack captures
-                        </p>
-                        <span className="text-[11px] text-gray-400">
-                          {slackCaptures.length} shown
-                        </span>
-                      </div>
-                      <div className="mt-2 space-y-2">
-                        {slackCaptures.length === 0 ? (
-                          <p className="text-xs leading-5 text-gray-500">
-                            Captured Slack messages will appear here until the dedicated capture
-                            inbox ships.
-                          </p>
-                        ) : (
-                          slackCaptures.map((capture) => (
-                            <div
-                              key={capture.id}
-                              className="flex items-start justify-between gap-3 rounded-lg border border-gray-100 bg-gray-50 px-3 py-2"
-                            >
-                              <div className="min-w-0">
-                                <p className="truncate text-sm font-medium text-gray-900">
-                                  {capture.captured_text || 'Slack message'}
-                                </p>
-                                <p className="mt-0.5 truncate text-[11px] text-gray-500">
-                                  From Slack
-                                  {capture.channel_name ? ` · #${capture.channel_name}` : ''}
-                                  {capture.author_name ? ` · ${capture.author_name}` : ''}
-                                </p>
-                              </div>
-                              {capture.external_url && (
-                                <button
-                                  type="button"
-                                  onClick={() => void openExternalUrl(capture.external_url || '')}
-                                  className="shrink-0 text-[11px] font-medium text-[#FF5F40] hover:text-[#d84b31]"
-                                >
-                                  Open
-                                </button>
-                              )}
-                            </div>
-                          ))
-                        )}
-                      </div>
-                    </div>
-
-                    <p className="mt-3 text-xs leading-5 text-gray-500">
-                      Phase 1 only stores intentional Slack message captures. Ledger will not sync
-                      channel history or read every message.
+                    <p className="mt-4 text-xs leading-5 text-gray-500">
+                      Saved Slack messages land in Inbox, where they can be converted into tasks,
+                      notes, reminders, or events.
                     </p>
                   </div>
                 </section>

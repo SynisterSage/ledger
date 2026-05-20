@@ -25,7 +25,7 @@ npm run dev
 - `SLACK_SIGNING_SECRET` - Slack request signing secret
 - `SLACK_REDIRECT_URI` - Slack OAuth callback URL
 - `SLACK_APP_ID` - Slack app id
-- `SLACK_SETTINGS_REDIRECT_URL` - Optional post-install redirect back to Ledger settings
+- `SLACK_SETTINGS_REDIRECT_URL` - Optional fallback redirect after install (Ledger deep link or HTTPS page)
 
 Create the backend env file from `backend/.env.example`. Slack secrets stay on the server and are not exposed to the renderer.
 

@@ -6,7 +6,7 @@ Phase 1 sets up the Slack app foundation for intentional capture. Ledger does no
 
 ## MVP behavior
 
-A user opens a Slack message action, chooses **Save to Ledger**, and Ledger stores the message as an external source record in the connected workspace. Later phases can convert that captured source into a task, note, reminder, event, or project context.
+A user opens a Slack message action, chooses **Save to Ledger**, and Ledger stores the message in the workspace Inbox. Later phases can convert that inbox item into a task, note, reminder, event, or project context.
 
 ## Local development setup
 
@@ -64,7 +64,7 @@ Do not hardcode Slack secrets. Slack request verification uses `SLACK_SIGNING_SE
 
 - `GET /api/integrations/slack/install` starts Slack OAuth for authenticated requests.
 - `GET /api/integrations/slack/oauth/callback` exchanges the Slack OAuth code and stores the workspace-scoped integration account.
-- `POST /api/integrations/slack/interactivity` verifies Slack signatures and captures `save_to_ledger` message shortcut payloads.
+- `POST /api/integrations/slack/interactivity` verifies Slack signatures and captures `save_to_ledger` message shortcut payloads into the workspace Inbox.
 
 The desktop Settings UI uses an authenticated install URL helper so Ledger can validate the active workspace before opening Slack OAuth externally.
 

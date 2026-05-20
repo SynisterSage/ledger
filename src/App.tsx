@@ -29,6 +29,7 @@ import LoginForm from './components/Common/LoginForm';
 import CalendarWindow from './components/Calendar/CalendarWindow';
 import NotesWindow from './components/Notes/NotesWindow';
 import ProjectsWindow from './components/Projects/ProjectsWindow';
+import InboxWindow from './components/Inbox/InboxWindow';
 import SettingsWindow from './components/Settings/SettingsWindow';
 import { SearchModal } from './components/Search/SearchModal';
 import { SearchProvider } from './context/SearchContext';
@@ -53,6 +54,7 @@ type ModuleKind =
   | 'projects'
   | 'dashboard'
   | 'settings'
+  | 'inbox'
   | 'quick-task'
   | 'quick-note'
   | 'quick-event'
@@ -643,6 +645,7 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
       eventTitle?: string | null;
     }>
   >([]);
+  const [inboxCount, setInboxCount] = useState(0);
   const [focusedTaskId, setFocusedTaskId] = useState<string | null>(initialFocusTaskId ?? null);
   const [focusDraftTitle, setFocusDraftTitle] = useState('');
   const [isSavingFocusTask, setIsSavingFocusTask] = useState(false);
@@ -929,6 +932,44 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
       window.clearInterval(timer);
     };
   }, [activeWorkspaceId, api, user]);
+
+  useEffect(() => {
+    if (!user || !activeWorkspaceId) {
+      setInboxCount(0);
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadInboxCount = async () => {
+      try {
+        const payload = (await api.getInboxCount()) as { count?: number };
+        if (!cancelled) {
+          setInboxCount(Math.max(0, Number(payload?.count ?? 0)));
+        }
+      } catch (error) {
+        console.error('Failed to load dashboard inbox count:', error);
+      }
+    };
+
+    void loadInboxCount();
+
+    const handleInboxItemsUpdated = () => {
+      void loadInboxCount();
+    };
+
+    window.ipcRenderer?.on('inbox:items-updated', handleInboxItemsUpdated);
+
+    const timer = window.setInterval(() => {
+      void loadInboxCount();
+    }, 30_000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+      window.ipcRenderer?.off('inbox:items-updated', handleInboxItemsUpdated);
+    };
+  }, [api, activeWorkspaceId, user]);
 
   useEffect(() => {
     const handleCheckinUpdated = (
@@ -1855,6 +1896,27 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
             <aside className="border-t border-gray-200 pt-8 lg:sticky lg:top-0 lg:self-start lg:border-l lg:border-t-0 lg:pl-12 lg:pt-0">
               <section ref={followUpsRef} className="space-y-6">
                 <div className="space-y-10">
+                  {inboxCount > 0 && (
+                    <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[#64748B]">
+                        Inbox
+                      </p>
+                      <p className="mt-2 text-sm font-medium text-[#111827]">
+                        {inboxCount} capture{inboxCount === 1 ? '' : 's'} waiting
+                      </p>
+                      <p className="mt-1 text-xs leading-5 text-[#64748B]">
+                        Slack saves and other captures land here first.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => window.desktopWindow?.toggleModule('inbox')}
+                        className="mt-3 inline-flex items-center rounded-full border border-[#FF5F40] bg-[#FF5F40] px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-[#f25538]"
+                      >
+                        Review Inbox
+                      </button>
+                    </div>
+                  )}
+
                   <div className="space-y-6">
                     <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[#64748B]">
                       Follow-ups
@@ -2659,6 +2721,10 @@ function AppShell() {
 
     if (moduleKind === 'dashboard') {
       return <DashboardContent initialFocusTaskId={moduleFocusTaskId || undefined} />;
+    }
+
+    if (moduleKind === 'inbox') {
+      return <InboxWindow />;
     }
 
     if (moduleKind === 'settings') {

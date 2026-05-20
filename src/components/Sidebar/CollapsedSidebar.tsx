@@ -1,6 +1,6 @@
 import type React from 'react';
 import { useSidebar } from '../../context/SidebarContext';
-import { Search, BarChart3, CalendarDays, Folder, StickyNote, ChevronUp, ChevronDown, LogOut } from 'lucide-react';
+import { Search, BarChart3, CalendarDays, Folder, StickyNote, Inbox, ChevronUp, ChevronDown, LogOut } from 'lucide-react';
 import { useSearch } from '../../context/SearchContext';
 import { useAuthContext } from '../../context/AuthContext';
 
@@ -73,6 +73,14 @@ export const CollapsedSidebar = ({
               className={iconButtonClass}
             >
               <BarChart3 size={18} />
+            </button>
+            <button
+              aria-label="Open inbox"
+              onClick={() => window.desktopWindow?.toggleModule('inbox')}
+              onMouseDown={(e) => e.stopPropagation()}
+              className={iconButtonClass}
+            >
+              <Inbox size={18} />
             </button>
             <button
               aria-label="Open calendar"

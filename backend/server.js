@@ -902,13 +902,18 @@ const buildSlackInstallCompleteHtml = ({ teamName }) => {
       .actions {
         display: flex;
         justify-content: center;
-        margin-top: 28px;
+        margin-top: 24px;
       }
       .button {
         appearance: none;
         border: 0;
         border-radius: 999px;
-        padding: 12px 18px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 132px;
+        height: 44px;
+        padding: 0 18px;
         font: inherit;
         font-weight: 600;
         cursor: pointer;
@@ -917,10 +922,14 @@ const buildSlackInstallCompleteHtml = ({ teamName }) => {
       .button.primary {
         background: var(--accent);
         color: white;
-        box-shadow: 0 12px 24px rgba(255, 95, 64, 0.18);
+        box-shadow: none;
+        transition: background-color 140ms ease, color 140ms ease;
+      }
+      .button.primary:hover {
+        background: #ea5336;
       }
       .fineprint {
-        margin-top: 14px;
+        margin-top: 12px;
         font-size: 12px;
       }
       .subcopy {
@@ -983,9 +992,24 @@ const parseSlackMessageTimestamp = (timestamp) => {
   return new Date(seconds * 1000).toISOString();
 };
 
+const normalizeSlackMessageText = (value) =>
+  String(value ?? '')
+    .replace(/\r\n/g, '\n')
+    .trim();
+
+const buildSlackInboxTitle = (text, authorName) => {
+  const cleanText = normalizeSlackMessageText(text);
+  const firstLine = cleanText.split('\n').map((line) => line.trim()).find(Boolean);
+  if (firstLine) {
+    return firstLine.length > 96 ? `${firstLine.slice(0, 93)}...` : firstLine;
+  }
+  if (authorName) return `Slack message from ${authorName}`;
+  return 'Slack message';
+};
+
 const saveSlackMessageCapture = async (payload) => {
   const teamId = payload?.team?.id ?? payload?.team?.enterprise_id ?? null;
-  if (!teamId) throw new Error('Slack payload missing team id');
+  if (!teamId) return { ok: false, reason: 'missing_team' };
 
   const accountResult = await supabase
     .from('integration_accounts')
@@ -998,35 +1022,95 @@ const saveSlackMessageCapture = async (payload) => {
 
   if (accountResult.error) throw accountResult.error;
   const account = accountResult.data;
-  if (!account?.workspace_id) throw new Error('Slack workspace is not connected to Ledger');
+  if (!account?.workspace_id) return { ok: false, reason: 'missing_workspace' };
 
   const message = payload?.message ?? {};
   const channel = payload?.channel ?? {};
   const user = payload?.user ?? {};
   const messageTs = message.ts ?? payload?.message_ts ?? null;
   const threadTs = message.thread_ts ?? payload?.thread_ts ?? null;
-  const externalId = [teamId, channel.id, messageTs].filter(Boolean).join(':') || null;
+  const channelId = channel.id ?? payload?.channel_id ?? null;
+  const authorName = message.username ?? user.username ?? user.name ?? null;
+  const messageText = normalizeSlackMessageText(message.text ?? '');
+  const sourceId = [teamId, channelId, messageTs].filter(Boolean).join(':') || null;
   // TODO: call Slack chat.getPermalink when the shortcut payload does not include a permalink.
   const externalUrl = message.permalink ?? message.url ?? null;
+  const title = buildSlackInboxTitle(messageText, authorName);
 
   const insertResult = await supabase.from('external_sources').insert({
     workspace_id: account.workspace_id,
     provider: 'slack',
     integration_account_id: account.id,
-    external_id: externalId,
+    external_id: sourceId,
     external_url: externalUrl,
     source_type: 'message',
-    channel_id: channel.id ?? null,
+    channel_id: channelId,
     channel_name: channel.name ?? null,
     author_id: message.user ?? user.id ?? null,
-    author_name: message.username ?? user.username ?? user.name ?? null,
-    captured_text: message.text ?? null,
+    author_name: authorName,
+    captured_text: messageText || null,
     captured_at: parseSlackMessageTimestamp(messageTs ?? threadTs),
     raw_payload: payload,
     created_by: null,
   });
 
   if (insertResult.error) throw insertResult.error;
+
+  const inboxResult = await supabase
+    .from('inbox_items')
+    .upsert(
+      {
+        workspace_id: account.workspace_id,
+        user_id: payload?.user?.id ?? account?.installed_by ?? null,
+        source: 'slack',
+        source_id: sourceId,
+        source_url: externalUrl,
+        title,
+        body: messageText || null,
+        raw_payload: payload,
+        suggested_type: 'unknown',
+        status: 'unprocessed',
+        updated_at: new Date().toISOString(),
+      },
+      {
+        onConflict: 'workspace_id,source,source_id',
+      }
+    )
+    .select('id')
+    .single();
+
+  if (inboxResult.error) throw inboxResult.error;
+
+  return { ok: true, inboxId: inboxResult.data?.id ?? null, workspaceId: account.workspace_id };
+};
+
+const mapInboxItemResponse = (row) => {
+  if (!row) return row;
+  const rawPayload = row.raw_payload ?? {};
+  const message = rawPayload?.message ?? {};
+  const channel = rawPayload?.channel ?? {};
+  const user = rawPayload?.user ?? {};
+  return {
+    ...row,
+    channel_name: row.channel_name ?? channel.name ?? null,
+    author_name:
+      row.author_name ?? message.username ?? user.username ?? user.name ?? rawPayload?.user_name ?? null,
+    source_label: row.source ? String(row.source).replace(/_/g, ' ') : 'inbox',
+  };
+};
+
+const loadInboxItemForWorkspace = async (workspaceId, id) => {
+  const result = await supabase
+    .from('inbox_items')
+    .select(
+      'id, workspace_id, user_id, source, source_id, source_url, title, body, raw_payload, suggested_type, status, converted_type, converted_id, created_at, updated_at'
+    )
+    .eq('workspace_id', workspaceId)
+    .eq('id', id)
+    .maybeSingle();
+
+  if (result.error) throw result.error;
+  return result.data ?? null;
 };
 
 const withWorkspaceContext = async (req, res, next) => {
@@ -1406,11 +1490,375 @@ app.post('/api/integrations/slack/interactivity', rateLimit('write'), async (req
     return res.status(200).json({ response_type: 'ephemeral', text: 'Unsupported Ledger action.' });
   }
 
-  res.status(200).json({ response_type: 'ephemeral', text: 'Saved to Ledger.' });
+  try {
+    const result = await saveSlackMessageCapture(payload);
+    if (!result?.ok) {
+      const fallbackMessage =
+        result?.reason === 'missing_workspace'
+          ? 'Ledger is connected, but no workspace is selected yet. Open Ledger settings to finish setup.'
+          : 'Ledger could not save this message right now.';
+      return res.status(200).json({
+        response_type: 'ephemeral',
+        text: fallbackMessage,
+      });
+    }
 
-  void saveSlackMessageCapture(payload).catch((error) => {
+    return res.status(200).json({
+      response_type: 'ephemeral',
+      text: 'Saved to Ledger Inbox.',
+    });
+  } catch (error) {
     console.error('Slack capture failed', error);
-  });
+    return res.status(200).json({
+      response_type: 'ephemeral',
+      text: 'Ledger could not save this message right now.',
+    });
+  }
+});
+
+app.get('/api/inbox/count', authMiddleware, rateLimit('read'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    const { count, error } = await supabase
+      .from('inbox_items')
+      .select('id', { count: 'exact', head: true })
+      .eq('workspace_id', workspaceId)
+      .eq('status', 'unprocessed');
+
+    if (error) throw error;
+    res.json({ count: count ?? 0 });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({ error: error.message });
+  }
+});
+
+app.get('/api/inbox', authMiddleware, rateLimit('read'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    const status = String(req.query?.status ?? 'unprocessed').trim() || 'unprocessed';
+    const source = String(req.query?.source ?? '').trim();
+
+    let query = supabase
+      .from('inbox_items')
+      .select(
+        'id, workspace_id, user_id, source, source_id, source_url, title, body, raw_payload, suggested_type, status, converted_type, converted_id, created_at, updated_at'
+      )
+      .eq('workspace_id', workspaceId)
+      .order('created_at', { ascending: false })
+      .limit(100);
+
+    if (status) query = query.eq('status', status);
+    if (source) query = query.eq('source', source);
+
+    const { data, error } = await query;
+    if (error) throw error;
+    res.json((data ?? []).map(mapInboxItemResponse));
+  } catch (error) {
+    res.status(error.statusCode || 500).json({ error: error.message });
+  }
+});
+
+app.post('/api/inbox/:id/archive', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    const allowed = await loadInboxItemForWorkspace(workspaceId, req.params.id);
+    if (!allowed) {
+      return res.status(404).json({ error: 'Inbox item not found' });
+    }
+
+    const { data, error } = await supabase
+      .from('inbox_items')
+      .update({
+        status: 'archived',
+        updated_at: new Date().toISOString(),
+      })
+      .eq('workspace_id', workspaceId)
+      .eq('id', req.params.id)
+      .select(
+        'id, workspace_id, user_id, source, source_id, source_url, title, body, raw_payload, suggested_type, status, converted_type, converted_id, created_at, updated_at'
+      )
+      .single();
+
+    if (error) throw error;
+    res.json(mapInboxItemResponse(data));
+  } catch (error) {
+    res.status(error.statusCode || 500).json({ error: error.message });
+  }
+});
+
+app.post('/api/inbox/:id/convert', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    const inboxItem = await loadInboxItemForWorkspace(workspaceId, req.params.id);
+    if (!inboxItem) {
+      return res.status(404).json({ error: 'Inbox item not found' });
+    }
+    if (String(inboxItem.status ?? '') === 'converted') {
+      return res.status(409).json({ error: 'Inbox item has already been converted' });
+    }
+
+    const type = String(req.body?.type ?? '').trim().toLowerCase();
+    const title = String(req.body?.title ?? inboxItem.title ?? '').trim();
+    const body = normalizeNullableText(req.body?.body ?? inboxItem.body);
+    const rawTitle = title || inboxItem.title || 'Untitled';
+    const inboxNotes = inboxItem.source_url
+      ? `${body ? `${body}\n\n` : ''}Source: ${inboxItem.source_url}`
+      : body;
+    let createdId = null;
+
+    if (type === 'task') {
+      const taskPayload = {
+        workspace_id: workspaceId,
+        project_id: req.body?.project_id ? String(req.body.project_id) : null,
+        title: rawTitle,
+        description: inboxNotes ? `inbox:${inboxItem.id}` : `inbox:${inboxItem.id}`,
+        notes: inboxNotes || null,
+        due_date: req.body?.due_date ? normalizeNullableDate(req.body.due_date, 'due date') : null,
+        due_time: req.body?.due_time ? normalizeNullableText(req.body.due_time) : null,
+        status: req.body?.status ? String(req.body.status) : 'todo',
+        priority: req.body?.priority ? String(req.body.priority) : 'medium',
+        tags: Array.isArray(req.body?.tags)
+          ? req.body.tags.map((tag) => String(tag).trim()).filter(Boolean)
+          : [],
+        show_in_today: Boolean(req.body?.show_in_today ?? false),
+        is_today_focus: Boolean(req.body?.is_today_focus ?? false),
+      };
+
+      if (taskPayload.project_id) {
+        const projectAllowed = await ensureWorkspaceResource(
+          'projects',
+          String(taskPayload.project_id),
+          workspaceId
+        );
+        if (!projectAllowed) {
+          return res.status(404).json({ error: 'Project not found' });
+        }
+      }
+
+      let createdTask = null;
+      for (const attempt of taskTodaySelectAttempts) {
+        const { data, error } = await supabase
+          .from('tasks')
+          .insert(taskPayload)
+          .select(attempt.columns)
+          .single();
+
+        if (!error) {
+          createdTask = data;
+          break;
+        }
+
+        if (isMissingTaskTodayColumnError(error)) {
+          continue;
+        }
+
+        throw error;
+      }
+      if (!createdTask) {
+        return res.status(500).json({ error: 'Could not create task from inbox item' });
+      }
+      createdId = createdTask.id;
+      const inboxUpdate = await supabase
+        .from('inbox_items')
+        .update({
+          status: 'converted',
+          converted_type: 'task',
+          converted_id: createdId,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('workspace_id', workspaceId)
+        .eq('id', inboxItem.id)
+        .select(
+          'id, workspace_id, user_id, source, source_id, source_url, title, body, raw_payload, suggested_type, status, converted_type, converted_id, created_at, updated_at'
+        )
+        .single();
+      if (inboxUpdate.error) throw inboxUpdate.error;
+      return res.json({
+        inbox_item: mapInboxItemResponse(inboxUpdate.data),
+        created: createdTask,
+      });
+    }
+
+    if (type === 'note') {
+      const noteDate = req.body?.date
+        ? normalizeNullableDate(req.body.date, 'date')
+        : new Date().toISOString().slice(0, 10);
+      const contentHtml = normalizeNoteHtml(
+        req.body?.content_html ?? plainTextToParagraphHtml(body || rawTitle)
+      );
+      const content = htmlToPlainText(contentHtml);
+      const { data, error } = await supabase
+        .from('notes')
+        .insert({
+          workspace_id: workspaceId,
+          user_id: req.authUser.id,
+          title: rawTitle,
+          content,
+          content_html: contentHtml,
+          date: noteDate,
+          mood: null,
+          source: 'inbox',
+          mode: 'text',
+          mind_map_structure: null,
+          parent_id: null,
+          section_id: null,
+          sort_order: 0,
+          depth: 0,
+        })
+        .select(
+          'id, workspace_id, user_id, title, content, content_html, date, mood, source, mode, mind_map_structure, parent_id, section_id, sort_order, depth, created_at, updated_at'
+        )
+        .single();
+      if (error) throw error;
+      createdId = data.id;
+      const inboxUpdate = await supabase
+        .from('inbox_items')
+        .update({
+          status: 'converted',
+          converted_type: 'note',
+          converted_id: createdId,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('workspace_id', workspaceId)
+        .eq('id', inboxItem.id)
+        .select(
+          'id, workspace_id, user_id, source, source_id, source_url, title, body, raw_payload, suggested_type, status, converted_type, converted_id, created_at, updated_at'
+        )
+        .single();
+      if (inboxUpdate.error) throw inboxUpdate.error;
+      return res.json({
+        inbox_item: mapInboxItemResponse(inboxUpdate.data),
+        created: data,
+      });
+    }
+
+    if (type === 'reminder') {
+      const reminderAt = String(req.body?.remind_at ?? '').trim();
+      if (!reminderAt) {
+        return res.status(400).json({ error: 'remind_at is required' });
+      }
+      const calendarId = req.body?.calendar_id || (await getCalendarId(workspaceId, req.authUser.id));
+      const reminderPayload = {
+        workspace_id: workspaceId,
+        calendar_id: calendarId,
+        created_by: req.authUser.id,
+        updated_by: req.authUser.id,
+        title: rawTitle,
+        remind_at: reminderAt,
+        color: req.body?.color || null,
+        is_done: false,
+        notes: inboxNotes || null,
+        project_id: req.body?.project_id || null,
+        note_id: req.body?.note_id || null,
+      };
+      if (reminderPayload.project_id) {
+        const projectAllowed = await ensureWorkspaceResource(
+          'projects',
+          String(reminderPayload.project_id),
+          workspaceId
+        );
+        if (!projectAllowed) {
+          return res.status(404).json({ error: 'Project not found' });
+        }
+      }
+      if (reminderPayload.note_id) {
+        const noteAllowed = await ensureWorkspaceResource(
+          'notes',
+          String(reminderPayload.note_id),
+          workspaceId
+        );
+        if (!noteAllowed) {
+          return res.status(404).json({ error: 'Note not found' });
+        }
+      }
+      const { data, error } = await withReminderTable((table) =>
+        supabase
+          .from(table)
+          .insert(reminderPayload)
+          .select('id, title, remind_at, calendar_id, color, is_done, notes, project_id, note_id')
+          .single()
+      );
+      if (error) throw error;
+      createdId = data.id;
+      const inboxUpdate = await supabase
+        .from('inbox_items')
+        .update({
+          status: 'converted',
+          converted_type: 'reminder',
+          converted_id: createdId,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('workspace_id', workspaceId)
+        .eq('id', inboxItem.id)
+        .select(
+          'id, workspace_id, user_id, source, source_id, source_url, title, body, raw_payload, suggested_type, status, converted_type, converted_id, created_at, updated_at'
+        )
+        .single();
+      if (inboxUpdate.error) throw inboxUpdate.error;
+      return res.json({
+        inbox_item: mapInboxItemResponse(inboxUpdate.data),
+        created: data,
+      });
+    }
+
+    if (type === 'event') {
+      const startAt = String(req.body?.start_at ?? '').trim();
+      if (!startAt) {
+        return res.status(400).json({ error: 'start_at is required' });
+      }
+      const endAt = String(req.body?.end_at ?? '').trim() || null;
+      const calendarId = req.body?.calendar_id || (await getCalendarId(workspaceId, req.authUser.id));
+      const { data, error } = await supabase
+        .from('events')
+        .insert({
+          workspace_id: workspaceId,
+          calendar_id: calendarId,
+          created_by: req.authUser.id,
+          updated_by: req.authUser.id,
+          title: rawTitle,
+          start_at: startAt,
+          end_at: endAt,
+          color: req.body?.color || null,
+          status: req.body?.status || 'planned',
+          recurrence_rule: req.body?.recurrence_rule || null,
+          notes: inboxNotes || null,
+          location: req.body?.location || null,
+          all_day: Boolean(req.body?.all_day ?? false),
+          project_id: req.body?.project_id || null,
+          linked_project_id: req.body?.project_id || null,
+          note_id: req.body?.note_id || null,
+        })
+        .select(
+          'id, title, start_at, end_at, all_day, calendar_id, color, status, recurrence_rule, notes, project_id, note_id'
+        )
+        .single();
+      if (error) throw error;
+      createdId = data.id;
+      const inboxUpdate = await supabase
+        .from('inbox_items')
+        .update({
+          status: 'converted',
+          converted_type: 'event',
+          converted_id: createdId,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('workspace_id', workspaceId)
+        .eq('id', inboxItem.id)
+        .select(
+          'id, workspace_id, user_id, source, source_id, source_url, title, body, raw_payload, suggested_type, status, converted_type, converted_id, created_at, updated_at'
+        )
+        .single();
+      if (inboxUpdate.error) throw inboxUpdate.error;
+      return res.json({
+        inbox_item: mapInboxItemResponse(inboxUpdate.data),
+        created: data,
+      });
+    }
+
+    return res.status(400).json({ error: 'Unsupported inbox conversion type' });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({ error: error.message });
+  }
 });
 
 app.get('/api/user/onboarding', authMiddleware, rateLimit('read'), async (req, res) => {

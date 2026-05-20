@@ -15,6 +15,7 @@ import {
   StickyNote,
   Trash2,
   Search,
+  Inbox,
 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
@@ -299,6 +300,7 @@ export const ExpandedSidebar = ({
       end_date?: string | null;
     }>
   >([]);
+  const [inboxCount, setInboxCount] = useState(0);
   const [isLoadingProjects, setIsLoadingProjects] = useState(true);
   const [expandedProjectId, setExpandedProjectId] = useState<string | null>(null);
   const [projectUpdating, setProjectUpdating] = useState<string | null>(null);
@@ -775,6 +777,44 @@ export const ExpandedSidebar = ({
       window.clearInterval(refreshTimer);
     };
   }, [user?.id, activeWorkspaceId]);
+
+  useEffect(() => {
+    if (!user || !activeWorkspaceId) {
+      setInboxCount(0);
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadInboxCount = async () => {
+      try {
+        const payload = (await api.getInboxCount()) as { count?: number };
+        if (!cancelled) {
+          setInboxCount(Math.max(0, Number(payload?.count ?? 0)));
+        }
+      } catch (error) {
+        console.error('Failed to load inbox count:', error);
+      }
+    };
+
+    void loadInboxCount();
+
+    const handleInboxItemsUpdated = () => {
+      void loadInboxCount();
+    };
+
+    window.ipcRenderer?.on('inbox:items-updated', handleInboxItemsUpdated);
+
+    const refreshTimer = window.setInterval(() => {
+      void loadInboxCount();
+    }, 30_000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(refreshTimer);
+      window.ipcRenderer?.off('inbox:items-updated', handleInboxItemsUpdated);
+    };
+  }, [api, activeWorkspaceId, user]);
 
   useEffect(() => {
     if (!user) {
@@ -1755,6 +1795,7 @@ export const ExpandedSidebar = ({
 
           <div className="flex items-center gap-1 shrink-0">
             {[
+              { label: 'Inbox', icon: Inbox, action: () => window.desktopWindow?.toggleModule('inbox') },
               { label: 'Dashboard', icon: BarChart3, action: () => window.desktopWindow?.toggleModule('dashboard') },
               { label: 'Projects', icon: Folder, action: () => window.desktopWindow?.toggleModule('projects') },
               { label: 'Notes', icon: StickyNote, action: () => window.desktopWindow?.toggleModule('notes') },
@@ -1763,11 +1804,16 @@ export const ExpandedSidebar = ({
               <button
                 key={item.label}
                 onClick={item.action}
-                className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-transparent text-gray-700 transition hover:border-gray-200 hover:bg-white/70 hover:text-gray-900"
+                className="relative inline-flex h-9 w-9 items-center justify-center rounded-xl border border-transparent text-gray-700 transition hover:border-gray-200 hover:bg-white/70 hover:text-gray-900"
                 title={item.label}
                 aria-label={item.label}
               >
                 <item.icon size={14} />
+                {item.label === 'Inbox' && inboxCount > 0 && (
+                  <span className="absolute -right-1 -top-1 inline-flex min-w-4 items-center justify-center rounded-full bg-[#FF5F40] px-1 py-0.5 text-[9px] font-semibold leading-none text-white">
+                    {inboxCount > 9 ? '9+' : inboxCount}
+                  </span>
+                )}
               </button>
             ))}
           </div>
@@ -2059,7 +2105,29 @@ export const ExpandedSidebar = ({
         </div>
       </div>
 
-      <div className="flex-1 min-h-0 overflow-y-auto px-5 py-4 space-y-5">
+      <div className="flex-1 min-h-0 overflow-y-auto px-5 py-4 space-y-2">
+        <section className="rounded-lg border border-gray-200 bg-white p-3">
+          <button
+            type="button"
+            onClick={() => window.desktopWindow?.toggleModule('inbox')}
+            className="flex w-full items-start justify-between gap-3 text-left outline-none"
+          >
+            <div className="min-w-0 flex-1 space-y-0.5">
+              <p className="text-sm font-semibold tracking-tight text-gray-900">Inbox</p>
+              <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-gray-500">
+                <span className="shrink-0">
+                  {inboxCount > 0 ? `${inboxCount} waiting` : 'No items'}
+                </span>
+              </div>
+            </div>
+            {inboxCount > 0 && (
+              <span className="mt-0.5 inline-flex shrink-0 min-w-5 items-center justify-center rounded-full bg-[#FF5F40] px-1.5 py-0.5 text-[10px] font-semibold leading-none text-white">
+                {inboxCount > 99 ? '99+' : inboxCount}
+              </span>
+            )}
+          </button>
+        </section>
+
         {/* Today unified feed (workspace-aware) */}
         <section className="rounded-lg border border-gray-200 bg-white p-3 space-y-3">
           <div

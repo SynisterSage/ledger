@@ -219,6 +219,51 @@ export const useApi = () => {
           skipWorkspaceHeader: true,
         }),
 
+      // Inbox
+      getInboxCount: () => request('/api/inbox/count', { skipWorkspaceHeader: true }),
+      getInboxItems: (options?: { status?: string; source?: string }) => {
+        const params = new URLSearchParams();
+        if (options?.status) params.set('status', options.status);
+        if (options?.source) params.set('source', options.source);
+        const query = params.toString();
+        return request(`/api/inbox${query ? `?${query}` : ''}`, { skipWorkspaceHeader: true });
+      },
+      archiveInboxItem: (id: string) =>
+        request(`/api/inbox/${id}/archive`, {
+          method: 'POST',
+          skipWorkspaceHeader: true,
+        }),
+      convertInboxItem: (
+        id: string,
+        payload: {
+          type: 'task' | 'note' | 'reminder' | 'event';
+          title?: string;
+          body?: string | null;
+          project_id?: string | null;
+          note_id?: string | null;
+          calendar_id?: string | null;
+          due_date?: string | null;
+          due_time?: string | null;
+          remind_at?: string | null;
+          start_at?: string | null;
+          end_at?: string | null;
+          all_day?: boolean;
+          color?: string | null;
+          status?: string | null;
+          tags?: string[];
+          show_in_today?: boolean;
+          is_today_focus?: boolean;
+          recurrence_rule?: string | null;
+          location?: string | null;
+          notes?: string | null;
+        }
+      ) =>
+        request(`/api/inbox/${id}/convert`, {
+          method: 'POST',
+          body: JSON.stringify(payload),
+          skipWorkspaceHeader: true,
+        }),
+
       // Projects
       getProjects: (options?: { includeCompleted?: boolean }) => {
         const params = new URLSearchParams();

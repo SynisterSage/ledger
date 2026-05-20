@@ -7,6 +7,7 @@ type ModuleWindowKind =
   | 'projects'
   | 'dashboard'
   | 'settings'
+  | 'inbox'
   | 'quick-task'
   | 'quick-note'
   | 'quick-event';
