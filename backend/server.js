@@ -823,6 +823,137 @@ const buildSlackAuthorizeUrl = ({ workspaceId, installedBy }) => {
   return `https://slack.com/oauth/v2/authorize?${params.toString()}`;
 };
 
+const escapeHtml = (value) =>
+  String(value ?? '').replace(/[&<>"']/g, (char) => {
+    const map = {
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#39;',
+    };
+    return map[char] ?? char;
+  });
+
+const buildSlackInstallCompleteHtml = ({ teamName }) => {
+  const publicBackendUrl =
+    process.env.PUBLIC_BACKEND_URL?.trim() || 'https://api.ledgerworkspace.com';
+  const safeTeamName = escapeHtml(teamName ? ` to ${teamName}` : '');
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Slack connected to Ledger</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #fffbf7;
+        --card: rgba(255, 255, 255, 0.92);
+        --border: rgba(17, 24, 39, 0.08);
+        --text: #111827;
+        --muted: #6b7280;
+        --accent: #ff5f40;
+      }
+      html, body {
+        margin: 0;
+        width: 100%;
+        height: 100%;
+        background: var(--bg);
+        color: var(--text);
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+      body {
+        display: grid;
+        place-items: center;
+      }
+      .card {
+        width: min(560px, calc(100vw - 32px));
+        border: 1px solid var(--border);
+        border-radius: 24px;
+        background: var(--card);
+        box-shadow: 0 24px 70px rgba(17, 24, 39, 0.12);
+        padding: 28px;
+      }
+      h1 {
+        margin: 0 0 8px;
+        font-size: 28px;
+        line-height: 1.1;
+      }
+      p {
+        margin: 0;
+        color: var(--muted);
+        line-height: 1.6;
+        font-size: 15px;
+      }
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 18px;
+        padding: 8px 12px;
+        border-radius: 999px;
+        background: rgba(255, 95, 64, 0.09);
+        color: var(--accent);
+        font-weight: 600;
+        font-size: 13px;
+      }
+      .actions {
+        display: flex;
+        gap: 12px;
+        margin-top: 24px;
+        flex-wrap: wrap;
+      }
+      .button {
+        appearance: none;
+        border: 0;
+        border-radius: 14px;
+        padding: 12px 16px;
+        font: inherit;
+        font-weight: 600;
+        cursor: pointer;
+        text-decoration: none;
+      }
+      .button.primary {
+        background: var(--accent);
+        color: white;
+      }
+      .button.secondary {
+        background: white;
+        color: var(--text);
+        border: 1px solid var(--border);
+      }
+      .fineprint {
+        margin-top: 14px;
+        font-size: 12px;
+      }
+      code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="card">
+      <div class="badge">Connected in Ledger</div>
+      <h1>Slack connected${safeTeamName}</h1>
+      <p>Ledger saved your Slack workspace connection. The desktop app should open to Settings automatically.</p>
+      <div class="actions">
+        <a class="button primary" href="ledger://settings/integrations">Open Ledger</a>
+        <a class="button secondary" href="${publicBackendUrl}">Back to Ledger</a>
+      </div>
+      <p class="fineprint">If the app does not open, use the button above or return to Ledger manually.</p>
+    </main>
+    <script>
+      setTimeout(() => {
+        try {
+          window.location.href = 'ledger://settings/integrations';
+        } catch {}
+      }, 120);
+    </script>
+  </body>
+</html>`;
+};
+
 const verifySlackRequest = (req) => {
   const signingSecret = process.env.SLACK_SIGNING_SECRET?.trim();
   if (!signingSecret) return false;
@@ -1261,9 +1392,7 @@ app.get('/api/integrations/slack/oauth/callback', rateLimit('auth'), async (req,
 
     if (accountResult.error) throw accountResult.error;
 
-    const redirectUrl =
-      process.env.SLACK_SETTINGS_REDIRECT_URL?.trim() || 'ledger://settings/integrations';
-    res.redirect(redirectUrl);
+    res.status(200).type('html').send(buildSlackInstallCompleteHtml({ teamName }));
   } catch (error) {
     console.error('Slack OAuth callback failed', error);
     res.status(error.statusCode || 500).send(error.message || 'Slack OAuth callback failed');
