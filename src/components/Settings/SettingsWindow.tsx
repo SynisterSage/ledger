@@ -1113,7 +1113,7 @@ export const SettingsWindow = () => {
 
   return (
     <div
-      className="h-screen overflow-hidden rounded-[28px] border border-gray-200 bg-[#f5f7fb] text-gray-900 flex flex-col shadow-[0_24px_80px_rgba(15,23,42,0.08)]"
+      className="h-screen overflow-hidden rounded-3xl border border-gray-200 bg-[#f5f7fb] text-gray-900 flex flex-col shadow-[0_24px_80px_rgba(15,23,42,0.08)]"
       style={{ scrollbarGutter: 'stable' }}
     >
       <CloseGuardModal
@@ -1155,7 +1155,7 @@ export const SettingsWindow = () => {
             aria-label="Settings sections"
           >
             <div className="mb-4 rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3">
-              <p className="text-[10px] uppercase tracking-wider text-gray-500">Account</p>
+              <p className="text-xs font-medium text-gray-500">Account</p>
               <p className="mt-1 text-sm font-semibold text-gray-900">Hi {firstName}</p>
               <p className="text-xs text-gray-600 truncate">
                 {user?.email ?? 'No email available'}
@@ -1302,7 +1302,7 @@ export const SettingsWindow = () => {
                   <div className="mt-4 border-t border-gray-100 pt-4">
                     <div className="flex items-start justify-between gap-4">
                       <div>
-                        <p className="text-[10px] font-medium uppercase tracking-[0.18em] text-gray-400">
+                        <p className="text-xs font-medium text-gray-500">
                           Create workspace
                         </p>
                         <h3 className="mt-1 text-[15px] font-semibold leading-5 text-gray-900">
@@ -1365,7 +1365,7 @@ export const SettingsWindow = () => {
                   <div className="mt-4 border-t border-gray-100 pt-4">
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
-                        <p className="text-[10px] font-medium uppercase tracking-[0.18em] text-gray-400">
+                        <p className="text-xs font-medium text-gray-500">
                           Active workspace
                         </p>
                         <p className="mt-1 text-[15px] font-semibold leading-5 text-gray-900">
@@ -1586,7 +1586,7 @@ export const SettingsWindow = () => {
                     )}
 
                     <div className="mt-3">
-                      <p className="text-[10px] font-medium uppercase tracking-[0.18em] text-gray-400">
+                      <p className="text-xs font-medium text-gray-500">
                         Recent invites
                       </p>
                       <div className="mt-2 space-y-2">
@@ -1659,7 +1659,7 @@ export const SettingsWindow = () => {
                       <div className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2">
                         <div className="flex items-center justify-between gap-2">
                           <div>
-                            <p className="text-[10px] font-medium uppercase tracking-[0.18em] text-gray-400">
+                            <p className="text-xs font-medium text-gray-500">
                               Status
                             </p>
                             <p className="text-sm font-medium text-gray-900">
@@ -1667,7 +1667,7 @@ export const SettingsWindow = () => {
                             </p>
                           </div>
                           <div className="text-right">
-                            <p className="text-[10px] font-medium uppercase tracking-[0.18em] text-gray-400">
+                            <p className="text-xs font-medium text-gray-500">
                               Role
                             </p>
                             <p className="text-sm font-medium text-gray-900">
@@ -1686,7 +1686,7 @@ export const SettingsWindow = () => {
 
                       {selectedInvite?.status === 'pending' ? (
                         <div className="rounded-xl border border-gray-200 bg-white p-3">
-                          <p className="text-[10px] font-medium uppercase tracking-[0.18em] text-gray-400">
+                          <p className="text-xs font-medium text-gray-500">
                             Invite link
                           </p>
                           <p className="mt-2 break-all rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-700">
@@ -1870,7 +1870,7 @@ export const SettingsWindow = () => {
                         </div>
 
                         <div className="mt-4 rounded-xl border border-gray-200 bg-white px-3 py-2">
-                          <p className="text-[10px] font-medium uppercase tracking-[0.18em] text-gray-400">
+                          <p className="text-xs font-medium text-gray-500">
                             Status
                           </p>
                           <p className="mt-1 text-sm font-medium text-gray-900">
@@ -2215,7 +2215,7 @@ export const SettingsWindow = () => {
             >
               <div className="flex items-start justify-between gap-4 px-5 pt-5">
                 <div>
-                  <p className="text-[10px] font-medium uppercase tracking-[0.18em] text-gray-400">
+                  <p className="text-xs font-medium text-gray-500">
                     Workspace settings
                   </p>
                   <h3
@@ -2272,7 +2272,7 @@ export const SettingsWindow = () => {
               <div className="mt-4 border-t border-gray-100 px-5 pt-4">
                 <div className="flex items-center justify-between gap-3">
                   <div>
-                    <p className="text-xs font-medium uppercase tracking-wider text-gray-500">
+                    <p className="text-xs font-medium text-gray-500">
                       Danger zone
                     </p>
                     <p className="mt-1 text-xs text-gray-600">

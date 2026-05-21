@@ -74,7 +74,10 @@ export const ModalOverlay = ({
         style={{ backgroundColor: 'rgba(17,24,39,0.45)' }}
         onClick={handleBackdropClick}
       />
-      <div className="relative z-10 flex h-full w-full items-center justify-center p-4">
+      <div
+        className="relative z-10 flex h-full w-full items-center justify-center p-4"
+        onClick={handleBackdropClick}
+      >
         <div
           className={classNameContainer}
           onClick={(event) => event.stopPropagation()}

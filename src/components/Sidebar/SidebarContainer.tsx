@@ -45,6 +45,35 @@ export const SidebarContainer = () => {
   const contentSwapTimerRef = useRef<number | null>(null);
   const lastPositionRef = useRef(position);
   const didMountRef = useRef(false);
+  const introFrameRef = useRef<number | null>(null);
+  const hasPlayedSidebarIntroRef = useRef(false);
+  const [isIntroVisible, setIsIntroVisible] = useState(false);
+
+  useEffect(() => {
+    if (!isHydrated || !isVisible || state === 'fullscreen' || hasPlayedSidebarIntroRef.current) {
+      return;
+    }
+
+    if (prefersReducedMotion) {
+      hasPlayedSidebarIntroRef.current = true;
+      setIsIntroVisible(true);
+      return;
+    }
+
+    setIsIntroVisible(false);
+    introFrameRef.current = window.requestAnimationFrame(() => {
+      hasPlayedSidebarIntroRef.current = true;
+      setIsIntroVisible(true);
+      introFrameRef.current = null;
+    });
+
+    return () => {
+      if (introFrameRef.current !== null) {
+        window.cancelAnimationFrame(introFrameRef.current);
+        introFrameRef.current = null;
+      }
+    };
+  }, [isHydrated, isVisible, prefersReducedMotion, state]);
 
   useEffect(() => {
     if (!autoHide) {
@@ -138,8 +167,8 @@ export const SidebarContainer = () => {
       : isHorizontal
       ? 'w-auto h-[60px]'
       : 'w-16 h-16';
-  const shellRadiusClass = isCollapsedIconMode ? 'rounded-[24px]' : 'rounded-[28px]';
-  const shellClipRadius = isCollapsedIconMode ? '24px' : '28px';
+  const shellRadiusClass = isCollapsedIconMode ? 'rounded-2xl' : 'rounded-3xl';
+  const shellClipRadius = isCollapsedIconMode ? '16px' : '24px';
   const shellOverflowClass =
     state === 'minimized' && isExpanded ? 'overflow-visible' : 'overflow-hidden';
   const isGlassShell = state === 'expanded' || (state === 'minimized' && isExpanded);
@@ -339,7 +368,25 @@ export const SidebarContainer = () => {
   const shouldDisableShellMotion = (isDragging && isFloating) || isHorizontal;
 
   const shellStyle: React.CSSProperties = {
-    opacity: autoHide && !isHovered && isAutoHideFading ? 0 : 1,
+    opacity:
+      autoHide && !isHovered && isAutoHideFading
+        ? 0
+        : isIntroVisible
+        ? 1
+        : 0,
+    transform: isIntroVisible
+      ? 'translate3d(0, 0, 0) scale(1)'
+      : prefersReducedMotion
+      ? 'translate3d(0, 0, 0) scale(1)'
+      : isFloating
+      ? 'translate3d(0, 10px, 0) scale(0.985)'
+      : position === 'left'
+      ? 'translate3d(-12px, 0, 0) scale(0.985)'
+      : position === 'right'
+      ? 'translate3d(12px, 0, 0) scale(0.985)'
+      : position === 'top'
+      ? 'translate3d(0, -12px, 0) scale(0.985)'
+      : 'translate3d(0, 12px, 0) scale(0.985)',
     width: isHorizontal
       ? state === 'expanded'
         ? 'min(1120px, calc(100vw - 32px))'

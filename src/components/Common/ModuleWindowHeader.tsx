@@ -46,12 +46,9 @@ export const ModuleWindowHeader = ({
 
   const triggerOnPrimaryMouseDown = (
     event: ReactMouseEvent<HTMLButtonElement>,
-    action?: () => void
   ) => {
-    if (!action) return;
     if (event.button !== 0) return;
     event.preventDefault();
-    action();
   };
 
   return (
@@ -64,8 +61,8 @@ export const ModuleWindowHeader = ({
         <div className="flex items-center gap-1.5" style={noDragRegionStyle}>
           <button
             type="button"
-            onMouseDown={(event) => triggerOnPrimaryMouseDown(event, onClose)}
             onClick={onClose}
+            onMouseDown={triggerOnPrimaryMouseDown}
             title={closeLabel}
             aria-label={closeLabel}
             className={controlClassName}
@@ -75,8 +72,8 @@ export const ModuleWindowHeader = ({
           {onMinimize && (
             <button
               type="button"
-              onMouseDown={(event) => triggerOnPrimaryMouseDown(event, onMinimize)}
               onClick={onMinimize}
+              onMouseDown={triggerOnPrimaryMouseDown}
               title={minimizeLabel}
               aria-label={minimizeLabel}
               className={controlClassName}
@@ -87,8 +84,8 @@ export const ModuleWindowHeader = ({
           {onToggleFullscreen && (
             <button
               type="button"
-              onMouseDown={(event) => triggerOnPrimaryMouseDown(event, onToggleFullscreen)}
               onClick={onToggleFullscreen}
+              onMouseDown={triggerOnPrimaryMouseDown}
               title={fullscreenLabel}
               aria-label={fullscreenLabel}
               className={controlClassName}
@@ -107,7 +104,7 @@ export const ModuleWindowHeader = ({
 
           <div className="min-w-0 space-y-0.5">
             {eyebrow && (
-              <p className="text-[10px] font-semibold uppercase tracking-[0.18em] leading-none text-gray-500">
+              <p className="text-xs font-medium leading-none text-gray-500">
                 {eyebrow}
               </p>
             )}

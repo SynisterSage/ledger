@@ -143,8 +143,8 @@ export const LoginForm: React.FC<LoginProps> = ({ onSuccess, notice }) => {
 
   return (
     <div className="relative h-screen w-screen overflow-hidden bg-transparent p-3">
-      <div className="absolute inset-3 rounded-[28px] border border-white/60 bg-[#f5f5f7] shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]" />
-      <div className="relative z-10 h-full w-full overflow-hidden rounded-[28px] bg-[#F9FBFA]">
+      <div className="absolute inset-3 rounded-3xl border border-white/60 bg-[#f5f5f7] shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]" />
+      <div className="relative z-10 h-full w-full overflow-hidden rounded-3xl bg-[#F9FBFA]">
         {!splashOverlayVisible && (
           <button
             type="button"

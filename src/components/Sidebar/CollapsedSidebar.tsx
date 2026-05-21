@@ -45,7 +45,7 @@ export const CollapsedSidebar = ({
               onClick={handleClick}
               onMouseDown={(e) => e.stopPropagation()}
               aria-label="Expand sidebar"
-              className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-[18px] bg-transparent transition-colors duration-200 ease-out hover:bg-white/45 focus:outline-none focus-visible:outline-none focus-visible:ring-0"
+              className="flex h-9 w-9 items-center justify-center bg-transparent transition-opacity duration-200 ease-out hover:opacity-80 focus:outline-none focus-visible:outline-none focus-visible:ring-0"
             >
               <img src="./logo-color.svg" alt="Ledger" className="block h-8 w-8 opacity-100" draggable={false} />
             </button>
@@ -126,7 +126,7 @@ export const CollapsedSidebar = ({
           onClick={handleClick}
           onMouseDown={(e) => e.stopPropagation()}
           aria-label="Expand sidebar"
-          className="flex h-11 w-11 items-center justify-center overflow-hidden rounded-[18px] bg-transparent transition-colors duration-200 ease-out hover:bg-white/45 focus:outline-none focus-visible:outline-none focus-visible:ring-0"
+          className="flex h-11 w-11 items-center justify-center bg-transparent transition-opacity duration-200 ease-out hover:opacity-80 focus:outline-none focus-visible:outline-none focus-visible:ring-0"
         >
           <img src="./logo-color.svg" alt="Ledger" className="block h-8 w-8 opacity-100" draggable={false} />
         </button>

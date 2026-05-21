@@ -2494,7 +2494,7 @@ export const CalendarWindow = () => {
 
   return (
     <div
-      className="h-screen overflow-hidden rounded-[28px] border border-gray-200 bg-[#f5f7fb] flex flex-col shadow-[0_24px_80px_rgba(15,23,42,0.08)]"
+      className="h-screen overflow-hidden rounded-3xl border border-gray-200 bg-[#f5f7fb] flex flex-col shadow-[0_24px_80px_rgba(15,23,42,0.08)]"
       style={{ scrollbarGutter: 'stable' }}
     >
       <CloseGuardModal
@@ -2616,7 +2616,7 @@ export const CalendarWindow = () => {
               style={{ width: `${leftPaneWidth}px` }}
             >
               <div className="flex items-center justify-between mb-3">
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">
+                <p className="text-xs font-medium text-gray-500">
                   Workspace
                 </p>
                 <button
@@ -2630,7 +2630,7 @@ export const CalendarWindow = () => {
               <div className="mb-5 rounded-2xl border border-gray-200 bg-gray-50 p-3">
                 <div className="flex items-start justify-between mb-3">
                   <div>
-                    <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">
+                    <p className="text-xs font-medium text-gray-500">
                       Month
                     </p>
                     <h2 className="text-sm font-semibold text-gray-900">{monthPreview.label}</h2>
@@ -2722,7 +2722,7 @@ export const CalendarWindow = () => {
 
               <div className="mb-5 border-t border-gray-100 pt-4">
                 <div className="mb-3 flex items-center justify-between gap-2">
-                  <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                  <h2 className="text-xs font-medium text-gray-500">
                     Calendars
                   </h2>
                   <button
@@ -2803,7 +2803,7 @@ export const CalendarWindow = () => {
               </div>
 
               <div className="mb-5 border-t border-gray-100 pt-4">
-                <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
+                <h2 className="mb-3 text-xs font-medium text-gray-500">
                   Quick Actions
                 </h2>
                 <div className="grid grid-cols-2 gap-2">
@@ -3500,7 +3500,7 @@ export const CalendarWindow = () => {
             >
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-gray-500">
+                  <p className="text-xs font-medium text-gray-500">
                     Day context
                   </p>
                   <h2 className="mt-2 text-[15px] font-semibold leading-5 text-gray-900">
@@ -3526,7 +3526,7 @@ export const CalendarWindow = () => {
 
               <div className="mt-6 space-y-6">
                 <div className="space-y-2 border-t border-gray-100 pt-6">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-gray-500">
+                  <p className="text-xs font-medium text-gray-500">
                     Selected event
                   </p>
                   {selectedEventPreview ? (
@@ -3710,7 +3710,7 @@ export const CalendarWindow = () => {
                 </div>
 
                 <div className="space-y-2 border-t border-gray-100 pt-6">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-gray-500">
+                  <p className="text-xs font-medium text-gray-500">
                     Event notes
                   </p>
                   <textarea
@@ -3747,7 +3747,7 @@ export const CalendarWindow = () => {
 
                 <div className="space-y-2 border-t border-gray-100 pt-6">
                   <div className="flex items-center justify-between gap-3">
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-gray-500">
+                    <p className="text-xs font-medium text-gray-500">
                       Follow-ups
                     </p>
                     <button
@@ -3805,7 +3805,7 @@ export const CalendarWindow = () => {
                 </div>
 
                 <div className="space-y-2 border-t border-gray-100 pt-6">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-gray-500">
+                  <p className="text-xs font-medium text-gray-500">
                     Agenda
                   </p>
                   <div className="space-y-1">
@@ -4563,7 +4563,7 @@ export const CalendarWindow = () => {
 
             <div className="space-y-4">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-2">
+                <p className="mb-2 text-xs font-medium text-gray-500">
                   Reminders
                 </p>
                 <div className="space-y-1.5">
@@ -4589,7 +4589,7 @@ export const CalendarWindow = () => {
               </div>
 
               <div>
-                <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-2">
+                <p className="mb-2 text-xs font-medium text-gray-500">
                   Events
                 </p>
                 <div className="space-y-1.5">
@@ -4757,7 +4757,7 @@ export const CalendarWindow = () => {
           onMouseDown={(e) => e.stopPropagation()}
         >
           <div className="mb-3 flex items-center justify-between">
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">
+            <p className="text-xs font-medium text-gray-500">
               Calendar Color
             </p>
             <button

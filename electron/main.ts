@@ -590,6 +590,7 @@ const moduleWindowBoundsMemory = new Map<
     sidebarPosition: SidebarPosition;
   }
 >();
+const moduleWindowFullscreenBoundsMemory = new Map<ModuleWindowKind, Electron.Rectangle>();
 
 const WINDOW_MARGIN = 16;
 const RAIL_SIZE = 64;
@@ -893,6 +894,31 @@ function nativeRectToDipRect(rect: Rect) {
     width: Math.max(1, Math.round(rect.width / display.scaleFactor)),
     height: Math.max(1, Math.round(rect.height / display.scaleFactor)),
   };
+}
+
+function getFullscreenWorkAreaForWindow(win: BrowserWindow) {
+  const bounds = win.getBounds();
+  return screen.getDisplayMatching(bounds).workArea;
+}
+
+function restoreModuleWindowBounds(kind: ModuleWindowKind, win: BrowserWindow) {
+  const restoredBounds = moduleWindowFullscreenBoundsMemory.get(kind);
+  if (restoredBounds) {
+    const workArea = screen.getDisplayMatching(restoredBounds).workArea;
+    win.setBounds(clampRectToWorkArea(restoredBounds, workArea), false);
+    moduleWindowFullscreenBoundsMemory.delete(kind);
+  }
+  win.show();
+  win.focus();
+}
+
+function enterModuleWindowFullscreen(kind: ModuleWindowKind, win: BrowserWindow) {
+  if (moduleWindowFullscreenBoundsMemory.has(kind)) return;
+  const workArea = getFullscreenWorkAreaForWindow(win);
+  moduleWindowFullscreenBoundsMemory.set(kind, win.getBounds());
+  win.setBounds(clampRectToWorkArea({ ...workArea }, workArea), false);
+  win.show();
+  win.focus();
 }
 
 function getDockSide(currentBounds: Rect, targetBounds: Rect): DockSide {
@@ -2352,6 +2378,7 @@ function openModuleWindow(
 
   moduleWin.on('closed', () => {
     moduleWins.delete(kind);
+    moduleWindowFullscreenBoundsMemory.delete(kind);
   });
 
   // Ensure fullscreen can be exited with Escape or F11 reliably on all platforms.
@@ -2410,7 +2437,7 @@ function openModuleWindow(
 
   if (!isQuickCapture) {
     const rememberBounds = () => {
-      if (moduleWin.isDestroyed()) return;
+      if (moduleWin.isDestroyed() || moduleWindowFullscreenBoundsMemory.has(kind)) return;
       const bounds = moduleWin.getBounds();
       moduleWindowBoundsMemory.set(kind, {
         bounds,
@@ -2681,13 +2708,19 @@ ipcMain.handle('window:toggle-module-fullscreen', (_event, kind: ModuleWindowKin
   if (existing.isMinimized()) {
     existing.restore();
   }
-  const next = !existing.isFullScreen();
-  existing.setFullScreen(next);
-  if (!next) {
-    existing.show();
-    existing.focus();
+  const isPseudoFullscreen = moduleWindowFullscreenBoundsMemory.has(kind);
+  const isNativeFullscreen = existing.isFullScreen();
+
+  if (!isPseudoFullscreen && !isNativeFullscreen) {
+    enterModuleWindowFullscreen(kind, existing);
+    return true;
   }
-  return next;
+
+  if (isNativeFullscreen) {
+    existing.setFullScreen(false);
+  }
+  restoreModuleWindowBounds(kind, existing);
+  return false;
 });
 
 ipcMain.handle('window:open-external', async (_event, url: string) => {

@@ -61,7 +61,7 @@ export const MinimizedSidebar = ({
           }}
           onMouseDown={(e) => e.stopPropagation()}
           aria-label="Collapse sidebar"
-          className="flex h-11 w-11 items-center justify-center rounded-[18px] border border-white/70 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)] transition-colors duration-150 hover:bg-white focus:outline-none focus-visible:outline-none focus-visible:ring-0"
+          className="flex h-11 w-11 items-center justify-center bg-transparent transition-opacity duration-150 hover:opacity-80 focus:outline-none focus-visible:outline-none focus-visible:ring-0"
         >
           <img src="./logo-color.svg" alt="Ledger" className="h-7 w-7 opacity-100" draggable={false} />
         </button>

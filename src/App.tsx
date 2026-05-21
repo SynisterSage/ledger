@@ -177,6 +177,35 @@ const formatExpiryCounter = (task: {
   return `Expires in ${days}d`;
 };
 
+const getTaskExpiryDate = (task: {
+  due_date?: string | null;
+  due_time?: string | null;
+}) => {
+  if (!task.due_date) return null;
+
+  const dueAt = task.due_time
+    ? new Date(
+        `${task.due_date}T${task.due_time.length === 5 ? `${task.due_time}:00` : task.due_time}`
+      )
+    : new Date(`${task.due_date}T23:59:59`);
+
+  return Number.isNaN(dueAt.getTime()) ? null : dueAt;
+};
+
+const shouldAutoExpireTodayTask = (task: {
+  due_date?: string | null;
+  due_time?: string | null;
+  show_in_today?: boolean | null;
+  is_today_focus?: boolean | null;
+  status?: string | null;
+}) => {
+  if (String(task.status ?? '') === 'completed') return false;
+  if (!task.show_in_today && !task.is_today_focus) return false;
+
+  const dueAt = getTaskExpiryDate(task);
+  return dueAt !== null && dueAt.getTime() <= Date.now();
+};
+
 type CompletedFocusTask = {
   id: string;
   title: string;
@@ -221,7 +250,7 @@ function AuthStatusScreen({
       }`}
       style={dragRegionStyle}
     >
-      <div className="absolute inset-3 rounded-[28px] border border-white/60 bg-[#f5f5f7] shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]" />
+      <div className="absolute inset-3 rounded-3xl border border-white/60 bg-[#f5f5f7] shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]" />
       <button
         type="button"
         onClick={() => {
@@ -263,9 +292,9 @@ function InviteSuccessScreen({
       className="relative flex min-h-screen items-center justify-center bg-transparent p-3 text-gray-900"
       style={dragRegionStyle}
     >
-      <div className="absolute inset-3 rounded-[28px] border border-white/60 bg-[#f5f5f7] shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]" />
+      <div className="absolute inset-3 rounded-3xl border border-white/60 bg-[#f5f5f7] shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]" />
       <div className="relative z-10 flex min-h-[calc(100vh-1.5rem)] items-center justify-center px-8">
-        <div className="w-full max-w-sm rounded-[28px] border border-gray-200 bg-white px-6 py-7 text-center shadow-[0_18px_50px_rgba(15,23,42,0.08)]">
+        <div className="w-full max-w-sm rounded-3xl border border-gray-200 bg-white px-6 py-7 text-center shadow-[0_18px_50px_rgba(15,23,42,0.08)]">
           <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-[#fff0eb]">
             <CheckCircle2 size={24} className="text-[#FF5F40]" />
           </div>
@@ -345,7 +374,7 @@ function OnboardingFlow({
       className="relative min-h-screen overflow-hidden bg-transparent p-3 text-[#111827]"
       style={dragRegionStyle}
     >
-      <div className="absolute inset-3 rounded-[28px] border border-white/70 bg-[#f5f5f7] shadow-[inset_0_1px_0_rgba(255,255,255,0.9)]" />
+      <div className="absolute inset-3 rounded-3xl border border-white/70 bg-[#f5f5f7] shadow-[inset_0_1px_0_rgba(255,255,255,0.9)]" />
       <button
         type="button"
         onClick={() => {
@@ -417,7 +446,7 @@ function OnboardingFlow({
           ) : null}
 
           {step === 'workspace' ? (
-            <div className="mx-auto rounded-[28px] bg-white/72 p-7 shadow-[0_24px_70px_rgba(17,24,39,0.10)] backdrop-blur-xl">
+            <div className="mx-auto rounded-3xl bg-white/72 p-7 shadow-[0_24px_70px_rgba(17,24,39,0.10)] backdrop-blur-xl">
               <div className="mb-7">
                 <img src="./logo-color.svg" alt="Ledger" className="mb-5 h-10 w-10" />
                 <h1 className="text-[30px] font-semibold leading-tight text-gray-950">
@@ -475,7 +504,7 @@ function OnboardingFlow({
           ) : null}
 
           {step === 'position' ? (
-            <div className="mx-auto rounded-[28px] bg-white/72 p-7 shadow-[0_24px_70px_rgba(17,24,39,0.10)] backdrop-blur-xl">
+            <div className="mx-auto rounded-3xl bg-white/72 p-7 shadow-[0_24px_70px_rgba(17,24,39,0.10)] backdrop-blur-xl">
               <div className="mb-7">
                 <img src="./logo-color.svg" alt="Ledger" className="mb-5 h-10 w-10" />
                 <h1 className="text-[30px] font-semibold leading-tight text-gray-950">
@@ -659,6 +688,7 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
   const [isNewFocusModalOpen, setIsNewFocusModalOpen] = useState(false);
   const [expandedTimelineIds, setExpandedTimelineIds] = useState<Set<string>>(new Set());
   const [expandedNoteIds, setExpandedNoteIds] = useState<Set<string>>(new Set());
+  const autoExpireTodayTaskIdsRef = useRef<Set<string>>(new Set());
   const getWorkspaceTaskMetadata = () => ({
     workspace_id: activeWorkspaceId ?? null,
     workspace_name: activeWorkspace?.name?.trim() || null,
@@ -954,20 +984,33 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
 
     void loadInboxCount();
 
-    const handleInboxItemsUpdated = () => {
+    const handleRefreshInboxCount = () => {
+      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
+      void loadInboxCount();
+    };
+
+    const handleInboxItemsUpdated = (_event: unknown, payload?: { delta?: number }) => {
+      if (typeof payload?.delta === 'number' && Number.isFinite(payload.delta)) {
+        setInboxCount((current) => Math.max(0, current + payload.delta!));
+        return;
+      }
       void loadInboxCount();
     };
 
     window.ipcRenderer?.on('inbox:items-updated', handleInboxItemsUpdated);
+    window.addEventListener('focus', handleRefreshInboxCount);
+    document.addEventListener('visibilitychange', handleRefreshInboxCount);
 
     const timer = window.setInterval(() => {
       void loadInboxCount();
-    }, 30_000);
+    }, 10_000);
 
     return () => {
       cancelled = true;
       window.clearInterval(timer);
       window.ipcRenderer?.off('inbox:items-updated', handleInboxItemsUpdated);
+      window.removeEventListener('focus', handleRefreshInboxCount);
+      document.removeEventListener('visibilitychange', handleRefreshInboxCount);
     };
   }, [api, activeWorkspaceId, user]);
 
@@ -1112,6 +1155,58 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
       : [];
     setTodayTasks(active);
   };
+
+  useEffect(() => {
+    if (!user || !activeWorkspaceId) {
+      autoExpireTodayTaskIdsRef.current.clear();
+      return;
+    }
+
+    const expiredTasks = todayTasks.filter((task) => shouldAutoExpireTodayTask(task));
+    if (expiredTasks.length === 0) return;
+
+    expiredTasks.forEach((task) => {
+      if (autoExpireTodayTaskIdsRef.current.has(task.id)) return;
+      autoExpireTodayTaskIdsRef.current.add(task.id);
+      setTodayTasks((prev) => prev.filter((item) => item.id !== task.id));
+
+      void (async () => {
+        let succeeded = false;
+        try {
+          const workspaceId = task.workspace_id ?? activeWorkspaceId;
+          if (!workspaceId) return;
+
+          await api.updateTaskInWorkspace(task.id, workspaceId, {
+            due_date: null,
+            due_time: null,
+            show_in_today: false,
+            is_today_focus: false,
+          });
+          succeeded = true;
+
+          window.ipcRenderer?.send('dashboard:today-task-deleted', {
+            source: 'sidebar',
+            optimistic: true,
+            task: {
+              ...task,
+              due_date: null,
+              due_time: null,
+              show_in_today: false,
+              is_today_focus: false,
+            },
+          });
+        } catch (error) {
+          console.error('Failed to expire today task:', error);
+          setTodayTasks((prev) => [task, ...prev.filter((item) => item.id !== task.id)]);
+          autoExpireTodayTaskIdsRef.current.delete(task.id);
+        } finally {
+          if (succeeded) {
+            autoExpireTodayTaskIdsRef.current.delete(task.id);
+          }
+        }
+      })();
+    });
+  }, [activeWorkspaceId, api, todayTasks, user]);
 
   const createNewFocusTask = async () => {
     const title = focusDraftTitle.trim();
@@ -1541,7 +1636,7 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
 
   return (
     <div
-      className="flex h-screen flex-col overflow-hidden rounded-[28px] border border-gray-200 bg-white shadow-none"
+      className="flex h-screen flex-col overflow-hidden rounded-3xl border border-gray-200 bg-white shadow-none"
       style={{ scrollbarGutter: 'stable' }}
     >
       <CloseGuardModal
@@ -1577,6 +1672,42 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
             : 'Dashboard overview'
         }
         icon={<img src="./logo-color.svg" alt="" className="h-5 w-5" />}
+        actions={
+          <>
+            {[
+              {
+                label: 'Task',
+                action: () => window.desktopWindow?.toggleModule('quick-task' as any),
+              },
+              {
+                label: 'Note',
+                action: () => window.desktopWindow?.toggleModule('quick-note' as any),
+              },
+              {
+                label: 'Event',
+                action: () => window.desktopWindow?.toggleModule('quick-event' as any),
+              },
+              {
+                label: 'Project',
+                action: () =>
+                  window.desktopWindow?.toggleModule('projects', {
+                    kind: 'projects',
+                    focusProjectId: '__new__',
+                  }),
+              },
+            ].map(({ label, action }) => (
+              <button
+                key={label}
+                type="button"
+                onClick={() => void action()}
+                className="inline-flex items-center gap-1.5 text-xs font-medium text-[#64748B] transition hover:text-[#FF5F40]"
+              >
+                <Plus size={14} />
+                {label}
+              </button>
+            ))}
+          </>
+        }
         closeLabel="Close dashboard"
         minimizeLabel="Minimize dashboard"
         onMinimize={() => {
@@ -1606,7 +1737,7 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
 
             <div className="flex flex-col gap-6 border-b border-gray-200 pb-8 sm:flex-row sm:items-end sm:justify-between">
               <div className="space-y-2">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[#64748B]">
+                <p className="text-xs font-medium text-[#64748B]">
                   {todayLabel}
                 </p>
                 {!isLoadingDashboard && (
@@ -1624,40 +1755,6 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
                   </div>
                 )}
               </div>
-              <div className="flex flex-wrap gap-6 sm:justify-end">
-                {[
-                  {
-                    label: 'Task',
-                    action: () => window.desktopWindow?.toggleModule('quick-task' as any),
-                  },
-                  {
-                    label: 'Note',
-                    action: () => window.desktopWindow?.toggleModule('quick-note' as any),
-                  },
-                  {
-                    label: 'Event',
-                    action: () => window.desktopWindow?.toggleModule('quick-event' as any),
-                  },
-                  {
-                    label: 'Project',
-                    action: () =>
-                      window.desktopWindow?.toggleModule('projects', {
-                        kind: 'projects',
-                        focusProjectId: '__new__',
-                      }),
-                  },
-                ].map(({ label, action }) => (
-                  <button
-                    key={label}
-                    type="button"
-                    onClick={() => void action()}
-                    className="inline-flex items-center gap-1.5 text-xs font-medium text-[#64748B] transition hover:text-[#FF5F40]"
-                  >
-                    <Plus size={14} />
-                    {label}
-                  </button>
-                ))}
-              </div>
             </div>
           </header>
 
@@ -1671,7 +1768,7 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
             <main className="space-y-14">
               <section ref={todayTasksRef} className="space-y-6">
                 <div className="flex flex-col gap-4 sm:flex-row sm:items-baseline sm:justify-between sm:gap-6">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[#64748B]">
+                  <p className="text-xs font-medium text-[#64748B]">
                     Focus
                   </p>
                   <div className="flex gap-4">
@@ -1757,7 +1854,7 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
                           onClick={() => setCompletedFocusExpanded((current) => !current)}
                           className="flex w-full items-center justify-between rounded-2xl px-0 py-1 text-left"
                         >
-                          <span className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[#64748B]">
+                          <span className="text-xs font-medium text-[#64748B]">
                             Completed · {completedFocusTasks.length}
                           </span>
                           <ChevronDown
@@ -1806,7 +1903,7 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
                   onContextMenu={(event) => openContextMenu(event, { type: 'checkin' })}
                 >
                   <div className="flex items-center justify-between gap-4">
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#64748B]">
+                    <p className="text-xs font-medium text-[#64748B]">
                       Review
                     </p>
                     <button
@@ -1814,7 +1911,7 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
                         void window.desktopWindow?.openCheckin();
                         setState('expanded');
                       }}
-                      className="rounded-full border border-gray-200 bg-white px-3 py-2 text-xs font-medium text-[#111827] hover:bg-gray-50"
+                      className="shrink-0 whitespace-nowrap rounded-full border border-[#ffd9d0] bg-white px-3 py-1.5 text-xs font-medium text-[#FF5F40] transition hover:border-[#FFB7A6] hover:bg-[#FFF7F4]"
                     >
                       Open check-in
                     </button>
@@ -1839,13 +1936,13 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
               <section className="space-y-6">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#64748B]">
+                    <p className="text-xs font-medium text-[#64748B]">
                       Recent Notes
                     </p>
                   </div>
                   <button
                     onClick={() => openModule('notes')}
-                    className="rounded-full border border-gray-200 bg-white px-3 py-2 text-xs font-medium text-[#111827] hover:bg-gray-50"
+                    className="shrink-0 whitespace-nowrap rounded-full border border-[#ffd9d0] bg-white px-3 py-1.5 text-xs font-medium text-[#FF5F40] transition hover:border-[#FFB7A6] hover:bg-[#FFF7F4]"
                   >
                     Open notes
                   </button>
@@ -1894,99 +1991,121 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
             </main>
 
             <aside className="border-t border-gray-200 pt-8 lg:sticky lg:top-0 lg:self-start lg:border-l lg:border-t-0 lg:pl-12 lg:pt-0">
-              <section ref={followUpsRef} className="space-y-6">
-                <div className="space-y-10">
-                  {inboxCount > 0 && (
-                    <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+              <section ref={followUpsRef} className="space-y-7">
+                <div className="space-y-3">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="min-w-0 space-y-1">
                       <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[#64748B]">
-                        Inbox
+                        Action queue
                       </p>
-                      <p className="mt-2 text-sm font-medium text-[#111827]">
-                        {inboxCount} capture{inboxCount === 1 ? '' : 's'} waiting
-                      </p>
-                      <p className="mt-1 text-xs leading-5 text-[#64748B]">
-                        Slack saves and other captures land here first.
-                      </p>
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-[#64748B]">
+                        <span className="whitespace-nowrap leading-5">
+                          {inboxCount > 0
+                            ? `${inboxCount} inbox capture${inboxCount === 1 ? '' : 's'}`
+                            : 'Inbox clear'}
+                        </span>
+                        <span aria-hidden="true">·</span>
+                        <span className="whitespace-nowrap leading-5">
+                          {followUpTasks.length} follow-up{followUpTasks.length === 1 ? '' : 's'}
+                        </span>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => window.desktopWindow?.toggleModule('inbox')}
+                      className="shrink-0 whitespace-nowrap rounded-full border border-[#ffd9d0] bg-white px-3 py-1.5 text-xs font-medium text-[#FF5F40] transition hover:border-[#FFB7A6] hover:bg-[#FFF7F4]"
+                    >
+                      Open inbox
+                    </button>
+                  </div>
+
+                  <div className="space-y-3 pt-2">
+                    {inboxCount > 0 && (
                       <button
                         type="button"
                         onClick={() => window.desktopWindow?.toggleModule('inbox')}
-                        className="mt-3 inline-flex items-center rounded-full border border-[#FF5F40] bg-[#FF5F40] px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-[#f25538]"
+                        className="flex w-full items-start justify-between gap-3 rounded-xl border border-gray-100 bg-white px-3 py-3 text-left transition hover:border-gray-200 hover:bg-gray-50"
                       >
-                        Review Inbox
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-medium text-[#4B5563]">
+                            Inbox
+                          </p>
+                          <p className="mt-1 truncate text-xs text-[#94A3B8]">
+                            Slack saves and other captures land here first.
+                          </p>
+                        </div>
+                        <span className="shrink-0 text-[11px] font-medium text-[#94A3B8]">
+                          {inboxCount}
+                        </span>
                       </button>
-                    </div>
-                  )}
+                    )}
 
-                  <div className="space-y-6">
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[#64748B]">
-                      Follow-ups
-                    </p>
-                    <div className="mt-3 space-y-2">
-                      {followUpTasks.length === 0 ? (
-                        <p className="text-sm font-light text-[#64748B]">No follow-ups yet.</p>
-                      ) : (
-                        followUpTasks.map((task) => {
-                          const isFocused = focusedTaskId === task.id;
-                          const statusLabel = task.status === 'done' ? 'Done' : 'Todo';
-                          return (
-                            <div
-                              key={task.id}
-                              onContextMenu={(event) =>
-                                openContextMenu(event, { type: 'followup', taskId: task.id })
+                    {followUpTasks.length === 0 ? (
+                      <div className="rounded-xl border border-dashed border-gray-200 bg-white px-3 py-3">
+                        <p className="text-sm font-light text-[#94A3B8]">No follow-ups yet.</p>
+                      </div>
+                    ) : (
+                      followUpTasks.map((task) => {
+                        const isFocused = focusedTaskId === task.id;
+                        const statusLabel = task.status === 'done' ? 'Done' : 'Todo';
+                        return (
+                          <div
+                            key={task.id}
+                            onContextMenu={(event) =>
+                              openContextMenu(event, { type: 'followup', taskId: task.id })
+                            }
+                            className={`flex items-start gap-3 rounded-lg px-0 py-3 transition ${
+                              isFocused ? 'bg-gray-50' : 'hover:bg-white/70'
+                            }`}
+                          >
+                            <button
+                              type="button"
+                              onClick={() =>
+                                void window.desktopWindow?.toggleModule(
+                                  'calendar',
+                                  task.eventId
+                                    ? {
+                                        kind: 'calendar',
+                                        focusContext: `focus-event:${task.eventId}`,
+                                      }
+                                    : {
+                                        kind: 'calendar',
+                                      }
+                                )
                               }
-                              className={`flex items-start gap-3 px-0 py-3 transition ${
-                                isFocused ? 'bg-gray-50' : 'hover:bg-white'
-                              }`}
+                              className="min-w-0 flex-1 text-left"
                             >
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  void window.desktopWindow?.toggleModule(
-                                    'calendar',
-                                    task.eventId
-                                      ? {
-                                          kind: 'calendar',
-                                          focusContext: `focus-event:${task.eventId}`,
-                                        }
-                                      : {
-                                          kind: 'calendar',
-                                        }
-                                  )
-                                }
-                                className="min-w-0 flex-1 text-left"
-                              >
-                                <p className="truncate text-sm font-medium text-[#111827]">
-                                  {task.title}
-                                </p>
-                                <p className="mt-1 truncate text-xs text-[#64748B]">
-                                  {task.eventTitle ? `Event: ${task.eventTitle}` : statusLabel}
-                                </p>
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => void markFollowUpDone(task.id)}
-                                className="shrink-0 rounded-full px-2 py-1 text-[11px] font-medium text-[#64748B] hover:bg-gray-50 hover:text-[#111827]"
-                              >
-                                {task.status === 'done' ? 'Undo' : 'Done'}
-                              </button>
-                            </div>
-                          );
-                        })
-                      )}
-                    </div>
+                              <p className="truncate text-sm font-medium text-[#4B5563]">
+                                {task.title}
+                              </p>
+                              <p className="mt-1 truncate text-xs text-[#94A3B8]">
+                                {task.eventTitle ? `Event: ${task.eventTitle}` : statusLabel}
+                              </p>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void markFollowUpDone(task.id)}
+                              className="shrink-0 rounded-full px-2 py-1 text-[11px] font-medium text-[#94A3B8] hover:bg-gray-50 hover:text-[#4B5563]"
+                            >
+                              {task.status === 'done' ? 'Undo' : 'Done'}
+                            </button>
+                          </div>
+                        );
+                      })
+                    )}
                   </div>
 
                   <div className="h-px w-12 bg-gray-200" />
 
-                  <div className="space-y-6">
+                  <div className="space-y-6 pt-2">
                     <div className="flex items-center justify-between gap-3">
-                      <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[#64748B]">
+                      <p className="text-xs font-medium text-[#64748B]">
                         Upcoming
                       </p>
                       <button
                         type="button"
                         onClick={() => openModule('calendar')}
-                        className="text-xs font-medium text-[#FF5F40] hover:underline"
+                        className="shrink-0 whitespace-nowrap rounded-full border border-[#ffd9d0] bg-white px-3 py-1.5 text-xs font-medium text-[#FF5F40] transition hover:border-[#FFB7A6] hover:bg-[#FFF7F4]"
                       >
                         Calendar
                       </button>
@@ -2041,13 +2160,13 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
 
                   <div className="space-y-6">
                     <div className="flex items-center justify-between gap-3">
-                      <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[#64748B]">
+                      <p className="text-xs font-medium text-[#64748B]">
                         Projects
                       </p>
                       <button
                         type="button"
                         onClick={() => openModule('projects')}
-                        className="text-xs font-medium text-[#FF5F40] hover:underline"
+                        className="shrink-0 whitespace-nowrap rounded-full border border-[#ffd9d0] bg-white px-3 py-1.5 text-xs font-medium text-[#FF5F40] transition hover:border-[#FFB7A6] hover:bg-[#FFF7F4]"
                       >
                         Projects
                       </button>
@@ -2119,7 +2238,7 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
         classNameContainer="w-full max-w-xl rounded-2xl border border-gray-200 bg-white shadow-2xl"
       >
         <div className="border-b border-gray-100 px-5 py-4">
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">
+          <p className="text-xs font-medium text-gray-500">
             Add from Today
           </p>
           <p className="mt-1 text-sm text-gray-600">
@@ -2177,7 +2296,7 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
         classNameContainer="w-full max-w-lg rounded-2xl border border-gray-200 bg-white shadow-2xl"
       >
         <div className="border-b border-gray-100 px-5 py-4">
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">
+          <p className="text-xs font-medium text-gray-500">
             New focus
           </p>
           <p className="mt-1 text-sm text-gray-600">

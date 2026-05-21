@@ -2470,7 +2470,7 @@ export const NotesWindow = () => {
 
   return (
     <div
-      className="h-screen overflow-hidden rounded-[28px] border border-gray-200 bg-[#f5f7fb] flex flex-col shadow-[0_24px_80px_rgba(15,23,42,0.08)]"
+      className="h-screen overflow-hidden rounded-3xl border border-gray-200 bg-[#f5f7fb] flex flex-col shadow-[0_24px_80px_rgba(15,23,42,0.08)]"
       style={{ scrollbarGutter: 'stable' }}
     >
       <CloseGuardModal
@@ -2578,7 +2578,7 @@ export const NotesWindow = () => {
             >
               <div className={`${isCompactLayout ? 'p-3' : 'p-4'} border-b border-gray-100`}>
                 <div className="flex items-center justify-between mb-3">
-                  <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-600">
+                  <h2 className="text-xs font-medium text-gray-500">
                     Notes
                   </h2>
                   <div className="relative" ref={newMenuRef}>
@@ -3683,7 +3683,7 @@ export const NotesWindow = () => {
               <div className="space-y-5">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0 flex-1">
-                    <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">
+                    <p className="text-xs font-medium text-gray-500">
                       Inspector
                     </p>
                     <p className="mt-1 text-sm font-semibold text-gray-900 truncate">
@@ -3821,7 +3821,7 @@ export const NotesWindow = () => {
                 </div>
 
                 <div className="space-y-2 border-t border-gray-100 pt-4">
-                  <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">
+                  <p className="text-xs font-medium text-gray-500">
                     Details
                   </p>
                   {selectedNote ? (
@@ -3855,7 +3855,7 @@ export const NotesWindow = () => {
                 </div>
 
                 <div className="space-y-2 border-t border-gray-100 pt-4">
-                  <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">
+                  <p className="text-xs font-medium text-gray-500">
                     Workspace
                   </p>
                   {selectedNote ? (
@@ -3904,7 +3904,7 @@ export const NotesWindow = () => {
 
                 <div className="space-y-2 border-t border-gray-100 pt-4">
                   <div className="flex items-center justify-between gap-3">
-                    <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">
+                    <p className="text-xs font-medium text-gray-500">
                       Recent updates
                     </p>
                   </div>
@@ -3945,7 +3945,7 @@ export const NotesWindow = () => {
           <div className="flex h-full w-full flex-col">
             <div className="flex items-center justify-between border-b border-gray-200 bg-white px-5 py-4 shadow-sm">
               <div className="min-w-0">
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">
+                <p className="text-xs font-medium text-gray-500">
                   Mind map fullscreen
                 </p>
                 <h2 className="truncate text-sm font-semibold text-gray-900">
@@ -4016,7 +4016,7 @@ export const NotesWindow = () => {
             <span className="font-medium">Create subfolder</span>
           </button>
           <div className="px-3 py-2 border-b border-gray-100">
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">
+            <p className="text-xs font-medium text-gray-500">
               Folder color
             </p>
             <div className="relative mt-2">
@@ -4101,7 +4101,7 @@ export const NotesWindow = () => {
                 onMouseDown={(e) => e.stopPropagation()}
               >
                 <div className="px-3 py-2 border-b border-gray-100">
-                  <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">
+                  <p className="text-xs font-medium text-gray-500">
                     {selectedCount} selected
                   </p>
                 </div>

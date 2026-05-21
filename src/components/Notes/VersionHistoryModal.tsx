@@ -104,7 +104,7 @@ export const VersionHistoryModal = ({
         >
           <div className="sticky top-0 z-10 flex items-center justify-between border-b border-gray-200 bg-white px-5 py-4">
             <div className="min-w-0">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-gray-500">
+              <p className="text-xs font-medium text-gray-500">
                 Version history
               </p>
               <p className="mt-1 truncate text-sm font-semibold text-gray-900">
@@ -184,7 +184,7 @@ export const VersionHistoryModal = ({
                   {selectedVersion ? (
                     <div className="flex h-full min-h-0 flex-col">
                       <div className="border-b border-gray-100 pb-3">
-                        <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-gray-500">
+                        <p className="text-xs font-medium text-gray-500">
                           Preview
                         </p>
                         <p className="mt-1 text-base font-semibold text-gray-900">

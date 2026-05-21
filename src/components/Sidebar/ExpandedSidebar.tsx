@@ -265,6 +265,35 @@ export const ExpandedSidebar = ({
     };
   };
 
+  const getTaskExpiryDate = (task: {
+    due_date?: string | null;
+    due_time?: string | null;
+  }) => {
+    if (!task.due_date) return null;
+
+    const dueAt = task.due_time
+      ? new Date(
+          `${task.due_date}T${task.due_time.length === 5 ? `${task.due_time}:00` : task.due_time}`
+        )
+      : new Date(`${task.due_date}T23:59:59`);
+
+    return Number.isNaN(dueAt.getTime()) ? null : dueAt;
+  };
+
+  const shouldAutoExpireTodayTask = (task: {
+    due_date?: string | null;
+    due_time?: string | null;
+    show_in_today?: boolean | null;
+    is_today_focus?: boolean | null;
+    status?: string | null;
+  }) => {
+    if (String(task.status ?? '') === 'completed') return false;
+    if (!task.show_in_today && !task.is_today_focus) return false;
+
+    const dueAt = getTaskExpiryDate(task);
+    return dueAt !== null && dueAt.getTime() <= Date.now();
+  };
+
   const [focusItems, setFocusItems] = useState<FocusItem[]>([]);
   const [checkin, setCheckin] = useState({
     finished: '',
@@ -321,6 +350,7 @@ export const ExpandedSidebar = ({
   const [todayItems, setTodayItems] = useState<TodayTask[]>([]);
   const [isLoadingToday, setIsLoadingToday] = useState(true);
   const [completedToday, setCompletedToday] = useState<CompletedTodayTask[]>([]);
+  const autoExpireTodayTaskIdsRef = useRef<Set<string>>(new Set());
   const TODAY_COLLAPSE_STORAGE_KEY = 'ledger:sidebar:today-collapsed:v1';
   const TODAY_HELP_TEXT = 'Your working list for today: what to do now, and what got done.';
 
@@ -659,6 +689,58 @@ export const ExpandedSidebar = ({
   }, [user?.id, activeWorkspaceId]);
 
   useEffect(() => {
+    if (!user || !activeWorkspaceId) {
+      autoExpireTodayTaskIdsRef.current.clear();
+      return;
+    }
+
+    const expiredTasks = todayItems.filter((task) => shouldAutoExpireTodayTask(task));
+    if (expiredTasks.length === 0) return;
+
+    expiredTasks.forEach((task) => {
+      if (autoExpireTodayTaskIdsRef.current.has(task.id)) return;
+      autoExpireTodayTaskIdsRef.current.add(task.id);
+      setTodayItems((prev) => prev.filter((item) => item.id !== task.id));
+
+      void (async () => {
+        let succeeded = false;
+        try {
+          const workspaceId = task.workspace_id ?? activeWorkspaceId;
+          if (!workspaceId) return;
+
+          await api.updateTaskInWorkspace(task.id, workspaceId, {
+            due_date: null,
+            due_time: null,
+            show_in_today: false,
+            is_today_focus: false,
+          });
+          succeeded = true;
+
+          window.ipcRenderer?.send('dashboard:today-task-deleted', {
+            source: 'sidebar',
+            optimistic: true,
+            task: {
+              ...task,
+              due_date: null,
+              due_time: null,
+              show_in_today: false,
+              is_today_focus: false,
+            },
+          });
+        } catch (error) {
+          console.error('Failed to expire today task:', error);
+          setTodayItems((prev) => [task, ...prev.filter((item) => item.id !== task.id)]);
+          autoExpireTodayTaskIdsRef.current.delete(task.id);
+        } finally {
+          if (succeeded) {
+            autoExpireTodayTaskIdsRef.current.delete(task.id);
+          }
+        }
+      })();
+    });
+  }, [activeWorkspaceId, api, todayItems, user]);
+
+  useEffect(() => {
     let cancelled = false;
 
     const loadQuickNotes = async () => {
@@ -799,20 +881,33 @@ export const ExpandedSidebar = ({
 
     void loadInboxCount();
 
-    const handleInboxItemsUpdated = () => {
+    const handleRefreshInboxCount = () => {
+      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
+      void loadInboxCount();
+    };
+
+    const handleInboxItemsUpdated = (_event: unknown, payload?: { delta?: number }) => {
+      if (typeof payload?.delta === 'number' && Number.isFinite(payload.delta)) {
+        setInboxCount((current) => Math.max(0, current + payload.delta!));
+        return;
+      }
       void loadInboxCount();
     };
 
     window.ipcRenderer?.on('inbox:items-updated', handleInboxItemsUpdated);
+    window.addEventListener('focus', handleRefreshInboxCount);
+    document.addEventListener('visibilitychange', handleRefreshInboxCount);
 
     const refreshTimer = window.setInterval(() => {
       void loadInboxCount();
-    }, 30_000);
+    }, 10_000);
 
     return () => {
       cancelled = true;
       window.clearInterval(refreshTimer);
       window.ipcRenderer?.off('inbox:items-updated', handleInboxItemsUpdated);
+      window.removeEventListener('focus', handleRefreshInboxCount);
+      document.removeEventListener('visibilitychange', handleRefreshInboxCount);
     };
   }, [api, activeWorkspaceId, user]);
 
@@ -1417,6 +1512,7 @@ export const ExpandedSidebar = ({
     if (!base || todayQuickSaving) return;
 
     setTodayQuickSaving(true);
+    setTodayQuickDraft('');
     const tempId = `today-task-${Date.now()}-${Math.random().toString(36).slice(2)}`;
     const dueAt = getTaskExpiryMetadata(24);
     const optimisticTask: TodayTask = {
@@ -1478,9 +1574,9 @@ export const ExpandedSidebar = ({
           },
         });
       }
-      setTodayQuickDraft('');
     } catch (error) {
       setTodayItems((prev) => prev.filter((item) => item.id !== tempId));
+      setTodayQuickDraft(base);
       window.ipcRenderer?.send('dashboard:today-task-created', {
         source: 'sidebar',
         rollback: true,
@@ -1858,7 +1954,7 @@ export const ExpandedSidebar = ({
             }}
             className="inline-flex shrink-0 items-center gap-2 rounded-full px-2 py-1.5 text-[13px] transition hover:bg-gray-50"
           >
-            <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-gray-500">
+            <span className="text-xs font-medium text-gray-500">
               Today
             </span>
             <span className="font-semibold text-gray-900">{horizontalTodaySummary}</span>
@@ -1871,7 +1967,7 @@ export const ExpandedSidebar = ({
             onClick={() => window.desktopWindow?.openCheckin()}
             className="inline-flex shrink-0 items-center gap-2 rounded-full px-2 py-1.5 text-[13px] transition hover:bg-gray-50"
           >
-            <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-gray-500">
+            <span className="text-xs font-medium text-gray-500">
               Check-in
             </span>
             <span className="font-medium text-gray-900">
@@ -1890,7 +1986,7 @@ export const ExpandedSidebar = ({
             onClick={() => window.desktopWindow?.toggleModule('calendar')}
             className="inline-flex shrink-0 items-center gap-2 rounded-full px-2 py-1.5 text-[13px] transition hover:bg-gray-50"
           >
-            <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-gray-500">
+            <span className="text-xs font-medium text-gray-500">
               Upcoming
             </span>
             <span className="font-medium text-gray-900">{upcomingItems.length}</span>
@@ -1903,7 +1999,7 @@ export const ExpandedSidebar = ({
             onClick={() => window.desktopWindow?.toggleModule('projects')}
             className="inline-flex shrink-0 items-center gap-2 rounded-full px-2 py-1.5 text-[13px] transition hover:bg-gray-50"
           >
-            <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-gray-500">
+            <span className="text-xs font-medium text-gray-500">
               Projects
             </span>
             <span className="font-medium text-gray-900">{activeProjectCount} active</span>
@@ -1930,7 +2026,7 @@ export const ExpandedSidebar = ({
               >
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-xs font-semibold uppercase tracking-[0.22em] text-gray-500">
+                    <p className="text-xs font-medium text-gray-500">
                       Today
                     </p>
                     <p className="mt-1 text-sm text-gray-600">{horizontalTodaySummary}</p>
@@ -1967,7 +2063,7 @@ export const ExpandedSidebar = ({
 
                   {completedToday.length > 0 && (
                     <div className="pt-2">
-                      <p className="px-2 text-[10px] font-semibold uppercase tracking-[0.2em] text-gray-400">
+                      <p className="px-2 text-xs font-medium text-gray-400">
                         Completed today
                       </p>
                       {sortTodayTasks(completedToday).slice(0, 4).map((item) => (
@@ -2020,9 +2116,9 @@ export const ExpandedSidebar = ({
         style={{ cursor: onDragHandleMouseDown ? 'grab' : 'auto' }}
       >
         <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-3 rounded-2xl bg-white px-2 py-1 text-left">
+          <div className="flex items-center gap-3 bg-transparent text-left">
             <img src="./logo-color.svg" alt="Ledger" className="h-8 w-8" />
-            <h1 className="text-2xl font-bold text-gray-950">Ledger</h1>
+            <h1 className="text-2xl font-light tracking-tight text-gray-950">Ledger</h1>
           </div>
           <button
             type="button"
@@ -2046,15 +2142,31 @@ export const ExpandedSidebar = ({
             </div>
             <p className="text-xs text-gray-700 truncate">{user?.email}</p>
           </div>
-          <button
-            onClick={() => window.desktopWindow?.toggleModule('settings')}
-            onMouseDown={(e) => e.stopPropagation()}
-            className="p-1.5 hover:bg-gray-100 rounded-md transition text-gray-600 hover:text-gray-900 shrink-0"
-            title="Settings"
-            aria-label="Open settings"
-          >
-            <Settings size={15} />
-          </button>
+          <div className="flex shrink-0 items-center gap-1">
+            <button
+              onClick={() => window.desktopWindow?.toggleModule('inbox')}
+              onMouseDown={(e) => e.stopPropagation()}
+              className="relative p-1.5 hover:bg-gray-100 rounded-md transition text-gray-600 hover:text-gray-900"
+              title="Inbox"
+              aria-label="Open inbox"
+            >
+              <Inbox size={15} />
+              {inboxCount > 0 && (
+                <span className="absolute -right-1 -top-1 inline-flex min-w-4 items-center justify-center rounded-full bg-[#FF5F40] px-1 py-0.5 text-[9px] font-semibold leading-none text-white">
+                  {inboxCount > 99 ? '99+' : inboxCount}
+                </span>
+              )}
+            </button>
+            <button
+              onClick={() => window.desktopWindow?.toggleModule('settings')}
+              onMouseDown={(e) => e.stopPropagation()}
+              className="p-1.5 hover:bg-gray-100 rounded-md transition text-gray-600 hover:text-gray-900 shrink-0"
+              title="Settings"
+              aria-label="Open settings"
+            >
+              <Settings size={15} />
+            </button>
+          </div>
         </div>
       </div>
 
@@ -2105,29 +2217,7 @@ export const ExpandedSidebar = ({
         </div>
       </div>
 
-      <div className="flex-1 min-h-0 overflow-y-auto px-5 py-4 space-y-2">
-        <section className="rounded-lg border border-gray-200 bg-white p-3">
-          <button
-            type="button"
-            onClick={() => window.desktopWindow?.toggleModule('inbox')}
-            className="flex w-full items-start justify-between gap-3 text-left outline-none"
-          >
-            <div className="min-w-0 flex-1 space-y-0.5">
-              <p className="text-sm font-semibold tracking-tight text-gray-900">Inbox</p>
-              <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-gray-500">
-                <span className="shrink-0">
-                  {inboxCount > 0 ? `${inboxCount} waiting` : 'No items'}
-                </span>
-              </div>
-            </div>
-            {inboxCount > 0 && (
-              <span className="mt-0.5 inline-flex shrink-0 min-w-5 items-center justify-center rounded-full bg-[#FF5F40] px-1.5 py-0.5 text-[10px] font-semibold leading-none text-white">
-                {inboxCount > 99 ? '99+' : inboxCount}
-              </span>
-            )}
-          </button>
-        </section>
-
+      <div className="flex-1 min-h-0 overflow-y-auto px-5 py-4 space-y-3">
         {/* Today unified feed (workspace-aware) */}
         <section className="rounded-lg border border-gray-200 bg-white p-3 space-y-3">
           <div
@@ -2379,7 +2469,7 @@ export const ExpandedSidebar = ({
           : null}
 
         <section>
-          <h2 className="text-xs font-semibold text-gray-600 uppercase tracking-wider mb-2">
+          <h2 className="mb-2 text-xs font-medium text-gray-500">
             Quick Capture
           </h2>
           <div className="grid grid-cols-3 gap-2">
@@ -2461,7 +2551,7 @@ export const ExpandedSidebar = ({
                 />
               </div>
               <div className="mt-2 flex items-center justify-between">
-                <div className="text-[10px] text-gray-500 leading-4">
+                <div className="text-xs font-medium text-gray-500">
                   <p>Press Enter to save quickly</p>
                 </div>
                 <button
@@ -2498,7 +2588,7 @@ export const ExpandedSidebar = ({
                 className="w-full h-24 resize-none text-xs leading-5 text-gray-800 placeholder:text-gray-400 bg-transparent focus:outline-none"
               />
               <div className="mt-2 flex items-center justify-between">
-                <span className="text-[10px] text-gray-500">Esc to close</span>
+                <span className="text-xs font-medium text-gray-500">Esc to close</span>
                 <div className="flex items-center gap-1.5">
                   <button
                     onClick={() => {
@@ -2601,7 +2691,7 @@ export const ExpandedSidebar = ({
               </div>
               <div className="grid grid-cols-2 gap-2">
                 <div className="flex flex-col gap-1">
-                  <label className="text-[10px] text-gray-600 font-medium">Start</label>
+                  <label className="text-xs font-medium text-gray-500">Start</label>
                   <select
                     value={eventStartTime}
                     onChange={(e) => setEventStartTime(e.target.value)}
@@ -2615,7 +2705,7 @@ export const ExpandedSidebar = ({
                   </select>
                 </div>
                 <div className="flex flex-col gap-1">
-                  <label className="text-[10px] text-gray-600 font-medium">End</label>
+                  <label className="text-xs font-medium text-gray-500">End</label>
                   <select
                     value={eventEndTime}
                     onChange={(e) => setEventEndTime(e.target.value)}

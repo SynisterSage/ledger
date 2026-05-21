@@ -18,7 +18,7 @@ body {
 /* Window / modal radius variables — used to keep modal backdrops
    visually consistent with the rounded Electron BrowserWindow. */
 :root {
-  --window-radius: 28px;
+  --window-radius: 24px;
   --modal-backdrop-radius: var(--window-radius);
 }
 

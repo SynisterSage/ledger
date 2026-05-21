@@ -1199,7 +1199,7 @@ export const ProjectsWindow = () => {
 
   return (
     <div
-      className="h-screen overflow-hidden rounded-[28px] border border-gray-200 bg-[#f5f7fb] flex flex-col text-gray-900 shadow-[0_24px_80px_rgba(15,23,42,0.08)]"
+      className="h-screen overflow-hidden rounded-3xl border border-gray-200 bg-[#f5f7fb] flex flex-col text-gray-900 shadow-[0_24px_80px_rgba(15,23,42,0.08)]"
       style={{ scrollbarGutter: 'stable' }}
     >
       <CloseGuardModal
@@ -1554,7 +1554,7 @@ export const ProjectsWindow = () => {
                 </section>
 
                 <section className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-gray-500">
+                  <p className="text-xs font-medium text-gray-500">
                     Timeline
                   </p>
                   <div className="mt-3 grid gap-3 sm:grid-cols-3">
@@ -1621,7 +1621,7 @@ export const ProjectsWindow = () => {
                 </section>
 
                 <section className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-gray-500">
+                  <p className="text-xs font-medium text-gray-500">
                     Objective
                   </p>
                   <textarea
@@ -1635,7 +1635,7 @@ export const ProjectsWindow = () => {
                 <section className="min-w-0 overflow-hidden rounded-3xl border border-gray-200 bg-white shadow-sm">
                   <div className="border-b border-gray-100 px-6 py-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
                     <div className="min-w-0">
-                      <p className="text-xs uppercase tracking-[0.2em] text-gray-500">Tasks</p>
+                      <p className="text-xs font-medium text-gray-500">Tasks</p>
                       <h3 className="mt-1 text-xl font-semibold tracking-tight text-gray-900">
                         Next actions
                       </h3>
@@ -1737,7 +1737,7 @@ export const ProjectsWindow = () => {
                     ) : (
                       <div className="space-y-4">
                         <div className="space-y-1.5">
-                          <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-gray-500">
+                          <p className="text-xs font-medium text-gray-500">
                             Active
                           </p>
                           {activeProjectTasks.length === 0 ? (
@@ -1794,7 +1794,7 @@ export const ProjectsWindow = () => {
 
                         {completedProjectTasks.length > 0 && (
                           <div className="space-y-1.5">
-                            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-gray-500">
+                            <p className="text-xs font-medium text-gray-500">
                               Completed
                             </p>
                             {completedProjectTasks.map((task) => {
@@ -1844,7 +1844,7 @@ export const ProjectsWindow = () => {
 
                 <section className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm">
                   <div className="flex items-center justify-between gap-3">
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-gray-500">
+                    <p className="text-xs font-medium text-gray-500">
                       Linked notes
                     </p>
                     <button
