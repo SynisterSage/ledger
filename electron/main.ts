@@ -352,6 +352,7 @@ const toInfo = (window, sidebar = null) => {
     if (![x, y, width, height].every(Number.isFinite)) return null
     if (isSidebarRect(x, y, width, height, sidebar)) return null
     if (width < 80 || height < 80) return null
+    if (typeof window.isVisible === 'function' && !window.isVisible()) return null
     return { id: String(window.id), x, y, width, height }
   } catch {
     return null
@@ -461,6 +462,10 @@ const startTracking = ({ target, intervalMs }) => {
       if (!trackingWindow) {
         trackingWindow = findWindowById(target.id)
       }
+      if (trackingWindow && typeof trackingWindow.isVisible === 'function' && !trackingWindow.isVisible()) {
+        send({ kind: 'missing', target })
+        return
+      }
       bounds = trackingWindow && trackingWindow.getBounds ? trackingWindow.getBounds() : null
     } catch {
       bounds = null
@@ -561,6 +566,12 @@ type FloatingDockTarget = {
   id: string;
   side: DockSide;
 };
+type FloatingDockAttachmentStatus =
+  | 'attached'
+  | 'detached'
+  | 'suspended_minimized'
+  | 'suspended_fullscreen'
+  | 'target_closed';
 
 let sidebarWin: BrowserWindow | null = null;
 const moduleWins = new Map<ModuleWindowKind, BrowserWindow>();
@@ -896,6 +907,22 @@ function nativeRectToDipRect(rect: Rect) {
   };
 }
 
+function isFullscreenLikeBounds(rect: Rect) {
+  if (!Number.isFinite(rect.x) || !Number.isFinite(rect.y)) return false;
+  if (!Number.isFinite(rect.width) || !Number.isFinite(rect.height)) return false;
+
+  const display = screen.getDisplayMatching(rect);
+  const { x, y, width, height } = display.bounds;
+  const tolerance = 8;
+
+  return (
+    Math.abs(rect.x - x) <= tolerance &&
+    Math.abs(rect.y - y) <= tolerance &&
+    Math.abs(rect.width - width) <= tolerance * 2 &&
+    Math.abs(rect.height - height) <= tolerance * 2
+  );
+}
+
 function getFullscreenWorkAreaForWindow(win: BrowserWindow) {
   const bounds = win.getBounds();
   return screen.getDisplayMatching(bounds).workArea;
@@ -952,10 +979,16 @@ function getDockedBoundsForTarget(targetBounds: Rect, side: DockSide, mode: Side
   );
 }
 
-function sendFloatingDockChanged(isDocked: boolean) {
+function sendFloatingDockChanged(
+  isDocked: boolean,
+  attachmentStatus: FloatingDockAttachmentStatus = isDocked ? 'attached' : 'detached'
+) {
   try {
     if (sidebarWin && !sidebarWin.isDestroyed() && !sidebarWin.webContents.isDestroyed()) {
-      sidebarWin.webContents.send('sidebar:floating-dock-changed', { isDocked });
+      sidebarWin.webContents.send('sidebar:floating-dock-changed', {
+        isDocked,
+        attachmentStatus,
+      });
     }
   } catch {
     // The window can be torn down between the destroyed check and the send.
@@ -966,16 +999,25 @@ function setCurrentFloatingDockTarget(target: FloatingDockTarget | null, bounds:
   currentFloatingDockTarget = target;
   currentFloatingDockBounds = bounds;
   currentFloatingDockMisses = 0;
-  sendFloatingDockChanged(Boolean(target && bounds));
+  sendFloatingDockChanged(Boolean(target && bounds), target && bounds ? 'attached' : 'detached');
 }
 
-function clearCurrentFloatingDockTarget() {
+function clearCurrentFloatingDockTarget(
+  attachmentStatus: Exclude<FloatingDockAttachmentStatus, 'attached'> = 'detached'
+) {
   stopFloatingDockNativeTracker();
   stopMacDockHelperTracking();
   currentFloatingDockTarget = null;
   currentFloatingDockBounds = null;
   currentFloatingDockMisses = 0;
-  sendFloatingDockChanged(false);
+  sendFloatingDockChanged(false, attachmentStatus);
+}
+
+function suspendCurrentFloatingDockTarget(
+  attachmentStatus: Exclude<FloatingDockAttachmentStatus, 'attached'> = 'detached'
+) {
+  clearCurrentFloatingDockTarget(attachmentStatus);
+  stopFloatingDockTracking();
 }
 
 function stopFloatingDockTracking() {
@@ -1124,10 +1166,7 @@ function ensureMacDockHelper() {
     }
     resolveMacDockHelperRequestsAsMissing();
     if (currentFloatingDockTarget?.platform === 'darwin') {
-      currentFloatingDockTarget = null;
-      currentFloatingDockBounds = null;
-      currentFloatingDockMisses = 0;
-      sendFloatingDockChanged(false);
+      clearCurrentFloatingDockTarget('target_closed');
     }
   });
 
@@ -1207,6 +1246,10 @@ function applyFloatingDockTargetBounds(targetBounds: Rect, side: DockSide) {
   if (currentSidebarPosition !== 'floating') return;
   if (currentSidebarMode === 'auth' || currentSidebarMode === 'fullscreen') return;
   if (floatingDockDragActive) return;
+  if (isFullscreenLikeBounds(targetBounds)) {
+    suspendCurrentFloatingDockTarget('suspended_fullscreen');
+    return;
+  }
 
   currentFloatingDockBounds = targetBounds;
   currentFloatingDockMisses = 0;
@@ -1293,7 +1336,20 @@ function setSidebarBounds(bounds: Rect, animate = false) {
 }
 
 function handleNativeDockTrackerLine(line: string, side: DockSide) {
-  const [kind, x, y, width, height] = line.trim().split('|');
+  const [kind, a, b, c, d] = line.trim().split('|');
+  if (kind === 'state') {
+    const state = String(a ?? '').toLowerCase();
+    if (state === 'minimized') {
+      suspendCurrentFloatingDockTarget('suspended_minimized');
+    } else if (state === 'fullscreen') {
+      suspendCurrentFloatingDockTarget('suspended_fullscreen');
+    } else if (state === 'closed') {
+      clearCurrentFloatingDockTarget('target_closed');
+    }
+    return;
+  }
+
+  const [x, y, width, height] = [a, b, c, d];
   if (kind !== 'bounds') return;
   const parsed = [x, y, width, height].map((value) => Number(value));
   if (parsed.some((value) => Number.isNaN(value) || value <= 0)) return;
@@ -1324,6 +1380,7 @@ using System.Runtime.InteropServices;
 
 public static class LedgerDockTracker {
   private const uint EVENT_OBJECT_LOCATIONCHANGE = 0x800B;
+  private const uint EVENT_SYSTEM_MINIMIZESTART = 0x0016;
   private const uint WINEVENT_OUTOFCONTEXT = 0;
   private static IntPtr targetHwnd;
   private static WinEventDelegate callbackRef = Callback;
@@ -1380,11 +1437,28 @@ public static class LedgerDockTracker {
   [DllImport("user32.dll")]
   private static extern bool IsWindow(IntPtr hWnd);
 
+  [DllImport("user32.dll")]
+  private static extern bool IsIconic(IntPtr hWnd);
+
+  [DllImport("user32.dll")]
+  private static extern IntPtr MonitorFromWindow(IntPtr hwnd, uint dwFlags);
+
+  [DllImport("user32.dll")]
+  private static extern bool GetMonitorInfo(IntPtr hMonitor, ref MONITORINFO lpmi);
+
+  [StructLayout(LayoutKind.Sequential)]
+  public struct MONITORINFO {
+    public int cbSize;
+    public RECT rcMonitor;
+    public RECT rcWork;
+    public uint dwFlags;
+  }
+
   public static void Start(long hwndValue) {
     targetHwnd = new IntPtr(hwndValue);
     EmitBounds();
     IntPtr hook = SetWinEventHook(
-      EVENT_OBJECT_LOCATIONCHANGE,
+      EVENT_SYSTEM_MINIMIZESTART,
       EVENT_OBJECT_LOCATIONCHANGE,
       IntPtr.Zero,
       callbackRef,
@@ -1407,14 +1481,49 @@ public static class LedgerDockTracker {
     uint dwmsEventTime
   ) {
     if (hwnd != targetHwnd) return;
+    if (eventType == EVENT_SYSTEM_MINIMIZESTART) {
+      Console.Out.WriteLine("state|minimized");
+      Console.Out.Flush();
+      return;
+    }
     EmitBounds();
   }
 
   private static void EmitBounds() {
+    if (IsIconic(targetHwnd)) {
+      Console.Out.WriteLine("state|minimized");
+      Console.Out.Flush();
+      return;
+    }
+
     RECT rect;
     if (!GetWindowRect(targetHwnd, out rect)) return;
+    if (IsFullscreenLike(rect)) {
+      Console.Out.WriteLine("state|fullscreen");
+      Console.Out.Flush();
+      return;
+    }
+
     Console.Out.WriteLine("bounds|" + rect.Left + "|" + rect.Top + "|" + (rect.Right - rect.Left) + "|" + (rect.Bottom - rect.Top));
     Console.Out.Flush();
+  }
+
+  private static bool IsFullscreenLike(RECT rect) {
+    try {
+      IntPtr monitor = MonitorFromWindow(targetHwnd, 2);
+      if (monitor == IntPtr.Zero) return false;
+      MONITORINFO info = new MONITORINFO();
+      info.cbSize = Marshal.SizeOf(typeof(MONITORINFO));
+      if (!GetMonitorInfo(monitor, ref info)) return false;
+      const int tolerance = 8;
+      return
+        Math.Abs(rect.Left - info.rcMonitor.Left) <= tolerance &&
+        Math.Abs(rect.Top - info.rcMonitor.Top) <= tolerance &&
+        Math.Abs((rect.Right - rect.Left) - (info.rcMonitor.Right - info.rcMonitor.Left)) <= tolerance * 2 &&
+        Math.Abs((rect.Bottom - rect.Top) - (info.rcMonitor.Bottom - info.rcMonitor.Top)) <= tolerance * 2;
+    } catch {
+      return false;
+    }
   }
 }
 "@
@@ -1447,6 +1556,9 @@ public static class LedgerDockTracker {
     if (floatingDockNativeTracker === tracker) {
       floatingDockNativeTracker = null;
       floatingDockNativeBuffer = '';
+    }
+    if (currentFloatingDockTarget?.platform === 'win32' && currentFloatingDockTarget.id === target.id) {
+      clearCurrentFloatingDockTarget('target_closed');
     }
   });
 
@@ -1564,6 +1676,8 @@ public class Win32 {
   [DllImport("user32.dll")]
   public static extern bool IsWindowVisible(IntPtr hWnd);
   [DllImport("user32.dll")]
+  public static extern bool IsIconic(IntPtr hWnd);
+  [DllImport("user32.dll")]
   public static extern bool GetWindowRect(IntPtr hWnd, out RECT rect);
   [DllImport("user32.dll")]
   public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out int lpdwProcessId);
@@ -1588,6 +1702,7 @@ $script:bestScore = [Double]::PositiveInfinity
 [Win32]::EnumWindows({
   param([IntPtr]$hWnd, [IntPtr]$lParam)
   if (-not [Win32]::IsWindowVisible($hWnd)) { return $true }
+  if ([Win32]::IsIconic($hWnd)) { return $true }
   $rect = [Win32+RECT]::new()
   if (-not [Win32]::GetWindowRect($hWnd, [ref]$rect)) { return $true }
   $width = $rect.Right - $rect.Left
@@ -1709,6 +1824,8 @@ public class Win32 {
   [DllImport("user32.dll")]
   public static extern bool IsWindowVisible(IntPtr hWnd);
   [DllImport("user32.dll")]
+  public static extern bool IsIconic(IntPtr hWnd);
+  [DllImport("user32.dll")]
   public static extern bool GetWindowRect(IntPtr hWnd, out RECT rect);
   [DllImport("user32.dll")]
   public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out int lpdwProcessId);
@@ -1738,6 +1855,7 @@ $script:result = $null
 [Win32]::EnumWindows({
   param([IntPtr]$hWnd, [IntPtr]$lParam)
   if (-not [Win32]::IsWindowVisible($hWnd)) { return $true }
+  if ([Win32]::IsIconic($hWnd)) { return $true }
   $rect = [Win32+RECT]::new()
   if (-not [Win32]::GetWindowRect($hWnd, [ref]$rect)) { return $true }
   $width = $rect.Right - $rect.Left
@@ -1810,6 +1928,12 @@ async function dockFloatingSidebarToTarget() {
 
   if (!target) {
     clearCurrentFloatingDockTarget();
+    stopFloatingDockTracking();
+    return null;
+  }
+
+  if (isFullscreenLikeBounds(target.bounds)) {
+    clearCurrentFloatingDockTarget('suspended_fullscreen');
     stopFloatingDockTracking();
     return null;
   }

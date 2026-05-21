@@ -45,6 +45,12 @@ For production Slack setup, point callbacks at `https://api.ledgerworkspace.com/
 
 ## API Endpoints
 
+### Browser Extension
+
+- `GET /api/extension/me` - Validate a browser extension token and return the default workspace
+- `GET /api/extension/workspaces` - Return accessible workspaces for the token user
+- `POST /api/inbox/browser` - Save a browser capture into Ledger Inbox
+
 ### Projects
 
 - `GET /api/projects` - List active projects
@@ -74,6 +80,27 @@ For production Slack setup, point callbacks at `https://api.ledgerworkspace.com/
 ✅ Input validation
 ✅ Error handling
 ✅ CORS enabled
+
+## Browser Extension Tokens
+
+Browser extension requests use a Ledger-issued token in the `Authorization: Bearer <token>` header.
+
+To create a dev token before the Settings UI exists:
+
+1. Generate a raw token and its SHA-256 hash.
+
+```bash
+node -e "const crypto=require('node:crypto'); const token=crypto.randomBytes(32).toString('base64url'); console.log('RAW_TOKEN='+token); console.log('TOKEN_HASH='+crypto.createHash('sha256').update(token).digest('hex'));"
+```
+
+2. Insert the hash into `extension_tokens` for an existing user.
+
+```sql
+insert into public.extension_tokens (user_id, workspace_id, name, token_hash)
+values ('<user-uuid>', '<workspace-uuid-or-null>', 'Browser Extension', '<sha256-hash>');
+```
+
+3. Use the raw token value in the browser extension popup later.
 
 ## Tier Limits (Freemium)
 

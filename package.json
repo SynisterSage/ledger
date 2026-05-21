@@ -8,7 +8,9 @@
     "dev:web": "node scripts/dev-web.mjs",
     "dev:electron": "node scripts/dev-electron.mjs",
     "dev:desktop": "node scripts/dev-desktop.mjs",
+    "dev:extension": "npm --prefix apps/browser-extension run dev",
     "build": "tsc -p tsconfig.json && vite build && electron-builder",
+    "build:extension": "npm --prefix apps/browser-extension run build",
     "preview": "vite preview",
     "format": "prettier --write .",
     "format:check": "prettier --check ."

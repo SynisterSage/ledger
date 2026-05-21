@@ -1,0 +1,24 @@
+{
+  "manifest_version": 3,
+  "name": "Ledger",
+  "version": "0.1.0",
+  "description": "Save links, selections, and notes to Ledger Inbox.",
+  "action": {
+    "default_popup": "index.html",
+    "default_title": "Ledger"
+  },
+  "options_page": "options.html",
+  "permissions": [
+    "activeTab",
+    "storage",
+    "contextMenus",
+    "scripting",
+    "tabs",
+    "notifications"
+  ],
+  "host_permissions": ["https://api.ledgerworkspace.com/*"],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  }
+}

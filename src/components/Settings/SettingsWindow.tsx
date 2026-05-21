@@ -68,6 +68,18 @@ type SlackIntegrationStatus = {
   updated_at?: string | null;
 };
 
+type ExtensionTokenStatus = {
+  exists: boolean;
+  created_at?: string | null;
+  last_used_at?: string | null;
+  revoked_at?: string | null;
+};
+
+type ExtensionTokenResponse = {
+  token?: string;
+  status?: ExtensionTokenStatus;
+};
+
 type InviteModalState = {
   id: string;
 } | null;
@@ -106,6 +118,16 @@ const isSettingsSection = (value: string | null | undefined): value is SettingsS
 const getInitialSettingsSection = (): SettingsSectionId => {
   const section = new URLSearchParams(window.location.search).get('section');
   return isSettingsSection(section) ? section : 'account';
+};
+
+const formatIntegrationDate = (value?: string | null) => {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toLocaleDateString([], {
+    month: 'short',
+    day: 'numeric',
+  });
 };
 
 const shortcutSections: Array<{
@@ -311,6 +333,17 @@ export const SettingsWindow = () => {
   const [isDisconnectingSlack, setIsDisconnectingSlack] = useState(false);
   const [slackError, setSlackError] = useState<string | null>(null);
   const [slackRefreshToken, setSlackRefreshToken] = useState(0);
+  const [extensionTokenStatus, setExtensionTokenStatus] =
+    useState<ExtensionTokenStatus | null>(null);
+  const [isLoadingExtensionTokenStatus, setIsLoadingExtensionTokenStatus] = useState(false);
+  const [isExtensionTokenBusy, setIsExtensionTokenBusy] = useState(false);
+  const [extensionTokenError, setExtensionTokenError] = useState<string | null>(null);
+  const [generatedExtensionToken, setGeneratedExtensionToken] = useState<string | null>(null);
+  const [isExtensionTokenModalOpen, setIsExtensionTokenModalOpen] = useState(false);
+  const [extensionTokenConfirmAction, setExtensionTokenConfirmAction] = useState<
+    'regenerate' | 'revoke' | null
+  >(null);
+  const [extensionTokenCopyStatus, setExtensionTokenCopyStatus] = useState<string | null>(null);
   const inviteEmailRef = useRef<HTMLInputElement | null>(null);
   const autosaveTimerRef = useRef<number | null>(null);
   const autosaveTokenRef = useRef(0);
@@ -690,6 +723,38 @@ export const SettingsWindow = () => {
     };
   }, [activeSection, activeWorkspaceId, api, slackRefreshToken]);
 
+  useEffect(() => {
+    if (activeSection !== 'integrations' || !activeWorkspaceId) return;
+
+    let cancelled = false;
+    setIsLoadingExtensionTokenStatus(true);
+    setExtensionTokenError(null);
+
+    void (async () => {
+      try {
+        const statusPayload = (await api.getExtensionTokenStatus(
+          activeWorkspaceId
+        )) as ExtensionTokenStatus;
+        if (!cancelled) {
+          setExtensionTokenStatus(statusPayload);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setExtensionTokenStatus({ exists: false });
+          setExtensionTokenError(
+            err instanceof Error ? err.message : 'Could not load browser extension token status.'
+          );
+        }
+      } finally {
+        if (!cancelled) setIsLoadingExtensionTokenStatus(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeSection, activeWorkspaceId, api]);
+
   const handleConnectSlack = async () => {
     if (!activeWorkspaceId) {
       setSlackError('Select a workspace before connecting Slack.');
@@ -734,6 +799,100 @@ export const SettingsWindow = () => {
     }
   };
 
+  const handleGenerateExtensionToken = async () => {
+    if (!activeWorkspaceId) {
+      setExtensionTokenError('Select a workspace before generating a browser extension token.');
+      return;
+    }
+
+    setIsExtensionTokenBusy(true);
+    setExtensionTokenError(null);
+    setExtensionTokenCopyStatus(null);
+    try {
+      const payload = (await api.createExtensionToken(activeWorkspaceId)) as ExtensionTokenResponse;
+      const token = String(payload?.token ?? '').trim();
+      if (!token) throw new Error('Extension token was not returned.');
+      setGeneratedExtensionToken(token);
+      setExtensionTokenStatus(payload.status ?? { exists: true });
+      setIsExtensionTokenModalOpen(true);
+    } catch (err) {
+      setExtensionTokenError(
+        err instanceof Error ? err.message : 'Could not generate browser extension token.'
+      );
+    } finally {
+      setIsExtensionTokenBusy(false);
+    }
+  };
+
+  const handleRegenerateExtensionToken = async () => {
+    if (!activeWorkspaceId) {
+      setExtensionTokenError('Select a workspace before regenerating the browser extension token.');
+      return;
+    }
+
+    setIsExtensionTokenBusy(true);
+    setExtensionTokenError(null);
+    setExtensionTokenCopyStatus(null);
+    try {
+      const payload = (await api.regenerateExtensionToken(
+        activeWorkspaceId
+      )) as ExtensionTokenResponse;
+      const token = String(payload?.token ?? '').trim();
+      if (!token) throw new Error('Extension token was not returned.');
+      setGeneratedExtensionToken(token);
+      setExtensionTokenStatus(payload.status ?? { exists: true });
+      setExtensionTokenConfirmAction(null);
+      setIsExtensionTokenModalOpen(true);
+    } catch (err) {
+      setExtensionTokenError(
+        err instanceof Error ? err.message : 'Could not regenerate browser extension token.'
+      );
+    } finally {
+      setIsExtensionTokenBusy(false);
+    }
+  };
+
+  const handleRevokeExtensionToken = async () => {
+    if (!activeWorkspaceId) {
+      setExtensionTokenError('Select a workspace before revoking the browser extension token.');
+      return;
+    }
+
+    setIsExtensionTokenBusy(true);
+    setExtensionTokenError(null);
+    try {
+      const statusPayload = (await api.revokeExtensionToken(
+        activeWorkspaceId
+      )) as ExtensionTokenStatus;
+      setExtensionTokenStatus(statusPayload ?? { exists: false });
+      setGeneratedExtensionToken(null);
+      setExtensionTokenConfirmAction(null);
+      setIsExtensionTokenModalOpen(false);
+    } catch (err) {
+      setExtensionTokenError(
+        err instanceof Error ? err.message : 'Could not revoke browser extension token.'
+      );
+    } finally {
+      setIsExtensionTokenBusy(false);
+    }
+  };
+
+  const handleCopyExtensionToken = async () => {
+    if (!generatedExtensionToken) return;
+    try {
+      await navigator.clipboard.writeText(generatedExtensionToken);
+      setExtensionTokenCopyStatus('Copied.');
+    } catch {
+      setExtensionTokenCopyStatus('Copy failed. Select the token manually.');
+    }
+  };
+
+  const closeExtensionTokenModal = () => {
+    setIsExtensionTokenModalOpen(false);
+    setGeneratedExtensionToken(null);
+    setExtensionTokenCopyStatus(null);
+  };
+
   const openExternalUrl = async (url: string) => {
     if (window.desktopWindow?.openExternal) {
       await window.desktopWindow.openExternal(url);
@@ -743,6 +902,7 @@ export const SettingsWindow = () => {
   };
 
   const canManageWorkspace = workspaceUserRole === 'owner' || workspaceUserRole === 'admin';
+  const canUseWorkspaceIntegrations = workspaceUserRole !== 'viewer';
 
   useEffect(() => {
     if (!activeWorkspace) {
@@ -1843,74 +2003,74 @@ export const SettingsWindow = () => {
 
               {activeSection === 'integrations' && (
                 <section
-                  className="rounded-2xl border border-gray-200 bg-white p-5"
+                  className="rounded-2xl border border-gray-200 bg-white px-5 py-5"
                   aria-labelledby="settings-integrations"
                 >
                   <h2 id="settings-integrations" className="text-lg font-semibold text-gray-900">
                     Integrations
                   </h2>
                   <p className="mt-1 text-sm text-gray-600">
-                    Connect external signals that should become intentional Ledger captures.
+                    Connect outside signals to your Ledger Inbox.
                   </p>
 
-                  <div className="mt-5 rounded-2xl border border-gray-200 bg-gray-50/70 p-4">
-                    <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="mt-6 divide-y divide-gray-100 border-y border-gray-100">
+                    <div className="flex flex-col gap-4 py-5 sm:flex-row sm:items-center sm:justify-between">
                       <div className="min-w-0">
-                        <div className="flex items-center gap-3">
-                          <span className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-[#FF5F40] text-sm font-semibold text-white shadow-sm">
-                            S
-                          </span>
-                          <div>
-                            <h3 className="text-sm font-semibold text-gray-950">Slack</h3>
-                            <p className="mt-0.5 text-xs leading-5 text-gray-600">
-                              Save Slack messages to Ledger as tasks, notes, reminders, and project
-                              context.
-                            </p>
-                          </div>
-                        </div>
-
-                        <div className="mt-4 rounded-xl border border-gray-200 bg-white px-3 py-2">
-                          <p className="text-xs font-medium text-gray-500">
-                            Status
-                          </p>
-                          <p className="mt-1 text-sm font-medium text-gray-900">
+                        <div className="flex items-center gap-2">
+                          <h3 className="text-sm font-semibold text-gray-950">Slack</h3>
+                          <span
+                            className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${
+                              slackStatus?.connected
+                                ? 'bg-gray-900 text-white'
+                                : 'bg-gray-100 text-gray-600'
+                            }`}
+                          >
                             {isLoadingSlackStatus
-                              ? 'Checking connection...'
+                              ? 'Checking'
                               : slackStatus?.connected
-                                ? `Connected to ${slackStatus.team_name || 'Slack'}`
+                                ? 'Connected'
                                 : 'Not connected'}
-                          </p>
-                          {slackStatus?.connected && slackStatus.updated_at && (
-                            <p className="mt-1 text-xs text-gray-500">
-                              Updated{' '}
-                              {new Date(slackStatus.updated_at).toLocaleDateString([], {
-                                month: 'short',
-                                day: 'numeric',
-                              })}
-                            </p>
-                          )}
+                          </span>
                         </div>
+                        <p className="mt-1 text-sm text-gray-600">
+                          Save Slack messages to Ledger Inbox.
+                        </p>
+                        <p className="mt-1 text-xs text-gray-500">
+                          {slackStatus?.connected
+                            ? `Connected to ${slackStatus.team_name || 'Slack'}${
+                                slackStatus.updated_at
+                                  ? ` · Updated ${formatIntegrationDate(slackStatus.updated_at)}`
+                                  : ''
+                              }`
+                            : 'Saved Slack messages appear in Inbox.'}
+                        </p>
                       </div>
 
-                      <div className="flex shrink-0 flex-col items-stretch gap-2 sm:min-w-36">
+                      <div className="flex shrink-0 flex-wrap items-center gap-2">
                         <button
                           type="button"
                           onClick={() => void handleConnectSlack()}
-                          disabled={isConnectingSlack || !activeWorkspaceId}
-                          className="h-9 rounded-xl bg-[#FF5F40] px-4 text-sm font-medium text-white transition hover:bg-[#ea5336] disabled:opacity-60"
+                          disabled={isConnectingSlack || !activeWorkspaceId || !canManageWorkspace}
+                          className={`h-8 rounded-lg px-3 text-xs font-medium transition disabled:opacity-50 ${
+                            slackStatus?.connected
+                              ? 'border border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
+                              : 'bg-[#FF5F40] text-white hover:bg-[#ea5336]'
+                          }`}
                         >
                           {isConnectingSlack
                             ? 'Opening...'
                             : slackStatus?.connected
-                              ? 'Reconnect Slack'
+                              ? 'Reconnect'
                               : 'Connect Slack'}
                         </button>
                         {slackStatus?.connected && (
                           <button
                             type="button"
                             onClick={() => void handleDisconnectSlack()}
-                            disabled={isDisconnectingSlack || !activeWorkspaceId}
-                            className="h-9 rounded-xl border border-gray-200 bg-white px-4 text-sm font-medium text-gray-700 transition hover:bg-gray-50 disabled:opacity-60"
+                            disabled={
+                              isDisconnectingSlack || !activeWorkspaceId || !canManageWorkspace
+                            }
+                            className="h-8 rounded-lg border border-gray-200 bg-white px-3 text-xs font-medium text-gray-600 transition hover:border-red-200 hover:bg-red-50 hover:text-red-700 disabled:opacity-50"
                           >
                             {isDisconnectingSlack ? 'Disconnecting...' : 'Disconnect'}
                           </button>
@@ -1918,18 +2078,137 @@ export const SettingsWindow = () => {
                       </div>
                     </div>
 
-                    {slackError && (
-                      <p className="mt-3 flex items-center gap-1.5 text-xs text-red-700">
-                        <CircleAlert size={12} />
-                        {slackError}
-                      </p>
-                    )}
+                    <div className="flex flex-col gap-4 py-5 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <h3 className="text-sm font-semibold text-gray-950">
+                            Browser Extension
+                          </h3>
+                          <span
+                            className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${
+                              extensionTokenStatus?.exists
+                                ? 'bg-gray-900 text-white'
+                                : 'bg-gray-100 text-gray-600'
+                            }`}
+                          >
+                            {isLoadingExtensionTokenStatus
+                              ? 'Checking'
+                              : extensionTokenStatus?.exists
+                                ? 'Token active'
+                                : 'Not connected'}
+                          </span>
+                        </div>
+                        <p className="mt-1 text-sm text-gray-600">
+                          Capture links, selected text, and quick notes from Chrome.
+                        </p>
+                        <p className="mt-1 text-xs text-gray-500">
+                          {extensionTokenStatus?.exists
+                            ? [
+                                extensionTokenStatus.created_at
+                                  ? `Created ${
+                                      formatIntegrationDate(extensionTokenStatus.created_at) ??
+                                      'recently'
+                                    }`
+                                  : 'Token created',
+                                extensionTokenStatus.last_used_at
+                                  ? `Last used ${
+                                      formatIntegrationDate(extensionTokenStatus.last_used_at) ??
+                                      'recently'
+                                    }`
+                                  : 'Generate a new token if you lost it',
+                              ]
+                                .filter(Boolean)
+                                .join(' · ')
+                            : 'No token created'}
+                        </p>
+                      </div>
 
-                    <p className="mt-4 text-xs leading-5 text-gray-500">
-                      Saved Slack messages land in Inbox, where they can be converted into tasks,
-                      notes, reminders, or events.
-                    </p>
+                      <div className="flex shrink-0 flex-wrap items-center gap-2">
+                        {extensionTokenStatus?.exists ? (
+                          <>
+                            {generatedExtensionToken && (
+                              <button
+                                type="button"
+                                onClick={() => void handleCopyExtensionToken()}
+                                className="h-8 rounded-lg border border-gray-200 bg-white px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-50"
+                              >
+                                Copy token
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => setExtensionTokenConfirmAction('regenerate')}
+                              disabled={
+                                isExtensionTokenBusy ||
+                                !activeWorkspaceId ||
+                                !canUseWorkspaceIntegrations
+                              }
+                              className="h-8 rounded-lg border border-gray-200 bg-white px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-50 disabled:opacity-50"
+                            >
+                              Regenerate
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setExtensionTokenConfirmAction('revoke')}
+                              disabled={
+                                isExtensionTokenBusy ||
+                                !activeWorkspaceId ||
+                                !canUseWorkspaceIntegrations
+                              }
+                              className="h-8 rounded-lg border border-gray-200 bg-white px-3 text-xs font-medium text-gray-600 transition hover:border-red-200 hover:bg-red-50 hover:text-red-700 disabled:opacity-50"
+                            >
+                              Revoke
+                            </button>
+                          </>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => void handleGenerateExtensionToken()}
+                            disabled={
+                              isExtensionTokenBusy ||
+                              !activeWorkspaceId ||
+                              !canUseWorkspaceIntegrations
+                            }
+                            className="h-8 rounded-lg bg-[#FF5F40] px-3 text-xs font-medium text-white transition hover:bg-[#ea5336] disabled:opacity-50"
+                          >
+                            {isExtensionTokenBusy ? 'Generating...' : 'Generate token'}
+                          </button>
+                        )}
+                      </div>
+                    </div>
                   </div>
+
+                  {(slackError || extensionTokenError || extensionTokenCopyStatus) && (
+                    <p
+                      className={`mt-4 flex items-center gap-1.5 text-xs ${
+                        slackError || extensionTokenError ? 'text-red-700' : 'text-gray-600'
+                      }`}
+                    >
+                      {(slackError || extensionTokenError) && <CircleAlert size={12} />}
+                      {slackError || extensionTokenError || extensionTokenCopyStatus}
+                    </p>
+                  )}
+
+                  <div className="mt-6">
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-400">
+                      Coming soon
+                    </p>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {['Email', 'Google Calendar', 'GitHub', 'Linear'].map((source) => (
+                        <span
+                          key={source}
+                          className="rounded-full border border-gray-200 bg-gray-50 px-2.5 py-1 text-xs font-medium text-gray-500"
+                        >
+                          {source}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+
+                  <p className="mt-6 border-t border-gray-100 pt-4 text-xs leading-5 text-gray-500">
+                    Captures from connected tools land in Inbox before becoming tasks, notes,
+                    reminders, or events.
+                  </p>
                 </section>
               )}
 
@@ -2207,6 +2486,146 @@ export const SettingsWindow = () => {
                 </section>
               )}
             </div>
+
+            <ModalOverlay
+              isOpen={isExtensionTokenModalOpen && !!generatedExtensionToken}
+              onClose={closeExtensionTokenModal}
+              classNameContainer="w-full max-w-125 rounded-2xl border border-gray-200 bg-white shadow-[0_24px_70px_rgba(15,23,42,0.12)]"
+            >
+              <div className="flex items-start justify-between gap-4 px-5 pt-5">
+                <div>
+                  <p className="text-[10px] font-medium uppercase tracking-[0.18em] text-gray-400">
+                    Browser extension
+                  </p>
+                  <h3 className="mt-1 text-lg font-semibold text-gray-900">
+                    Connect browser extension
+                  </h3>
+                  <p className="mt-1 text-sm leading-5 text-gray-600">
+                    Use this token in the Ledger browser extension to save links, selections, and
+                    notes into Inbox.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={closeExtensionTokenModal}
+                  className="rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xs font-medium text-gray-600 transition hover:bg-gray-50"
+                >
+                  Close
+                </button>
+              </div>
+
+              <div className="mt-4 border-y border-gray-100 px-5 py-4">
+                <p className="mb-2 text-xs font-medium text-gray-500">Extension token</p>
+                <div className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2">
+                  <p className="break-all font-mono text-xs leading-5 text-gray-900">
+                    {generatedExtensionToken}
+                  </p>
+                </div>
+                <p className="mt-2 text-xs leading-5 text-gray-500">
+                  This token is shown once. Keep it somewhere safe.
+                </p>
+                {extensionTokenCopyStatus && (
+                  <p className="mt-2 text-xs text-gray-600">{extensionTokenCopyStatus}</p>
+                )}
+              </div>
+
+              <div className="flex items-center justify-end gap-2 px-5 py-4">
+                <button
+                  type="button"
+                  onClick={() => setExtensionTokenConfirmAction('regenerate')}
+                  disabled={isExtensionTokenBusy}
+                  className="h-8 rounded-lg border border-gray-200 bg-white px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-50 disabled:opacity-50"
+                >
+                  Regenerate
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleCopyExtensionToken()}
+                  className="inline-flex h-8 items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-50"
+                >
+                  <Copy size={13} />
+                  Copy token
+                </button>
+                <button
+                  type="button"
+                  onClick={closeExtensionTokenModal}
+                  className="h-8 rounded-lg bg-gray-900 px-3 text-xs font-medium text-white transition hover:bg-gray-800"
+                >
+                  Done
+                </button>
+              </div>
+            </ModalOverlay>
+
+            <ModalOverlay
+              isOpen={extensionTokenConfirmAction === 'regenerate'}
+              onClose={() => setExtensionTokenConfirmAction(null)}
+              classNameContainer="w-full max-w-115 rounded-2xl border border-gray-200 bg-white shadow-[0_24px_70px_rgba(15,23,42,0.12)]"
+            >
+              <div className="px-5 pt-5">
+                <p className="text-[10px] font-medium uppercase tracking-[0.18em] text-gray-400">
+                  Browser extension
+                </p>
+                <h3 className="mt-1 text-lg font-semibold text-gray-900">
+                  Regenerate extension token?
+                </h3>
+                <p className="mt-1 text-sm leading-5 text-gray-600">
+                  Your existing browser extension token will stop working. You’ll need to paste the
+                  new token into the extension.
+                </p>
+              </div>
+              <div className="mt-5 flex items-center justify-end gap-2 border-t border-gray-100 px-5 py-4">
+                <button
+                  type="button"
+                  onClick={() => setExtensionTokenConfirmAction(null)}
+                  className="h-8 rounded-lg border border-gray-200 bg-white px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleRegenerateExtensionToken()}
+                  disabled={isExtensionTokenBusy}
+                  className="h-8 rounded-lg bg-gray-900 px-3 text-xs font-medium text-white transition hover:bg-gray-800 disabled:opacity-50"
+                >
+                  {isExtensionTokenBusy ? 'Regenerating...' : 'Regenerate token'}
+                </button>
+              </div>
+            </ModalOverlay>
+
+            <ModalOverlay
+              isOpen={extensionTokenConfirmAction === 'revoke'}
+              onClose={() => setExtensionTokenConfirmAction(null)}
+              classNameContainer="w-full max-w-115 rounded-2xl border border-gray-200 bg-white shadow-[0_24px_70px_rgba(15,23,42,0.12)]"
+            >
+              <div className="px-5 pt-5">
+                <p className="text-[10px] font-medium uppercase tracking-[0.18em] text-gray-400">
+                  Browser extension
+                </p>
+                <h3 className="mt-1 text-lg font-semibold text-gray-900">
+                  Revoke extension token?
+                </h3>
+                <p className="mt-1 text-sm leading-5 text-gray-600">
+                  The browser extension will no longer be able to save captures to Ledger.
+                </p>
+              </div>
+              <div className="mt-5 flex items-center justify-end gap-2 border-t border-gray-100 px-5 py-4">
+                <button
+                  type="button"
+                  onClick={() => setExtensionTokenConfirmAction(null)}
+                  className="h-8 rounded-lg border border-gray-200 bg-white px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleRevokeExtensionToken()}
+                  disabled={isExtensionTokenBusy}
+                  className="h-8 rounded-lg border border-red-200 bg-white px-3 text-xs font-medium text-red-700 transition hover:bg-red-50 disabled:opacity-50"
+                >
+                  {isExtensionTokenBusy ? 'Revoking...' : 'Revoke'}
+                </button>
+              </div>
+            </ModalOverlay>
 
             <ModalOverlay
               isOpen={isWorkspaceManageModalOpen && !!activeWorkspace}

@@ -218,6 +218,25 @@ export const useApi = () => {
           method: 'DELETE',
           skipWorkspaceHeader: true,
         }),
+      getExtensionTokenStatus: (workspaceId: string) =>
+        request(`/api/extension/token/status?workspaceId=${encodeURIComponent(workspaceId)}`, {
+          skipWorkspaceHeader: true,
+        }),
+      createExtensionToken: (workspaceId: string) =>
+        request(`/api/extension/token?workspaceId=${encodeURIComponent(workspaceId)}`, {
+          method: 'POST',
+          skipWorkspaceHeader: true,
+        }),
+      regenerateExtensionToken: (workspaceId: string) =>
+        request(`/api/extension/token/regenerate?workspaceId=${encodeURIComponent(workspaceId)}`, {
+          method: 'POST',
+          skipWorkspaceHeader: true,
+        }),
+      revokeExtensionToken: (workspaceId: string) =>
+        request(`/api/extension/token/revoke?workspaceId=${encodeURIComponent(workspaceId)}`, {
+          method: 'POST',
+          skipWorkspaceHeader: true,
+        }),
 
       // Inbox
       getInboxCount: () => request('/api/inbox/count', { skipWorkspaceHeader: true }),

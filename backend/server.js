@@ -43,6 +43,48 @@ const rateBuckets = new Map();
 
 const getBucketKey = (scope, req, userId) => `${scope}:${userId ?? req.ip}`;
 
+const getBearerToken = (req) => {
+  const authorization = req.headers.authorization;
+  if (typeof authorization !== 'string') return null;
+  const match = authorization.match(/^Bearer\s+(.+)$/i);
+  return match?.[1]?.trim() || null;
+};
+
+const hashExtensionToken = (token) =>
+  crypto.createHash('sha256').update(String(token ?? '')).digest('hex');
+
+const createRawExtensionToken = () => `ledger_ext_${crypto.randomBytes(32).toString('base64url')}`;
+
+const mapExtensionTokenStatus = (row) => ({
+  exists: Boolean(row?.id && !row?.revoked_at),
+  created_at: row?.created_at ?? null,
+  last_used_at: row?.last_used_at ?? null,
+  revoked_at: row?.revoked_at ?? null,
+});
+
+const isUuidLike = (value) =>
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    String(value ?? '').trim()
+  );
+
+const clampText = (value, maxLength) => {
+  const normalized = String(value ?? '').trim();
+  if (!normalized) return '';
+  return normalized.length > maxLength ? normalized.slice(0, maxLength).trim() : normalized;
+};
+
+const clampMultilineText = (value, maxLength) => {
+  const normalized = String(value ?? '').replace(/\r\n/g, '\n').trim();
+  if (!normalized) return null;
+  return normalized.length > maxLength ? normalized.slice(0, maxLength).trim() : normalized;
+};
+
+const titleCaseLabel = (value) =>
+  String(value ?? '')
+    .replace(/_/g, ' ')
+    .trim()
+    .replace(/\b\w/g, (char) => char.toUpperCase()) || 'Inbox';
+
 const rateLimit = (scope) => (req, res, next) => {
   const now = Date.now();
   const bucketKey = getBucketKey(scope, req, req.authUser?.id);
@@ -64,7 +106,7 @@ const rateLimit = (scope) => (req, res, next) => {
 };
 
 const authMiddleware = async (req, res, next) => {
-  const token = req.headers.authorization?.replace('Bearer ', '');
+  const token = getBearerToken(req);
   if (!token) {
     return res.status(401).json({ error: 'Missing token' });
   }
@@ -76,6 +118,69 @@ const authMiddleware = async (req, res, next) => {
     }
 
     req.authUser = data.user;
+    next();
+  } catch (error) {
+    return res.status(401).json({ error: 'Auth failed' });
+  }
+};
+
+const loadExtensionTokenContext = async (token) => {
+  const tokenHash = hashExtensionToken(token);
+  const tokenResult = await supabase
+    .from('extension_tokens')
+    .select('id, user_id, workspace_id, name, created_at, last_used_at, revoked_at')
+    .eq('token_hash', tokenHash)
+    .is('revoked_at', null)
+    .maybeSingle();
+
+  if (tokenResult.error) throw tokenResult.error;
+  const tokenRow = tokenResult.data;
+  if (!tokenRow?.id || !tokenRow.user_id) {
+    return null;
+  }
+
+  const userResult = await supabase
+    .from('users')
+    .select('id, email, full_name, avatar_url, active_workspace_id, preferences, created_at, updated_at')
+    .eq('id', tokenRow.user_id)
+    .maybeSingle();
+
+  if (userResult.error) throw userResult.error;
+  if (!userResult.data?.id) {
+    return null;
+  }
+
+  const now = new Date().toISOString();
+  supabase
+    .from('extension_tokens')
+    .update({ last_used_at: now })
+    .eq('id', tokenRow.id)
+    .then(({ error }) => {
+      if (error) {
+        console.error('Failed to update extension token last_used_at:', error.message);
+      }
+    });
+
+  return {
+    token: tokenRow,
+    user: userResult.data,
+  };
+};
+
+const extensionAuthMiddleware = async (req, res, next) => {
+  const token = getBearerToken(req);
+  if (!token) {
+    return res.status(401).json({ error: 'Missing token' });
+  }
+
+  try {
+    const context = await loadExtensionTokenContext(token);
+    if (!context) {
+      return res.status(401).json({ error: 'Invalid token' });
+    }
+
+    req.extensionToken = context.token;
+    req.authUser = context.user;
     next();
   } catch (error) {
     return res.status(401).json({ error: 'Auth failed' });
@@ -748,6 +853,110 @@ const resolveWorkspaceIdForRequest = async (req) => {
   return resolveWorkspaceId(req.authUser.id, requestedWorkspaceId);
 };
 
+const resolveExtensionWorkspaceId = async (userId, requestedWorkspaceId = null, tokenWorkspaceId = null) => {
+  if (requestedWorkspaceId) {
+    const allowed = await isWorkspaceAccessibleToUser(userId, requestedWorkspaceId);
+    if (!allowed) {
+      const error = new Error('Workspace access denied');
+      error.statusCode = 403;
+      throw error;
+    }
+    return requestedWorkspaceId;
+  }
+
+  if (tokenWorkspaceId) {
+    const allowed = await isWorkspaceAccessibleToUser(userId, tokenWorkspaceId);
+    if (allowed) {
+      return tokenWorkspaceId;
+    }
+  }
+
+  const activeWorkspaceId = await getUserActiveWorkspaceId(userId);
+  if (activeWorkspaceId) {
+    const allowed = await isWorkspaceAccessibleToUser(userId, activeWorkspaceId);
+    if (allowed) {
+      return activeWorkspaceId;
+    }
+  }
+
+  const personalWorkspace = await supabase
+    .from('workspaces')
+    .select('id')
+    .eq('owner_id', userId)
+    .eq('is_personal', true)
+    .maybeSingle();
+
+  if (personalWorkspace.error) throw personalWorkspace.error;
+  if (personalWorkspace.data?.id) {
+    return personalWorkspace.data.id;
+  }
+
+  const membershipWorkspace = await supabase
+    .from('workspace_members')
+    .select('workspace_id')
+    .eq('user_id', userId)
+    .order('joined_at', { ascending: true })
+    .limit(1)
+    .maybeSingle();
+
+  if (membershipWorkspace.error) throw membershipWorkspace.error;
+  if (membershipWorkspace.data?.workspace_id) {
+    return membershipWorkspace.data.workspace_id;
+  }
+
+  const createdWorkspace = await supabase
+    .from('workspaces')
+    .insert({
+      owner_id: userId,
+      name: 'My Work',
+      is_personal: true,
+    })
+    .select('id')
+    .single();
+
+  if (createdWorkspace.error) throw createdWorkspace.error;
+  if (createdWorkspace.data?.id) {
+    await setUserActiveWorkspaceId(userId, createdWorkspace.data.id);
+  }
+  return createdWorkspace.data?.id ?? null;
+};
+
+const getWorkspaceSummary = async (workspaceId) => {
+  if (!workspaceId) return null;
+
+  const result = await supabase
+    .from('workspaces')
+    .select('id, name, owner_id, is_personal, created_at, updated_at')
+    .eq('id', workspaceId)
+    .maybeSingle();
+
+  if (result.error) throw result.error;
+  return result.data ?? null;
+};
+
+const getAccessibleWorkspaces = async (userId) => {
+  const workspaceIds = Array.from(await getUserWorkspaceIds(userId));
+  if (!workspaceIds.length) return [];
+
+  const result = await supabase
+    .from('workspaces')
+    .select('id, name, owner_id, is_personal, created_at, updated_at')
+    .in('id', workspaceIds)
+    .order('created_at', { ascending: true });
+
+  if (result.error) throw result.error;
+  return result.data ?? [];
+};
+
+const resolveExtensionWorkspaceForRequest = async (req) => {
+  const requestedWorkspaceId = normalizeNullableText(req.body?.workspace_id);
+  return resolveExtensionWorkspaceId(
+    req.authUser.id,
+    requestedWorkspaceId || null,
+    req.extensionToken?.workspace_id ?? null
+  );
+};
+
 const getSlackRedirectUri = () => {
   const explicit = process.env.SLACK_REDIRECT_URI?.trim();
   if (explicit) return explicit;
@@ -1095,7 +1304,7 @@ const mapInboxItemResponse = (row) => {
     channel_name: row.channel_name ?? channel.name ?? null,
     author_name:
       row.author_name ?? message.username ?? user.username ?? user.name ?? rawPayload?.user_name ?? null,
-    source_label: row.source ? String(row.source).replace(/_/g, ' ') : 'inbox',
+    source_label: row.source ? titleCaseLabel(row.source) : 'Inbox',
   };
 };
 
@@ -1111,6 +1320,24 @@ const loadInboxItemForWorkspace = async (workspaceId, id) => {
 
   if (result.error) throw result.error;
   return result.data ?? null;
+};
+
+const loadBrowserCapturePayload = (req) => {
+  const captureType = String(req.body?.capture_type ?? '').trim().toLowerCase();
+  const title = clampText(req.body?.title, 300);
+  const body = clampMultilineText(req.body?.body, 20_000);
+  const sourceUrl = clampText(req.body?.source_url, 2_000) || null;
+  const projectId = normalizeNullableText(req.body?.project_id);
+  const rawPayload = req.body?.raw_payload ?? {};
+
+  return {
+    captureType,
+    title: title || '',
+    body,
+    sourceUrl,
+    projectId,
+    rawPayload,
+  };
 };
 
 const withWorkspaceContext = async (req, res, next) => {
@@ -1281,6 +1508,233 @@ const quotaGuard = (resource) => async (req, res, next) => {
 };
 
 app.get('/health', (req, res) => res.json({ status: 'ok' }));
+
+const loadActiveExtensionTokenForSettings = async (userId, workspaceId) => {
+  const result = await supabase
+    .from('extension_tokens')
+    .select('id, created_at, last_used_at, revoked_at')
+    .eq('user_id', userId)
+    .eq('workspace_id', workspaceId)
+    .is('revoked_at', null)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (result.error) throw result.error;
+  return result.data ?? null;
+};
+
+const createExtensionTokenForSettings = async (userId, workspaceId) => {
+  const rawToken = createRawExtensionToken();
+  const insertResult = await supabase
+    .from('extension_tokens')
+    .insert({
+      user_id: userId,
+      workspace_id: workspaceId,
+      name: 'Browser Extension',
+      token_hash: hashExtensionToken(rawToken),
+    })
+    .select('id, created_at, last_used_at, revoked_at')
+    .single();
+
+  if (insertResult.error) throw insertResult.error;
+
+  return {
+    token: rawToken,
+    status: mapExtensionTokenStatus(insertResult.data),
+  };
+};
+
+const revokeActiveExtensionTokensForSettings = async (userId, workspaceId) => {
+  const revokeResult = await supabase
+    .from('extension_tokens')
+    .update({ revoked_at: new Date().toISOString() })
+    .eq('user_id', userId)
+    .eq('workspace_id', workspaceId)
+    .is('revoked_at', null);
+
+  if (revokeResult.error) throw revokeResult.error;
+};
+
+app.get('/api/extension/token/status', authMiddleware, rateLimit('read'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    await requireWorkspaceAccess(req.authUser.id, workspaceId, 'member');
+    const tokenRow = await loadActiveExtensionTokenForSettings(req.authUser.id, workspaceId);
+    res.json(mapExtensionTokenStatus(tokenRow));
+  } catch (error) {
+    if (isMissingRelationError(error, 'extension_tokens')) {
+      return res.json({ exists: false, created_at: null, last_used_at: null, revoked_at: null });
+    }
+    res.status(error.statusCode || 500).json({ error: error.message });
+  }
+});
+
+app.post('/api/extension/token', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    await requireWorkspaceAccess(req.authUser.id, workspaceId, 'member');
+
+    const existing = await loadActiveExtensionTokenForSettings(req.authUser.id, workspaceId);
+    if (existing?.id) {
+      return res.status(409).json({ error: 'An active browser extension token already exists.' });
+    }
+
+    const payload = await createExtensionTokenForSettings(req.authUser.id, workspaceId);
+    res.status(201).json(payload);
+  } catch (error) {
+    res.status(error.statusCode || 500).json({ error: error.message });
+  }
+});
+
+app.post(
+  '/api/extension/token/regenerate',
+  authMiddleware,
+  rateLimit('write'),
+  async (req, res) => {
+    try {
+      const workspaceId = await resolveWorkspaceIdForRequest(req);
+      await requireWorkspaceAccess(req.authUser.id, workspaceId, 'member');
+      await revokeActiveExtensionTokensForSettings(req.authUser.id, workspaceId);
+      const payload = await createExtensionTokenForSettings(req.authUser.id, workspaceId);
+      res.status(201).json(payload);
+    } catch (error) {
+      res.status(error.statusCode || 500).json({ error: error.message });
+    }
+  }
+);
+
+app.post('/api/extension/token/revoke', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    await requireWorkspaceAccess(req.authUser.id, workspaceId, 'member');
+    await revokeActiveExtensionTokensForSettings(req.authUser.id, workspaceId);
+    res.json({ exists: false, created_at: null, last_used_at: null, revoked_at: new Date().toISOString() });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({ error: error.message });
+  }
+});
+
+app.get('/api/extension/me', extensionAuthMiddleware, rateLimit('read'), async (req, res) => {
+  try {
+    const defaultWorkspaceId = await resolveExtensionWorkspaceId(
+      req.authUser.id,
+      null,
+      req.extensionToken?.workspace_id ?? null
+    );
+    const defaultWorkspace = await getWorkspaceSummary(defaultWorkspaceId);
+
+    res.json({
+      ok: true,
+      user: {
+        id: req.authUser.id,
+        email: req.authUser.email ?? null,
+        full_name: req.authUser.full_name ?? null,
+        avatar_url: req.authUser.avatar_url ?? null,
+      },
+      default_workspace_id: defaultWorkspaceId,
+      default_workspace: defaultWorkspace,
+    });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({ error: error.message });
+  }
+});
+
+app.get(
+  '/api/extension/workspaces',
+  extensionAuthMiddleware,
+  rateLimit('read'),
+  async (req, res) => {
+    try {
+      const defaultWorkspaceId = await resolveExtensionWorkspaceId(
+        req.authUser.id,
+        null,
+        req.extensionToken?.workspace_id ?? null
+      );
+      const workspaces = await getAccessibleWorkspaces(req.authUser.id);
+
+      res.json({
+        ok: true,
+        default_workspace_id: defaultWorkspaceId,
+        workspaces,
+      });
+    } catch (error) {
+      res.status(error.statusCode || 500).json({ error: error.message });
+    }
+  }
+);
+
+app.post('/api/inbox/browser', extensionAuthMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const { captureType, title, body, sourceUrl, projectId, rawPayload } =
+      loadBrowserCapturePayload(req);
+
+    if (!['link', 'selection', 'manual'].includes(captureType)) {
+      return res.status(400).json({ error: 'Invalid capture type' });
+    }
+
+    if (
+      rawPayload !== null &&
+      (typeof rawPayload !== 'object' || Array.isArray(rawPayload))
+    ) {
+      return res.status(400).json({ error: 'raw_payload must be an object' });
+    }
+
+    if (projectId && !isUuidLike(projectId)) {
+      return res.status(400).json({ error: 'Invalid project_id' });
+    }
+
+    const workspaceId = await resolveExtensionWorkspaceForRequest(req);
+    if (!workspaceId) {
+      return res.status(400).json({ error: 'No workspace available' });
+    }
+
+    if (projectId) {
+      const projectAllowed = await ensureWorkspaceResource('projects', projectId, workspaceId);
+      if (!projectAllowed) {
+        return res.status(403).json({ error: 'Project does not belong to the selected workspace' });
+      }
+    }
+
+    const fallbackTitle =
+      captureType === 'selection'
+        ? 'Selected text'
+        : captureType === 'link'
+          ? 'Page link'
+          : 'Manual note';
+
+    const insertPayload = {
+      workspace_id: workspaceId,
+      user_id: req.authUser.id,
+      source: 'browser',
+      source_id: null,
+      source_url: sourceUrl,
+      title: title || fallbackTitle,
+      body,
+      raw_payload: rawPayload ?? {},
+      suggested_type: 'unknown',
+      status: 'unprocessed',
+      updated_at: new Date().toISOString(),
+    };
+
+    const { data, error } = await supabase
+      .from('inbox_items')
+      .insert(insertPayload)
+      .select(
+        'id, workspace_id, user_id, source, source_id, source_url, title, body, raw_payload, suggested_type, status, converted_type, converted_id, created_at, updated_at'
+      )
+      .single();
+
+    if (error) throw error;
+
+    res.status(201).json({
+      ok: true,
+      item: mapInboxItemResponse(data),
+    });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({ error: error.message });
+  }
+});
 
 app.get('/api/integrations/slack/status', authMiddleware, rateLimit('read'), async (req, res) => {
   try {
