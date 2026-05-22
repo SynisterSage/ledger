@@ -1,5 +1,7 @@
 import {
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   Clock3,
   FileText,
   Folder,
@@ -288,6 +290,27 @@ export const ProjectsWindow = () => {
   const [isLoadingLinkableNotes, setIsLoadingLinkableNotes] = useState(false);
   const [linkNotesSearch, setLinkNotesSearch] = useState('');
   const [showCloseGuardModal, setShowCloseGuardModal] = useState(false);
+  const areSidePanelsCollapsed = isLeftPaneCollapsed && isRightPaneCollapsed;
+
+  useEffect(() => {
+    const onHideSidePanelsShortcut = (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey)) return;
+      if (!event.shiftKey) return;
+      if (event.key.toLowerCase() !== 'h') return;
+
+      event.preventDefault();
+      if (areSidePanelsCollapsed) {
+        setIsLeftPaneCollapsed(false);
+        setIsRightPaneCollapsed(false);
+      } else {
+        setIsLeftPaneCollapsed(true);
+        setIsRightPaneCollapsed(true);
+      }
+    };
+
+    window.addEventListener('keydown', onHideSidePanelsShortcut);
+    return () => window.removeEventListener('keydown', onHideSidePanelsShortcut);
+  }, [areSidePanelsCollapsed]);
 
   const selectedProject = useMemo(
     () => projects.find((project) => project.id === selectedProjectId) ?? null,
@@ -1236,30 +1259,28 @@ export const ProjectsWindow = () => {
         onClose={attemptCloseProjects}
         actions={
           <div className="flex items-center gap-2">
-            <div className="flex items-center gap-1 rounded-full border border-gray-200 bg-gray-50 p-1 shadow-sm">
-              <button
-                onClick={() => {
-                  if (isLeftPaneCollapsed && isRightPaneCollapsed) {
-                    setIsLeftPaneCollapsed(false);
-                    setIsRightPaneCollapsed(false);
-                  } else {
-                    setIsLeftPaneCollapsed(true);
-                    setIsRightPaneCollapsed(true);
-                  }
-                }}
-                className="h-8 px-3 rounded-full bg-white border border-gray-200 hover:bg-gray-100 text-gray-700 text-xs font-semibold inline-flex items-center justify-center leading-none"
-                title={isLeftPaneCollapsed && isRightPaneCollapsed ? 'Show panels' : 'Hide panels'}
-              >
-                {isLeftPaneCollapsed && isRightPaneCollapsed ? 'Show panels' : 'Hide panels'}
-              </button>
-              <button
-                onClick={() => setIsCreatingProject(!isCreatingProject)}
-                className="h-8 px-3 rounded-full bg-white border border-gray-200 hover:bg-gray-100 text-gray-700 text-xs font-semibold inline-flex items-center justify-center leading-none"
-              >
-                <Plus size={13} />
-                {isCreatingProject ? 'Cancel' : 'New project'}
-              </button>
-            </div>
+            <button
+              onClick={() => {
+                if (areSidePanelsCollapsed) {
+                  setIsLeftPaneCollapsed(false);
+                  setIsRightPaneCollapsed(false);
+                } else {
+                  setIsLeftPaneCollapsed(true);
+                  setIsRightPaneCollapsed(true);
+                }
+              }}
+              className="h-8 px-3 rounded-full border border-gray-200 bg-gray-50 text-xs font-medium text-gray-700 hover:bg-gray-100 transition"
+              title={areSidePanelsCollapsed ? 'Show panels' : 'Hide panels'}
+            >
+              {areSidePanelsCollapsed ? 'Show panels' : 'Hide panels'}
+            </button>
+            <button
+              onClick={() => setIsCreatingProject(!isCreatingProject)}
+              className="h-8 px-3 rounded-full bg-white border border-gray-200 hover:bg-gray-100 text-gray-700 text-xs font-semibold inline-flex items-center justify-center leading-none"
+            >
+              <Plus size={13} />
+              {isCreatingProject ? 'Cancel' : 'New project'}
+            </button>
             <button
               onClick={() => void loadProjects()}
               className="h-8 w-8 rounded-full border border-gray-200 bg-white hover:bg-gray-100 text-gray-600 flex items-center justify-center shadow-sm"
@@ -1278,7 +1299,7 @@ export const ProjectsWindow = () => {
       )}
 
       <div className="flex-1 flex overflow-hidden">
-        {!isLeftPaneCollapsed && (
+        {!isLeftPaneCollapsed ? (
           <>
             <aside
               className="border-r border-gray-200 bg-white flex flex-col overflow-hidden shrink-0"
@@ -1286,13 +1307,23 @@ export const ProjectsWindow = () => {
             >
               <div className={`${isCompactLayout ? 'p-3' : 'p-4'} border-b border-gray-100`}>
                 <div className="flex items-center justify-between mb-3">
-                  <div>
-                    <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">
-                      Library
-                    </p>
-                    <h2 className="text-sm font-semibold text-gray-900">
-                      {projects.length} projects
-                    </h2>
+                  <div className="flex items-center gap-2 min-w-0">
+                    <div>
+                      <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">
+                        Library
+                      </p>
+                      <h2 className="text-sm font-semibold text-gray-900">
+                        {projects.length} projects
+                      </h2>
+                    </div>
+                    <button
+                      onClick={() => setIsLeftPaneCollapsed(true)}
+                      className="h-7 w-7 rounded-lg border border-gray-200 bg-white text-gray-500 hover:bg-gray-100 flex items-center justify-center shadow-sm"
+                      title="Hide left panel"
+                      aria-label="Hide left panel"
+                    >
+                      <ChevronLeft size={13} strokeWidth={2.25} className="-translate-x-px" />
+                    </button>
                   </div>
                   <span className="text-[10px] text-gray-500">
                     {isLoadingProjects ? 'Syncing...' : 'Live'}
@@ -1461,6 +1492,17 @@ export const ProjectsWindow = () => {
               }}
             />
           </>
+        ) : (
+          <div className="w-10 shrink-0 border-r border-gray-200 bg-white flex items-start justify-center pt-4">
+            <button
+              onClick={() => setIsLeftPaneCollapsed(false)}
+              className="h-7 w-7 rounded-lg border border-gray-200 bg-white text-gray-500 hover:bg-gray-100 flex items-center justify-center shadow-sm"
+              title="Show left panel"
+              aria-label="Show left panel"
+            >
+              <ChevronRight size={14} strokeWidth={2.25} />
+            </button>
+          </div>
         )}
 
         <main className="flex-1 overflow-hidden bg-[#f5f7fb]">
@@ -1928,7 +1970,7 @@ export const ProjectsWindow = () => {
           </div>
         </main>
 
-        {!isRightPaneCollapsed && (
+        {!isRightPaneCollapsed ? (
           <>
             <div
               className="w-1.5 cursor-col-resize bg-gray-100 hover:bg-gray-200 transition touch-none"
@@ -1955,68 +1997,79 @@ export const ProjectsWindow = () => {
                       {selectedProject ? projectDraft.name : 'Click a project to view details'}
                     </p>
                   </div>
-                  {selectedProject && (
-                    <div className="relative" ref={rightPanelMenuRef}>
-                      <button
-                        type="button"
-                        onClick={() => setIsContextMenuOpen((current) => !current)}
-                        className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
-                        aria-label="Project context actions"
-                      >
-                        <MoreHorizontal size={14} />
-                      </button>
-                      {isContextMenuOpen && (
-                        <div className="absolute right-0 top-9 z-50 min-w-44 rounded-lg border border-gray-200 bg-white py-1 shadow-lg">
-                          <button
-                            className="w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
-                            onClick={() => {
-                              setIsContextMenuOpen(false);
-                            }}
-                          >
-                            Edit project notes
-                          </button>
-                          <button
-                            className="w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
-                            onClick={() => {
-                              setIsContextMenuOpen(false);
-                              void openLinkNoteModal();
-                            }}
-                          >
-                            Link note
-                          </button>
-                          <button
-                            className="w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
-                            onClick={() => {
-                              setIsContextMenuOpen(false);
-                            }}
-                          >
-                            Copy project link
-                          </button>
-                          <button
-                            className="w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
-                            onClick={() => {
-                              setIsContextMenuOpen(false);
-                              if (!selectedProject) return;
-                              void updateProjectStatus(selectedProject.id, 'paused');
-                            }}
-                          >
-                            Archive project
-                          </button>
-                          <div className="my-1 h-px bg-gray-100" />
-                          <button
-                            className="w-full px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50"
-                            onClick={() => {
-                              setIsContextMenuOpen(false);
-                              if (!selectedProject) return;
-                              void deleteProject(selectedProject.id);
-                            }}
-                          >
-                            Delete project
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  )}
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setIsRightPaneCollapsed(true)}
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
+                      aria-label="Hide right panel"
+                      title="Hide right panel"
+                    >
+                      <ChevronRight size={14} />
+                    </button>
+                    {selectedProject && (
+                      <div className="relative" ref={rightPanelMenuRef}>
+                        <button
+                          type="button"
+                          onClick={() => setIsContextMenuOpen((current) => !current)}
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
+                          aria-label="Project context actions"
+                        >
+                          <MoreHorizontal size={14} />
+                        </button>
+                        {isContextMenuOpen && (
+                          <div className="absolute right-0 top-9 z-50 min-w-44 rounded-lg border border-gray-200 bg-white py-1 shadow-lg">
+                            <button
+                              className="w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
+                              onClick={() => {
+                                setIsContextMenuOpen(false);
+                              }}
+                            >
+                              Edit project notes
+                            </button>
+                            <button
+                              className="w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
+                              onClick={() => {
+                                setIsContextMenuOpen(false);
+                                void openLinkNoteModal();
+                              }}
+                            >
+                              Link note
+                            </button>
+                            <button
+                              className="w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
+                              onClick={() => {
+                                setIsContextMenuOpen(false);
+                              }}
+                            >
+                              Copy project link
+                            </button>
+                            <button
+                              className="w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
+                              onClick={() => {
+                                setIsContextMenuOpen(false);
+                                if (!selectedProject) return;
+                                void updateProjectStatus(selectedProject.id, 'paused');
+                              }}
+                            >
+                              Archive project
+                            </button>
+                            <div className="my-1 h-px bg-gray-100" />
+                            <button
+                              className="w-full px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50"
+                              onClick={() => {
+                                setIsContextMenuOpen(false);
+                                if (!selectedProject) return;
+                                void deleteProject(selectedProject.id);
+                              }}
+                            >
+                              Delete project
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 {!selectedProject ? (
@@ -2197,6 +2250,17 @@ export const ProjectsWindow = () => {
               </div>
             </aside>
           </>
+        ) : (
+          <div className="w-10 shrink-0 border-l border-gray-200 bg-[#fbfcfe] flex items-start justify-center pt-4">
+            <button
+              onClick={() => setIsRightPaneCollapsed(false)}
+              className="h-7 w-7 rounded-lg border border-gray-200 bg-white text-gray-500 hover:bg-gray-100 flex items-center justify-center shadow-sm"
+              title="Show right panel"
+              aria-label="Show right panel"
+            >
+              <ChevronLeft size={13} strokeWidth={2.25} />
+            </button>
+          </div>
         )}
       </div>
 

@@ -56,6 +56,16 @@ export const authService = {
     return data.session;
   },
 
+  // Restore a session from saved tokens.
+  async restoreSession(session: { access_token: string; refresh_token: string }): Promise<Session | null> {
+    const { data, error } = await supabase.auth.setSession({
+      access_token: session.access_token,
+      refresh_token: session.refresh_token,
+    });
+    if (error) return null;
+    return data.session;
+  },
+
   // Get current session
   async getSession(): Promise<Session | null> {
     const { data } = await supabase.auth.getSession();

@@ -714,6 +714,27 @@ export const CalendarWindow = () => {
   const [isRightPaneCollapsed, setIsRightPaneCollapsed] = useState(false);
   const [overflowDayKey, setOverflowDayKey] = useState<string | null>(null);
   const areSidePanelsCollapsed = isLeftPaneCollapsed && isRightPaneCollapsed;
+
+  useEffect(() => {
+    const onHideSidePanelsShortcut = (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey)) return;
+      if (!event.shiftKey) return;
+      if (event.key.toLowerCase() !== 'h') return;
+
+      event.preventDefault();
+      if (areSidePanelsCollapsed) {
+        setIsLeftPaneCollapsed(false);
+        setIsRightPaneCollapsed(false);
+      } else {
+        setIsLeftPaneCollapsed(true);
+        setIsRightPaneCollapsed(true);
+      }
+    };
+
+    window.addEventListener('keydown', onHideSidePanelsShortcut);
+    return () => window.removeEventListener('keydown', onHideSidePanelsShortcut);
+  }, [areSidePanelsCollapsed]);
+
   const monthPreview = useMemo(() => {
     const start = startOfMonthGrid(viewAnchor);
     return {
@@ -2621,10 +2642,10 @@ export const CalendarWindow = () => {
                 </p>
                 <button
                   onClick={() => setIsLeftPaneCollapsed(true)}
-                  className="h-7 w-7 rounded-full border border-gray-200 bg-white text-gray-500 hover:bg-gray-100 flex items-center justify-center shadow-sm"
+                  className="h-7 w-7 rounded-lg border border-gray-200 bg-white text-gray-500 hover:bg-gray-100 flex items-center justify-center shadow-sm"
                   title="Hide left panel"
                 >
-                  <ChevronLeft size={13} strokeWidth={2.25} />
+                  <ChevronLeft size={13} strokeWidth={2.25} className="-translate-x-px" />
                 </button>
               </div>
               <div className="mb-5 rounded-2xl border border-gray-200 bg-gray-50 p-3">
@@ -2866,7 +2887,7 @@ export const CalendarWindow = () => {
           <div className="w-10 shrink-0 border-r border-gray-200 bg-white flex items-start justify-center pt-4">
             <button
               onClick={() => setIsLeftPaneCollapsed(false)}
-              className="h-8 w-8 rounded-full border border-gray-200 bg-white text-gray-500 hover:bg-gray-100 flex items-center justify-center shadow-sm"
+              className="h-7 w-7 rounded-lg border border-gray-200 bg-white text-gray-500 hover:bg-gray-100 flex items-center justify-center shadow-sm"
               title="Show left panel"
             >
               <ChevronRight size={14} />
@@ -3516,7 +3537,7 @@ export const CalendarWindow = () => {
                 </div>
                 <button
                   onClick={() => setIsRightPaneCollapsed(true)}
-                  className="h-7 w-7 shrink-0 rounded-full border border-gray-200 bg-white text-gray-500 shadow-sm hover:bg-gray-100 flex items-center justify-center"
+                  className="h-7 w-7 shrink-0 rounded-lg border border-gray-200 bg-white text-gray-500 shadow-sm hover:bg-gray-100 flex items-center justify-center"
                   title="Hide right panel"
                   aria-label="Hide right panel"
                 >
@@ -3847,7 +3868,7 @@ export const CalendarWindow = () => {
           <div className="w-10 shrink-0 border-l border-gray-200 bg-[#fbfcfe] flex items-start justify-center pt-4">
             <button
               onClick={() => setIsRightPaneCollapsed(false)}
-              className="h-8 w-8 rounded-full border border-gray-200 bg-white text-gray-500 hover:bg-gray-100 flex items-center justify-center shadow-sm"
+              className="h-7 w-7 rounded-lg border border-gray-200 bg-white text-gray-500 hover:bg-gray-100 flex items-center justify-center shadow-sm"
               title="Show right panel"
             >
               <ChevronLeft size={13} strokeWidth={2.25} />

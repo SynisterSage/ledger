@@ -140,6 +140,7 @@ const shortcutSections: Array<{
     title: 'Sidebar',
     shortcuts: [
       { keys: '⌘ + ⇧ + B', description: 'hide / show sidebar' },
+      { keys: '⌘/Ctrl + ⇧ + H', description: 'toggle side panels in Notes, Calendar, and Projects' },
       { keys: '⌘/Ctrl + ⇧ + L', description: 'hide / show all Ledger windows' },
       { keys: '⌘ + B', description: 'collapse / expand' },
     ],

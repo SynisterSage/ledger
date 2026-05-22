@@ -1,5 +1,6 @@
 import {
   ChevronDown,
+  ChevronLeft,
   ChevronRight,
   Clock,
   Copy,
@@ -540,6 +541,26 @@ export const NotesWindow = () => {
 
   const areSidePanelsCollapsed = isLeftPaneCollapsed && isRightPaneCollapsed;
   const isCompactLayout = viewportWidth < modulePaneSizing.notes.left.compactBreakpoint;
+
+  useEffect(() => {
+    const onHideSidePanelsShortcut = (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey)) return;
+      if (!event.shiftKey) return;
+      if (event.key.toLowerCase() !== 'h') return;
+
+      event.preventDefault();
+      if (areSidePanelsCollapsed) {
+        setIsLeftPaneCollapsed(false);
+        setIsRightPaneCollapsed(false);
+      } else {
+        setIsLeftPaneCollapsed(true);
+        setIsRightPaneCollapsed(true);
+      }
+    };
+
+    window.addEventListener('keydown', onHideSidePanelsShortcut);
+    return () => window.removeEventListener('keydown', onHideSidePanelsShortcut);
+  }, [areSidePanelsCollapsed]);
 
   const selectedNote = useMemo(
     () => notes.find((note) => note.id === selectedNoteId) ?? null,
@@ -2509,34 +2530,32 @@ export const NotesWindow = () => {
         onClose={attemptCloseNotes}
         actions={
           <div className="flex items-center gap-2">
-            <div className="flex items-center gap-1 rounded-full border border-gray-200 bg-gray-50 p-1 shadow-sm">
-              <button
-                onClick={() => {
-                  if (areSidePanelsCollapsed) {
-                    setIsLeftPaneCollapsed(false);
-                    setIsRightPaneCollapsed(false);
-                  } else {
-                    setIsLeftPaneCollapsed(true);
-                    setIsRightPaneCollapsed(true);
-                  }
-                }}
-                className="h-8 px-3 rounded-full bg-white border border-gray-200 hover:bg-gray-100 text-gray-700 text-xs font-semibold inline-flex items-center justify-center leading-none"
-                title={areSidePanelsCollapsed ? 'Show panels' : 'Hide panels'}
-              >
-                {areSidePanelsCollapsed ? 'Show panels' : 'Hide panels'}
-              </button>
-              <button
-                onClick={() => {
-                  setNoteCreationSectionId(null);
-                  setShowCreateNoteModal(true);
-                }}
-                disabled={isCreating}
-                className="h-8 px-3 rounded-full bg-white border border-gray-200 hover:bg-gray-100 text-gray-700 text-xs font-semibold inline-flex items-center justify-center leading-none disabled:opacity-60"
-              >
-                <Plus size={13} />
-                {isCreating ? 'Creating...' : 'New note'}
-              </button>
-            </div>
+            <button
+              onClick={() => {
+                if (areSidePanelsCollapsed) {
+                  setIsLeftPaneCollapsed(false);
+                  setIsRightPaneCollapsed(false);
+                } else {
+                  setIsLeftPaneCollapsed(true);
+                  setIsRightPaneCollapsed(true);
+                }
+              }}
+              className="h-8 px-3 rounded-full border border-gray-200 bg-gray-50 text-xs font-medium text-gray-700 hover:bg-gray-100 transition"
+              title={areSidePanelsCollapsed ? 'Show panels' : 'Hide panels'}
+            >
+              {areSidePanelsCollapsed ? 'Show panels' : 'Hide panels'}
+            </button>
+            <button
+              onClick={() => {
+                setNoteCreationSectionId(null);
+                setShowCreateNoteModal(true);
+              }}
+              disabled={isCreating}
+              className="h-8 px-3 rounded-full bg-white border border-gray-200 hover:bg-gray-100 text-gray-700 text-xs font-semibold inline-flex items-center justify-center leading-none disabled:opacity-60"
+            >
+              <Plus size={13} />
+              {isCreating ? 'Creating...' : 'New note'}
+            </button>
             <button
               onClick={() => void loadNotes({ silent: true })}
               className="h-8 rounded-full border border-gray-200 bg-white px-2.5 text-[11px] font-medium text-gray-600 hover:bg-gray-50 inline-flex items-center gap-1.5"
@@ -2568,7 +2587,7 @@ export const NotesWindow = () => {
         </div>
       )}
       <div className="flex-1 flex overflow-hidden">
-        {!isLeftPaneCollapsed && hasLoadedOnce && (
+        {!isLeftPaneCollapsed && hasLoadedOnce ? (
           <>
             <aside
               className={`border-r border-gray-200 bg-white flex flex-col overflow-hidden shrink-0 ${
@@ -2578,9 +2597,19 @@ export const NotesWindow = () => {
             >
               <div className={`${isCompactLayout ? 'p-3' : 'p-4'} border-b border-gray-100`}>
                 <div className="flex items-center justify-between mb-3">
-                  <h2 className="text-xs font-medium text-gray-500">
-                    Notes
-                  </h2>
+                  <div className="flex items-center gap-2 min-w-0">
+                    <h2 className="text-xs font-medium text-gray-500">
+                      Notes
+                    </h2>
+                    <button
+                      onClick={() => setIsLeftPaneCollapsed(true)}
+                      className="h-7 w-7 rounded-lg border border-gray-200 bg-white text-gray-500 hover:bg-gray-100 flex items-center justify-center shadow-sm"
+                      title="Hide left panel"
+                      aria-label="Hide left panel"
+                    >
+                      <ChevronLeft size={13} strokeWidth={2.25} className="-translate-x-px" />
+                    </button>
+                  </div>
                   <div className="relative" ref={newMenuRef}>
                     <button
                       onClick={() => setShowNewMenu((current) => !current)}
@@ -3411,6 +3440,17 @@ export const NotesWindow = () => {
               title="Resize panels"
             />
           </>
+        ) : (
+          <div className="w-10 shrink-0 border-r border-gray-200 bg-white flex items-start justify-center pt-4">
+            <button
+              onClick={() => setIsLeftPaneCollapsed(false)}
+              className="h-7 w-7 rounded-lg border border-gray-200 bg-white text-gray-500 hover:bg-gray-100 flex items-center justify-center shadow-sm"
+              title="Show left panel"
+              aria-label="Show left panel"
+            >
+              <ChevronRight size={14} strokeWidth={2.25} />
+            </button>
+          </div>
         )}
 
         <section
@@ -3664,7 +3704,7 @@ export const NotesWindow = () => {
           </div>
         </section>
 
-        {!isRightPaneCollapsed && (
+        {!isRightPaneCollapsed ? (
           <>
             <div
               role="separator"
@@ -3698,126 +3738,137 @@ export const NotesWindow = () => {
                     </p>
                   </div>
 
-                  {selectedNote && (
-                    <div className="relative shrink-0" ref={inspectorActionsRef}>
-                      <button
-                        type="button"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          setIsInspectorActionsOpen((current) => !current);
-                        }}
-                        className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
-                        aria-label="Inspector actions"
-                      >
-                        <MoreHorizontal size={14} />
-                      </button>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setIsRightPaneCollapsed(true)}
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
+                      aria-label="Hide right panel"
+                      title="Hide right panel"
+                    >
+                      <ChevronRight size={14} />
+                    </button>
+                    {selectedNote && (
+                      <div className="relative shrink-0" ref={inspectorActionsRef}>
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            setIsInspectorActionsOpen((current) => !current);
+                          }}
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
+                          aria-label="Inspector actions"
+                        >
+                          <MoreHorizontal size={14} />
+                        </button>
 
-                      {isInspectorActionsOpen && selectedNote && (
-                        <div className="absolute right-0 top-10 z-40 min-w-52 rounded-xl border border-gray-200 bg-white p-1.5 shadow-lg">
-                          <button
-                            onClick={() => {
-                              setIsInspectorActionsOpen(false);
-                              titleRef.current?.focus();
-                            }}
-                            className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-50"
-                          >
-                            Rename
-                          </button>
-                          <button
-                            disabled={draftMode !== 'text'}
-                            onClick={() => {
-                              setIsInspectorActionsOpen(false);
-                              runAutoCorrectSpelling();
-                            }}
-                            className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:text-gray-400"
-                          >
-                            Auto-correct spelling
-                          </button>
-                          <button
-                            onClick={() => {
-                              setIsInspectorActionsOpen(false);
-                              void duplicateNoteById(selectedNote.id);
-                            }}
-                            className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-50"
-                          >
-                            Duplicate
-                          </button>
-                          <button
-                            onClick={() => {
+                        {isInspectorActionsOpen && selectedNote && (
+                          <div className="absolute right-0 top-10 z-40 min-w-52 rounded-xl border border-gray-200 bg-white p-1.5 shadow-lg">
+                            <button
+                              onClick={() => {
+                                setIsInspectorActionsOpen(false);
+                                titleRef.current?.focus();
+                              }}
+                              className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-50"
+                            >
+                              Rename
+                            </button>
+                            <button
+                              disabled={draftMode !== 'text'}
+                              onClick={() => {
+                                setIsInspectorActionsOpen(false);
+                                runAutoCorrectSpelling();
+                              }}
+                              className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:text-gray-400"
+                            >
+                              Auto-correct spelling
+                            </button>
+                            <button
+                              onClick={() => {
+                                setIsInspectorActionsOpen(false);
+                                void duplicateNoteById(selectedNote.id);
+                              }}
+                              className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-50"
+                            >
+                              Duplicate
+                            </button>
+                            <button
+                              onClick={() => {
                                 setIsInspectorActionsOpen(false);
                                 void handleSaveNoteAsTemplate(
                                   selectedNote.id,
                                   draftTitle || selectedNote.title || 'Untitled note'
                                 );
                               }}
-                            className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-50"
-                          >
-                            Save as template
-                          </button>
-                          <button
-                            onClick={() => {
-                              setIsInspectorActionsOpen(false);
-                              const id = selectedNote?.id ?? selectedNoteId;
-                              if (!id) return;
-                              setShowVersionHistoryModal(true);
-                              void openVersionHistory(id);
-                            }}
-                            className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-50"
-                          >
-                            Version history
-                          </button>
+                              className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-50"
+                            >
+                              Save as template
+                            </button>
+                            <button
+                              onClick={() => {
+                                setIsInspectorActionsOpen(false);
+                                const id = selectedNote?.id ?? selectedNoteId;
+                                if (!id) return;
+                                setShowVersionHistoryModal(true);
+                                void openVersionHistory(id);
+                              }}
+                              className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-50"
+                            >
+                              Version history
+                            </button>
 
-                          <button
-                            onClick={() => {
-                              setIsInspectorActionsOpen(false);
-                              void restoreLatestVersion();
-                            }}
-                            className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-50"
-                          >
-                            Restore last version
-                          </button>
-                          <button
-                            onClick={() => {
-                              setIsInspectorActionsOpen(false);
-                              const firstSection = sections[0];
-                              if (!firstSection) return;
-                              void api
-                                .updateNote(selectedNote.id, { section_id: firstSection.id })
-                                .then((updated) => {
-                                  const row = updated as NoteRow;
-                                  setNotes((prev) =>
-                                    prev.map((note) => (note.id === row.id ? row : note))
-                                  );
-                                });
-                            }}
-                            className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-50"
-                          >
-                            Move to section...
-                          </button>
-                          <button
-                            onClick={() => {
-                              setIsInspectorActionsOpen(false);
-                              void createChildNote(selectedNote.id);
-                            }}
-                            className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-50"
-                          >
-                            Add child note
-                          </button>
-                          <div className="my-1 h-px bg-gray-100" />
-                          <button
-                            disabled={isDeleting}
-                            onClick={() => {
-                              setIsInspectorActionsOpen(false);
-                              void deleteSelectedNote();
-                            }}
-                            className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-red-600 hover:bg-red-50 disabled:opacity-50"
-                          >
-                            {isDeleting ? 'Deleting...' : 'Delete note'}
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  )}
+                            <button
+                              onClick={() => {
+                                setIsInspectorActionsOpen(false);
+                                void restoreLatestVersion();
+                              }}
+                              className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-50"
+                            >
+                              Restore last version
+                            </button>
+                            <button
+                              onClick={() => {
+                                setIsInspectorActionsOpen(false);
+                                const firstSection = sections[0];
+                                if (!firstSection) return;
+                                void api
+                                  .updateNote(selectedNote.id, { section_id: firstSection.id })
+                                  .then((updated) => {
+                                    const row = updated as NoteRow;
+                                    setNotes((prev) =>
+                                      prev.map((note) => (note.id === row.id ? row : note))
+                                    );
+                                  });
+                              }}
+                              className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-50"
+                            >
+                              Move to section...
+                            </button>
+                            <button
+                              onClick={() => {
+                                setIsInspectorActionsOpen(false);
+                                void createChildNote(selectedNote.id);
+                              }}
+                              className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-50"
+                            >
+                              Add child note
+                            </button>
+                            <div className="my-1 h-px bg-gray-100" />
+                            <button
+                              disabled={isDeleting}
+                              onClick={() => {
+                                setIsInspectorActionsOpen(false);
+                                void deleteSelectedNote();
+                              }}
+                              className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-red-600 hover:bg-red-50 disabled:opacity-50"
+                            >
+                              {isDeleting ? 'Deleting...' : 'Delete note'}
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 <div className="space-y-2 border-t border-gray-100 pt-4">
@@ -3937,6 +3988,17 @@ export const NotesWindow = () => {
               </div>
             </aside>
           </>
+        ) : (
+          <div className="w-10 shrink-0 border-l border-gray-200 bg-[#fbfcfe] flex items-start justify-center pt-4">
+            <button
+              onClick={() => setIsRightPaneCollapsed(false)}
+              className="h-7 w-7 rounded-lg border border-gray-200 bg-white text-gray-500 hover:bg-gray-100 flex items-center justify-center shadow-sm"
+              title="Show right panel"
+              aria-label="Show right panel"
+            >
+              <ChevronLeft size={13} strokeWidth={2.25} />
+            </button>
+          </div>
         )}
       </div>
 

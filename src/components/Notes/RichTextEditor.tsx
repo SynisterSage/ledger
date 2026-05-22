@@ -30,6 +30,7 @@ import { $generateHtmlFromNodes } from '@lexical/html';
 import { $generateNodesFromDOM } from '@lexical/html';
 import {
   $getRoot,
+  $getNodeByKey,
   $insertNodes,
   EditorState,
   FORMAT_TEXT_COMMAND,
@@ -43,7 +44,7 @@ import {
 } from 'lexical';
 import { $setBlocksType } from '@lexical/selection';
 import { $createHeadingNode, $createQuoteNode } from '@lexical/rich-text';
-import { $createImageNode, ImageNode } from './nodes/ImageNode';
+import { $createImageNode, $isImageNode, ImageNode } from './nodes/ImageNode';
 import { supabase } from '../../services/supabase';
 import { useWorkspaceContext } from '../../context/WorkspaceContext';
 import { useToast } from '../Common/ToastProvider';
@@ -399,6 +400,18 @@ const fileToDataUrl = (file: File) =>
     reader.readAsDataURL(file);
   });
 
+const loadImageDimensions = (src: string) =>
+  new Promise<{ width: number; height: number } | null>((resolve) => {
+    const image = new window.Image();
+    image.onload = () =>
+      resolve({
+        width: image.naturalWidth || image.width || 0,
+        height: image.naturalHeight || image.height || 0,
+      });
+    image.onerror = () => resolve(null);
+    image.src = src;
+  });
+
 const getImageFilesFromClipboard = (event: ClipboardEvent): File[] => {
   const directFiles = Array.from(event.clipboardData?.files ?? []).filter((file) =>
     file.type.startsWith('image/')
@@ -461,6 +474,10 @@ const ImagePasteDropPlugin = ({ noteId }: { noteId?: string | null }) => {
       const safeNoteId = noteId ?? 'unassigned';
       const storagePath = `workspaces/${activeWorkspaceId}/notes/${safeNoteId}/images/${timestamp}-${random}.${ext}`;
       const localDataUrl = await fileToDataUrl(file);
+      const imageDimensions = await loadImageDimensions(localDataUrl);
+      const initialWidth = imageDimensions?.width
+        ? Math.min(Math.max(imageDimensions.width, 180), 720)
+        : 560;
 
       try {
         const { error: uploadError } = await supabase.storage
@@ -472,17 +489,15 @@ const ImagePasteDropPlugin = ({ noteId }: { noteId?: string | null }) => {
           return;
         }
 
-        // Use deterministic public URL so renderer has a stable, immediately displayable src.
-        const imageUrl =
-          supabase.storage.from(NOTE_IMAGE_BUCKET).getPublicUrl(storagePath).data?.publicUrl ?? '';
-
-        // only insert after successful upload and valid render URL
+        // Insert with the local data URL so the image is visible immediately.
+        // The node serializes to the public storage URL on save, so we avoid persisting base64.
         editor.update(() => {
           $insertNodes([
             $createImageNode({
-              src: imageUrl || localDataUrl,
+              src: localDataUrl,
               altText: file.name || 'Pasted image',
               storagePath,
+              width: initialWidth,
             }),
             $createParagraphNode(),
           ]);
@@ -539,6 +554,102 @@ const ImagePasteDropPlugin = ({ noteId }: { noteId?: string | null }) => {
       rootElement?.addEventListener('dragover', onDragOver as EventListener);
     });
   }, [editor]);
+
+  return null;
+};
+
+const ResizableImagePlugin = () => {
+  const [editor] = useLexicalComposerContext();
+  const observersRef = useRef(
+    new Map<
+      string,
+      {
+        observer: ResizeObserver;
+        widthTimer: number | null;
+        lastWidth: number | null;
+      }
+    >()
+  );
+
+  const syncObservers = useCallback(() => {
+    const rootElement = editor.getRootElement();
+    if (!rootElement) return;
+
+    const seenKeys = new Set<string>();
+    const wrappers = Array.from(rootElement.querySelectorAll<HTMLElement>('[data-lexical-image-node-key]'));
+
+    for (const wrapper of wrappers) {
+      const key = wrapper.getAttribute('data-lexical-image-node-key');
+      if (!key) continue;
+      seenKeys.add(key);
+
+      if (observersRef.current.has(key)) continue;
+
+      const observerState = {
+        observer: new ResizeObserver((entries) => {
+          const entry = entries[0];
+          if (!entry) return;
+
+          const nextWidth = Math.round(entry.contentRect.width);
+          if (!nextWidth) return;
+
+          const currentState = observersRef.current.get(key);
+          if (!currentState) return;
+          if (currentState.lastWidth === nextWidth) return;
+
+          currentState.lastWidth = nextWidth;
+
+          if (currentState.widthTimer) {
+            window.clearTimeout(currentState.widthTimer);
+          }
+
+          currentState.widthTimer = window.setTimeout(() => {
+            editor.update(() => {
+              const node = $getNodeByKey(key);
+              if (!$isImageNode(node)) return;
+              if (node.getWidth() === nextWidth) return;
+              node.setWidth(nextWidth);
+            });
+          }, 120);
+        }),
+        widthTimer: null as number | null,
+        lastWidth: null as number | null,
+      };
+
+      observerState.lastWidth = Math.round(wrapper.getBoundingClientRect().width);
+      observerState.observer.observe(wrapper);
+      observersRef.current.set(key, observerState);
+    }
+
+    for (const [key, state] of observersRef.current.entries()) {
+      if (seenKeys.has(key)) continue;
+      state.observer.disconnect();
+      if (state.widthTimer) {
+        window.clearTimeout(state.widthTimer);
+      }
+      observersRef.current.delete(key);
+    }
+  }, [editor]);
+
+  useEffect(() => {
+    const rafSync = () => {
+      window.requestAnimationFrame(syncObservers);
+    };
+
+    rafSync();
+    const unregister = editor.registerUpdateListener(rafSync);
+
+    return () => {
+      unregister();
+      for (const state of observersRef.current.values()) {
+        state.observer.disconnect();
+        if (state.widthTimer) {
+          window.clearTimeout(state.widthTimer);
+        }
+      }
+      observersRef.current.clear();
+    };
+  }, [editor, syncObservers]);
 
   return null;
 };
@@ -620,6 +731,7 @@ export function RichTextEditor({ initialValue, editorKey, noteId, onChange, onFo
           <TabIndentationPlugin />
           <ListPlugin />
           <ImagePasteDropPlugin noteId={noteId} />
+          <ResizableImagePlugin />
           <OnChangePlugin onChange={handleChange} />
         </div>
       </div>

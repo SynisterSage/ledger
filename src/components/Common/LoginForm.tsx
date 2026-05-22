@@ -45,6 +45,7 @@ export const LoginForm: React.FC<LoginProps> = ({ onSuccess, notice }) => {
   const triggerOnPrimaryMouseDown = (event: React.MouseEvent<HTMLButtonElement>) => {
     if (event.button !== 0) return;
     event.preventDefault();
+    event.stopPropagation();
     handleCloseWindow();
   };
 

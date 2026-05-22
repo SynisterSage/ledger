@@ -244,6 +244,8 @@ export const ExpandedSidebar = ({
   const { openSearch } = useSearch();
   const api = useApi();
   const isHorizontal = position === 'top' || position === 'bottom';
+  const isWindowsPlatform =
+    typeof navigator !== 'undefined' && navigator.platform.toLowerCase().includes('win');
   const fullName = (user?.user_metadata?.full_name as string | undefined)?.trim() ?? '';
   const firstName = fullName ? fullName.split(' ')[0] : user?.email?.split('@')[0] ?? 'User';
   const getWorkspaceTaskMetadata = () => ({
@@ -462,7 +464,7 @@ export const ExpandedSidebar = ({
       <div
         ref={dropdownRef}
         style={portalStyle ?? undefined}
-        className="rounded-2xl border border-gray-200 bg-white shadow-[0_12px_40px_rgba(15,23,42,0.12)] ring-0 outline-none max-h-56 overflow-auto"
+        className="rounded-2xl border border-gray-200 bg-white shadow-[0_12px_40px_rgba(15,23,42,0.12)] ring-0 outline-none max-h-56 overflow-y-auto overscroll-contain pr-0 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
       >
         {Array.isArray(workspaces) && workspaces.length > 0 ? (
           workspaces.map((ws) => (
@@ -475,7 +477,6 @@ export const ExpandedSidebar = ({
                 } catch (err) {
                   // ignore
                 }
-                setOpen(false);
               }}
               className="flex w-full items-center gap-3 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
             >
@@ -2118,7 +2119,9 @@ export const ExpandedSidebar = ({
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-3 bg-transparent text-left">
             <img src="./logo-color.svg" alt="Ledger" className="h-8 w-8" />
-            <h1 className="text-2xl font-light tracking-tight text-gray-950">Ledger</h1>
+            <h1 className={`text-2xl tracking-tight text-gray-950 ${isWindowsPlatform ? 'font-normal' : 'font-light'}`}>
+              Ledger
+            </h1>
           </div>
           <button
             type="button"
