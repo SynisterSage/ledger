@@ -174,12 +174,48 @@ const ToolbarPlugin = () => {
   const [editor] = useLexicalComposerContext();
   const [blockType, setBlockType] = useState<BlockType>('paragraph');
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const [isSticky, setIsSticky] = useState(false);
+  const toolbarSentinelRef = useRef<HTMLDivElement | null>(null);
   const [activeFormats, setActiveFormats] = useState({
     bold: false,
     italic: false,
     underline: false,
     code: false,
   });
+
+  useEffect(() => {
+    const sentinel = toolbarSentinelRef.current;
+    if (!sentinel) return;
+
+    const findScrollParent = (node: HTMLElement | null) => {
+      let current: HTMLElement | null = node;
+      while (current) {
+        const style = window.getComputedStyle(current);
+        const overflowY = style.overflowY;
+        if (overflowY === 'auto' || overflowY === 'scroll') {
+          return current;
+        }
+        current = current.parentElement;
+      }
+      return null;
+    };
+
+    const root = findScrollParent(sentinel.parentElement);
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        setIsSticky(!entry.isIntersecting);
+      },
+      {
+        root,
+        threshold: 0,
+        rootMargin: '-12px 0px 0px 0px',
+      }
+    );
+
+    observer.observe(sentinel);
+
+    return () => observer.disconnect();
+  }, []);
 
   const updateToolbar = useCallback(() => {
     editor.update(() => {
@@ -247,7 +283,16 @@ const ToolbarPlugin = () => {
   }, [editor, updateToolbar]);
 
   return (
-    <div className="sticky top-0 z-10 mb-2 flex flex-wrap items-center gap-1.5 rounded-lg border border-gray-200/80 bg-white/95 px-2 py-1.5 shadow-sm backdrop-blur">
+    <>
+      <div ref={toolbarSentinelRef} aria-hidden="true" className="pointer-events-none h-px w-full" />
+      <div
+        style={{ top: 'var(--notes-toolbar-sticky-top, 0px)' }}
+        className={`sticky z-20 mb-2 flex w-full flex-wrap items-center gap-1.5 rounded-xl px-1.5 py-1 transition-[background-color,border-color,box-shadow,opacity,transform,backdrop-filter] duration-150 ease-out ${
+          isSticky
+            ? 'border border-gray-200/80 bg-[rgba(255,255,255,0.86)] shadow-[0_8px_24px_rgba(17,24,39,0.08)] backdrop-blur-[14px]'
+            : 'border border-transparent bg-transparent shadow-none backdrop-blur-none'
+        }`}
+      >
       {/* Block type selector */}
       <div className="relative">
         <button
@@ -339,7 +384,8 @@ const ToolbarPlugin = () => {
       >
         <Link2 size={14} />
       </ToolbarButton>
-    </div>
+      </div>
+    </>
   );
 };
 

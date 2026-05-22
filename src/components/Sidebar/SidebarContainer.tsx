@@ -140,7 +140,8 @@ export const SidebarContainer = () => {
       contentSwapTimerRef.current = null;
     }
 
-    if (!didMountRef.current || prefersReducedMotion || positionChanged || state !== 'expanded') {
+    const isOpeningExpanded = state === 'expanded' && targetContentView.state === 'expanded';
+    if (!didMountRef.current || prefersReducedMotion || positionChanged || !isOpeningExpanded) {
       didMountRef.current = true;
       setContentView(targetContentView);
       return;
@@ -368,12 +369,7 @@ export const SidebarContainer = () => {
   const shouldDisableShellMotion = (isDragging && isFloating) || isHorizontal;
 
   const shellStyle: React.CSSProperties = {
-    opacity:
-      autoHide && !isHovered && isAutoHideFading
-        ? 0
-        : isIntroVisible
-        ? 1
-        : 0,
+    opacity: autoHide && !isHovered && isAutoHideFading ? 0 : 1,
     transform: isIntroVisible
       ? 'translate3d(0, 0, 0) scale(1)'
       : prefersReducedMotion

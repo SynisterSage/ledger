@@ -252,6 +252,11 @@ export const useApi = () => {
           method: 'POST',
           skipWorkspaceHeader: true,
         }),
+      deleteInboxItem: (id: string) =>
+        request(`/api/inbox/${id}`, {
+          method: 'DELETE',
+          skipWorkspaceHeader: true,
+        }),
       convertInboxItem: (
         id: string,
         payload: {

@@ -18,6 +18,7 @@ type PopupState = {
   isLoading: boolean;
   isSaving: boolean;
   hasToken: boolean;
+  isLinkNoteVisible: boolean;
   tokenInput: string;
   captureType: CaptureType;
   pageTitle: string;
@@ -36,6 +37,7 @@ const state: PopupState = {
   isLoading: true,
   isSaving: false,
   hasToken: false,
+  isLinkNoteVisible: false,
   tokenInput: '',
   captureType: 'link',
   pageTitle: '',
@@ -58,6 +60,7 @@ if (!app) {
 
 const extensionChrome = globalThis.chrome as typeof chrome | undefined;
 const hasExtensionApi = Boolean(extensionChrome?.storage?.local && extensionChrome?.tabs);
+const LOADING_MIN_MS = 650;
 
 const requireExtensionApi = () => {
   if (!hasExtensionApi) {
@@ -70,6 +73,8 @@ const storageGet = (keys: string[] | string) =>
   new Promise<Record<string, unknown>>((resolve) => {
     requireExtensionApi().storage.local.get(keys, resolve);
   });
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const loadActiveTab = async () => {
   const tabs = await requireExtensionApi().tabs.query({ active: true, currentWindow: true });
@@ -99,6 +104,25 @@ const setStatus = (text: string, tone: PopupState['statusTone'] = '') => {
   state.statusTone = tone;
 };
 
+const shouldDiscardToken = (error: unknown) => {
+  const message = error instanceof Error ? error.message : String(error ?? '');
+  return /connect ledger first|unauthori[sz]ed|forbidden|invalid token|401/i.test(message);
+};
+
+const formatPageSource = (value: string) => {
+  const raw = String(value ?? '').trim();
+  if (!raw) return 'Open a web page to capture it.';
+
+  try {
+    const url = new URL(raw);
+    const path = url.pathname === '/' ? '' : url.pathname;
+    const query = url.search || '';
+    return truncate(`${url.hostname}${path}${query}`, 120);
+  } catch {
+    return truncate(raw.replace(/^https?:\/\//i, ''), 120);
+  }
+};
+
 const applyDefaults = () => {
   if (state.captureType === 'selection') {
     const selectionTitle = firstLine(state.selectionText) || state.pageTitle || 'Selected text';
@@ -109,7 +133,6 @@ const applyDefaults = () => {
 
   if (state.captureType === 'link') {
     state.title = truncate(state.pageTitle || 'Page link', 300);
-    state.body = '';
     return;
   }
 
@@ -123,6 +146,7 @@ const applyDefaults = () => {
 
 const setCaptureType = (nextType: CaptureType) => {
   state.captureType = nextType;
+  state.isLinkNoteVisible = nextType === 'link' ? Boolean(state.body.trim()) : true;
   applyDefaults();
   render();
 };
@@ -175,7 +199,7 @@ const saveToken = async () => {
 
   await setStoredToken(token);
   state.hasToken = true;
-  setStatus('Connected to Ledger.', 'success');
+  setStatus('', '');
   await bootstrapWorkspace();
   if (!state.hasToken) {
     render();
@@ -211,7 +235,9 @@ const bootstrapWorkspace = async () => {
       await setStoredWorkspaceId(state.workspaceId);
     }
   } catch (error) {
-    await clearStoredToken();
+    if (shouldDiscardToken(error)) {
+      await clearStoredToken();
+    }
     state.hasToken = false;
     state.workspaces = [];
     state.workspaceId = null;
@@ -224,6 +250,7 @@ const bootstrapWorkspace = async () => {
 const bootstrapCaptureData = async () => {
   await loadActiveTab();
   applyDefaults();
+  state.isLinkNoteVisible = state.captureType !== 'link' || Boolean(state.body.trim());
 };
 
 const submitCapture = async () => {
@@ -248,20 +275,26 @@ const submitCapture = async () => {
   }
 };
 
-const renderWorkspaceSelect = () => {
-  if (!state.hasToken || state.workspaces.length === 0) {
-    return `<div class="meta"><strong>Workspace</strong><div>${state.workspaceId ? 'Default workspace' : 'Ledger will choose automatically'}</div></div>`;
-  }
-
-  if (state.workspaces.length === 1) {
-    const workspace = state.workspaces[0];
-    return `<div class="meta"><strong>Workspace</strong><div>${workspace.name}</div></div>`;
+const renderWorkspaceSection = () => {
+  if (state.workspaces.length <= 1) {
+    const workspace = state.workspaces[0] ?? null;
+    return `
+      <div class="meta-row">
+        <div>
+          <label class="section-label">Workspace</label>
+          <div class="value">${escapeHtml(workspace?.name ?? 'Default workspace')}</div>
+        </div>
+        <button class="text-action muted" id="disconnect">Disconnect</button>
+      </div>
+    `;
   }
 
   const options = state.workspaces
     .map(
       (workspace) =>
-        `<option value="${workspace.id}" ${workspace.id === state.workspaceId ? 'selected' : ''}>${workspace.name}</option>`
+        `<option value="${workspace.id}" ${workspace.id === state.workspaceId ? 'selected' : ''}>${escapeHtml(
+          workspace.name
+        )}</option>`
     )
     .join('');
 
@@ -270,19 +303,77 @@ const renderWorkspaceSelect = () => {
       <label for="workspace">Workspace</label>
       <select id="workspace" class="select">${options}</select>
     </div>
+    <div class="section-foot">
+      <div class="meta">Connected to Ledger.</div>
+      <button class="text-action muted" id="disconnect">Disconnect</button>
+    </div>
   `;
 };
 
+const renderOnboarding = () => `
+  <main class="popup-shell onboarding-shell">
+    <header class="header onboarding-header">
+      <div class="brand-row">
+        <img class="brand-mark" src="/logo.svg" alt="Ledger" />
+        <span class="brand-name">Ledger</span>
+      </div>
+      <h1 class="title">Connect to Ledger</h1>
+      <p class="subtitle">Paste your extension token to save captures into Inbox.</p>
+    </header>
+
+    <div class="divider divider-header"></div>
+
+    <section class="onboarding-card">
+      <div class="field onboarding-field">
+        <label for="token">Extension token</label>
+        <input id="token" class="input" type="password" placeholder="Paste extension token" value="${escapeHtml(
+          state.tokenInput
+        )}" />
+      </div>
+
+      <div class="section-foot onboarding-foot">
+        <div class="meta">Stored locally in Chrome and reused here.</div>
+        <button class="button primary onboarding-button" id="save-token">Connect</button>
+      </div>
+    </section>
+
+    <div class="status" data-tone="${state.statusTone}">${escapeHtml(state.statusText)}</div>
+  </main>
+`;
+
+const renderLoadingState = () => `
+  <div class="loading-shell">
+    <img class="loading-mark" src="/logo.svg" alt="Ledger" />
+    <div class="loading-copy">
+      <div class="loading-title">Ledger</div>
+      <div class="loading-subtitle">Preparing capture panel…</div>
+    </div>
+  </div>
+`;
+
 const renderCaptureFields = () => {
+  const noteBody =
+    state.captureType === 'link' && !state.isLinkNoteVisible
+      ? `<button class="text-action note-toggle" id="show-note">Add note</button>`
+      : `
+        <div class="field">
+          <label for="body">${state.captureType === 'selection' ? 'Selection' : 'Body'}</label>
+          <textarea id="body" class="textarea" placeholder="Add a quick note...">${escapeHtml(state.body)}</textarea>
+        </div>
+      `;
+
   const selectionPreview =
     state.captureType === 'selection'
-      ? `<div class="note-box">${state.selectionText ? state.selectionText : 'No selection found yet.'}</div>`
+      ? `<div class="selection-preview">${state.selectionText ? escapeHtml(state.selectionText) : 'No selection found yet.'}</div>`
       : '';
 
   return `
     <div class="section">
-      <div class="label-row">
-        <div class="label">Capture type</div>
+      <div class="section-header">
+        <div>
+          <div class="section-label">Capture</div>
+          <div class="section-kicker">Pick what to save.</div>
+        </div>
         <div class="segment" role="tablist" aria-label="Capture type">
           <button data-active="${state.captureType === 'link'}" data-type="link">Link</button>
           <button data-active="${state.captureType === 'selection'}" data-type="selection">Selection</button>
@@ -295,11 +386,7 @@ const renderCaptureFields = () => {
         <input id="title" class="input" value="${escapeHtml(state.title)}" placeholder="Untitled capture" />
       </div>
 
-      <div class="field">
-        <label for="body">Body</label>
-        <textarea id="body" class="textarea" placeholder="Add a quick note...">${escapeHtml(state.body)}</textarea>
-      </div>
-
+      ${noteBody}
       ${selectionPreview}
     </div>
   `;
@@ -318,83 +405,88 @@ const escapeHtml = (value: string) =>
   });
 
 const render = () => {
+  if (state.isLoading) {
+    app.innerHTML = renderLoadingState();
+    return;
+  }
+
+  if (!state.hasToken) {
+    app.innerHTML = renderOnboarding();
+
+    const saveTokenButton = document.querySelector<HTMLButtonElement>('#save-token');
+    const tokenInput = document.querySelector<HTMLInputElement>('#token');
+
+    saveTokenButton?.addEventListener('click', () => {
+      if (tokenInput) {
+        state.tokenInput = tokenInput.value;
+        void saveToken();
+      }
+    });
+
+    tokenInput?.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        state.tokenInput = tokenInput.value;
+        void saveToken();
+      }
+    });
+
+    return;
+  }
+
   app.innerHTML = `
-    <div class="panel">
-      <div class="header">
-        <p class="eyebrow">Ledger</p>
+    <main class="popup-shell">
+      <header class="header">
+        <div class="brand-row">
+          <img class="brand-mark" src="/logo.svg" alt="Ledger" />
+          <span class="brand-name">Ledger</span>
+        </div>
         <h1 class="title">Save to Inbox</h1>
         <p class="subtitle">Save a page, selection, or quick note.</p>
-      </div>
+      </header>
 
-      <div class="section">
-        <div class="label-row">
-          <div class="label">Current page</div>
-          <button class="mini-link" id="refresh">Refresh</button>
+      <div class="divider divider-header"></div>
+
+      <section class="section section-current">
+        <div class="section-header compact">
+          <div class="section-label">Current page</div>
+          <button class="icon-button" id="refresh" aria-label="Refresh current page">
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <path d="M20 12a8 8 0 0 1-13.66 5.66L4 15.32" />
+              <path d="M4 19.5v-4.18h4.18" />
+              <path d="M4 12a8 8 0 0 1 13.66-5.66L20 8.68" />
+              <path d="M20 4.5v4.18h-4.18" />
+            </svg>
+          </button>
         </div>
-        <div class="meta">
-          <strong>${escapeHtml(state.pageTitle || 'No active page')}</strong>
-          <div class="page-url">${escapeHtml(state.pageUrl || 'Open a web page to capture it.')}</div>
-        </div>
-      </div>
+        <div class="page-title">${escapeHtml(state.pageTitle || 'No active page')}</div>
+        <div class="page-source">${escapeHtml(formatPageSource(state.pageUrl))}</div>
+      </section>
+
+      <div class="divider"></div>
 
       ${state.hasToken ? renderCaptureFields() : ''}
 
       <div class="section">
-        ${state.hasToken ? renderWorkspaceSelect() : ''}
-        ${
-          !state.hasToken
-            ? `
-              <div class="field">
-                <label for="token">Connect Ledger</label>
-                <div class="token-wrap">
-                  <input id="token" class="input" type="password" placeholder="Paste extension token" value="${escapeHtml(
-                    state.tokenInput
-                  )}" />
-                  <button class="button" id="save-token">Save</button>
-                </div>
-              </div>
-            `
-            : `
-              <div class="label-row" style="margin-bottom: 0;">
-                <div class="meta">Connected to Ledger</div>
-                <button class="mini-link" id="disconnect">Disconnect</button>
-              </div>
-            `
-        }
+        ${renderWorkspaceSection()}
       </div>
 
-      <div class="footer">
-        <div class="status" data-tone="${state.statusTone}">${escapeHtml(state.statusText)}</div>
-        <button class="button primary" id="save" ${canSave() ? '' : 'disabled'}>${
-          state.isSaving ? 'Saving...' : 'Save to Ledger'
-        }</button>
-      </div>
-    </div>
+      <div class="divider"></div>
+
+      <div class="status" data-tone="${state.statusTone}">${escapeHtml(state.statusText)}</div>
+      <button class="button primary save-button" id="save" ${canSave() ? '' : 'disabled'}>${
+        state.isSaving ? 'Saving...' : 'Save to Ledger'
+      }</button>
+    </main>
   `;
 
-  const saveTokenButton = document.querySelector<HTMLButtonElement>('#save-token');
-  const tokenInput = document.querySelector<HTMLInputElement>('#token');
   const titleInput = document.querySelector<HTMLInputElement>('#title');
   const bodyInput = document.querySelector<HTMLTextAreaElement>('#body');
   const saveButton = document.querySelector<HTMLButtonElement>('#save');
   const disconnectButton = document.querySelector<HTMLButtonElement>('#disconnect');
   const refreshButton = document.querySelector<HTMLButtonElement>('#refresh');
   const workspaceSelect = document.querySelector<HTMLSelectElement>('#workspace');
-
-  saveTokenButton?.addEventListener('click', () => {
-    if (tokenInput) {
-      state.tokenInput = tokenInput.value;
-      void saveToken();
-    }
-  });
-
-  tokenInput?.addEventListener('keydown', (event) => {
-    if (event.key === 'Enter') {
-      event.preventDefault();
-      state.tokenInput = tokenInput.value;
-      void saveToken();
-    }
-  });
+  const noteToggleButton = document.querySelector<HTMLButtonElement>('#show-note');
 
   titleInput?.addEventListener('input', () => {
     state.title = titleInput.value;
@@ -402,6 +494,11 @@ const render = () => {
 
   bodyInput?.addEventListener('input', () => {
     state.body = bodyInput.value;
+  });
+
+  noteToggleButton?.addEventListener('click', () => {
+    state.isLinkNoteVisible = true;
+    render();
   });
 
   disconnectButton?.addEventListener('click', () => {
@@ -434,6 +531,7 @@ const render = () => {
 };
 
 const bootstrap = async () => {
+  const startedAt = performance.now();
   try {
     const stored = (await storageGet(['extension_token', 'default_workspace_id'])) as {
       extension_token?: string;
@@ -446,15 +544,9 @@ const bootstrap = async () => {
 
     if (state.hasToken) {
       await bootstrapWorkspace();
-      if (!state.hasToken) {
-        state.isLoading = false;
-        render();
-        return;
+      if (state.hasToken) {
+        await bootstrapCaptureData();
       }
-      await bootstrapCaptureData();
-    } else {
-      await loadActiveTab();
-      applyDefaults();
     }
   } catch (error) {
     state.statusTone = 'error';
@@ -463,8 +555,13 @@ const bootstrap = async () => {
     state.hasToken = false;
   }
 
+  const elapsed = performance.now() - startedAt;
+  if (elapsed < LOADING_MIN_MS) {
+    await sleep(LOADING_MIN_MS - elapsed);
+  }
   state.isLoading = false;
   render();
 };
 
+render();
 void bootstrap();

@@ -62,9 +62,19 @@ const storageGet = (keys: string[] | string) =>
     chrome.storage.local.get(keys, resolve);
   });
 
+const syncStorageGet = (keys: string[] | string) =>
+  new Promise<Record<string, unknown>>((resolve) => {
+    chrome.storage.sync.get(keys, resolve);
+  });
+
 const storageSet = (value: Record<string, unknown>) =>
   new Promise<void>((resolve) => {
     chrome.storage.local.set(value, () => resolve());
+  });
+
+const syncStorageSet = (value: Record<string, unknown>) =>
+  new Promise<void>((resolve) => {
+    chrome.storage.sync.set(value, () => resolve());
   });
 
 const storageRemove = (keys: string[] | string) =>
@@ -72,17 +82,39 @@ const storageRemove = (keys: string[] | string) =>
     chrome.storage.local.remove(keys, () => resolve());
   });
 
+const syncStorageRemove = (keys: string[] | string) =>
+  new Promise<void>((resolve) => {
+    chrome.storage.sync.remove(keys, () => resolve());
+  });
+
 export const getStoredToken = async () => {
   const result = (await storageGet('extension_token')) as StorageState;
-  return String(result.extension_token ?? '').trim() || null;
+  const localToken = String(result.extension_token ?? '').trim();
+  if (localToken) return localToken;
+
+  const syncResult = (await syncStorageGet('extension_token')) as StorageState;
+  const syncToken = String(syncResult.extension_token ?? '').trim();
+  if (syncToken) {
+    await storageSet({ extension_token: syncToken });
+    return syncToken;
+  }
+
+  return null;
 };
 
 export const setStoredToken = async (token: string) => {
-  await storageSet({ extension_token: String(token ?? '').trim() });
+  const cleanedToken = String(token ?? '').trim();
+  await Promise.all([
+    storageSet({ extension_token: cleanedToken }),
+    syncStorageSet({ extension_token: cleanedToken }),
+  ]);
 };
 
 export const clearStoredToken = async () => {
-  await storageRemove(['extension_token', 'default_workspace_id']);
+  await Promise.all([
+    storageRemove(['extension_token', 'default_workspace_id']),
+    syncStorageRemove(['extension_token', 'default_workspace_id']),
+  ]);
 };
 
 export const setStoredWorkspaceId = async (workspaceId: string | null) => {

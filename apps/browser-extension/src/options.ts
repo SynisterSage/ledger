@@ -46,6 +46,11 @@ const setStatus = (text: string, tone: OptionsState['statusTone'] = '') => {
   state.statusTone = tone;
 };
 
+const shouldDiscardToken = (error: unknown) => {
+  const message = error instanceof Error ? error.message : String(error ?? '');
+  return /connect ledger first|unauthori[sz]ed|forbidden|invalid token|401/i.test(message);
+};
+
 const loadState = async () => {
   const stored = (await storageGet(['extension_token', 'default_workspace_id'])) as {
     extension_token?: string;
@@ -75,7 +80,9 @@ const bootstrapWorkspace = async () => {
     }
     setStatus('Connected to Ledger.', 'success');
   } catch (error) {
-    await clearStoredToken();
+    if (shouldDiscardToken(error)) {
+      await clearStoredToken();
+    }
     state.tokenInput = '';
     state.workspaceId = null;
     state.defaultWorkspaceId = null;

@@ -5,7 +5,19 @@
   "description": "Save links, selections, and notes to Ledger Inbox.",
   "action": {
     "default_popup": "index.html",
-    "default_title": "Ledger"
+    "default_title": "Ledger",
+    "default_icon": {
+      "16": "icon.png",
+      "32": "icon.png",
+      "48": "icon.png",
+      "128": "icon.png"
+    }
+  },
+  "icons": {
+    "16": "icon.png",
+    "32": "icon.png",
+    "48": "icon.png",
+    "128": "icon.png"
   },
   "options_page": "options.html",
   "permissions": [

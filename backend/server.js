@@ -2040,6 +2040,27 @@ app.post('/api/inbox/:id/archive', authMiddleware, rateLimit('write'), async (re
   }
 });
 
+app.delete('/api/inbox/:id', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    const allowed = await loadInboxItemForWorkspace(workspaceId, req.params.id);
+    if (!allowed) {
+      return res.status(404).json({ error: 'Inbox item not found' });
+    }
+
+    const { error } = await supabase
+      .from('inbox_items')
+      .delete()
+      .eq('workspace_id', workspaceId)
+      .eq('id', req.params.id);
+
+    if (error) throw error;
+    res.json({ ok: true });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({ error: error.message });
+  }
+});
+
 app.post('/api/inbox/:id/convert', authMiddleware, rateLimit('write'), async (req, res) => {
   try {
     const workspaceId = await resolveWorkspaceIdForRequest(req);

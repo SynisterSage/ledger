@@ -173,10 +173,10 @@ export const LoginForm: React.FC<LoginProps> = ({ onSuccess, notice }) => {
             }`}
             aria-hidden={!splashOverlayVisible}
           >
-            <div className="absolute inset-0 flex items-center justify-center p-8 sm:p-12">
+            <div className="absolute inset-0 flex items-center justify-center p-6 sm:p-10">
               <video
                 ref={preloginSplashVideoRef}
-                className="h-full w-full max-h-[60vh] max-w-[min(60vw,620px)] object-contain object-center"
+                className="h-full w-full max-h-[52vh] max-w-[min(52vw,540px)] object-contain object-center"
                 src="./preload-splash.mp4"
                 autoPlay
                 muted
@@ -215,7 +215,7 @@ export const LoginForm: React.FC<LoginProps> = ({ onSuccess, notice }) => {
             <p className="max-w-65 text-[24px] font-semibold leading-0.5 [text-shadow:0_1px_12px_rgba(17,24,39,0.42)]">
               Live a little simpler.
             </p>
-            <p className="mt-3 max-w-68.75 text-sm leading-6 text-white/90 [text-shadow:0_1px_10px_rgba(17,24,39,0.35)]">
+            <p className="mt-3 max-w-68.75 text-sm leading-3.3 text-white/90 [text-shadow:0_1px_10px_rgba(17,24,39,0.35)]">
               Capture tasks, notes, and follow-ups without losing context.
             </p>
           </div>

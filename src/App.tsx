@@ -2573,7 +2573,6 @@ function AppShell() {
   );
   const sidebarModeTimerRef = useRef<number | null>(null);
   const [showAuthenticatedShell, setShowAuthenticatedShell] = useState(false);
-  const [hasShownLoginOnce, setHasShownLoginOnce] = useState(false);
   const authNativeWindowPinnedRef = useRef(false);
 
   // Initialize workspace for authenticated users
@@ -2782,16 +2781,7 @@ function AppShell() {
     setIsVisible(true);
   }, [isLoading, isVisible, setIsVisible, uiMode]);
 
-  useEffect(() => {
-    if (user) {
-      setHasShownLoginOnce(false);
-      return;
-    }
-
-    if (!isLoading) {
-      setHasShownLoginOnce(true);
-    }
-  }, [isLoading, user]);
+  
 
   useEffect(() => {
     if (isModuleWindow) return;
@@ -3197,7 +3187,9 @@ function AppShell() {
     user,
   ]);
 
-  const shouldShowBootLoading = isLoading && (Boolean(user) || !hasShownLoginOnce);
+  // Only show the global boot loading state for authenticated users.
+  // Unauthenticated flows (login) handle their own prelogin splash to avoid a flash of the preparing loader.
+  const shouldShowBootLoading = isLoading && Boolean(user);
 
   if (shouldShowBootLoading) {
     return <AuthStatusScreen title="Loading" subtitle="Preparing Ledger." />;

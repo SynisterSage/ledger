@@ -14,10 +14,11 @@ import { useAuthContext } from '../../context/AuthContext';
 import { useWorkspaceContext } from '../../context/WorkspaceContext';
 import { ModuleWindowHeader } from '../Common/ModuleWindowHeader';
 import { useToast } from '../Common/ToastProvider';
+import { ModalOverlay } from '../Common/ModalOverlay';
 import { createPortal } from 'react-dom';
 
 type InboxStatus = 'unprocessed' | 'converted' | 'archived';
-type SourceFilter = 'all' | 'slack';
+type SourceFilter = 'all' | 'slack' | 'browser';
 type ConversionType = 'task' | 'note' | 'reminder' | 'event';
 
 type InboxItem = {
@@ -69,8 +70,6 @@ const statusLabels: Array<{ value: InboxStatus; label: string }> = [
   { value: 'converted', label: 'Converted' },
   { value: 'archived', label: 'Archived' },
 ];
-
-const upcomingSources = ['Email', 'Browser', 'Calendar', 'GitHub', 'Linear'];
 
 const formatDateTime = (value?: string | null) => {
   if (!value) return '';
@@ -245,6 +244,7 @@ export default function InboxWindow() {
   const [eventDuration, setEventDuration] = useState('30');
   const [isConverting, setIsConverting] = useState(false);
   const [activeItemId, setActiveItemId] = useState<string | null>(null);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; item: InboxItem } | null>(null);
   const [projects, setProjects] = useState<ProjectOption[]>([]);
   const [calendars, setCalendars] = useState<CalendarOption[]>([]);
   const [notes, setNotes] = useState<NoteOption[]>([]);
@@ -351,6 +351,7 @@ export default function InboxWindow() {
     const sourceCounts = {
       all: items.filter((item) => item.status === activeStatus).length,
       slack: items.filter((item) => item.status === activeStatus && item.source === 'slack').length,
+      browser: items.filter((item) => item.status === activeStatus && item.source === 'browser').length,
     };
     return { statusCounts, sourceCounts };
   }, [activeSource, activeStatus, items]);
@@ -382,7 +383,6 @@ export default function InboxWindow() {
 
   const closeConversion = () => {
     setSelectedItem(null);
-    setSelectedItemId(null);
   };
 
   const archiveItem = async (itemId: string) => {
@@ -394,6 +394,29 @@ export default function InboxWindow() {
       toast.show('Archived capture.', { variant: 'success' });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Could not archive inbox item.';
+      setError(message);
+      toast.show(message, { variant: 'error' });
+    } finally {
+      setActiveItemId(null);
+    }
+  };
+
+  const deleteItem = async (item: InboxItem) => {
+    setActiveItemId(item.id);
+    setContextMenu(null);
+    try {
+      await api.deleteInboxItem(item.id);
+      setItems((current) => current.filter((entry) => entry.id !== item.id));
+      if (selectedItemId === item.id) {
+        setSelectedItemId(null);
+        setSelectedItem(null);
+      }
+      window.ipcRenderer?.send('inbox:items-updated', {
+        delta: item.status === 'unprocessed' ? -1 : 0,
+      });
+      toast.show('Deleted capture.', { variant: 'success' });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Could not delete inbox item.';
       setError(message);
       toast.show(message, { variant: 'error' });
     } finally {
@@ -482,6 +505,12 @@ export default function InboxWindow() {
       <article
         key={item.id}
         onClick={() => setSelectedItemId(item.id)}
+        onContextMenu={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          setContextMenu({ x: event.clientX, y: event.clientY, item });
+          setSelectedItemId(item.id);
+        }}
         className={`group border-b border-gray-100 px-1 py-4 transition ${
           isSelected ? 'bg-gray-50/70' : 'hover:bg-gray-50/50'
         }`}
@@ -539,6 +568,47 @@ export default function InboxWindow() {
       </article>
     );
   };
+
+  const contextMenuElement = contextMenu &&
+    createPortal(
+      <div
+        className="fixed z-260"
+        style={{ left: Math.min(contextMenu.x, window.innerWidth - 180), top: Math.min(contextMenu.y, window.innerHeight - 80) }}
+        onMouseDown={(event) => event.stopPropagation()}
+        onContextMenu={(event) => event.preventDefault()}
+      >
+        <div className="min-w-40 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-xl">
+          <button
+            type="button"
+            onClick={() => void deleteItem(contextMenu.item)}
+            className="flex w-full items-center px-3 py-2 text-left text-sm text-red-600 transition hover:bg-red-50"
+          >
+            Delete capture
+          </button>
+        </div>
+      </div>,
+      document.body
+    );
+
+  useEffect(() => {
+    if (!contextMenu) return;
+
+    const closeMenu = () => setContextMenu(null);
+    const onScroll = () => setContextMenu(null);
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') closeMenu();
+    };
+
+    window.addEventListener('mousedown', closeMenu);
+    window.addEventListener('scroll', onScroll, true);
+    window.addEventListener('keydown', onKeyDown);
+
+    return () => {
+      window.removeEventListener('mousedown', closeMenu);
+      window.removeEventListener('scroll', onScroll, true);
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, [contextMenu]);
 
   return (
     <div className="flex h-screen flex-col overflow-hidden rounded-3xl border border-gray-200 bg-white text-gray-950 shadow-none">
@@ -599,6 +669,8 @@ export default function InboxWindow() {
                     {activeStatus === 'unprocessed'
                       ? activeSource === 'slack'
                         ? 'No Slack captures waiting.'
+                        : activeSource === 'browser'
+                          ? 'No browser captures waiting.'
                         : 'Inbox is clear.'
                       : `No ${activeStatus} captures.`}
                   </p>
@@ -630,20 +702,12 @@ export default function InboxWindow() {
                   active={activeSource === 'slack'}
                   onClick={() => setActiveSource('slack')}
                 />
-              </div>
-            </section>
-
-            <section>
-              <p className="text-sm font-semibold text-gray-900">Coming soon</p>
-              <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-2">
-                {upcomingSources.map((source) => (
-                  <div
-                    key={source}
-                    className="text-xs font-medium text-gray-400"
-                  >
-                    {source}
-                  </div>
-                ))}
+                <FilterButton
+                  label="Browser"
+                  count={counts.sourceCounts.browser}
+                  active={activeSource === 'browser'}
+                  onClick={() => setActiveSource('browser')}
+                />
               </div>
             </section>
 
@@ -703,17 +767,16 @@ export default function InboxWindow() {
         </aside>
       </div>
 
-      {selectedItem &&
-        createPortal(
-          <div className="fixed inset-0 z-220 isolate">
-            <div className="absolute inset-0 bg-black/45" onClick={closeConversion} />
-            <div className="relative z-10 flex h-full w-full items-center justify-center p-4">
-              <div
-                className="flex max-h-[88vh] w-full max-w-2xl overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-xl"
-                onClick={(event) => event.stopPropagation()}
-              >
-                <div className="flex min-h-0 w-full flex-col">
-                  <div className="flex items-start justify-between gap-4 border-b border-gray-100 bg-white px-6 py-5">
+      {contextMenuElement}
+
+      <ModalOverlay
+        isOpen={!!selectedItem}
+        onClose={closeConversion}
+        classNameContainer="flex max-h-[88vh] w-full max-w-2xl overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-xl"
+      >
+        {selectedItem && (
+                <div className="flex min-h-0 w-full flex-col" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+                  <div className="flex items-start justify-between gap-4 border-b border-gray-100 bg-white px-6 py-5" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
                     <div className="min-w-0">
                       <p className="text-sm font-semibold text-gray-900">Convert capture</p>
                       <h2 className="mt-2 truncate text-lg font-semibold text-gray-950">
@@ -738,6 +801,7 @@ export default function InboxWindow() {
                         closeConversion();
                       }}
                       className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-600 shadow-sm hover:bg-gray-50"
+                      style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
                       aria-label="Close convert modal"
                     >
                       <X size={16} />
@@ -956,11 +1020,8 @@ export default function InboxWindow() {
                     </div>
                   </div>
                 </div>
-              </div>
-            </div>
-          </div>,
-          document.body
         )}
+      </ModalOverlay>
     </div>
   );
 }

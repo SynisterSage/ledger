@@ -482,12 +482,37 @@ export const SettingsWindow = () => {
     });
   }, [alwaysOnTop]);
 
-  // Sync sidebar preferences to sidebar window whenever they change
+  // Sync structural sidebar preferences separately from opacity so the range slider does not
+  // trigger window-mode reapplication on every pointer move.
   useEffect(() => {
-    void window.desktopWindow?.applySidebarPreferences(sidebarPreferences).catch(() => {
+    const { opacity: _opacity, ...restPreferences } = sidebarPreferences;
+    void window.desktopWindow?.applySidebarPreferences(restPreferences).catch(() => {
       // No-op outside Electron (browser dev mode)
     });
-  }, [sidebarPreferences]);
+  }, [
+    sidebarPreferences.position,
+    sidebarPreferences.blur,
+    sidebarPreferences.defaultState,
+    sidebarPreferences.alwaysOnTop,
+    sidebarPreferences.autoHide,
+    sidebarPreferences.isExpanded,
+    sidebarPreferences.collapsedRestoreIsExpanded,
+    sidebarPreferences.collapsedRestoreView,
+    sidebarPreferences.isHidden,
+    sidebarPreferences.floatingPosition.x,
+    sidebarPreferences.floatingPosition.y,
+    sidebarPreferences.floatingDockEnabled,
+    sidebarPreferences.floatingDockThreshold,
+    sidebarPreferences.lastState,
+  ]);
+
+  useEffect(() => {
+    void window.desktopWindow
+      ?.applySidebarPreferences({ opacity: sidebarPreferences.opacity })
+      .catch(() => {
+        // No-op outside Electron (browser dev mode)
+      });
+  }, [sidebarPreferences.opacity]);
 
   useEffect(() => {
     const handleFocusSection = (_event: unknown, payload: { section?: string | null }) => {

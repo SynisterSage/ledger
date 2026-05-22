@@ -2713,7 +2713,9 @@ ipcMain.handle(
       ...currentSidebarPreferences,
       ...preferences,
     };
-    sidebarWin.webContents.send('sidebar:preferences-updated', preferences);
+    if (Object.keys(preferences).some((key) => key !== 'opacity')) {
+      sidebarWin.webContents.send('sidebar:preferences-updated', preferences);
+    }
     if (
       hasModeRelevantChange &&
       currentSidebarMode !== 'auth' &&
