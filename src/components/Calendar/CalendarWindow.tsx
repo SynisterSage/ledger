@@ -35,6 +35,42 @@ import { useViewportWidth } from '../../hooks/useViewportWidth';
 // Get RRule from the module - handles both ESM and CommonJS
 const RRule = (rruleModule as any).RRule || (rruleModule as any).default?.RRule || rruleModule;
 
+const preferenceColorMap: Record<
+  NonNullable<CalendarPreferenceSnapshot['calendarColor']>,
+  string
+> = {
+  'ledger-orange': '#FF5F40',
+  blue: '#3B82F6',
+  green: '#22C55E',
+  gray: '#94A3B8',
+};
+
+const resolveReminderSnoozeOptions = (
+  setting: CalendarPreferenceSnapshot['reminderSnoozePreset'] | undefined
+) => {
+  switch (setting) {
+    case '5m-15m-1h':
+      return [
+        { label: '5 min', minutes: 5 },
+        { label: '15 min', minutes: 15 },
+        { label: '1 hour', minutes: 60 },
+      ];
+    case '15m-1h-tomorrow':
+      return [
+        { label: '15 min', minutes: 15 },
+        { label: '1 hour', minutes: 60 },
+        { label: 'Tomorrow', minutes: 24 * 60 },
+      ];
+    case '10m-1h-tomorrow':
+    default:
+      return [
+        { label: '10 min', minutes: 10 },
+        { label: '1 hour', minutes: 60 },
+        { label: 'Tomorrow', minutes: 24 * 60 },
+      ];
+  }
+};
+
 type CalendarRow = {
   id: string;
   name: string;
@@ -54,6 +90,7 @@ type EventRow = {
   calendar_id: string;
   color?: string;
   status?: 'planned' | 'done' | 'missed' | 'cancelled';
+  visibility?: 'private' | 'workspace';
   recurrence_rule?: 'none' | 'daily' | 'weekly' | 'weekdays';
   all_day?: boolean;
   project_id?: string | null;
@@ -71,6 +108,32 @@ type ReminderRow = {
   project_id?: string | null;
   note_id?: string | null;
   notes?: string | null;
+};
+
+type CalendarPreferenceSnapshot = {
+  weekStartsOn?: 'sunday' | 'monday';
+  timeFormat?: '12h' | '24h';
+  defaultEventMinutes?: number;
+  defaultEventCalendar?: 'personal' | 'work' | 'projects';
+  defaultEventStatus?: 'planned' | 'tentative' | 'confirmed';
+  defaultEventVisibility?: 'private' | 'workspace';
+  defaultReminderTime?: '08:00' | '09:00' | '12:00' | '17:00';
+  defaultCalendarView?: 'day' | 'week' | 'month';
+  showWeekends?: boolean;
+  showRemindersOnCalendar?: boolean;
+  showCompletedItems?: 'muted' | 'hidden' | 'visible';
+  reminderSnoozePreset?: '10m-1h-tomorrow' | '5m-15m-1h' | '15m-1h-tomorrow';
+  reminderDestination?: 'today-calendar' | 'today' | 'calendar';
+  missedReminderBehavior?: 'needs_attention' | 'today' | 'hide';
+  completedReminderBehavior?: 'collapse' | 'keep_visible' | 'hide_immediately';
+  pastEventBehavior?: 'history' | 'fade' | 'upcoming_only';
+  followUpBehavior?: 'none' | 'offer' | 'review_prompt';
+  followUpDefaultTime?: 'tomorrow_9' | 'today_5' | 'next_morning' | 'custom';
+  eventNotesBehavior?: 'enabled' | 'disabled';
+  linkedProjectFollowUps?: 'project_and_today' | 'project_only' | 'today_only';
+  defaultWorkspaceCalendar?: 'personal' | 'workspace' | 'projects';
+  calendarScope?: 'current_workspace' | 'all_accessible_workspaces';
+  calendarColor?: 'ledger-orange' | 'blue' | 'green' | 'gray';
 };
 
 type TaskRow = {
@@ -136,20 +199,18 @@ const SIDEBAR_MAX_WIDTH = 460;
 const INSPECTOR_MIN_WIDTH = modulePaneSizing.calendar.right.min;
 const INSPECTOR_MAX_WIDTH = 420;
 
-const startOfWeek = (date: Date) => {
+const startOfWeek = (date: Date, weekStartsOn: 'sunday' | 'monday' = 'monday') => {
   const d = new Date(date);
   const day = d.getDay();
-  const diff = day === 0 ? -6 : 1 - day;
+  const diff =
+    weekStartsOn === 'sunday'
+      ? -day
+      : day === 0
+        ? -6
+        : 1 - day;
   d.setDate(d.getDate() + diff);
   d.setHours(0, 0, 0, 0);
   return d;
-};
-
-const endOfWeek = (date: Date) => {
-  const s = startOfWeek(date);
-  const e = new Date(s);
-  e.setDate(s.getDate() + 7);
-  return e;
 };
 
 const startOfDay = (date: Date) => {
@@ -636,6 +697,7 @@ export const CalendarWindow = () => {
   const [composerProjectId, setComposerProjectId] = useState('');
   const [composerNoteId, setComposerNoteId] = useState('');
   const [composerNotes, setComposerNotes] = useState('');
+  const [newEventVisibility, setNewEventVisibility] = useState<'private' | 'workspace'>('private');
   const [isSavingEvent, setIsSavingEvent] = useState(false);
   const [, setIsSyncingApple] = useState(false);
   const [appleSyncMessage, setAppleSyncMessage] = useState<string | null>(null);
@@ -681,6 +743,7 @@ export const CalendarWindow = () => {
   const [editColor, setEditColor] = useState('#93C5FD');
   const [editProjectId, setEditProjectId] = useState('');
   const [editNoteId, setEditNoteId] = useState('');
+  const [editVisibility, setEditVisibility] = useState<'private' | 'workspace'>('private');
   const [editRecurrence, setEditRecurrence] = useState<'none' | 'daily' | 'weekly' | 'weekdays'>(
     'none'
   );
@@ -700,8 +763,35 @@ export const CalendarWindow = () => {
   const [showCloseGuardModal, setShowCloseGuardModal] = useState(false);
   const [isNewCalendarModalOpen, setIsNewCalendarModalOpen] = useState(false);
   const [newCalendarName, setNewCalendarName] = useState('');
-  const [newCalendarColor, setNewCalendarColor] = useState('#3B82F6');
+  const [newCalendarColor, setNewCalendarColor] = useState(
+    preferenceColorMap['ledger-orange']
+  );
   const [isCreatingCalendar, setIsCreatingCalendar] = useState(false);
+  const [calendarPreferences, setCalendarPreferences] = useState<CalendarPreferenceSnapshot>({
+    weekStartsOn: 'monday',
+    timeFormat: '12h',
+    defaultEventMinutes: 30,
+    defaultEventCalendar: 'personal',
+    defaultEventStatus: 'planned',
+    defaultEventVisibility: 'private',
+    defaultReminderTime: '09:00',
+    defaultCalendarView: 'week',
+    showWeekends: true,
+    showRemindersOnCalendar: true,
+    showCompletedItems: 'muted',
+    reminderSnoozePreset: '10m-1h-tomorrow',
+    reminderDestination: 'today-calendar',
+    missedReminderBehavior: 'needs_attention',
+    completedReminderBehavior: 'collapse',
+    pastEventBehavior: 'history',
+    followUpBehavior: 'offer',
+    followUpDefaultTime: 'tomorrow_9',
+    eventNotesBehavior: 'enabled',
+    linkedProjectFollowUps: 'project_and_today',
+    defaultWorkspaceCalendar: 'personal',
+    calendarScope: 'current_workspace',
+    calendarColor: 'ledger-orange',
+  });
   const [leftPaneWidth, setLeftPaneWidth] = useState(() =>
     getPaneWidthForViewport(viewportWidth, modulePaneSizing.calendar.left)
   );
@@ -900,8 +990,11 @@ export const CalendarWindow = () => {
       };
     }
 
-    const start = startOfWeek(viewAnchor);
-    const end = endOfWeek(viewAnchor);
+    const start = startOfWeek(viewAnchor, calendarPreferences.weekStartsOn);
+    const end = addDays(start, calendarPreferences.showWeekends ? 7 : 5);
+    const dates = calendarPreferences.showWeekends
+      ? Array.from({ length: 7 }, (_, i) => addDays(start, i))
+      : Array.from({ length: 5 }, (_, i) => addDays(start, i));
     return {
       label: `${start.toLocaleDateString([], { month: 'short', day: 'numeric' })} - ${new Date(
         end.getTime() - 1
@@ -912,9 +1005,9 @@ export const CalendarWindow = () => {
       })}`,
       start,
       end,
-      dates: Array.from({ length: 7 }, (_, i) => addDays(start, i)),
+      dates,
     };
-  }, [viewAnchor, viewMode]);
+  }, [viewAnchor, viewMode, calendarPreferences.showWeekends, calendarPreferences.weekStartsOn]);
 
   const visibleCalendarIdsMemo = useMemo(() => {
     return new Set(calendars.filter((calendar) => calendar.is_visible !== false).map((c) => c.id));
@@ -926,6 +1019,8 @@ export const CalendarWindow = () => {
     const visibleCalendarIds = visibleCalendarIdsMemo;
     for (const event of events) {
       if (!visibleCalendarIds.has(event.calendar_id)) continue;
+      if (calendarPreferences.showCompletedItems === 'hidden' && event.status === 'done') continue;
+      if (shouldHidePastEvent(event)) continue;
       const recurrence = event.recurrence_rule ?? 'none';
       if (recurrence === 'none') {
         expanded.push(event);
@@ -991,7 +1086,13 @@ export const CalendarWindow = () => {
 
     expanded.sort((a, b) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime());
     return expanded;
-  }, [events, viewConfig.start, viewConfig.end, visibleCalendarIdsMemo]);
+  }, [
+    events,
+    viewConfig.start,
+    viewConfig.end,
+    visibleCalendarIdsMemo,
+    calendarPreferences.showCompletedItems,
+  ]);
 
   const calendarById = useMemo(
     () => new Map(calendars.map((calendar) => [calendar.id, calendar])),
@@ -1051,10 +1152,20 @@ export const CalendarWindow = () => {
     const grouped: Record<string, ReminderRow[]> = {};
     for (const date of viewConfig.dates) grouped[formatDateKey(date)] = [];
 
+    if (!calendarPreferences.showRemindersOnCalendar) {
+      return grouped;
+    }
+
+    const todayKey = formatDateKey(new Date());
     for (const reminder of reminders) {
       // only include reminders from visible calendars
       if (!visibleCalendarIdsMemo.has(reminder.calendar_id)) continue;
-      const key = formatDateKey(new Date(reminder.remind_at));
+      if (shouldHideReminder(reminder)) continue;
+      const isOverdue = isPastReminder(reminder) && !reminder.is_done;
+      const key =
+        isOverdue && (calendarPreferences.missedReminderBehavior ?? 'needs_attention') === 'today'
+          ? todayKey
+          : formatDateKey(new Date(reminder.remind_at));
       if (!grouped[key]) grouped[key] = [];
       grouped[key].push(reminder);
     }
@@ -1066,7 +1177,12 @@ export const CalendarWindow = () => {
     }
 
     return grouped;
-  }, [reminders, viewConfig.dates, visibleCalendarIdsMemo]);
+  }, [
+    reminders,
+    viewConfig.dates,
+    visibleCalendarIdsMemo,
+    calendarPreferences.showRemindersOnCalendar,
+  ]);
 
   const selectedContextDate = selectedEventPreview
     ? new Date(selectedEventPreview.start_at)
@@ -1214,6 +1330,25 @@ export const CalendarWindow = () => {
   const isPastEvent = (event: EventRow) => new Date(event.end_at).getTime() < Date.now();
   const canEditEvent = (event: EventRow) => !isPastEvent(event);
   const isPastReminder = (reminder: ReminderRow) => new Date(reminder.remind_at).getTime() < Date.now();
+  const isPastEventMuted = (event: EventRow) =>
+    isPastEvent(event) && (calendarPreferences.pastEventBehavior ?? 'history') === 'fade';
+  const shouldHidePastEvent = (event: EventRow) =>
+    isPastEvent(event) && (calendarPreferences.pastEventBehavior ?? 'history') === 'upcoming_only';
+  const shouldHideReminder = (reminder: ReminderRow) => {
+    if (!calendarPreferences.showRemindersOnCalendar) return true;
+    if (calendarPreferences.showCompletedItems === 'hidden' && reminder.is_done) return true;
+    const isOverdue = isPastReminder(reminder) && !reminder.is_done;
+    if (isOverdue && (calendarPreferences.missedReminderBehavior ?? 'needs_attention') === 'hide') {
+      return true;
+    }
+    if (
+      reminder.is_done &&
+      (calendarPreferences.completedReminderBehavior ?? 'collapse') === 'hide_immediately'
+    ) {
+      return true;
+    }
+    return false;
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -1221,14 +1356,147 @@ export const CalendarWindow = () => {
     const loadPreferenceDefaults = async () => {
       try {
         const payload = (await api.getUserSettings()) as {
-          preferences?: { defaultEventMinutes?: number } | null;
+          preferences?: CalendarPreferenceSnapshot | null;
         };
         if (cancelled) return;
 
-        const minutes = Number(payload?.preferences?.defaultEventMinutes ?? 30);
+        const nextPreferences: CalendarPreferenceSnapshot = {
+          weekStartsOn:
+            payload?.preferences?.weekStartsOn === 'sunday' ? 'sunday' : 'monday',
+          timeFormat: payload?.preferences?.timeFormat === '24h' ? '24h' : '12h',
+          defaultEventMinutes: [30, 45, 60].includes(Number(payload?.preferences?.defaultEventMinutes))
+            ? Number(payload?.preferences?.defaultEventMinutes)
+            : 30,
+          defaultEventCalendar: ['personal', 'work', 'projects'].includes(
+            String(payload?.preferences?.defaultEventCalendar)
+          )
+            ? (payload?.preferences?.defaultEventCalendar as 'personal' | 'work' | 'projects')
+            : 'personal',
+          defaultEventStatus: ['planned', 'tentative', 'confirmed'].includes(
+            String(payload?.preferences?.defaultEventStatus)
+          )
+            ? (payload?.preferences?.defaultEventStatus as
+                | 'planned'
+                | 'tentative'
+                | 'confirmed')
+            : 'planned',
+          defaultEventVisibility:
+            payload?.preferences?.defaultEventVisibility === 'workspace' ? 'workspace' : 'private',
+          defaultReminderTime: ['08:00', '09:00', '12:00', '17:00'].includes(
+            String(payload?.preferences?.defaultReminderTime)
+          )
+            ? (payload?.preferences?.defaultReminderTime as
+                | '08:00'
+                | '09:00'
+                | '12:00'
+                | '17:00')
+            : '09:00',
+          defaultCalendarView: ['day', 'week', 'month'].includes(
+            String(payload?.preferences?.defaultCalendarView)
+          )
+            ? (payload?.preferences?.defaultCalendarView as 'day' | 'week' | 'month')
+            : 'week',
+          showWeekends: payload?.preferences?.showWeekends !== false,
+          showRemindersOnCalendar: payload?.preferences?.showRemindersOnCalendar !== false,
+          showCompletedItems: ['muted', 'hidden', 'visible'].includes(
+            String(payload?.preferences?.showCompletedItems)
+          )
+            ? (payload?.preferences?.showCompletedItems as 'muted' | 'hidden' | 'visible')
+            : 'muted',
+          reminderSnoozePreset: ['10m-1h-tomorrow', '5m-15m-1h', '15m-1h-tomorrow'].includes(
+            String(payload?.preferences?.reminderSnoozePreset)
+          )
+            ? (payload?.preferences?.reminderSnoozePreset as
+                | '10m-1h-tomorrow'
+                | '5m-15m-1h'
+                | '15m-1h-tomorrow')
+            : '10m-1h-tomorrow',
+          reminderDestination: ['today-calendar', 'today', 'calendar'].includes(
+            String(payload?.preferences?.reminderDestination)
+          )
+            ? (payload?.preferences?.reminderDestination as 'today-calendar' | 'today' | 'calendar')
+            : 'today-calendar',
+          missedReminderBehavior: ['needs_attention', 'today', 'hide'].includes(
+            String(payload?.preferences?.missedReminderBehavior)
+          )
+            ? (payload?.preferences?.missedReminderBehavior as
+                | 'needs_attention'
+                | 'today'
+                | 'hide')
+            : 'needs_attention',
+          completedReminderBehavior: ['collapse', 'keep_visible', 'hide_immediately'].includes(
+            String(payload?.preferences?.completedReminderBehavior)
+          )
+            ? (payload?.preferences?.completedReminderBehavior as
+                | 'collapse'
+                | 'keep_visible'
+                | 'hide_immediately')
+            : 'collapse',
+          pastEventBehavior: ['history', 'fade', 'upcoming_only'].includes(
+            String(payload?.preferences?.pastEventBehavior)
+          )
+            ? (payload?.preferences?.pastEventBehavior as
+                | 'history'
+                | 'fade'
+                | 'upcoming_only')
+            : 'history',
+          followUpBehavior: ['none', 'offer', 'review_prompt'].includes(
+            String(payload?.preferences?.followUpBehavior)
+          )
+            ? (payload?.preferences?.followUpBehavior as 'none' | 'offer' | 'review_prompt')
+            : 'offer',
+          followUpDefaultTime: ['tomorrow_9', 'today_5', 'next_morning', 'custom'].includes(
+            String(payload?.preferences?.followUpDefaultTime)
+          )
+            ? (payload?.preferences?.followUpDefaultTime as
+                | 'tomorrow_9'
+                | 'today_5'
+                | 'next_morning'
+                | 'custom')
+            : 'tomorrow_9',
+          eventNotesBehavior: payload?.preferences?.eventNotesBehavior === 'disabled' ? 'disabled' : 'enabled',
+          linkedProjectFollowUps: ['project_and_today', 'project_only', 'today_only'].includes(
+            String(payload?.preferences?.linkedProjectFollowUps)
+          )
+            ? (payload?.preferences?.linkedProjectFollowUps as
+                | 'project_and_today'
+                | 'project_only'
+                | 'today_only')
+            : 'project_and_today',
+          defaultWorkspaceCalendar: ['personal', 'workspace', 'projects'].includes(
+            String(payload?.preferences?.defaultWorkspaceCalendar)
+          )
+            ? (payload?.preferences?.defaultWorkspaceCalendar as
+                | 'personal'
+                | 'workspace'
+                | 'projects')
+            : 'personal',
+          calendarScope: ['current_workspace', 'all_accessible_workspaces'].includes(
+            String(payload?.preferences?.calendarScope)
+          )
+            ? (payload?.preferences?.calendarScope as
+                | 'current_workspace'
+                | 'all_accessible_workspaces')
+            : 'current_workspace',
+          calendarColor: ['ledger-orange', 'blue', 'green', 'gray'].includes(
+            String(payload?.preferences?.calendarColor)
+          )
+            ? (payload?.preferences?.calendarColor as 'ledger-orange' | 'blue' | 'green' | 'gray')
+            : 'ledger-orange',
+        };
+
+        setCalendarPreferences(nextPreferences);
+        setNewCalendarColor(preferenceColorMap[nextPreferences.calendarColor ?? 'ledger-orange']);
+
+        const minutes = Number(nextPreferences.defaultEventMinutes ?? 30);
         setDefaultEventDurationMinutes([30, 45, 60].includes(minutes) ? minutes : 30);
+        if (!initialFocusDate) {
+          setViewMode(nextPreferences.defaultCalendarView ?? 'week');
+        }
       } catch {
-        if (!cancelled) setDefaultEventDurationMinutes(30);
+        if (!cancelled) {
+          setDefaultEventDurationMinutes(30);
+        }
       }
     };
 
@@ -1237,7 +1505,7 @@ export const CalendarWindow = () => {
     return () => {
       cancelled = true;
     };
-  }, [api, user?.id]);
+  }, [api, user?.id, initialFocusDate]);
 
   useEffect(() => {
     if (viewMode !== 'day' || !selectedTimelineInVisibleHours || selectedTimelineHour === null) {
@@ -1272,6 +1540,33 @@ export const CalendarWindow = () => {
     ) ??
     calendars[0] ??
     null;
+  const getPreferredCalendar = (source: 'event' | 'workspace' = 'event') => {
+    const preference =
+      source === 'workspace'
+        ? calendarPreferences.defaultWorkspaceCalendar
+        : calendarPreferences.defaultEventCalendar;
+
+    const personalCalendar =
+      calendars.find((calendar) => calendar.is_visible !== false && calendar.is_personal) ??
+      getDefaultCalendar();
+    const workspaceCalendar =
+      calendars.find(
+        (calendar) => calendar.is_visible !== false && !calendar.is_personal && calendar.is_default
+      ) ?? calendars.find((calendar) => calendar.is_visible !== false && !calendar.is_personal);
+    const projectCalendar =
+      calendars.find(
+        (calendar) =>
+          calendar.is_visible !== false && /project/i.test(String(calendar.name ?? '').trim())
+      ) ?? workspaceCalendar ?? personalCalendar;
+
+    if (preference === 'work' || preference === 'workspace') {
+      return workspaceCalendar ?? personalCalendar ?? getDefaultCalendar();
+    }
+    if (preference === 'projects') {
+      return projectCalendar ?? personalCalendar ?? getDefaultCalendar();
+    }
+    return personalCalendar ?? workspaceCalendar ?? getDefaultCalendar();
+  };
 
   const notifyCalendarItemsUpdated = () => {
     window.ipcRenderer?.send('calendar:items-updated');
@@ -1653,22 +1948,25 @@ export const CalendarWindow = () => {
     setGridQuickAdd(null);
     setGridQuickTitle('');
     setNewEventDate(dateKey);
-    setNewEventTime(`${String(hour).padStart(2, '0')}:00`);
+    setNewEventTime(
+      mode === 'reminder'
+        ? calendarPreferences.defaultReminderTime ?? '09:00'
+        : `${String(hour).padStart(2, '0')}:00`
+    );
     const defaultDuration = getDurationDisplay(defaultEventDurationMinutes);
     setNewEventDurationValue(defaultDuration.value);
     setNewEventDurationUnit(defaultDuration.unit);
     setNewEventTitle(title);
     setNewEventRecurrence('none');
     setComposerCalendarId(
-      calendars.find(
-        (calendar) => calendar.is_visible !== false && (calendar.is_personal || calendar.is_default)
-      )?.id ??
-        calendars[0]?.id ??
-        ''
+      mode === 'reminder' && (calendarPreferences.reminderDestination ?? 'today-calendar') === 'today'
+        ? getPreferredCalendar('workspace')?.id ?? ''
+        : getPreferredCalendar('event')?.id ?? ''
     );
     setComposerProjectId('');
     setComposerNoteId('');
     setComposerNotes('');
+    setNewEventVisibility(calendarPreferences.defaultEventVisibility ?? 'private');
     setComposerMode(mode);
     setIsComposerOpen(true);
   };
@@ -1706,11 +2004,16 @@ export const CalendarWindow = () => {
     setError(null);
 
     if (composerMode === 'reminder') {
+      const reminderCalendarPreference = calendarPreferences.reminderDestination ?? 'today-calendar';
+      const selectedReminderCalendar =
+        reminderCalendarPreference === 'today'
+          ? getPreferredCalendar('workspace') ?? selectedCalendar
+          : selectedCalendar;
       const createdReminder = (await api.createReminder({
         title: newEventTitle.trim(),
         remind_at: start.toISOString(),
-        calendar_id: selectedCalendar.id,
-        color: selectedCalendar.color,
+        calendar_id: selectedReminderCalendar.id,
+        color: selectedReminderCalendar.color,
         is_done: false,
         project_id: composerProjectId || null,
         note_id: composerNoteId || null,
@@ -1734,10 +2037,11 @@ export const CalendarWindow = () => {
       setIsComposerOpen(false);
       setComposerMode('event');
       setNewEventRecurrence('none');
-      setComposerCalendarId(getDefaultCalendar()?.id ?? '');
+      setComposerCalendarId(getPreferredCalendar('event')?.id ?? '');
       setComposerProjectId('');
       setComposerNoteId('');
       setComposerNotes('');
+      setNewEventVisibility(calendarPreferences.defaultEventVisibility ?? 'private');
       const defaultDuration = getDurationDisplay(defaultEventDurationMinutes);
       setNewEventDurationValue(defaultDuration.value);
       setNewEventDurationUnit(defaultDuration.unit);
@@ -1752,7 +2056,8 @@ export const CalendarWindow = () => {
       calendar_id: selectedCalendar.id,
       color: selectedCalendar.color,
       recurrence_rule: newEventRecurrence,
-      status: 'planned',
+      status: calendarPreferences.defaultEventStatus ?? 'planned',
+      visibility: newEventVisibility ?? calendarPreferences.defaultEventVisibility ?? 'private',
       project_id: composerProjectId || null,
       note_id: composerNoteId || null,
       notes: composerNotes.trim() || null,
@@ -1776,10 +2081,11 @@ export const CalendarWindow = () => {
     setIsComposerOpen(false);
     setComposerMode('event');
     setNewEventRecurrence('none');
-    setComposerCalendarId(getDefaultCalendar()?.id ?? '');
+    setComposerCalendarId(getPreferredCalendar('event')?.id ?? '');
     setComposerProjectId('');
     setComposerNoteId('');
     setComposerNotes('');
+    setNewEventVisibility(calendarPreferences.defaultEventVisibility ?? 'private');
     const defaultDuration = getDurationDisplay(defaultEventDurationMinutes);
     setNewEventDurationValue(defaultDuration.value);
     setNewEventDurationUnit(defaultDuration.unit);
@@ -1807,7 +2113,7 @@ export const CalendarWindow = () => {
       setComposerCalendarId(created.id);
       setIsNewCalendarModalOpen(false);
       setNewCalendarName('');
-      setNewCalendarColor('#3B82F6');
+      setNewCalendarColor(preferenceColorMap[calendarPreferences.calendarColor ?? 'ledger-orange']);
     } catch (error) {
       setError('Could not create calendar.');
     } finally {
@@ -1854,6 +2160,21 @@ export const CalendarWindow = () => {
     setReminderEditCalendarId(reminder.calendar_id);
     setReminderEditColor(reminder.color ?? '#F59E0B');
     setReminderEditDone(reminder.is_done);
+  };
+
+  const snoozeReminderByMinutes = async (reminder: ReminderRow, minutes: number) => {
+    const snoozeUntil = new Date(Date.now() + minutes * 60 * 1000).toISOString();
+    try {
+      const updated = (await api.snoozeReminder(reminder.id, snoozeUntil)) as ReminderRow;
+      setReminders((prev) =>
+        prev
+          .map((item) => (item.id === updated.id ? updated : item))
+          .sort((a, b) => new Date(a.remind_at).getTime() - new Date(b.remind_at).getTime())
+      );
+      setSelectedReminder((current) => (current?.id === updated.id ? updated : current));
+    } catch (error) {
+      setError('Could not snooze reminder.');
+    }
   };
 
   const saveReminderEdits = async () => {
@@ -1941,6 +2262,7 @@ export const CalendarWindow = () => {
     setEditColor(calendarById.get(source.calendar_id)?.color ?? source.color ?? '#93C5FD');
     setEditProjectId(source.project_id ?? '');
     setEditNoteId(source.note_id ?? '');
+    setEditVisibility(source.visibility ?? calendarPreferences.defaultEventVisibility ?? 'private');
     setEditRecurrence(source.recurrence_rule ?? 'none');
     setEventNotesDrafts((prev) => ({
       ...prev,
@@ -2086,6 +2408,7 @@ export const CalendarWindow = () => {
       calendar_id: resolvedEventCalendarId,
       color: resolvedEventColor,
       status: editStatus,
+      visibility: editVisibility,
       recurrence_rule: editRecurrence,
       project_id: editProjectId || null,
       note_id: editNoteId || null,
@@ -2250,7 +2573,7 @@ export const CalendarWindow = () => {
   const createGridEvent = async () => {
     if (!user || !gridQuickAdd || !gridQuickTitle.trim() || calendars.length === 0) return;
 
-    const selectedCalendar = getDefaultCalendar();
+    const selectedCalendar = getPreferredCalendar('workspace');
     if (!selectedCalendar) return;
     const hourString = String(gridQuickAdd.hour).padStart(2, '0');
     const start = new Date(`${gridQuickAdd.dateKey}T${hourString}:00:00`);
@@ -2267,7 +2590,8 @@ export const CalendarWindow = () => {
       calendar_id: selectedCalendar.id,
       color: selectedCalendar.color,
       recurrence_rule: 'none',
-      status: 'planned',
+      status: calendarPreferences.defaultEventStatus ?? 'planned',
+      visibility: calendarPreferences.defaultEventVisibility ?? 'private',
     })) as EventRow;
 
     setIsSavingEvent(false);
@@ -2359,7 +2683,7 @@ export const CalendarWindow = () => {
         return;
       }
 
-      const selectedCalendar = getDefaultCalendar();
+      const selectedCalendar = getPreferredCalendar('workspace');
       if (!selectedCalendar) return;
       const payload = parsed.map((evt) => ({
         calendar_id: selectedCalendar.id,
@@ -2427,7 +2751,7 @@ export const CalendarWindow = () => {
             end_at: item.end_at,
             calendar_id: item.calendar_id,
             color: item.color,
-            status: item.status,
+            status: item.status || (calendarPreferences.defaultEventStatus ?? 'planned'),
             recurrence_rule: 'none',
             notes: item.notes ?? null,
             location: item.location ?? null,
@@ -2750,7 +3074,7 @@ export const CalendarWindow = () => {
                     type="button"
                     onClick={() => {
                       setNewCalendarName('');
-                      setNewCalendarColor('#3B82F6');
+                      setNewCalendarColor(preferenceColorMap[calendarPreferences.calendarColor ?? 'ledger-orange']);
                       setIsNewCalendarModalOpen(true);
                     }}
                     className="h-6 w-6 rounded-full border border-gray-200 bg-white text-gray-500 hover:bg-gray-100 flex items-center justify-center shadow-sm"
@@ -3023,6 +3347,7 @@ export const CalendarWindow = () => {
                                 const meta = getEventStatusMeta(event.status);
                                 const calendarColor = getCalendarColor(event.calendar_id);
                                 const pastEvent = isPastEvent(event);
+                                const pastEventMuted = isPastEventMuted(event);
                                 return (
                                   <div
                                     key={event.id}
@@ -3030,7 +3355,9 @@ export const CalendarWindow = () => {
                                       meta.previewClass
                                     } ${event.status === 'done' ? 'line-through opacity-80' : ''} ${
                                       event.status === 'cancelled' ? 'opacity-65' : ''
-                                    } ${pastEvent ? 'opacity-75 grayscale-[0.15]' : ''}`}
+                                    } ${pastEventMuted ? 'opacity-50 grayscale-[0.35]' : ''} ${
+                                      pastEvent && !pastEventMuted ? 'opacity-75 grayscale-[0.15]' : ''
+                                    }`}
                                     style={{
                                       backgroundColor: pastEvent ? '#F3F4F6' : `${calendarColor}18`,
                                       borderColor: pastEvent ? '#E5E7EB' : `${calendarColor}44`,
@@ -3154,6 +3481,7 @@ export const CalendarWindow = () => {
                           {visibleAllDayItems.map((evt) => {
                             const eventColor = getCalendarColor(evt.calendar_id);
                             const pastEvent = isPastEvent(evt);
+                            const pastEventMuted = isPastEventMuted(evt);
                             return (
                               <button
                                 key={evt.id}
@@ -3174,7 +3502,9 @@ export const CalendarWindow = () => {
                                     id: evt.id,
                                   });
                                 }}
-                                className="text-[10px] leading-tight rounded-md px-2 py-1 truncate w-full text-left border shadow-sm"
+                                className={`text-[10px] leading-tight rounded-md px-2 py-1 truncate w-full text-left border shadow-sm ${
+                                  pastEventMuted ? 'opacity-50 grayscale-[0.35]' : ''
+                                }`}
                                 style={{
                                   backgroundColor: pastEvent ? '#F3F4F6' : `${eventColor}18`,
                                   borderColor: pastEvent ? '#E5E7EB' : `${eventColor}44`,
@@ -3365,7 +3695,13 @@ export const CalendarWindow = () => {
                                       });
                                     }}
                                     className={`relative z-40 block w-full truncate rounded-md border px-2 py-1.5 text-left text-[10px] leading-tight shadow-sm ${
-                                      reminder.is_done ? 'line-through opacity-60' : ''
+                                      reminder.is_done &&
+                                      (calendarPreferences.completedReminderBehavior ?? 'collapse') ===
+                                        'collapse'
+                                        ? 'line-through opacity-70'
+                                        : reminder.is_done
+                                        ? 'line-through opacity-60'
+                                        : ''
                                     } ${isPastReminder(reminder) ? 'opacity-80' : ''}`}
                                     style={{
                                       backgroundColor: isPastReminder(reminder) ? '#F9FAFB' : '#FFFFFF',
@@ -3409,6 +3745,7 @@ export const CalendarWindow = () => {
                             {visibleItems.map((evt) => {
                               const eventColor = getCalendarColor(evt.calendar_id);
                               const pastEvent = isPastEvent(evt);
+                              const pastEventMuted = isPastEventMuted(evt);
                               const durationRows = getEventDurationRows(evt);
                               return (
                                 <button
@@ -3462,7 +3799,13 @@ export const CalendarWindow = () => {
                                             className="shrink-0 text-gray-500"
                                           />
                                         )}
-                                        <span className={`font-medium ${durationRows > 1 ? 'line-clamp-3' : 'truncate'}`}>{evt.title}</span>
+                                        <span
+                                          className={`font-medium ${
+                                            durationRows > 1 ? 'line-clamp-3' : 'truncate'
+                                          } ${pastEventMuted ? 'opacity-70' : ''}`}
+                                        >
+                                          {evt.title}
+                                        </span>
                                       </div>
                                       {durationRows > 1 && (
                                         <div className={`text-[9px] text-gray-500 ${durationRows > 1 ? 'mt-1' : 'mt-0.5'}`}>
@@ -3574,6 +3917,12 @@ export const CalendarWindow = () => {
                                 {formatEventDateTimeLabel(selectedEventPreview)}
                               </p>
                               <p className="mt-1 text-[13px] text-gray-700">{meta.label}</p>
+                              <p className="mt-1 text-[12px] text-gray-500">
+                                Visibility ·{' '}
+                                {selectedEventPreview.visibility === 'workspace'
+                                  ? 'Workspace'
+                                  : 'Private'}
+                              </p>
                               <div className="mt-3 space-y-2 text-[13px]">
                                 <div className="flex items-center justify-between gap-3">
                                   <span className="text-gray-500">Project</span>
@@ -3730,74 +4079,63 @@ export const CalendarWindow = () => {
                   )}
                 </div>
 
-                <div className="space-y-2 border-t border-gray-100 pt-6">
-                  <p className="text-xs font-medium text-gray-500">
-                    Event notes
-                  </p>
-                  <textarea
-                    value={selectedEventPreview ? selectedEventNoteDraft : ''}
-                    onChange={(e) => {
-                      if (!selectedEventPreview) return;
-                      const nextValue = e.target.value;
-                      setEventNotesDrafts((prev) => ({
-                        ...prev,
-                        [selectedEventPreview.id]: nextValue,
-                      }));
-                    }}
-                    disabled={!selectedEventPreview}
-                    rows={2}
-                    placeholder="Add notes for this event..."
-                    className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-[13px] text-gray-800 placeholder:text-gray-400 outline-none focus:border-gray-300 disabled:cursor-not-allowed disabled:opacity-70"
-                  />
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="text-[12px] text-gray-500">Saved to the event.</p>
-                    <button
-                      type="button"
-                      onClick={() => void saveSelectedEventNotes()}
-                      disabled={!selectedEventPreview}
-                      className={`text-[12px] font-medium ${
-                        selectedEventPreview
-                          ? 'text-gray-600 hover:text-gray-900'
-                          : 'text-gray-300 cursor-not-allowed'
-                      }`}
-                    >
-                      Save notes
-                    </button>
+                {selectedEventPreview && calendarPreferences.eventNotesBehavior !== 'disabled' && (
+                  <div className="space-y-2 border-t border-gray-100 pt-6">
+                    <p className="text-xs font-medium text-gray-500">Event notes</p>
+                    <textarea
+                      value={selectedEventNoteDraft}
+                      onChange={(e) => {
+                        const nextValue = e.target.value;
+                        setEventNotesDrafts((prev) => ({
+                          ...prev,
+                          [selectedEventPreview.id]: nextValue,
+                        }));
+                      }}
+                      rows={2}
+                      placeholder="Add notes for this event..."
+                      className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-[13px] text-gray-800 placeholder:text-gray-400 outline-none focus:border-gray-300"
+                    />
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-[12px] text-gray-500">Saved to the event.</p>
+                      <button
+                        type="button"
+                        onClick={() => void saveSelectedEventNotes()}
+                        className="text-[12px] font-medium text-gray-600 hover:text-gray-900"
+                      >
+                        Save notes
+                      </button>
+                    </div>
                   </div>
-                </div>
+                )}
 
-                <div className="space-y-2 border-t border-gray-100 pt-6">
-                  <div className="flex items-center justify-between gap-3">
-                    <p className="text-xs font-medium text-gray-500">
-                      Follow-ups
-                    </p>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        selectedEventPreview &&
-                        window.desktopWindow?.toggleModule('quick-task' as any, {
-                          focusContext: selectedEventPreview
-                            ? `ledger-followup|${baseEventId(
-                                selectedEventPreview.id
-                              )}|${encodeURIComponent(selectedEventPreview.title)}|${
-                                selectedEventPreview.project_id ?? ''
-                              }|${selectedEventPreview.note_id ?? ''}`
-                            : 'Follow-up from Calendar',
-                        })
-                      }
-                      disabled={!selectedEventPreview}
-                      className={`inline-flex items-center gap-0.5 text-[12px] font-medium ${
-                        selectedEventPreview
-                          ? 'text-gray-600 hover:text-[#FF5F40]'
-                          : 'cursor-not-allowed text-gray-300'
-                      }`}
-                    >
-                      <span>+ </span>
-                      <span>Add</span>
-                    </button>
-                  </div>
-                  {selectedEventPreview ? (
-                    selectedEventFollowUps.length > 0 ? (
+                {selectedEventPreview && calendarPreferences.followUpBehavior !== 'none' && (
+                  <div className="space-y-2 border-t border-gray-100 pt-6">
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="text-xs font-medium text-gray-500">Follow-ups</p>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          window.desktopWindow?.toggleModule('quick-task' as any, {
+                            focusContext: `ledger-followup|${baseEventId(
+                              selectedEventPreview.id
+                            )}|${encodeURIComponent(selectedEventPreview.title)}|${
+                              selectedEventPreview.project_id ?? ''
+                            }|${selectedEventPreview.note_id ?? ''}|${
+                              calendarPreferences.followUpDefaultTime ?? 'tomorrow_9'
+                            }|${calendarPreferences.linkedProjectFollowUps ?? 'project_and_today'}`,
+                          })
+                        }
+                        className="inline-flex items-center gap-0.5 text-[12px] font-medium text-gray-600 hover:text-[#FF5F40]"
+                      >
+                        <span>+ </span>
+                        <span>
+                          {calendarPreferences.followUpBehavior === 'review_prompt'
+                            ? 'Review'
+                            : 'Add'}
+                        </span>
+                      </button>
+                    </div>
+                    {selectedEventFollowUps.length > 0 ? (
                       <div className="space-y-1">
                         {selectedEventFollowUps.map((task) => (
                           <button
@@ -3819,11 +4157,9 @@ export const CalendarWindow = () => {
                       </div>
                     ) : (
                       <p className="text-[14px] text-gray-500">No follow-ups yet.</p>
-                    )
-                  ) : (
-                    <p className="text-[14px] text-gray-500">Select an event to view follow-ups.</p>
-                  )}
-                </div>
+                    )}
+                  </div>
+                )}
 
                 <div className="space-y-2 border-t border-gray-100 pt-6">
                   <p className="text-xs font-medium text-gray-500">
@@ -3970,6 +4306,24 @@ export const CalendarWindow = () => {
                   className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500"
                 />
               </div>
+              {composerMode === 'event' && (
+                <div className="relative">
+                  <select
+                    value={newEventVisibility}
+                    onChange={(e) =>
+                      setNewEventVisibility(e.target.value as 'private' | 'workspace')
+                    }
+                    className="w-full h-9 pr-9 pl-2 text-sm border border-gray-200 rounded-md focus:outline-none focus:border-gray-400 bg-white appearance-none"
+                  >
+                    <option value="private">Private</option>
+                    <option value="workspace">Workspace</option>
+                  </select>
+                  <ChevronDown
+                    size={16}
+                    className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500"
+                  />
+                </div>
+              )}
               <div className="relative">
                 <select
                   value={composerProjectId}
@@ -4325,6 +4679,22 @@ export const CalendarWindow = () => {
               </div>
               <div className="relative">
                 <select
+                  value={editVisibility}
+                  onChange={(e) =>
+                    setEditVisibility(e.target.value as 'private' | 'workspace')
+                  }
+                  className="w-full h-9 pr-9 pl-2 text-sm border border-gray-200 rounded-md focus:outline-none focus:border-gray-400 bg-white appearance-none"
+                >
+                  <option value="private">Private</option>
+                  <option value="workspace">Workspace</option>
+                </select>
+                <ChevronDown
+                  size={16}
+                  className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500"
+                />
+              </div>
+              <div className="relative">
+                <select
                   value={editProjectId}
                   onChange={(e) => setEditProjectId(e.target.value)}
                   className="w-full h-9 pr-9 pl-2 text-sm border border-gray-200 rounded-md focus:outline-none focus:border-gray-400 bg-white appearance-none"
@@ -4501,6 +4871,25 @@ export const CalendarWindow = () => {
                   onChange={(e) => setReminderEditDone(e.target.checked)}
                 />
               </label>
+              <div className="space-y-1">
+                <p className="text-xs font-medium text-gray-500">Snooze</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {resolveReminderSnoozeOptions(calendarPreferences.reminderSnoozePreset).map(
+                    (option) => (
+                      <button
+                        key={option.label}
+                        type="button"
+                        onClick={() =>
+                          selectedReminder && void snoozeReminderByMinutes(selectedReminder, option.minutes)
+                        }
+                        className="rounded-md border border-gray-200 bg-white px-2.5 py-1.5 text-[11px] font-medium text-gray-700 hover:bg-gray-50"
+                      >
+                        {option.label}
+                      </button>
+                    )
+                  )}
+                </div>
+              </div>
               <div className="relative">
                 <select
                   value={reminderEditCalendarId}

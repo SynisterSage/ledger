@@ -9,7 +9,7 @@ import {
   Settings,
   Wind,
 } from 'lucide-react';
-import { type CSSProperties, useEffect, useMemo, useRef, useState } from 'react';
+import { type CSSProperties, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { ModalOverlay } from '../Common/ModalOverlay';
 import { useAuthContext } from '../../context/AuthContext';
 import { useSidebar } from '../../context/SidebarContext';
@@ -28,7 +28,27 @@ type UserPreferences = {
   weekStartsOn: 'sunday' | 'monday';
   timeFormat: '12h' | '24h';
   defaultEventMinutes: 30 | 45 | 60;
+  defaultEventCalendar: 'personal' | 'work' | 'projects';
+  defaultEventStatus: 'planned' | 'tentative' | 'confirmed';
+  defaultEventVisibility: 'private' | 'workspace';
   reminderLeadMinutes: 5 | 10 | 15 | 30;
+  defaultReminderTime: '08:00' | '09:00' | '12:00' | '17:00';
+  reminderSnoozePreset: '10m-1h-tomorrow' | '5m-15m-1h' | '15m-1h-tomorrow';
+  reminderDestination: 'today-calendar' | 'today' | 'calendar';
+  missedReminderBehavior: 'needs_attention' | 'today' | 'hide';
+  completedReminderBehavior: 'collapse' | 'keep_visible' | 'hide_immediately';
+  pastEventBehavior: 'history' | 'fade' | 'upcoming_only';
+  followUpBehavior: 'none' | 'offer' | 'review_prompt';
+  followUpDefaultTime: 'tomorrow_9' | 'today_5' | 'next_morning' | 'custom';
+  eventNotesBehavior: 'enabled' | 'disabled';
+  linkedProjectFollowUps: 'project_and_today' | 'project_only' | 'today_only';
+  defaultCalendarView: 'day' | 'week' | 'month';
+  showWeekends: boolean;
+  showRemindersOnCalendar: boolean;
+  showCompletedItems: 'muted' | 'hidden' | 'visible';
+  calendarScope: 'current_workspace' | 'all_accessible_workspaces';
+  defaultWorkspaceCalendar: 'personal' | 'workspace' | 'projects';
+  calendarColor: 'ledger-orange' | 'blue' | 'green' | 'gray';
   openDashboardByDefault: boolean;
   reduceMotion: boolean;
   highContrast: boolean;
@@ -187,7 +207,27 @@ const defaultPrefs: UserPreferences = {
   weekStartsOn: 'monday',
   timeFormat: '12h',
   defaultEventMinutes: 30,
+  defaultEventCalendar: 'personal',
+  defaultEventStatus: 'planned',
+  defaultEventVisibility: 'private',
   reminderLeadMinutes: 15,
+  defaultReminderTime: '09:00',
+  reminderSnoozePreset: '10m-1h-tomorrow',
+  reminderDestination: 'today-calendar',
+  missedReminderBehavior: 'needs_attention',
+  completedReminderBehavior: 'collapse',
+  pastEventBehavior: 'history',
+  followUpBehavior: 'offer',
+  followUpDefaultTime: 'tomorrow_9',
+  eventNotesBehavior: 'enabled',
+  linkedProjectFollowUps: 'project_and_today',
+  defaultCalendarView: 'week',
+  showWeekends: true,
+  showRemindersOnCalendar: true,
+  showCompletedItems: 'muted',
+  calendarScope: 'current_workspace',
+  defaultWorkspaceCalendar: 'personal',
+  calendarColor: 'ledger-orange',
   openDashboardByDefault: true,
   reduceMotion: false,
   highContrast: false,
@@ -226,6 +266,63 @@ const compactFieldClassName =
 
 const compactSelectClassName =
   'h-9 appearance-none rounded-xl border border-gray-200 bg-gray-50/80 px-3 pr-8 text-sm text-gray-900 outline-none transition focus:border-gray-300 focus:bg-white focus:ring-4 focus:ring-gray-100 disabled:opacity-60';
+
+const preferenceSelectClassName = `${compactSelectClassName} w-full bg-white`;
+
+const preferenceRowClassName =
+  'grid gap-3 py-5 sm:grid-cols-[minmax(0,1fr)_280px] sm:items-center';
+
+const inlineSwitchClassName =
+  'relative inline-flex h-7 w-12 shrink-0 items-center rounded-full border border-gray-200 bg-gray-200 transition focus:outline-none focus:ring-4 focus:ring-gray-100';
+
+const PreferenceRow = ({
+  label,
+  help,
+  children,
+}: {
+  label: string;
+  help: string;
+  children: ReactNode;
+}) => {
+  return (
+    <div className={preferenceRowClassName}>
+      <div className="min-w-0">
+        <h3 className="text-sm font-medium text-gray-900">{label}</h3>
+        <p className="mt-1 text-xs leading-5 text-gray-500">{help}</p>
+      </div>
+      <div className="sm:justify-self-end sm:w-70">{children}</div>
+    </div>
+  );
+};
+
+const InlineSwitch = ({
+  checked,
+  onToggle,
+  label,
+}: {
+  checked: boolean;
+  onToggle: () => void;
+  label: string;
+}) => {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={label}
+      onClick={onToggle}
+      className={`${inlineSwitchClassName} ${
+        checked ? 'border-gray-900 bg-gray-900' : 'border-gray-200 bg-gray-200'
+      }`}
+    >
+      <span
+        className={`inline-block h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${
+          checked ? 'translate-x-6' : 'translate-x-0.5'
+        }`}
+      />
+    </button>
+  );
+};
 
 const ToggleField = ({
   id,
@@ -304,6 +401,7 @@ export const SettingsWindow = () => {
   const [workspaceCreateName, setWorkspaceCreateName] = useState('');
   const [workspaceCreateDescription, setWorkspaceCreateDescription] = useState('');
   const [workspaceCreateType, setWorkspaceCreateType] = useState<'team' | 'personal'>('team');
+  const [showCreateWorkspaceForm, setShowCreateWorkspaceForm] = useState(false);
   const [isCreatingWorkspace, setIsCreatingWorkspace] = useState(false);
   const [workspaceCreateStatus, setWorkspaceCreateStatus] = useState<string | null>(null);
   const [isWorkspaceManageModalOpen, setIsWorkspaceManageModalOpen] = useState(false);
@@ -1395,7 +1493,7 @@ export const SettingsWindow = () => {
           <main className="overflow-auto bg-white p-6" aria-live="polite">
             <div className="mx-auto max-w-4xl space-y-5">
               {activeSection === 'account' && (
-                <section className="w-full max-w-[860px]" aria-labelledby="settings-account">
+                <section className="w-full max-w-215" aria-labelledby="settings-account">
                   <div className="space-y-2">
                     <h2
                       id="settings-account"
@@ -1406,12 +1504,9 @@ export const SettingsWindow = () => {
                     <p className="text-sm text-gray-600">
                       Basic identity and security settings.
                     </p>
-                    <p className="text-xs text-gray-500">Changes save automatically.</p>
-                    {saveStatus && (
-                      <p className="text-xs text-gray-700" role="status">
-                        {saveStatus}
-                      </p>
-                    )}
+                    <p className="text-xs text-gray-500" role="status">
+                      {saveStatus ?? 'Changes save automatically.'}
+                    </p>
                   </div>
 
                   <div className="mt-8 space-y-10">
@@ -1433,7 +1528,7 @@ export const SettingsWindow = () => {
                               Your name as it appears in Ledger.
                             </p>
                           </div>
-                          <div className="max-w-[520px]">
+                          <div className="max-w-130">
                             <input
                               id="settings-full-name"
                               value={fullName}
@@ -1453,7 +1548,7 @@ export const SettingsWindow = () => {
                             </label>
                             <p className="text-xs text-gray-500">Used for signing in.</p>
                           </div>
-                          <div className="max-w-[520px] text-sm text-gray-700">
+                          <div className="max-w-130 text-sm text-gray-700">
                             {user?.email ?? 'No email available'}
                           </div>
                         </div>
@@ -1496,7 +1591,7 @@ export const SettingsWindow = () => {
                       </div>
 
                       {showPasswordEditor ? (
-                        <div className="mt-5 max-w-[620px] space-y-4">
+                        <div className="mt-5 max-w-155 space-y-4">
                           <div className="grid gap-4 md:grid-cols-2">
                             <div className="grid gap-2">
                               <label
@@ -1581,555 +1676,1021 @@ export const SettingsWindow = () => {
               )}
 
               {activeSection === 'workspace' && (
-                <section
-                  className="rounded-2xl border border-gray-200 bg-white p-5"
-                  aria-labelledby="settings-workspace"
-                >
-                  <h2 id="settings-workspace" className="text-lg font-semibold text-gray-900">
-                    Workspace
-                  </h2>
-                  <p className="mt-1 text-sm text-gray-600">
-                    Defaults used across dashboard and modules.
-                  </p>
-
-                  <div className="mt-4 border-t border-gray-100 pt-4">
-                    <div className="flex items-start justify-between gap-4">
-                      <div>
-                        <p className="text-xs font-medium text-gray-500">
-                          Create workspace
-                        </p>
-                        <h3 className="mt-1 text-[15px] font-semibold leading-5 text-gray-900">
-                          Create a focused space for work
-                        </h3>
-                        <p className="mt-0.5 text-xs leading-5 text-gray-500">
-                          Start a personal or team workspace for Ledger data.
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="mt-3 grid gap-3 md:grid-cols-[minmax(0,1fr)_176px]">
-                      <input
-                        value={workspaceCreateName}
-                        onChange={(e) => setWorkspaceCreateName(e.target.value)}
-                        placeholder="Workspace name"
-                        className={compactFieldClassName}
-                        aria-label="Workspace name"
-                      />
-                      <select
-                        value={workspaceCreateType}
-                        onChange={(e) =>
-                          setWorkspaceCreateType(e.target.value as 'team' | 'personal')
-                        }
-                        className={compactSelectClassName}
-                        style={selectChevronStyle}
-                        aria-label="Workspace type"
-                      >
-                        <option value="team">Team workspace</option>
-                        <option value="personal">Personal workspace</option>
-                      </select>
-                    </div>
-
-                    <div className="mt-3">
-                      <textarea
-                        value={workspaceCreateDescription}
-                        onChange={(e) => setWorkspaceCreateDescription(e.target.value)}
-                        placeholder="Optional description"
-                        className="min-h-14 w-full resize-none rounded-xl border border-gray-200 bg-gray-50/80 px-3 py-2 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 focus:border-gray-300 focus:bg-white focus:ring-4 focus:ring-gray-100"
-                        aria-label="Workspace description"
-                      />
-                    </div>
-
-                    <div className="mt-2.5 flex items-center justify-between gap-3">
-                      <div className="min-h-5">
-                        {workspaceCreateStatus && (
-                          <p className="text-xs text-green-700">{workspaceCreateStatus}</p>
-                        )}
-                      </div>
-                      <button
-                        onClick={() => void handleCreateWorkspace()}
-                        disabled={isCreatingWorkspace || !workspaceCreateName.trim()}
-                        className="h-8 rounded-lg bg-[#FF5F40] px-3 text-xs font-medium text-white transition hover:bg-[#ea5336] disabled:opacity-60"
-                      >
-                        {isCreatingWorkspace ? 'Creating...' : 'Create workspace'}
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className="mt-4 border-t border-gray-100 pt-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="text-xs font-medium text-gray-500">
-                          Active workspace
-                        </p>
-                        <p className="mt-1 text-[15px] font-semibold leading-5 text-gray-900">
-                          {activeWorkspace?.name ?? 'No workspace selected'}
-                        </p>
-                        <p className="mt-0.5 text-xs leading-5 text-gray-500">
-                          {activeWorkspaceKindLabel}
-                        </p>
-                        <p className="mt-2 max-w-xl text-xs leading-5 text-gray-600">
-                          This workspace keeps dashboard, projects, calendar, notes, and settings
-                          separated.
-                        </p>
-                      </div>
-                      <div className="flex shrink-0 items-center gap-2">
-                        <button
-                          onClick={() => void refreshWorkspaces()}
-                          disabled={isLoadingWorkspaces || isSwitchingWorkspace}
-                          className="h-8 rounded-lg border border-gray-200 bg-white px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-50 disabled:opacity-60"
-                        >
-                          Refresh
-                        </button>
-                        {canManageWorkspace ? (
-                          <button
-                            onClick={openWorkspaceManageModal}
-                            className="h-8 rounded-lg border border-gray-200 bg-white px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-50"
-                          >
-                            Manage
-                          </button>
-                        ) : (
-                          <span className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-medium text-gray-500">
-                            Owner only
-                          </span>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="mt-4">
-                      <label
-                        htmlFor="settings-active-workspace"
-                        className="mb-2 block text-xs font-medium text-gray-500"
-                      >
-                        Switch workspace
-                      </label>
-                      <select
-                        id="settings-active-workspace"
-                        value={activeWorkspaceId ?? ''}
-                        onChange={(e) => void handleSwitchWorkspace(e.target.value)}
-                        disabled={
-                          isLoadingWorkspaces || isSwitchingWorkspace || workspaces.length === 0
-                        }
-                        className="h-9 w-full appearance-none rounded-xl border border-gray-200 bg-gray-50/80 px-3 pr-9 text-sm text-gray-900 outline-none transition focus:border-gray-300 focus:bg-white focus:ring-4 focus:ring-gray-100 disabled:opacity-60"
-                        style={selectChevronStyle}
-                      >
-                        {workspaces.length === 0 && (
-                          <option value="">No workspaces available</option>
-                        )}
-                        {workspaces.map((workspace) => (
-                          <option key={workspace.id} value={workspace.id}>
-                            {workspace.name} ({workspace.role})
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    {(workspaceStatus || workspaceError) && (
-                      <p className="mt-3 text-xs text-gray-700" role="status">
-                        {workspaceStatus || workspaceError}
-                      </p>
-                    )}
-                  </div>
-
-                  <div className="mt-4 rounded-2xl border border-gray-200 bg-white p-4">
-                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                      <div className="min-w-0">
-                        <h3 className="text-sm font-semibold text-gray-900">Members</h3>
-                        <p className="mt-1 text-xs text-gray-600">
-                          Manage access for the selected workspace. Owners and admins can add or
-                          remove people.
-                        </p>
-                      </div>
-                      <span className="inline-flex self-start rounded-full border border-gray-200 bg-gray-50 px-2.5 py-1 text-[11px] font-medium text-gray-700">
-                        {workspaceUserRole === 'owner' ? 'Owner' : `Role: ${workspaceUserRole}`}
-                      </span>
-                    </div>
-
-                    <div className="mt-3 space-y-2">
-                      {isLoadingWorkspaceAdmin ? (
-                        <p className="text-xs text-gray-500">Loading members...</p>
-                      ) : workspaceMembers.length === 0 ? (
-                        <p className="text-xs text-gray-500">No members yet.</p>
-                      ) : (
-                        workspaceMembers.map((member) => {
-                          const displayName = member.full_name || member.email || member.user_id;
-                          const canEditRole =
-                            canManageWorkspace && !member.is_owner && member.user_id !== user?.id;
-                          return (
-                            <div
-                              key={member.user_id}
-                              className="flex flex-col gap-2 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 lg:grid lg:grid-cols-[minmax(0,1fr)_auto_auto] lg:items-center"
-                            >
-                              <div className="min-w-0 lg:min-w-0">
-                                <p className="truncate text-sm font-medium text-gray-900">
-                                  {displayName}
-                                </p>
-                                <p className="truncate text-xs text-gray-600">
-                                  {member.email || 'No email'}
-                                  {member.is_owner ? ' · Owner' : ''}
-                                </p>
-                              </div>
-                              <select
-                                value={member.is_owner ? 'owner' : member.role}
-                                onChange={(e) =>
-                                  void handleUpdateMemberRole(
-                                    member.user_id,
-                                    e.target.value as 'admin' | 'member' | 'viewer'
-                                  )
-                                }
-                                disabled={!canEditRole || memberActionId === member.user_id}
-                                className="h-8 w-full appearance-none rounded-lg border border-gray-200 bg-white px-2 pr-8 text-xs text-gray-800 outline-none disabled:opacity-60 lg:w-auto"
-                                style={selectChevronStyle}
-                                aria-label={`Update ${displayName} role`}
-                              >
-                                {member.is_owner ? (
-                                  <option value="owner">owner</option>
-                                ) : (
-                                  <>
-                                    <option value="admin">admin</option>
-                                    <option value="member">member</option>
-                                    <option value="viewer">viewer</option>
-                                  </>
-                                )}
-                              </select>
-                              <button
-                                onClick={() => void handleRemoveMember(member.user_id)}
-                                disabled={
-                                  !canManageWorkspace ||
-                                  member.is_owner ||
-                                  member.user_id === user?.id ||
-                                  memberActionId === member.user_id
-                                }
-                                className="h-8 w-full rounded-lg border border-gray-200 bg-white px-2 text-xs font-medium text-gray-700 transition hover:bg-gray-100 disabled:opacity-50 lg:w-auto"
-                              >
-                                Remove
-                              </button>
-                            </div>
-                          );
-                        })
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="mt-4 rounded-2xl border border-gray-200 bg-white p-4">
-                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                      <div className="min-w-0">
-                        <h3 className="text-sm font-semibold text-gray-900">Invite members</h3>
-                        <p className="mt-1 text-xs text-gray-600">
-                          Invite someone to this workspace.
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="mt-3 grid gap-2 md:grid-cols-[minmax(0,1fr)_148px_auto]">
-                      <input
-                        ref={inviteEmailRef}
-                        value={inviteEmail}
-                        onChange={(e) => setInviteEmail(e.target.value)}
-                        placeholder="name@example.com"
-                        disabled={!canManageWorkspace || isSendingInvite}
-                        className="h-9 rounded-xl border border-gray-200 bg-gray-50/80 px-3 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 focus:border-gray-300 focus:bg-white focus:ring-4 focus:ring-gray-100 disabled:opacity-60"
-                        aria-label="Invite email optional"
-                      />
-                      <select
-                        value={inviteRole}
-                        onChange={(e) => setInviteRole(e.target.value as 'admin' | 'member')}
-                        disabled={!canManageWorkspace || isSendingInvite}
-                        className="h-9 appearance-none rounded-xl border border-gray-200 bg-gray-50/80 px-3 pr-8 text-sm text-gray-900 outline-none transition focus:border-gray-300 focus:bg-white focus:ring-4 focus:ring-gray-100 disabled:opacity-60"
-                        style={selectChevronStyle}
-                        aria-label="Invite role"
-                      >
-                        <option value="member">member</option>
-                        <option value="admin">admin</option>
-                      </select>
-                      <button
-                        onClick={() => void handleCreateInvitation()}
-                        disabled={!canManageWorkspace || isSendingInvite}
-                        className="h-9 rounded-xl border border-gray-200 bg-white px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-50 disabled:opacity-60"
-                      >
-                        {isSendingInvite ? 'Creating...' : 'Create invite'}
-                      </button>
-                    </div>
-                    <p className="mt-2 text-xs leading-5 text-gray-500">
-                      Optional email. Invite links can be copied and shared manually.
+                <section className="w-full max-w-215" aria-labelledby="settings-workspace">
+                  <div className="space-y-2">
+                    <h2
+                      id="settings-workspace"
+                      className="text-[28px] font-semibold tracking-tight text-gray-950"
+                    >
+                      Workspace
+                    </h2>
+                    <p className="text-sm text-gray-600">
+                      Manage workspace identity, members, and defaults.
                     </p>
+                    <p className="text-xs text-gray-500" role="status">
+                      {workspaceStatus || workspaceError || 'Changes save automatically.'}
+                    </p>
+                  </div>
 
-                    {(inviteLink || inviteToken) && (
-                      <div className="mt-3 rounded-xl border border-gray-200 bg-gray-50/70 p-3">
-                        <p className="text-xs font-medium text-gray-700">Invite link</p>
-                        <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center">
-                          {inviteLink && (
-                            <p className="min-w-0 flex-1 break-all rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs text-gray-700">
-                              {inviteLink}
-                            </p>
+                  <div className="mt-8 space-y-10">
+                    <section className="border-t border-gray-200 pt-6" aria-labelledby="settings-current-workspace">
+                      <div className="flex items-center justify-between gap-4">
+                        <div className="space-y-1">
+                          <h3 id="settings-current-workspace" className="text-sm font-semibold text-gray-900">
+                            Current workspace
+                          </h3>
+                          <p className="text-xs text-gray-500">The workspace currently active in Ledger.</p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => void refreshWorkspaces()}
+                            disabled={isLoadingWorkspaces || isSwitchingWorkspace}
+                            className="h-8 rounded-full border border-gray-200 bg-white px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-50 disabled:opacity-60"
+                          >
+                            Refresh
+                          </button>
+                          {canManageWorkspace ? (
+                            <button
+                              onClick={openWorkspaceManageModal}
+                              className="h-8 rounded-full border border-gray-200 bg-white px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-50"
+                            >
+                              Manage
+                            </button>
+                          ) : (
+                            <span className="rounded-full border border-gray-200 bg-white px-3 py-2 text-xs font-medium text-gray-500">
+                              Owner only
+                            </span>
                           )}
-                          <button
-                            type="button"
-                            onClick={() => void handleCopyInvitationLink()}
-                            disabled={!inviteLink}
-                            className="inline-flex h-9 items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-100 disabled:opacity-50"
-                          >
-                            <Copy size={14} />
-                            Copy link
-                          </button>
                         </div>
-                        {inviteCopyStatus && (
-                          <p className="mt-2 text-xs text-gray-600">{inviteCopyStatus}</p>
-                        )}
                       </div>
-                    )}
 
-                    <div className="mt-3">
-                      <p className="text-xs font-medium text-gray-500">
-                        Recent invites
-                      </p>
-                      <div className="mt-2 space-y-2">
-                        {workspaceInvitations.length === 0 ? (
-                          <p className="text-xs text-gray-500">No pending invites.</p>
-                        ) : (
-                          workspaceInvitations.map((invite) => (
-                            <div
-                              key={invite.id}
-                              className="grid grid-cols-[1fr_auto_auto] items-center gap-2 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2"
+                      <div className="mt-5 divide-y divide-gray-100 border-t border-gray-200">
+                        <div className="grid gap-4 py-5 md:grid-cols-[220px_minmax(0,1fr)]">
+                          <div className="text-sm font-medium text-gray-800">Name</div>
+                          <div className="text-sm text-gray-900">
+                            {activeWorkspace?.name ?? 'No workspace selected'}
+                          </div>
+                        </div>
+                        <div className="grid gap-4 py-5 md:grid-cols-[220px_minmax(0,1fr)]">
+                          <div className="text-sm font-medium text-gray-800">Type</div>
+                          <div className="text-sm text-gray-900">{activeWorkspaceKindLabel}</div>
+                        </div>
+                        <div className="grid gap-4 py-5 md:grid-cols-[220px_minmax(0,1fr)]">
+                          <div className="text-sm font-medium text-gray-800">Description</div>
+                          <div className="max-w-140 text-sm leading-6 text-gray-700">
+                            {activeWorkspace?.description?.trim() || 'No description set.'}
+                          </div>
+                        </div>
+                        <div className="grid gap-4 py-5 md:grid-cols-[220px_minmax(0,1fr)] md:items-center">
+                          <div className="text-sm font-medium text-gray-800">Switch workspace</div>
+                          <div className="max-w-130">
+                            <select
+                              id="settings-active-workspace"
+                              value={activeWorkspaceId ?? ''}
+                              onChange={(e) => void handleSwitchWorkspace(e.target.value)}
+                              disabled={isLoadingWorkspaces || isSwitchingWorkspace || workspaces.length === 0}
+                              className="h-10 w-full appearance-none rounded-xl border border-gray-200 bg-white px-3 pr-9 text-sm text-gray-900 outline-none transition focus:border-gray-300 focus:ring-4 focus:ring-gray-100 disabled:opacity-60"
+                              style={selectChevronStyle}
                             >
-                              <div className="min-w-0">
-                                <p className="truncate text-sm font-medium text-gray-900">
-                                  {invite.invited_email}
-                                </p>
-                                <p className="text-xs text-gray-600">
-                                  {invite.role} · {invite.status}
-                                </p>
-                              </div>
-                              <p className="text-[11px] text-gray-500">
-                                {new Date(invite.expires_at).toLocaleDateString([], {
-                                  month: 'short',
-                                  day: 'numeric',
-                                })}
-                              </p>
-                              <button
-                                onClick={() => setInviteModal({ id: invite.id })}
-                                disabled={!canManageWorkspace}
-                                className="h-8 rounded-lg border border-gray-200 bg-white px-2 text-xs font-medium text-gray-700 transition hover:bg-gray-100 disabled:opacity-50"
-                              >
-                                Manage
-                              </button>
-                            </div>
-                          ))
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  {workspaceAdminError && (
-                    <p className="mt-3 text-xs text-red-700" role="status">
-                      {workspaceAdminError}
-                    </p>
-                  )}
-
-                  <ModalOverlay
-                    isOpen={!!inviteModal && !!selectedInvite}
-                    onClose={() => setInviteModal(null)}
-                    classNameContainer="w-full max-w-md rounded-2xl border border-gray-200 bg-white p-4 shadow-2xl"
-                  >
-                    <div className="flex items-start justify-between gap-4">
-                      <div>
-                        <h4 className="text-sm font-semibold text-gray-950">
-                          Manage invite
-                        </h4>
-                        <p className="mt-1 text-xs text-gray-500">
-                          {selectedInvite?.invited_email}
-                        </p>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => setInviteModal(null)}
-                        className="rounded-lg border border-gray-200 bg-white px-2 py-1 text-xs font-medium text-gray-600 hover:bg-gray-50"
-                      >
-                        Close
-                      </button>
-                    </div>
-
-                    <div className="mt-4 space-y-3">
-                      <div className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2">
-                        <div className="flex items-center justify-between gap-2">
-                          <div>
-                            <p className="text-xs font-medium text-gray-500">
-                              Status
-                            </p>
-                            <p className="text-sm font-medium text-gray-900">
-                              {selectedInvite?.status}
-                            </p>
-                          </div>
-                          <div className="text-right">
-                            <p className="text-xs font-medium text-gray-500">
-                              Role
-                            </p>
-                            <p className="text-sm font-medium text-gray-900">
-                              {selectedInvite?.role}
-                            </p>
+                              {workspaces.length === 0 && (
+                                <option value="">No workspaces available</option>
+                              )}
+                              {workspaces.map((workspace) => (
+                                <option key={workspace.id} value={workspace.id}>
+                                  {workspace.name} ({workspace.role})
+                                </option>
+                              ))}
+                            </select>
                           </div>
                         </div>
-                        <p className="mt-2 text-[11px] text-gray-500">
-                          Expires{' '}
-                          {selectedInvite && new Date(selectedInvite.expires_at).toLocaleDateString([], {
-                            month: 'short',
-                            day: 'numeric',
-                          })}
-                        </p>
+                      </div>
+                    </section>
+
+                    <section className="border-t border-gray-200 pt-6" aria-labelledby="settings-members">
+                      <div className="flex items-center justify-between gap-4">
+                        <div className="space-y-1">
+                          <h3 id="settings-members" className="text-sm font-semibold text-gray-900">
+                            Members
+                          </h3>
+                          <p className="text-xs text-gray-500">Manage access for the selected workspace.</p>
+                        </div>
+                        <span className="inline-flex rounded-full border border-gray-200 bg-white px-2.5 py-1 text-[11px] font-medium text-gray-700">
+                          {workspaceUserRole === 'owner' ? 'Owner' : `Role: ${workspaceUserRole}`}
+                        </span>
                       </div>
 
-                      {selectedInvite?.status === 'pending' ? (
-                        <div className="rounded-xl border border-gray-200 bg-white p-3">
-                          <p className="text-xs font-medium text-gray-500">
-                            Invite link
-                          </p>
-                          <p className="mt-2 break-all rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-700">
-                            {getInviteUrl(selectedInvite) ?? 'No link available'}
-                          </p>
-                          <div className="mt-3 flex gap-2">
+                      <div className="mt-5 divide-y divide-gray-100 border-t border-gray-200">
+                        {isLoadingWorkspaceAdmin ? (
+                          <div className="py-4 text-xs text-gray-500">Loading members...</div>
+                        ) : workspaceMembers.length === 0 ? (
+                          <div className="py-4 text-xs text-gray-500">No members yet.</div>
+                        ) : (
+                          workspaceMembers.map((member) => {
+                            const displayName = member.full_name || member.email || member.user_id;
+                            const canEditRole =
+                              canManageWorkspace && !member.is_owner && member.user_id !== user?.id;
+                            return (
+                              <div
+                                key={member.user_id}
+                                className="grid gap-4 py-4 md:grid-cols-[minmax(0,1fr)_auto_auto] md:items-center"
+                              >
+                                <div className="min-w-0">
+                                  <p className="truncate text-sm font-medium text-gray-900">{displayName}</p>
+                                  <p className="truncate text-xs text-gray-500">
+                                    {member.email || 'No email'}{member.is_owner ? ' · Owner' : ''}
+                                  </p>
+                                </div>
+                                <select
+                                  value={member.is_owner ? 'owner' : member.role}
+                                  onChange={(e) =>
+                                    void handleUpdateMemberRole(
+                                      member.user_id,
+                                      e.target.value as 'admin' | 'member' | 'viewer'
+                                    )
+                                  }
+                                  disabled={!canEditRole || memberActionId === member.user_id}
+                                  className="h-8 w-full appearance-none rounded-lg border border-gray-200 bg-white px-2 pr-8 text-xs text-gray-800 outline-none disabled:opacity-60 md:w-auto"
+                                  style={selectChevronStyle}
+                                  aria-label={`Update ${displayName} role`}
+                                >
+                                  {member.is_owner ? (
+                                    <option value="owner">owner</option>
+                                  ) : (
+                                    <>
+                                      <option value="admin">admin</option>
+                                      <option value="member">member</option>
+                                      <option value="viewer">viewer</option>
+                                    </>
+                                  )}
+                                </select>
+                                <button
+                                  onClick={() => void handleRemoveMember(member.user_id)}
+                                  disabled={
+                                    !canManageWorkspace ||
+                                    member.is_owner ||
+                                    member.user_id === user?.id ||
+                                    memberActionId === member.user_id
+                                  }
+                                  className="h-8 rounded-lg border border-gray-200 bg-white px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-50 disabled:opacity-50"
+                                >
+                                  Remove
+                                </button>
+                              </div>
+                            );
+                          })
+                        )}
+                      </div>
+                      {workspaceAdminError && (
+                        <p className="mt-3 text-xs text-red-700" role="status">
+                          {workspaceAdminError}
+                        </p>
+                      )}
+                    </section>
+
+                    <section className="border-t border-gray-200 pt-6" aria-labelledby="settings-invites">
+                      <div className="flex items-center justify-between gap-4">
+                        <div className="space-y-1">
+                          <h3 id="settings-invites" className="text-sm font-semibold text-gray-900">
+                            Invites
+                          </h3>
+                          <p className="text-xs text-gray-500">Invite someone to this workspace.</p>
+                        </div>
+                      </div>
+
+                      <div className="mt-5 grid gap-2 md:grid-cols-[minmax(0,1fr)_148px_auto]">
+                        <input
+                          ref={inviteEmailRef}
+                          value={inviteEmail}
+                          onChange={(e) => setInviteEmail(e.target.value)}
+                          placeholder="name@example.com"
+                          disabled={!canManageWorkspace || isSendingInvite}
+                          className="h-9 rounded-xl border border-gray-200 bg-white px-3 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 focus:border-gray-300 focus:ring-4 focus:ring-gray-100 disabled:opacity-60"
+                          aria-label="Invite email optional"
+                        />
+                        <select
+                          value={inviteRole}
+                          onChange={(e) => setInviteRole(e.target.value as 'admin' | 'member')}
+                          disabled={!canManageWorkspace || isSendingInvite}
+                          className="h-9 appearance-none rounded-xl border border-gray-200 bg-white px-3 pr-8 text-sm text-gray-900 outline-none transition focus:border-gray-300 focus:ring-4 focus:ring-gray-100 disabled:opacity-60"
+                          style={selectChevronStyle}
+                          aria-label="Invite role"
+                        >
+                          <option value="member">member</option>
+                          <option value="admin">admin</option>
+                        </select>
+                        <button
+                          onClick={() => void handleCreateInvitation()}
+                          disabled={!canManageWorkspace || isSendingInvite}
+                          className="h-9 rounded-xl border border-gray-200 bg-white px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-50 disabled:opacity-60"
+                        >
+                          {isSendingInvite ? 'Creating...' : 'Create invite'}
+                        </button>
+                      </div>
+                      <p className="mt-2 text-xs leading-5 text-gray-500">
+                        Optional email. Invite links can be copied and shared manually.
+                      </p>
+
+                      {(inviteLink || inviteToken) && (
+                        <div className="mt-4 border-t border-gray-200 pt-4">
+                          <p className="text-xs font-medium text-gray-500">Invite link</p>
+                          <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center">
+                            {inviteLink && (
+                              <p className="min-w-0 flex-1 break-all text-sm text-gray-700">
+                                {inviteLink}
+                              </p>
+                            )}
                             <button
                               type="button"
-                              onClick={() => void handleCopySelectedInviteLink()}
-                              disabled={!getInviteUrl(selectedInvite)}
-                              className="inline-flex h-9 flex-1 items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-50 disabled:opacity-50"
+                              onClick={() => void handleCopyInvitationLink()}
+                              disabled={!inviteLink}
+                              className="inline-flex h-8 items-center justify-center gap-2 rounded-full border border-gray-200 bg-white px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-50 disabled:opacity-50"
                             >
                               <Copy size={14} />
                               Copy link
                             </button>
-                            <button
-                              type="button"
-                              onClick={() => void handleRevokeInvitation(selectedInvite.id)}
-                              disabled={invitationActionId === selectedInvite.id}
-                              className="inline-flex h-9 flex-1 items-center justify-center rounded-xl border border-red-200 bg-red-50 px-3 text-xs font-medium text-red-700 transition hover:bg-red-100 disabled:opacity-50"
+                          </div>
+                          {inviteCopyStatus && (
+                            <p className="mt-2 text-xs text-gray-600">{inviteCopyStatus}</p>
+                          )}
+                        </div>
+                      )}
+
+                      <div className="mt-4 border-t border-gray-200 pt-4">
+                        <p className="text-xs font-medium text-gray-500">Recent invites</p>
+                        <div className="mt-2 divide-y divide-gray-100 border-t border-gray-200">
+                          {workspaceInvitations.length === 0 ? (
+                            <div className="py-4 text-xs text-gray-500">No pending invites.</div>
+                          ) : (
+                            workspaceInvitations.map((invite) => (
+                              <div
+                                key={invite.id}
+                                className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-3 py-4"
+                              >
+                                <div className="min-w-0">
+                                  <p className="truncate text-sm font-medium text-gray-900">
+                                    {invite.invited_email}
+                                  </p>
+                                  <p className="text-xs text-gray-500">
+                                    {invite.role} · {invite.status}
+                                  </p>
+                                </div>
+                                <p className="text-[11px] text-gray-500">
+                                  {new Date(invite.expires_at).toLocaleDateString([], {
+                                    month: 'short',
+                                    day: 'numeric',
+                                  })}
+                                </p>
+                                <button
+                                  onClick={() => setInviteModal({ id: invite.id })}
+                                  disabled={!canManageWorkspace}
+                                  className="h-8 rounded-lg border border-gray-200 bg-white px-2 text-xs font-medium text-gray-700 transition hover:bg-gray-50 disabled:opacity-50"
+                                >
+                                  Manage
+                                </button>
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      </div>
+                    </section>
+
+                    <section className="border-t border-gray-200 pt-6" aria-labelledby="settings-defaults">
+                      <h3 id="settings-defaults" className="text-sm font-semibold text-gray-900">Defaults</h3>
+                      <div className="mt-5 grid gap-4 md:grid-cols-2">
+                        <div>
+                          <label htmlFor="settings-week-start" className="mb-2 block text-xs font-medium text-gray-500">
+                            Week starts on
+                          </label>
+                          <select
+                            id="settings-week-start"
+                            value={preferences.weekStartsOn}
+                            onChange={(e) =>
+                              setPreferences((prev) => ({
+                                ...prev,
+                                weekStartsOn: e.target.value as 'sunday' | 'monday',
+                              }))
+                            }
+                            className="h-10 w-full appearance-none rounded-xl border border-gray-200 bg-white px-3 pr-9 text-sm text-gray-900 outline-none focus:border-gray-300 focus:ring-4 focus:ring-gray-100"
+                            style={selectChevronStyle}
+                          >
+                            <option value="monday">Monday</option>
+                            <option value="sunday">Sunday</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label htmlFor="settings-time-format" className="mb-2 block text-xs font-medium text-gray-500">
+                            Time format
+                          </label>
+                          <select
+                            id="settings-time-format"
+                            value={preferences.timeFormat}
+                            onChange={(e) =>
+                              setPreferences((prev) => ({
+                                ...prev,
+                                timeFormat: e.target.value as '12h' | '24h',
+                              }))
+                            }
+                            className="h-10 w-full appearance-none rounded-xl border border-gray-200 bg-white px-3 pr-9 text-sm text-gray-900 outline-none focus:border-gray-300 focus:ring-4 focus:ring-gray-100"
+                            style={selectChevronStyle}
+                          >
+                            <option value="12h">12-hour (2:00 PM)</option>
+                            <option value="24h">24-hour (14:00)</option>
+                          </select>
+                        </div>
+                      </div>
+                    </section>
+
+                    <section className="border-t border-gray-200 pt-6" aria-labelledby="settings-create-workspace">
+                      <div className="flex items-center justify-between gap-4">
+                        <div className="space-y-1">
+                          <h3 id="settings-create-workspace" className="text-sm font-semibold text-gray-900">
+                            Create workspace
+                          </h3>
+                          <p className="text-xs text-gray-500">
+                            Create another focused space for school, internship, freelance, or personal work.
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setShowCreateWorkspaceForm((value) => !value)}
+                          className="h-8 rounded-full border border-gray-200 bg-white px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-50"
+                          aria-label={showCreateWorkspaceForm ? 'Close workspace creation' : 'Create workspace'}
+                        >
+                          {showCreateWorkspaceForm ? 'Collapse' : 'Create workspace'}
+                        </button>
+                      </div>
+
+                      {showCreateWorkspaceForm ? (
+                        <div className="mt-5 space-y-3">
+                          <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_176px]">
+                            <input
+                              value={workspaceCreateName}
+                              onChange={(e) => setWorkspaceCreateName(e.target.value)}
+                              placeholder="Workspace name"
+                              className={compactFieldClassName}
+                              aria-label="Workspace name"
+                            />
+                            <select
+                              value={workspaceCreateType}
+                              onChange={(e) =>
+                                setWorkspaceCreateType(e.target.value as 'team' | 'personal')
+                              }
+                              className={compactSelectClassName}
+                              style={selectChevronStyle}
+                              aria-label="Workspace type"
                             >
-                              {invitationActionId === selectedInvite.id
-                                ? 'Revoking...'
-                                : 'Revoke'}
+                              <option value="team">Team workspace</option>
+                              <option value="personal">Personal workspace</option>
+                            </select>
+                          </div>
+                          <textarea
+                            value={workspaceCreateDescription}
+                            onChange={(e) => setWorkspaceCreateDescription(e.target.value)}
+                            placeholder="Optional description"
+                            className="min-h-14 w-full resize-none rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 focus:border-gray-300 focus:ring-4 focus:ring-gray-100"
+                            aria-label="Workspace description"
+                          />
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="min-h-5">
+                              {workspaceCreateStatus && (
+                                <p className="text-xs text-green-700">{workspaceCreateStatus}</p>
+                              )}
+                            </div>
+                            <button
+                              onClick={() => void handleCreateWorkspace()}
+                              disabled={isCreatingWorkspace || !workspaceCreateName.trim()}
+                              className="h-8 rounded-lg bg-[#FF5F40] px-3 text-xs font-medium text-white transition hover:bg-[#ea5336] disabled:opacity-60"
+                            >
+                              {isCreatingWorkspace ? 'Creating...' : 'Create workspace'}
                             </button>
                           </div>
                         </div>
-                      ) : (
-                        <div className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-600">
-                          This invite is no longer pending.
+                      ) : null}
+                    </section>
+
+                    <section className="border-t border-gray-200 pt-6" aria-labelledby="settings-danger-zone">
+                      <div className="flex items-center justify-between gap-4">
+                        <div className="space-y-1">
+                          <h3 id="settings-danger-zone" className="text-sm font-semibold text-gray-900">
+                            Danger zone
+                          </h3>
+                          <p className="text-xs text-gray-500">
+                            Delete this workspace and all data inside it.
+                          </p>
                         </div>
-                      )}
-                    </div>
-                  </ModalOverlay>
-
-                  <div className="mt-5 grid gap-4 md:grid-cols-2">
-                    <div>
-                      <label
-                        htmlFor="settings-week-start"
-                        className="block text-sm font-medium text-gray-700 mb-2"
-                      >
-                        Week starts on
-                      </label>
-                      <select
-                        id="settings-week-start"
-                        value={preferences.weekStartsOn}
-                        onChange={(e) =>
-                          setPreferences((prev) => ({
-                            ...prev,
-                            weekStartsOn: e.target.value as 'sunday' | 'monday',
-                          }))
-                        }
-                        className="h-10 w-full appearance-none rounded-xl border border-gray-200 bg-gray-50 px-3 pr-9 text-sm text-gray-900 outline-none focus:border-gray-300 focus:ring-4 focus:ring-gray-100"
-                        style={selectChevronStyle}
-                      >
-                        <option value="monday">Monday</option>
-                        <option value="sunday">Sunday</option>
-                      </select>
-                    </div>
-
-                    <div>
-                      <label
-                        htmlFor="settings-time-format"
-                        className="block text-sm font-medium text-gray-700 mb-2"
-                      >
-                        Time format
-                      </label>
-                      <select
-                        id="settings-time-format"
-                        value={preferences.timeFormat}
-                        onChange={(e) =>
-                          setPreferences((prev) => ({
-                            ...prev,
-                            timeFormat: e.target.value as '12h' | '24h',
-                          }))
-                        }
-                        className="h-10 w-full appearance-none rounded-xl border border-gray-200 bg-gray-50 px-3 pr-9 text-sm text-gray-900 outline-none focus:border-gray-300 focus:ring-4 focus:ring-gray-100"
-                        style={selectChevronStyle}
-                      >
-                        <option value="12h">12-hour (2:00 PM)</option>
-                        <option value="24h">24-hour (14:00)</option>
-                      </select>
-                    </div>
+                        <button
+                          onClick={openWorkspaceDeleteModal}
+                          disabled={workspaceUserRole !== 'owner' || isDeletingWorkspace}
+                          className="h-8 rounded-full border border-red-200 bg-white px-3 text-xs font-medium text-red-700 transition hover:bg-red-50 disabled:opacity-50"
+                        >
+                          Delete workspace
+                        </button>
+                      </div>
+                    </section>
                   </div>
                 </section>
               )}
-
               {activeSection === 'calendar' && (
-                <section
-                  className="rounded-2xl border border-gray-200 bg-white p-5"
-                  aria-labelledby="settings-calendar"
-                >
-                  <h2 id="settings-calendar" className="text-lg font-semibold text-gray-900">
-                    Calendar and reminders
-                  </h2>
-                  <p className="mt-1 text-sm text-gray-600">
-                    Set defaults for new events and reminder timing.
-                  </p>
+                <section className="w-full max-w-215" aria-labelledby="settings-calendar">
+                  <div className="space-y-2">
+                    <h2 id="settings-calendar" className="text-[28px] font-semibold tracking-tight text-gray-950">
+                      Calendar and reminders
+                    </h2>
+                    <p className="text-sm text-gray-600">
+                      Set how Ledger schedules events, reminders, follow-ups, and overdue items.
+                    </p>
+                    <p className="text-xs text-gray-500" role="status">
+                      Changes save automatically.
+                    </p>
+                  </div>
 
-                  <div className="mt-5 grid gap-4 md:grid-cols-2">
-                    <div>
-                      <label
-                        htmlFor="settings-event-duration"
-                        className="block text-sm font-medium text-gray-700 mb-2"
-                      >
-                        Default event duration
-                      </label>
-                      <select
-                        id="settings-event-duration"
-                        value={String(preferences.defaultEventMinutes)}
-                        onChange={(e) =>
-                          setPreferences((prev) => ({
-                            ...prev,
-                            defaultEventMinutes: Number(e.target.value) as 30 | 45 | 60,
-                          }))
-                        }
-                        className="h-10 w-full appearance-none rounded-xl border border-gray-200 bg-gray-50 px-3 pr-9 text-sm text-gray-900 outline-none focus:border-gray-300 focus:ring-4 focus:ring-gray-100"
-                        style={selectChevronStyle}
-                      >
-                        <option value="30">30 minutes</option>
-                        <option value="45">45 minutes</option>
-                        <option value="60">60 minutes</option>
-                      </select>
-                    </div>
+                  <div className="mt-8 space-y-8">
+                    <section className="border-t border-gray-200 pt-6" aria-labelledby="calendar-defaults">
+                      <h3 id="calendar-defaults" className="text-sm font-semibold text-gray-900">
+                        Calendar defaults
+                      </h3>
+                      <div className="mt-2 divide-y divide-gray-200 border-y border-gray-200">
+                        <PreferenceRow
+                          label="Default event duration"
+                          help="Used when creating a new event."
+                        >
+                          <select
+                            id="settings-event-duration"
+                            value={String(preferences.defaultEventMinutes)}
+                            onChange={(e) =>
+                              setPreferences((prev) => ({
+                                ...prev,
+                                defaultEventMinutes: Number(e.target.value) as 30 | 45 | 60,
+                              }))
+                            }
+                            className={preferenceSelectClassName}
+                            style={selectChevronStyle}
+                          >
+                            <option value="30">30 minutes</option>
+                            <option value="45">45 minutes</option>
+                            <option value="60">60 minutes</option>
+                          </select>
+                        </PreferenceRow>
+                        <PreferenceRow
+                          label="Default event calendar"
+                          help="Where new events are created by default."
+                        >
+                          <select
+                            id="settings-event-calendar"
+                            value={preferences.defaultEventCalendar}
+                            onChange={(e) =>
+                              setPreferences((prev) => ({
+                                ...prev,
+                                defaultEventCalendar: e.target.value as 'personal' | 'work' | 'projects',
+                              }))
+                            }
+                            className={preferenceSelectClassName}
+                            style={selectChevronStyle}
+                          >
+                            <option value="personal">Personal</option>
+                            <option value="work">Work</option>
+                            <option value="projects">Projects</option>
+                          </select>
+                        </PreferenceRow>
+                        <PreferenceRow
+                          label="Default event status"
+                          help="Initial state for new events."
+                        >
+                          <select
+                            id="settings-event-status"
+                            value={preferences.defaultEventStatus}
+                            onChange={(e) =>
+                              setPreferences((prev) => ({
+                                ...prev,
+                                defaultEventStatus: e.target.value as
+                                  | 'planned'
+                                  | 'tentative'
+                                  | 'confirmed',
+                              }))
+                            }
+                            className={preferenceSelectClassName}
+                            style={selectChevronStyle}
+                          >
+                            <option value="planned">Planned</option>
+                            <option value="tentative">Tentative</option>
+                            <option value="confirmed">Confirmed</option>
+                          </select>
+                        </PreferenceRow>
+                        <PreferenceRow
+                          label="Default event visibility"
+                          help="Choose whether new events are private or workspace-visible."
+                        >
+                          <select
+                            id="settings-event-visibility"
+                            value={preferences.defaultEventVisibility}
+                            onChange={(e) =>
+                              setPreferences((prev) => ({
+                                ...prev,
+                                defaultEventVisibility: e.target.value as 'private' | 'workspace',
+                              }))
+                            }
+                            className={preferenceSelectClassName}
+                            style={selectChevronStyle}
+                          >
+                            <option value="private">Private</option>
+                            <option value="workspace">Workspace</option>
+                          </select>
+                        </PreferenceRow>
+                      </div>
+                    </section>
 
-                    <div>
-                      <label
-                        htmlFor="settings-reminder-lead"
-                        className="block text-sm font-medium text-gray-700 mb-2"
-                      >
-                        Default reminder
-                      </label>
-                      <select
-                        id="settings-reminder-lead"
-                        value={String(preferences.reminderLeadMinutes)}
-                        onChange={(e) =>
-                          setPreferences((prev) => ({
-                            ...prev,
-                            reminderLeadMinutes: Number(e.target.value) as 5 | 10 | 15 | 30,
-                          }))
-                        }
-                        className="h-10 w-full appearance-none rounded-xl border border-gray-200 bg-gray-50 px-3 pr-9 text-sm text-gray-900 outline-none focus:border-gray-300 focus:ring-4 focus:ring-gray-100"
-                        style={selectChevronStyle}
-                      >
-                        <option value="5">5 minutes before</option>
-                        <option value="10">10 minutes before</option>
-                        <option value="15">15 minutes before</option>
-                        <option value="30">30 minutes before</option>
-                      </select>
-                    </div>
+                    <section className="border-t border-gray-200 pt-6" aria-labelledby="reminder-defaults">
+                      <h3 id="reminder-defaults" className="text-sm font-semibold text-gray-900">
+                        Reminder defaults
+                      </h3>
+                      <div className="mt-2 divide-y divide-gray-200 border-y border-gray-200">
+                        <PreferenceRow
+                          label="Default reminder timing"
+                          help="When reminders should alert you before due time."
+                        >
+                          <select
+                            id="settings-reminder-lead"
+                            value={String(preferences.reminderLeadMinutes)}
+                            onChange={(e) =>
+                              setPreferences((prev) => ({
+                                ...prev,
+                                reminderLeadMinutes: Number(e.target.value) as 5 | 10 | 15 | 30,
+                              }))
+                            }
+                            className={preferenceSelectClassName}
+                            style={selectChevronStyle}
+                          >
+                            <option value="5">5 minutes before</option>
+                            <option value="10">10 minutes before</option>
+                            <option value="15">15 minutes before</option>
+                            <option value="30">30 minutes before</option>
+                          </select>
+                        </PreferenceRow>
+                        <PreferenceRow
+                          label="Default reminder time"
+                          help="Used when a reminder has a date but no time."
+                        >
+                          <select
+                            id="settings-default-reminder-time"
+                            value={preferences.defaultReminderTime}
+                            onChange={(e) =>
+                              setPreferences((prev) => ({
+                                ...prev,
+                                defaultReminderTime: e.target.value as
+                                  | '08:00'
+                                  | '09:00'
+                                  | '12:00'
+                                  | '17:00',
+                              }))
+                            }
+                            className={preferenceSelectClassName}
+                            style={selectChevronStyle}
+                          >
+                            <option value="08:00">8:00 AM</option>
+                            <option value="09:00">9:00 AM</option>
+                            <option value="12:00">12:00 PM</option>
+                            <option value="17:00">5:00 PM</option>
+                          </select>
+                        </PreferenceRow>
+                        <PreferenceRow
+                          label="Snooze options"
+                          help="Quick choices shown in reminder notifications."
+                        >
+                          <select
+                            id="settings-reminder-snooze"
+                            value={preferences.reminderSnoozePreset}
+                            onChange={(e) =>
+                              setPreferences((prev) => ({
+                                ...prev,
+                                reminderSnoozePreset: e.target.value as
+                                  | '10m-1h-tomorrow'
+                                  | '5m-15m-1h'
+                                  | '15m-1h-tomorrow',
+                              }))
+                            }
+                            className={preferenceSelectClassName}
+                            style={selectChevronStyle}
+                          >
+                            <option value="10m-1h-tomorrow">10 min, 1 hour, tomorrow</option>
+                            <option value="5m-15m-1h">5 min, 15 min, 1 hour</option>
+                            <option value="15m-1h-tomorrow">15 min, 1 hour, tomorrow</option>
+                          </select>
+                        </PreferenceRow>
+                        <PreferenceRow
+                          label="Reminder destination"
+                          help="Where reminders appear in Ledger."
+                        >
+                          <select
+                            id="settings-reminder-destination"
+                            value={preferences.reminderDestination}
+                            onChange={(e) =>
+                              setPreferences((prev) => ({
+                                ...prev,
+                                reminderDestination: e.target.value as
+                                  | 'today-calendar'
+                                  | 'today'
+                                  | 'calendar',
+                              }))
+                            }
+                            className={preferenceSelectClassName}
+                            style={selectChevronStyle}
+                          >
+                            <option value="today-calendar">Today + Calendar</option>
+                            <option value="today">Today</option>
+                            <option value="calendar">Calendar</option>
+                          </select>
+                        </PreferenceRow>
+                      </div>
+                    </section>
+
+                    <section className="border-t border-gray-200 pt-6" aria-labelledby="overdue-behavior">
+                      <h3 id="overdue-behavior" className="text-sm font-semibold text-gray-900">
+                        Overdue behavior
+                      </h3>
+                      <div className="mt-2 divide-y divide-gray-200 border-y border-gray-200">
+                        <PreferenceRow
+                          label="When reminders are missed"
+                          help="What Ledger does when a reminder is overdue."
+                        >
+                          <select
+                            id="settings-missed-reminder"
+                            value={preferences.missedReminderBehavior}
+                            onChange={(e) =>
+                              setPreferences((prev) => ({
+                                ...prev,
+                                missedReminderBehavior: e.target.value as
+                                  | 'needs_attention'
+                                  | 'today'
+                                  | 'hide',
+                              }))
+                            }
+                            className={preferenceSelectClassName}
+                            style={selectChevronStyle}
+                          >
+                            <option value="needs_attention">Move to Needs Attention</option>
+                            <option value="today">Keep in Today</option>
+                            <option value="hide">Hide until rescheduled</option>
+                          </select>
+                        </PreferenceRow>
+                        <PreferenceRow
+                          label="Completed reminders"
+                          help="How completed reminders are shown."
+                        >
+                          <select
+                            id="settings-completed-reminders"
+                            value={preferences.completedReminderBehavior}
+                            onChange={(e) =>
+                              setPreferences((prev) => ({
+                                ...prev,
+                                completedReminderBehavior: e.target.value as
+                                  | 'collapse'
+                                  | 'keep_visible'
+                                  | 'hide_immediately',
+                              }))
+                            }
+                            className={preferenceSelectClassName}
+                            style={selectChevronStyle}
+                          >
+                            <option value="keep_visible">Keep visible today</option>
+                            <option value="collapse">Collapse after completion</option>
+                            <option value="hide_immediately">Hide immediately</option>
+                          </select>
+                        </PreferenceRow>
+                        <PreferenceRow
+                          label="Past events"
+                          help="How Ledger treats completed or past events."
+                        >
+                          <select
+                            id="settings-past-events"
+                            value={preferences.pastEventBehavior}
+                            onChange={(e) =>
+                              setPreferences((prev) => ({
+                                ...prev,
+                                pastEventBehavior: e.target.value as
+                                  | 'history'
+                                  | 'fade'
+                                  | 'upcoming_only',
+                              }))
+                            }
+                            className={preferenceSelectClassName}
+                            style={selectChevronStyle}
+                          >
+                            <option value="history">Keep as history</option>
+                            <option value="fade">Fade in calendar</option>
+                            <option value="upcoming_only">Hide from upcoming only</option>
+                          </select>
+                        </PreferenceRow>
+                      </div>
+                      <p className="mt-3 text-xs leading-5 text-gray-500">
+                        Past events stay in Calendar history. Missed reminders stay visible until
+                        completed, rescheduled, or dismissed.
+                      </p>
+                    </section>
+
+                    <section className="border-t border-gray-200 pt-6" aria-labelledby="follow-up-behavior">
+                      <h3 id="follow-up-behavior" className="text-sm font-semibold text-gray-900">
+                        Follow-up behavior
+                      </h3>
+                      <div className="mt-2 divide-y divide-gray-200 border-y border-gray-200">
+                        <PreferenceRow
+                          label="After events end"
+                          help="What Ledger offers after an event finishes."
+                        >
+                          <select
+                            id="settings-follow-up-behavior"
+                            value={preferences.followUpBehavior}
+                            onChange={(e) =>
+                              setPreferences((prev) => ({
+                                ...prev,
+                                followUpBehavior: e.target.value as
+                                  | 'none'
+                                  | 'offer'
+                                  | 'review_prompt',
+                              }))
+                            }
+                            className={preferenceSelectClassName}
+                            style={selectChevronStyle}
+                          >
+                            <option value="none">Do nothing</option>
+                            <option value="offer">Offer follow-up</option>
+                            <option value="review_prompt">Create review prompt</option>
+                          </select>
+                        </PreferenceRow>
+                        <PreferenceRow
+                          label="Follow-up default time"
+                          help="Default time for suggested follow-ups."
+                        >
+                          <select
+                            id="settings-follow-up-default-time"
+                            value={preferences.followUpDefaultTime}
+                            onChange={(e) =>
+                              setPreferences((prev) => ({
+                                ...prev,
+                                followUpDefaultTime: e.target.value as
+                                  | 'tomorrow_9'
+                                  | 'today_5'
+                                  | 'next_morning'
+                                  | 'custom',
+                              }))
+                            }
+                            className={preferenceSelectClassName}
+                            style={selectChevronStyle}
+                          >
+                            <option value="tomorrow_9">Tomorrow at 9:00 AM</option>
+                            <option value="today_5">Today at 5:00 PM</option>
+                            <option value="next_morning">Next morning</option>
+                            <option value="custom">Custom</option>
+                          </select>
+                        </PreferenceRow>
+                        <PreferenceRow
+                          label="Event notes"
+                          help="Allow notes to be attached directly to events."
+                        >
+                          <select
+                            id="settings-event-notes"
+                            value={preferences.eventNotesBehavior}
+                            onChange={(e) =>
+                              setPreferences((prev) => ({
+                                ...prev,
+                                eventNotesBehavior: e.target.value as 'enabled' | 'disabled',
+                              }))
+                            }
+                            className={preferenceSelectClassName}
+                            style={selectChevronStyle}
+                          >
+                            <option value="enabled">Enabled</option>
+                            <option value="disabled">Disabled</option>
+                          </select>
+                        </PreferenceRow>
+                        <PreferenceRow
+                          label="Linked project follow-ups"
+                          help="Where follow-ups from events should appear."
+                        >
+                          <select
+                            id="settings-linked-project-follow-ups"
+                            value={preferences.linkedProjectFollowUps}
+                            onChange={(e) =>
+                              setPreferences((prev) => ({
+                                ...prev,
+                                linkedProjectFollowUps: e.target.value as
+                                  | 'project_and_today'
+                                  | 'project_only'
+                                  | 'today_only',
+                              }))
+                            }
+                            className={preferenceSelectClassName}
+                            style={selectChevronStyle}
+                          >
+                            <option value="project_and_today">Project and Today</option>
+                            <option value="project_only">Project only</option>
+                            <option value="today_only">Today only</option>
+                          </select>
+                        </PreferenceRow>
+                      </div>
+                    </section>
+
+                    <section className="border-t border-gray-200 pt-6" aria-labelledby="calendar-display">
+                      <h3 id="calendar-display" className="text-sm font-semibold text-gray-900">
+                        Calendar display
+                      </h3>
+                      <div className="mt-2 divide-y divide-gray-200 border-y border-gray-200">
+                        <PreferenceRow
+                          label="Default calendar view"
+                          help="Which calendar view opens first."
+                        >
+                          <select
+                            id="settings-default-calendar-view"
+                            value={preferences.defaultCalendarView}
+                            onChange={(e) =>
+                              setPreferences((prev) => ({
+                                ...prev,
+                                defaultCalendarView: e.target.value as 'day' | 'week' | 'month',
+                              }))
+                            }
+                            className={preferenceSelectClassName}
+                            style={selectChevronStyle}
+                          >
+                            <option value="day">Day</option>
+                            <option value="week">Week</option>
+                            <option value="month">Month</option>
+                          </select>
+                        </PreferenceRow>
+                        <PreferenceRow label="Week starts on" help="Start the week on Sunday or Monday.">
+                          <select
+                            id="settings-week-starts-on"
+                            value={preferences.weekStartsOn}
+                            onChange={(e) =>
+                              setPreferences((prev) => ({
+                                ...prev,
+                                weekStartsOn: e.target.value as 'sunday' | 'monday',
+                              }))
+                            }
+                            className={preferenceSelectClassName}
+                            style={selectChevronStyle}
+                          >
+                            <option value="monday">Monday</option>
+                            <option value="sunday">Sunday</option>
+                          </select>
+                        </PreferenceRow>
+                        <PreferenceRow label="Time format" help="Choose 12-hour or 24-hour time.">
+                          <select
+                            id="settings-time-format"
+                            value={preferences.timeFormat}
+                            onChange={(e) =>
+                              setPreferences((prev) => ({
+                                ...prev,
+                                timeFormat: e.target.value as '12h' | '24h',
+                              }))
+                            }
+                            className={preferenceSelectClassName}
+                            style={selectChevronStyle}
+                          >
+                            <option value="12h">12-hour (2:00 PM)</option>
+                            <option value="24h">24-hour (14:00)</option>
+                          </select>
+                        </PreferenceRow>
+                        <PreferenceRow
+                          label="Show weekends"
+                          help="Include Saturday and Sunday in week view."
+                        >
+                          <InlineSwitch
+                            checked={preferences.showWeekends}
+                            onToggle={() =>
+                              setPreferences((prev) => ({
+                                ...prev,
+                                showWeekends: !prev.showWeekends,
+                              }))
+                            }
+                            label="Show weekends"
+                          />
+                        </PreferenceRow>
+                        <PreferenceRow
+                          label="Show reminders on calendar"
+                          help="Surface reminders directly in the calendar grid."
+                        >
+                          <InlineSwitch
+                            checked={preferences.showRemindersOnCalendar}
+                            onToggle={() =>
+                              setPreferences((prev) => ({
+                                ...prev,
+                                showRemindersOnCalendar: !prev.showRemindersOnCalendar,
+                              }))
+                            }
+                            label="Show reminders on calendar"
+                          />
+                        </PreferenceRow>
+                        <PreferenceRow
+                          label="Show completed items"
+                          help="How completed reminders and events appear."
+                        >
+                          <select
+                            id="settings-show-completed-items"
+                            value={preferences.showCompletedItems}
+                            onChange={(e) =>
+                              setPreferences((prev) => ({
+                                ...prev,
+                                showCompletedItems: e.target.value as
+                                  | 'muted'
+                                  | 'hidden'
+                                  | 'visible',
+                              }))
+                            }
+                            className={preferenceSelectClassName}
+                            style={selectChevronStyle}
+                          >
+                            <option value="muted">Muted</option>
+                            <option value="hidden">Hidden</option>
+                            <option value="visible">Visible</option>
+                          </select>
+                        </PreferenceRow>
+                      </div>
+                    </section>
+
+                    <section className="border-t border-gray-200 pt-6" aria-labelledby="workspace-calendars">
+                      <h3 id="workspace-calendars" className="text-sm font-semibold text-gray-900">
+                        Workspace calendars
+                      </h3>
+                      <p className="mt-1 text-xs leading-5 text-gray-500">
+                        Workspace calendars keep school, internship, freelance, and personal
+                        commitments separated while Today can still surface what needs attention.
+                      </p>
+                      <div className="mt-2 divide-y divide-gray-200 border-y border-gray-200">
+                        <PreferenceRow
+                          label="Calendar scope"
+                          help="Choose whether Ledger shows the current workspace or all accessible workspaces."
+                        >
+                          <select
+                            id="settings-calendar-scope"
+                            value={preferences.calendarScope}
+                            onChange={(e) =>
+                              setPreferences((prev) => ({
+                                ...prev,
+                                calendarScope: e.target.value as
+                                  | 'current_workspace'
+                                  | 'all_accessible_workspaces',
+                              }))
+                            }
+                            className={preferenceSelectClassName}
+                            style={selectChevronStyle}
+                          >
+                            <option value="current_workspace">Current workspace</option>
+                            <option value="all_accessible_workspaces">
+                              All accessible workspaces
+                            </option>
+                          </select>
+                        </PreferenceRow>
+                        <PreferenceRow
+                          label="Default workspace calendar"
+                          help="The workspace calendar Ledger should use by default."
+                        >
+                          <select
+                            id="settings-default-workspace-calendar"
+                            value={preferences.defaultWorkspaceCalendar}
+                            onChange={(e) =>
+                              setPreferences((prev) => ({
+                                ...prev,
+                                defaultWorkspaceCalendar: e.target.value as
+                                  | 'personal'
+                                  | 'workspace'
+                                  | 'projects',
+                              }))
+                            }
+                            className={preferenceSelectClassName}
+                            style={selectChevronStyle}
+                          >
+                            <option value="personal">Personal</option>
+                            <option value="workspace">Workspace</option>
+                            <option value="projects">Projects</option>
+                          </select>
+                        </PreferenceRow>
+                        <PreferenceRow
+                          label="Calendar color"
+                          help="Used as the default accent for calendar items."
+                        >
+                          <select
+                            id="settings-calendar-color"
+                            value={preferences.calendarColor}
+                            onChange={(e) =>
+                              setPreferences((prev) => ({
+                                ...prev,
+                                calendarColor: e.target.value as
+                                  | 'ledger-orange'
+                                  | 'blue'
+                                  | 'green'
+                                  | 'gray',
+                              }))
+                            }
+                            className={preferenceSelectClassName}
+                            style={selectChevronStyle}
+                          >
+                            <option value="ledger-orange">Ledger orange</option>
+                            <option value="blue">Blue</option>
+                            <option value="green">Green</option>
+                            <option value="gray">Gray</option>
+                          </select>
+                        </PreferenceRow>
+                      </div>
+                    </section>
                   </div>
                 </section>
               )}
@@ -2621,23 +3182,25 @@ export const SettingsWindow = () => {
               {activeSection !== 'sidebar' &&
                 activeSection !== 'shortcuts' &&
                 activeSection !== 'integrations' &&
-                activeSection !== 'account' && (
-                <section className="rounded-2xl border border-gray-200 bg-white p-5">
-                  <div>
-                    <h2 className="text-sm font-semibold text-gray-900">
-                      Changes save automatically
-                    </h2>
-                    <p className="mt-1 text-xs text-gray-600">
-                      Your account and workspace defaults update as you edit them.
-                    </p>
-                  </div>
-                  {saveStatus && (
-                    <p className="mt-3 text-xs text-gray-700" role="status">
-                      {saveStatus}
-                    </p>
-                  )}
-                </section>
-              )}
+                activeSection !== 'account' &&
+                activeSection !== 'workspace' &&
+                activeSection !== 'calendar' && (
+                  <section className="rounded-2xl border border-gray-200 bg-white p-5">
+                    <div>
+                      <h2 className="text-sm font-semibold text-gray-900">
+                        Changes save automatically
+                      </h2>
+                      <p className="mt-1 text-xs text-gray-600">
+                        Your account and workspace defaults update as you edit them.
+                      </p>
+                    </div>
+                    {saveStatus && (
+                      <p className="mt-3 text-xs text-gray-700" role="status">
+                        {saveStatus}
+                      </p>
+                    )}
+                  </section>
+                )}
             </div>
 
             <ModalOverlay
@@ -2783,17 +3346,12 @@ export const SettingsWindow = () => {
             <ModalOverlay
               isOpen={isWorkspaceManageModalOpen && !!activeWorkspace}
               onClose={closeWorkspaceManageModal}
-              classNameContainer="w-full max-w-155 rounded-2xl border border-gray-200 bg-white shadow-[0_24px_70px_rgba(15,23,42,0.12)]"
+              classNameContainer="w-full max-w-[720px] rounded-2xl border border-gray-200 bg-white shadow-[0_24px_70px_rgba(15,23,42,0.12)]"
             >
               <div className="flex items-start justify-between gap-4 px-5 pt-5">
                 <div>
-                  <p className="text-xs font-medium text-gray-500">
-                    Workspace settings
-                  </p>
-                  <h3
-                    id="workspace-manage-title"
-                    className="mt-1 text-lg font-semibold text-gray-900"
-                  >
+                  <p className="text-xs font-medium text-gray-500">Workspace settings</p>
+                  <h3 id="workspace-manage-title" className="mt-1 text-lg font-semibold text-gray-900">
                     {activeWorkspace?.name}
                   </h3>
                   <p className="mt-0.5 text-xs text-gray-500">{activeWorkspaceKindLabel}</p>
@@ -2808,54 +3366,50 @@ export const SettingsWindow = () => {
               </div>
 
               <div className="mt-4 border-t border-gray-100 px-5 pt-4">
-                <label
-                  htmlFor="workspace-edit-name"
-                  className="mb-2 block text-xs font-medium text-gray-500"
-                >
-                  Name
-                </label>
-                <input
-                  id="workspace-edit-name"
-                  value={workspaceEditName}
-                  onChange={(e) => setWorkspaceEditName(e.target.value)}
-                  disabled={!canManageWorkspace || isSavingWorkspace}
-                  className="h-9 w-full rounded-xl border border-gray-200 bg-gray-50/80 px-3 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 focus:border-gray-300 focus:bg-white focus:ring-4 focus:ring-gray-100 disabled:opacity-60"
-                  aria-label="Edit workspace name"
-                />
+                <div className="grid gap-4 md:grid-cols-[220px_minmax(0,1fr)] md:items-start">
+                  <div className="space-y-1 pt-1">
+                    <p className="text-sm font-medium text-gray-800">Name</p>
+                    <p className="text-xs text-gray-500">Workspace display name.</p>
+                  </div>
+                  <input
+                    id="workspace-edit-name"
+                    value={workspaceEditName}
+                    onChange={(e) => setWorkspaceEditName(e.target.value)}
+                    disabled={!canManageWorkspace || isSavingWorkspace}
+                    className="h-10 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 focus:border-gray-300 focus:ring-4 focus:ring-gray-100 disabled:opacity-60"
+                    aria-label="Edit workspace name"
+                  />
+                </div>
               </div>
 
-              <div className="mt-3 px-5">
-                <label
-                  htmlFor="workspace-edit-description"
-                  className="mb-2 block text-xs font-medium text-gray-500"
-                >
-                  Description
-                </label>
-                <textarea
-                  id="workspace-edit-description"
-                  value={workspaceEditDescription}
-                  onChange={(e) => setWorkspaceEditDescription(e.target.value)}
-                  disabled={!canManageWorkspace || isSavingWorkspace}
-                  className="min-h-20 w-full resize-none rounded-xl border border-gray-200 bg-gray-50/80 px-3 py-2 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 focus:border-gray-300 focus:bg-white focus:ring-4 focus:ring-gray-100 disabled:opacity-60"
-                  aria-label="Edit workspace description"
-                />
+              <div className="mt-4 px-5">
+                <div className="grid gap-4 md:grid-cols-[220px_minmax(0,1fr)] md:items-start">
+                  <div className="space-y-1 pt-1">
+                    <p className="text-sm font-medium text-gray-800">Description</p>
+                    <p className="text-xs text-gray-500">Optional workspace context.</p>
+                  </div>
+                  <textarea
+                    id="workspace-edit-description"
+                    value={workspaceEditDescription}
+                    onChange={(e) => setWorkspaceEditDescription(e.target.value)}
+                    disabled={!canManageWorkspace || isSavingWorkspace}
+                    className="min-h-24 w-full resize-none rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 focus:border-gray-300 focus:ring-4 focus:ring-gray-100 disabled:opacity-60"
+                    aria-label="Edit workspace description"
+                  />
+                </div>
               </div>
 
               <div className="mt-4 border-t border-gray-100 px-5 pt-4">
-                <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center justify-between gap-4">
                   <div>
-                    <p className="text-xs font-medium text-gray-500">
-                      Danger zone
-                    </p>
-                    <p className="mt-1 text-xs text-gray-600">
-                      Delete this workspace and all data inside it.
-                    </p>
+                    <p className="text-sm font-semibold text-gray-900">Danger zone</p>
+                    <p className="mt-1 text-xs text-gray-500">Delete this workspace and all data inside it.</p>
                   </div>
                   <button
                     type="button"
                     onClick={openWorkspaceDeleteModal}
                     disabled={workspaceUserRole !== 'owner' || isDeletingWorkspace}
-                    className="h-8 rounded-lg border border-red-200 bg-white px-3 text-xs font-medium text-red-700 transition hover:bg-red-50 disabled:opacity-50"
+                    className="h-8 rounded-full border border-red-200 bg-white px-3 text-xs font-medium text-red-700 transition hover:bg-red-50 disabled:opacity-50"
                   >
                     Delete workspace
                   </button>
@@ -2886,26 +3440,18 @@ export const SettingsWindow = () => {
                 </button>
               </div>
             </ModalOverlay>
-
             <ModalOverlay
               isOpen={isWorkspaceDeleteModalOpen && !!activeWorkspace}
               onClose={closeWorkspaceDeleteModal}
-              classNameContainer="w-full max-w-130 rounded-2xl border border-gray-200 bg-white shadow-[0_24px_70px_rgba(15,23,42,0.12)]"
+              classNameContainer="w-full max-w-[640px] rounded-2xl border border-gray-200 bg-white shadow-[0_24px_70px_rgba(15,23,42,0.12)]"
             >
               <div className="px-5 pt-5">
-                <p className="text-[10px] font-medium uppercase tracking-[0.18em] text-gray-400">
-                  Danger zone
-                </p>
-                <h3
-                  id="workspace-delete-title"
-                  className="mt-1 text-lg font-semibold text-gray-900"
-                >
+                <p className="text-xs font-medium text-gray-500">Danger zone</p>
+                <h3 id="workspace-delete-title" className="mt-1 text-lg font-semibold text-gray-900">
                   Delete workspace
                 </h3>
                 <p className="mt-1 text-sm text-gray-600">
-                  Type{' '}
-                  <span className="font-medium text-gray-900">{activeWorkspace?.name}</span> to
-                  confirm deletion.
+                  Type <span className="font-medium text-gray-900">{activeWorkspace?.name}</span> to confirm deletion.
                 </p>
               </div>
 
@@ -2922,12 +3468,10 @@ export const SettingsWindow = () => {
                   onChange={(e) => setWorkspaceDeleteConfirm(e.target.value)}
                   disabled={workspaceUserRole !== 'owner' || isDeletingWorkspace}
                   placeholder={activeWorkspace?.name}
-                  className="h-9 w-full rounded-xl border border-gray-200 bg-gray-50/80 px-3 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 focus:border-gray-300 focus:bg-white focus:ring-4 focus:ring-gray-100 disabled:opacity-60"
+                  className="h-9 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 focus:border-gray-300 focus:ring-4 focus:ring-gray-100 disabled:opacity-60"
                   aria-label="Confirm workspace deletion"
                 />
-                <p className="mt-2 text-xs text-gray-500">
-                  This removes the workspace and all data inside it.
-                </p>
+                <p className="mt-2 text-xs text-gray-500">This removes the workspace and all data inside it.</p>
               </div>
 
               {workspaceDeleteError && (
@@ -2956,6 +3500,63 @@ export const SettingsWindow = () => {
                 >
                   {isDeletingWorkspace ? 'Deleting...' : 'Delete workspace'}
                 </button>
+              </div>
+            </ModalOverlay>
+
+            <ModalOverlay
+              isOpen={!!inviteModal && !!selectedInvite}
+              onClose={() => setInviteModal(null)}
+              classNameContainer="w-full max-w-[560px] rounded-2xl border border-gray-200 bg-white shadow-[0_24px_70px_rgba(15,23,42,0.12)]"
+            >
+              <div className="flex items-start justify-between gap-4 px-5 pt-5">
+                <div>
+                  <p className="text-xs font-medium text-gray-500">Manage invite</p>
+                  <h3 className="mt-1 text-lg font-semibold text-gray-900">
+                    {selectedInvite?.invited_email}
+                  </h3>
+                  <p className="mt-0.5 text-xs text-gray-500">
+                    {selectedInvite?.role} · {selectedInvite?.status}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setInviteModal(null)}
+                  className="rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xs font-medium text-gray-600 transition hover:bg-gray-50"
+                >
+                  Close
+                </button>
+              </div>
+
+              <div className="mt-4 border-t border-gray-100 px-5 pt-4">
+                <p className="text-xs font-medium text-gray-500">Invite link</p>
+                {selectedInvite?.status === 'pending' ? (
+                  <>
+                    <p className="mt-2 break-all text-sm text-gray-700">
+                      {getInviteUrl(selectedInvite) ?? 'No link available'}
+                    </p>
+                    <div className="mt-3 flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => void handleCopySelectedInviteLink()}
+                        disabled={!getInviteUrl(selectedInvite)}
+                        className="inline-flex h-8 flex-1 items-center justify-center gap-2 rounded-full border border-gray-200 bg-white px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-50 disabled:opacity-50"
+                      >
+                        <Copy size={14} />
+                        Copy link
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void handleRevokeInvitation(selectedInvite.id)}
+                        disabled={invitationActionId === selectedInvite.id}
+                        className="inline-flex h-8 flex-1 items-center justify-center rounded-full border border-red-200 bg-white px-3 text-xs font-medium text-red-700 transition hover:bg-red-50 disabled:opacity-50"
+                      >
+                        {invitationActionId === selectedInvite.id ? 'Revoking...' : 'Revoke'}
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <p className="mt-2 text-sm text-gray-600">This invite is no longer pending.</p>
+                )}
               </div>
             </ModalOverlay>
           </main>

@@ -446,6 +446,7 @@ export const useApi = () => {
         location?: string | null;
         all_day?: boolean;
         status?: string;
+        visibility?: 'private' | 'workspace';
       }) =>
         request('/api/events', {
           method: 'POST',
@@ -481,6 +482,11 @@ export const useApi = () => {
         request(`/api/reminders/${id}`, {
           method: 'PATCH',
           body: JSON.stringify(update),
+        }),
+      snoozeReminder: (id: string, snoozeUntil: string) =>
+        request(`/api/reminders/${id}/snooze`, {
+          method: 'POST',
+          body: JSON.stringify({ snooze_until: snoozeUntil }),
         }),
       deleteReminder: (id: string) =>
         request(`/api/reminders/${id}`, {

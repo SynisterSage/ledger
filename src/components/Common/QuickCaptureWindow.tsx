@@ -11,18 +11,45 @@ type FollowUpContext = {
   eventTitle: string;
   projectId: string | null;
   noteId: string | null;
+  defaultTime?: 'tomorrow_9' | 'today_5' | 'next_morning' | 'custom';
+  linkedProjectFollowUps?: 'project_and_today' | 'project_only' | 'today_only';
+};
+
+type QuickCapturePreferences = {
+  defaultEventMinutes?: number;
+  defaultEventStatus?: 'planned' | 'tentative' | 'confirmed';
+  defaultEventCalendar?: 'personal' | 'work' | 'projects';
+};
+
+type QuickCaptureCalendar = {
+  id: string;
+  color?: string | null;
+  is_visible?: boolean;
+  is_personal?: boolean;
+  is_default?: boolean;
+  name?: string | null;
 };
 
 const parseFollowUpContext = (value?: string): FollowUpContext | null => {
   if (!value) return null;
   if (!value.startsWith('ledger-followup|')) return null;
-  const [, eventId = '', eventTitle = '', projectId = '', noteId = ''] = value.split('|');
+  const [
+    ,
+    eventId = '',
+    eventTitle = '',
+    projectId = '',
+    noteId = '',
+    defaultTime = 'tomorrow_9',
+    linkedProjectFollowUps = 'project_and_today',
+  ] = value.split('|');
   if (!eventId) return null;
   return {
     eventId,
     eventTitle: decodeURIComponent(eventTitle || ''),
     projectId: projectId || null,
     noteId: noteId || null,
+    defaultTime: defaultTime as FollowUpContext['defaultTime'],
+    linkedProjectFollowUps: linkedProjectFollowUps as FollowUpContext['linkedProjectFollowUps'],
   };
 };
 
@@ -51,6 +78,11 @@ export const QuickCaptureWindow = ({
   const [eventTime, setEventTime] = useState('09:00');
   const [eventDurationValue, setEventDurationValue] = useState(30);
   const [eventDurationUnit, setEventDurationUnit] = useState<'minutes' | 'hours'>('minutes');
+  const [quickCapturePreferences, setQuickCapturePreferences] = useState<QuickCapturePreferences>({
+    defaultEventMinutes: 30,
+    defaultEventStatus: 'planned',
+    defaultEventCalendar: 'personal',
+  });
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showCloseGuardModal, setShowCloseGuardModal] = useState(false);
@@ -81,15 +113,34 @@ export const QuickCaptureWindow = ({
     const loadDefaultDuration = async () => {
       try {
         const payload = (await api.getUserSettings()) as {
-          preferences?: { defaultEventMinutes?: number } | null;
+          preferences?: QuickCapturePreferences | null;
         };
         if (cancelled) return;
         const minutes = Number(payload?.preferences?.defaultEventMinutes ?? 30);
         const resolved = [30, 45, 60].includes(minutes) ? minutes : 30;
+        setQuickCapturePreferences({
+          defaultEventMinutes: resolved,
+          defaultEventStatus:
+            payload?.preferences?.defaultEventStatus === 'tentative'
+              ? 'tentative'
+              : payload?.preferences?.defaultEventStatus === 'confirmed'
+                ? 'confirmed'
+                : 'planned',
+          defaultEventCalendar:
+            payload?.preferences?.defaultEventCalendar === 'work' ||
+            payload?.preferences?.defaultEventCalendar === 'projects'
+              ? payload.preferences.defaultEventCalendar
+              : 'personal',
+        });
         setEventDurationValue(resolved >= 60 && resolved % 60 === 0 ? resolved / 60 : resolved);
         setEventDurationUnit(resolved >= 60 && resolved % 60 === 0 ? 'hours' : 'minutes');
       } catch {
         if (!cancelled) {
+          setQuickCapturePreferences({
+            defaultEventMinutes: 30,
+            defaultEventStatus: 'planned',
+            defaultEventCalendar: 'personal',
+          });
           setEventDurationValue(30);
           setEventDurationUnit('minutes');
         }
@@ -197,6 +248,27 @@ export const QuickCaptureWindow = ({
     try {
       setIsSaving(true);
       setError(null);
+      const followUpDate = followUpContext
+        ? resolveFollowUpDate(followUpContext.defaultTime)
+        : null;
+      const followUpDueDate = followUpDate
+        ? `${followUpDate.getFullYear()}-${String(followUpDate.getMonth() + 1).padStart(2, '0')}-${String(
+            followUpDate.getDate()
+          ).padStart(2, '0')}`
+        : (() => {
+            const today = new Date();
+            const year = today.getFullYear();
+            const month = String(today.getMonth() + 1).padStart(2, '0');
+            const day = String(today.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+          })();
+      const followUpDueTime = followUpDate
+        ? `${String(followUpDate.getHours()).padStart(2, '0')}:${String(
+            followUpDate.getMinutes()
+          ).padStart(2, '0')}`
+        : null;
+      const showInToday =
+        followUpContext?.linkedProjectFollowUps !== 'project_only';
       const createdTask = await api.createTask({
         title: taskTitle.trim(),
         description: followUpContext ? `calendar_followup:${followUpContext.eventId}` : '',
@@ -206,13 +278,10 @@ export const QuickCaptureWindow = ({
         notes: followUpContext?.eventTitle
           ? `Follow-up from calendar: ${followUpContext.eventTitle}`
           : null,
-        due_date: (() => {
-          const today = new Date();
-          const year = today.getFullYear();
-          const month = String(today.getMonth() + 1).padStart(2, '0');
-          const day = String(today.getDate()).padStart(2, '0');
-          return `${year}-${month}-${day}`;
-        })(),
+        due_date: followUpDueDate,
+        due_time: followUpDueTime,
+        show_in_today: showInToday,
+        is_today_focus: false,
       });
 
       if (followUpContext) {
@@ -231,6 +300,23 @@ export const QuickCaptureWindow = ({
     } finally {
       setIsSaving(false);
     }
+  };
+
+  const resolveFollowUpDate = (
+    setting: FollowUpContext['defaultTime'] = 'tomorrow_9'
+  ) => {
+    const date = new Date();
+    if (setting === 'today_5') {
+      date.setHours(17, 0, 0, 0);
+      return date;
+    }
+    date.setDate(date.getDate() + 1);
+    if (setting === 'next_morning' || setting === 'custom' || setting === 'tomorrow_9') {
+      date.setHours(9, 0, 0, 0);
+      return date;
+    }
+    date.setHours(9, 0, 0, 0);
+    return date;
   };
 
   const saveQuickNote = async () => {
@@ -270,10 +356,40 @@ export const QuickCaptureWindow = ({
         startDateTime.getTime() + getEventDurationMinutes() * 60 * 1000
       );
 
+      const calendars = (await api.getCalendars()) as QuickCaptureCalendar[];
+      const personalCalendar =
+        calendars.find((calendar) => calendar.is_visible !== false && calendar.is_personal) ??
+        calendars.find((calendar) => calendar.is_visible !== false && calendar.is_default) ??
+        calendars[0] ??
+        null;
+      const workspaceCalendar =
+        calendars.find(
+          (calendar) => calendar.is_visible !== false && !calendar.is_personal && calendar.is_default
+        ) ??
+        calendars.find((calendar) => calendar.is_visible !== false && !calendar.is_personal) ??
+        personalCalendar;
+      const projectCalendar =
+        calendars.find(
+          (calendar) =>
+            calendar.is_visible !== false && /project/i.test(String(calendar.name ?? '').trim())
+        ) ?? workspaceCalendar ?? personalCalendar;
+      const preferredCalendar =
+        quickCapturePreferences.defaultEventCalendar === 'work'
+          ? workspaceCalendar
+          : quickCapturePreferences.defaultEventCalendar === 'projects'
+            ? projectCalendar
+            : personalCalendar;
+      if (!preferredCalendar) {
+        throw new Error('Could not find a default calendar.');
+      }
+
       await api.createEvent({
         title: eventTitle.trim(),
         start_at: startDateTime.toISOString(),
         end_at: endDateTime.toISOString(),
+        calendar_id: preferredCalendar.id,
+        color: preferredCalendar.color ?? undefined,
+        status: quickCapturePreferences.defaultEventStatus ?? 'planned',
       });
       setShowCloseGuardModal(false);
       resetEventDraft();

@@ -1617,8 +1617,52 @@ export const ExpandedSidebar = ({
     setSaveError(null);
 
     try {
+      const settings = (await api.getUserSettings()) as {
+        preferences?: {
+          defaultEventStatus?: 'planned' | 'tentative' | 'confirmed';
+          defaultEventCalendar?: 'personal' | 'work' | 'projects';
+        } | null;
+      };
+      const defaultEventStatus =
+        settings.preferences?.defaultEventStatus === 'tentative'
+          ? 'tentative'
+          : settings.preferences?.defaultEventStatus === 'confirmed'
+            ? 'confirmed'
+            : 'planned';
+      const defaultEventCalendar = settings.preferences?.defaultEventCalendar ?? 'personal';
+
       let calendars = await api.getCalendars();
-      let selectedCalendar = Array.isArray(calendars) ? calendars[0] ?? null : null;
+      const personalCalendar =
+        Array.isArray(calendars)
+          ? calendars.find((calendar) => calendar.is_visible !== false && calendar.is_personal) ??
+            calendars.find((calendar) => calendar.is_visible !== false && calendar.is_default) ??
+            calendars[0] ??
+            null
+          : null;
+      const workspaceCalendar =
+        Array.isArray(calendars)
+          ? calendars.find(
+              (calendar) => calendar.is_visible !== false && !calendar.is_personal && calendar.is_default
+            ) ??
+            calendars.find((calendar) => calendar.is_visible !== false && !calendar.is_personal) ??
+            personalCalendar
+          : null;
+      const projectCalendar =
+        Array.isArray(calendars)
+          ? calendars.find(
+              (calendar) =>
+                calendar.is_visible !== false &&
+                /project/i.test(String(calendar.name ?? '').trim())
+            ) ??
+            workspaceCalendar ??
+            personalCalendar
+          : null;
+      let selectedCalendar =
+        defaultEventCalendar === 'work'
+          ? workspaceCalendar
+          : defaultEventCalendar === 'projects'
+            ? projectCalendar
+            : personalCalendar;
 
       if (!selectedCalendar) {
         const createdCalendar = await api.createCalendar('Personal', '#3B82F6', true);
@@ -1652,7 +1696,7 @@ export const ExpandedSidebar = ({
         color: selectedCalendar.color,
         notes: '',
         all_day: false,
-        status: 'planned',
+        status: defaultEventStatus,
       });
 
       if (!data) {

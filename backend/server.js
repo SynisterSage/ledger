@@ -222,7 +222,18 @@ const projectSelectColumns =
 const taskSelectColumns =
   'id, workspace_id, project_id, title, description, notes, due_date, due_time, status, priority, assigned_to, tags, completed_at, created_at, updated_at';
 const reminderSelectColumns =
-  'id, workspace_id, calendar_id, project_id, note_id, title, remind_at, is_done, notes, color, created_at, updated_at';
+  'id, workspace_id, user_id, title, body, remind_at, status, linked_type, linked_id, completed_at, dismissed_at, snoozed_until, created_at, updated_at';
+const reminderDashboardSelectColumns =
+  'id, workspace_id, user_id, title, body, remind_at, status, linked_type, linked_id, completed_at, dismissed_at, snoozed_until, created_at, updated_at, calendar_id, project_id, note_id, notes, color, is_done, created_by';
+const reminderLinkedTypes = ['task', 'event', 'note', 'project', 'inbox', 'none'];
+const reminderStatusValues = ['active', 'completed', 'dismissed', 'overdue'];
+const reminderLinkedLabels = {
+  task: 'Task',
+  event: 'Event',
+  note: 'Note',
+  project: 'Project',
+  inbox: 'Inbox item',
+};
 const workspaceRoleRank = { viewer: 1, member: 2, admin: 3, owner: 4 };
 const workspaceMemberRoles = ['admin', 'member', 'viewer'];
 
@@ -265,6 +276,11 @@ const normalizeNullableDate = (value, fieldName) => {
     throw new Error(`Invalid ${fieldName} format`);
   }
   return normalized;
+};
+
+const normalizeEventVisibility = (value) => {
+  const normalized = normalizeNullableText(value);
+  return normalized === 'workspace' ? 'workspace' : 'private';
 };
 
 const normalizeEmail = (value) =>
@@ -604,7 +620,27 @@ const userPreferencesDefaults = {
   weekStartsOn: 'monday',
   timeFormat: '12h',
   defaultEventMinutes: 30,
+  defaultEventCalendar: 'personal',
+  defaultEventStatus: 'planned',
+  defaultEventVisibility: 'private',
   reminderLeadMinutes: 15,
+  defaultReminderTime: '09:00',
+  reminderSnoozePreset: '10m-1h-tomorrow',
+  reminderDestination: 'today-calendar',
+  missedReminderBehavior: 'needs_attention',
+  completedReminderBehavior: 'collapse',
+  pastEventBehavior: 'history',
+  followUpBehavior: 'offer',
+  followUpDefaultTime: 'tomorrow_9',
+  eventNotesBehavior: 'enabled',
+  linkedProjectFollowUps: 'project_and_today',
+  defaultCalendarView: 'week',
+  showWeekends: true,
+  showRemindersOnCalendar: true,
+  showCompletedItems: 'muted',
+  calendarScope: 'current_workspace',
+  defaultWorkspaceCalendar: 'personal',
+  calendarColor: 'ledger-orange',
   openDashboardByDefault: true,
   reduceMotion: false,
   highContrast: false,
@@ -623,11 +659,135 @@ const normalizeUserPreferences = (value) => {
     ? Number(merged.reminderLeadMinutes)
     : userPreferencesDefaults.reminderLeadMinutes;
 
+  const defaultEventCalendar = ['personal', 'work', 'projects'].includes(
+    String(merged.defaultEventCalendar)
+  )
+    ? String(merged.defaultEventCalendar)
+    : userPreferencesDefaults.defaultEventCalendar;
+
+  const defaultEventStatus = ['planned', 'tentative', 'confirmed'].includes(
+    String(merged.defaultEventStatus)
+  )
+    ? String(merged.defaultEventStatus)
+    : userPreferencesDefaults.defaultEventStatus;
+
+  const defaultEventVisibility = ['private', 'workspace'].includes(
+    String(merged.defaultEventVisibility)
+  )
+    ? String(merged.defaultEventVisibility)
+    : userPreferencesDefaults.defaultEventVisibility;
+
+  const defaultReminderTime = ['08:00', '09:00', '12:00', '17:00'].includes(
+    String(merged.defaultReminderTime)
+  )
+    ? String(merged.defaultReminderTime)
+    : userPreferencesDefaults.defaultReminderTime;
+
+  const reminderSnoozePreset = ['10m-1h-tomorrow', '5m-15m-1h', '15m-1h-tomorrow'].includes(
+    String(merged.reminderSnoozePreset)
+  )
+    ? String(merged.reminderSnoozePreset)
+    : userPreferencesDefaults.reminderSnoozePreset;
+
+  const reminderDestination = ['today-calendar', 'today', 'calendar'].includes(
+    String(merged.reminderDestination)
+  )
+    ? String(merged.reminderDestination)
+    : userPreferencesDefaults.reminderDestination;
+
+  const missedReminderBehavior = ['needs_attention', 'today', 'hide'].includes(
+    String(merged.missedReminderBehavior)
+  )
+    ? String(merged.missedReminderBehavior)
+    : userPreferencesDefaults.missedReminderBehavior;
+
+  const completedReminderBehavior = ['collapse', 'keep_visible', 'hide_immediately'].includes(
+    String(merged.completedReminderBehavior)
+  )
+    ? String(merged.completedReminderBehavior)
+    : userPreferencesDefaults.completedReminderBehavior;
+
+  const pastEventBehavior = ['history', 'fade', 'upcoming_only'].includes(
+    String(merged.pastEventBehavior)
+  )
+    ? String(merged.pastEventBehavior)
+    : userPreferencesDefaults.pastEventBehavior;
+
+  const followUpBehavior = ['none', 'offer', 'review_prompt'].includes(
+    String(merged.followUpBehavior)
+  )
+    ? String(merged.followUpBehavior)
+    : userPreferencesDefaults.followUpBehavior;
+
+  const followUpDefaultTime = ['tomorrow_9', 'today_5', 'next_morning', 'custom'].includes(
+    String(merged.followUpDefaultTime)
+  )
+    ? String(merged.followUpDefaultTime)
+    : userPreferencesDefaults.followUpDefaultTime;
+
+  const eventNotesBehavior = ['enabled', 'disabled'].includes(String(merged.eventNotesBehavior))
+    ? String(merged.eventNotesBehavior)
+    : userPreferencesDefaults.eventNotesBehavior;
+
+  const linkedProjectFollowUps = ['project_and_today', 'project_only', 'today_only'].includes(
+    String(merged.linkedProjectFollowUps)
+  )
+    ? String(merged.linkedProjectFollowUps)
+    : userPreferencesDefaults.linkedProjectFollowUps;
+
+  const defaultCalendarView = ['day', 'week', 'month'].includes(String(merged.defaultCalendarView))
+    ? String(merged.defaultCalendarView)
+    : userPreferencesDefaults.defaultCalendarView;
+
+  const showCompletedItems = ['muted', 'hidden', 'visible'].includes(
+    String(merged.showCompletedItems)
+  )
+    ? String(merged.showCompletedItems)
+    : userPreferencesDefaults.showCompletedItems;
+
+  const calendarScope = ['current_workspace', 'all_accessible_workspaces'].includes(
+    String(merged.calendarScope)
+  )
+    ? String(merged.calendarScope)
+    : userPreferencesDefaults.calendarScope;
+
+  const defaultWorkspaceCalendar = ['personal', 'workspace', 'projects'].includes(
+    String(merged.defaultWorkspaceCalendar)
+  )
+    ? String(merged.defaultWorkspaceCalendar)
+    : userPreferencesDefaults.defaultWorkspaceCalendar;
+
+  const calendarColor = ['ledger-orange', 'blue', 'green', 'gray'].includes(
+    String(merged.calendarColor)
+  )
+    ? String(merged.calendarColor)
+    : userPreferencesDefaults.calendarColor;
+
   return {
     weekStartsOn: String(merged.weekStartsOn).toLowerCase() === 'sunday' ? 'sunday' : 'monday',
     timeFormat: String(merged.timeFormat).toLowerCase() === '24h' ? '24h' : '12h',
     defaultEventMinutes,
+    defaultEventCalendar,
+    defaultEventStatus,
+    defaultEventVisibility,
     reminderLeadMinutes,
+    defaultReminderTime,
+    reminderSnoozePreset,
+    reminderDestination,
+    missedReminderBehavior,
+    completedReminderBehavior,
+    pastEventBehavior,
+    followUpBehavior,
+    followUpDefaultTime,
+    eventNotesBehavior,
+    linkedProjectFollowUps,
+    defaultCalendarView,
+    showWeekends: Boolean(merged.showWeekends),
+    showRemindersOnCalendar: Boolean(merged.showRemindersOnCalendar),
+    showCompletedItems,
+    calendarScope,
+    defaultWorkspaceCalendar,
+    calendarColor,
     openDashboardByDefault: Boolean(merged.openDashboardByDefault),
     reduceMotion: Boolean(merged.reduceMotion),
     highContrast: Boolean(merged.highContrast),
@@ -1413,6 +1573,142 @@ const withReminderTable = async (queryFactory) => {
   }
 
   return { data: null, error: lastError ?? new Error('Reminder table lookup failed') };
+};
+
+const normalizeReminderLinkedType = (value) => {
+  const normalized = normalizeNullableText(value);
+  if (normalized === null) return null;
+
+  const linkedType = normalized.toLowerCase();
+  if (linkedType === 'null') return null;
+  if (!reminderLinkedTypes.includes(linkedType)) {
+    const error = new Error('Invalid linked_type');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  return linkedType;
+};
+
+const normalizeReminderStatus = (value, fallback = 'active') => {
+  const normalized = normalizeNullableText(value);
+  if (normalized === null) return fallback;
+
+  const status = normalized.toLowerCase();
+  if (!reminderStatusValues.includes(status)) {
+    const error = new Error('Invalid status');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  return status;
+};
+
+const isReminderOverdue = (row, nowMs = Date.now()) => {
+  const remindAtMs = new Date(row?.remind_at ?? 0).getTime();
+  if (!Number.isFinite(remindAtMs)) return false;
+
+  const status = String(row?.status ?? 'active').toLowerCase();
+  return status === 'overdue' || (status === 'active' && remindAtMs < nowMs);
+};
+
+const mapReminderRow = (row, nowMs = Date.now()) => {
+  if (!row) return row;
+
+  return {
+    id: row.id,
+    workspace_id: row.workspace_id,
+    user_id: row.user_id ?? row.created_by ?? null,
+    title: row.title,
+    body: row.body ?? row.notes ?? null,
+    remind_at: row.remind_at ?? null,
+    status: String(row.status ?? 'active').toLowerCase(),
+    is_overdue: isReminderOverdue(row, nowMs),
+    linked_type: row.linked_type ?? null,
+    linked_id: row.linked_id ?? null,
+    completed_at: row.completed_at ?? null,
+    dismissed_at: row.dismissed_at ?? null,
+    snoozed_until: row.snoozed_until ?? null,
+    created_at: row.created_at ?? null,
+    updated_at: row.updated_at ?? null,
+  };
+};
+
+const getReminderLegacyFields = ({ userId, linkedType, linkedId, body, status }) => ({
+  created_by: userId,
+  notes: body,
+  is_done: status === 'completed' || status === 'dismissed',
+  calendar_id: null,
+  project_id: linkedType === 'project' ? linkedId : null,
+  note_id: linkedType === 'note' ? linkedId : null,
+});
+
+const validateReminderLink = async ({ workspaceId, linkedType, linkedId }) => {
+  if (!linkedType || linkedType === 'none') return;
+
+  if (!linkedId) {
+    const error = new Error('linked_id is required when linked_type is set');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const tableMap = {
+    task: 'tasks',
+    event: 'events',
+    note: 'notes',
+    project: 'projects',
+    inbox: 'inbox_items',
+  };
+
+  const label = reminderLinkedLabels[linkedType] ?? 'Linked item';
+  const table = tableMap[linkedType];
+  if (!table) return;
+
+  const allowed = await ensureWorkspaceResource(table, linkedId, workspaceId);
+  if (!allowed) {
+    const error = new Error(`${label} not found`);
+    error.statusCode = 404;
+    throw error;
+  }
+};
+
+const parseReminderTimestamp = (value, fieldName) => {
+  const normalized = normalizeNullableText(value);
+  if (!normalized) {
+    const error = new Error(`${fieldName} is required`);
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const date = new Date(normalized);
+  if (Number.isNaN(date.getTime())) {
+    const error = new Error(`Invalid ${fieldName}`);
+    error.statusCode = 400;
+    throw error;
+  }
+
+  return date.toISOString();
+};
+
+const resolveReminderWorkspaceIdForRequest = async (req) => {
+  const requestedWorkspaceId = normalizeNullableText(req.query?.workspace_id);
+  if (requestedWorkspaceId) {
+    await requireWorkspaceAccess(req.authUser.id, requestedWorkspaceId, 'member');
+    return requestedWorkspaceId;
+  }
+
+  return resolveWorkspaceIdForRequest(req);
+};
+
+const getReminderById = async (reminderId) => {
+  const result = await supabase
+    .from('reminders')
+    .select(reminderDashboardSelectColumns)
+    .eq('id', reminderId)
+    .maybeSingle();
+
+  if (result.error) throw result.error;
+  return result.data ?? null;
 };
 
 const writeWorkspaceAuditLog = async ({
@@ -3738,7 +4034,7 @@ app.get('/api/today', authMiddleware, rateLimit('read'), async (req, res) => {
     const { data: reminderData, error: reminderError } = await withReminderTable((table) =>
       supabase
         .from(table)
-        .select(reminderSelectColumns)
+        .select(reminderDashboardSelectColumns)
         .in('workspace_id', workspaceIds)
         .eq('is_done', false)
         .lte('remind_at', todayEndISO)
@@ -3843,7 +4139,7 @@ app.get('/api/today', authMiddleware, rateLimit('read'), async (req, res) => {
     const completedReminderResult = await withReminderTable((table) =>
       supabase
         .from(table)
-        .select(reminderSelectColumns)
+        .select(reminderDashboardSelectColumns)
         .in('workspace_id', workspaceIds)
         .eq('is_done', true)
         .gte('updated_at', cutoff)
@@ -4320,7 +4616,9 @@ app.get('/api/events/upcoming', authMiddleware, rateLimit('read'), async (req, r
 
     const { data, error } = await supabase
       .from('events')
-      .select('id, title, start_at, end_at, all_day, calendar_id, color, status, recurrence_rule')
+      .select(
+        'id, title, start_at, end_at, all_day, calendar_id, color, status, visibility, recurrence_rule'
+      )
       .eq('workspace_id', workspaceId)
       .gte('start_at', now.toISOString())
       .lte('start_at', end.toISOString())
@@ -4378,6 +4676,7 @@ app.post(
           end_at: endAt,
           color: req.body?.color || null,
           status: req.body?.status || 'planned',
+          visibility: normalizeEventVisibility(req.body?.visibility),
           recurrence_rule: req.body?.recurrence_rule || null,
           notes: req.body?.notes || null,
           location: req.body?.location || null,
@@ -4387,7 +4686,7 @@ app.post(
           note_id: req.body?.note_id || null,
         })
         .select(
-          'id, title, start_at, end_at, all_day, calendar_id, color, status, recurrence_rule, notes, project_id, note_id'
+          'id, title, start_at, end_at, all_day, calendar_id, color, status, visibility, recurrence_rule, notes, project_id, note_id'
         )
         .single();
 
@@ -4437,6 +4736,9 @@ app.patch('/api/events/:id', authMiddleware, rateLimit('write'), async (req, res
     ]) {
       if (req.body?.[key] !== undefined) update[key] = req.body[key];
     }
+    if (req.body?.visibility !== undefined) {
+      update.visibility = normalizeEventVisibility(req.body.visibility);
+    }
     if (req.body?.project_id !== undefined) {
       const projectId = req.body.project_id ? String(req.body.project_id) : null;
       if (projectId) {
@@ -4465,7 +4767,7 @@ app.patch('/api/events/:id', authMiddleware, rateLimit('write'), async (req, res
       .update(update)
       .eq('id', req.params.id)
       .select(
-        'id, title, start_at, end_at, all_day, calendar_id, color, status, recurrence_rule, notes, project_id, note_id'
+        'id, title, start_at, end_at, all_day, calendar_id, color, status, visibility, recurrence_rule, notes, project_id, note_id'
       )
       .single();
 
@@ -4654,49 +4956,124 @@ app.post(
   }
 );
 
+const loadRemindersForWorkspace = async ({
+  workspaceId,
+  statusFilter = 'default',
+  from = null,
+  to = null,
+  linkedType = null,
+  linkedId = null,
+  limit = 500,
+}) => {
+  let query = supabase.from('reminders').select(reminderSelectColumns).eq('workspace_id', workspaceId);
+
+  if (statusFilter === 'active') {
+    query = query.eq('status', 'active');
+  } else if (statusFilter === 'completed' || statusFilter === 'dismissed') {
+    query = query.eq('status', statusFilter);
+  } else if (statusFilter === 'overdue') {
+    query = query.in('status', ['active', 'overdue']);
+  } else if (statusFilter !== 'all' && statusFilter !== 'default') {
+    query = query.in('status', ['active', 'overdue']);
+  } else if (statusFilter === 'default') {
+    query = query.in('status', ['active', 'overdue']);
+  }
+
+  if (from) query = query.gte('remind_at', from);
+  if (to) query = query.lte('remind_at', to);
+  if (linkedType) query = query.eq('linked_type', linkedType);
+  if (linkedId) query = query.eq('linked_id', linkedId);
+  if (limit) query = query.limit(limit);
+
+  const { data, error } = await query.order('remind_at', { ascending: true });
+  if (error) throw error;
+
+  const rows = Array.isArray(data) ? data : [];
+  const mapped = rows.map((row) => mapReminderRow(row));
+  if (statusFilter === 'overdue') {
+    return mapped.filter((row) => row.is_overdue);
+  }
+  return mapped;
+};
+
 app.get('/api/reminders', authMiddleware, rateLimit('read'), async (req, res) => {
   try {
-    const workspaceId = await resolveWorkspaceIdForRequest(req);
-    const { data, error } = await withReminderTable((table) =>
-      supabase
-        .from(table)
-        .select('id, title, remind_at, calendar_id, color, is_done, notes, project_id, note_id')
-        .eq('workspace_id', workspaceId)
-        .order('remind_at', { ascending: true })
-    );
-
-    if (error) throw error;
-
-    const rows = Array.isArray(data) ? data : [];
-    const now = Date.now();
-    const overdueReminders = rows.filter((reminder) => {
-      const isDone = Boolean(reminder.is_done);
-      const remindAt = new Date(reminder.remind_at ?? 0).getTime();
-      return !isDone && Number.isFinite(remindAt) && remindAt < now;
-    });
-
-    if (overdueReminders.length > 0) {
-      await Promise.allSettled(
-        overdueReminders.map((reminder) =>
-          withReminderTable((table) =>
-            supabase
-              .from(table)
-              .update({ is_done: true, updated_by: req.authUser.id })
-              .eq('id', reminder.id)
-          )
-        )
-      );
+    const workspaceId = await resolveReminderWorkspaceIdForRequest(req);
+    const statusFilter = normalizeNullableText(req.query?.status)?.toLowerCase() ?? 'default';
+    if (!['active', 'completed', 'dismissed', 'overdue', 'all', 'default'].includes(statusFilter)) {
+      return res.status(400).json({ error: 'Invalid status' });
     }
 
-    res.json(
-      rows.map((reminder) =>
-        overdueReminders.some((overdue) => overdue.id === reminder.id)
-          ? { ...reminder, is_done: true }
-          : reminder
-      )
-    );
+    const from = req.query?.from ? parseReminderTimestamp(req.query.from, 'from') : null;
+    const to = req.query?.to ? parseReminderTimestamp(req.query.to, 'to') : null;
+    const linkedType =
+      req.query?.linked_type !== undefined ? normalizeReminderLinkedType(req.query.linked_type) : null;
+    const linkedId = normalizeNullableText(req.query?.linked_id);
+    if (linkedId && !isUuidLike(linkedId)) {
+      return res.status(400).json({ error: 'Invalid linked_id' });
+    }
+
+    const reminders = await loadRemindersForWorkspace({
+      workspaceId,
+      statusFilter,
+      from,
+      to,
+      linkedType,
+      linkedId,
+    });
+
+    res.json(reminders);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(error.statusCode || 500).json({ error: error.message });
+  }
+});
+
+app.get('/api/reminders/due', authMiddleware, rateLimit('read'), async (req, res) => {
+  try {
+    const workspaceId = await resolveReminderWorkspaceIdForRequest(req);
+    const before = req.query?.before ? parseReminderTimestamp(req.query.before, 'before') : new Date().toISOString();
+    const reminders = await loadRemindersForWorkspace({
+      workspaceId,
+      statusFilter: 'default',
+      to: before,
+    });
+
+    res.json(reminders);
+  } catch (error) {
+    res.status(error.statusCode || 500).json({ error: error.message });
+  }
+});
+
+app.get('/api/reminders/overdue', authMiddleware, rateLimit('read'), async (req, res) => {
+  try {
+    const workspaceId = await resolveReminderWorkspaceIdForRequest(req);
+    const reminders = await loadRemindersForWorkspace({
+      workspaceId,
+      statusFilter: 'overdue',
+    });
+
+    res.json(reminders);
+  } catch (error) {
+    res.status(error.statusCode || 500).json({ error: error.message });
+  }
+});
+
+app.get('/api/reminders/today', authMiddleware, rateLimit('read'), async (req, res) => {
+  try {
+    const workspaceId = await resolveReminderWorkspaceIdForRequest(req);
+    const now = new Date();
+    const endOfDay = new Date(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 23, 59, 59, 999)
+    );
+    const reminders = await loadRemindersForWorkspace({
+      workspaceId,
+      statusFilter: 'default',
+      to: endOfDay.toISOString(),
+    });
+
+    res.json(reminders);
+  } catch (error) {
+    res.status(error.statusCode || 500).json({ error: error.message });
   }
 });
 
@@ -4707,137 +5084,324 @@ app.post(
   quotaGuard('reminders'),
   async (req, res) => {
     try {
-      const workspaceId = req.workspaceId;
-      const calendarId =
-        req.body?.calendar_id || (await getCalendarId(workspaceId, req.authUser.id));
+      const workspaceId = req.workspaceId ?? (await resolveReminderWorkspaceIdForRequest(req));
+      await requireWorkspaceAccess(req.authUser.id, workspaceId, 'member');
+
+      const title = String(req.body?.title ?? '').trim();
+      if (!title) {
+        return res.status(400).json({ error: 'title is required' });
+      }
+      if (title.length > 300) {
+        return res.status(400).json({ error: 'title must be 300 characters or less' });
+      }
+
+      const body = normalizeNullableText(req.body?.body);
+      if (body && body.length > 5000) {
+        return res.status(400).json({ error: 'body must be 5000 characters or less' });
+      }
+
+      const remindAt = parseReminderTimestamp(req.body?.remind_at, 'remind_at');
+      const linkedType = normalizeReminderLinkedType(req.body?.linked_type);
+      const linkedId = normalizeNullableText(req.body?.linked_id);
+
+      if (linkedId && !isUuidLike(linkedId)) {
+        return res.status(400).json({ error: 'Invalid linked_id' });
+      }
+      if ((linkedType === null || linkedType === 'none') && linkedId) {
+        return res.status(400).json({ error: 'linked_type is required when linked_id is provided' });
+      }
+
+      await validateReminderLink({ workspaceId, linkedType, linkedId });
+
+      const status = 'active';
+      const legacyFields = getReminderLegacyFields({
+        userId: req.authUser.id,
+        linkedType,
+        linkedId,
+        body,
+        status,
+      });
 
       const insertPayload = {
         workspace_id: workspaceId,
-        calendar_id: calendarId,
-        created_by: req.authUser.id,
-        updated_by: req.authUser.id,
-        title: String(req.body?.title ?? 'Reminder').trim() || 'Reminder',
-        remind_at: req.body?.remind_at,
-        color: req.body?.color || null,
-        is_done: Boolean(req.body?.is_done ?? false),
-        notes: req.body?.notes || null,
-        project_id: req.body?.project_id || null,
-        note_id: req.body?.note_id || null,
+        user_id: req.authUser.id,
+        title,
+        body,
+        remind_at: remindAt,
+        status,
+        linked_type: linkedType,
+        linked_id: linkedId,
+        completed_at: null,
+        dismissed_at: null,
+        snoozed_until: null,
+        ...legacyFields,
       };
 
-      if (insertPayload.project_id) {
-        const projectAllowed = await ensureWorkspaceResource(
-          'projects',
-          String(insertPayload.project_id),
-          workspaceId
-        );
-        if (!projectAllowed) {
-          return res.status(404).json({ error: 'Project not found' });
-        }
-      }
-      if (insertPayload.note_id) {
-        const noteAllowed = await ensureWorkspaceResource(
-          'notes',
-          String(insertPayload.note_id),
-          workspaceId
-        );
-        if (!noteAllowed) {
-          return res.status(404).json({ error: 'Note not found' });
-        }
-      }
-
-      const { data, error } = await withReminderTable((table) =>
-        supabase
-          .from(table)
-          .insert(insertPayload)
-          .select('id, title, remind_at, calendar_id, color, is_done, notes, project_id, note_id')
-          .single()
-      );
+      const { data, error } = await supabase
+        .from('reminders')
+        .insert(insertPayload)
+        .select(reminderSelectColumns)
+        .single();
 
       if (error) throw error;
-      res.json(data);
+      res.json(mapReminderRow(data));
     } catch (error) {
-      res.status(500).json({ error: error.message });
+      res.status(error.statusCode || 500).json({ error: error.message });
     }
   }
 );
 
 app.patch('/api/reminders/:id', authMiddleware, rateLimit('write'), async (req, res) => {
   try {
-    const workspaceId = await resolveWorkspaceIdForRequest(req);
-    const allowedResult = await withReminderTable((table) =>
-      supabase
-        .from(table)
-        .select('id')
-        .eq('id', req.params.id)
-        .eq('workspace_id', workspaceId)
-        .maybeSingle()
-    );
-    if (!allowedResult?.data?.id) {
+    const reminder = await getReminderById(req.params.id);
+    if (!reminder) {
+      return res.status(404).json({ error: 'Reminder not found' });
+    }
+    if (String(reminder.user_id ?? reminder.created_by ?? '') !== String(req.authUser.id)) {
       return res.status(404).json({ error: 'Reminder not found' });
     }
 
-    const update = {};
-    for (const key of [
-      'title',
-      'remind_at',
-      'calendar_id',
-      'color',
-      'is_done',
-      'notes',
-      'note_id',
-    ]) {
-      if (req.body?.[key] !== undefined) update[key] = req.body[key];
-    }
-    if (req.body?.project_id !== undefined) {
-      const projectId = req.body.project_id ? String(req.body.project_id) : null;
-      if (projectId) {
-        const projectAllowed = await ensureWorkspaceResource('projects', projectId, workspaceId);
-        if (!projectAllowed) {
-          return res.status(404).json({ error: 'Project not found' });
-        }
-      }
-      update.project_id = projectId;
-    }
-    if (req.body?.note_id !== undefined) {
-      const noteId = req.body.note_id ? String(req.body.note_id) : null;
-      if (noteId) {
-        const noteAllowed = await ensureWorkspaceResource('notes', noteId, workspaceId);
-        if (!noteAllowed) {
-          return res.status(404).json({ error: 'Note not found' });
-        }
-      }
-      update.note_id = noteId;
-    }
-    update.updated_by = req.authUser.id;
+    await requireWorkspaceAccess(req.authUser.id, reminder.workspace_id, 'member');
 
-    const { data, error } = await withReminderTable((table) =>
-      supabase
-        .from(table)
-        .update(update)
-        .eq('id', req.params.id)
-        .select('id, title, remind_at, calendar_id, color, is_done, notes, project_id, note_id')
-        .single()
-    );
+    const nextTitle = req.body?.title !== undefined ? String(req.body.title ?? '').trim() : null;
+    if (nextTitle !== null && !nextTitle) {
+      return res.status(400).json({ error: 'title is required' });
+    }
+    if (nextTitle !== null && nextTitle.length > 300) {
+      return res.status(400).json({ error: 'title must be 300 characters or less' });
+    }
+
+    const nextBody = req.body?.body !== undefined ? normalizeNullableText(req.body.body) : undefined;
+    if (nextBody !== undefined && nextBody !== null && nextBody.length > 5000) {
+      return res.status(400).json({ error: 'body must be 5000 characters or less' });
+    }
+
+    const hasRemindAt = req.body?.remind_at !== undefined;
+    const nextRemindAt = hasRemindAt ? parseReminderTimestamp(req.body.remind_at, 'remind_at') : null;
+    const hasStatus = req.body?.status !== undefined;
+    const nextStatus = hasStatus ? normalizeReminderStatus(req.body.status) : null;
+
+    const hasLinkedType = req.body?.linked_type !== undefined;
+    const nextLinkedType = hasLinkedType ? normalizeReminderLinkedType(req.body.linked_type) : null;
+    const hasLinkedId = req.body?.linked_id !== undefined;
+    const nextLinkedId = hasLinkedId ? normalizeNullableText(req.body.linked_id) : null;
+
+    if (nextLinkedId && !isUuidLike(nextLinkedId)) {
+      return res.status(400).json({ error: 'Invalid linked_id' });
+    }
+    if (hasLinkedId && nextLinkedId && (nextLinkedType === null || nextLinkedType === 'none')) {
+      return res.status(400).json({ error: 'linked_type is required when linked_id is provided' });
+    }
+
+    const currentStatus = String(reminder.status ?? 'active').toLowerCase();
+    const effectiveStatus = nextStatus ?? currentStatus;
+    const effectiveLinkedType = hasLinkedType ? nextLinkedType : reminder.linked_type ?? null;
+    const effectiveLinkedId = hasLinkedId ? nextLinkedId : reminder.linked_id ?? null;
+
+    if ((currentStatus === 'completed' || currentStatus === 'dismissed') && hasRemindAt && effectiveStatus !== 'active') {
+      return res.status(400).json({ error: 'Set status to active before changing remind_at' });
+    }
+
+    await validateReminderLink({
+      workspaceId: reminder.workspace_id,
+      linkedType: effectiveLinkedType,
+      linkedId: effectiveLinkedId,
+    });
+
+    const bodyForLegacy = nextBody !== undefined ? nextBody : reminder.body ?? reminder.notes ?? null;
+    const legacyFields = getReminderLegacyFields({
+      userId: req.authUser.id,
+      linkedType: effectiveLinkedType,
+      linkedId: effectiveLinkedId,
+      body: bodyForLegacy,
+      status: effectiveStatus,
+    });
+
+    const updatePayload = {
+      updated_at: new Date().toISOString(),
+      ...legacyFields,
+    };
+
+    if (nextTitle !== null) updatePayload.title = nextTitle;
+    if (nextBody !== undefined) updatePayload.body = nextBody;
+    if (hasRemindAt) updatePayload.remind_at = nextRemindAt;
+    if (hasStatus) updatePayload.status = nextStatus;
+    if (hasLinkedType) updatePayload.linked_type = nextLinkedType;
+    if (hasLinkedId) updatePayload.linked_id = nextLinkedId;
+
+    if (effectiveStatus === 'active') {
+      updatePayload.completed_at = null;
+      updatePayload.dismissed_at = null;
+      updatePayload.is_done = false;
+    } else if (effectiveStatus === 'completed') {
+      updatePayload.completed_at = reminder.completed_at ?? new Date().toISOString();
+      updatePayload.dismissed_at = null;
+      updatePayload.is_done = true;
+    } else if (effectiveStatus === 'dismissed') {
+      updatePayload.dismissed_at = reminder.dismissed_at ?? new Date().toISOString();
+      updatePayload.completed_at = null;
+      updatePayload.is_done = true;
+    }
+
+    if (req.body?.snoozed_until !== undefined) {
+      const snoozedUntil = parseReminderTimestamp(req.body.snoozed_until, 'snoozed_until');
+      updatePayload.snoozed_until = snoozedUntil;
+      updatePayload.remind_at = snoozedUntil;
+      updatePayload.status = 'active';
+      updatePayload.completed_at = null;
+      updatePayload.dismissed_at = null;
+      updatePayload.is_done = false;
+    }
+
+    const { data, error } = await supabase
+      .from('reminders')
+      .update(updatePayload)
+      .eq('id', req.params.id)
+      .eq('workspace_id', reminder.workspace_id)
+      .eq('user_id', req.authUser.id)
+      .select(reminderSelectColumns)
+      .single();
 
     if (error) throw error;
-    res.json(data);
+    res.json(mapReminderRow(data));
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(error.statusCode || 500).json({ error: error.message });
+  }
+});
+
+app.post('/api/reminders/:id/complete', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const reminder = await getReminderById(req.params.id);
+    if (!reminder) {
+      return res.status(404).json({ error: 'Reminder not found' });
+    }
+    if (String(reminder.user_id ?? reminder.created_by ?? '') !== String(req.authUser.id)) {
+      return res.status(404).json({ error: 'Reminder not found' });
+    }
+
+    await requireWorkspaceAccess(req.authUser.id, reminder.workspace_id, 'member');
+
+    const nowIso = new Date().toISOString();
+    const { data, error } = await supabase
+      .from('reminders')
+      .update({
+        status: 'completed',
+        completed_at: nowIso,
+        dismissed_at: null,
+        snoozed_until: null,
+        is_done: true,
+        updated_at: nowIso,
+      })
+      .eq('id', req.params.id)
+      .eq('workspace_id', reminder.workspace_id)
+      .eq('user_id', req.authUser.id)
+      .select(reminderSelectColumns)
+      .single();
+
+    if (error) throw error;
+    res.json(mapReminderRow(data));
+  } catch (error) {
+    res.status(error.statusCode || 500).json({ error: error.message });
+  }
+});
+
+app.post('/api/reminders/:id/dismiss', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const reminder = await getReminderById(req.params.id);
+    if (!reminder) {
+      return res.status(404).json({ error: 'Reminder not found' });
+    }
+    if (String(reminder.user_id ?? reminder.created_by ?? '') !== String(req.authUser.id)) {
+      return res.status(404).json({ error: 'Reminder not found' });
+    }
+
+    await requireWorkspaceAccess(req.authUser.id, reminder.workspace_id, 'member');
+
+    const nowIso = new Date().toISOString();
+    const { data, error } = await supabase
+      .from('reminders')
+      .update({
+        status: 'dismissed',
+        dismissed_at: nowIso,
+        completed_at: null,
+        snoozed_until: null,
+        is_done: true,
+        updated_at: nowIso,
+      })
+      .eq('id', req.params.id)
+      .eq('workspace_id', reminder.workspace_id)
+      .eq('user_id', req.authUser.id)
+      .select(reminderSelectColumns)
+      .single();
+
+    if (error) throw error;
+    res.json(mapReminderRow(data));
+  } catch (error) {
+    res.status(error.statusCode || 500).json({ error: error.message });
+  }
+});
+
+app.post('/api/reminders/:id/snooze', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const reminder = await getReminderById(req.params.id);
+    if (!reminder) {
+      return res.status(404).json({ error: 'Reminder not found' });
+    }
+    if (String(reminder.user_id ?? reminder.created_by ?? '') !== String(req.authUser.id)) {
+      return res.status(404).json({ error: 'Reminder not found' });
+    }
+
+    await requireWorkspaceAccess(req.authUser.id, reminder.workspace_id, 'member');
+
+    const snoozedUntil = parseReminderTimestamp(req.body?.snooze_until, 'snooze_until');
+    const nowIso = new Date().toISOString();
+    const { data, error } = await supabase
+      .from('reminders')
+      .update({
+        remind_at: snoozedUntil,
+        snoozed_until: snoozedUntil,
+        status: 'active',
+        completed_at: null,
+        dismissed_at: null,
+        is_done: false,
+        updated_at: nowIso,
+      })
+      .eq('id', req.params.id)
+      .eq('workspace_id', reminder.workspace_id)
+      .eq('user_id', req.authUser.id)
+      .select(reminderSelectColumns)
+      .single();
+
+    if (error) throw error;
+    res.json(mapReminderRow(data));
+  } catch (error) {
+    res.status(error.statusCode || 500).json({ error: error.message });
   }
 });
 
 app.delete('/api/reminders/:id', authMiddleware, rateLimit('write'), async (req, res) => {
   try {
-    const workspaceId = await resolveWorkspaceIdForRequest(req);
-    const { error } = await withReminderTable((table) =>
-      supabase.from(table).delete().eq('id', req.params.id).eq('workspace_id', workspaceId)
-    );
+    const reminder = await getReminderById(req.params.id);
+    if (!reminder) {
+      return res.status(404).json({ error: 'Reminder not found' });
+    }
+    if (String(reminder.user_id ?? reminder.created_by ?? '') !== String(req.authUser.id)) {
+      return res.status(404).json({ error: 'Reminder not found' });
+    }
+
+    await requireWorkspaceAccess(req.authUser.id, reminder.workspace_id, 'member');
+
+    const { error } = await supabase
+      .from('reminders')
+      .delete()
+      .eq('id', req.params.id)
+      .eq('workspace_id', reminder.workspace_id)
+      .eq('user_id', req.authUser.id);
 
     if (error) throw error;
     res.json({ success: true });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(error.statusCode || 500).json({ error: error.message });
   }
 });
 
