@@ -19,6 +19,7 @@ type QuickCapturePreferences = {
   defaultEventMinutes?: number;
   defaultEventStatus?: 'planned' | 'tentative' | 'confirmed';
   defaultEventCalendar?: 'personal' | 'work' | 'projects';
+  calendarScope?: 'current_workspace' | 'all_accessible_workspaces';
 };
 
 type QuickCaptureCalendar = {
@@ -82,6 +83,7 @@ export const QuickCaptureWindow = ({
     defaultEventMinutes: 30,
     defaultEventStatus: 'planned',
     defaultEventCalendar: 'personal',
+    calendarScope: 'current_workspace',
   });
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -131,6 +133,10 @@ export const QuickCaptureWindow = ({
             payload?.preferences?.defaultEventCalendar === 'projects'
               ? payload.preferences.defaultEventCalendar
               : 'personal',
+          calendarScope:
+            payload?.preferences?.calendarScope === 'all_accessible_workspaces'
+              ? 'all_accessible_workspaces'
+              : 'current_workspace',
         });
         setEventDurationValue(resolved >= 60 && resolved % 60 === 0 ? resolved / 60 : resolved);
         setEventDurationUnit(resolved >= 60 && resolved % 60 === 0 ? 'hours' : 'minutes');
@@ -140,6 +146,7 @@ export const QuickCaptureWindow = ({
             defaultEventMinutes: 30,
             defaultEventStatus: 'planned',
             defaultEventCalendar: 'personal',
+            calendarScope: 'current_workspace',
           });
           setEventDurationValue(30);
           setEventDurationUnit('minutes');
@@ -356,7 +363,9 @@ export const QuickCaptureWindow = ({
         startDateTime.getTime() + getEventDurationMinutes() * 60 * 1000
       );
 
-      const calendars = (await api.getCalendars()) as QuickCaptureCalendar[];
+      const calendars = (await api.getCalendars({
+        scope: quickCapturePreferences.calendarScope,
+      })) as QuickCaptureCalendar[];
       const personalCalendar =
         calendars.find((calendar) => calendar.is_visible !== false && calendar.is_personal) ??
         calendars.find((calendar) => calendar.is_visible !== false && calendar.is_default) ??

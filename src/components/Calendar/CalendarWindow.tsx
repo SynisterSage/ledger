@@ -1607,7 +1607,9 @@ export const CalendarWindow = () => {
       setError(null);
 
       try {
-        const loadedCalendars = await api.getCalendars();
+        const loadedCalendars = await api.getCalendars({
+          scope: calendarPreferences.calendarScope,
+        });
 
         if (cancelled) return;
 
@@ -1631,8 +1633,10 @@ export const CalendarWindow = () => {
         );
 
         const [eventRows, reminderRows] = await Promise.all([
-          api.getEvents(viewConfig.start.toISOString(), viewConfig.end.toISOString()),
-          api.getReminders(),
+          api.getEvents(viewConfig.start.toISOString(), viewConfig.end.toISOString(), {
+            scope: calendarPreferences.calendarScope,
+          }),
+          api.getReminders({ scope: calendarPreferences.calendarScope }),
         ]);
 
         if (cancelled) return;
@@ -1735,6 +1739,7 @@ export const CalendarWindow = () => {
     viewConfig.start.toISOString(),
     viewConfig.end.toISOString(),
     api,
+    calendarPreferences.calendarScope,
   ]);
 
   useEffect(() => {

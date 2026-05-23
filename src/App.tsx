@@ -688,6 +688,9 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
   const [isNewFocusModalOpen, setIsNewFocusModalOpen] = useState(false);
   const [expandedTimelineIds, setExpandedTimelineIds] = useState<Set<string>>(new Set());
   const [expandedNoteIds, setExpandedNoteIds] = useState<Set<string>>(new Set());
+  const [calendarScope, setCalendarScope] = useState<'current_workspace' | 'all_accessible_workspaces'>(
+    'current_workspace'
+  );
   const autoExpireTodayTaskIdsRef = useRef<Set<string>>(new Set());
   const getWorkspaceTaskMetadata = () => ({
     workspace_id: activeWorkspaceId ?? null,
@@ -731,6 +734,35 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
       // No-op when storage is unavailable.
     }
   }, [completedFocusTasks]);
+
+  useEffect(() => {
+    if (!user) return;
+
+    let cancelled = false;
+    const loadCalendarSettings = async () => {
+      try {
+        const payload = (await api.getUserSettings()) as {
+          preferences?: { calendarScope?: 'current_workspace' | 'all_accessible_workspaces' } | null;
+        };
+        if (cancelled) return;
+        setCalendarScope(
+          payload?.preferences?.calendarScope === 'all_accessible_workspaces'
+            ? 'all_accessible_workspaces'
+            : 'current_workspace'
+        );
+      } catch {
+        if (!cancelled) {
+          setCalendarScope('current_workspace');
+        }
+      }
+    };
+
+    void loadCalendarSettings();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [api, user]);
 
   useEffect(() => {
     const syncCompletedFocusDay = () => {
@@ -786,7 +818,7 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
             api.getDailyAccountability(),
             api.getToday(),
             api.getProjects(),
-            api.getUpcomingEvents(),
+            api.getUpcomingEvents({ scope: calendarScope }),
             api.getNotes(),
             api.getTasks(),
           ]);
@@ -961,7 +993,7 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [activeWorkspaceId, api, user]);
+  }, [activeWorkspaceId, api, calendarScope, user]);
 
   useEffect(() => {
     if (!user || !activeWorkspaceId) {

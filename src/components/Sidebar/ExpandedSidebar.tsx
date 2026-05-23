@@ -337,6 +337,9 @@ export const ExpandedSidebar = ({
   const [projectUpdating, setProjectUpdating] = useState<string | null>(null);
   const [newProjectName, setNewProjectName] = useState('');
   const [isCreatingProject, setIsCreatingProject] = useState(false);
+  const [calendarScope, setCalendarScope] = useState<'current_workspace' | 'all_accessible_workspaces'>(
+    'current_workspace'
+  );
   const [upcomingItems, setUpcomingItems] = useState<
     Array<{
       id: string;
@@ -388,6 +391,35 @@ export const ExpandedSidebar = ({
   } | null>(null);
   const taskCaptureRef = useRef<HTMLInputElement | null>(null);
   const noteCaptureRef = useRef<HTMLTextAreaElement | null>(null);
+
+  useEffect(() => {
+    if (!user) return;
+
+    let cancelled = false;
+    const loadCalendarSettings = async () => {
+      try {
+        const settings = (await api.getUserSettings()) as {
+          preferences?: { calendarScope?: 'current_workspace' | 'all_accessible_workspaces' } | null;
+        };
+        if (cancelled) return;
+        setCalendarScope(
+          settings?.preferences?.calendarScope === 'all_accessible_workspaces'
+            ? 'all_accessible_workspaces'
+            : 'current_workspace'
+        );
+      } catch {
+        if (!cancelled) {
+          setCalendarScope('current_workspace');
+        }
+      }
+    };
+
+    void loadCalendarSettings();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [api, user]);
   const eventCaptureRef = useRef<HTMLInputElement | null>(null);
   const todayHelpButtonRef = useRef<HTMLButtonElement | null>(null);
   const todayHelpPopoverRef = useRef<HTMLDivElement | null>(null);
@@ -931,7 +963,7 @@ export const ExpandedSidebar = ({
 
     const loadUpcoming = async () => {
       try {
-        const events = await api.getUpcomingEvents();
+        const events = await api.getUpcomingEvents({ scope: calendarScope });
         const today = new Date();
         today.setHours(0, 0, 0, 0);
         const todayISO = today.toISOString().slice(0, 10);
@@ -1009,7 +1041,7 @@ export const ExpandedSidebar = ({
       window.ipcRenderer?.off('calendar:items-updated', handleCalendarItemsUpdated);
       window.clearInterval(refreshTimer);
     };
-  }, [user?.id, activeWorkspaceId]);
+  }, [user?.id, activeWorkspaceId, calendarScope, api]);
 
   useEffect(() => {
     if (quickCaptureMode === 'none') return;
@@ -1631,7 +1663,7 @@ export const ExpandedSidebar = ({
             : 'planned';
       const defaultEventCalendar = settings.preferences?.defaultEventCalendar ?? 'personal';
 
-      let calendars = await api.getCalendars();
+      let calendars = await api.getCalendars({ scope: calendarScope });
       const personalCalendar =
         Array.isArray(calendars)
           ? calendars.find((calendar) => calendar.is_visible !== false && calendar.is_personal) ??
@@ -1673,7 +1705,7 @@ export const ExpandedSidebar = ({
             color: created.color ?? '#3B82F6',
           };
         } else {
-          calendars = await api.getCalendars();
+          calendars = await api.getCalendars({ scope: calendarScope });
           selectedCalendar = Array.isArray(calendars) ? calendars[0] ?? null : null;
         }
       }

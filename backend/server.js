@@ -222,7 +222,7 @@ const projectSelectColumns =
 const taskSelectColumns =
   'id, workspace_id, project_id, title, description, notes, due_date, due_time, status, priority, assigned_to, tags, completed_at, created_at, updated_at';
 const reminderSelectColumns =
-  'id, workspace_id, user_id, title, body, remind_at, status, linked_type, linked_id, completed_at, dismissed_at, snoozed_until, created_at, updated_at';
+  'id, workspace_id, user_id, title, body, remind_at, status, linked_type, linked_id, completed_at, dismissed_at, snoozed_until, created_at, updated_at, calendar_id, project_id, note_id, notes, color, is_done, created_by';
 const reminderDashboardSelectColumns =
   'id, workspace_id, user_id, title, body, remind_at, status, linked_type, linked_id, completed_at, dismissed_at, snoozed_until, created_at, updated_at, calendar_id, project_id, note_id, notes, color, is_done, created_by';
 const reminderLinkedTypes = ['task', 'event', 'note', 'project', 'inbox', 'none'];
@@ -1013,6 +1013,17 @@ const resolveWorkspaceIdForRequest = async (req) => {
   return resolveWorkspaceId(req.authUser.id, requestedWorkspaceId);
 };
 
+const getCalendarById = async (calendarId) => {
+  const result = await supabase
+    .from('calendars')
+    .select('id, workspace_id, name, color, is_personal, is_visible, is_default, created_by')
+    .eq('id', calendarId)
+    .maybeSingle();
+
+  if (result.error) throw result.error;
+  return result.data ?? null;
+};
+
 const resolveExtensionWorkspaceId = async (userId, requestedWorkspaceId = null, tokenWorkspaceId = null) => {
   if (requestedWorkspaceId) {
     const allowed = await isWorkspaceAccessibleToUser(userId, requestedWorkspaceId);
@@ -1109,6 +1120,23 @@ const getAccessibleWorkspaces = async (userId) => {
 };
 
 const getCalendarScopeWorkspaceIds = async (req) => {
+  const scope = String(req.query?.scope ?? '').trim().toLowerCase();
+  if (scope === 'all_accessible_workspaces') {
+    const workspaces = await getAccessibleWorkspaces(req.authUser.id);
+    return workspaces.map((workspace) => workspace.id).filter(Boolean);
+  }
+
+  const workspaceId = await resolveWorkspaceIdForRequest(req);
+  return workspaceId ? [workspaceId] : [];
+};
+
+const getReminderScopeWorkspaceIds = async (req) => {
+  const requestedWorkspaceId = normalizeNullableText(req.query?.workspace_id);
+  if (requestedWorkspaceId) {
+    await requireWorkspaceAccess(req.authUser.id, requestedWorkspaceId, 'member');
+    return [requestedWorkspaceId];
+  }
+
   const scope = String(req.query?.scope ?? '').trim().toLowerCase();
   if (scope === 'all_accessible_workspaces') {
     const workspaces = await getAccessibleWorkspaces(req.authUser.id);
@@ -1637,6 +1665,13 @@ const mapReminderRow = (row, nowMs = Date.now()) => {
     is_overdue: isReminderOverdue(row, nowMs),
     linked_type: row.linked_type ?? null,
     linked_id: row.linked_id ?? null,
+    calendar_id: row.calendar_id ?? null,
+    project_id: row.project_id ?? null,
+    note_id: row.note_id ?? null,
+    notes: row.notes ?? null,
+    color: row.color ?? null,
+    is_done: Boolean(row.is_done ?? false),
+    created_by: row.created_by ?? null,
     completed_at: row.completed_at ?? null,
     dismissed_at: row.dismissed_at ?? null,
     snoozed_until: row.snoozed_until ?? null,
@@ -1645,11 +1680,11 @@ const mapReminderRow = (row, nowMs = Date.now()) => {
   };
 };
 
-const getReminderLegacyFields = ({ userId, linkedType, linkedId, body, status }) => ({
+const getReminderLegacyFields = ({ userId, linkedType, linkedId, body, status, calendarId }) => ({
   created_by: userId,
   notes: body,
   is_done: status === 'completed' || status === 'dismissed',
-  calendar_id: null,
+  calendar_id: calendarId ?? null,
   project_id: linkedType === 'project' ? linkedId : null,
   note_id: linkedType === 'note' ? linkedId : null,
 });
@@ -4670,14 +4705,51 @@ app.post(
   quotaGuard('events'),
   async (req, res) => {
     try {
-      const workspaceId = req.workspaceId;
+      let workspaceId = req.workspaceId ?? (await resolveWorkspaceIdForRequest(req));
       const title = String(req.body?.title ?? '').trim();
       if (!title) {
         return res.status(400).json({ error: 'Event title required' });
       }
 
-      const calendarId =
-        req.body?.calendar_id || (await getCalendarId(workspaceId, req.authUser.id));
+      const requestedCalendarId = normalizeNullableText(req.body?.calendar_id);
+      let calendarId = null;
+      if (requestedCalendarId) {
+        if (!isUuidLike(requestedCalendarId)) {
+          return res.status(400).json({ error: 'Invalid calendar_id' });
+        }
+        const calendar = await getCalendarById(requestedCalendarId);
+        if (!calendar) {
+          return res.status(404).json({ error: 'Calendar not found' });
+        }
+        await requireWorkspaceAccess(req.authUser.id, calendar.workspace_id, 'member');
+        workspaceId = calendar.workspace_id;
+        calendarId = calendar.id;
+      } else {
+        calendarId = await getCalendarId(workspaceId, req.authUser.id);
+      }
+
+      const projectId = normalizeNullableText(req.body?.project_id);
+      if (projectId) {
+        if (!isUuidLike(projectId)) {
+          return res.status(400).json({ error: 'Invalid project_id' });
+        }
+        const projectAllowed = await ensureWorkspaceResource('projects', projectId, workspaceId);
+        if (!projectAllowed) {
+          return res.status(404).json({ error: 'Project not found' });
+        }
+      }
+
+      const noteId = normalizeNullableText(req.body?.note_id);
+      if (noteId) {
+        if (!isUuidLike(noteId)) {
+          return res.status(400).json({ error: 'Invalid note_id' });
+        }
+        const noteAllowed = await ensureWorkspaceResource('notes', noteId, workspaceId);
+        if (!noteAllowed) {
+          return res.status(404).json({ error: 'Note not found' });
+        }
+      }
+
       const startAt = String(req.body?.start_at ?? '');
       const parsedStartAt = startAt ? new Date(startAt) : null;
       const endAt = req.body?.end_at
@@ -4703,9 +4775,9 @@ app.post(
           notes: req.body?.notes || null,
           location: req.body?.location || null,
           all_day: Boolean(req.body?.all_day ?? false),
-          project_id: req.body?.project_id || null,
-          linked_project_id: req.body?.project_id || null,
-          note_id: req.body?.note_id || null,
+          project_id: projectId || null,
+          linked_project_id: projectId || null,
+          note_id: noteId || null,
         })
         .select(
           'id, title, start_at, end_at, all_day, calendar_id, color, status, visibility, recurrence_rule, notes, project_id, note_id'
@@ -4722,24 +4794,71 @@ app.post(
 
 app.patch('/api/events/:id', authMiddleware, rateLimit('write'), async (req, res) => {
   try {
-    const workspaceId = await resolveWorkspaceIdForRequest(req);
-    const allowed = await ensureWorkspaceResource('events', req.params.id, workspaceId);
-    if (!allowed) {
-      return res.status(404).json({ error: 'Event not found' });
-    }
-
     const { data: existingEvent, error: existingError } = await supabase
       .from('events')
-      .select('id, start_at, end_at')
+      .select('id, workspace_id, start_at, end_at, calendar_id, project_id, note_id')
       .eq('id', req.params.id)
       .single();
 
     if (existingError) throw existingError;
+    if (!existingEvent) {
+      return res.status(404).json({ error: 'Event not found' });
+    }
+    const eventWorkspaceId = existingEvent.workspace_id;
+    await requireWorkspaceAccess(req.authUser.id, eventWorkspaceId, 'member');
 
     const existingEnd = existingEvent?.end_at ? new Date(existingEvent.end_at) : null;
     const isPastEvent = existingEnd ? existingEnd.getTime() < Date.now() : false;
     if (isPastEvent) {
       return res.status(409).json({ error: 'Past events cannot be edited' });
+    }
+
+    const hasCalendarId = req.body?.calendar_id !== undefined;
+    const nextCalendarId = hasCalendarId ? normalizeNullableText(req.body.calendar_id) : null;
+    if (hasCalendarId && nextCalendarId && !isUuidLike(nextCalendarId)) {
+      return res.status(400).json({ error: 'Invalid calendar_id' });
+    }
+
+    let targetWorkspaceId = eventWorkspaceId;
+    let resolvedCalendarId = hasCalendarId ? nextCalendarId : existingEvent.calendar_id ?? null;
+    if (hasCalendarId && nextCalendarId) {
+      const calendar = await getCalendarById(nextCalendarId);
+      if (!calendar) {
+        return res.status(404).json({ error: 'Calendar not found' });
+      }
+      await requireWorkspaceAccess(req.authUser.id, calendar.workspace_id, 'member');
+      targetWorkspaceId = calendar.workspace_id;
+      resolvedCalendarId = calendar.id;
+    }
+
+    const hasProjectId = req.body?.project_id !== undefined;
+    const nextProjectId = hasProjectId ? normalizeNullableText(req.body.project_id) : null;
+    if (nextProjectId && !isUuidLike(nextProjectId)) {
+      return res.status(400).json({ error: 'Invalid project_id' });
+    }
+    const hasNoteId = req.body?.note_id !== undefined;
+    const nextNoteId = hasNoteId ? normalizeNullableText(req.body.note_id) : null;
+    if (nextNoteId && !isUuidLike(nextNoteId)) {
+      return res.status(400).json({ error: 'Invalid note_id' });
+    }
+
+    const effectiveProjectId = hasProjectId ? nextProjectId : existingEvent.project_id ?? null;
+    const effectiveNoteId = hasNoteId ? nextNoteId : existingEvent.note_id ?? null;
+    if (effectiveProjectId) {
+      const projectAllowed = await ensureWorkspaceResource(
+        'projects',
+        effectiveProjectId,
+        targetWorkspaceId
+      );
+      if (!projectAllowed) {
+        return res.status(404).json({ error: 'Project not found' });
+      }
+    }
+    if (effectiveNoteId) {
+      const noteAllowed = await ensureWorkspaceResource('notes', effectiveNoteId, targetWorkspaceId);
+      if (!noteAllowed) {
+        return res.status(404).json({ error: 'Note not found' });
+      }
     }
 
     const update = {};
@@ -4758,29 +4877,21 @@ app.patch('/api/events/:id', authMiddleware, rateLimit('write'), async (req, res
     ]) {
       if (req.body?.[key] !== undefined) update[key] = req.body[key];
     }
+    if (hasCalendarId) {
+      update.calendar_id = resolvedCalendarId;
+    }
     if (req.body?.visibility !== undefined) {
       update.visibility = normalizeEventVisibility(req.body.visibility);
     }
     if (req.body?.project_id !== undefined) {
-      const projectId = req.body.project_id ? String(req.body.project_id) : null;
-      if (projectId) {
-        const projectAllowed = await ensureWorkspaceResource('projects', projectId, workspaceId);
-        if (!projectAllowed) {
-          return res.status(404).json({ error: 'Project not found' });
-        }
-      }
-      update.project_id = projectId;
-      update.linked_project_id = projectId;
+      update.project_id = nextProjectId;
+      update.linked_project_id = nextProjectId;
     }
     if (req.body?.note_id !== undefined) {
-      const noteId = req.body.note_id ? String(req.body.note_id) : null;
-      if (noteId) {
-        const noteAllowed = await ensureWorkspaceResource('notes', noteId, workspaceId);
-        if (!noteAllowed) {
-          return res.status(404).json({ error: 'Note not found' });
-        }
-      }
-      update.note_id = noteId;
+      update.note_id = nextNoteId;
+    }
+    if (targetWorkspaceId !== eventWorkspaceId) {
+      update.workspace_id = targetWorkspaceId;
     }
     update.updated_by = req.authUser.id;
 
@@ -4788,6 +4899,7 @@ app.patch('/api/events/:id', authMiddleware, rateLimit('write'), async (req, res
       .from('events')
       .update(update)
       .eq('id', req.params.id)
+      .eq('workspace_id', eventWorkspaceId)
       .select(
         'id, title, start_at, end_at, all_day, calendar_id, color, status, visibility, recurrence_rule, notes, project_id, note_id'
       )
@@ -4802,7 +4914,19 @@ app.patch('/api/events/:id', authMiddleware, rateLimit('write'), async (req, res
 
 app.delete('/api/events/:id', authMiddleware, rateLimit('write'), async (req, res) => {
   try {
-    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    const { data: existingEvent, error: existingError } = await supabase
+      .from('events')
+      .select('id, workspace_id')
+      .eq('id', req.params.id)
+      .single();
+
+    if (existingError) throw existingError;
+    if (!existingEvent) {
+      return res.status(404).json({ error: 'Event not found' });
+    }
+
+    const workspaceId = existingEvent.workspace_id;
+    await requireWorkspaceAccess(req.authUser.id, workspaceId, 'member');
     const { error } = await supabase
       .from('events')
       .delete()
@@ -4978,8 +5102,8 @@ app.post(
   }
 );
 
-const loadRemindersForWorkspace = async ({
-  workspaceId,
+const loadRemindersForWorkspaces = async ({
+  workspaceIds,
   statusFilter = 'default',
   from = null,
   to = null,
@@ -4987,7 +5111,20 @@ const loadRemindersForWorkspace = async ({
   linkedId = null,
   limit = 500,
 }) => {
-  let query = supabase.from('reminders').select(reminderSelectColumns).eq('workspace_id', workspaceId);
+  const normalizedWorkspaceIds = Array.isArray(workspaceIds)
+    ? workspaceIds.filter(Boolean)
+    : workspaceIds
+      ? [workspaceIds]
+      : [];
+
+  if (!normalizedWorkspaceIds.length) {
+    return [];
+  }
+
+  let query = supabase
+    .from('reminders')
+    .select(reminderSelectColumns)
+    .in('workspace_id', normalizedWorkspaceIds);
 
   if (statusFilter === 'active') {
     query = query.eq('status', 'active');
@@ -5018,9 +5155,12 @@ const loadRemindersForWorkspace = async ({
   return mapped;
 };
 
+const loadRemindersForWorkspace = async (options) =>
+  loadRemindersForWorkspaces({ ...options, workspaceIds: options.workspaceId });
+
 app.get('/api/reminders', authMiddleware, rateLimit('read'), async (req, res) => {
   try {
-    const workspaceId = await resolveReminderWorkspaceIdForRequest(req);
+    const workspaceIds = await getReminderScopeWorkspaceIds(req);
     const statusFilter = normalizeNullableText(req.query?.status)?.toLowerCase() ?? 'default';
     if (!['active', 'completed', 'dismissed', 'overdue', 'all', 'default'].includes(statusFilter)) {
       return res.status(400).json({ error: 'Invalid status' });
@@ -5035,8 +5175,8 @@ app.get('/api/reminders', authMiddleware, rateLimit('read'), async (req, res) =>
       return res.status(400).json({ error: 'Invalid linked_id' });
     }
 
-    const reminders = await loadRemindersForWorkspace({
-      workspaceId,
+    const reminders = await loadRemindersForWorkspaces({
+      workspaceIds,
       statusFilter,
       from,
       to,
@@ -5052,10 +5192,10 @@ app.get('/api/reminders', authMiddleware, rateLimit('read'), async (req, res) =>
 
 app.get('/api/reminders/due', authMiddleware, rateLimit('read'), async (req, res) => {
   try {
-    const workspaceId = await resolveReminderWorkspaceIdForRequest(req);
+    const workspaceIds = await getReminderScopeWorkspaceIds(req);
     const before = req.query?.before ? parseReminderTimestamp(req.query.before, 'before') : new Date().toISOString();
-    const reminders = await loadRemindersForWorkspace({
-      workspaceId,
+    const reminders = await loadRemindersForWorkspaces({
+      workspaceIds,
       statusFilter: 'default',
       to: before,
     });
@@ -5068,9 +5208,9 @@ app.get('/api/reminders/due', authMiddleware, rateLimit('read'), async (req, res
 
 app.get('/api/reminders/overdue', authMiddleware, rateLimit('read'), async (req, res) => {
   try {
-    const workspaceId = await resolveReminderWorkspaceIdForRequest(req);
-    const reminders = await loadRemindersForWorkspace({
-      workspaceId,
+    const workspaceIds = await getReminderScopeWorkspaceIds(req);
+    const reminders = await loadRemindersForWorkspaces({
+      workspaceIds,
       statusFilter: 'overdue',
     });
 
@@ -5082,13 +5222,13 @@ app.get('/api/reminders/overdue', authMiddleware, rateLimit('read'), async (req,
 
 app.get('/api/reminders/today', authMiddleware, rateLimit('read'), async (req, res) => {
   try {
-    const workspaceId = await resolveReminderWorkspaceIdForRequest(req);
+    const workspaceIds = await getReminderScopeWorkspaceIds(req);
     const now = new Date();
     const endOfDay = new Date(
       Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 23, 59, 59, 999)
     );
-    const reminders = await loadRemindersForWorkspace({
-      workspaceId,
+    const reminders = await loadRemindersForWorkspaces({
+      workspaceIds,
       statusFilter: 'default',
       to: endOfDay.toISOString(),
     });
@@ -5106,7 +5246,7 @@ app.post(
   quotaGuard('reminders'),
   async (req, res) => {
     try {
-      const workspaceId = req.workspaceId ?? (await resolveReminderWorkspaceIdForRequest(req));
+      let workspaceId = req.workspaceId ?? (await resolveReminderWorkspaceIdForRequest(req));
       await requireWorkspaceAccess(req.authUser.id, workspaceId, 'member');
 
       const title = String(req.body?.title ?? '').trim();
@@ -5123,6 +5263,21 @@ app.post(
       }
 
       const remindAt = parseReminderTimestamp(req.body?.remind_at, 'remind_at');
+      const requestedCalendarId = normalizeNullableText(req.body?.calendar_id);
+      let calendarId = null;
+      if (requestedCalendarId) {
+        if (!isUuidLike(requestedCalendarId)) {
+          return res.status(400).json({ error: 'Invalid calendar_id' });
+        }
+        const calendar = await getCalendarById(requestedCalendarId);
+        if (!calendar) {
+          return res.status(404).json({ error: 'Calendar not found' });
+        }
+        await requireWorkspaceAccess(req.authUser.id, calendar.workspace_id, 'member');
+        workspaceId = calendar.workspace_id;
+        calendarId = calendar.id;
+      }
+
       const linkedType = normalizeReminderLinkedType(req.body?.linked_type);
       const linkedId = normalizeNullableText(req.body?.linked_id);
 
@@ -5142,6 +5297,7 @@ app.post(
         linkedId,
         body,
         status,
+        calendarId,
       });
 
       const insertPayload = {
@@ -5151,6 +5307,7 @@ app.post(
         body,
         remind_at: remindAt,
         status,
+        calendar_id: calendarId,
         linked_type: linkedType,
         linked_id: linkedId,
         completed_at: null,
@@ -5207,6 +5364,8 @@ app.patch('/api/reminders/:id', authMiddleware, rateLimit('write'), async (req, 
     const nextLinkedType = hasLinkedType ? normalizeReminderLinkedType(req.body.linked_type) : null;
     const hasLinkedId = req.body?.linked_id !== undefined;
     const nextLinkedId = hasLinkedId ? normalizeNullableText(req.body.linked_id) : null;
+    const hasCalendarId = req.body?.calendar_id !== undefined;
+    const nextCalendarId = hasCalendarId ? normalizeNullableText(req.body.calendar_id) : null;
 
     if (nextLinkedId && !isUuidLike(nextLinkedId)) {
       return res.status(400).json({ error: 'Invalid linked_id' });
@@ -5214,18 +5373,33 @@ app.patch('/api/reminders/:id', authMiddleware, rateLimit('write'), async (req, 
     if (hasLinkedId && nextLinkedId && (nextLinkedType === null || nextLinkedType === 'none')) {
       return res.status(400).json({ error: 'linked_type is required when linked_id is provided' });
     }
+    if (hasCalendarId && nextCalendarId && !isUuidLike(nextCalendarId)) {
+      return res.status(400).json({ error: 'Invalid calendar_id' });
+    }
 
     const currentStatus = String(reminder.status ?? 'active').toLowerCase();
     const effectiveStatus = nextStatus ?? currentStatus;
     const effectiveLinkedType = hasLinkedType ? nextLinkedType : reminder.linked_type ?? null;
     const effectiveLinkedId = hasLinkedId ? nextLinkedId : reminder.linked_id ?? null;
+    let targetWorkspaceId = reminder.workspace_id;
+    let resolvedCalendarId = hasCalendarId ? nextCalendarId : reminder.calendar_id ?? null;
+
+    if (hasCalendarId && nextCalendarId) {
+      const calendar = await getCalendarById(nextCalendarId);
+      if (!calendar) {
+        return res.status(404).json({ error: 'Calendar not found' });
+      }
+      await requireWorkspaceAccess(req.authUser.id, calendar.workspace_id, 'member');
+      targetWorkspaceId = calendar.workspace_id;
+      resolvedCalendarId = calendar.id;
+    }
 
     if ((currentStatus === 'completed' || currentStatus === 'dismissed') && hasRemindAt && effectiveStatus !== 'active') {
       return res.status(400).json({ error: 'Set status to active before changing remind_at' });
     }
 
     await validateReminderLink({
-      workspaceId: reminder.workspace_id,
+      workspaceId: targetWorkspaceId,
       linkedType: effectiveLinkedType,
       linkedId: effectiveLinkedId,
     });
@@ -5237,6 +5411,7 @@ app.patch('/api/reminders/:id', authMiddleware, rateLimit('write'), async (req, 
       linkedId: effectiveLinkedId,
       body: bodyForLegacy,
       status: effectiveStatus,
+      calendarId: resolvedCalendarId,
     });
 
     const updatePayload = {
@@ -5244,12 +5419,17 @@ app.patch('/api/reminders/:id', authMiddleware, rateLimit('write'), async (req, 
       ...legacyFields,
     };
 
+    if (targetWorkspaceId && targetWorkspaceId !== reminder.workspace_id) {
+      updatePayload.workspace_id = targetWorkspaceId;
+    }
+
     if (nextTitle !== null) updatePayload.title = nextTitle;
     if (nextBody !== undefined) updatePayload.body = nextBody;
     if (hasRemindAt) updatePayload.remind_at = nextRemindAt;
     if (hasStatus) updatePayload.status = nextStatus;
     if (hasLinkedType) updatePayload.linked_type = nextLinkedType;
     if (hasLinkedId) updatePayload.linked_id = nextLinkedId;
+    if (hasCalendarId) updatePayload.calendar_id = resolvedCalendarId;
 
     if (effectiveStatus === 'active') {
       updatePayload.completed_at = null;
