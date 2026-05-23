@@ -33,6 +33,7 @@ type UserPreferences = {
   reduceMotion: boolean;
   highContrast: boolean;
   compactDensity: boolean;
+  theme: 'light' | 'dark' | 'system';
 };
 
 type WorkspaceRole = 'owner' | 'admin' | 'member' | 'viewer';
@@ -191,6 +192,7 @@ const defaultPrefs: UserPreferences = {
   reduceMotion: false,
   highContrast: false,
   compactDensity: false,
+  theme: 'system',
 };
 
 const loadCachedPreferences = (): UserPreferences => {
@@ -293,6 +295,7 @@ export const SettingsWindow = () => {
   const [fullName, setFullName] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPasswordEditor, setShowPasswordEditor] = useState(false);
   const [isUpdatingPassword, setIsUpdatingPassword] = useState(false);
   const [passwordStatus, setPasswordStatus] = useState<string | null>(null);
   const [passwordError, setPasswordError] = useState<string | null>(null);
@@ -347,6 +350,7 @@ export const SettingsWindow = () => {
   const [extensionTokenCopyStatus, setExtensionTokenCopyStatus] = useState<string | null>(null);
   const inviteEmailRef = useRef<HTMLInputElement | null>(null);
   const autosaveTimerRef = useRef<number | null>(null);
+  const saveStatusTimerRef = useRef<number | null>(null);
   const autosaveTokenRef = useRef(0);
   const lastSavedSettingsRef = useRef<string>('');
   const lastSavedFullNameRef = useRef<string>('');
@@ -547,6 +551,22 @@ export const SettingsWindow = () => {
     setSaveStatus('Sidebar settings reset to defaults.');
   };
 
+  const setTimedSaveStatus = (message: string, shouldClear = false) => {
+    if (saveStatusTimerRef.current !== null) {
+      window.clearTimeout(saveStatusTimerRef.current);
+      saveStatusTimerRef.current = null;
+    }
+
+    setSaveStatus(message);
+
+    if (shouldClear) {
+      saveStatusTimerRef.current = window.setTimeout(() => {
+        saveStatusTimerRef.current = null;
+        setSaveStatus(null);
+      }, 3000);
+    }
+  };
+
   useEffect(() => {
     if (!settingsHydratedRef.current) return;
 
@@ -592,7 +612,7 @@ export const SettingsWindow = () => {
           if (saveToken !== autosaveTokenRef.current) return;
           lastSavedSettingsRef.current = nextSnapshot;
           lastSavedFullNameRef.current = nextFullName ?? '';
-          setSaveStatus('Saved automatically.');
+          setTimedSaveStatus('Saved automatically.', true);
         } catch {
           if (saveToken !== autosaveTokenRef.current) return;
           setSaveStatus('Could not save automatically.');
@@ -607,6 +627,10 @@ export const SettingsWindow = () => {
       if (autosaveTimerRef.current !== null) {
         window.clearTimeout(autosaveTimerRef.current);
         autosaveTimerRef.current = null;
+      }
+      if (saveStatusTimerRef.current !== null) {
+        window.clearTimeout(saveStatusTimerRef.current);
+        saveStatusTimerRef.current = null;
       }
     };
   }, [api, fullName, preferences]);
@@ -633,6 +657,7 @@ export const SettingsWindow = () => {
       setPasswordStatus('Password updated.');
       setNewPassword('');
       setConfirmPassword('');
+      setShowPasswordEditor(false);
     } catch (err) {
       setPasswordError(err instanceof Error ? err.message : 'Could not update password.');
     } finally {
@@ -1334,13 +1359,13 @@ export const SettingsWindow = () => {
         }
       />
 
-      <div className="flex-1 overflow-hidden">
+      <div className="flex-1 overflow-hidden bg-white">
         <div className="h-full grid grid-cols-[260px_1fr]">
           <aside
             className="border-r border-gray-200 bg-white p-4 overflow-auto"
             aria-label="Settings sections"
           >
-            <div className="mb-4 rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3">
+            <div className="mb-4 border-b border-gray-200 pb-4">
               <p className="text-xs font-medium text-gray-500">Account</p>
               <p className="mt-1 text-sm font-semibold text-gray-900">Hi {firstName}</p>
               <p className="text-xs text-gray-600 truncate">
@@ -1348,127 +1373,209 @@ export const SettingsWindow = () => {
               </p>
             </div>
 
-            <nav className="space-y-2" aria-label="Settings navigation">
+            <nav className="space-y-1.5" aria-label="Settings navigation">
               {sectionOrder.map((section) => (
                 <button
                   key={section.id}
                   onClick={() => setActiveSection(section.id)}
-                  className={`w-full rounded-xl border px-3 py-3 text-left transition ${
+                  className={`w-full rounded-lg px-3 py-2.5 text-left transition outline-none focus-visible:ring-2 focus-visible:ring-gray-300 focus-visible:ring-offset-2 focus-visible:ring-offset-white ${
                     activeSection === section.id
-                      ? 'border-gray-300 bg-gray-100'
-                      : 'border-transparent bg-white hover:border-gray-200 hover:bg-gray-50'
+                      ? 'bg-gray-100 text-gray-950'
+                      : 'text-gray-900 hover:bg-gray-50'
                   }`}
                   aria-current={activeSection === section.id ? 'page' : undefined}
                 >
-                  <p className="text-sm font-semibold text-gray-900">{section.label}</p>
-                  <p className="mt-1 text-xs text-gray-600">{section.description}</p>
+                  <p className="text-sm font-semibold">{section.label}</p>
+                  <p className="mt-0.5 text-xs text-gray-500">{section.description}</p>
                 </button>
               ))}
             </nav>
           </aside>
 
-          <main className="overflow-auto p-6" aria-live="polite">
-            <div className="mx-auto max-w-3xl space-y-5">
+          <main className="overflow-auto bg-white p-6" aria-live="polite">
+            <div className="mx-auto max-w-4xl space-y-5">
               {activeSection === 'account' && (
-                <section
-                  className="rounded-2xl border border-gray-200 bg-white p-5"
-                  aria-labelledby="settings-account"
-                >
-                  <h2 id="settings-account" className="text-lg font-semibold text-gray-900">
-                    Account
-                  </h2>
-                  <p className="mt-1 text-sm text-gray-600">
-                    Basic identity and security controls.
-                  </p>
+                <section className="w-full max-w-[860px]" aria-labelledby="settings-account">
+                  <div className="space-y-2">
+                    <h2
+                      id="settings-account"
+                      className="text-[28px] font-semibold tracking-tight text-gray-950"
+                    >
+                      Account
+                    </h2>
+                    <p className="text-sm text-gray-600">
+                      Basic identity and security settings.
+                    </p>
+                    <p className="text-xs text-gray-500">Changes save automatically.</p>
+                    {saveStatus && (
+                      <p className="text-xs text-gray-700" role="status">
+                        {saveStatus}
+                      </p>
+                    )}
+                  </div>
 
-                  <div className="mt-5 space-y-4">
-                    <div>
-                      <label
-                        htmlFor="settings-full-name"
-                        className="block text-sm font-medium text-gray-700 mb-2"
-                      >
-                        Display name
-                      </label>
-                      <input
-                        id="settings-full-name"
-                        value={fullName}
-                        onChange={(e) => setFullName(e.target.value)}
-                        className="h-10 w-full rounded-xl border border-gray-200 bg-gray-50 px-3 text-sm text-gray-900 outline-none focus:border-gray-300 focus:ring-4 focus:ring-gray-100"
-                        aria-describedby="settings-full-name-help"
-                      />
-                    </div>
+                  <div className="mt-8 space-y-10">
+                    <section className="border-t border-gray-200 pt-6" aria-labelledby="settings-profile">
+                      <h3 id="settings-profile" className="text-sm font-semibold text-gray-900">
+                        Profile
+                      </h3>
 
-                    <div>
-                      <label
-                        htmlFor="settings-email"
-                        className="block text-sm font-medium text-gray-700 mb-2"
-                      >
-                        Email
-                      </label>
-                      <input
-                        id="settings-email"
-                        value={user?.email ?? ''}
-                        readOnly
-                        className="h-10 w-full rounded-xl border border-gray-200 bg-gray-100 px-3 text-sm text-gray-600"
-                      />
-                    </div>
-
-                    <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4">
-                      <p className="text-sm font-semibold text-gray-900">Change password</p>
-                      <div className="mt-3 grid gap-3 md:grid-cols-2">
-                        <div>
-                          <label
-                            htmlFor="settings-password"
-                            className="block text-xs font-medium text-gray-700 mb-1.5"
-                          >
-                            New password
-                          </label>
-                          <input
-                            id="settings-password"
-                            type="password"
-                            value={newPassword}
-                            onChange={(e) => setNewPassword(e.target.value)}
-                            className="h-10 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm text-gray-900 outline-none focus:border-gray-300 focus:ring-4 focus:ring-gray-100"
-                          />
+                      <div className="mt-5 divide-y divide-gray-100 border-t border-gray-200">
+                        <div className="grid gap-4 py-5 md:grid-cols-[220px_minmax(0,1fr)] md:items-start">
+                          <div className="space-y-1">
+                            <label
+                              htmlFor="settings-full-name"
+                              className="text-sm font-medium text-gray-800"
+                            >
+                              Display name
+                            </label>
+                            <p className="text-xs text-gray-500">
+                              Your name as it appears in Ledger.
+                            </p>
+                          </div>
+                          <div className="max-w-[520px]">
+                            <input
+                              id="settings-full-name"
+                              value={fullName}
+                              onChange={(e) => setFullName(e.target.value)}
+                              className="h-10 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm text-gray-900 outline-none transition focus:border-gray-300 focus:ring-4 focus:ring-gray-100"
+                            />
+                          </div>
                         </div>
-                        <div>
-                          <label
-                            htmlFor="settings-password-confirm"
-                            className="block text-xs font-medium text-gray-700 mb-1.5"
-                          >
-                            Confirm password
-                          </label>
-                          <input
-                            id="settings-password-confirm"
-                            type="password"
-                            value={confirmPassword}
-                            onChange={(e) => setConfirmPassword(e.target.value)}
-                            className="h-10 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm text-gray-900 outline-none focus:border-gray-300 focus:ring-4 focus:ring-gray-100"
-                          />
+
+                        <div className="grid gap-4 py-5 md:grid-cols-[220px_minmax(0,1fr)] md:items-start">
+                          <div className="space-y-1">
+                            <label
+                              htmlFor="settings-email"
+                              className="text-sm font-medium text-gray-800"
+                            >
+                              Email
+                            </label>
+                            <p className="text-xs text-gray-500">Used for signing in.</p>
+                          </div>
+                          <div className="max-w-[520px] text-sm text-gray-700">
+                            {user?.email ?? 'No email available'}
+                          </div>
                         </div>
                       </div>
-                      <div className="mt-3 flex items-center gap-2">
-                        <button
-                          onClick={() => void handleUpdatePassword()}
-                          disabled={isUpdatingPassword}
-                          className="h-9 rounded-xl bg-[#FF5F40] px-4 text-sm font-medium text-white transition hover:bg-[#ea5336] disabled:opacity-60"
-                        >
-                          {isUpdatingPassword ? 'Updating...' : 'Update password'}
-                        </button>
-                        {isUpdatingPassword && (
-                          <Loader2 size={14} className="animate-spin text-gray-500" />
+                    </section>
+
+                    <section className="border-t border-gray-200 pt-6" aria-labelledby="settings-security">
+                      <div className="flex items-center justify-between gap-4">
+                        <div className="space-y-1">
+                          <h3 id="settings-security" className="text-sm font-semibold text-gray-900">
+                            Security
+                          </h3>
+                          <p className="text-xs text-gray-500">
+                            Change your account password.
+                          </p>
+                        </div>
+                        {!showPasswordEditor ? (
+                          <button
+                            type="button"
+                            onClick={() => setShowPasswordEditor(true)}
+                            className="h-8 rounded-full border border-gray-200 bg-white px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-50"
+                          >
+                            Change password
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setShowPasswordEditor(false);
+                              setNewPassword('');
+                              setConfirmPassword('');
+                              setPasswordError(null);
+                              setPasswordStatus(null);
+                            }}
+                            className="h-8 rounded-full border border-gray-200 bg-white px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-50"
+                          >
+                            Cancel
+                          </button>
                         )}
                       </div>
-                      {passwordError && (
-                        <p className="mt-2 flex items-center gap-1.5 text-xs text-red-700">
-                          <CircleAlert size={12} />
-                          {passwordError}
-                        </p>
-                      )}
-                      {passwordStatus && (
-                        <p className="mt-2 text-xs text-green-700">{passwordStatus}</p>
-                      )}
-                    </div>
+
+                      {showPasswordEditor ? (
+                        <div className="mt-5 max-w-[620px] space-y-4">
+                          <div className="grid gap-4 md:grid-cols-2">
+                            <div className="grid gap-2">
+                              <label
+                                htmlFor="settings-password"
+                                className="text-xs font-medium text-gray-700"
+                              >
+                                New password
+                              </label>
+                              <input
+                                id="settings-password"
+                                type="password"
+                                value={newPassword}
+                                onChange={(e) => setNewPassword(e.target.value)}
+                                className="h-10 rounded-xl border border-gray-200 bg-white px-3 text-sm text-gray-900 outline-none transition focus:border-gray-300 focus:ring-4 focus:ring-gray-100"
+                              />
+                            </div>
+                            <div className="grid gap-2">
+                              <label
+                                htmlFor="settings-password-confirm"
+                                className="text-xs font-medium text-gray-700"
+                              >
+                                Confirm password
+                              </label>
+                              <input
+                                id="settings-password-confirm"
+                                type="password"
+                                value={confirmPassword}
+                                onChange={(e) => setConfirmPassword(e.target.value)}
+                                className="h-10 rounded-xl border border-gray-200 bg-white px-3 text-sm text-gray-900 outline-none transition focus:border-gray-300 focus:ring-4 focus:ring-gray-100"
+                              />
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-3">
+                            <button
+                              onClick={() => void handleUpdatePassword()}
+                              disabled={isUpdatingPassword}
+                              className="h-9 rounded-full bg-[#FF5F40] px-4 text-sm font-medium text-white transition hover:bg-[#ea5336] disabled:opacity-60"
+                            >
+                              {isUpdatingPassword ? 'Updating...' : 'Update password'}
+                            </button>
+                            {isUpdatingPassword && (
+                              <Loader2 size={14} className="animate-spin text-gray-500" />
+                            )}
+                          </div>
+                          {passwordError && (
+                            <p className="flex items-center gap-1.5 text-xs text-red-700">
+                              <CircleAlert size={12} />
+                              {passwordError}
+                            </p>
+                          )}
+                          {passwordStatus && (
+                            <p className="text-xs text-green-700">{passwordStatus}</p>
+                          )}
+                        </div>
+                      ) : null}
+                    </section>
+
+                    <section className="border-t border-gray-200 pt-6" aria-labelledby="settings-session">
+                      <div className="flex items-center justify-between gap-4">
+                        <div className="space-y-1">
+                          <h3 id="settings-session" className="text-sm font-semibold text-gray-900">
+                            Session
+                          </h3>
+                          <p className="text-xs text-gray-500">
+                            Sign out of Ledger on this device.
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            void signOut();
+                          }}
+                          className="h-8 rounded-full border border-gray-200 bg-white px-3 text-xs font-medium text-red-600 transition hover:bg-red-50"
+                        >
+                          Sign out
+                        </button>
+                      </div>
+                    </section>
                   </div>
                 </section>
               )}
@@ -2358,6 +2465,25 @@ export const SettingsWindow = () => {
                       <h3 className="text-xs font-semibold uppercase tracking-[0.5px] text-gray-600">
                         Appearance
                       </h3>
+                      <div className="mt-3">
+                        <label className="mb-1.5 block text-sm font-medium text-gray-900">
+                          Theme
+                        </label>
+                        <select
+                          value={preferences.theme}
+                          onChange={(event) =>
+                            setPreferences((current) => ({
+                              ...current,
+                              theme: event.target.value as UserPreferences['theme'],
+                            }))
+                          }
+                          className={compactSelectClassName}
+                        >
+                          <option value="system">System</option>
+                          <option value="light">Light</option>
+                          <option value="dark">Dark</option>
+                        </select>
+                      </div>
                       <div className="mt-3 flex items-center justify-between">
                         <p className="text-sm font-medium text-gray-900">Opacity</p>
                         <span className="text-base font-semibold text-gray-900">
@@ -2494,7 +2620,8 @@ export const SettingsWindow = () => {
 
               {activeSection !== 'sidebar' &&
                 activeSection !== 'shortcuts' &&
-                activeSection !== 'integrations' && (
+                activeSection !== 'integrations' &&
+                activeSection !== 'account' && (
                 <section className="rounded-2xl border border-gray-200 bg-white p-5">
                   <div>
                     <h2 className="text-sm font-semibold text-gray-900">

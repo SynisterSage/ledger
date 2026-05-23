@@ -69,11 +69,6 @@ const dragRegionStyle = { WebkitAppRegion: 'drag' } as CSSProperties & { WebkitA
 const noDragRegionStyle = { WebkitAppRegion: 'no-drag' } as CSSProperties & {
   WebkitAppRegion: 'no-drag';
 };
-const triggerCloseOnPrimaryMouseDown = (event: React.MouseEvent<HTMLButtonElement>) => {
-  if (event.button !== 0) return;
-  event.preventDefault();
-  event.stopPropagation();
-};
 const OPEN_LEDGER_URL = (
   import.meta.env.VITE_LEDGER_OPEN_URL?.trim() || window.location.origin
 ).replace(/\/$/, '');
@@ -258,7 +253,6 @@ function AuthStatusScreen({
       <div className="absolute inset-3 rounded-3xl border border-white/60 bg-[#f5f5f7] shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]" />
       <button
         type="button"
-        onMouseDown={triggerCloseOnPrimaryMouseDown}
         onClick={() => {
           void window.desktopWindow?.quitApp();
         }}
@@ -383,7 +377,6 @@ function OnboardingFlow({
       <div className="absolute inset-3 rounded-3xl border border-white/70 bg-[#f5f5f7] shadow-[inset_0_1px_0_rgba(255,255,255,0.9)]" />
       <button
         type="button"
-        onMouseDown={triggerCloseOnPrimaryMouseDown}
         onClick={() => {
           void window.desktopWindow?.quitApp();
         }}
