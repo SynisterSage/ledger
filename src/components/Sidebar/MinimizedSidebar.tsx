@@ -92,7 +92,7 @@ export const MinimizedSidebar = ({
           </button>
           <button
             aria-label="Open calendar"
-            onClick={() => window.desktopWindow?.toggleModule('calendar')}
+            onClick={() => window.desktopWindow?.openModule('calendar')}
             onMouseDown={(e) => e.stopPropagation()}
             className={accentIcon}
           >

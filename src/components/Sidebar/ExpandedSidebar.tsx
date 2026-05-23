@@ -1976,7 +1976,7 @@ export const ExpandedSidebar = ({
               { label: 'Dashboard', icon: BarChart3, action: () => window.desktopWindow?.toggleModule('dashboard') },
               { label: 'Projects', icon: Folder, action: () => window.desktopWindow?.toggleModule('projects') },
               { label: 'Notes', icon: StickyNote, action: () => window.desktopWindow?.toggleModule('notes') },
-              { label: 'Calendar', icon: CalendarDays, action: () => window.desktopWindow?.toggleModule('calendar') },
+              { label: 'Calendar', icon: CalendarDays, action: () => window.desktopWindow?.openModule('calendar') },
             ].map((item) => (
               <button
                 key={item.label}
@@ -2064,7 +2064,7 @@ export const ExpandedSidebar = ({
 
           <button
             type="button"
-            onClick={() => window.desktopWindow?.toggleModule('calendar')}
+            onClick={() => window.desktopWindow?.openModule('calendar')}
             className="inline-flex shrink-0 items-center gap-2 rounded-full px-2 py-1.5 text-[13px] transition hover:bg-gray-50"
           >
             <span className="text-xs font-medium text-gray-500">
@@ -2291,7 +2291,7 @@ export const ExpandedSidebar = ({
             Notes
           </button>
           <button
-            onClick={() => window.desktopWindow?.toggleModule('calendar')}
+            onClick={() => window.desktopWindow?.openModule('calendar')}
             className="h-10 rounded-lg border border-gray-200 bg-white text-xs font-medium text-gray-700 hover:bg-gray-50 transition flex items-center justify-center gap-1.5"
           >
             <CalendarDays size={13} />
@@ -3318,7 +3318,7 @@ export const ExpandedSidebar = ({
                   onClick={() => {
                     const event = upcomingItems.find((e) => e.id === contextMenu.id);
                     if (event) {
-                      void window.desktopWindow?.toggleModule('calendar', event.rawDate);
+                      void window.desktopWindow?.openModule('calendar', event.rawDate);
                       setContextMenu(null);
                     }
                   }}

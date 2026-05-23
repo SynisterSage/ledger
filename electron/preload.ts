@@ -91,6 +91,11 @@ contextBridge.exposeInMainWorld('desktopWindow', {
       typeof focus === 'string' ? { kind, focusDate: focus } : { kind, ...(focus ?? {}) };
     return ipcRenderer.invoke('window:toggle-module', payload);
   },
+  openModule(kind: ModuleWindowKind, focus?: string | ModuleFocusPayload) {
+    const payload =
+      typeof focus === 'string' ? { kind, focusDate: focus } : { kind, ...(focus ?? {}) };
+    return ipcRenderer.invoke('window:open-module', payload);
+  },
   closeModule(kind: ModuleWindowKind) {
     return ipcRenderer.invoke('window:close-module', kind);
   },

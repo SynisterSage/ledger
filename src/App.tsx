@@ -1506,7 +1506,7 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
     kind: 'calendar' | 'notes' | 'projects',
     focus?: string | ModuleFocusPayload
   ) => {
-    void window.desktopWindow?.toggleModule(kind, focus);
+    void window.desktopWindow?.openModule(kind, focus);
   };
 
   const openContextMenu = (
@@ -2436,7 +2436,7 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
                   onClick={() => {
                     const event = upcoming.find((item) => item.id === dashboardContextMenu.eventId);
                     if (!event) return;
-                    void window.desktopWindow?.toggleModule('calendar', {
+                    void window.desktopWindow?.openModule('calendar', {
                       kind: 'calendar',
                       focusContext: `focus-event:${event.id}`,
                     });
@@ -2727,7 +2727,7 @@ function AppShell() {
 
       if (key === '2') {
         event.preventDefault();
-        void window.desktopWindow?.toggleModule('calendar');
+        void window.desktopWindow?.openModule('calendar');
         return;
       }
 

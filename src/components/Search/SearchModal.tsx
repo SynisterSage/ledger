@@ -162,7 +162,7 @@ export const SearchModal = () => {
         });
       } else if (result.type === 'event') {
         const focusDate = result.focusDate ?? undefined;
-        void window.desktopWindow?.toggleModule('calendar', focusDate ? { focusDate } : undefined);
+        void window.desktopWindow?.openModule('calendar', focusDate ? { focusDate } : undefined);
       }
 
       closeSearch();

@@ -2500,6 +2500,22 @@ function openModuleWindow(
     moduleWindowFullscreenBoundsMemory.delete(kind);
   });
 
+  moduleWin.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL) => {
+    console.error(`[electron][${kind}] did-fail-load`, {
+      errorCode,
+      errorDescription,
+      validatedURL,
+    });
+  });
+
+  moduleWin.webContents.on('render-process-gone', (_event, details) => {
+    console.error(`[electron][${kind}] render-process-gone`, details);
+  });
+
+  moduleWin.webContents.on('unresponsive', () => {
+    console.error(`[electron][${kind}] unresponsive`);
+  });
+
   // Ensure fullscreen can be exited with Escape or F11 reliably on all platforms.
   moduleWin.webContents.on('before-input-event', (event, input) => {
     try {
@@ -2805,6 +2821,28 @@ ipcMain.handle('window:toggle-module', (_event, payload: ModuleWindowKind | Modu
 
     existing.show();
     existing.focus();
+    return;
+  }
+
+  openModuleWindow(kind, focusDate, focusProjectId, focusNoteId, focusTaskId, focusContext);
+});
+
+ipcMain.handle('window:open-module', (_event, payload: ModuleWindowKind | ModuleFocusPayload) => {
+  const kind = typeof payload === 'string' ? payload : payload.kind;
+  const focusDate = typeof payload === 'string' ? undefined : payload.focusDate;
+  const focusProjectId = typeof payload === 'string' ? undefined : payload.focusProjectId;
+  const focusNoteId = typeof payload === 'string' ? undefined : payload.focusNoteId;
+  const focusTaskId = typeof payload === 'string' ? undefined : payload.focusTaskId;
+  const focusContext = typeof payload === 'string' ? undefined : payload.focusContext;
+  const existing = moduleWins.get(kind);
+
+  if (existing && !existing.isDestroyed()) {
+    if (existing.isMinimized()) {
+      existing.restore();
+    }
+    existing.show();
+    existing.focus();
+    sendModuleFocus(kind, focusDate, focusProjectId, focusNoteId, focusTaskId, focusContext);
     return;
   }
 

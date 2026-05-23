@@ -261,6 +261,12 @@ const parseDateKey = (key: string) => {
   const [year, month, day] = key.split('-').map(Number);
   return new Date(year, (month || 1) - 1, day || 1, 0, 0, 0, 0);
 };
+
+const parseValidCalendarDate = (value: string | null | undefined) => {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+};
 const endOfLocalDay = (date: Date) => {
   const d = new Date(date);
   d.setHours(23, 59, 59, 999);
@@ -670,8 +676,8 @@ export const CalendarWindow = () => {
     new URLSearchParams(window.location.search).get('focusContext')?.trim() ?? '';
   const [viewMode, setViewMode] = useState<CalendarViewMode>('week');
   const [viewAnchor, setViewAnchor] = useState(() => {
-    if (initialFocusDate) {
-      const date = new Date(initialFocusDate);
+    const date = parseValidCalendarDate(initialFocusDate);
+    if (date) {
       date.setHours(0, 0, 0, 0);
       return date;
     }
@@ -902,7 +908,8 @@ export const CalendarWindow = () => {
   };
   useEffect(() => {
     const applyFocusDate = (focusDate: string) => {
-      const date = new Date(focusDate);
+      const date = parseValidCalendarDate(focusDate);
+      if (!date) return;
       date.setHours(0, 0, 0, 0);
       setViewAnchor(date);
     };
@@ -1018,6 +1025,29 @@ export const CalendarWindow = () => {
   const visibleCalendarIdsMemo = useMemo(() => {
     return new Set(calendars.filter((calendar) => calendar.is_visible !== false).map((c) => c.id));
   }, [calendars]);
+
+  const isPastEvent = (event: EventRow) => new Date(event.end_at).getTime() < Date.now();
+  const canEditEvent = (event: EventRow) => !isPastEvent(event);
+  const isPastReminder = (reminder: ReminderRow) => new Date(reminder.remind_at).getTime() < Date.now();
+  const isPastEventMuted = (event: EventRow) =>
+    isPastEvent(event) && (calendarPreferences.pastEventBehavior ?? 'history') === 'fade';
+  const shouldHidePastEvent = (event: EventRow) =>
+    isPastEvent(event) && (calendarPreferences.pastEventBehavior ?? 'history') === 'upcoming_only';
+  const shouldHideReminder = (reminder: ReminderRow) => {
+    if (!calendarPreferences.showRemindersOnCalendar) return true;
+    if (calendarPreferences.showCompletedItems === 'hidden' && reminder.is_done) return true;
+    const isOverdue = isPastReminder(reminder) && !reminder.is_done;
+    if (isOverdue && (calendarPreferences.missedReminderBehavior ?? 'needs_attention') === 'hide') {
+      return true;
+    }
+    if (
+      reminder.is_done &&
+      (calendarPreferences.completedReminderBehavior ?? 'collapse') === 'hide_immediately'
+    ) {
+      return true;
+    }
+    return false;
+  };
 
   const visibleEvents = useMemo(() => {
     const expanded: EventRow[] = [];
@@ -1333,28 +1363,6 @@ export const CalendarWindow = () => {
   };
   const getDurationMinutes = (value: number, unit: 'minutes' | 'hours') =>
     Math.max(1, Math.round(unit === 'hours' ? value * 60 : value));
-  const isPastEvent = (event: EventRow) => new Date(event.end_at).getTime() < Date.now();
-  const canEditEvent = (event: EventRow) => !isPastEvent(event);
-  const isPastReminder = (reminder: ReminderRow) => new Date(reminder.remind_at).getTime() < Date.now();
-  const isPastEventMuted = (event: EventRow) =>
-    isPastEvent(event) && (calendarPreferences.pastEventBehavior ?? 'history') === 'fade';
-  const shouldHidePastEvent = (event: EventRow) =>
-    isPastEvent(event) && (calendarPreferences.pastEventBehavior ?? 'history') === 'upcoming_only';
-  const shouldHideReminder = (reminder: ReminderRow) => {
-    if (!calendarPreferences.showRemindersOnCalendar) return true;
-    if (calendarPreferences.showCompletedItems === 'hidden' && reminder.is_done) return true;
-    const isOverdue = isPastReminder(reminder) && !reminder.is_done;
-    if (isOverdue && (calendarPreferences.missedReminderBehavior ?? 'needs_attention') === 'hide') {
-      return true;
-    }
-    if (
-      reminder.is_done &&
-      (calendarPreferences.completedReminderBehavior ?? 'collapse') === 'hide_immediately'
-    ) {
-      return true;
-    }
-    return false;
-  };
 
   useEffect(() => {
     let cancelled = false;
@@ -1743,8 +1751,8 @@ export const CalendarWindow = () => {
   }, [
     user?.id,
     activeWorkspaceId,
-    viewConfig.start.toISOString(),
-    viewConfig.end.toISOString(),
+    viewConfig.start.getTime(),
+    viewConfig.end.getTime(),
     api,
     calendarPreferences.calendarScope,
   ]);
