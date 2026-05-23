@@ -405,7 +405,12 @@ export const useApi = () => {
         }),
 
       // Calendars
-      getCalendars: () => request('/api/calendars'),
+      getCalendars: (options?: { scope?: 'current_workspace' | 'all_accessible_workspaces' }) => {
+        const params = new URLSearchParams();
+        if (options?.scope) params.set('scope', options.scope);
+        const query = params.toString();
+        return request(`/api/calendars${query ? `?${query}` : ''}`);
+      },
       createCalendar: (name: string, color?: string, is_visible?: boolean) =>
         request('/api/calendars', {
           method: 'POST',
@@ -425,14 +430,24 @@ export const useApi = () => {
         }),
 
       // Events
-      getEvents: (startDate?: string, endDate?: string) => {
+      getEvents: (
+        startDate?: string,
+        endDate?: string,
+        options?: { scope?: 'current_workspace' | 'all_accessible_workspaces' }
+      ) => {
         const params = new URLSearchParams();
         if (startDate) params.set('startDate', startDate);
         if (endDate) params.set('endDate', endDate);
+        if (options?.scope) params.set('scope', options.scope);
         const query = params.toString();
         return request(`/api/events${query ? `?${query}` : ''}`);
       },
-      getUpcomingEvents: () => request('/api/events/upcoming'),
+      getUpcomingEvents: (options?: { scope?: 'current_workspace' | 'all_accessible_workspaces' }) => {
+        const params = new URLSearchParams();
+        if (options?.scope) params.set('scope', options.scope);
+        const query = params.toString();
+        return request(`/api/events/upcoming${query ? `?${query}` : ''}`);
+      },
       createEvent: (payload: {
         title: string;
         start_at: string;
@@ -463,7 +478,12 @@ export const useApi = () => {
         }),
 
       // Reminders
-      getReminders: () => request('/api/reminders'),
+      getReminders: (options?: { scope?: 'current_workspace' | 'all_accessible_workspaces' }) => {
+        const params = new URLSearchParams();
+        if (options?.scope) params.set('scope', options.scope);
+        const query = params.toString();
+        return request(`/api/reminders${query ? `?${query}` : ''}`);
+      },
       createReminder: (payload: {
         title: string;
         remind_at: string;

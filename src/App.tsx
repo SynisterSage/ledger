@@ -2712,14 +2712,6 @@ function AppShell() {
     const handleSidebarVisibilityChanged = (_event: unknown, payload: { isVisible?: boolean }) => {
       if (typeof payload?.isVisible !== 'boolean') return;
 
-      // Keep auth flow stable: never accept a hidden sidebar state while signed out.
-      if (!user && payload.isVisible === false) {
-        void window.desktopWindow?.setVisible(true).catch(() => {
-          // No-op outside Electron (browser dev mode)
-        });
-        return;
-      }
-
       setIsVisible(payload.isVisible);
     };
 
@@ -2767,19 +2759,10 @@ function AppShell() {
     if (isModuleWindow) return;
     if (isLoading) return;
 
-    const desiredVisibility = !user ? true : isVisible;
-    window.desktopWindow?.setVisible(desiredVisibility).catch(() => {
+    window.desktopWindow?.setVisible(isVisible).catch(() => {
       // No-op outside Electron (browser dev mode)
     });
   }, [isLoading, isVisible, user]);
-
-  useEffect(() => {
-    if (isLoading) return;
-    if (uiMode !== 'auth') return;
-    if (isVisible) return;
-
-    setIsVisible(true);
-  }, [isLoading, isVisible, setIsVisible, uiMode]);
 
   
 

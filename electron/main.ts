@@ -31,6 +31,7 @@ const SETTINGS_SECTIONS = new Set([
 ]);
 
 let pendingLedgerProtocolUrl: string | null = null;
+let sidebarTouchBar: InstanceType<typeof TouchBar> | null = null;
 
 if (process.platform === 'win32') {
   // Command buffer / GPUControl errors on some Windows drivers can freeze
@@ -2079,6 +2080,7 @@ function applySidebarWindowMode(mode: SidebarWindowMode, animate = true) {
     floatingDockDragActive = false;
     clearCurrentFloatingDockTarget();
     stopFloatingDockTracking();
+    syncTouchBar();
     const bounds = getCenteredBounds(DASHBOARD_WIDTH, DASHBOARD_HEIGHT);
     sidebarWin.setAlwaysOnTop(false);
     sidebarWin.setResizable(true);
@@ -2091,6 +2093,7 @@ function applySidebarWindowMode(mode: SidebarWindowMode, animate = true) {
     floatingDockDragActive = false;
     clearCurrentFloatingDockTarget();
     stopFloatingDockTracking();
+    syncTouchBar();
     const bounds = getCenteredBoundsForCurrentSidebarDisplay(AUTH_WIDTH, AUTH_HEIGHT);
     sidebarWin.setAlwaysOnTop(false);
     sidebarWin.setResizable(false);
@@ -2116,6 +2119,7 @@ function applySidebarWindowMode(mode: SidebarWindowMode, animate = true) {
   sidebarWin.setResizable(false);
   setWindowButtonVisibility(sidebarWin, false);
   const isOpeningSidebar = mode === 'expanded' && previousMode !== 'expanded';
+  syncTouchBar();
   setSidebarBounds(bounds, animate && (!isOpeningSidebar || isHorizontalDock));
 }
 
@@ -2138,15 +2142,6 @@ function applySidebarOpacity(_opacity: number) {
 
 function applySidebarVisibility(isVisible: boolean) {
   if (!sidebarWin || sidebarWin.isDestroyed()) return;
-
-  if (currentSidebarMode === 'auth' && !isVisible) {
-    sidebarIsVisible = true;
-    if (!sidebarWin.isVisible()) {
-      sidebarWin.show();
-    }
-    sidebarWin.webContents.send('sidebar:visibility-changed', { isVisible: true });
-    return;
-  }
 
   if (allLedgerWindowsHidden && isVisible) {
     allLedgerWindowsHidden = false;
@@ -2970,49 +2965,56 @@ ipcMain.on('calendar:items-updated', () => {
 });
 
 // Touch Bar setup for macOS
-function setupTouchBar() {
+function syncTouchBar() {
   if (process.platform !== 'darwin' || !sidebarWin || sidebarWin.isDestroyed()) return;
+
+  if (currentSidebarMode === 'auth' || currentSidebarMode === 'fullscreen') {
+    sidebarWin.setTouchBar(null);
+    return;
+  }
 
   const { TouchBarButton, TouchBarSpacer } = TouchBar;
 
-  const touchBar = new TouchBar({
-    items: [
-      new TouchBarButton({
-        label: '+ Task',
-        backgroundColor: '#FF5F40',
-        click: () => {
-          console.log('[touchbar] Opening quick-task');
-          openModuleWindow('quick-task');
-        },
-      }),
-      new TouchBarButton({
-        label: '+ Note',
-        backgroundColor: '#FF5F40',
-        click: () => {
-          console.log('[touchbar] Opening quick-note');
-          openModuleWindow('quick-note');
-        },
-      }),
-      new TouchBarButton({
-        label: '+ Event',
-        backgroundColor: '#FF5F40',
-        click: () => {
-          console.log('[touchbar] Opening quick-event');
-          openModuleWindow('quick-event');
-        },
-      }),
-      new TouchBarSpacer({ size: 'small' }),
-      new TouchBarButton({
-        label: 'Search',
-        backgroundColor: '#FF5F40',
-        click: () => {
-          sidebarWin?.webContents.send('touchbar:open-search');
-        },
-      }),
-    ],
-  });
+  if (!sidebarTouchBar) {
+    sidebarTouchBar = new TouchBar({
+      items: [
+        new TouchBarButton({
+          label: '+ Task',
+          backgroundColor: '#FF5F40',
+          click: () => {
+            console.log('[touchbar] Opening quick-task');
+            openModuleWindow('quick-task');
+          },
+        }),
+        new TouchBarButton({
+          label: '+ Note',
+          backgroundColor: '#FF5F40',
+          click: () => {
+            console.log('[touchbar] Opening quick-note');
+            openModuleWindow('quick-note');
+          },
+        }),
+        new TouchBarButton({
+          label: '+ Event',
+          backgroundColor: '#FF5F40',
+          click: () => {
+            console.log('[touchbar] Opening quick-event');
+            openModuleWindow('quick-event');
+          },
+        }),
+        new TouchBarSpacer({ size: 'small' }),
+        new TouchBarButton({
+          label: 'Search',
+          backgroundColor: '#FF5F40',
+          click: () => {
+            sidebarWin?.webContents.send('touchbar:open-search');
+          },
+        }),
+      ],
+    });
+  }
 
-  sidebarWin.setTouchBar(touchBar);
+  sidebarWin.setTouchBar(sidebarTouchBar);
 }
 
 app.whenReady().then(() => {
@@ -3021,15 +3023,14 @@ app.whenReady().then(() => {
   processPendingLedgerProtocolUrl();
 
   // Setup Touch Bar for macOS
-  setTimeout(() => setupTouchBar(), 500);
+  setTimeout(() => syncTouchBar(), 500);
 
   const toggleSidebarShortcut = process.platform === 'darwin' ? 'Cmd+Shift+B' : 'Ctrl+Shift+B';
   const registered = globalShortcut.register(toggleSidebarShortcut, () => {
     const now = Date.now();
     if (now - lastSidebarToggleAt < 250) return;
     lastSidebarToggleAt = now;
-    const nextVisible =
-      sidebarWin && !sidebarWin.isDestroyed() ? !sidebarWin.isVisible() : !sidebarIsVisible;
+    const nextVisible = sidebarWin && !sidebarWin.isDestroyed() ? !sidebarIsVisible : false;
     applySidebarVisibility(nextVisible);
   });
 

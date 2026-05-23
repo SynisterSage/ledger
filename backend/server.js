@@ -1108,6 +1108,17 @@ const getAccessibleWorkspaces = async (userId) => {
   return result.data ?? [];
 };
 
+const getCalendarScopeWorkspaceIds = async (req) => {
+  const scope = String(req.query?.scope ?? '').trim().toLowerCase();
+  if (scope === 'all_accessible_workspaces') {
+    const workspaces = await getAccessibleWorkspaces(req.authUser.id);
+    return workspaces.map((workspace) => workspace.id).filter(Boolean);
+  }
+
+  const workspaceId = await resolveWorkspaceIdForRequest(req);
+  return workspaceId ? [workspaceId] : [];
+};
+
 const resolveExtensionWorkspaceForRequest = async (req) => {
   const requestedWorkspaceId = normalizeNullableText(req.body?.workspace_id);
   return resolveExtensionWorkspaceId(
@@ -4465,12 +4476,17 @@ app.delete('/api/tasks/:id', authMiddleware, rateLimit('write'), async (req, res
 
 app.get('/api/calendars', authMiddleware, rateLimit('read'), async (req, res) => {
   try {
-    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    const workspaceIds = await getCalendarScopeWorkspaceIds(req);
+    if (!workspaceIds.length) {
+      return res.json([]);
+    }
+
     const { data, error } = await supabase
       .from('calendars')
       .select('id, name, color, workspace_id, is_personal, is_visible, created_by')
-      .eq('workspace_id', workspaceId)
+      .in('workspace_id', workspaceIds)
       .order('is_personal', { ascending: false })
+      .order('workspace_id', { ascending: true })
       .order('name', { ascending: true });
 
     if (error) throw error;
@@ -4557,13 +4573,16 @@ app.delete('/api/calendars/:id', authMiddleware, rateLimit('write'), async (req,
 
 app.get('/api/events', authMiddleware, rateLimit('read'), async (req, res) => {
   try {
-    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    const workspaceIds = await getCalendarScopeWorkspaceIds(req);
+    if (!workspaceIds.length) {
+      return res.json([]);
+    }
     let query = supabase
       .from('events')
       .select(
         'id, title, start_at, end_at, all_day, calendar_id, color, status, recurrence_rule, notes, project_id, note_id, created_at'
       )
-      .eq('workspace_id', workspaceId);
+      .in('workspace_id', workspaceIds);
 
     if (req.query?.startDate) {
       query = query.gte('start_at', String(req.query.startDate));
@@ -4609,7 +4628,10 @@ app.get('/api/events', authMiddleware, rateLimit('read'), async (req, res) => {
 
 app.get('/api/events/upcoming', authMiddleware, rateLimit('read'), async (req, res) => {
   try {
-    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    const workspaceIds = await getCalendarScopeWorkspaceIds(req);
+    if (!workspaceIds.length) {
+      return res.json([]);
+    }
     const now = new Date();
     const end = new Date(now);
     end.setDate(end.getDate() + 30);
@@ -4619,7 +4641,7 @@ app.get('/api/events/upcoming', authMiddleware, rateLimit('read'), async (req, r
       .select(
         'id, title, start_at, end_at, all_day, calendar_id, color, status, visibility, recurrence_rule'
       )
-      .eq('workspace_id', workspaceId)
+      .in('workspace_id', workspaceIds)
       .gte('start_at', now.toISOString())
       .lte('start_at', end.toISOString())
       .order('start_at', { ascending: true })
