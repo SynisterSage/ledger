@@ -96,6 +96,9 @@ type EventRow = {
   project_id?: string | null;
   note_id?: string | null;
   notes?: string | null;
+  workspace_id?: string | null;
+  workspace_name?: string | null;
+  workspace_color?: string | null;
 };
 
 type ReminderRow = {
@@ -108,6 +111,9 @@ type ReminderRow = {
   project_id?: string | null;
   note_id?: string | null;
   notes?: string | null;
+  workspace_id?: string | null;
+  workspace_name?: string | null;
+  workspace_color?: string | null;
 };
 
 type CalendarPreferenceSnapshot = {
@@ -1581,6 +1587,7 @@ export const CalendarWindow = () => {
     () => (overflowDayKey ? remindersByDay[overflowDayKey] ?? [] : []),
     [overflowDayKey, remindersByDay]
   );
+  const showWorkspaceNames = calendarPreferences.calendarScope === 'all_accessible_workspaces';
 
   useEffect(() => {
     let cancelled = false;
@@ -3928,6 +3935,11 @@ export const CalendarWindow = () => {
                                   ? 'Workspace'
                                   : 'Private'}
                               </p>
+                              {showWorkspaceNames && selectedEventPreview.workspace_name && (
+                                <p className="mt-1 text-[12px] text-gray-500">
+                                  Workspace · {selectedEventPreview.workspace_name}
+                                </p>
+                              )}
                               <div className="mt-3 space-y-2 text-[13px]">
                                 <div className="flex items-center justify-between gap-3">
                                   <span className="text-gray-500">Project</span>
@@ -4016,6 +4028,11 @@ export const CalendarWindow = () => {
                             })}
                           </p>
                           <p className="mt-1 text-[13px] text-gray-700">Reminder context</p>
+                          {showWorkspaceNames && selectedReminder.workspace_name && (
+                            <p className="mt-1 text-[12px] text-gray-500">
+                              Workspace · {selectedReminder.workspace_name}
+                            </p>
+                          )}
                           <div className="mt-3 space-y-2 text-[13px]">
                             <div className="flex items-center justify-between gap-3">
                               <span className="text-gray-500">Project</span>
@@ -4170,34 +4187,41 @@ export const CalendarWindow = () => {
                   <p className="text-xs font-medium text-gray-500">
                     Agenda
                   </p>
-                  <div className="space-y-1">
-                    {selectedContextDayEvents.length === 0 ? (
-                      <p className="text-[14px] text-gray-500">No events for this day.</p>
-                    ) : (
-                      selectedContextDayEvents.map((event) => {
-                        const isSelected = selectedEventPreview?.id === event.id;
-                        const eventColor = getCalendarColor(event.calendar_id);
-                        return (
-                          <button
-                            key={event.id}
-                            onClick={() => setSelectedEvent(event)}
-                            className={`flex h-8 w-full items-center gap-2 rounded-md px-2 text-left transition ${
-                              isSelected ? 'bg-gray-50 ring-1 ring-gray-200' : 'hover:bg-gray-50'
-                            }`}
-                          >
-                            <span
-                              className="h-2 w-2 shrink-0 rounded-full"
-                              style={{ backgroundColor: isPastEvent(event) ? '#9CA3AF' : eventColor }}
-                            />
-                            <p className="w-28 shrink-0 whitespace-nowrap text-[12px] font-medium text-gray-900">
-                              {formatEventTimeLabel(event)}
-                            </p>
-                            <p className={`min-w-0 flex-1 truncate text-[13px] ${isPastEvent(event) ? 'text-gray-500' : 'text-gray-700'}`}>
-                              {event.title}
-                            </p>
-                          </button>
-                        );
-                      })
+                    <div className="space-y-1">
+                      {selectedContextDayEvents.length === 0 ? (
+                        <p className="text-[14px] text-gray-500">No events for this day.</p>
+                      ) : (
+                        selectedContextDayEvents.map((event) => {
+                          const isSelected = selectedEventPreview?.id === event.id;
+                          const eventColor = getCalendarColor(event.calendar_id);
+                          return (
+                            <button
+                              key={event.id}
+                              onClick={() => setSelectedEvent(event)}
+                              className={`flex h-8 w-full items-center gap-2 rounded-md px-2 text-left transition ${
+                                isSelected ? 'bg-gray-50 ring-1 ring-gray-200' : 'hover:bg-gray-50'
+                              }`}
+                            >
+                              <span
+                                className="h-2 w-2 shrink-0 rounded-full"
+                                style={{ backgroundColor: isPastEvent(event) ? '#9CA3AF' : eventColor }}
+                              />
+                              <p className="w-28 shrink-0 whitespace-nowrap text-[12px] font-medium text-gray-900">
+                                {formatEventTimeLabel(event)}
+                              </p>
+                              <div className="min-w-0 flex-1">
+                                <p className={`truncate text-[13px] ${isPastEvent(event) ? 'text-gray-500' : 'text-gray-700'}`}>
+                                  {event.title}
+                                </p>
+                                {showWorkspaceNames && event.workspace_name && (
+                                  <p className="mt-0.5 truncate text-[11px] text-gray-500">
+                                    Workspace · {event.workspace_name}
+                                  </p>
+                                )}
+                              </div>
+                            </button>
+                          );
+                        })
                     )}
                   </div>
                 </div>

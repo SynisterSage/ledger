@@ -2696,213 +2696,186 @@ export const SettingsWindow = () => {
               )}
 
               {activeSection === 'integrations' && (
-                <section
-                  className="rounded-2xl border border-gray-200 bg-white px-5 py-5"
-                  aria-labelledby="settings-integrations"
-                >
-                  <h2 id="settings-integrations" className="text-lg font-semibold text-gray-900">
-                    Integrations
-                  </h2>
-                  <p className="mt-1 text-sm text-gray-600">
-                    Connect outside signals to your Ledger Inbox.
-                  </p>
+                <section className="w-full max-w-215" aria-labelledby="settings-integrations">
+                  <div className="space-y-2">
+                    <h2
+                      id="settings-integrations"
+                      className="text-[28px] font-semibold tracking-tight text-gray-950"
+                    >
+                      Integrations
+                    </h2>
+                    <p className="text-sm text-gray-600">
+                      Connect tools that send captures into Ledger.
+                    </p>
+                  </div>
 
-                  <div className="mt-6 divide-y divide-gray-100 border-y border-gray-100">
-                    <div className="flex flex-col gap-4 py-5 sm:flex-row sm:items-center sm:justify-between">
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2">
-                          <h3 className="text-sm font-semibold text-gray-950">Slack</h3>
-                          <span
-                            className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${
-                              slackStatus?.connected
-                                ? 'bg-gray-900 text-white'
-                                : 'bg-gray-100 text-gray-600'
-                            }`}
-                          >
-                            {isLoadingSlackStatus
-                              ? 'Checking'
-                              : slackStatus?.connected
-                                ? 'Connected'
-                                : 'Not connected'}
-                          </span>
-                        </div>
-                        <p className="mt-1 text-sm text-gray-600">
-                          Save Slack messages to Ledger Inbox.
-                        </p>
-                        <p className="mt-1 text-xs text-gray-500">
-                          {slackStatus?.connected
-                            ? `Connected to ${slackStatus.team_name || 'Slack'}${
-                                slackStatus.updated_at
-                                  ? ` · Updated ${formatIntegrationDate(slackStatus.updated_at)}`
-                                  : ''
-                              }`
-                            : 'Saved Slack messages appear in Inbox.'}
-                        </p>
-                      </div>
-
-                      <div className="flex shrink-0 flex-wrap items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() => void handleConnectSlack()}
-                          disabled={isConnectingSlack || !activeWorkspaceId || !canManageWorkspace}
-                          className={`h-8 rounded-lg px-3 text-xs font-medium transition disabled:opacity-50 ${
-                            slackStatus?.connected
-                              ? 'border border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
-                              : 'bg-[#FF5F40] text-white hover:bg-[#ea5336]'
-                          }`}
-                        >
-                          {isConnectingSlack
-                            ? 'Opening...'
-                            : slackStatus?.connected
-                              ? 'Reconnect'
-                              : 'Connect Slack'}
-                        </button>
-                        {slackStatus?.connected && (
-                          <button
-                            type="button"
-                            onClick={() => void handleDisconnectSlack()}
-                            disabled={
-                              isDisconnectingSlack || !activeWorkspaceId || !canManageWorkspace
-                            }
-                            className="h-8 rounded-lg border border-gray-200 bg-white px-3 text-xs font-medium text-gray-600 transition hover:border-red-200 hover:bg-red-50 hover:text-red-700 disabled:opacity-50"
-                          >
-                            {isDisconnectingSlack ? 'Disconnecting...' : 'Disconnect'}
-                          </button>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="flex flex-col gap-4 py-5 sm:flex-row sm:items-center sm:justify-between">
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2">
-                          <h3 className="text-sm font-semibold text-gray-950">
-                            Browser Extension
-                          </h3>
-                          <span
-                            className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${
-                              extensionTokenStatus?.exists
-                                ? 'bg-gray-900 text-white'
-                                : 'bg-gray-100 text-gray-600'
-                            }`}
-                          >
-                            {isLoadingExtensionTokenStatus
-                              ? 'Checking'
-                              : extensionTokenStatus?.exists
-                                ? 'Token active'
-                                : 'Not connected'}
-                          </span>
-                        </div>
-                        <p className="mt-1 text-sm text-gray-600">
-                          Capture links, selected text, and quick notes from Chrome.
-                        </p>
-                        <p className="mt-1 text-xs text-gray-500">
-                          {extensionTokenStatus?.exists
-                            ? [
-                                extensionTokenStatus.created_at
-                                  ? `Created ${
-                                      formatIntegrationDate(extensionTokenStatus.created_at) ??
-                                      'recently'
+                  <div className="mt-8 space-y-8">
+                    <section className="border-t border-gray-200 pt-6" aria-labelledby="integration-list">
+                      <h3 id="integration-list" className="sr-only">
+                        Connected integrations
+                      </h3>
+                      <div className="divide-y divide-gray-200 border-y border-gray-200">
+                        <div className="grid gap-4 py-5 md:grid-cols-[minmax(0,1fr)_auto] md:items-start md:gap-6">
+                          <div className="min-w-0">
+                            <h3 className="text-sm font-medium text-gray-900">Slack</h3>
+                            <p className="mt-1 text-sm text-gray-600">
+                              Save Slack messages to Inbox.
+                            </p>
+                            <p className="mt-1 text-xs text-gray-500">
+                              {isLoadingSlackStatus
+                                ? 'Checking status'
+                                : slackStatus?.connected
+                                  ? `Connected to ${slackStatus.team_name || 'Slack'}${
+                                      slackStatus.updated_at
+                                        ? ` · Updated ${formatIntegrationDate(slackStatus.updated_at)}`
+                                        : ''
                                     }`
-                                  : 'Token created',
-                                extensionTokenStatus.last_used_at
-                                  ? `Last used ${
-                                      formatIntegrationDate(extensionTokenStatus.last_used_at) ??
-                                      'recently'
-                                    }`
-                                  : 'Generate a new token if you lost it',
-                              ]
-                                .filter(Boolean)
-                                .join(' · ')
-                            : 'No token created'}
-                        </p>
-                      </div>
+                                  : 'Not connected'}
+                            </p>
+                          </div>
 
-                      <div className="flex shrink-0 flex-wrap items-center gap-2">
-                        {extensionTokenStatus?.exists ? (
-                          <>
-                            {generatedExtensionToken && (
+                          <div className="flex shrink-0 flex-wrap items-center gap-2 md:justify-end">
+                            <button
+                              type="button"
+                              onClick={() => void handleConnectSlack()}
+                              disabled={isConnectingSlack || !activeWorkspaceId || !canManageWorkspace}
+                              className={`h-8 rounded-lg px-3 text-xs font-medium transition disabled:opacity-50 ${
+                                slackStatus?.connected
+                                  ? 'border border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
+                                  : 'bg-[#FF5F40] text-white hover:bg-[#ea5336]'
+                              }`}
+                            >
+                              {isConnectingSlack
+                                ? 'Opening...'
+                                : slackStatus?.connected
+                                  ? 'Reconnect'
+                                  : 'Connect Slack'}
+                            </button>
+                            {slackStatus?.connected && (
                               <button
                                 type="button"
-                                onClick={() => void handleCopyExtensionToken()}
-                                className="h-8 rounded-lg border border-gray-200 bg-white px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-50"
+                                onClick={() => void handleDisconnectSlack()}
+                                disabled={
+                                  isDisconnectingSlack || !activeWorkspaceId || !canManageWorkspace
+                                }
+                                className="h-8 rounded-lg border border-gray-200 bg-white px-3 text-xs font-medium text-gray-600 transition hover:border-red-200 hover:bg-red-50 hover:text-red-700 disabled:opacity-50"
                               >
-                                Copy token
+                                {isDisconnectingSlack ? 'Disconnecting...' : 'Disconnect'}
                               </button>
                             )}
-                            <button
-                              type="button"
-                              onClick={() => setExtensionTokenConfirmAction('regenerate')}
-                              disabled={
-                                isExtensionTokenBusy ||
-                                !activeWorkspaceId ||
-                                !canUseWorkspaceIntegrations
-                              }
-                              className="h-8 rounded-lg border border-gray-200 bg-white px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-50 disabled:opacity-50"
-                            >
-                              Regenerate
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setExtensionTokenConfirmAction('revoke')}
-                              disabled={
-                                isExtensionTokenBusy ||
-                                !activeWorkspaceId ||
-                                !canUseWorkspaceIntegrations
-                              }
-                              className="h-8 rounded-lg border border-gray-200 bg-white px-3 text-xs font-medium text-gray-600 transition hover:border-red-200 hover:bg-red-50 hover:text-red-700 disabled:opacity-50"
-                            >
-                              Revoke
-                            </button>
-                          </>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => void handleGenerateExtensionToken()}
-                            disabled={
-                              isExtensionTokenBusy ||
-                              !activeWorkspaceId ||
-                              !canUseWorkspaceIntegrations
-                            }
-                            className="h-8 rounded-lg bg-[#FF5F40] px-3 text-xs font-medium text-white transition hover:bg-[#ea5336] disabled:opacity-50"
-                          >
-                            {isExtensionTokenBusy ? 'Generating...' : 'Generate token'}
-                          </button>
-                        )}
+                          </div>
+                        </div>
+
+                        <div className="grid gap-4 py-5 md:grid-cols-[minmax(0,1fr)_auto] md:items-start md:gap-6">
+                          <div className="min-w-0">
+                            <h3 className="text-sm font-medium text-gray-900">Browser Extension</h3>
+                            <p className="mt-1 text-sm text-gray-600">
+                              Capture links, selected text, and quick notes from Chrome.
+                            </p>
+                            <p className="mt-1 text-xs text-gray-500">
+                              {isLoadingExtensionTokenStatus
+                                ? 'Checking status'
+                                : extensionTokenStatus?.exists
+                                  ? [
+                                      'Token active',
+                                      extensionTokenStatus.last_used_at
+                                        ? `Last used ${
+                                            formatIntegrationDate(extensionTokenStatus.last_used_at) ??
+                                            'recently'
+                                          }`
+                                        : null,
+                                    ]
+                                      .filter(Boolean)
+                                      .join(' · ')
+                                  : 'No token created'}
+                            </p>
+                          </div>
+
+                          <div className="flex shrink-0 flex-wrap items-center gap-2 md:justify-end">
+                            {extensionTokenStatus?.exists ? (
+                              <>
+                                {generatedExtensionToken && (
+                                  <button
+                                    type="button"
+                                    onClick={() => void handleCopyExtensionToken()}
+                                    className="h-8 rounded-lg border border-gray-200 bg-white px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-50"
+                                  >
+                                    Copy token
+                                  </button>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={() => setExtensionTokenConfirmAction('regenerate')}
+                                  disabled={
+                                    isExtensionTokenBusy ||
+                                    !activeWorkspaceId ||
+                                    !canUseWorkspaceIntegrations
+                                  }
+                                  className="h-8 rounded-lg border border-gray-200 bg-white px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-50 disabled:opacity-50"
+                                >
+                                  Regenerate
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setExtensionTokenConfirmAction('revoke')}
+                                  disabled={
+                                    isExtensionTokenBusy ||
+                                    !activeWorkspaceId ||
+                                    !canUseWorkspaceIntegrations
+                                  }
+                                  className="h-8 rounded-lg border border-gray-200 bg-white px-3 text-xs font-medium text-gray-600 transition hover:border-red-200 hover:bg-red-50 hover:text-red-700 disabled:opacity-50"
+                                >
+                                  Revoke
+                                </button>
+                              </>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => void handleGenerateExtensionToken()}
+                                disabled={
+                                  isExtensionTokenBusy ||
+                                  !activeWorkspaceId ||
+                                  !canUseWorkspaceIntegrations
+                                }
+                                className="h-8 rounded-lg bg-[#FF5F40] px-3 text-xs font-medium text-white transition hover:bg-[#ea5336] disabled:opacity-50"
+                              >
+                                {isExtensionTokenBusy ? 'Generating...' : 'Generate token'}
+                              </button>
+                            )}
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                  </div>
 
-                  {(slackError || extensionTokenError || extensionTokenCopyStatus) && (
-                    <p
-                      className={`mt-4 flex items-center gap-1.5 text-xs ${
-                        slackError || extensionTokenError ? 'text-red-700' : 'text-gray-600'
-                      }`}
-                    >
-                      {(slackError || extensionTokenError) && <CircleAlert size={12} />}
-                      {slackError || extensionTokenError || extensionTokenCopyStatus}
-                    </p>
-                  )}
-
-                  <div className="mt-6">
-                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-400">
-                      Coming soon
-                    </p>
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      {['Email', 'Google Calendar', 'GitHub', 'Linear'].map((source) => (
-                        <span
-                          key={source}
-                          className="rounded-full border border-gray-200 bg-gray-50 px-2.5 py-1 text-xs font-medium text-gray-500"
+                      {(slackError || extensionTokenError || extensionTokenCopyStatus) && (
+                        <p
+                          className={`mt-4 flex items-center gap-1.5 text-xs ${
+                            slackError || extensionTokenError ? 'text-red-700' : 'text-gray-600'
+                          }`}
                         >
-                          {source}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
+                          {(slackError || extensionTokenError) && <CircleAlert size={12} />}
+                          {slackError || extensionTokenError || extensionTokenCopyStatus}
+                        </p>
+                      )}
+                    </section>
 
-                  <p className="mt-6 border-t border-gray-100 pt-4 text-xs leading-5 text-gray-500">
-                    Captures from connected tools land in Inbox before becoming tasks, notes,
-                    reminders, or events.
-                  </p>
+                    <section className="border-t border-gray-200 pt-6" aria-labelledby="integration-coming-soon">
+                      <h3 id="integration-coming-soon" className="text-sm font-medium text-gray-900">
+                        Coming soon
+                      </h3>
+                      <div className="mt-3 divide-y divide-gray-100 border-y border-gray-100">
+                        {['Email', 'Google Calendar', 'GitHub', 'Linear'].map((source) => (
+                          <div key={source} className="py-3 text-sm text-gray-600">
+                            {source}
+                          </div>
+                        ))}
+                      </div>
+                    </section>
+
+                    <p className="border-t border-gray-200 pt-4 text-xs leading-5 text-gray-500">
+                      Connected tools send captures to Inbox. You decide later whether they become
+                      tasks, notes, reminders, or events.
+                    </p>
+                  </div>
                 </section>
               )}
 
@@ -3136,102 +3109,51 @@ export const SettingsWindow = () => {
               )}
 
               {activeSection === 'shortcuts' && (
-                <section
-                  className="rounded-2xl border border-gray-200 bg-white p-5"
-                  aria-labelledby="settings-shortcuts"
-                >
-                  <div>
-                    <h2 id="settings-shortcuts" className="text-lg font-semibold text-gray-900">
+                <section className="w-full max-w-215" aria-labelledby="settings-shortcuts">
+                  <div className="space-y-2">
+                    <h2
+                      id="settings-shortcuts"
+                      className="text-[28px] font-semibold tracking-tight text-gray-950"
+                    >
                       Keyboard Shortcuts
                     </h2>
-                    <p className="mt-1 text-sm text-gray-600">Quick reference for actions.</p>
+                    <p className="text-sm text-gray-600">Quick reference for actions.</p>
                   </div>
 
-                  <div className="mt-5 rounded-xl border border-gray-200 bg-[#fafafa] p-5">
-                    <div className="space-y-7">
-                      {shortcutSections.map((section) => (
-                        <section key={section.id} aria-labelledby={`shortcut-group-${section.id}`}>
-                          <h3
-                            id={`shortcut-group-${section.id}`}
-                            className="text-xs font-semibold uppercase tracking-[0.5px] text-gray-600"
-                          >
-                            {section.title}
-                          </h3>
-                          <div className="mt-3 space-y-3">
-                            {section.shortcuts.map((shortcut) => (
-                              <div
-                                key={`${section.id}-${shortcut.keys}-${shortcut.description}`}
-                                className="grid min-h-8 grid-cols-[180px_1fr] items-center gap-3"
-                              >
-                                <span className="font-mono text-sm font-semibold text-gray-900">
-                                  {shortcut.keys}
-                                </span>
-                                <span className="text-sm text-gray-700">
-                                  {shortcut.description}
-                                </span>
-                              </div>
-                            ))}
-                          </div>
-                        </section>
-                      ))}
-                    </div>
+                  <div className="mt-8 space-y-6">
+                    {shortcutSections.map((section) => (
+                      <section key={section.id} className="border-t border-gray-200 pt-6">
+                        <h3 className="text-sm font-medium text-gray-900">{section.title}</h3>
+                        <div className="mt-3 divide-y divide-gray-100 border-y border-gray-100">
+                          {section.shortcuts.map((shortcut) => (
+                            <div
+                              key={`${section.id}-${shortcut.keys}`}
+                              className="grid gap-3 py-3 md:grid-cols-[160px_minmax(0,1fr)] md:items-center"
+                            >
+                              <p className="text-xs font-medium text-gray-500">{shortcut.keys}</p>
+                              <p className="text-sm text-gray-700">{shortcut.description}</p>
+                            </div>
+                          ))}
+                        </div>
+                      </section>
+                    ))}
                   </div>
                 </section>
               )}
 
-              {activeSection !== 'sidebar' &&
-                activeSection !== 'shortcuts' &&
-                activeSection !== 'integrations' &&
-                activeSection !== 'account' &&
-                activeSection !== 'workspace' &&
-                activeSection !== 'calendar' && (
-                  <section className="rounded-2xl border border-gray-200 bg-white p-5">
-                    <div>
-                      <h2 className="text-sm font-semibold text-gray-900">
-                        Changes save automatically
-                      </h2>
-                      <p className="mt-1 text-xs text-gray-600">
-                        Your account and workspace defaults update as you edit them.
-                      </p>
-                    </div>
-                    {saveStatus && (
-                      <p className="mt-3 text-xs text-gray-700" role="status">
-                        {saveStatus}
-                      </p>
-                    )}
-                  </section>
-                )}
-            </div>
-
             <ModalOverlay
-              isOpen={isExtensionTokenModalOpen && !!generatedExtensionToken}
+              isOpen={isExtensionTokenModalOpen}
               onClose={closeExtensionTokenModal}
-              classNameContainer="w-full max-w-125 rounded-2xl border border-gray-200 bg-white shadow-[0_24px_70px_rgba(15,23,42,0.12)]"
+              classNameContainer="w-full max-w-115 rounded-2xl border border-gray-200 bg-white"
             >
-              <div className="flex items-start justify-between gap-4 px-5 pt-5">
-                <div>
-                  <p className="text-[10px] font-medium uppercase tracking-[0.18em] text-gray-400">
-                    Browser extension
-                  </p>
-                  <h3 className="mt-1 text-lg font-semibold text-gray-900">
-                    Connect browser extension
-                  </h3>
-                  <p className="mt-1 text-sm leading-5 text-gray-600">
-                    Use this token in the Ledger browser extension to save links, selections, and
-                    notes into Inbox.
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={closeExtensionTokenModal}
-                  className="rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xs font-medium text-gray-600 transition hover:bg-gray-50"
-                >
-                  Close
-                </button>
+              <div className="px-5 pt-5">
+                <h3 className="text-lg font-semibold text-gray-900">Connect browser extension</h3>
+                <p className="mt-1 text-sm leading-5 text-gray-600">
+                  Use this token in the Ledger browser extension.
+                </p>
               </div>
 
-              <div className="mt-4 border-y border-gray-100 px-5 py-4">
-                <p className="mb-2 text-xs font-medium text-gray-500">Extension token</p>
+              <div className="mt-5 border-y border-gray-100 px-5 py-4">
                 <div className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2">
                   <p className="break-all font-mono text-xs leading-5 text-gray-900">
                     {generatedExtensionToken}
@@ -3275,15 +3197,10 @@ export const SettingsWindow = () => {
             <ModalOverlay
               isOpen={extensionTokenConfirmAction === 'regenerate'}
               onClose={() => setExtensionTokenConfirmAction(null)}
-              classNameContainer="w-full max-w-115 rounded-2xl border border-gray-200 bg-white shadow-[0_24px_70px_rgba(15,23,42,0.12)]"
+              classNameContainer="w-full max-w-115 rounded-2xl border border-gray-200 bg-white"
             >
               <div className="px-5 pt-5">
-                <p className="text-[10px] font-medium uppercase tracking-[0.18em] text-gray-400">
-                  Browser extension
-                </p>
-                <h3 className="mt-1 text-lg font-semibold text-gray-900">
-                  Regenerate extension token?
-                </h3>
+                <h3 className="text-lg font-semibold text-gray-900">Regenerate extension token?</h3>
                 <p className="mt-1 text-sm leading-5 text-gray-600">
                   Your existing browser extension token will stop working. You’ll need to paste the
                   new token into the extension.
@@ -3311,15 +3228,10 @@ export const SettingsWindow = () => {
             <ModalOverlay
               isOpen={extensionTokenConfirmAction === 'revoke'}
               onClose={() => setExtensionTokenConfirmAction(null)}
-              classNameContainer="w-full max-w-115 rounded-2xl border border-gray-200 bg-white shadow-[0_24px_70px_rgba(15,23,42,0.12)]"
+              classNameContainer="w-full max-w-115 rounded-2xl border border-gray-200 bg-white"
             >
               <div className="px-5 pt-5">
-                <p className="text-[10px] font-medium uppercase tracking-[0.18em] text-gray-400">
-                  Browser extension
-                </p>
-                <h3 className="mt-1 text-lg font-semibold text-gray-900">
-                  Revoke extension token?
-                </h3>
+                <h3 className="text-lg font-semibold text-gray-900">Revoke extension token?</h3>
                 <p className="mt-1 text-sm leading-5 text-gray-600">
                   The browser extension will no longer be able to save captures to Ledger.
                 </p>
@@ -3559,6 +3471,7 @@ export const SettingsWindow = () => {
                 )}
               </div>
             </ModalOverlay>
+            </div>
           </main>
         </div>
       </div>

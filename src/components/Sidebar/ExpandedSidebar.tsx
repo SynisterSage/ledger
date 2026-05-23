@@ -349,6 +349,8 @@ export const ExpandedSidebar = ({
       time?: string;
       rawDate: string;
       sortAt: number;
+      workspace_name?: string | null;
+      workspace_color?: string | null;
     }>
   >([]);
   const [isLoadingUpcoming, setIsLoadingUpcoming] = useState(true);
@@ -992,17 +994,19 @@ export const ExpandedSidebar = ({
               : 'No date';
           }
 
-          return {
-            id: e.id,
-            title: e.title,
-            status: e.status ?? null,
-            start_at: e.start_at ?? null,
-            end_at: e.end_at ?? null,
-            type: 'event' as const,
-            dueDate: dateDisplay,
-            rawDate: eventDateISO,
-            time: isValidDate
-              ? startDate.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+                return {
+                  id: e.id,
+                  title: e.title,
+                  status: e.status ?? null,
+                  start_at: e.start_at ?? null,
+                  end_at: e.end_at ?? null,
+                  workspace_name: e.workspace_name ?? null,
+                  workspace_color: e.workspace_color ?? null,
+                  type: 'event' as const,
+                  dueDate: dateDisplay,
+                  rawDate: eventDateISO,
+                  time: isValidDate
+                    ? startDate.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
               : undefined,
             sortAt: isValidDate ? startAt : Number.MAX_SAFE_INTEGER,
           };
@@ -3188,6 +3192,11 @@ export const ExpandedSidebar = ({
                           {item.dueDate}
                           {item.time && ` · ${item.time}`}
                         </p>
+                        {calendarScope === 'all_accessible_workspaces' && item.workspace_name && (
+                          <p className="mt-0.5 text-[11px] text-gray-500">
+                            Workspace · {item.workspace_name}
+                          </p>
+                        )}
                       </div>
                       <div className="shrink-0 mt-0.5">
                         {isExpanded ? (

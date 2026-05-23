@@ -4630,6 +4630,12 @@ app.get('/api/events', authMiddleware, rateLimit('read'), async (req, res) => {
     if (error) throw error;
 
     const rows = Array.isArray(data) ? data : [];
+    const workspaceRowIds = Array.from(new Set(rows.map((event) => event.workspace_id).filter(Boolean)));
+    const { data: workspaceData, error: workspaceError } = workspaceRowIds.length
+      ? await supabase.from('workspaces').select('id, name, color').in('id', workspaceRowIds)
+      : { data: [] };
+    if (workspaceError) throw workspaceError;
+    const workspaceById = new Map((workspaceData || []).map((workspace) => [workspace.id, workspace]));
     const now = Date.now();
     const overdueEvents = rows.filter((event) => {
       const isRecurring = String(event.recurrence_rule ?? 'none') !== 'none';
@@ -4652,8 +4658,17 @@ app.get('/api/events', authMiddleware, rateLimit('read'), async (req, res) => {
     res.json(
       rows.map((event) =>
         overdueEvents.some((overdue) => overdue.id === event.id)
-          ? { ...event, status: 'done' }
-          : event
+          ? {
+              ...event,
+              status: 'done',
+              workspace_name: workspaceById.get(event.workspace_id)?.name ?? null,
+              workspace_color: workspaceById.get(event.workspace_id)?.color ?? null,
+            }
+          : {
+              ...event,
+              workspace_name: workspaceById.get(event.workspace_id)?.name ?? null,
+              workspace_color: workspaceById.get(event.workspace_id)?.color ?? null,
+            }
       )
     );
   } catch (error) {
@@ -4674,7 +4689,7 @@ app.get('/api/events/upcoming', authMiddleware, rateLimit('read'), async (req, r
     const { data, error } = await supabase
       .from('events')
       .select(
-        'id, title, start_at, end_at, all_day, calendar_id, color, status, visibility, recurrence_rule'
+        'id, workspace_id, title, start_at, end_at, all_day, calendar_id, color, status, visibility, recurrence_rule'
       )
       .in('workspace_id', workspaceIds)
       .gte('start_at', now.toISOString())
@@ -4684,6 +4699,12 @@ app.get('/api/events/upcoming', authMiddleware, rateLimit('read'), async (req, r
 
     if (error) throw error;
     const rows = Array.isArray(data) ? data : [];
+    const workspaceIdsForRows = Array.from(new Set(rows.map((event) => event.workspace_id).filter(Boolean)));
+    const { data: workspaceData, error: workspaceError } = workspaceIdsForRows.length
+      ? await supabase.from('workspaces').select('id, name, color').in('id', workspaceIdsForRows)
+      : { data: [] };
+    if (workspaceError) throw workspaceError;
+    const workspaceById = new Map((workspaceData || []).map((workspace) => [workspace.id, workspace]));
     const filtered = rows.filter((event) => {
       const isDone = String(event.status ?? '') === 'done';
       if (isDone) return false;
@@ -4692,7 +4713,13 @@ app.get('/api/events/upcoming', authMiddleware, rateLimit('read'), async (req, r
       return Number.isFinite(endAt) && endAt > now.getTime();
     });
 
-    res.json(filtered);
+    res.json(
+      filtered.map((event) => ({
+        ...event,
+        workspace_name: workspaceById.get(event.workspace_id)?.name ?? null,
+        workspace_color: workspaceById.get(event.workspace_id)?.color ?? null,
+      }))
+    );
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -5148,7 +5175,28 @@ const loadRemindersForWorkspaces = async ({
   if (error) throw error;
 
   const rows = Array.isArray(data) ? data : [];
-  const mapped = rows.map((row) => mapReminderRow(row));
+  const workspaceIdsForRows = Array.from(new Set(rows.map((row) => row.workspace_id).filter(Boolean)));
+  const calendarIdsForRows = Array.from(new Set(rows.map((row) => row.calendar_id).filter(Boolean)));
+  const workspaceResult = workspaceIdsForRows.length
+    ? await supabase.from('workspaces').select('id, name, color').in('id', workspaceIdsForRows)
+    : { data: [] };
+  const calendarResult = calendarIdsForRows.length
+    ? await supabase.from('calendars').select('id, name, color').in('id', calendarIdsForRows)
+    : { data: [] };
+  if (workspaceResult.error) throw workspaceResult.error;
+  if (calendarResult.error) throw calendarResult.error;
+  const workspaceById = new Map((workspaceResult.data || []).map((workspace) => [workspace.id, workspace]));
+  const calendarById = new Map((calendarResult.data || []).map((calendar) => [calendar.id, calendar]));
+  const mapped = rows.map((row) => {
+    const base = mapReminderRow(row);
+    return {
+      ...base,
+      workspace_name: workspaceById.get(row.workspace_id)?.name ?? null,
+      workspace_color: workspaceById.get(row.workspace_id)?.color ?? null,
+      calendar_name: row.calendar_id ? calendarById.get(row.calendar_id)?.name ?? null : null,
+      calendar_color: row.calendar_id ? calendarById.get(row.calendar_id)?.color ?? null : null,
+    };
+  });
   if (statusFilter === 'overdue') {
     return mapped.filter((row) => row.is_overdue);
   }

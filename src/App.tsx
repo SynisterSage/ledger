@@ -657,7 +657,15 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
     }>
   >([]);
   const [upcoming, setUpcoming] = useState<
-    Array<{ id: string; title: string; start_at: string; end_at: string; color?: string }>
+    Array<{
+      id: string;
+      title: string;
+      start_at: string;
+      end_at: string;
+      color?: string;
+      workspace_name?: string | null;
+      workspace_color?: string | null;
+    }>
   >([]);
   const [notes, setNotes] = useState<
     Array<{ id: string; title: string; content: string; updated_at: string }>
@@ -906,6 +914,8 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
                   end_at: string;
                   color?: string;
                   status?: string | null;
+                  workspace_name?: string | null;
+                  workspace_color?: string | null;
                 }>
               )
                 .filter(isUpcomingEventActive)
@@ -2153,6 +2163,7 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
                         upcoming.map((item) => {
                           const start = new Date(item.start_at);
                           const isExpanded = expandedTimelineIds.has(item.id);
+                          const showWorkspace = calendarScope === 'all_accessible_workspaces';
                           const timeLabel = start.toLocaleTimeString([], {
                             hour: 'numeric',
                             minute: '2-digit',
@@ -2181,6 +2192,11 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
                                 <p className="shrink-0 text-xs text-[#64748B]">{dayLabel}</p>
                               </div>
                               <p className="mt-1 text-xs text-[#64748B]">{timeLabel}</p>
+                              {showWorkspace && item.workspace_name && (
+                                <p className="mt-0.5 text-[11px] text-[#94A3B8]">
+                                  Workspace · {item.workspace_name}
+                                </p>
+                              )}
                             </button>
                           );
                         })
