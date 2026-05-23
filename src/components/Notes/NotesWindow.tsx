@@ -3645,6 +3645,9 @@ export const NotesWindow = () => {
                         editorKey={`${selectedNote.id}:${editorRefreshTick}`}
                         noteId={selectedNote.id}
                         initialValue={draftContent}
+                        onAutoCorrect={() => {
+                          void runAutoCorrectSpelling();
+                        }}
                         onChange={(nextHtml) => {
                           const normalizedNext = normalizeEditorHtml(nextHtml);
                           const normalizedCurrent = normalizeEditorHtml(draftContent);
@@ -3968,7 +3971,7 @@ export const NotesWindow = () => {
                             if (event.shiftKey) event.preventDefault();
                           }}
                           onClick={(event) => void handleSidebarNoteClick(note, event.shiftKey)}
-                          className="flex w-full items-center justify-between gap-3 rounded-lg bg-white px-2 py-1.5 text-left text-sm transition hover:bg-gray-100"
+                          className="flex w-full items-center justify-between gap-3 rounded-lg bg-[#fbfcfe] px-2 py-1.5 text-left text-sm transition hover:bg-gray-100 active:bg-gray-100/80"
                         >
                           <div className="min-w-0">
                             <p className="truncate font-medium text-gray-900">

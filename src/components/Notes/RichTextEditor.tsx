@@ -18,6 +18,7 @@ import {
   Link2,
   Code2,
   ChevronDown,
+  SpellCheck,
 } from 'lucide-react';
 import { AutoLinkNode, LinkNode } from '@lexical/link';
 import { TOGGLE_LINK_COMMAND } from '@lexical/link';
@@ -37,6 +38,7 @@ import {
   $getPreviousSelection,
   $getSelection,
   $isRangeSelection,
+  $setSelection,
   $createParagraphNode,
   COMMAND_PRIORITY_HIGH,
   PASTE_COMMAND,
@@ -56,6 +58,7 @@ type Props = {
   onChange: (html: string) => void;
   onFocus?: () => void;
   onBlur?: () => void;
+  onAutoCorrect?: () => void | Promise<void>;
 };
 
 const editorConfig = {
@@ -149,14 +152,20 @@ const ToolbarButton = ({
   title,
   children,
   isActive = false,
+  onMouseDown,
 }: {
   onClick: () => void;
   title: string;
   children: React.ReactNode;
   isActive?: boolean;
+  onMouseDown?: React.MouseEventHandler<HTMLButtonElement>;
 }) => (
   <button
     type="button"
+    onMouseDown={(event) => {
+      event.preventDefault();
+      onMouseDown?.(event);
+    }}
     onClick={onClick}
     title={title}
     className={`h-7 w-7 rounded-md border transition inline-flex items-center justify-center ${
@@ -171,7 +180,7 @@ const ToolbarButton = ({
 
 type BlockType = 'paragraph' | 'h1' | 'h2' | 'h3' | 'quote';
 
-const ToolbarPlugin = () => {
+const ToolbarPlugin = ({ onAutoCorrect }: { onAutoCorrect?: () => void | Promise<void> }) => {
   const [editor] = useLexicalComposerContext();
   const [blockType, setBlockType] = useState<BlockType>('paragraph');
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
@@ -183,6 +192,39 @@ const ToolbarPlugin = () => {
     underline: false,
     code: false,
   });
+  const savedSelectionRef = useRef<ReturnType<typeof $getSelection> | null>(null);
+
+  const getSelectedText = useCallback(() => {
+    let selectedText = '';
+    editor.getEditorState().read(() => {
+      const selection = $getSelection();
+      if ($isRangeSelection(selection)) {
+        selectedText = selection.getTextContent().trim();
+      }
+    });
+    return selectedText;
+  }, [editor]);
+
+  const isProbablyUrl = useCallback((value: string) => {
+    const text = String(value ?? '').trim();
+    if (!text) return false;
+    return /^(https?:\/\/|mailto:|tel:)/i.test(text) || /^[^\s]+\.[^\s]+/.test(text);
+  }, []);
+
+  const normalizeUrl = useCallback((value: string) => {
+    const text = String(value ?? '').trim();
+    if (!text) return '';
+    if (/^(https?:\/\/|mailto:|tel:)/i.test(text)) return text;
+    if (/^[^\s]+\.[^\s]+/.test(text)) return `https://${text}`;
+    return text;
+  }, []);
+
+  const captureSelection = useCallback(() => {
+    editor.getEditorState().read(() => {
+      const selection = $getSelection();
+      savedSelectionRef.current = $isRangeSelection(selection) ? selection.clone() : null;
+    });
+  }, [editor]);
 
   useEffect(() => {
     const sentinel = toolbarSentinelRef.current;
@@ -377,14 +419,32 @@ const ToolbarPlugin = () => {
 
       <ToolbarButton
         title="Add Link"
+        onMouseDown={() => {
+          captureSelection();
+        }}
         onClick={() => {
-          const url = window.prompt('Enter URL');
-          if (!url) return;
-          editor.dispatchCommand(TOGGLE_LINK_COMMAND, url);
+          const selectedText = getSelectedText();
+          const defaultValue = isProbablyUrl(selectedText) ? selectedText : '';
+          const enteredUrl = window.prompt('Enter URL', defaultValue);
+          const nextUrl = normalizeUrl(enteredUrl?.trim() || defaultValue);
+          if (!nextUrl) return;
+          editor.focus();
+          editor.update(() => {
+            if (savedSelectionRef.current) {
+              $setSelection(savedSelectionRef.current);
+            }
+          });
+          editor.dispatchCommand(TOGGLE_LINK_COMMAND, nextUrl);
         }}
       >
         <Link2 size={14} />
       </ToolbarButton>
+
+      {onAutoCorrect ? (
+        <ToolbarButton title="Auto-correct spelling" onClick={() => void onAutoCorrect()}>
+          <SpellCheck size={14} />
+        </ToolbarButton>
+      ) : null}
       </div>
     </>
   );
@@ -654,7 +714,15 @@ const ResizableImagePlugin = () => {
   return null;
 };
 
-export function RichTextEditor({ initialValue, editorKey, noteId, onChange, onFocus, onBlur }: Props) {
+export function RichTextEditor({
+  initialValue,
+  editorKey,
+  noteId,
+  onChange,
+  onFocus,
+  onBlur,
+  onAutoCorrect,
+}: Props) {
   const lastChangeTimeRef = React.useRef(0);
   const pendingHtmlRef = React.useRef<string | null>(null);
   const throttleTimerRef = React.useRef<NodeJS.Timeout | null>(null);
@@ -706,7 +774,7 @@ export function RichTextEditor({ initialValue, editorKey, noteId, onChange, onFo
   return (
     <LexicalComposer initialConfig={editorConfig}>
       <div>
-        <ToolbarPlugin />
+        <ToolbarPlugin onAutoCorrect={onAutoCorrect} />
         <div className="relative mt-2">
           <RichTextBehaviorPlugin />
           <RichTextPlugin
