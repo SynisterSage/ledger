@@ -324,39 +324,6 @@ const InlineSwitch = ({
   );
 };
 
-const ToggleField = ({
-  id,
-  label,
-  help,
-  checked,
-  onChange,
-}: {
-  id: string;
-  label: string;
-  help: string;
-  checked: boolean;
-  onChange: (checked: boolean) => void;
-}) => {
-  return (
-    <label
-      htmlFor={id}
-      className="flex items-start gap-3 rounded-2xl border border-gray-200 bg-white px-4 py-3"
-    >
-      <input
-        id={id}
-        type="checkbox"
-        checked={checked}
-        onChange={(e) => onChange(e.target.checked)}
-        className="mt-1 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-2 focus:ring-blue-200"
-      />
-      <span>
-        <span className="block text-sm font-medium text-gray-900">{label}</span>
-        <span className="mt-1 block text-xs text-gray-600">{help}</span>
-      </span>
-    </label>
-  );
-};
-
 export const SettingsWindow = () => {
   const { user, signOut } = useAuthContext();
   const {
@@ -2880,34 +2847,32 @@ export const SettingsWindow = () => {
               )}
 
               {activeSection === 'sidebar' && (
-                <section
-                  className="rounded-2xl border border-gray-200 bg-white p-5"
-                  aria-labelledby="settings-sidebar"
-                >
-                  <h2 id="settings-sidebar" className="text-lg font-semibold text-gray-900">
+                <section className="w-full max-w-[860px]" aria-labelledby="settings-sidebar">
+                  <h2
+                    id="settings-sidebar"
+                    className="text-[28px] font-semibold tracking-tight text-gray-950"
+                  >
                     Sidebar
                   </h2>
                   <p className="mt-1 text-sm text-gray-600">
-                    Configure position, behavior, and appearance for the sidebar.
+                    Configure where Ledger lives and how it behaves.
+                  </p>
+                  <p className="mt-2 text-xs text-gray-500">
+                    {saveStatus ?? 'Changes save automatically.'}
                   </p>
 
-                  <div className="mt-5 space-y-5">
-                    <div className="rounded-xl border border-gray-200 bg-gray-50 p-5">
-                      <h3 className="text-xs font-semibold uppercase tracking-[0.5px] text-gray-600">
-                        Position
-                      </h3>
-                      <p className="mt-2 text-xs text-gray-600">
-                        Choose where the sidebar appears in your workspace.
-                      </p>
-                      <div className="mt-4 grid gap-2">
-                        {sidebarPositionOptions.map((option) => (
+                  <section className="mt-6 border-t border-gray-200 pt-6" aria-labelledby="sidebar-position">
+                    <h3 id="sidebar-position" className="text-sm font-semibold text-gray-900">
+                      Position
+                    </h3>
+                    <p className="mt-1 text-xs leading-5 text-gray-500">Choose where Ledger lives.</p>
+                    <div className="mt-2 divide-y divide-gray-200 border-y border-gray-200">
+                      {sidebarPositionOptions
+                        .filter((option) => option.value !== 'floating')
+                        .map((option) => (
                           <label
                             key={option.value}
-                            className={`flex cursor-pointer items-start gap-3 rounded-xl border px-3 py-2.5 transition ${
-                              position === option.value
-                                ? 'border-gray-300 bg-white'
-                                : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'
-                            }`}
+                            className="flex cursor-pointer items-start gap-3 px-4 py-3 transition hover:bg-gray-50"
                           >
                             <input
                               type="radio"
@@ -2915,94 +2880,134 @@ export const SettingsWindow = () => {
                               value={option.value}
                               checked={position === option.value}
                               onChange={() => setPosition(option.value)}
-                              className="mt-1 h-4 w-4 border-gray-300 text-[#FF5F40] focus:ring-2 focus:ring-[#ffd9d0]"
+                              className="mt-0.5 h-4 w-4 border-gray-300 text-[#FF5F40] outline-none focus:outline-none focus:ring-0 focus:ring-offset-0 focus-visible:outline-none focus-visible:ring-0"
                             />
-                            <span className="flex-1">
-                              <span className="inline-flex items-center gap-2 text-sm font-medium text-gray-900">
-                                <option.icon
-                                  size={16}
-                                  className={
-                                    position === option.value ? 'text-[#FF5F40]' : 'text-gray-400'
-                                  }
-                                />
-                                {option.label}
-                              </span>
-                              <span className="mt-1 block text-xs text-gray-600">
-                                {option.description}
-                              </span>
-                            </span>
-                          </label>
-                        ))}
-                      </div>
-                      <div className="mt-4 space-y-3">
-                        <p className="text-xs font-semibold uppercase tracking-[0.5px] text-gray-600">
-                          Default state
-                        </p>
-                        {sidebarDefaultStateOptions.map((option) => (
-                          <label
-                            key={option.value}
-                            className="flex items-start gap-3 rounded-xl border border-gray-200 bg-white px-3 py-2.5"
-                          >
-                            <input
-                              type="radio"
-                              name="sidebar-default-state"
-                              value={option.value}
-                              checked={defaultState === option.value}
-                              onChange={() => setDefaultState(option.value)}
-                              className="mt-1 h-4 w-4 border-gray-300 text-[#FF5F40] focus:ring-2 focus:ring-[#ffd9d0]"
-                            />
-                            <span>
+                            <span className="min-w-0">
                               <span className="block text-sm font-medium text-gray-900">
                                 {option.label}
                               </span>
-                              <span className="mt-1 block text-xs text-gray-600">
+                              <span className="mt-1 block text-xs leading-5 text-gray-500">
                                 {option.description}
                               </span>
                             </span>
                           </label>
                         ))}
-                      </div>
                     </div>
+                  </section>
 
-                    <div className="rounded-xl border border-gray-200 bg-gray-50 p-5">
-                      <h3 className="text-xs font-semibold uppercase tracking-[0.5px] text-gray-600">
-                        Behavior
-                      </h3>
-                      <div className="mt-3 space-y-3">
-                        <ToggleField
-                          id="settings-sidebar-always-on-top"
-                          label="Always on top"
-                          help="Keep sidebar above other windows in docked mode."
+                  <section className="border-t border-gray-200 pt-6" aria-labelledby="sidebar-behavior">
+                    <h3 id="sidebar-behavior" className="text-sm font-semibold text-gray-900">
+                      Behavior
+                    </h3>
+                    <p className="mt-1 text-xs leading-5 text-gray-500">
+                      Keep Ledger attached, detached, or following the app you dock to.
+                    </p>
+                    <div className="mt-2 divide-y divide-gray-200 border-y border-gray-200">
+                      <label
+                        className="flex cursor-pointer items-start gap-3 px-4 py-3 transition hover:bg-gray-50"
+                      >
+                        <input
+                          type="radio"
+                          name="sidebar-position"
+                          value="floating"
+                          checked={position === 'floating'}
+                          onChange={() => setPosition('floating')}
+                          className="mt-0.5 h-4 w-4 border-gray-300 text-[#FF5F40] outline-none focus:outline-none focus:ring-0 focus:ring-offset-0 focus-visible:outline-none focus-visible:ring-0"
+                        />
+                        <span className="min-w-0 flex-1">
+                          <span className="block text-sm font-medium text-gray-900">Floating</span>
+                          <span className="mt-1 block text-xs leading-5 text-gray-500">
+                            Detach Ledger as a movable panel.
+                          </span>
+                        </span>
+                      </label>
+                      <div className="flex items-start justify-between gap-4 px-4 py-3">
+                        <span className="min-w-0">
+                          <span className="block text-sm font-medium text-gray-900">
+                            Always on top
+                          </span>
+                          <span className="mt-1 block text-xs leading-5 text-gray-500">
+                            Keep Ledger above other windows.
+                          </span>
+                        </span>
+                        <InlineSwitch
                           checked={alwaysOnTop}
-                          onChange={(checked) => setAlwaysOnTop(checked)}
+                          onToggle={() => setAlwaysOnTop(!alwaysOnTop)}
+                          label="Always on top"
                         />
-                        <ToggleField
-                          id="settings-sidebar-auto-hide"
-                          label="Auto hide"
-                          help="Collapse sidebar when pointer leaves the panel."
+                      </div>
+                      <div className="flex items-start justify-between gap-4 px-4 py-3">
+                        <span className="min-w-0">
+                          <span className="block text-sm font-medium text-gray-900">Auto hide</span>
+                          <span className="mt-1 block text-xs leading-5 text-gray-500">
+                            Collapse when your pointer leaves the panel.
+                          </span>
+                        </span>
+                        <InlineSwitch
                           checked={autoHide}
-                          onChange={(checked) => setAutoHide(checked)}
+                          onToggle={() => setAutoHide(!autoHide)}
+                          label="Auto hide"
                         />
-                        {position === 'floating' && (
-                          <ToggleField
-                            id="settings-sidebar-dock-enabled"
-                            label="Dock to app windows"
-                            help="Attach sidebar to app windows while floating."
-                            checked={sidebarPreferences.floatingDockEnabled}
-                            onChange={(checked) => setFloatingDockEnabled(checked)}
-                          />
-                        )}
+                      </div>
+                      <div className="flex items-start justify-between gap-4 px-4 py-3">
+                        <span className="min-w-0">
+                          <span className="block text-sm font-medium text-gray-900">
+                            Dock to app windows
+                          </span>
+                          <span className="mt-1 block text-xs leading-5 text-gray-500">
+                            Follow the app you attach Ledger to.
+                          </span>
+                        </span>
+                        <InlineSwitch
+                          checked={sidebarPreferences.floatingDockEnabled}
+                          onToggle={() => setFloatingDockEnabled(!sidebarPreferences.floatingDockEnabled)}
+                          label="Dock to app windows"
+                        />
                       </div>
                     </div>
+                  </section>
 
-                    <div className="rounded-xl border border-gray-200 bg-gray-50 p-5">
-                      <h3 className="text-xs font-semibold uppercase tracking-[0.5px] text-gray-600">
-                        Appearance
-                      </h3>
-                      <div className="mt-3">
-                        <label className="mb-1.5 block text-sm font-medium text-gray-900">
-                          Theme
+                  <section className="border-t border-gray-200 pt-6" aria-labelledby="sidebar-default-state">
+                    <h3 id="sidebar-default-state" className="text-sm font-semibold text-gray-900">
+                      Default state
+                    </h3>
+                    <p className="mt-1 text-xs leading-5 text-gray-500">Choose how Ledger opens.</p>
+                    <div className="mt-2 divide-y divide-gray-200 border-y border-gray-200">
+                      {sidebarDefaultStateOptions.map((option) => (
+                        <label
+                          key={option.value}
+                          className="flex cursor-pointer items-start gap-3 px-4 py-3 transition hover:bg-gray-50"
+                        >
+                          <input
+                            type="radio"
+                            name="sidebar-default-state"
+                            value={option.value}
+                            checked={defaultState === option.value}
+                            onChange={() => setDefaultState(option.value)}
+                            className="mt-0.5 h-4 w-4 border-gray-300 text-[#FF5F40] outline-none focus:outline-none focus:ring-0 focus:ring-offset-0 focus-visible:outline-none focus-visible:ring-0"
+                          />
+                          <span className="min-w-0">
+                            <span className="block text-sm font-medium text-gray-900">
+                              {option.label}
+                            </span>
+                            <span className="mt-1 block text-xs leading-5 text-gray-500">
+                              {option.description}
+                            </span>
+                          </span>
                         </label>
+                      ))}
+                    </div>
+                  </section>
+
+                  <section className="border-t border-gray-200 pt-6" aria-labelledby="sidebar-appearance">
+                    <h3 id="sidebar-appearance" className="text-sm font-semibold text-gray-900">
+                      Appearance
+                    </h3>
+                    <p className="mt-1 text-xs leading-5 text-gray-500">
+                      Tune the sidebar look and feel.
+                    </p>
+                    <div className="mt-2 divide-y divide-gray-200 border-y border-gray-200">
+                      <PreferenceRow label="Theme" help="Match your system or choose a fixed theme.">
                         <select
                           value={preferences.theme}
                           onChange={(event) =>
@@ -3011,100 +3016,148 @@ export const SettingsWindow = () => {
                               theme: event.target.value as UserPreferences['theme'],
                             }))
                           }
-                          className={compactSelectClassName}
+                          className={preferenceSelectClassName}
+                          style={selectChevronStyle}
                         >
                           <option value="system">System</option>
                           <option value="light">Light</option>
                           <option value="dark">Dark</option>
                         </select>
-                      </div>
-                      <div className="mt-3 flex items-center justify-between">
-                        <p className="text-sm font-medium text-gray-900">Opacity</p>
-                        <span className="text-base font-semibold text-gray-900">
-                          {Math.round(opacity * 100)}%
-                        </span>
-                      </div>
-                      <input
-                        type="range"
-                        min="0.7"
-                        max="0.95"
-                        step="0.01"
-                        value={opacity}
-                        onChange={(event) => setOpacity(Number(event.target.value))}
-                        className="mt-3 w-full accent-[#FF5F40]"
-                      />
-                      <p className="mt-2 text-xs text-gray-600">(Range: 70% - 95%)</p>
+                      </PreferenceRow>
+                      <PreferenceRow label="Opacity" help={`${Math.round(opacity * 100)}% to 95%.`}>
+                        <div className="w-full sm:w-70">
+                          <div className="flex items-center justify-between gap-4">
+                            <span className="text-sm font-semibold text-gray-900">
+                              {Math.round(opacity * 100)}%
+                            </span>
+                          </div>
+                          <input
+                            type="range"
+                            min="0.7"
+                            max="0.95"
+                            step="0.01"
+                            value={opacity}
+                            onChange={(event) => setOpacity(Number(event.target.value))}
+                            className="mt-3 h-2 w-full cursor-pointer appearance-none rounded-full bg-gray-200 accent-[#FF5F40]"
+                          />
+                        </div>
+                      </PreferenceRow>
                     </div>
-
-                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                      <button
-                        onClick={handleResetSidebarSettings}
-                        type="button"
-                        className="h-9 rounded-xl border border-gray-200 bg-gray-100 px-4 text-sm font-medium text-gray-800 transition hover:bg-gray-200"
-                      >
-                        Reset to Defaults
-                      </button>
-                      <p className="text-xs text-gray-600">Changes save automatically.</p>
-                    </div>
-                    {saveStatus && (
-                      <p className="mt-2 text-xs text-gray-700" role="status">
-                        {saveStatus}
-                      </p>
-                    )}
+                  </section>
+                  <div className="mt-6 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <button
+                      onClick={handleResetSidebarSettings}
+                      type="button"
+                      className="h-9 rounded-xl border border-gray-200 bg-white px-4 text-sm font-medium text-gray-800 transition hover:bg-gray-50"
+                    >
+                      Reset to Defaults
+                    </button>
                   </div>
                 </section>
               )}
 
               {activeSection === 'accessibility' && (
-                <section
-                  className="rounded-2xl border border-gray-200 bg-white p-5"
-                  aria-labelledby="settings-accessibility"
-                >
-                  <h2 id="settings-accessibility" className="text-lg font-semibold text-gray-900">
+                <section className="w-full max-w-[860px]" aria-labelledby="settings-accessibility">
+                  <h2
+                    id="settings-accessibility"
+                    className="text-[28px] font-semibold tracking-tight text-gray-950"
+                  >
                     Accessibility
                   </h2>
                   <p className="mt-1 text-sm text-gray-600">
-                    Comfort controls for readability and navigation.
+                    Adjust motion, contrast, and density for a more comfortable workspace.
                   </p>
+                  <p className="mt-2 text-xs text-gray-500">Changes save automatically.</p>
 
-                  <div className="mt-5 space-y-3">
-                    <ToggleField
-                      id="settings-reduce-motion"
-                      label="Reduce motion"
-                      help="Minimize non-essential animations where supported."
-                      checked={preferences.reduceMotion}
-                      onChange={(checked) =>
-                        setPreferences((prev) => ({ ...prev, reduceMotion: checked }))
-                      }
-                    />
-                    <ToggleField
-                      id="settings-high-contrast"
-                      label="High contrast"
-                      help="Increase contrast for text and borders in future screens."
-                      checked={preferences.highContrast}
-                      onChange={(checked) =>
-                        setPreferences((prev) => ({ ...prev, highContrast: checked }))
-                      }
-                    />
-                    <ToggleField
-                      id="settings-compact-density"
-                      label="Compact density"
-                      help="Fit more content on screen with tighter spacing."
-                      checked={preferences.compactDensity}
-                      onChange={(checked) =>
-                        setPreferences((prev) => ({ ...prev, compactDensity: checked }))
-                      }
-                    />
-                    <ToggleField
-                      id="settings-dashboard-default"
-                      label="Open dashboard by default"
-                      help="Use dashboard mode as your preferred entry layout."
-                      checked={preferences.openDashboardByDefault}
-                      onChange={(checked) =>
-                        setPreferences((prev) => ({ ...prev, openDashboardByDefault: checked }))
-                      }
-                    />
-                  </div>
+                  <section className="mt-6 border-t border-gray-200 pt-6" aria-labelledby="accessibility-core">
+                    <h3 id="accessibility-core" className="text-sm font-semibold text-gray-900">
+                      Accessibility
+                    </h3>
+                    <div className="mt-2 divide-y divide-gray-200 border-y border-gray-200">
+                      <div className="flex items-start justify-between gap-4 px-4 py-3">
+                        <span className="min-w-0">
+                          <span className="block text-sm font-medium text-gray-900">
+                            Reduce motion
+                          </span>
+                          <span className="mt-1 block text-xs leading-5 text-gray-500">
+                            Minimize non-essential animations.
+                          </span>
+                        </span>
+                        <InlineSwitch
+                          checked={preferences.reduceMotion}
+                          onToggle={() =>
+                            setPreferences((prev) => ({ ...prev, reduceMotion: !prev.reduceMotion }))
+                          }
+                          label="Reduce motion"
+                        />
+                      </div>
+                      <div className="flex items-start justify-between gap-4 px-4 py-3">
+                        <span className="min-w-0">
+                          <span className="block text-sm font-medium text-gray-900">
+                            High contrast
+                          </span>
+                          <span className="mt-1 block text-xs leading-5 text-gray-500">
+                            Increase contrast for text, borders, and controls.
+                          </span>
+                        </span>
+                        <InlineSwitch
+                          checked={preferences.highContrast}
+                          onToggle={() =>
+                            setPreferences((prev) => ({ ...prev, highContrast: !prev.highContrast }))
+                          }
+                          label="High contrast"
+                        />
+                      </div>
+                      <div className="flex items-start justify-between gap-4 px-4 py-3">
+                        <span className="min-w-0">
+                          <span className="block text-sm font-medium text-gray-900">
+                            Compact density
+                          </span>
+                          <span className="mt-1 block text-xs leading-5 text-gray-500">
+                            Use tighter spacing across Ledger.
+                          </span>
+                        </span>
+                        <InlineSwitch
+                          checked={preferences.compactDensity}
+                          onToggle={() =>
+                            setPreferences((prev) => ({
+                              ...prev,
+                              compactDensity: !prev.compactDensity,
+                            }))
+                          }
+                          label="Compact density"
+                        />
+                      </div>
+                    </div>
+                  </section>
+
+                  <section className="border-t border-gray-200 pt-6" aria-labelledby="accessibility-startup">
+                    <h3 id="accessibility-startup" className="text-sm font-semibold text-gray-900">
+                      Startup
+                    </h3>
+                    <div className="mt-2 divide-y divide-gray-200 border-y border-gray-200">
+                      <div className="flex items-start justify-between gap-4 px-4 py-3">
+                        <span className="min-w-0">
+                          <span className="block text-sm font-medium text-gray-900">
+                            Open dashboard by default
+                          </span>
+                          <span className="mt-1 block text-xs leading-5 text-gray-500">
+                            Open Dashboard when Ledger starts.
+                          </span>
+                        </span>
+                        <InlineSwitch
+                          checked={preferences.openDashboardByDefault}
+                          onToggle={() =>
+                            setPreferences((prev) => ({
+                              ...prev,
+                              openDashboardByDefault: !prev.openDashboardByDefault,
+                            }))
+                          }
+                          label="Open dashboard by default"
+                        />
+                      </div>
+                    </div>
+                  </section>
                 </section>
               )}
 
