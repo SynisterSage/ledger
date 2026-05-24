@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import type { User, Session } from '@supabase/supabase-js';
 import { authService } from '../services/auth';
 import { supabaseConfigError } from '../services/supabase';
+import { DEFAULT_API_URL } from '../config/runtime';
 
 const AUTH_SESSION_BACKUP_KEY = 'ledger-auth-session-backup:v1';
 
@@ -50,8 +51,10 @@ export const useAuth = (): UseAuthReturn => {
     if (typeof window === 'undefined') return;
     window.ipcRenderer?.send('notifications:set-session', {
       accessToken: session?.access_token ?? null,
+      userId: session?.user?.id ?? null,
+      apiUrl: DEFAULT_API_URL,
     });
-  }, [session?.access_token]);
+  }, [session?.access_token, session?.user?.id]);
 
   // Initialize auth state
   useEffect(() => {
