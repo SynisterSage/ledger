@@ -795,6 +795,158 @@ const normalizeUserPreferences = (value) => {
   };
 };
 
+const notificationPreferencesDefaults = {
+  desktopEnabled: false,
+  inAppEnabled: true,
+  remindersEnabled: true,
+  eventsEnabled: true,
+  tasksEnabled: false,
+  projectDeadlinesEnabled: true,
+  inboxCapturesEnabled: false,
+  overdueEnabled: true,
+  defaultEventLeadMinutes: 10,
+  defaultTaskTiming: 'morning_of',
+  defaultProjectDeadlineLeadDays: 1,
+  defaultSnoozeMinutes: 10,
+  keepOverdueVisible: true,
+  notifyWhileFullscreen: false,
+  quietHoursEnabled: false,
+  quietHoursStart: null,
+  quietHoursEnd: null,
+};
+
+const notificationPreferencesSelectColumns =
+  'id, user_id, desktop_enabled, in_app_enabled, reminders_enabled, events_enabled, tasks_enabled, project_deadlines_enabled, inbox_captures_enabled, overdue_enabled, default_event_lead_minutes, default_task_timing, default_project_deadline_lead_days, default_snooze_minutes, keep_overdue_visible, notify_while_fullscreen, quiet_hours_enabled, quiet_hours_start, quiet_hours_end, created_at, updated_at';
+
+const normalizeNotificationClockTime = (value) => {
+  const text = normalizeNullableText(value);
+  if (!text) return null;
+  const match = text.match(/^(\d{1,2}):(\d{2})$/);
+  if (!match) return null;
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  if (!Number.isInteger(hours) || !Number.isInteger(minutes)) return null;
+  if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) return null;
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+};
+
+const normalizeNotificationPreferences = (value) => {
+  const raw = value && typeof value === 'object' ? value : {};
+  const merged = { ...notificationPreferencesDefaults, ...raw };
+
+  const defaultEventLeadMinutes = [0, 5, 10, 30, 60].includes(Number(merged.defaultEventLeadMinutes))
+    ? Number(merged.defaultEventLeadMinutes)
+    : notificationPreferencesDefaults.defaultEventLeadMinutes;
+
+  const defaultTaskTiming = ['morning_of', 'at_due_time', 'day_before', 'none'].includes(
+    String(merged.defaultTaskTiming)
+  )
+    ? String(merged.defaultTaskTiming)
+    : notificationPreferencesDefaults.defaultTaskTiming;
+
+  const defaultProjectDeadlineLeadDays = [0, 1, 3, 7].includes(
+    Number(merged.defaultProjectDeadlineLeadDays)
+  )
+    ? Number(merged.defaultProjectDeadlineLeadDays)
+    : notificationPreferencesDefaults.defaultProjectDeadlineLeadDays;
+
+  const defaultSnoozeMinutes = [10, 30, 60, 1440].includes(Number(merged.defaultSnoozeMinutes))
+    ? Number(merged.defaultSnoozeMinutes)
+    : notificationPreferencesDefaults.defaultSnoozeMinutes;
+
+  return {
+    desktopEnabled: Boolean(merged.desktopEnabled),
+    inAppEnabled: Boolean(merged.inAppEnabled),
+    remindersEnabled: Boolean(merged.remindersEnabled),
+    eventsEnabled: Boolean(merged.eventsEnabled),
+    tasksEnabled: Boolean(merged.tasksEnabled),
+    projectDeadlinesEnabled: Boolean(merged.projectDeadlinesEnabled),
+    inboxCapturesEnabled: Boolean(merged.inboxCapturesEnabled),
+    overdueEnabled: Boolean(merged.overdueEnabled),
+    defaultEventLeadMinutes,
+    defaultTaskTiming,
+    defaultProjectDeadlineLeadDays,
+    defaultSnoozeMinutes,
+    keepOverdueVisible: Boolean(merged.keepOverdueVisible),
+    notifyWhileFullscreen: Boolean(merged.notifyWhileFullscreen),
+    quietHoursEnabled: Boolean(merged.quietHoursEnabled),
+    quietHoursStart: normalizeNotificationClockTime(merged.quietHoursStart),
+    quietHoursEnd: normalizeNotificationClockTime(merged.quietHoursEnd),
+  };
+};
+
+const mapNotificationPreferencesRow = (row) => ({
+  id: row?.id ?? null,
+  userId: row?.user_id ?? null,
+  desktopEnabled: Boolean(row?.desktop_enabled),
+  inAppEnabled: Boolean(row?.in_app_enabled),
+  remindersEnabled: Boolean(row?.reminders_enabled),
+  eventsEnabled: Boolean(row?.events_enabled),
+  tasksEnabled: Boolean(row?.tasks_enabled),
+  projectDeadlinesEnabled: Boolean(row?.project_deadlines_enabled),
+  inboxCapturesEnabled: Boolean(row?.inbox_captures_enabled),
+  overdueEnabled: Boolean(row?.overdue_enabled),
+  defaultEventLeadMinutes: Number(row?.default_event_lead_minutes ?? 10),
+  defaultTaskTiming: String(row?.default_task_timing ?? notificationPreferencesDefaults.defaultTaskTiming),
+  defaultProjectDeadlineLeadDays: Number(
+    row?.default_project_deadline_lead_days ?? notificationPreferencesDefaults.defaultProjectDeadlineLeadDays
+  ),
+  defaultSnoozeMinutes: Number(row?.default_snooze_minutes ?? 10),
+  keepOverdueVisible: Boolean(row?.keep_overdue_visible),
+  notifyWhileFullscreen: Boolean(row?.notify_while_fullscreen),
+  quietHoursEnabled: Boolean(row?.quiet_hours_enabled),
+  quietHoursStart: row?.quiet_hours_start ?? null,
+  quietHoursEnd: row?.quiet_hours_end ?? null,
+  created_at: row?.created_at ?? null,
+  updated_at: row?.updated_at ?? null,
+});
+
+const notificationPreferencesInsertPayload = (userId, value) => {
+  const prefs = normalizeNotificationPreferences(value);
+  return {
+    user_id: userId,
+    desktop_enabled: prefs.desktopEnabled,
+    in_app_enabled: prefs.inAppEnabled,
+    reminders_enabled: prefs.remindersEnabled,
+    events_enabled: prefs.eventsEnabled,
+    tasks_enabled: prefs.tasksEnabled,
+    project_deadlines_enabled: prefs.projectDeadlinesEnabled,
+    inbox_captures_enabled: prefs.inboxCapturesEnabled,
+    overdue_enabled: prefs.overdueEnabled,
+    default_event_lead_minutes: prefs.defaultEventLeadMinutes,
+    default_task_timing: prefs.defaultTaskTiming,
+    default_project_deadline_lead_days: prefs.defaultProjectDeadlineLeadDays,
+    default_snooze_minutes: prefs.defaultSnoozeMinutes,
+    keep_overdue_visible: prefs.keepOverdueVisible,
+    notify_while_fullscreen: prefs.notifyWhileFullscreen,
+    quiet_hours_enabled: prefs.quietHoursEnabled,
+    quiet_hours_start: prefs.quietHoursStart,
+    quiet_hours_end: prefs.quietHoursEnd,
+  };
+};
+
+const getOrCreateNotificationPreferences = async (userId) => {
+  const existing = await supabase
+    .from('notification_preferences')
+    .select(notificationPreferencesSelectColumns)
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  if (existing.error) throw existing.error;
+  if (existing.data?.id) return existing.data;
+
+  const { data, error } = await supabase
+    .from('notification_preferences')
+    .upsert(notificationPreferencesInsertPayload(userId, notificationPreferencesDefaults), {
+      onConflict: 'user_id',
+    })
+    .select(notificationPreferencesSelectColumns)
+    .single();
+
+  if (error) throw error;
+  return data;
+};
+
 const roleAtLeast = (role, minimumRole) => {
   const currentRank = workspaceRoleRank[String(role ?? '').toLowerCase()] ?? 0;
   const minimumRank = workspaceRoleRank[String(minimumRole ?? '').toLowerCase()] ?? 0;
@@ -2814,6 +2966,42 @@ app.patch('/api/user/settings', authMiddleware, rateLimit('write'), async (req, 
     res.status(500).json({ error: error.message });
   }
 });
+
+app.get('/api/notifications/preferences', authMiddleware, rateLimit('read'), async (req, res) => {
+  try {
+    const data = await getOrCreateNotificationPreferences(req.authUser.id);
+    res.json(mapNotificationPreferencesRow(data));
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.patch(
+  '/api/notifications/preferences',
+  authMiddleware,
+  rateLimit('write'),
+  async (req, res) => {
+    try {
+      const existing = await getOrCreateNotificationPreferences(req.authUser.id);
+      const mergedInput = {
+        ...mapNotificationPreferencesRow(existing),
+        ...req.body,
+      };
+      const updatePayload = notificationPreferencesInsertPayload(req.authUser.id, mergedInput);
+
+      const { data, error } = await supabase
+        .from('notification_preferences')
+        .upsert(updatePayload, { onConflict: 'user_id' })
+        .select(notificationPreferencesSelectColumns)
+        .single();
+
+      if (error) throw error;
+      res.json(mapNotificationPreferencesRow(data));
+    } catch (error) {
+      res.status(500).json({ error: error.message });
+    }
+  }
+);
 
 app.get('/api/workspaces', authMiddleware, rateLimit('read'), async (req, res) => {
   try {

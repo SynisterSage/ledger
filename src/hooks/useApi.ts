@@ -124,6 +124,12 @@ export const useApi = () => {
           method: 'PATCH',
           body: JSON.stringify(payload),
         }),
+      getNotificationPreferences: () => request('/api/notifications/preferences'),
+      updateNotificationPreferences: (payload: Record<string, unknown>) =>
+        request('/api/notifications/preferences', {
+          method: 'PATCH',
+          body: JSON.stringify(payload),
+        }),
 
       // Workspaces
       getWorkspaces: () => request('/api/workspaces'),

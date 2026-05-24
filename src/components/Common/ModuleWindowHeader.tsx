@@ -36,7 +36,7 @@ export const ModuleWindowHeader = ({
   actions,
 }: ModuleWindowHeaderProps) => {
   const controlClassName =
-    'flex h-6 w-6 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-600 transition hover:bg-gray-100 hover:text-gray-900';
+    'flex h-[18px] w-[18px] items-center justify-center rounded-full border border-gray-200 bg-white text-gray-600 transition hover:bg-gray-100 hover:text-gray-900';
 
   const handleTitleBarDoubleClick = () => {
     if (onToggleFullscreen) {
@@ -54,11 +54,11 @@ export const ModuleWindowHeader = ({
   return (
     <div className="border-b border-gray-200 bg-white" style={dragRegionStyle}>
       <div
-        className="h-10 px-4 py-2 flex items-center bg-gray-50 border-b border-gray-200 cursor-default"
+        className="flex h-9 items-center border-b border-gray-200 bg-gray-50 px-3.5 py-1.5 cursor-default"
         style={dragRegionStyle}
         onDoubleClick={handleTitleBarDoubleClick}
       >
-        <div className="flex items-center gap-1.5" style={noDragRegionStyle}>
+        <div className="flex items-center gap-1" style={noDragRegionStyle}>
           <button
             type="button"
             onClick={onClose}
@@ -108,7 +108,7 @@ export const ModuleWindowHeader = ({
                 {eyebrow}
               </p>
             )}
-            <h1 className="truncate text-[25px] font-semibold leading-[1.15] tracking-tight text-gray-900">
+            <h1 className="truncate text-[23px] font-semibold leading-[1.15] tracking-tight text-gray-900">
               {title}
             </h1>
             {subtitle && <p className="truncate text-xs leading-tight text-gray-500">{subtitle}</p>}
@@ -116,7 +116,7 @@ export const ModuleWindowHeader = ({
         </div>
 
         {actions && (
-          <div className="flex flex-wrap items-center justify-end gap-2" style={noDragRegionStyle}>
+          <div className="flex flex-wrap items-center justify-end gap-1.5" style={noDragRegionStyle}>
             {actions}
           </div>
         )}

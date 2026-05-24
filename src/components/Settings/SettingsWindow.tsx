@@ -56,6 +56,26 @@ type UserPreferences = {
   theme: 'light' | 'dark' | 'system';
 };
 
+type NotificationPreferences = {
+  desktopEnabled: boolean;
+  inAppEnabled: boolean;
+  remindersEnabled: boolean;
+  eventsEnabled: boolean;
+  tasksEnabled: boolean;
+  projectDeadlinesEnabled: boolean;
+  inboxCapturesEnabled: boolean;
+  overdueEnabled: boolean;
+  defaultEventLeadMinutes: 0 | 5 | 10 | 30 | 60;
+  defaultTaskTiming: 'morning_of' | 'at_due_time' | 'day_before' | 'none';
+  defaultProjectDeadlineLeadDays: 0 | 1 | 3 | 7;
+  defaultSnoozeMinutes: 10 | 30 | 60 | 1440;
+  keepOverdueVisible: boolean;
+  notifyWhileFullscreen: boolean;
+  quietHoursEnabled: boolean;
+  quietHoursStart: string | null;
+  quietHoursEnd: string | null;
+};
+
 type WorkspaceRole = 'owner' | 'admin' | 'member' | 'viewer';
 
 type WorkspaceMember = {
@@ -109,6 +129,7 @@ type SettingsSectionId =
   | 'account'
   | 'workspace'
   | 'calendar'
+  | 'notifications'
   | 'integrations'
   | 'sidebar'
   | 'shortcuts'
@@ -117,6 +138,7 @@ const sectionOrder: Array<{ id: SettingsSectionId; label: string; description: s
   { id: 'account', label: 'Account', description: 'Identity and security' },
   { id: 'workspace', label: 'Workspace', description: 'Display and behavior defaults' },
   { id: 'calendar', label: 'Calendar', description: 'Event and reminder defaults' },
+  { id: 'notifications', label: 'Notifications', description: 'Alerts and delivery' },
   { id: 'integrations', label: 'Integrations', description: 'Connect external signals' },
   { id: 'sidebar', label: 'Sidebar', description: 'Docking, visibility, and placement' },
   { id: 'shortcuts', label: 'Keyboard Shortcuts', description: 'Quick reference for actions' },
@@ -129,6 +151,7 @@ const isSettingsSection = (value: string | null | undefined): value is SettingsS
     section === 'account' ||
     section === 'workspace' ||
     section === 'calendar' ||
+    section === 'notifications' ||
     section === 'integrations' ||
     section === 'sidebar' ||
     section === 'shortcuts' ||
@@ -233,6 +256,26 @@ const defaultPrefs: UserPreferences = {
   highContrast: false,
   compactDensity: false,
   theme: 'system',
+};
+
+const defaultNotificationPrefs: NotificationPreferences = {
+  desktopEnabled: false,
+  inAppEnabled: true,
+  remindersEnabled: true,
+  eventsEnabled: true,
+  tasksEnabled: false,
+  projectDeadlinesEnabled: true,
+  inboxCapturesEnabled: false,
+  overdueEnabled: true,
+  defaultEventLeadMinutes: 10,
+  defaultTaskTiming: 'morning_of',
+  defaultProjectDeadlineLeadDays: 1,
+  defaultSnoozeMinutes: 10,
+  keepOverdueVisible: true,
+  notifyWhileFullscreen: false,
+  quietHoursEnabled: false,
+  quietHoursStart: null,
+  quietHoursEnd: null,
 };
 
 const loadCachedPreferences = (): UserPreferences => {
@@ -355,6 +398,10 @@ export const SettingsWindow = () => {
   const [preferences, setPreferences] = useState<UserPreferences>(defaultPrefs);
   const [isSavingPrefs, setIsSavingPrefs] = useState(false);
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
+  const [notificationPreferences, setNotificationPreferences] = useState<NotificationPreferences>(
+    defaultNotificationPrefs
+  );
+  const [isSavingNotificationPrefs, setIsSavingNotificationPrefs] = useState(false);
 
   const [fullName, setFullName] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -420,6 +467,10 @@ export const SettingsWindow = () => {
   const lastSavedSettingsRef = useRef<string>('');
   const lastSavedFullNameRef = useRef<string>('');
   const settingsHydratedRef = useRef(false);
+  const notificationAutosaveTimerRef = useRef<number | null>(null);
+  const notificationAutosaveTokenRef = useRef(0);
+  const lastSavedNotificationSettingsRef = useRef<string>('');
+  const notificationSettingsHydratedRef = useRef(false);
 
   const sidebarPositionOptions: Array<{
     value: SidebarPosition;
@@ -545,6 +596,38 @@ export const SettingsWindow = () => {
       cancelled = true;
     };
   }, [api, user?.email, user?.user_metadata?.full_name]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadNotificationPreferences = async () => {
+      try {
+        const payload = (await api.getNotificationPreferences()) as Partial<NotificationPreferences>;
+
+        if (cancelled) return;
+
+        const nextPreferences = {
+          ...defaultNotificationPrefs,
+          ...(payload ?? {}),
+        };
+
+        setNotificationPreferences(nextPreferences);
+        lastSavedNotificationSettingsRef.current = JSON.stringify(nextPreferences);
+        notificationSettingsHydratedRef.current = true;
+      } catch {
+        if (cancelled) return;
+        setNotificationPreferences(defaultNotificationPrefs);
+        lastSavedNotificationSettingsRef.current = JSON.stringify(defaultNotificationPrefs);
+        notificationSettingsHydratedRef.current = true;
+      }
+    };
+
+    void loadNotificationPreferences();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [api]);
 
   useEffect(() => {
     void window.desktopWindow?.setAlwaysOnTop(alwaysOnTop).catch(() => {
@@ -699,6 +782,49 @@ export const SettingsWindow = () => {
       }
     };
   }, [api, fullName, preferences]);
+
+  useEffect(() => {
+    if (!notificationSettingsHydratedRef.current) return;
+
+    const nextSnapshot = JSON.stringify(notificationPreferences);
+    if (nextSnapshot === lastSavedNotificationSettingsRef.current) {
+      return;
+    }
+
+    if (notificationAutosaveTimerRef.current !== null) {
+      window.clearTimeout(notificationAutosaveTimerRef.current);
+    }
+
+    const saveToken = ++notificationAutosaveTokenRef.current;
+    setIsSavingNotificationPrefs(true);
+    setSaveStatus('Saving automatically...');
+
+    notificationAutosaveTimerRef.current = window.setTimeout(() => {
+      notificationAutosaveTimerRef.current = null;
+      void (async () => {
+        try {
+          await api.updateNotificationPreferences(notificationPreferences);
+
+          if (saveToken !== notificationAutosaveTokenRef.current) return;
+          lastSavedNotificationSettingsRef.current = nextSnapshot;
+          setTimedSaveStatus('Saved automatically.', true);
+        } catch {
+          if (saveToken !== notificationAutosaveTokenRef.current) return;
+          setSaveStatus('Could not save automatically.');
+        } finally {
+          if (saveToken !== notificationAutosaveTokenRef.current) return;
+          setIsSavingNotificationPrefs(false);
+        }
+      })();
+    }, 450);
+
+    return () => {
+      if (notificationAutosaveTimerRef.current !== null) {
+        window.clearTimeout(notificationAutosaveTimerRef.current);
+        notificationAutosaveTimerRef.current = null;
+      }
+    };
+  }, [api, notificationPreferences]);
 
   const handleUpdatePassword = async () => {
     setPasswordError(null);
@@ -2662,6 +2788,294 @@ export const SettingsWindow = () => {
                 </section>
               )}
 
+              {activeSection === 'notifications' && (
+                <section className="w-full max-w-215" aria-labelledby="settings-notifications">
+                  <div className="space-y-2">
+                    <h2
+                      id="settings-notifications"
+                      className="text-[28px] font-semibold tracking-tight text-gray-950"
+                    >
+                      Notifications
+                    </h2>
+                    <p className="text-sm text-gray-600">
+                      Choose what Ledger should bring to your attention.
+                    </p>
+                    <p className="text-xs text-gray-500" role="status">
+                      {isSavingNotificationPrefs
+                        ? 'Saving automatically...'
+                        : saveStatus ?? 'Changes save automatically.'}
+                    </p>
+                  </div>
+
+                  <div className="mt-8 space-y-8">
+                    <section className="border-t border-gray-200 pt-6" aria-labelledby="notification-delivery">
+                      <h3 id="notification-delivery" className="text-sm font-semibold text-gray-900">
+                        Delivery
+                      </h3>
+                      <div className="mt-2 divide-y divide-gray-200 border-y border-gray-200">
+                        <PreferenceRow
+                          label="Desktop notifications"
+                          help="Use native system notifications when Ledger is running."
+                        >
+                          <InlineSwitch
+                            checked={notificationPreferences.desktopEnabled}
+                            onToggle={() =>
+                              setNotificationPreferences((prev) => ({
+                                ...prev,
+                                desktopEnabled: !prev.desktopEnabled,
+                              }))
+                            }
+                            label="Desktop notifications"
+                          />
+                        </PreferenceRow>
+                        <PreferenceRow
+                          label="In-app notifications"
+                          help="Show reminders and alerts inside Ledger."
+                        >
+                          <InlineSwitch
+                            checked={notificationPreferences.inAppEnabled}
+                            onToggle={() =>
+                              setNotificationPreferences((prev) => ({
+                                ...prev,
+                                inAppEnabled: !prev.inAppEnabled,
+                              }))
+                            }
+                            label="In-app notifications"
+                          />
+                        </PreferenceRow>
+                      </div>
+                    </section>
+
+                    <section className="border-t border-gray-200 pt-6" aria-labelledby="notification-sources">
+                      <h3 id="notification-sources" className="text-sm font-semibold text-gray-900">
+                        Notify me about
+                      </h3>
+                      <div className="mt-2 divide-y divide-gray-200 border-y border-gray-200">
+                        <PreferenceRow label="Reminders" help="Time-based reminders you create.">
+                          <InlineSwitch
+                            checked={notificationPreferences.remindersEnabled}
+                            onToggle={() =>
+                              setNotificationPreferences((prev) => ({
+                                ...prev,
+                                remindersEnabled: !prev.remindersEnabled,
+                              }))
+                            }
+                            label="Reminders"
+                          />
+                        </PreferenceRow>
+                        <PreferenceRow label="Events" help="Upcoming calendar events.">
+                          <InlineSwitch
+                            checked={notificationPreferences.eventsEnabled}
+                            onToggle={() =>
+                              setNotificationPreferences((prev) => ({
+                                ...prev,
+                                eventsEnabled: !prev.eventsEnabled,
+                              }))
+                            }
+                            label="Events"
+                          />
+                        </PreferenceRow>
+                        <PreferenceRow label="Tasks" help="Tasks due today or overdue.">
+                          <InlineSwitch
+                            checked={notificationPreferences.tasksEnabled}
+                            onToggle={() =>
+                              setNotificationPreferences((prev) => ({
+                                ...prev,
+                                tasksEnabled: !prev.tasksEnabled,
+                              }))
+                            }
+                            label="Tasks"
+                          />
+                        </PreferenceRow>
+                        <PreferenceRow
+                          label="Project deadlines"
+                          help="Projects approaching their due date."
+                        >
+                          <InlineSwitch
+                            checked={notificationPreferences.projectDeadlinesEnabled}
+                            onToggle={() =>
+                              setNotificationPreferences((prev) => ({
+                                ...prev,
+                                projectDeadlinesEnabled: !prev.projectDeadlinesEnabled,
+                              }))
+                            }
+                            label="Project deadlines"
+                          />
+                        </PreferenceRow>
+                        <PreferenceRow
+                          label="Inbox captures"
+                          help="New captures from Slack, browser, or other integrations."
+                        >
+                          <InlineSwitch
+                            checked={notificationPreferences.inboxCapturesEnabled}
+                            onToggle={() =>
+                              setNotificationPreferences((prev) => ({
+                                ...prev,
+                                inboxCapturesEnabled: !prev.inboxCapturesEnabled,
+                              }))
+                            }
+                            label="Inbox captures"
+                          />
+                        </PreferenceRow>
+                        <PreferenceRow
+                          label="Overdue items"
+                          help="Items past due that still need attention."
+                        >
+                          <InlineSwitch
+                            checked={notificationPreferences.overdueEnabled}
+                            onToggle={() =>
+                              setNotificationPreferences((prev) => ({
+                                ...prev,
+                                overdueEnabled: !prev.overdueEnabled,
+                              }))
+                            }
+                            label="Overdue items"
+                          />
+                        </PreferenceRow>
+                      </div>
+                    </section>
+
+                    <section className="border-t border-gray-200 pt-6" aria-labelledby="notification-timing">
+                      <h3 id="notification-timing" className="text-sm font-semibold text-gray-900">
+                        Timing
+                      </h3>
+                      <div className="mt-2 divide-y divide-gray-200 border-y border-gray-200">
+                        <PreferenceRow
+                          label="Default event reminder"
+                          help="How far in advance event reminders should fire."
+                        >
+                          <select
+                            value={String(notificationPreferences.defaultEventLeadMinutes)}
+                            onChange={(e) =>
+                              setNotificationPreferences((prev) => ({
+                                ...prev,
+                                defaultEventLeadMinutes: Number(
+                                  e.target.value
+                                ) as NotificationPreferences['defaultEventLeadMinutes'],
+                              }))
+                            }
+                            className={preferenceSelectClassName}
+                            style={selectChevronStyle}
+                          >
+                            <option value="0">At time of event</option>
+                            <option value="5">5 minutes before</option>
+                            <option value="10">10 minutes before</option>
+                            <option value="30">30 minutes before</option>
+                            <option value="60">1 hour before</option>
+                          </select>
+                        </PreferenceRow>
+                        <PreferenceRow
+                          label="Default task reminder"
+                          help="How task notifications should be timed."
+                        >
+                          <select
+                            value={notificationPreferences.defaultTaskTiming}
+                            onChange={(e) =>
+                              setNotificationPreferences((prev) => ({
+                                ...prev,
+                                defaultTaskTiming: e.target.value as NotificationPreferences['defaultTaskTiming'],
+                              }))
+                            }
+                            className={preferenceSelectClassName}
+                            style={selectChevronStyle}
+                          >
+                            <option value="morning_of">Morning of due date</option>
+                            <option value="at_due_time">At due time</option>
+                            <option value="day_before">1 day before</option>
+                            <option value="none">None</option>
+                          </select>
+                        </PreferenceRow>
+                        <PreferenceRow
+                          label="Default project deadline reminder"
+                          help="How early project deadlines should notify."
+                        >
+                          <select
+                            value={String(notificationPreferences.defaultProjectDeadlineLeadDays)}
+                            onChange={(e) =>
+                              setNotificationPreferences((prev) => ({
+                                ...prev,
+                                defaultProjectDeadlineLeadDays: Number(
+                                  e.target.value
+                                ) as NotificationPreferences['defaultProjectDeadlineLeadDays'],
+                              }))
+                            }
+                            className={preferenceSelectClassName}
+                            style={selectChevronStyle}
+                          >
+                            <option value="0">At deadline</option>
+                            <option value="1">1 day before</option>
+                            <option value="3">3 days before</option>
+                            <option value="7">1 week before</option>
+                          </select>
+                        </PreferenceRow>
+                        <PreferenceRow
+                          label="Default snooze"
+                          help="Quick choices shown when you snooze a notification."
+                        >
+                          <select
+                            value={String(notificationPreferences.defaultSnoozeMinutes)}
+                            onChange={(e) =>
+                              setNotificationPreferences((prev) => ({
+                                ...prev,
+                                defaultSnoozeMinutes: Number(
+                                  e.target.value
+                                ) as NotificationPreferences['defaultSnoozeMinutes'],
+                              }))
+                            }
+                            className={preferenceSelectClassName}
+                            style={selectChevronStyle}
+                          >
+                            <option value="10">10 minutes</option>
+                            <option value="30">30 minutes</option>
+                            <option value="60">1 hour</option>
+                            <option value="1440">Tomorrow</option>
+                          </select>
+                        </PreferenceRow>
+                      </div>
+                    </section>
+
+                    <section className="border-t border-gray-200 pt-6" aria-labelledby="notification-behavior">
+                      <h3 id="notification-behavior" className="text-sm font-semibold text-gray-900">
+                        Behavior
+                      </h3>
+                      <div className="mt-2 divide-y divide-gray-200 border-y border-gray-200">
+                        <PreferenceRow
+                          label="Keep overdue items visible"
+                          help="Keep overdue items surfaced in Today and Dashboard."
+                        >
+                          <InlineSwitch
+                            checked={notificationPreferences.keepOverdueVisible}
+                            onToggle={() =>
+                              setNotificationPreferences((prev) => ({
+                                ...prev,
+                                keepOverdueVisible: !prev.keepOverdueVisible,
+                              }))
+                            }
+                            label="Keep overdue items visible"
+                          />
+                        </PreferenceRow>
+                        <PreferenceRow
+                          label="Show notifications while fullscreen"
+                          help="Let desktop notifications through when Ledger or another app is fullscreen."
+                        >
+                          <InlineSwitch
+                            checked={notificationPreferences.notifyWhileFullscreen}
+                            onToggle={() =>
+                              setNotificationPreferences((prev) => ({
+                                ...prev,
+                                notifyWhileFullscreen: !prev.notifyWhileFullscreen,
+                              }))
+                            }
+                            label="Show notifications while fullscreen"
+                          />
+                        </PreferenceRow>
+                      </div>
+                      <p className="mt-3 text-xs text-gray-500">Quiet hours coming later.</p>
+                    </section>
+                  </div>
+                </section>
+              )}
+
               {activeSection === 'integrations' && (
                 <section className="w-full max-w-215" aria-labelledby="settings-integrations">
                   <div className="space-y-2">
@@ -2847,7 +3261,7 @@ export const SettingsWindow = () => {
               )}
 
               {activeSection === 'sidebar' && (
-                <section className="w-full max-w-[860px]" aria-labelledby="settings-sidebar">
+                <section className="w-full max-w-215" aria-labelledby="settings-sidebar">
                   <h2
                     id="settings-sidebar"
                     className="text-[28px] font-semibold tracking-tight text-gray-950"
@@ -3057,7 +3471,7 @@ export const SettingsWindow = () => {
               )}
 
               {activeSection === 'accessibility' && (
-                <section className="w-full max-w-[860px]" aria-labelledby="settings-accessibility">
+                <section className="w-full max-w-215" aria-labelledby="settings-accessibility">
                   <h2
                     id="settings-accessibility"
                     className="text-[28px] font-semibold tracking-tight text-gray-950"
