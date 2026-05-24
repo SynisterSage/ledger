@@ -10,7 +10,6 @@ import {
   TouchBar,
   Menu,
 } from 'electron';
-import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { execFile, spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { promisify } from 'node:util';
@@ -109,11 +108,6 @@ const readRuntimeConfigValues = (): RuntimeConfigValues => {
 const runtimeConfigValues = readRuntimeConfigValues();
 const LEDGER_API_URL =
   process.env.VITE_API_URL?.trim() || runtimeConfigValues.apiUrl || 'https://api.ledgerworkspace.com';
-const LEDGER_SUPABASE_URL = process.env.VITE_SUPABASE_URL?.trim() || runtimeConfigValues.supabaseUrl;
-const LEDGER_SUPABASE_PUBLISHABLE_KEY =
-  process.env.VITE_SUPABASE_PUBLISHABLE_KEY?.trim() ||
-  process.env.VITE_SUPABASE_ANON_KEY?.trim() ||
-  runtimeConfigValues.supabasePublishableKey;
 
 const isSettingsSection = (value: string | null | undefined): value is string =>
   SETTINGS_SECTIONS.has(String(value ?? '').toLowerCase());
@@ -714,176 +708,14 @@ type NotificationSchedulerItem = {
 type NotificationPreferencesPayload = {
   desktopEnabled?: boolean;
   inAppEnabled?: boolean;
-  remindersEnabled?: boolean;
-  eventsEnabled?: boolean;
-  tasksEnabled?: boolean;
-  projectDeadlinesEnabled?: boolean;
-  inboxCapturesEnabled?: boolean;
-  overdueEnabled?: boolean;
-  defaultEventLeadMinutes?: number;
-  defaultTaskTiming?: 'morning_of' | 'at_due_time' | 'day_before' | 'none';
-  defaultProjectDeadlineLeadDays?: number;
-  defaultSnoozeMinutes?: number;
-  keepOverdueVisible?: boolean;
-  notifyWhileFullscreen?: boolean;
-  quietHoursEnabled?: boolean;
-};
-
-type NotificationPreferences = Required<
-  Pick<
-    NotificationPreferencesPayload,
-    | 'desktopEnabled'
-    | 'inAppEnabled'
-    | 'remindersEnabled'
-    | 'eventsEnabled'
-    | 'tasksEnabled'
-    | 'projectDeadlinesEnabled'
-    | 'inboxCapturesEnabled'
-    | 'overdueEnabled'
-    | 'defaultEventLeadMinutes'
-    | 'defaultTaskTiming'
-    | 'defaultProjectDeadlineLeadDays'
-    | 'defaultSnoozeMinutes'
-    | 'keepOverdueVisible'
-    | 'notifyWhileFullscreen'
-    | 'quietHoursEnabled'
-  >
->;
-
-type NotificationCandidate = {
-  user_id: string;
-  workspace_id: string | null;
-  source_type: 'reminder' | 'event' | 'task' | 'project' | 'inbox';
-  source_id: string;
-  notification_type: string;
-  scheduled_for: string;
-  metadata: Record<string, unknown>;
-  title: string | null;
-  body: string | null;
-  moduleKind: ModuleWindowKind | null;
-  focusPayload: Record<string, unknown> | null;
-  actions: Array<'open' | 'dismiss' | 'complete' | 'snooze'>;
-  workspace_name?: string | null;
-  workspace_color?: string | null;
 };
 
 let notificationSchedulerTimer: NodeJS.Timeout | null = null;
 let notificationSchedulerInFlight = false;
 let notificationAccessToken: string | null = null;
-let notificationUserId: string | null = null;
 let notificationApiUrl = LEDGER_API_URL;
-let notificationBackendCheckAvailable = true;
-
-const notificationPreferencesDefaults: NotificationPreferences = {
-  desktopEnabled: false,
-  inAppEnabled: true,
-  remindersEnabled: true,
-  eventsEnabled: true,
-  tasksEnabled: false,
-  projectDeadlinesEnabled: true,
-  inboxCapturesEnabled: false,
-  overdueEnabled: true,
-  defaultEventLeadMinutes: 10,
-  defaultTaskTiming: 'morning_of',
-  defaultProjectDeadlineLeadDays: 1,
-  defaultSnoozeMinutes: 10,
-  keepOverdueVisible: true,
-  notifyWhileFullscreen: false,
-  quietHoursEnabled: false,
-};
-
-const normalizeNullableText = (value: unknown) => {
-  if (value === null || value === undefined) return null;
-  const text = String(value).trim();
-  return text ? text : null;
-};
-
-const isCompletedProjectStatus = (status: unknown) =>
-  String(status ?? '')
-    .toLowerCase()
-    .includes('complete');
-
-const notificationScheduledBucket = (value: string) => {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return new Date().toISOString();
-  date.setSeconds(0, 0);
-  return date.toISOString();
-};
-
-const localDateAtTime = (dateLike: unknown, timeText: unknown, fallbackHour = 9) => {
-  const date = new Date(String(dateLike ?? ''));
-  if (Number.isNaN(date.getTime())) return null;
-  const [hours, minutes] = String(timeText ?? '')
-    .split(':')
-    .map((part) => Number(part));
-  const safeHour = Number.isInteger(hours) ? hours : fallbackHour;
-  const safeMinute = Number.isInteger(minutes) ? minutes : 0;
-  date.setHours(safeHour, safeMinute, 0, 0);
-  return date;
-};
-
-const startOfLocalDay = (dateLike: unknown) => {
-  const date = new Date(String(dateLike ?? ''));
-  if (Number.isNaN(date.getTime())) return null;
-  date.setHours(0, 0, 0, 0);
-  return date;
-};
-
-const isSameDay = (left: unknown, right: unknown) => {
-  const a = new Date(String(left ?? ''));
-  const b = new Date(String(right ?? ''));
-  if (Number.isNaN(a.getTime()) || Number.isNaN(b.getTime())) return false;
-  return (
-    a.getFullYear() === b.getFullYear() &&
-    a.getMonth() === b.getMonth() &&
-    a.getDate() === b.getDate()
-  );
-};
-
-const isMissingTableError = (error: unknown) =>
-  String((error as { message?: string } | null)?.message ?? '')
-    .toLowerCase()
-    .includes('does not exist');
-
-const withReminderTable = async <T,>(
-  _client: SupabaseClient,
-  queryFactory: (table: string) => Promise<{ data: T | null; error: unknown | null }>
-) => {
-  let lastError: unknown = null;
-
-  for (const table of ['reminders', 'calendar_reminders']) {
-    const result = await queryFactory(table);
-    if (!result?.error) {
-      return result;
-    }
-
-    lastError = result.error;
-    if (!isMissingTableError(result.error)) {
-      return result;
-    }
-  }
-
-  return { data: null, error: lastError ?? new Error('Reminder table lookup failed') };
-};
-
-const createNotificationSupabaseClient = () => {
-  if (!LEDGER_SUPABASE_URL || !LEDGER_SUPABASE_PUBLISHABLE_KEY || !notificationAccessToken) {
-    return null;
-  }
-
-  return createClient(LEDGER_SUPABASE_URL, LEDGER_SUPABASE_PUBLISHABLE_KEY, {
-    auth: {
-      persistSession: false,
-      autoRefreshToken: false,
-      detectSessionInUrl: false,
-    },
-    global: {
-      headers: {
-        Authorization: `Bearer ${notificationAccessToken}`,
-      },
-    },
-  });
-};
+const notificationSeenIds = new Set<string>();
+let notificationSeenAccessToken: string | null = null;
 
 const getNotificationWindows = () =>
   BrowserWindow.getAllWindows().filter((win) => !win.isDestroyed());
@@ -930,446 +762,6 @@ const deliverDesktopNotification = (item: NotificationSchedulerItem) => {
   }
 };
 
-const buildNotificationEventKey = (
-  sourceType: string,
-  sourceId: string,
-  notificationType: string,
-  scheduledFor: string
-) => [sourceType, sourceId, notificationType, scheduledFor].join('|');
-
-const buildNotificationEventPayload = ({
-  userId,
-  workspaceId,
-  sourceType,
-  sourceId,
-  notificationType,
-  scheduledFor,
-  metadata = {},
-}: {
-  userId: string;
-  workspaceId: string | null;
-  sourceType: string;
-  sourceId: string;
-  notificationType: string;
-  scheduledFor: string;
-  metadata?: Record<string, unknown>;
-}) => ({
-  user_id: userId,
-  workspace_id: workspaceId ?? null,
-  source_type: sourceType,
-  source_id: String(sourceId),
-  notification_type: notificationType,
-  scheduled_for: scheduledFor,
-  metadata,
-});
-
-const normalizeNotificationPreferences = (
-  prefs: NotificationPreferencesPayload
-): NotificationPreferences => ({
-  ...notificationPreferencesDefaults,
-  desktopEnabled: Boolean(prefs.desktopEnabled),
-  inAppEnabled: prefs.inAppEnabled !== false,
-  remindersEnabled: prefs.remindersEnabled !== false,
-  eventsEnabled: prefs.eventsEnabled !== false,
-  tasksEnabled: Boolean(prefs.tasksEnabled),
-  projectDeadlinesEnabled: prefs.projectDeadlinesEnabled !== false,
-  inboxCapturesEnabled: Boolean(prefs.inboxCapturesEnabled),
-  overdueEnabled: prefs.overdueEnabled !== false,
-  defaultEventLeadMinutes: Number(prefs.defaultEventLeadMinutes ?? 10),
-  defaultTaskTiming: prefs.defaultTaskTiming ?? 'morning_of',
-  defaultProjectDeadlineLeadDays: Number(prefs.defaultProjectDeadlineLeadDays ?? 1),
-  defaultSnoozeMinutes: Number(prefs.defaultSnoozeMinutes ?? 10),
-  keepOverdueVisible: prefs.keepOverdueVisible !== false,
-  notifyWhileFullscreen: Boolean(prefs.notifyWhileFullscreen),
-  quietHoursEnabled: Boolean(prefs.quietHoursEnabled),
-});
-
-const getNotificationWorkspaceIds = async (client: SupabaseClient, userId: string) => {
-  const [ownedResult, memberResult] = await Promise.all([
-    client.from('workspaces').select('id').eq('owner_id', userId),
-    client.from('workspace_members').select('workspace_id').eq('user_id', userId),
-  ]);
-
-  if (ownedResult.error) throw ownedResult.error;
-  if (memberResult.error) throw memberResult.error;
-
-  const ids = new Set<string>();
-  for (const row of ownedResult.data ?? []) {
-    if (row?.id) ids.add(String(row.id));
-  }
-  for (const row of memberResult.data ?? []) {
-    if (row?.workspace_id) ids.add(String(row.workspace_id));
-  }
-
-  return ids;
-};
-
-const buildLocalNotificationCandidates = async (
-  client: SupabaseClient,
-  userId: string,
-  prefs: NotificationPreferences
-) => {
-  const workspaceIds = Array.from(await getNotificationWorkspaceIds(client, userId));
-  if (!workspaceIds.length) return [];
-
-  const now = new Date();
-  const todayStart = startOfLocalDay(now);
-  if (!todayStart) return [];
-
-  const workspaceResult = await client
-    .from('workspaces')
-    .select('id, name, color')
-    .in('id', workspaceIds);
-  if (workspaceResult.error) throw workspaceResult.error;
-
-  const workspaceById = new Map(
-    (workspaceResult.data ?? []).map((workspace) => [String(workspace.id), workspace])
-  );
-
-  const candidates: NotificationCandidate[] = [];
-
-  if (prefs.remindersEnabled) {
-    const reminderResult = await withReminderTable(client, async (table) =>
-      client
-        .from(table)
-        .select(
-          'id, workspace_id, user_id, title, body, remind_at, status, dismissed_at, snoozed_until, notes, calendar_id, project_id, note_id, is_done, created_by'
-        )
-        .in('workspace_id', workspaceIds)
-        .eq('is_done', false)
-        .or('status.eq.active,status.eq.overdue')
-        .order('remind_at', { ascending: true })
-        .limit(500)
-    );
-
-    if (reminderResult.error) throw reminderResult.error;
-
-    for (const row of reminderResult.data ?? []) {
-      const remindAt = new Date(String(row?.remind_at ?? ''));
-      if (Number.isNaN(remindAt.getTime())) continue;
-      if (remindAt > now) continue;
-      if (row?.dismissed_at) continue;
-
-      const workspace = workspaceById.get(String(row.workspace_id ?? '')) ?? null;
-      candidates.push({
-        user_id: userId,
-        workspace_id: row.workspace_id ?? null,
-        source_type: 'reminder',
-        source_id: String(row.id),
-        notification_type: 'reminder_due',
-        scheduled_for: notificationScheduledBucket(String(row.remind_at ?? now.toISOString())),
-        metadata: {
-          reminder_id: row.id,
-          project_id: row.project_id ?? null,
-          note_id: row.note_id ?? null,
-          calendar_id: row.calendar_id ?? null,
-        },
-        title: row.title ?? 'Reminder due',
-        body: row.body ?? row.notes ?? null,
-        moduleKind: 'calendar',
-        focusPayload: row.calendar_id
-          ? { kind: 'calendar', focusContext: `focus-reminder:${row.id}` }
-          : { kind: 'calendar' },
-        actions: ['open', 'complete', 'snooze', 'dismiss'],
-        workspace_name: workspace?.name ?? null,
-        workspace_color: workspace?.color ?? null,
-      });
-    }
-  }
-
-  if (prefs.eventsEnabled) {
-    const leadMinutes = Math.max(0, Number(prefs.defaultEventLeadMinutes ?? 10));
-    const endWindow = new Date(now.getTime() + leadMinutes * 60_000);
-    const { data, error } = await client
-      .from('events')
-      .select('id, workspace_id, title, start_at, calendar_id, status, project_id, note_id')
-      .in('workspace_id', workspaceIds)
-      .gte('start_at', todayStart.toISOString())
-      .lte('start_at', endWindow.toISOString())
-      .limit(250);
-    if (error) throw error;
-
-    for (const row of data ?? []) {
-      if (String(row?.status ?? '').toLowerCase() === 'done') continue;
-      const startAt = new Date(String(row?.start_at ?? ''));
-      if (Number.isNaN(startAt.getTime())) continue;
-      const scheduledFor = new Date(startAt.getTime() - leadMinutes * 60_000);
-      if (scheduledFor > now) continue;
-
-      const workspace = workspaceById.get(String(row.workspace_id ?? '')) ?? null;
-      candidates.push({
-        user_id: userId,
-        workspace_id: row.workspace_id ?? null,
-        source_type: 'event',
-        source_id: String(row.id),
-        notification_type: 'event_starting',
-        scheduled_for: notificationScheduledBucket(scheduledFor.toISOString()),
-        metadata: {
-          event_id: row.id,
-          calendar_id: row.calendar_id ?? null,
-          project_id: row.project_id ?? null,
-          note_id: row.note_id ?? null,
-        },
-        title: row.title ?? 'Event starting',
-        body: row.start_at ? new Date(row.start_at).toLocaleString() : null,
-        moduleKind: 'calendar',
-        focusPayload: { kind: 'calendar', focusContext: `focus-event:${row.id}` },
-        actions: ['open', 'dismiss'],
-        workspace_name: workspace?.name ?? null,
-        workspace_color: workspace?.color ?? null,
-      });
-    }
-  }
-
-  if (prefs.tasksEnabled) {
-    const { data, error } = await client
-      .from('tasks')
-      .select('id, workspace_id, project_id, title, due_date, due_time, status')
-      .in('workspace_id', workspaceIds)
-      .neq('status', 'completed')
-      .limit(500);
-    if (error) throw error;
-
-    for (const row of data ?? []) {
-      if (!row?.due_date) continue;
-      const dueDate = new Date(`${String(row.due_date)}T00:00:00`);
-      if (Number.isNaN(dueDate.getTime())) continue;
-
-      const timing = String(prefs.defaultTaskTiming ?? 'morning_of');
-      if (timing === 'none') continue;
-
-      let scheduledFor: Date | null = null;
-      const dueTime = normalizeNullableText(row.due_time);
-      if (timing === 'day_before') {
-        const dayBefore = new Date(dueDate);
-        dayBefore.setDate(dayBefore.getDate() - 1);
-        scheduledFor = localDateAtTime(dayBefore, '09:00');
-      } else if (timing === 'at_due_time' && dueTime) {
-        scheduledFor = localDateAtTime(dueDate, dueTime);
-      } else {
-        scheduledFor = localDateAtTime(dueDate, '09:00');
-      }
-
-      if (!scheduledFor || scheduledFor > now) continue;
-
-      const notificationType = isSameDay(dueDate, now) ? 'task_due' : 'overdue_item';
-      if (notificationType === 'overdue_item' && !prefs.overdueEnabled) continue;
-      const workspace = workspaceById.get(String(row.workspace_id ?? '')) ?? null;
-
-      candidates.push({
-        user_id: userId,
-        workspace_id: row.workspace_id ?? null,
-        source_type: 'task',
-        source_id: String(row.id),
-        notification_type: notificationType,
-        scheduled_for: notificationScheduledBucket(
-          notificationType === 'overdue_item' ? todayStart.toISOString() : scheduledFor.toISOString()
-        ),
-        metadata: {
-          task_id: row.id,
-          project_id: row.project_id ?? null,
-        },
-        title: row.title ?? 'Task due',
-        body: row.due_date ? `Due ${row.due_date}${row.due_time ? ` · ${row.due_time}` : ''}` : null,
-        moduleKind: 'dashboard',
-        focusPayload: { kind: 'dashboard', focusTaskId: row.id },
-        actions: ['open', 'complete', 'dismiss'],
-        workspace_name: workspace?.name ?? null,
-        workspace_color: workspace?.color ?? null,
-      });
-    }
-  }
-
-  if (prefs.projectDeadlinesEnabled) {
-    const leadDays = Math.max(0, Number(prefs.defaultProjectDeadlineLeadDays ?? 1));
-    const { data, error } = await client
-      .from('projects')
-      .select('id, workspace_id, name, status, end_date, color')
-      .in('workspace_id', workspaceIds)
-      .not('end_date', 'is', null)
-      .limit(250);
-    if (error) throw error;
-
-    for (const row of data ?? []) {
-      if (!row?.end_date || isCompletedProjectStatus(row.status)) continue;
-      const dueDate = new Date(`${String(row.end_date)}T00:00:00`);
-      if (Number.isNaN(dueDate.getTime())) continue;
-
-      const leadDate = new Date(dueDate);
-      leadDate.setDate(leadDate.getDate() - leadDays);
-      const scheduledFor = localDateAtTime(leadDate, '09:00');
-      if (!scheduledFor || scheduledFor > now) continue;
-
-      const notificationType = dueDate < todayStart ? 'overdue_item' : 'project_deadline';
-      if (notificationType === 'overdue_item' && !prefs.overdueEnabled) continue;
-      const workspace = workspaceById.get(String(row.workspace_id ?? '')) ?? null;
-
-      candidates.push({
-        user_id: userId,
-        workspace_id: row.workspace_id ?? null,
-        source_type: 'project',
-        source_id: String(row.id),
-        notification_type: notificationType,
-        scheduled_for: notificationScheduledBucket(
-          notificationType === 'overdue_item' ? todayStart.toISOString() : scheduledFor.toISOString()
-        ),
-        metadata: {
-          project_id: row.id,
-        },
-        title: row.name ?? 'Project deadline',
-        body: row.end_date ? `Due ${row.end_date}` : null,
-        moduleKind: 'projects',
-        focusPayload: { kind: 'projects', focusProjectId: row.id },
-        actions: ['open', 'dismiss'],
-        workspace_name: workspace?.name ?? null,
-        workspace_color: workspace?.color ?? null,
-      });
-    }
-  }
-
-  if (prefs.inboxCapturesEnabled) {
-    const sinceIso = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString();
-    const { data, error } = await client
-      .from('inbox_items')
-      .select('id, workspace_id, title, body, source, source_url, status, created_at')
-      .in('workspace_id', workspaceIds)
-      .eq('status', 'unprocessed')
-      .gte('created_at', sinceIso)
-      .order('created_at', { ascending: false })
-      .limit(50);
-    if (error) throw error;
-
-    for (const row of data ?? []) {
-      const workspace = workspaceById.get(String(row.workspace_id ?? '')) ?? null;
-      candidates.push({
-        user_id: userId,
-        workspace_id: row.workspace_id ?? null,
-        source_type: 'inbox',
-        source_id: String(row.id),
-        notification_type: 'inbox_capture',
-        scheduled_for: notificationScheduledBucket(String(row.created_at ?? now.toISOString())),
-        metadata: {
-          inbox_item_id: row.id,
-          source: row.source ?? null,
-          source_url: row.source_url ?? null,
-        },
-        title: row.title ?? 'Inbox capture',
-        body: row.body ?? row.source_url ?? null,
-        moduleKind: 'inbox',
-        focusPayload: { kind: 'inbox' },
-        actions: ['open', 'dismiss'],
-        workspace_name: workspace?.name ?? null,
-        workspace_color: workspace?.color ?? null,
-      });
-    }
-  }
-
-  return candidates;
-};
-
-const deliverNotificationItems = async (
-  items: NotificationSchedulerItem[],
-  prefs: NotificationPreferences
-) => {
-  if (!items.length) return;
-
-  if (prefs.desktopEnabled) {
-    items.forEach((item) => deliverDesktopNotification(item));
-  }
-
-  if (prefs.inAppEnabled) {
-    broadcastNotificationBatch(items);
-  }
-};
-
-const runNotificationSchedulerLocally = async (
-  prefs: NotificationPreferences,
-  userId: string
-) => {
-  const client = createNotificationSupabaseClient();
-  if (!client) return [];
-
-  const candidates = await buildLocalNotificationCandidates(client, userId, prefs);
-  if (!candidates.length) return [];
-
-  const payload = candidates.map((candidate) =>
-    buildNotificationEventPayload({
-      userId: candidate.user_id,
-      workspaceId: candidate.workspace_id,
-      sourceType: candidate.source_type,
-      sourceId: candidate.source_id,
-      notificationType: candidate.notification_type,
-      scheduledFor: candidate.scheduled_for,
-      metadata: candidate.metadata,
-    })
-  );
-
-  const { data: insertedRows, error: insertError } = await client
-    .from('notification_events')
-    .upsert(payload, {
-      onConflict: 'user_id,source_type,source_id,notification_type,scheduled_for',
-    })
-    .select(
-      'id, user_id, workspace_id, source_type, source_id, notification_type, scheduled_for, delivered_in_app_at, delivered_desktop_at, dismissed_at, action_taken, metadata'
-    );
-
-  if (insertError) throw insertError;
-
-  const inserted = Array.isArray(insertedRows) ? insertedRows : [];
-  if (!inserted.length) return [];
-
-  const candidateByEventKey = new Map(
-    candidates.map((candidate) => [
-      buildNotificationEventKey(
-        candidate.source_type,
-        candidate.source_id,
-        candidate.notification_type,
-        candidate.scheduled_for
-      ),
-      candidate,
-    ])
-  );
-
-  const nowIso = new Date().toISOString();
-  const { data: claimedRows, error: claimError } = await client
-    .from('notification_events')
-    .update({ delivered_in_app_at: nowIso, updated_at: nowIso })
-    .in(
-      'id',
-      inserted.map((row) => row.id).filter(Boolean)
-    )
-    .is('delivered_in_app_at', null)
-    .is('dismissed_at', null)
-    .select(
-      'id, user_id, workspace_id, source_type, source_id, notification_type, scheduled_for, delivered_in_app_at, delivered_desktop_at, dismissed_at, action_taken, metadata'
-    );
-
-  if (claimError) throw claimError;
-  if (!claimedRows?.length) return [];
-
-  return claimedRows.map((row) => {
-    const candidate = candidateByEventKey.get(
-      buildNotificationEventKey(row.source_type, row.source_id, row.notification_type, row.scheduled_for)
-    );
-    return {
-      id: row.id,
-      sourceType: row.source_type,
-      sourceId: row.source_id,
-      notificationType: row.notification_type,
-      title: candidate?.title ?? null,
-      body: candidate?.body ?? null,
-      context: null,
-      workspaceName: candidate?.workspace_name ?? null,
-      workspaceColor: candidate?.workspace_color ?? null,
-      moduleKind: candidate?.moduleKind ?? null,
-      focusPayload: candidate?.focusPayload ?? null,
-      actions: candidate?.actions ?? [],
-      scheduledFor: row.scheduled_for,
-      status: 'active',
-    } satisfies NotificationSchedulerItem;
-  });
-};
-
 const fetchLedgerApi = async <T,>(
   endpoint: string,
   token: string,
@@ -1401,61 +793,34 @@ const runNotificationScheduler = async () => {
   notificationSchedulerInFlight = true;
 
   try {
-    const prefs = normalizeNotificationPreferences(
-      await fetchLedgerApi<NotificationPreferencesPayload>(
+    const prefs = await fetchLedgerApi<NotificationPreferencesPayload>(
       '/api/notifications/preferences',
       notificationAccessToken
-      )
     );
-
     const shouldDeliverDesktop = Boolean(prefs.desktopEnabled);
-    const shouldDeliverInApp = Boolean(prefs.inAppEnabled);
-    if (!shouldDeliverDesktop && !shouldDeliverInApp) {
-      const summary = await fetchLedgerApi<{ counts?: { active?: number } }>(
-        '/api/notifications/summary',
-        notificationAccessToken
-      );
-      broadcastNotificationSummary(Number(summary?.counts?.active ?? 0));
-      return;
-    }
-
-    let notifications: NotificationSchedulerItem[] = [];
-
-    if (notificationBackendCheckAvailable) {
-      try {
-        notifications = await fetchLedgerApi<NotificationSchedulerItem[]>(
-          '/api/notifications/check',
-          notificationAccessToken
-        );
-      } catch (error) {
-        const status = error instanceof Error ? (error as Error & { status?: number }).status : undefined;
-        if (status === 404 || /Request failed: 404/i.test(String(error instanceof Error ? error.message : error))) {
-          notificationBackendCheckAvailable = false;
-        } else {
-          throw error;
-        }
-      }
-    }
-
-    if (!notificationBackendCheckAvailable) {
-      if (!notificationUserId) return;
-      notifications = await runNotificationSchedulerLocally(prefs, notificationUserId);
-    }
-
-    if (Array.isArray(notifications) && notifications.length) {
-      await deliverNotificationItems(notifications, prefs as NotificationPreferences);
-    }
+    const shouldDeliverInApp = prefs.inAppEnabled !== false;
 
     const summary = await fetchLedgerApi<{ counts?: { active?: number } }>(
       '/api/notifications/summary',
       notificationAccessToken
     );
+    const notifications = await fetchLedgerApi<{ active?: NotificationSchedulerItem[] }>(
+      '/api/notifications',
+      notificationAccessToken
+    );
+    const activeItems = Array.isArray(notifications?.active) ? notifications.active : [];
+    if (shouldDeliverInApp || shouldDeliverDesktop) {
+      const unseenItems = activeItems.filter((item) => !notificationSeenIds.has(item.id));
+      unseenItems.forEach((item) => notificationSeenIds.add(item.id));
+      if (shouldDeliverInApp) {
+        broadcastNotificationBatch(unseenItems);
+      }
+      if (shouldDeliverDesktop) {
+        unseenItems.forEach((item) => deliverDesktopNotification(item));
+      }
+    }
     broadcastNotificationSummary(Number(summary?.counts?.active ?? 0));
   } catch (error) {
-    const status = error instanceof Error ? (error as Error & { status?: number }).status : undefined;
-    if (status === 404 || (error instanceof Error && /Request failed: 404/i.test(error.message))) {
-      return;
-    }
     console.warn('[electron] Notification scheduler failed', error);
   } finally {
     notificationSchedulerInFlight = false;
@@ -1471,9 +836,12 @@ const syncNotificationSession = (payload: {
     notificationApiUrl = payload.apiUrl.trim();
   }
   const accessToken = payload?.accessToken ?? null;
-  notificationAccessToken = accessToken && accessToken.trim() ? accessToken.trim() : null;
-  const userId = payload?.userId ?? null;
-  notificationUserId = typeof userId === 'string' && userId.trim() ? userId.trim() : null;
+  const nextAccessToken = accessToken && accessToken.trim() ? accessToken.trim() : null;
+  if (nextAccessToken !== notificationSeenAccessToken) {
+    notificationSeenIds.clear();
+    notificationSeenAccessToken = nextAccessToken;
+  }
+  notificationAccessToken = nextAccessToken;
   void runNotificationScheduler();
 };
 

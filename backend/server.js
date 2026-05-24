@@ -1536,6 +1536,83 @@ const getNotificationCenterItems = async (userId) => {
   };
 };
 
+let notificationSchedulerTimer = null;
+let notificationSchedulerInFlight = false;
+
+const processNotificationEventsForUser = async (userId) => {
+  const prefsRow = await getOrCreateNotificationPreferences(userId);
+  const prefs = normalizeNotificationPreferences(mapNotificationPreferencesRow(prefsRow));
+  const candidates = await buildDueNotificationCandidates(userId, prefs);
+  if (!candidates.length) return [];
+
+  const payload = candidates.map((candidate) =>
+    buildNotificationEventPayload({
+      userId: candidate.user_id,
+      workspaceId: candidate.workspace_id,
+      sourceType: candidate.source_type,
+      sourceId: candidate.source_id,
+      notificationType: candidate.notification_type,
+      scheduledFor: candidate.scheduled_for,
+      metadata: candidate.metadata,
+    })
+  );
+
+  const { data: insertedRows, error: insertError } = await supabase
+    .from('notification_events')
+    .upsert(payload, {
+      onConflict: 'user_id,source_type,source_id,notification_type,scheduled_for',
+    })
+    .select(
+      'id, user_id, workspace_id, source_type, source_id, notification_type, scheduled_for, delivered_in_app_at, delivered_desktop_at, dismissed_at, action_taken, metadata'
+    );
+
+  if (insertError) throw insertError;
+
+  const eventRows = Array.isArray(insertedRows) ? insertedRows : [];
+  const eventIds = eventRows.map((row) => row.id).filter(Boolean);
+  if (!eventIds.length) return [];
+
+  const nowIso = new Date().toISOString();
+  const { data: claimedRows, error: claimError } = await supabase
+    .from('notification_events')
+    .update({ delivered_in_app_at: nowIso, updated_at: nowIso })
+    .in('id', eventIds)
+    .is('delivered_in_app_at', null)
+    .is('dismissed_at', null)
+    .select(
+      'id, user_id, workspace_id, source_type, source_id, notification_type, scheduled_for, delivered_in_app_at, delivered_desktop_at, dismissed_at, action_taken, metadata'
+    );
+
+  if (claimError) throw claimError;
+  return Array.isArray(claimedRows) ? claimedRows : [];
+};
+
+const runNotificationScheduler = async () => {
+  if (notificationSchedulerInFlight) return;
+  notificationSchedulerInFlight = true;
+
+  try {
+    const { data, error } = await supabase
+      .from('notification_preferences')
+      .select('user_id')
+      .order('updated_at', { ascending: false });
+    if (error) throw error;
+
+    const userIds = Array.from(new Set((data ?? []).map((row) => row?.user_id).filter(Boolean)));
+    for (const userId of userIds) {
+      try {
+        await processNotificationEventsForUser(userId);
+      } catch (userError) {
+        console.error('[notifications] Scheduler user failed:', userId, userError?.message ?? userError);
+      }
+    }
+  } catch (error) {
+    console.error('[notifications] Scheduler failed:', error?.message ?? error);
+  } finally {
+    notificationSchedulerInFlight = false;
+  }
+};
+
 const roleAtLeast = (role, minimumRole) => {
   const currentRank = workspaceRoleRank[String(role ?? '').toLowerCase()] ?? 0;
   const minimumRank = workspaceRoleRank[String(minimumRole ?? '').toLowerCase()] ?? 0;
@@ -8115,4 +8192,8 @@ app.use((error, req, res, next) => {
 
 app.listen(PORT, () => {
   console.log(`Backend running on port ${PORT}`);
+  void runNotificationScheduler();
+  notificationSchedulerTimer = setInterval(() => {
+    void runNotificationScheduler();
+  }, 60_000);
 });
