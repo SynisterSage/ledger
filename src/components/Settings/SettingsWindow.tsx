@@ -304,6 +304,16 @@ const selectChevronStyle: CSSProperties = {
   backgroundSize: '14px 14px',
 };
 
+const getSidebarOpacitySliderStyle = (value: number): CSSProperties => {
+  const min = 0.7;
+  const max = 0.95;
+  const fillPercent = Math.max(0, Math.min(100, ((value - min) / (max - min)) * 100));
+
+  return {
+    backgroundImage: `linear-gradient(to right, #FF5F40 0%, #FF5F40 ${fillPercent}%, rgba(229, 231, 235, 0.9) ${fillPercent}%, rgba(229, 231, 235, 0.9) 100%)`,
+  };
+};
+
 const compactFieldClassName =
   'h-9 rounded-xl border border-gray-200 bg-gray-50/80 px-3 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 focus:border-gray-300 focus:bg-white focus:ring-4 focus:ring-gray-100 disabled:opacity-60';
 
@@ -3452,7 +3462,8 @@ export const SettingsWindow = () => {
                             step="0.01"
                             value={opacity}
                             onChange={(event) => setOpacity(Number(event.target.value))}
-                            className="mt-3 h-2 w-full cursor-pointer appearance-none rounded-full bg-gray-200 accent-[#FF5F40]"
+                            className="mt-3 h-2 w-full cursor-pointer appearance-none rounded-full bg-transparent"
+                            style={getSidebarOpacitySliderStyle(opacity)}
                           />
                         </div>
                       </PreferenceRow>

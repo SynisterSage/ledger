@@ -14,6 +14,7 @@ import {
   X,
 } from 'lucide-react';
 import { ToastProvider } from './components/Common/ToastProvider';
+import { NotificationMonitor } from './components/Common/NotificationMonitor';
 import { type CSSProperties, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useAuthContext } from './context/AuthContext';
@@ -266,10 +267,10 @@ function AuthStatusScreen({
         className="relative z-10 flex min-h-[calc(100vh-1.5rem)] items-center justify-center px-8"
         style={noDragRegionStyle}
       >
-        <div className="flex w-full max-w-90 flex-col items-center text-center">
+        <div className="flex w-full max-w-136 flex-col items-center text-center">
           <img src="./logo-color.svg" alt="Ledger" className="mb-5 h-12 w-12" />
           <h2 className="text-[26px] font-semibold leading-tight text-gray-950">{title}</h2>
-          <p className="mt-2 max-w-xs text-sm leading-6 text-gray-500">{subtitle}</p>
+          <p className="mt-2 whitespace-nowrap text-sm leading-6 text-gray-500">{subtitle}</p>
           <div className="mt-6 flex items-center gap-2 text-gray-500">
             <Loader2 size={15} className="animate-spin" />
             <span className="text-xs font-medium">Loading</span>
@@ -3445,6 +3446,7 @@ function App() {
   return (
     <SearchProvider>
       <ToastProvider>
+        <NotificationMonitor />
         <AppShell />
         <SearchModal />
       </ToastProvider>

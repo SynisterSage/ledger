@@ -130,6 +130,16 @@ export const useApi = () => {
           method: 'PATCH',
           body: JSON.stringify(payload),
         }),
+      checkNotifications: () => request('/api/notifications/check'),
+      updateNotificationAction: (
+        notificationId: string,
+        action: 'open' | 'dismiss' | 'complete' | 'snooze',
+        payload?: { snooze_until?: string }
+      ) =>
+        request(`/api/notifications/${notificationId}/action`, {
+          method: 'POST',
+          body: JSON.stringify({ action, ...(payload ?? {}) }),
+        }),
 
       // Workspaces
       getWorkspaces: () => request('/api/workspaces'),

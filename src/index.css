@@ -72,13 +72,18 @@ body.has-modal-open #root > * {
 }
 
 .sidebar-glass-icon {
-  background: rgba(255, 255, 255, 0.82);
-  border: 1px solid rgba(255, 255, 255, 0.58);
+  background:
+    linear-gradient(
+      135deg,
+      rgba(255, 255, 255, var(--sidebar-glass-icon-alpha, 0.76)),
+      rgba(255, 255, 255, calc(var(--sidebar-glass-icon-alpha, 0.76) - 0.04))
+    );
+  border: 1px solid rgba(255, 255, 255, 0.46);
   box-shadow:
-    0 14px 38px rgba(17, 24, 39, 0.2),
-    inset 0 1px 0 rgba(255, 255, 255, 0.82);
-  -webkit-backdrop-filter: blur(26px) saturate(0.92);
-  backdrop-filter: blur(26px) saturate(0.92);
+    0 14px 38px rgba(17, 24, 39, 0.16),
+    inset 0 1px 0 rgba(255, 255, 255, 0.78);
+  -webkit-backdrop-filter: blur(24px) saturate(0.9);
+  backdrop-filter: blur(24px) saturate(0.9);
 }
 
 .platform-macos.sidebar-glass {

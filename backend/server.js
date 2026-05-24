@@ -947,6 +947,370 @@ const getOrCreateNotificationPreferences = async (userId) => {
   return data;
 };
 
+const notificationActionValues = new Set(['open', 'dismiss', 'complete', 'snooze']);
+
+const notificationScheduledBucket = (value) => {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return new Date().toISOString();
+  date.setSeconds(0, 0);
+  return date.toISOString();
+};
+
+const localDateAtTime = (dateLike, timeText, fallbackHour = 9) => {
+  const date = new Date(dateLike);
+  if (Number.isNaN(date.getTime())) return null;
+  const [hours, minutes] = String(timeText ?? '')
+    .split(':')
+    .map((part) => Number(part));
+  const safeHour = Number.isInteger(hours) ? hours : fallbackHour;
+  const safeMinute = Number.isInteger(minutes) ? minutes : 0;
+  date.setHours(safeHour, safeMinute, 0, 0);
+  return date;
+};
+
+const endOfLocalDay = (dateLike) => {
+  const date = new Date(dateLike);
+  if (Number.isNaN(date.getTime())) return null;
+  date.setHours(23, 59, 59, 999);
+  return date;
+};
+
+const startOfLocalDay = (dateLike) => {
+  const date = new Date(dateLike);
+  if (Number.isNaN(date.getTime())) return null;
+  date.setHours(0, 0, 0, 0);
+  return date;
+};
+
+const isSameDay = (left, right) => {
+  const a = new Date(left);
+  const b = new Date(right);
+  if (Number.isNaN(a.getTime()) || Number.isNaN(b.getTime())) return false;
+  return (
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
+  );
+};
+
+const buildNotificationEventPayload = ({
+  userId,
+  workspaceId,
+  sourceType,
+  sourceId,
+  notificationType,
+  scheduledFor,
+  metadata = {},
+}) => ({
+  user_id: userId,
+  workspace_id: workspaceId ?? null,
+  source_type: sourceType,
+  source_id: String(sourceId),
+  notification_type: notificationType,
+  scheduled_for: scheduledFor,
+  metadata,
+});
+
+const mapNotificationEventRow = (row, extras = {}) => ({
+  id: row.id,
+  userId: row.user_id,
+  workspaceId: row.workspace_id ?? null,
+  sourceType: row.source_type,
+  sourceId: row.source_id,
+  notificationType: row.notification_type,
+  scheduledFor: row.scheduled_for,
+  deliveredInAppAt: row.delivered_in_app_at ?? null,
+  deliveredDesktopAt: row.delivered_desktop_at ?? null,
+  dismissedAt: row.dismissed_at ?? null,
+  actionTaken: row.action_taken ?? null,
+  metadata: safeJson(row.metadata, {}) ?? {},
+  title: extras.title ?? null,
+  body: extras.body ?? null,
+  workspaceName: extras.workspaceName ?? null,
+  workspaceColor: extras.workspaceColor ?? null,
+  moduleKind: extras.moduleKind ?? null,
+  focusPayload: extras.focusPayload ?? null,
+  actions: extras.actions ?? [],
+});
+
+const getNotificationSourcePayload = async (userId, candidates) => {
+  const workspaceIds = Array.from(new Set(candidates.map((item) => item.workspace_id).filter(Boolean)));
+  const projectIds = Array.from(new Set(candidates.map((item) => item.project_id).filter(Boolean)));
+  const noteIds = Array.from(new Set(candidates.map((item) => item.note_id).filter(Boolean)));
+  const calendarIds = Array.from(new Set(candidates.map((item) => item.calendar_id).filter(Boolean)));
+
+  const [workspaceResult, projectResult, noteResult, calendarResult] = await Promise.all([
+    workspaceIds.length
+      ? supabase.from('workspaces').select('id, name, color').in('id', workspaceIds)
+      : { data: [] },
+    projectIds.length ? supabase.from('projects').select('id, name').in('id', projectIds) : { data: [] },
+    noteIds.length ? supabase.from('notes').select('id, title').in('id', noteIds) : { data: [] },
+    calendarIds.length
+      ? supabase.from('calendars').select('id, name, color').in('id', calendarIds)
+      : { data: [] },
+  ]);
+
+  if (workspaceResult.error) throw workspaceResult.error;
+  if (projectResult.error) throw projectResult.error;
+  if (noteResult.error) throw noteResult.error;
+  if (calendarResult.error) throw calendarResult.error;
+
+  const workspaceById = new Map((workspaceResult.data || []).map((workspace) => [workspace.id, workspace]));
+  const projectById = new Map((projectResult.data || []).map((project) => [project.id, project]));
+  const noteById = new Map((noteResult.data || []).map((note) => [note.id, note]));
+  const calendarById = new Map((calendarResult.data || []).map((calendar) => [calendar.id, calendar]));
+
+  return {
+    workspaceById,
+    projectById,
+    noteById,
+    calendarById,
+  };
+};
+
+const buildDueNotificationCandidates = async (userId, prefs) => {
+  const workspaceIds = Array.from(await getUserWorkspaceIds(userId));
+  if (!workspaceIds.length) return [];
+
+  const now = new Date();
+  const todayStart = startOfLocalDay(now);
+  const todayEnd = endOfLocalDay(now);
+  if (!todayStart || !todayEnd) return [];
+
+  const candidates = [];
+
+  if (prefs.remindersEnabled) {
+    const { data, error } = await withReminderTable((table) =>
+      supabase
+        .from(table)
+        .select(reminderSelectColumns)
+        .in('workspace_id', workspaceIds)
+        .eq('is_done', false)
+        .or('status.eq.active,status.eq.overdue')
+        .order('remind_at', { ascending: true })
+        .limit(500)
+    );
+    if (error) throw error;
+
+    for (const row of Array.isArray(data) ? data : []) {
+      const remindAt = new Date(row?.remind_at ?? '');
+      if (Number.isNaN(remindAt.getTime())) continue;
+      if (remindAt > now) continue;
+      if (row?.dismissed_at) continue;
+
+      candidates.push({
+        user_id: userId,
+        workspace_id: row.workspace_id ?? null,
+        source_type: 'reminder',
+        source_id: String(row.id),
+        notification_type: 'reminder_due',
+        scheduled_for: notificationScheduledBucket(row.remind_at),
+        metadata: {
+          reminder_id: row.id,
+          project_id: row.project_id ?? null,
+          note_id: row.note_id ?? null,
+          calendar_id: row.calendar_id ?? null,
+        },
+        title: row.title ?? 'Reminder due',
+        body: row.body ?? row.notes ?? null,
+        moduleKind: 'calendar',
+        focusPayload: row.calendar_id
+          ? { kind: 'calendar', focusContext: `focus-reminder:${row.id}` }
+          : { kind: 'calendar' },
+        actions: ['open', 'complete', 'snooze', 'dismiss'],
+        workspace_id_for_fetch: row.workspace_id ?? null,
+        project_id: row.project_id ?? null,
+        note_id: row.note_id ?? null,
+        calendar_id: row.calendar_id ?? null,
+      });
+    }
+  }
+
+  if (prefs.eventsEnabled) {
+    const leadMinutes = Number(prefs.defaultEventLeadMinutes ?? 10);
+    const startWindow = new Date(now.getTime() - Math.max(0, leadMinutes) * 60 * 1000);
+    const endWindow = new Date(now.getTime() + Math.max(0, leadMinutes) * 60 * 1000);
+    const { data, error } = await supabase
+      .from('events')
+      .select('id, workspace_id, title, start_at, end_at, calendar_id, color, status, project_id, note_id')
+      .in('workspace_id', workspaceIds)
+      .gte('start_at', startWindow.toISOString())
+      .lte('start_at', endWindow.toISOString())
+      .limit(250);
+
+    if (error) throw error;
+
+    for (const row of Array.isArray(data) ? data : []) {
+      if (String(row?.status ?? '').toLowerCase() === 'done') continue;
+      const startAt = new Date(row?.start_at ?? '');
+      if (Number.isNaN(startAt.getTime())) continue;
+      const scheduledFor = new Date(startAt.getTime() - leadMinutes * 60 * 1000);
+      if (scheduledFor > now) continue;
+
+      candidates.push({
+        user_id: userId,
+        workspace_id: row.workspace_id ?? null,
+        source_type: 'event',
+        source_id: String(row.id),
+        notification_type: 'event_starting',
+        scheduled_for: notificationScheduledBucket(scheduledFor.toISOString()),
+        metadata: {
+          event_id: row.id,
+          calendar_id: row.calendar_id ?? null,
+          project_id: row.project_id ?? null,
+          note_id: row.note_id ?? null,
+        },
+        title: row.title ?? 'Event starting',
+        body: row.start_at ? new Date(row.start_at).toLocaleString() : null,
+        moduleKind: 'calendar',
+        focusPayload: { kind: 'calendar', focusContext: `focus-event:${row.id}` },
+        actions: ['open', 'dismiss'],
+        workspace_id_for_fetch: row.workspace_id ?? null,
+        project_id: row.project_id ?? null,
+        note_id: row.note_id ?? null,
+        calendar_id: row.calendar_id ?? null,
+      });
+    }
+  }
+
+  if (prefs.tasksEnabled) {
+    const { data, error } = await supabase
+      .from('tasks')
+      .select(taskSelectColumns)
+      .in('workspace_id', workspaceIds)
+      .neq('status', 'completed')
+      .limit(500);
+    if (error) throw error;
+
+    for (const row of Array.isArray(data) ? data : []) {
+      if (!row?.due_date) continue;
+      const dueDate = new Date(`${String(row.due_date)}T00:00:00`);
+      if (Number.isNaN(dueDate.getTime())) continue;
+
+      let scheduledFor = null;
+      const dueTime = normalizeNullableText(row.due_time);
+      const timing = String(prefs.defaultTaskTiming ?? 'morning_of');
+      if (timing === 'none') continue;
+      if (timing === 'day_before') {
+        const dayBefore = new Date(dueDate);
+        dayBefore.setDate(dayBefore.getDate() - 1);
+        scheduledFor = localDateAtTime(dayBefore, '09:00');
+      } else if (timing === 'at_due_time' && dueTime) {
+        scheduledFor = localDateAtTime(dueDate, dueTime);
+      } else {
+        scheduledFor = localDateAtTime(dueDate, '09:00');
+      }
+
+      if (!scheduledFor || scheduledFor > now) continue;
+
+      const notificationType = isSameDay(dueDate, now) ? 'task_due' : 'overdue_item';
+      candidates.push({
+        user_id: userId,
+        workspace_id: row.workspace_id ?? null,
+        source_type: 'task',
+        source_id: String(row.id),
+        notification_type: notificationType,
+        scheduled_for: notificationScheduledBucket(
+          notificationType === 'overdue_item' ? todayStart.toISOString() : scheduledFor.toISOString()
+        ),
+        metadata: {
+          task_id: row.id,
+          project_id: row.project_id ?? null,
+        },
+        title: row.title ?? 'Task due',
+        body: row.due_date ? `Due ${row.due_date}${row.due_time ? ` · ${row.due_time}` : ''}` : null,
+        moduleKind: 'dashboard',
+        focusPayload: { kind: 'dashboard', focusTaskId: row.id },
+        actions: ['open', 'complete', 'dismiss'],
+        workspace_id_for_fetch: row.workspace_id ?? null,
+        project_id: row.project_id ?? null,
+      });
+    }
+  }
+
+  const projectLeadDays = Number(prefs.defaultProjectDeadlineLeadDays ?? 1);
+  if (prefs.projectDeadlinesEnabled && projectLeadDays >= 0) {
+    const { data, error } = await supabase
+      .from('projects')
+      .select(projectSelectColumns)
+      .in('workspace_id', workspaceIds)
+      .not('end_date', 'is', null)
+      .limit(250);
+    if (error) throw error;
+
+    for (const row of Array.isArray(data) ? data : []) {
+      if (!row?.end_date || isCompletedProjectStatus(row.status)) continue;
+      const dueDate = new Date(`${String(row.end_date)}T00:00:00`);
+      if (Number.isNaN(dueDate.getTime())) continue;
+
+      const leadDate = new Date(dueDate);
+      leadDate.setDate(leadDate.getDate() - projectLeadDays);
+      const scheduledFor = localDateAtTime(leadDate, '09:00');
+      if (!scheduledFor || scheduledFor > now) continue;
+
+      const notificationType = dueDate < todayStart ? 'overdue_item' : 'project_deadline';
+      candidates.push({
+        user_id: userId,
+        workspace_id: row.workspace_id ?? null,
+        source_type: 'project',
+        source_id: String(row.id),
+        notification_type: notificationType,
+        scheduled_for: notificationScheduledBucket(
+          notificationType === 'overdue_item' ? todayStart.toISOString() : scheduledFor.toISOString()
+        ),
+        metadata: {
+          project_id: row.id,
+        },
+        title: row.name ?? 'Project deadline',
+        body: row.end_date ? `Due ${row.end_date}` : null,
+        moduleKind: 'projects',
+        focusPayload: { kind: 'projects', focusProjectId: row.id },
+        actions: ['open', 'dismiss'],
+        workspace_id_for_fetch: row.workspace_id ?? null,
+        project_id: row.id ?? null,
+      });
+    }
+  }
+
+  if (prefs.inboxCapturesEnabled) {
+    const sinceIso = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString();
+    const { data, error } = await supabase
+      .from('inbox_items')
+      .select('id, workspace_id, title, body, source, source_url, status, created_at')
+      .in('workspace_id', workspaceIds)
+      .eq('status', 'unprocessed')
+      .gte('created_at', sinceIso)
+      .order('created_at', { ascending: false })
+      .limit(50);
+
+    if (error) throw error;
+
+    for (const row of Array.isArray(data) ? data : []) {
+      candidates.push({
+        user_id: userId,
+        workspace_id: row.workspace_id ?? null,
+        source_type: 'inbox',
+        source_id: String(row.id),
+        notification_type: 'inbox_capture',
+        scheduled_for: notificationScheduledBucket(row.created_at ?? now.toISOString()),
+        metadata: {
+          inbox_item_id: row.id,
+          source: row.source ?? null,
+          source_url: row.source_url ?? null,
+        },
+        title: row.title ?? 'Inbox capture',
+        body: row.body ?? row.source_url ?? null,
+        moduleKind: 'inbox',
+        focusPayload: { kind: 'inbox' },
+        actions: ['open', 'dismiss'],
+        workspace_id_for_fetch: row.workspace_id ?? null,
+      });
+    }
+  }
+
+  return candidates;
+};
+
 const roleAtLeast = (role, minimumRole) => {
   const currentRank = workspaceRoleRank[String(role ?? '').toLowerCase()] ?? 0;
   const minimumRank = workspaceRoleRank[String(minimumRole ?? '').toLowerCase()] ?? 0;
@@ -3002,6 +3366,246 @@ app.patch(
     }
   }
 );
+
+app.post('/api/notifications/check', authMiddleware, rateLimit('read'), async (req, res) => {
+  try {
+    const prefsRow = await getOrCreateNotificationPreferences(req.authUser.id);
+    const prefs = normalizeNotificationPreferences(mapNotificationPreferencesRow(prefsRow));
+    const candidates = await buildDueNotificationCandidates(req.authUser.id, prefs);
+
+    if (!candidates.length) {
+      return res.json([]);
+    }
+
+    const payload = candidates.map((candidate) =>
+      buildNotificationEventPayload({
+        userId: candidate.user_id,
+        workspaceId: candidate.workspace_id,
+        sourceType: candidate.source_type,
+        sourceId: candidate.source_id,
+        notificationType: candidate.notification_type,
+        scheduledFor: candidate.scheduled_for,
+        metadata: candidate.metadata,
+      })
+    );
+
+    const { data: insertedRows, error: insertError } = await supabase
+      .from('notification_events')
+      .upsert(payload, {
+        onConflict: 'user_id,source_type,source_id,notification_type,scheduled_for',
+      })
+      .select(
+        'id, user_id, workspace_id, source_type, source_id, notification_type, scheduled_for, delivered_in_app_at, delivered_desktop_at, dismissed_at, action_taken, metadata'
+      );
+
+    if (insertError) throw insertError;
+
+    const eventRows = Array.isArray(insertedRows) ? insertedRows : [];
+    const eventIds = eventRows.map((row) => row.id).filter(Boolean);
+
+    if (!eventIds.length) {
+      return res.json([]);
+    }
+
+    const nowIso = new Date().toISOString();
+    const { data: workspaceData, error: workspaceError } = await supabase
+      .from('workspaces')
+      .select('id, name, color')
+      .in(
+        'id',
+        Array.from(new Set(eventRows.map((row) => row.workspace_id).filter(Boolean)))
+      );
+    if (workspaceError) throw workspaceError;
+    const workspaceById = new Map((workspaceData || []).map((workspace) => [workspace.id, workspace]));
+
+    const candidateByEventKey = new Map(
+      candidates.map((candidate) => [
+        [
+          candidate.source_type,
+          candidate.source_id,
+          candidate.notification_type,
+          candidate.scheduled_for,
+        ].join('|'),
+        candidate,
+      ])
+    );
+
+    const { data: claimedRows, error: claimError } = await supabase
+      .from('notification_events')
+      .update({ delivered_in_app_at: nowIso, updated_at: nowIso })
+      .in('id', eventIds)
+      .is('delivered_in_app_at', null)
+      .is('dismissed_at', null)
+      .select(
+        'id, user_id, workspace_id, source_type, source_id, notification_type, scheduled_for, delivered_in_app_at, delivered_desktop_at, dismissed_at, action_taken, metadata'
+      );
+
+    if (claimError) throw claimError;
+
+    if (!claimedRows?.length) {
+      return res.json([]);
+    }
+
+    res.json(
+      claimedRows.map((row) => {
+        const candidate = candidateByEventKey.get(
+          [row.source_type, row.source_id, row.notification_type, row.scheduled_for].join('|')
+        );
+        const workspace = workspaceById.get(row.workspace_id ?? '') ?? null;
+        return mapNotificationEventRow(row, {
+          title: candidate?.title ?? null,
+          body: candidate?.body ?? null,
+          workspaceName: workspace?.name ?? null,
+          workspaceColor: workspace?.color ?? null,
+          moduleKind: candidate?.moduleKind ?? null,
+          focusPayload: candidate?.focusPayload ?? null,
+          actions: candidate?.actions ?? [],
+        });
+      })
+    );
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/notifications/:id/action', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const action = String(req.body?.action ?? '').trim().toLowerCase();
+    if (!notificationActionValues.has(action)) {
+      return res.status(400).json({ error: 'Invalid notification action' });
+    }
+
+    const { data: existing, error: existingError } = await supabase
+      .from('notification_events')
+      .select(
+        'id, user_id, workspace_id, source_type, source_id, notification_type, scheduled_for, dismissed_at, metadata'
+      )
+      .eq('id', req.params.id)
+      .eq('user_id', req.authUser.id)
+      .maybeSingle();
+
+    if (existingError) throw existingError;
+    if (!existing?.id) {
+      return res.status(404).json({ error: 'Notification event not found' });
+    }
+
+    const workspaceIds = Array.from(await getUserWorkspaceIds(req.authUser.id));
+    const nowIso = new Date().toISOString();
+    let sourceUpdateResult = null;
+
+    if (existing.source_type === 'reminder') {
+      const prefsRow = await getOrCreateNotificationPreferences(req.authUser.id);
+      const prefs = normalizeNotificationPreferences(mapNotificationPreferencesRow(prefsRow));
+      const snoozeUntil = parseReminderTimestamp(
+        req.body?.snooze_until ??
+          (action === 'snooze'
+            ? new Date(Date.now() + prefs.defaultSnoozeMinutes * 60 * 1000).toISOString()
+            : null),
+        'snooze_until'
+      );
+
+      const { data, error } = await withReminderTable((table) =>
+        supabase
+          .from(table)
+          .select(reminderSelectColumns)
+          .eq('id', existing.source_id)
+          .in('workspace_id', workspaceIds)
+          .maybeSingle()
+      );
+      if (error) throw error;
+
+      if (data?.id) {
+        const updatePayload = { updated_at: nowIso };
+        if (action === 'complete') {
+          updatePayload.status = 'completed';
+          updatePayload.completed_at = nowIso;
+          updatePayload.dismissed_at = null;
+          updatePayload.snoozed_until = null;
+          updatePayload.remind_at = data.remind_at ?? nowIso;
+        } else if (action === 'dismiss') {
+          updatePayload.status = 'dismissed';
+          updatePayload.dismissed_at = nowIso;
+          updatePayload.completed_at = null;
+          updatePayload.snoozed_until = null;
+        } else if (action === 'snooze' && snoozeUntil) {
+          updatePayload.status = 'active';
+          updatePayload.dismissed_at = null;
+          updatePayload.completed_at = null;
+          updatePayload.snoozed_until = snoozeUntil;
+          updatePayload.remind_at = snoozeUntil;
+        }
+
+        const { data: reminderUpdated, error: reminderUpdateError } = await supabase
+          .from(table)
+          .update(updatePayload)
+          .eq('id', data.id)
+          .select(reminderSelectColumns)
+          .single();
+        if (reminderUpdateError) throw reminderUpdateError;
+        sourceUpdateResult = reminderUpdated ?? null;
+      }
+    } else if (existing.source_type === 'task' && action === 'complete') {
+      const { data, error } = await supabase
+        .from('tasks')
+        .select('id')
+        .eq('id', existing.source_id)
+        .in('workspace_id', workspaceIds)
+        .maybeSingle();
+      if (error) throw error;
+      if (data?.id) {
+        const { data: taskUpdated, error: taskUpdateError } = await supabase
+          .from('tasks')
+          .update({ status: 'completed', completed_at: nowIso, updated_at: nowIso })
+          .eq('id', data.id)
+          .select(taskSelectColumns)
+          .single();
+        if (taskUpdateError) throw taskUpdateError;
+        sourceUpdateResult = taskUpdated ?? null;
+      }
+    } else if (existing.source_type === 'event' && action === 'complete') {
+      const { data, error } = await supabase
+        .from('events')
+        .select('id')
+        .eq('id', existing.source_id)
+        .in('workspace_id', workspaceIds)
+        .maybeSingle();
+      if (error) throw error;
+      if (data?.id) {
+        const { data: eventUpdated, error: eventUpdateError } = await supabase
+          .from('events')
+          .update({ status: 'done', updated_at: nowIso, completed_at: nowIso })
+          .eq('id', data.id)
+          .select('id, workspace_id, title, start_at, end_at, calendar_id, color, status, project_id, note_id')
+          .single();
+        if (eventUpdateError) throw eventUpdateError;
+        sourceUpdateResult = eventUpdated ?? null;
+      }
+    }
+
+    const update = {
+      action_taken: action,
+      updated_at: new Date().toISOString(),
+    };
+    if (action === 'dismiss') {
+      update.dismissed_at = new Date().toISOString();
+    }
+
+    const { data, error } = await supabase
+      .from('notification_events')
+      .update(update)
+      .eq('id', existing.id)
+      .eq('user_id', req.authUser.id)
+      .select(
+        'id, user_id, workspace_id, source_type, source_id, notification_type, scheduled_for, delivered_in_app_at, delivered_desktop_at, dismissed_at, action_taken, metadata'
+      )
+      .single();
+
+    if (error) throw error;
+    res.json({ ok: true, notification: data, source: sourceUpdateResult });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
 
 app.get('/api/workspaces', authMiddleware, rateLimit('read'), async (req, res) => {
   try {

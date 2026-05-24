@@ -395,6 +395,7 @@ export const SidebarContainer = () => {
         : `rgba(248, 249, 251, ${Math.max(0.7, Math.min(0.95, opacity))})`,
     ['--sidebar-glass-white-alpha' as string]: Math.min(0.97, Math.max(0.9, opacity + 0.08)),
     ['--sidebar-glass-cream-alpha' as string]: Math.min(0.92, Math.max(0.84, opacity + 0.02)),
+    ['--sidebar-glass-icon-alpha' as string]: Math.min(0.82, Math.max(0.72, opacity - 0.06)),
     clipPath: `inset(0 round ${shellClipRadius})`,
     contain: 'paint',
     transitionProperty:
