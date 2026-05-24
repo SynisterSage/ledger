@@ -227,7 +227,14 @@ export const NotificationMonitor: React.FC = () => {
     const handleRefreshNotifications = () => {
       void runPoll();
     };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        void runPoll();
+      }
+    };
     window.addEventListener('ledger:notifications-refresh', handleRefreshNotifications);
+    window.addEventListener('focus', handleRefreshNotifications);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
     return () => {
       cancelled = true;
       if (pollingRef.current !== null) {
@@ -235,8 +242,82 @@ export const NotificationMonitor: React.FC = () => {
         pollingRef.current = null;
       }
       window.removeEventListener('ledger:notifications-refresh', handleRefreshNotifications);
+      window.removeEventListener('focus', handleRefreshNotifications);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, [api, prefs, session?.access_token, toast, user]);
+
+  useEffect(() => {
+    const handleBatch = (_event: unknown, notifications?: NotificationItem[]) => {
+      if (!Array.isArray(notifications) || !notifications.length) return;
+
+      notifications.forEach((item) => {
+        const snoozeMinutes = 10;
+        toast.show(item.title ?? 'Ledger notification', {
+          detail: item.body ?? undefined,
+          variant: 'info',
+          duration: item.actions?.length ? 8000 : 2500,
+          actions: (item.actions ?? []).map((action) => {
+            if (action === 'open') {
+              return {
+                label: 'Open',
+                onClick: async () => {
+                  await api.updateNotificationAction(item.id, 'open');
+                  const { kind, focus } = buildModuleLaunch(item);
+                  await window.desktopWindow?.openModule(kind, focus as any);
+                },
+              };
+            }
+
+            if (action === 'complete') {
+              return {
+                label: 'Complete',
+                onClick: async () => {
+                  await api.updateNotificationAction(item.id, 'complete');
+                },
+              };
+            }
+
+            if (action === 'snooze') {
+              return {
+                label: 'Snooze',
+                onClick: async () => {
+                  const until = new Date(Date.now() + snoozeMinutes * 60_000).toISOString();
+                  await api.updateNotificationAction(item.id, 'snooze', {
+                    snooze_until: until,
+                  });
+                },
+              };
+            }
+
+            return {
+              label: 'Dismiss',
+              variant: 'destructive' as const,
+              onClick: async () => {
+                await api.updateNotificationAction(item.id, 'dismiss');
+              },
+            };
+          }),
+        });
+      });
+    };
+
+    const handleSummary = (_event: unknown, payload?: { activeCount?: number }) => {
+      window.dispatchEvent(
+        new CustomEvent('ledger:notifications-summary', {
+          detail: { activeCount: Number(payload?.activeCount ?? 0) },
+        })
+      );
+    };
+
+    window.ipcRenderer?.on('ledger:notifications-batch', handleBatch);
+    window.ipcRenderer?.on('ledger:notifications-summary', handleSummary);
+
+    return () => {
+      window.ipcRenderer?.off('ledger:notifications-batch', handleBatch);
+      window.ipcRenderer?.off('ledger:notifications-summary', handleSummary);
+    };
+  }, [api, toast]);
 
   return null;
 };

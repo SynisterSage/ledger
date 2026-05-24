@@ -225,7 +225,6 @@ export const NotificationCenterWindow: React.FC = () => {
               className="inline-flex h-8 items-center gap-1.5 rounded-full border border-gray-200 bg-white px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-50"
             >
               <RotateCcw size={12} />
-              Refresh
             </button>
             <button
               type="button"
@@ -233,7 +232,6 @@ export const NotificationCenterWindow: React.FC = () => {
               className="inline-flex h-8 items-center gap-1.5 rounded-full border border-gray-200 bg-white px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-50"
             >
               <Settings size={12} />
-              Settings
             </button>
           </>
         }

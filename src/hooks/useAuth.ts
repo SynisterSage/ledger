@@ -46,6 +46,13 @@ export const useAuth = (): UseAuthReturn => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    window.ipcRenderer?.send('notifications:set-session', {
+      accessToken: session?.access_token ?? null,
+    });
+  }, [session?.access_token]);
+
   // Initialize auth state
   useEffect(() => {
     let isMounted = true;

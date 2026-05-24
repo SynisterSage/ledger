@@ -1128,13 +1128,12 @@ const buildDueNotificationCandidates = async (userId, prefs) => {
 
   if (prefs.eventsEnabled) {
     const leadMinutes = Number(prefs.defaultEventLeadMinutes ?? 10);
-    const startWindow = new Date(now.getTime() - Math.max(0, leadMinutes) * 60 * 1000);
     const endWindow = new Date(now.getTime() + Math.max(0, leadMinutes) * 60 * 1000);
     const { data, error } = await supabase
       .from('events')
       .select('id, workspace_id, title, start_at, end_at, calendar_id, color, status, project_id, note_id')
       .in('workspace_id', workspaceIds)
-      .gte('start_at', startWindow.toISOString())
+      .gte('start_at', todayStart.toISOString())
       .lte('start_at', endWindow.toISOString())
       .limit(250);
 

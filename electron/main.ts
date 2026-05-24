@@ -1,6 +1,7 @@
 import {
   app,
   BrowserWindow,
+  Notification,
   ipcMain,
   screen,
   shell,
@@ -635,6 +636,153 @@ const NOTIFICATION_CENTER_MIN_HEIGHT = 600;
 const QUICK_CAPTURE_WIDTH = 400;
 const QUICK_CAPTURE_HEIGHT = 320;
 const MODULE_GAP = 12;
+const LEDGER_API_URL = process.env.VITE_API_URL?.trim() || 'https://api.ledgerworkspace.com';
+const NOTIFICATION_SCHEDULER_INTERVAL_MS = 15_000;
+
+type NotificationSchedulerItem = {
+  id: string;
+  sourceType: 'reminder' | 'event' | 'task' | 'project' | 'inbox';
+  sourceId: string;
+  notificationType: string;
+  title: string | null;
+  body: string | null;
+  context: string | null;
+  workspaceName: string | null;
+  workspaceColor: string | null;
+  moduleKind: ModuleWindowKind | null;
+  focusPayload: Record<string, unknown> | null;
+  actions: Array<'open' | 'dismiss' | 'complete' | 'snooze'>;
+  scheduledFor: string;
+  status: 'active' | 'earlier';
+};
+
+type NotificationPreferencesPayload = {
+  desktopEnabled?: boolean;
+  inAppEnabled?: boolean;
+};
+
+let notificationSchedulerTimer: NodeJS.Timeout | null = null;
+let notificationSchedulerInFlight = false;
+let notificationAccessToken: string | null = null;
+
+const getNotificationWindows = () =>
+  BrowserWindow.getAllWindows().filter((win) => !win.isDestroyed());
+
+const broadcastNotificationSummary = (activeCount: number) => {
+  for (const win of getNotificationWindows()) {
+    win.webContents.send('ledger:notifications-summary', { activeCount });
+  }
+};
+
+const broadcastNotificationBatch = (items: NotificationSchedulerItem[]) => {
+  for (const win of getNotificationWindows()) {
+    win.webContents.send('ledger:notifications-batch', items);
+  }
+};
+
+const launchNotificationTarget = (item: NotificationSchedulerItem) => {
+  const focus = item.focusPayload ?? {};
+  const kind = item.moduleKind ?? 'dashboard';
+  openModuleWindow(
+    kind,
+    typeof focus.focusDate === 'string' ? focus.focusDate : null,
+    typeof focus.focusProjectId === 'string' ? focus.focusProjectId : null,
+    typeof focus.focusNoteId === 'string' ? focus.focusNoteId : null,
+    typeof focus.focusTaskId === 'string' ? focus.focusTaskId : null,
+    typeof focus.focusContext === 'string' ? focus.focusContext : null
+  );
+};
+
+const deliverDesktopNotification = (item: NotificationSchedulerItem) => {
+  try {
+    if (!Notification.isSupported()) return;
+    const notification = new Notification({
+      title: item.title ?? 'Ledger notification',
+      body: item.body ?? '',
+      silent: true,
+    });
+    notification.on('click', () => {
+      launchNotificationTarget(item);
+    });
+    notification.show();
+  } catch {
+    // Best effort.
+  }
+};
+
+const fetchLedgerApi = async <T,>(
+  endpoint: string,
+  token: string,
+  options: RequestInit = {}
+): Promise<T> => {
+  const response = await fetch(`${LEDGER_API_URL}${endpoint}`, {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(options.headers as Record<string, string> | undefined),
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.error || `Request failed: ${response.status}`);
+  }
+
+  return response.json() as Promise<T>;
+};
+
+const runNotificationScheduler = async () => {
+  if (notificationSchedulerInFlight || !notificationAccessToken) return;
+  notificationSchedulerInFlight = true;
+
+  try {
+    const prefs = await fetchLedgerApi<NotificationPreferencesPayload>(
+      '/api/notifications/preferences',
+      notificationAccessToken
+    );
+
+    const shouldDeliverDesktop = Boolean(prefs.desktopEnabled);
+    const shouldDeliverInApp = Boolean(prefs.inAppEnabled);
+    if (!shouldDeliverDesktop && !shouldDeliverInApp) {
+      const summary = await fetchLedgerApi<{ counts?: { active?: number } }>(
+        '/api/notifications/summary',
+        notificationAccessToken
+      );
+      broadcastNotificationSummary(Number(summary?.counts?.active ?? 0));
+      return;
+    }
+
+    const notifications = await fetchLedgerApi<NotificationSchedulerItem[]>(
+      '/api/notifications/check',
+      notificationAccessToken
+    );
+
+    if (Array.isArray(notifications) && notifications.length) {
+      if (shouldDeliverDesktop) {
+        notifications.forEach((item) => deliverDesktopNotification(item));
+      }
+      if (shouldDeliverInApp) {
+        broadcastNotificationBatch(notifications);
+      }
+    }
+
+    const summary = await fetchLedgerApi<{ counts?: { active?: number } }>(
+      '/api/notifications/summary',
+      notificationAccessToken
+    );
+    broadcastNotificationSummary(Number(summary?.counts?.active ?? 0));
+  } catch (error) {
+    console.warn('[electron] Notification scheduler failed', error);
+  } finally {
+    notificationSchedulerInFlight = false;
+  }
+};
+
+const syncNotificationSession = (accessToken: string | null) => {
+  notificationAccessToken = accessToken && accessToken.trim() ? accessToken.trim() : null;
+  void runNotificationScheduler();
+};
 
 const broadcastCalendarItemsUpdated = () => {
   const targets = [sidebarWin, moduleWins.get('calendar'), moduleWins.get('dashboard')];
@@ -3090,9 +3238,16 @@ app.whenReady().then(() => {
   registerLedgerProtocol();
   createSidebarWindow();
   processPendingLedgerProtocolUrl();
+  ipcMain.on('notifications:set-session', (_event, payload?: { accessToken?: string | null }) => {
+    syncNotificationSession(payload?.accessToken ?? null);
+  });
 
   // Setup Touch Bar for macOS
   setTimeout(() => syncTouchBar(), 500);
+
+  notificationSchedulerTimer = setInterval(() => {
+    void runNotificationScheduler();
+  }, NOTIFICATION_SCHEDULER_INTERVAL_MS);
 
   const toggleSidebarShortcut = process.platform === 'darwin' ? 'Cmd+Shift+B' : 'Ctrl+Shift+B';
   const registered = globalShortcut.register(toggleSidebarShortcut, () => {
@@ -3117,5 +3272,12 @@ app.whenReady().then(() => {
 
   if (!allWindowsRegistered) {
     console.warn(`[electron] Failed to register all windows shortcut: ${toggleAllWindowsShortcut}`);
+  }
+});
+
+app.on('before-quit', () => {
+  if (notificationSchedulerTimer !== null) {
+    clearInterval(notificationSchedulerTimer);
+    notificationSchedulerTimer = null;
   }
 });
