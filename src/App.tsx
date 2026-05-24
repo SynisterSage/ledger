@@ -623,16 +623,19 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
   const [todayTasks, setTodayTasks] = useState<
     Array<{
       id: string;
+      kind?: 'task' | 'reminder';
       client_id?: string | null;
       title: string;
       status: string;
       due_date?: string | null;
       due_time?: string | null;
+      remind_at?: string | null;
       project_id?: string | null;
       project_name?: string | null;
       workspace_id?: string | null;
       workspace_name?: string | null;
       workspace_color?: string | null;
+      calendar_name?: string | null;
       assigned_to?: string | null;
       is_today_focus?: boolean;
       show_in_today?: boolean;
@@ -898,9 +901,22 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
           todayData.status === 'fulfilled' &&
           Array.isArray((todayData.value as { active?: unknown[] } | null)?.active)
             ? (todayData.value as { active: Array<(typeof todayTasks)[number]> }).active
-          : [];
+            : [];
+        const activeReminders =
+          todayData.status === 'fulfilled' &&
+          Array.isArray((todayData.value as { reminders?: unknown[] } | null)?.reminders)
+            ? (todayData.value as { reminders: Array<(typeof todayTasks)[number]> }).reminders
+            : [];
 
-        setTodayTasks(activeToday);
+        setTodayTasks([
+          ...activeToday.map((item) => ({ ...item, kind: 'task' as const })),
+          ...activeReminders.map((item) => ({
+            ...item,
+            kind: 'reminder' as const,
+            is_today_focus: false,
+            show_in_today: true,
+          })),
+        ]);
 
         const normalizedNotes =
           noteData.status === 'fulfilled'
@@ -1196,6 +1212,10 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
 
   const focusTasks = todayTasks.filter((task) => task.is_today_focus);
   const activeTodayTasks = todayTasks.filter((task) => !task.is_today_focus);
+  const reminderFocusTasks = todayTasks.filter(
+    (task) => task.kind === 'reminder' && !task.is_today_focus
+  );
+  const focusTasksForDisplay = focusTasks.length > 0 ? focusTasks : reminderFocusTasks.slice(0, 1);
   const recentNotes = notes;
   const firstName =
     (user?.user_metadata?.full_name as string | undefined)?.trim()?.split(' ')[0] ||
@@ -1208,7 +1228,7 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
   });
 
   const summaryItems = [
-    { label: 'focus', value: focusTasks.length, accent: true },
+    { label: 'focus', value: focusTasksForDisplay.length, accent: true },
     { label: 'tasks', value: activeTodayTasks.length },
     { label: 'notifications', value: notificationCount },
     { label: 'upcoming', value: upcoming.length },
@@ -1240,7 +1260,39 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
           }
         ).active
       : [];
-    setTodayTasks(active);
+    const reminders = Array.isArray((data as { reminders?: unknown[] } | null)?.reminders)
+      ? (
+          data as {
+            reminders: Array<{
+              id: string;
+              title: string;
+              status: string;
+              remind_at?: string | null;
+              project_id?: string | null;
+              project_name?: string | null;
+              workspace_id?: string | null;
+              workspace_name?: string | null;
+              workspace_color?: string | null;
+              calendar_name?: string | null;
+              assigned_to?: string | null;
+              is_today_focus?: boolean;
+              show_in_today?: boolean;
+              completed_at?: string | null;
+              created_at?: string | null;
+              updated_at?: string | null;
+            }>;
+          }
+        ).reminders
+      : [];
+    setTodayTasks([
+      ...active.map((item) => ({ ...item, kind: 'task' as const })),
+      ...reminders.map((item) => ({
+        ...item,
+        kind: 'reminder' as const,
+        is_today_focus: false,
+        show_in_today: true,
+      })),
+    ]);
   };
 
   useEffect(() => {
@@ -1905,11 +1957,48 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
                 ) : (
                   <>
                     <div className="border-y border-gray-200 py-10">
-                      {focusTasks.length === 0 ? (
+                      {focusTasksForDisplay.length === 0 ? (
                         <p className="text-sm font-light italic text-[#64748B]">No focus set yet.</p>
                       ) : (
                         <div className="space-y-4">
-                          {focusTasks.map((task, index) => {
+                          {focusTasksForDisplay.map((task, index) => {
+                            if (task.kind === 'reminder') {
+                              const reminderTime = task.remind_at
+                                ? new Date(task.remind_at).toLocaleTimeString([], {
+                                    hour: 'numeric',
+                                    minute: '2-digit',
+                                  })
+                                : 'Today';
+
+                              return (
+                                <div key={task.id} className="group flex items-start gap-3">
+                                  <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-[#ffd9d0] bg-[#FFF7F4] text-[#FF5F40]">
+                                    <Bell size={12} />
+                                  </div>
+                                  <div className="min-w-0 flex-1">
+                                    <p className="text-[13px] font-medium leading-5 text-[#111827]">
+                                      {task.title}
+                                    </p>
+                                    <p className="mt-0.5 text-[11px] leading-4 text-[#64748B]">
+                                      Reminder{task.calendar_name ? ` · ${task.calendar_name}` : ''}
+                                      {task.project_name ? ` · ${task.project_name}` : ''}
+                                      {reminderTime ? ` · ${reminderTime}` : ''}
+                                    </p>
+                                  </div>
+                                  <div className="flex items-center gap-2 opacity-100 transition sm:opacity-0 sm:group-hover:opacity-100">
+                                    <button
+                                      type="button"
+                                      onClick={() => openModule('calendar')}
+                                      className="text-[#64748B] transition hover:text-[#111827]"
+                                      title="Open calendar"
+                                    >
+                                      <CalendarDays size={14} />
+                                    </button>
+                                  </div>
+                                </div>
+                              );
+                            }
+
                             const expiryLabel = formatExpiryCounter(task);
                             return (
                               <div key={task.id} className="group flex items-start gap-3">

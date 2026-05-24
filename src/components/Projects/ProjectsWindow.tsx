@@ -1,10 +1,12 @@
 import {
+  Bell,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
   Clock3,
   FileText,
   Folder,
+  Inbox,
   MoreHorizontal,
   Plus,
   Search,
@@ -22,7 +24,7 @@ import {
 } from '../../config/modulePaneSizes';
 import { useApi } from '../../hooks/useApi';
 import { useWorkspaceContext } from '../../context/WorkspaceContext';
-import { ModuleWindowHeader } from '../Common/ModuleWindowHeader';
+import { ModuleHeaderStripAction, ModuleWindowHeader } from '../Common/ModuleWindowHeader';
 import { CloseGuardModal } from '../Common/CloseGuardModal';
 import { SkeletonProjectCard, SkeletonTaskItem } from '../Common/Skeleton';
 import { useViewportWidth } from '../../hooks/useViewportWidth';
@@ -237,6 +239,8 @@ export const ProjectsWindow = () => {
   const [isLoadingTasks, setIsLoadingTasks] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [taskError, setTaskError] = useState<string | null>(null);
+  const [inboxCount, setInboxCount] = useState(0);
+  const [notificationCount, setNotificationCount] = useState(0);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<ProjectStatusFilter>('all');
   const [leftPaneWidth, setLeftPaneWidth] = useState(() =>
@@ -937,6 +941,96 @@ export const ProjectsWindow = () => {
   }, [loadTasks]);
 
   useEffect(() => {
+    if (!user) {
+      setInboxCount(0);
+      return;
+    }
+
+    let cancelled = false;
+    const loadInboxCount = async () => {
+      try {
+        const payload = (await api.getInboxCount()) as { count?: number };
+        if (!cancelled) {
+          setInboxCount(Math.max(0, Number(payload?.count ?? 0)));
+        }
+      } catch {
+        if (!cancelled) setInboxCount(0);
+      }
+    };
+
+    void loadInboxCount();
+
+    const handleRefreshInboxCount = () => {
+      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
+      void loadInboxCount();
+    };
+
+    const handleInboxItemsUpdated = (_event: unknown, payload?: { delta?: number }) => {
+      if (typeof payload?.delta === 'number' && Number.isFinite(payload.delta)) {
+        setInboxCount((current) => Math.max(0, current + payload.delta!));
+        return;
+      }
+
+      void loadInboxCount();
+    };
+
+    window.ipcRenderer?.on('inbox:items-updated', handleInboxItemsUpdated);
+    window.addEventListener('focus', handleRefreshInboxCount);
+    document.addEventListener('visibilitychange', handleRefreshInboxCount);
+
+    const timer = window.setInterval(() => {
+      void loadInboxCount();
+    }, 10_000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+      window.ipcRenderer?.off('inbox:items-updated', handleInboxItemsUpdated);
+      window.removeEventListener('focus', handleRefreshInboxCount);
+      document.removeEventListener('visibilitychange', handleRefreshInboxCount);
+    };
+  }, [api, user]);
+
+  useEffect(() => {
+    if (!user) {
+      setNotificationCount(0);
+      return;
+    }
+
+    let cancelled = false;
+    const loadNotificationCount = async () => {
+      try {
+        const payload = (await api.getNotificationCenterSummary()) as {
+          counts?: { active?: number };
+        };
+        if (!cancelled) {
+          setNotificationCount(Number(payload?.counts?.active ?? 0));
+        }
+      } catch {
+        if (!cancelled) setNotificationCount(0);
+      }
+    };
+
+    const handleNotificationsSummary = (event: Event) => {
+      const detail = (event as CustomEvent<{ activeCount?: number }>).detail;
+      setNotificationCount(Number(detail?.activeCount ?? 0));
+    };
+
+    void loadNotificationCount();
+    window.addEventListener('ledger:notifications-summary', handleNotificationsSummary as EventListener);
+
+    const timer = window.setInterval(() => {
+      void loadNotificationCount();
+    }, 10_000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+      window.removeEventListener('ledger:notifications-summary', handleNotificationsSummary as EventListener);
+    };
+  }, [api, user]);
+
+  useEffect(() => {
     if (!selectedProjectId) {
       setLinkedNotes([]);
       setIsLoadingLinkedNotes(false);
@@ -1257,6 +1351,24 @@ export const ProjectsWindow = () => {
           void window.desktopWindow?.toggleModuleFullscreen('projects');
         }}
         onClose={attemptCloseProjects}
+        stripActions={
+          <>
+            <ModuleHeaderStripAction
+              icon={<Inbox size={12} />}
+              count={inboxCount}
+              onClick={() => window.desktopWindow?.toggleModule('inbox')}
+              title="Open inbox"
+              ariaLabel="Open inbox"
+            />
+            <ModuleHeaderStripAction
+              icon={<Bell size={12} />}
+              count={notificationCount}
+              onClick={() => window.desktopWindow?.openModule('notifications')}
+              title="Open notifications center"
+              ariaLabel="Open notifications center"
+            />
+          </>
+        }
         actions={
           <div className="flex items-center gap-2">
             <button

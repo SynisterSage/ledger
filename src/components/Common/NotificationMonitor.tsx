@@ -220,16 +220,21 @@ export const NotificationMonitor: React.FC = () => {
       void runPoll();
       pollingRef.current = window.setInterval(() => {
         void runPoll();
-      }, 45_000);
+      }, 15_000);
     };
 
     schedule();
+    const handleRefreshNotifications = () => {
+      void runPoll();
+    };
+    window.addEventListener('ledger:notifications-refresh', handleRefreshNotifications);
     return () => {
       cancelled = true;
       if (pollingRef.current !== null) {
         window.clearInterval(pollingRef.current);
         pollingRef.current = null;
       }
+      window.removeEventListener('ledger:notifications-refresh', handleRefreshNotifications);
     };
   }, [api, prefs, session?.access_token, toast, user]);
 

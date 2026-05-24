@@ -15,6 +15,7 @@ import {
   Loader2,
   Eye,
   EyeOff,
+  Inbox,
 } from 'lucide-react';
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
@@ -28,7 +29,7 @@ import {
 } from '../../config/modulePaneSizes';
 import { useWorkspaceContext } from '../../context/WorkspaceContext';
 import { useApi } from '../../hooks/useApi';
-import { ModuleWindowHeader } from '../Common/ModuleWindowHeader';
+import { ModuleHeaderStripAction, ModuleWindowHeader } from '../Common/ModuleWindowHeader';
 import { CloseGuardModal } from '../Common/CloseGuardModal';
 import { useViewportWidth } from '../../hooks/useViewportWidth';
 
@@ -694,6 +695,8 @@ export const CalendarWindow = () => {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [hasLoadedData, setHasLoadedData] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [inboxCount, setInboxCount] = useState(0);
+  const [notificationCount, setNotificationCount] = useState(0);
 
   const [isComposerOpen, setIsComposerOpen] = useState(false);
   const [newEventTitle, setNewEventTitle] = useState('');
@@ -836,6 +839,96 @@ export const CalendarWindow = () => {
     window.addEventListener('keydown', onHideSidePanelsShortcut);
     return () => window.removeEventListener('keydown', onHideSidePanelsShortcut);
   }, [areSidePanelsCollapsed]);
+
+  useEffect(() => {
+    if (!user) {
+      setInboxCount(0);
+      return;
+    }
+
+    let cancelled = false;
+    const loadInboxCount = async () => {
+      try {
+        const payload = (await api.getInboxCount()) as { count?: number };
+        if (!cancelled) {
+          setInboxCount(Math.max(0, Number(payload?.count ?? 0)));
+        }
+      } catch {
+        if (!cancelled) setInboxCount(0);
+      }
+    };
+
+    void loadInboxCount();
+
+    const handleRefreshInboxCount = () => {
+      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
+      void loadInboxCount();
+    };
+
+    const handleInboxItemsUpdated = (_event: unknown, payload?: { delta?: number }) => {
+      if (typeof payload?.delta === 'number' && Number.isFinite(payload.delta)) {
+        setInboxCount((current) => Math.max(0, current + payload.delta!));
+        return;
+      }
+
+      void loadInboxCount();
+    };
+
+    window.ipcRenderer?.on('inbox:items-updated', handleInboxItemsUpdated);
+    window.addEventListener('focus', handleRefreshInboxCount);
+    document.addEventListener('visibilitychange', handleRefreshInboxCount);
+
+    const timer = window.setInterval(() => {
+      void loadInboxCount();
+    }, 10_000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+      window.ipcRenderer?.off('inbox:items-updated', handleInboxItemsUpdated);
+      window.removeEventListener('focus', handleRefreshInboxCount);
+      document.removeEventListener('visibilitychange', handleRefreshInboxCount);
+    };
+  }, [api, user]);
+
+  useEffect(() => {
+    if (!user) {
+      setNotificationCount(0);
+      return;
+    }
+
+    let cancelled = false;
+    const loadNotificationCount = async () => {
+      try {
+        const payload = (await api.getNotificationCenterSummary()) as {
+          counts?: { active?: number };
+        };
+        if (!cancelled) {
+          setNotificationCount(Number(payload?.counts?.active ?? 0));
+        }
+      } catch {
+        if (!cancelled) setNotificationCount(0);
+      }
+    };
+
+    const handleNotificationsSummary = (event: Event) => {
+      const detail = (event as CustomEvent<{ activeCount?: number }>).detail;
+      setNotificationCount(Number(detail?.activeCount ?? 0));
+    };
+
+    void loadNotificationCount();
+    window.addEventListener('ledger:notifications-summary', handleNotificationsSummary as EventListener);
+
+    const timer = window.setInterval(() => {
+      void loadNotificationCount();
+    }, 10_000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+      window.removeEventListener('ledger:notifications-summary', handleNotificationsSummary as EventListener);
+    };
+  }, [api, user]);
 
   const monthPreview = useMemo(() => {
     const start = startOfMonthGrid(viewAnchor);
@@ -2066,6 +2159,7 @@ export const CalendarWindow = () => {
       setNewEventDurationValue(defaultDuration.value);
       setNewEventDurationUnit(defaultDuration.unit);
       notifyCalendarItemsUpdated();
+      window.dispatchEvent(new CustomEvent('ledger:notifications-refresh'));
       return;
     }
 
@@ -2110,6 +2204,7 @@ export const CalendarWindow = () => {
     setNewEventDurationValue(defaultDuration.value);
     setNewEventDurationUnit(defaultDuration.unit);
     notifyCalendarItemsUpdated();
+    window.dispatchEvent(new CustomEvent('ledger:notifications-refresh'));
   };
 
   const createNewCalendar = async () => {
@@ -2241,6 +2336,7 @@ export const CalendarWindow = () => {
 
     setSelectedReminder(updated);
     notifyCalendarItemsUpdated();
+    window.dispatchEvent(new CustomEvent('ledger:notifications-refresh'));
   };
 
   const deleteReminderFromEditor = async () => {
@@ -2882,6 +2978,24 @@ export const CalendarWindow = () => {
           void window.desktopWindow?.toggleModuleFullscreen('calendar');
         }}
         onClose={attemptCloseCalendar}
+        stripActions={
+          <>
+            <ModuleHeaderStripAction
+              icon={<Inbox size={12} />}
+              count={inboxCount}
+              onClick={() => window.desktopWindow?.toggleModule('inbox')}
+              title="Open inbox"
+              ariaLabel="Open inbox"
+            />
+            <ModuleHeaderStripAction
+              icon={<BellRing size={12} />}
+              count={notificationCount}
+              onClick={() => window.desktopWindow?.openModule('notifications')}
+              title="Open notifications center"
+              ariaLabel="Open notifications center"
+            />
+          </>
+        }
         actions={
           <>
             {isRefreshing && !isInitialLoading && (
