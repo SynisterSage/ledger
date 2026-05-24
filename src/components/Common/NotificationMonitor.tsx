@@ -126,14 +126,36 @@ export const NotificationMonitor: React.FC = () => {
       }
     };
 
+    const publishSummary = async () => {
+      try {
+        const payload = (await api.getNotificationCenterSummary()) as {
+          counts?: { active?: number };
+        };
+        if (cancelled) return;
+        window.dispatchEvent(
+          new CustomEvent('ledger:notifications-summary', {
+            detail: { activeCount: Number(payload?.counts?.active ?? 0) },
+          })
+        );
+      } catch {
+        // Best-effort only.
+      }
+    };
+
     const runPoll = async () => {
       if (cancelled || inFlightRef.current || !session?.access_token || !user) return;
-      if (!prefs?.inAppEnabled && !prefs?.desktopEnabled) return;
+      if (!prefs?.inAppEnabled && !prefs?.desktopEnabled) {
+        await publishSummary();
+        return;
+      }
 
       inFlightRef.current = true;
       try {
         const notifications = (await api.checkNotifications()) as NotificationItem[];
-        if (!Array.isArray(notifications) || !notifications.length) return;
+        if (!Array.isArray(notifications) || !notifications.length) {
+          await publishSummary();
+          return;
+        }
 
         notifications.forEach((item) => {
           deliverDesktopNotification(item);
@@ -187,6 +209,8 @@ export const NotificationMonitor: React.FC = () => {
             }),
           });
         });
+
+        await publishSummary();
       } finally {
         inFlightRef.current = false;
       }

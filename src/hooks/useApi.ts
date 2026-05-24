@@ -131,6 +131,8 @@ export const useApi = () => {
           body: JSON.stringify(payload),
         }),
       checkNotifications: () => request('/api/notifications/check'),
+      getNotificationCenterSummary: () => request('/api/notifications/summary'),
+      getNotificationCenter: () => request('/api/notifications'),
       updateNotificationAction: (
         notificationId: string,
         action: 'open' | 'dismiss' | 'complete' | 'snooze',

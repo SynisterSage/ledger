@@ -6,6 +6,7 @@ type ModuleWindowKind =
   | 'notes'
   | 'projects'
   | 'dashboard'
+  | 'notifications'
   | 'settings'
   | 'inbox'
   | 'quick-task'

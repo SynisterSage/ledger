@@ -29,6 +29,7 @@ type ModuleWindowKind =
   | 'notes'
   | 'projects'
   | 'dashboard'
+  | 'notifications'
   | 'settings'
   | 'quick-task'
   | 'quick-note'

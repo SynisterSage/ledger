@@ -1,11 +1,13 @@
 import {
   ArrowRight,
+  Bell,
   CalendarDays,
   ChevronDown,
   ChevronUp,
   CheckCircle2,
   Circle,
   Folder,
+  Inbox,
   Loader2,
   MoreHorizontal,
   Plus,
@@ -23,7 +25,7 @@ import { useWorkspaceInit } from './hooks/useWorkspaceInit';
 import { useApi } from './hooks/useApi';
 import { useSidebar } from './context/SidebarContext';
 import { MainLayout } from './components/Common/MainLayout';
-import { ModuleWindowHeader } from './components/Common/ModuleWindowHeader';
+import { ModuleHeaderStripAction, ModuleWindowHeader } from './components/Common/ModuleWindowHeader';
 import { CloseGuardModal } from './components/Common/CloseGuardModal';
 import { ModalOverlay } from './components/Common/ModalOverlay';
 import LoginForm from './components/Common/LoginForm';
@@ -31,6 +33,7 @@ import CalendarWindow from './components/Calendar/CalendarWindow';
 import NotesWindow from './components/Notes/NotesWindow';
 import ProjectsWindow from './components/Projects/ProjectsWindow';
 import InboxWindow from './components/Inbox/InboxWindow';
+import { NotificationCenterWindow } from './components/Notifications/NotificationCenterWindow';
 import SettingsWindow from './components/Settings/SettingsWindow';
 import { SearchModal } from './components/Search/SearchModal';
 import { SearchProvider } from './context/SearchContext';
@@ -54,6 +57,7 @@ type ModuleKind =
   | 'notes'
   | 'projects'
   | 'dashboard'
+  | 'notifications'
   | 'settings'
   | 'inbox'
   | 'quick-task'
@@ -684,6 +688,7 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
     }>
   >([]);
   const [inboxCount, setInboxCount] = useState(0);
+  const [notificationCount, setNotificationCount] = useState(0);
   const [focusedTaskId, setFocusedTaskId] = useState<string | null>(initialFocusTaskId ?? null);
   const [focusDraftTitle, setFocusDraftTitle] = useState('');
   const [isSavingFocusTask, setIsSavingFocusTask] = useState(false);
@@ -770,6 +775,44 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
 
     return () => {
       cancelled = true;
+    };
+  }, [api, user]);
+
+  useEffect(() => {
+    if (!user) {
+      setNotificationCount(0);
+      return;
+    }
+
+    let cancelled = false;
+    const loadNotificationSummary = async () => {
+      try {
+        const payload = (await api.getNotificationCenterSummary()) as {
+          counts?: { active?: number };
+        };
+        if (cancelled) return;
+        setNotificationCount(Number(payload?.counts?.active ?? 0));
+      } catch {
+        if (!cancelled) {
+          setNotificationCount(0);
+        }
+      }
+    };
+
+    const handleNotificationsSummary = (event: Event) => {
+      const detail = (event as CustomEvent<{ activeCount?: number }>).detail;
+      setNotificationCount(Number(detail?.activeCount ?? 0));
+    };
+
+    void loadNotificationSummary();
+    window.addEventListener('ledger:notifications-summary', handleNotificationsSummary as EventListener);
+
+    return () => {
+      cancelled = true;
+      window.removeEventListener(
+        'ledger:notifications-summary',
+        handleNotificationsSummary as EventListener
+      );
     };
   }, [api, user]);
 
@@ -1167,6 +1210,7 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
   const summaryItems = [
     { label: 'focus', value: focusTasks.length, accent: true },
     { label: 'tasks', value: activeTodayTasks.length },
+    { label: 'notifications', value: notificationCount },
     { label: 'upcoming', value: upcoming.length },
     { label: recentNotes.length === 1 ? 'note' : 'notes', value: recentNotes.length },
   ];
@@ -1715,6 +1759,24 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
             : 'Dashboard overview'
         }
         icon={<img src="./logo-color.svg" alt="" className="h-5 w-5" />}
+        stripActions={
+          <>
+            <ModuleHeaderStripAction
+              icon={<Inbox size={12} />}
+              count={inboxCount}
+              onClick={() => window.desktopWindow?.openModule('inbox')}
+              title="Open inbox"
+              ariaLabel="Open inbox"
+            />
+            <ModuleHeaderStripAction
+              icon={<Bell size={12} />}
+              count={notificationCount}
+              onClick={() => window.desktopWindow?.openModule('notifications')}
+              title="Open notifications center"
+              ariaLabel="Open notifications center"
+            />
+          </>
+        }
         actions={
           <>
             {[
@@ -2036,7 +2098,7 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
             <aside className="border-t border-gray-200 pt-8 lg:sticky lg:top-0 lg:self-start lg:border-l lg:border-t-0 lg:pl-12 lg:pt-0">
               <section ref={followUpsRef} className="space-y-7">
                 <div className="space-y-3">
-                  <div className="flex items-start justify-between gap-4">
+                  <div className="space-y-3">
                     <div className="min-w-0 space-y-1">
                       <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[#64748B]">
                         Action queue
@@ -2049,17 +2111,32 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
                         </span>
                         <span aria-hidden="true">·</span>
                         <span className="whitespace-nowrap leading-5">
+                          {notificationCount > 0
+                            ? `${notificationCount} notification${notificationCount === 1 ? '' : 's'}`
+                            : 'No notifications'}
+                        </span>
+                        <span aria-hidden="true">·</span>
+                        <span className="whitespace-nowrap leading-5">
                           {followUpTasks.length} follow-up{followUpTasks.length === 1 ? '' : 's'}
                         </span>
                       </div>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => window.desktopWindow?.toggleModule('inbox')}
-                      className="shrink-0 whitespace-nowrap rounded-full border border-[#ffd9d0] bg-white px-3 py-1.5 text-xs font-medium text-[#FF5F40] transition hover:border-[#FFB7A6] hover:bg-[#FFF7F4]"
-                    >
-                      Open inbox
-                    </button>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => window.desktopWindow?.openModule('notifications')}
+                        className="whitespace-nowrap rounded-full border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 transition hover:bg-gray-50"
+                      >
+                        Open notifications
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => window.desktopWindow?.toggleModule('inbox')}
+                        className="whitespace-nowrap rounded-full border border-[#ffd9d0] bg-white px-3 py-1.5 text-xs font-medium text-[#FF5F40] transition hover:border-[#FFB7A6] hover:bg-[#FFF7F4]"
+                      >
+                        Open inbox
+                      </button>
+                    </div>
                   </div>
 
                   <div className="space-y-3 pt-2">
@@ -2862,6 +2939,10 @@ function AppShell() {
 
     if (moduleKind === 'dashboard') {
       return <DashboardContent initialFocusTaskId={moduleFocusTaskId || undefined} />;
+    }
+
+    if (moduleKind === 'notifications') {
+      return <NotificationCenterWindow />;
     }
 
     if (moduleKind === 'inbox') {

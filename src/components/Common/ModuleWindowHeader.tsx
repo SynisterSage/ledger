@@ -12,7 +12,25 @@ type ModuleWindowHeaderProps = {
   closeLabel?: string;
   minimizeLabel?: string;
   fullscreenLabel?: string;
+  stripActions?: ReactNode;
   actions?: ReactNode;
+};
+
+type ModuleHeaderCounterActionProps = {
+  label: string;
+  icon: ReactNode;
+  count: number;
+  onClick: () => void;
+  title: string;
+  ariaLabel: string;
+};
+
+type ModuleHeaderStripActionProps = {
+  icon: ReactNode;
+  count?: number;
+  onClick: () => void;
+  title: string;
+  ariaLabel: string;
 };
 
 type AppRegionStyle = CSSProperties & {
@@ -21,6 +39,58 @@ type AppRegionStyle = CSSProperties & {
 
 const dragRegionStyle: AppRegionStyle = { WebkitAppRegion: 'drag' };
 const noDragRegionStyle: AppRegionStyle = { WebkitAppRegion: 'no-drag' };
+
+export const ModuleHeaderCounterAction = ({
+  label,
+  icon,
+  count,
+  onClick,
+  title,
+  ariaLabel,
+}: ModuleHeaderCounterActionProps) => {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={title}
+      aria-label={ariaLabel}
+      className="relative inline-flex h-8 items-center gap-1.5 rounded-full border border-gray-200 bg-white px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-50"
+    >
+      {icon}
+      <span>{label}</span>
+      {count > 0 && (
+        <span className="absolute -right-1 -top-1 inline-flex min-w-4 items-center justify-center rounded-full bg-[#FF5F40] px-1 py-0.5 text-[9px] font-semibold leading-none text-white">
+          {count > 9 ? '9+' : count}
+        </span>
+      )}
+    </button>
+  );
+};
+
+export const ModuleHeaderStripAction = ({
+  icon,
+  count,
+  onClick,
+  title,
+  ariaLabel,
+}: ModuleHeaderStripActionProps) => {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={title}
+      aria-label={ariaLabel}
+      className="relative inline-flex h-6 w-6 items-center justify-center rounded-full border border-gray-300 bg-white text-gray-700 shadow-[0_1px_2px_rgba(15,23,42,0.06)] transition hover:border-gray-400 hover:bg-gray-50 hover:text-gray-950"
+    >
+      {icon}
+      {typeof count === 'number' && count > 0 && (
+        <span className="absolute -right-1 -top-1 inline-flex min-w-4 items-center justify-center rounded-full bg-[#FF5F40] px-1 py-0.5 text-[9px] font-semibold leading-none text-white">
+          {count > 9 ? '9+' : count}
+        </span>
+      )}
+    </button>
+  );
+};
 
 export const ModuleWindowHeader = ({
   eyebrow,
@@ -33,10 +103,11 @@ export const ModuleWindowHeader = ({
   closeLabel = 'Close window',
   minimizeLabel = 'Minimize window',
   fullscreenLabel = 'Toggle fullscreen',
+  stripActions,
   actions,
 }: ModuleWindowHeaderProps) => {
   const controlClassName =
-    'flex h-[18px] w-[18px] items-center justify-center rounded-full border border-gray-200 bg-white text-gray-600 transition hover:bg-gray-100 hover:text-gray-900';
+    'flex h-5 w-5 items-center justify-center rounded-full border border-gray-300 bg-white text-gray-700 shadow-[0_1px_2px_rgba(15,23,42,0.06)] transition hover:border-gray-400 hover:bg-gray-50 hover:text-gray-950';
 
   const handleTitleBarDoubleClick = () => {
     if (onToggleFullscreen) {
@@ -54,7 +125,7 @@ export const ModuleWindowHeader = ({
   return (
     <div className="border-b border-gray-200 bg-white" style={dragRegionStyle}>
       <div
-        className="flex h-9 items-center border-b border-gray-200 bg-gray-50 px-3.5 py-1.5 cursor-default"
+        className="flex h-9 items-center justify-between border-b border-gray-200 bg-gray-50 px-3.5 py-1.5 cursor-default"
         style={dragRegionStyle}
         onDoubleClick={handleTitleBarDoubleClick}
       >
@@ -67,7 +138,7 @@ export const ModuleWindowHeader = ({
             aria-label={closeLabel}
             className={controlClassName}
           >
-            <X size={12} />
+            <X size={13} />
           </button>
           {onMinimize && (
             <button
@@ -78,7 +149,7 @@ export const ModuleWindowHeader = ({
               aria-label={minimizeLabel}
               className={controlClassName}
             >
-              <Minus size={12} />
+              <Minus size={13} />
             </button>
           )}
           {onToggleFullscreen && (
@@ -90,10 +161,16 @@ export const ModuleWindowHeader = ({
               aria-label={fullscreenLabel}
               className={controlClassName}
             >
-              <Maximize2 size={12} />
+              <Maximize2 size={13} />
             </button>
           )}
         </div>
+
+        {stripActions && (
+          <div className="flex items-center gap-1" style={noDragRegionStyle}>
+            {stripActions}
+          </div>
+        )}
       </div>
 
       <div className="flex min-h-16 items-center justify-between gap-4 px-5 py-3">

@@ -12,7 +12,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useApi } from '../../hooks/useApi';
 import { useAuthContext } from '../../context/AuthContext';
 import { useWorkspaceContext } from '../../context/WorkspaceContext';
-import { ModuleWindowHeader } from '../Common/ModuleWindowHeader';
+import { ModuleHeaderStripAction, ModuleWindowHeader } from '../Common/ModuleWindowHeader';
 import { useToast } from '../Common/ToastProvider';
 import { ModalOverlay } from '../Common/ModalOverlay';
 import { createPortal } from 'react-dom';
@@ -248,6 +248,7 @@ export default function InboxWindow() {
   const [projects, setProjects] = useState<ProjectOption[]>([]);
   const [calendars, setCalendars] = useState<CalendarOption[]>([]);
   const [notes, setNotes] = useState<NoteOption[]>([]);
+  const [notificationCount, setNotificationCount] = useState(0);
 
   const loadInbox = async (showSpinner = false) => {
     if (!activeWorkspaceId) {
@@ -284,6 +285,62 @@ export default function InboxWindow() {
     if (!user) return;
     void loadInbox();
   }, [activeWorkspaceId, user]);
+
+  const loadNotificationSummary = async () => {
+    if (!user) {
+      setNotificationCount(0);
+      return;
+    }
+
+    try {
+      const payload = (await api.getNotificationCenterSummary()) as {
+        counts?: { active?: number };
+      };
+      setNotificationCount(Number(payload?.counts?.active ?? 0));
+    } catch {
+      setNotificationCount(0);
+    }
+  };
+
+  useEffect(() => {
+    if (!user) return;
+
+    let cancelled = false;
+    void loadNotificationSummary();
+
+    const handleNotificationsSummary = (event: Event) => {
+      const detail = (event as CustomEvent<{ activeCount?: number }>).detail;
+      setNotificationCount(Number(detail?.activeCount ?? 0));
+    };
+
+    const handleNotificationsUpdated = () => {
+      if (!cancelled) void loadNotificationSummary();
+    };
+
+    const handleRefreshNotifications = () => {
+      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
+      if (cancelled) return;
+      void loadNotificationSummary();
+    };
+
+    window.addEventListener('ledger:notifications-summary', handleNotificationsSummary as EventListener);
+    window.addEventListener('ledger:notifications-updated', handleNotificationsUpdated);
+    window.addEventListener('focus', handleRefreshNotifications);
+    document.addEventListener('visibilitychange', handleRefreshNotifications);
+
+    const refreshTimer = window.setInterval(() => {
+      if (!cancelled) void loadNotificationSummary();
+    }, 10_000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(refreshTimer);
+      window.removeEventListener('ledger:notifications-summary', handleNotificationsSummary as EventListener);
+      window.removeEventListener('ledger:notifications-updated', handleNotificationsUpdated);
+      window.removeEventListener('focus', handleRefreshNotifications);
+      document.removeEventListener('visibilitychange', handleRefreshNotifications);
+    };
+  }, [api, user]);
 
   useEffect(() => {
     if (!activeWorkspaceId || !user) return;
@@ -620,6 +677,15 @@ export default function InboxWindow() {
         onClose={() => window.desktopWindow?.closeModule('inbox')}
         onMinimize={() => window.desktopWindow?.minimizeModule('inbox')}
         onToggleFullscreen={() => window.desktopWindow?.toggleModuleFullscreen('inbox')}
+        stripActions={
+          <ModuleHeaderStripAction
+            icon={<Bell size={12} />}
+            count={notificationCount}
+            onClick={() => window.desktopWindow?.openModule('notifications')}
+            title="Open notifications center"
+            ariaLabel="Open notifications center"
+          />
+        }
         actions={
           <button
             type="button"

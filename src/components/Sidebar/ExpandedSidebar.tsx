@@ -7,6 +7,7 @@ import {
   ChevronDown,
   ChevronUp,
   ClipboardCheck,
+  Bell,
   Folder,
   LogOut,
   Plus,
@@ -332,6 +333,7 @@ export const ExpandedSidebar = ({
     }>
   >([]);
   const [inboxCount, setInboxCount] = useState(0);
+  const [notificationCount, setNotificationCount] = useState(0);
   const [isLoadingProjects, setIsLoadingProjects] = useState(true);
   const [expandedProjectId, setExpandedProjectId] = useState<string | null>(null);
   const [projectUpdating, setProjectUpdating] = useState<string | null>(null);
@@ -945,6 +947,56 @@ export const ExpandedSidebar = ({
       document.removeEventListener('visibilitychange', handleRefreshInboxCount);
     };
   }, [api, activeWorkspaceId, user]);
+
+  useEffect(() => {
+    if (!user) {
+      setNotificationCount(0);
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadNotificationSummary = async () => {
+      try {
+        const payload = (await api.getNotificationCenterSummary()) as {
+          counts?: { active?: number };
+        };
+        if (!cancelled) {
+          setNotificationCount(Math.max(0, Number(payload?.counts?.active ?? 0)));
+        }
+      } catch (error) {
+        console.error('Failed to load notification count:', error);
+      }
+    };
+
+    void loadNotificationSummary();
+
+    const handleNotificationsSummary = (event: Event) => {
+      const detail = (event as CustomEvent<{ activeCount?: number }>).detail;
+      if (typeof detail?.activeCount === 'number' && Number.isFinite(detail.activeCount)) {
+        setNotificationCount(Math.max(0, detail.activeCount));
+        return;
+      }
+      void loadNotificationSummary();
+    };
+
+    window.addEventListener(
+      'ledger:notifications-summary',
+      handleNotificationsSummary as EventListener
+    );
+    const refreshTimer = window.setInterval(() => {
+      void loadNotificationSummary();
+    }, 60_000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(refreshTimer);
+      window.removeEventListener(
+        'ledger:notifications-summary',
+        handleNotificationsSummary as EventListener
+      );
+    };
+  }, [api, user]);
 
   useEffect(() => {
     if (!user) {
@@ -1973,6 +2025,7 @@ export const ExpandedSidebar = ({
           <div className="flex items-center gap-1 shrink-0">
             {[
               { label: 'Inbox', icon: Inbox, action: () => window.desktopWindow?.toggleModule('inbox') },
+              { label: 'Notifications', icon: Bell, action: () => window.desktopWindow?.openModule('notifications') },
               { label: 'Dashboard', icon: BarChart3, action: () => window.desktopWindow?.toggleModule('dashboard') },
               { label: 'Projects', icon: Folder, action: () => window.desktopWindow?.toggleModule('projects') },
               { label: 'Notes', icon: StickyNote, action: () => window.desktopWindow?.toggleModule('notes') },
@@ -1989,6 +2042,11 @@ export const ExpandedSidebar = ({
                 {item.label === 'Inbox' && inboxCount > 0 && (
                   <span className="absolute -right-1 -top-1 inline-flex min-w-4 items-center justify-center rounded-full bg-[#FF5F40] px-1 py-0.5 text-[9px] font-semibold leading-none text-white">
                     {inboxCount > 9 ? '9+' : inboxCount}
+                  </span>
+                )}
+                {item.label === 'Notifications' && notificationCount > 0 && (
+                  <span className="absolute -right-1 -top-1 inline-flex min-w-4 items-center justify-center rounded-full bg-[#FF5F40] px-1 py-0.5 text-[9px] font-semibold leading-none text-white">
+                    {notificationCount > 9 ? '9+' : notificationCount}
                   </span>
                 )}
               </button>
@@ -2229,11 +2287,11 @@ export const ExpandedSidebar = ({
             <button
               onClick={() => window.desktopWindow?.toggleModule('inbox')}
               onMouseDown={(e) => e.stopPropagation()}
-              className="relative p-1.5 hover:bg-gray-100 rounded-md transition text-gray-600 hover:text-gray-900"
+              className="relative inline-flex h-7 w-7 items-center justify-center text-gray-600 transition hover:text-gray-900"
               title="Inbox"
               aria-label="Open inbox"
             >
-              <Inbox size={15} />
+              <Inbox size={14} />
               {inboxCount > 0 && (
                 <span className="absolute -right-1 -top-1 inline-flex min-w-4 items-center justify-center rounded-full bg-[#FF5F40] px-1 py-0.5 text-[9px] font-semibold leading-none text-white">
                   {inboxCount > 99 ? '99+' : inboxCount}
@@ -2241,13 +2299,27 @@ export const ExpandedSidebar = ({
               )}
             </button>
             <button
+              onClick={() => window.desktopWindow?.openModule('notifications')}
+              onMouseDown={(e) => e.stopPropagation()}
+              className="relative inline-flex h-7 w-7 items-center justify-center text-gray-600 transition hover:text-gray-900"
+              title="Notifications"
+              aria-label="Open notifications center"
+            >
+              <Bell size={14} />
+              {notificationCount > 0 && (
+                <span className="absolute -right-1 -top-1 inline-flex min-w-4 items-center justify-center rounded-full bg-[#FF5F40] px-1 py-0.5 text-[9px] font-semibold leading-none text-white">
+                  {notificationCount > 99 ? '99+' : notificationCount}
+                </span>
+              )}
+            </button>
+            <button
               onClick={() => window.desktopWindow?.toggleModule('settings')}
               onMouseDown={(e) => e.stopPropagation()}
-              className="p-1.5 hover:bg-gray-100 rounded-md transition text-gray-600 hover:text-gray-900 shrink-0"
+              className="inline-flex h-7 w-7 items-center justify-center text-gray-600 transition hover:text-gray-900 shrink-0"
               title="Settings"
               aria-label="Open settings"
             >
-              <Settings size={15} />
+              <Settings size={14} />
             </button>
           </div>
         </div>

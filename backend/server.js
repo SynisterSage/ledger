@@ -1311,6 +1311,232 @@ const buildDueNotificationCandidates = async (userId, prefs) => {
   return candidates;
 };
 
+const buildNotificationCenterSourceMaps = async (rows) => {
+  const workspaceIds = Array.from(new Set(rows.map((item) => item.workspace_id).filter(Boolean)));
+  const reminderIds = Array.from(
+    new Set(
+      rows
+        .filter((item) => String(item.source_type ?? '') === 'reminder')
+        .map((item) => String(item.source_id ?? '').trim())
+        .filter(Boolean)
+    )
+  );
+  const eventIds = Array.from(
+    new Set(
+      rows
+        .filter((item) => String(item.source_type ?? '') === 'event')
+        .map((item) => String(item.source_id ?? '').trim())
+        .filter(Boolean)
+    )
+  );
+  const taskIds = Array.from(
+    new Set(
+      rows
+        .filter((item) => String(item.source_type ?? '') === 'task')
+        .map((item) => String(item.source_id ?? '').trim())
+        .filter(Boolean)
+    )
+  );
+  const projectIds = Array.from(
+    new Set(
+      rows
+        .filter((item) => String(item.source_type ?? '') === 'project')
+        .map((item) => String(item.source_id ?? '').trim())
+        .filter(Boolean)
+    )
+  );
+  const inboxIds = Array.from(
+    new Set(
+      rows
+        .filter((item) => String(item.source_type ?? '') === 'inbox')
+        .map((item) => String(item.source_id ?? '').trim())
+        .filter(Boolean)
+    )
+  );
+
+  const [workspaceResult, reminderResult, eventResult, taskResult, projectResult, inboxResult] =
+    await Promise.all([
+      workspaceIds.length
+        ? supabase.from('workspaces').select('id, name, color').in('id', workspaceIds)
+        : { data: [] },
+      reminderIds.length
+        ? withReminderTable((table) =>
+            supabase
+              .from(table)
+              .select(reminderSelectColumns)
+              .in('id', reminderIds)
+              .limit(reminderIds.length)
+          )
+        : Promise.resolve({ data: [] }),
+      eventIds.length
+        ? supabase
+            .from('events')
+            .select('id, workspace_id, title, start_at, end_at, calendar_id, color, status, project_id, note_id')
+            .in('id', eventIds)
+        : { data: [] },
+      taskIds.length
+        ? supabase
+            .from('tasks')
+            .select(taskSelectColumns)
+            .in('id', taskIds)
+        : { data: [] },
+      projectIds.length
+        ? supabase.from('projects').select(projectSelectColumns).in('id', projectIds)
+        : { data: [] },
+      inboxIds.length
+        ? supabase
+            .from('inbox_items')
+            .select('id, workspace_id, title, body, source, source_url, status, created_at')
+            .in('id', inboxIds)
+        : { data: [] },
+    ]);
+
+  const fetchErrors = [
+    workspaceResult.error,
+    reminderResult.error,
+    eventResult.error,
+    taskResult.error,
+    projectResult.error,
+    inboxResult.error,
+  ].filter(Boolean);
+  if (fetchErrors.length) throw fetchErrors[0];
+
+  return {
+    workspaceById: new Map((workspaceResult.data || []).map((workspace) => [workspace.id, workspace])),
+    reminderById: new Map((reminderResult.data || []).map((item) => [String(item.id), item])),
+    eventById: new Map((eventResult.data || []).map((item) => [String(item.id), item])),
+    taskById: new Map((taskResult.data || []).map((item) => [String(item.id), item])),
+    projectById: new Map((projectResult.data || []).map((item) => [String(item.id), item])),
+    inboxById: new Map((inboxResult.data || []).map((item) => [String(item.id), item])),
+  };
+};
+
+const mapNotificationCenterRow = (row, maps) => {
+  const metadata = safeJson(row.metadata, {}) ?? {};
+  const sourceId = String(row.source_id ?? '');
+  const sourceType = String(row.source_type ?? '');
+  const workspace = maps.workspaceById.get(row.workspace_id ?? '') ?? null;
+
+  let title = normalizeNullableText(metadata.title);
+  let body = normalizeNullableText(metadata.body);
+  let moduleKind = metadata.moduleKind ?? null;
+  let focusPayload = metadata.focusPayload ?? null;
+  let actions = Array.isArray(metadata.actions) ? metadata.actions : null;
+  let context = null;
+
+  if (sourceType === 'reminder') {
+    const reminder = maps.reminderById.get(sourceId) ?? null;
+    title = title ?? reminder?.title ?? 'Reminder due';
+    body = body ?? reminder?.notes ?? reminder?.body ?? null;
+    moduleKind = moduleKind ?? 'calendar';
+    focusPayload = focusPayload ?? { kind: 'calendar', focusContext: `focus-reminder:${sourceId}` };
+    context = reminder?.calendar_id
+      ? 'Calendar reminder'
+      : reminder?.project_id
+      ? 'Project reminder'
+      : 'Reminder';
+    actions = actions ?? ['open', 'complete', 'snooze', 'dismiss'];
+  } else if (sourceType === 'event') {
+    const event = maps.eventById.get(sourceId) ?? null;
+    title = title ?? event?.title ?? 'Event soon';
+    const startAt = event?.start_at ? new Date(event.start_at) : null;
+    body =
+      body ??
+      (startAt && !Number.isNaN(startAt.getTime())
+        ? `Starts at ${startAt.toLocaleTimeString([], {
+            hour: 'numeric',
+            minute: '2-digit',
+          })}`
+        : null);
+    moduleKind = moduleKind ?? 'calendar';
+    focusPayload = focusPayload ?? { kind: 'calendar', focusContext: `focus-event:${sourceId}` };
+    context = event?.calendar_id ? 'Calendar event' : 'Event';
+    actions = actions ?? ['open', 'dismiss'];
+  } else if (sourceType === 'task') {
+    const task = maps.taskById.get(sourceId) ?? null;
+    title = title ?? task?.title ?? 'Task due';
+    body =
+      body ??
+      (task?.due_date
+        ? `Due ${task.due_date}${task?.due_time ? ` · ${task.due_time}` : ''}`
+        : null);
+    moduleKind = moduleKind ?? 'dashboard';
+    focusPayload = focusPayload ?? { kind: 'dashboard', focusTaskId: sourceId };
+    context = task?.project_id ? 'Task' : 'Today item';
+    actions = actions ?? ['open', 'complete', 'dismiss'];
+  } else if (sourceType === 'project') {
+    const project = maps.projectById.get(sourceId) ?? null;
+    title = title ?? project?.name ?? 'Project deadline';
+    body = body ?? (project?.end_date ? `Due ${project.end_date}` : null);
+    moduleKind = moduleKind ?? 'projects';
+    focusPayload = focusPayload ?? { kind: 'projects', focusProjectId: sourceId };
+    context = 'Project';
+    actions = actions ?? ['open', 'dismiss'];
+  } else if (sourceType === 'inbox') {
+    const inbox = maps.inboxById.get(sourceId) ?? null;
+    title = title ?? inbox?.title ?? 'Inbox capture';
+    body = body ?? inbox?.body ?? inbox?.source_url ?? 'Waiting in Inbox';
+    moduleKind = moduleKind ?? 'inbox';
+    focusPayload = focusPayload ?? { kind: 'inbox' };
+    context = inbox?.source ? `Capture from ${String(inbox.source)}` : 'Inbox capture';
+    actions = actions ?? ['open', 'dismiss'];
+  }
+
+  const actionTaken = String(row.action_taken ?? '').trim().toLowerCase();
+  const isActive = !row.dismissed_at && actionTaken !== 'complete';
+
+  return {
+    id: row.id,
+    sourceType,
+    sourceId,
+    notificationType: row.notification_type,
+    title,
+    body,
+    context,
+    workspaceName: workspace?.name ?? null,
+    workspaceColor: workspace?.color ?? null,
+    moduleKind,
+    focusPayload,
+    actions: Array.from(new Set((actions || []).map((action) => String(action).trim()).filter(Boolean))),
+    scheduledFor: row.scheduled_for,
+    deliveredInAppAt: row.delivered_in_app_at ?? null,
+    deliveredDesktopAt: row.delivered_desktop_at ?? null,
+    dismissedAt: row.dismissed_at ?? null,
+    actionTaken: row.action_taken ?? null,
+    status: isActive ? 'active' : 'earlier',
+  };
+};
+
+const getNotificationCenterItems = async (userId) => {
+  const { data, error } = await supabase
+    .from('notification_events')
+    .select(
+      'id, user_id, workspace_id, source_type, source_id, notification_type, scheduled_for, delivered_in_app_at, delivered_desktop_at, dismissed_at, action_taken, metadata, created_at, updated_at'
+    )
+    .eq('user_id', userId)
+    .not('delivered_in_app_at', 'is', null)
+    .order('scheduled_for', { ascending: false })
+    .limit(200);
+
+  if (error) throw error;
+
+  const rows = Array.isArray(data) ? data : [];
+  const maps = await buildNotificationCenterSourceMaps(rows);
+  const items = rows.map((row) => mapNotificationCenterRow(row, maps));
+  const active = items.filter((item) => item.status === 'active');
+  const earlier = items.filter((item) => item.status !== 'active');
+
+  return {
+    active,
+    earlier,
+    counts: {
+      active: active.length,
+      earlier: earlier.length,
+      total: items.length,
+    },
+  };
+};
+
 const roleAtLeast = (role, minimumRole) => {
   const currentRank = workspaceRoleRank[String(role ?? '').toLowerCase()] ?? 0;
   const minimumRank = workspaceRoleRank[String(minimumRole ?? '').toLowerCase()] ?? 0;
@@ -3602,6 +3828,24 @@ app.post('/api/notifications/:id/action', authMiddleware, rateLimit('write'), as
 
     if (error) throw error;
     res.json({ ok: true, notification: data, source: sourceUpdateResult });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/notifications/summary', authMiddleware, rateLimit('read'), async (req, res) => {
+  try {
+    const data = await getNotificationCenterItems(req.authUser.id);
+    res.json({ counts: data.counts });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/notifications', authMiddleware, rateLimit('read'), async (req, res) => {
+  try {
+    const data = await getNotificationCenterItems(req.authUser.id);
+    res.json(data);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

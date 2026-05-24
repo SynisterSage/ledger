@@ -547,6 +547,7 @@ type ModuleWindowKind =
   | 'notes'
   | 'projects'
   | 'dashboard'
+  | 'notifications'
   | 'settings'
   | 'inbox'
   | 'quick-task'
@@ -627,6 +628,10 @@ const MODULE_DEFAULT_WIDTH = 1440;
 const MODULE_DEFAULT_HEIGHT = 860;
 const MODULE_MIN_WIDTH = 1100;
 const MODULE_MIN_HEIGHT = 720;
+const NOTIFICATION_CENTER_WIDTH = 480;
+const NOTIFICATION_CENTER_HEIGHT = 680;
+const NOTIFICATION_CENTER_MIN_WIDTH = 420;
+const NOTIFICATION_CENTER_MIN_HEIGHT = 600;
 const QUICK_CAPTURE_WIDTH = 400;
 const QUICK_CAPTURE_HEIGHT = 320;
 const MODULE_GAP = 12;
@@ -1990,6 +1995,23 @@ function isRectInsideWorkArea(rect: Electron.Rectangle, workArea: Electron.Recta
 }
 
 function resolveModuleBounds(kind: ModuleWindowKind): Electron.Rectangle {
+  if (kind === 'notifications') {
+    const sidebarBounds = sidebarWin?.getBounds() ?? getDockedBounds(RAIL_SIZE);
+    const sidebarAnchorPoint = {
+      x: Math.round(sidebarBounds.x + sidebarBounds.width / 2),
+      y: Math.round(sidebarBounds.y + sidebarBounds.height / 2),
+    };
+    const display = screen.getDisplayNearestPoint(sidebarAnchorPoint);
+    const workArea = display.workArea;
+    return clampRectToWorkArea(
+      getCenteredBoundsInWorkArea(
+        NOTIFICATION_CENTER_WIDTH,
+        NOTIFICATION_CENTER_HEIGHT,
+        workArea
+      ),
+      workArea
+    );
+  }
   const sidebarBounds = sidebarWin?.getBounds() ?? getDockedBounds(RAIL_SIZE);
   const sidebarAnchorPoint = {
     x: Math.round(sidebarBounds.x + sidebarBounds.width / 2),
@@ -2436,6 +2458,7 @@ function openModuleWindow(
 
   // Quick capture modules use smaller dimensions
   const isQuickCapture = kind === 'quick-task' || kind === 'quick-note' || kind === 'quick-event';
+  const isNotificationCenter = kind === 'notifications';
   let initialBounds = resolveModuleBounds(kind);
 
   if (isQuickCapture) {
@@ -2448,8 +2471,16 @@ function openModuleWindow(
     };
   }
 
-  const minWidth = isQuickCapture ? QUICK_CAPTURE_WIDTH : MODULE_MIN_WIDTH;
-  const minHeight = isQuickCapture ? QUICK_CAPTURE_HEIGHT : MODULE_MIN_HEIGHT;
+  const minWidth = isQuickCapture
+    ? QUICK_CAPTURE_WIDTH
+    : isNotificationCenter
+    ? NOTIFICATION_CENTER_MIN_WIDTH
+    : MODULE_MIN_WIDTH;
+  const minHeight = isQuickCapture
+    ? QUICK_CAPTURE_HEIGHT
+    : isNotificationCenter
+    ? NOTIFICATION_CENTER_MIN_HEIGHT
+    : MODULE_MIN_HEIGHT;
 
   const moduleWin = new BrowserWindow({
     ...initialBounds,
