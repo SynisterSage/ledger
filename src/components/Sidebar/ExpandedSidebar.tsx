@@ -670,6 +670,7 @@ export const ExpandedSidebar = ({
 
   useEffect(() => {
     let cancelled = false;
+    let hasLoadedToday = false;
 
     const loadToday = async () => {
       if (!user) {
@@ -678,7 +679,11 @@ export const ExpandedSidebar = ({
         return;
       }
 
-      setIsLoadingToday(true);
+      const showInitialSkeleton = !hasLoadedToday;
+      if (showInitialSkeleton) {
+        setIsLoadingToday(true);
+      }
+
       try {
         const data = await api.getToday();
         if (cancelled) return;
@@ -709,7 +714,8 @@ export const ExpandedSidebar = ({
         setTodayItems([]);
         setCompletedToday([]);
       } finally {
-        if (!cancelled) setIsLoadingToday(false);
+        hasLoadedToday = true;
+        if (!cancelled && showInitialSkeleton) setIsLoadingToday(false);
       }
     };
 

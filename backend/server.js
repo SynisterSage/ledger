@@ -2410,7 +2410,7 @@ const withReminderTable = async (queryFactory) => {
   for (const table of REMINDER_TABLES) {
     const result = await queryFactory(table);
     if (!result?.error) {
-      return result;
+      return { ...result, table };
     }
 
     lastError = result.error;
@@ -3796,7 +3796,7 @@ app.post('/api/notifications/:id/action', authMiddleware, rateLimit('write'), as
         'snooze_until'
       );
 
-      const { data, error } = await withReminderTable((table) =>
+      const { data, error, table } = await withReminderTable((table) =>
         supabase
           .from(table)
           .select(reminderSelectColumns)
@@ -3876,10 +3876,10 @@ app.post('/api/notifications/:id/action', authMiddleware, rateLimit('write'), as
 
     const update = {
       action_taken: action,
-      updated_at: new Date().toISOString(),
+      updated_at: nowIso,
     };
-    if (action === 'dismiss') {
-      update.dismissed_at = new Date().toISOString();
+    if (action === 'dismiss' || action === 'snooze') {
+      update.dismissed_at = nowIso;
     }
 
     const { data, error } = await supabase

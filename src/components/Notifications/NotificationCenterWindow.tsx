@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Bell, Settings, RotateCcw, Inbox, CalendarDays, Folder, CheckCircle2, Clock3 } from 'lucide-react';
 import { useApi } from '../../hooks/useApi';
 import { useAuthContext } from '../../context/AuthContext';
@@ -60,8 +60,24 @@ export const NotificationCenterWindow: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [activeCount, setActiveCount] = useState(0);
   const [inboxCount, setInboxCount] = useState(0);
+  const notificationLoadInFlightRef = useRef(false);
+  const inboxLoadInFlightRef = useRef(false);
+  const notificationLoadAtRef = useRef(0);
+  const inboxLoadAtRef = useRef(0);
+  const notificationRetryAfterRef = useRef(0);
+  const inboxRetryAfterRef = useRef(0);
 
-  const loadNotifications = useCallback(async () => {
+  const notificationLoadCooldownMs = 15_000;
+  const inboxLoadCooldownMs = 30_000;
+  const retryAfterMs = 30_000;
+
+  const isTooManyRequests = useCallback((nextError: unknown) => {
+    const message = nextError instanceof Error ? nextError.message : String(nextError ?? '');
+    const status = typeof nextError === 'object' && nextError !== null ? (nextError as { status?: number }).status : null;
+    return status === 429 || /too many requests|429/i.test(message);
+  }, []);
+
+  const loadNotifications = useCallback(async (opts?: { force?: boolean }) => {
     if (!user) {
       setActive([]);
       setEarlier([]);
@@ -70,6 +86,15 @@ export const NotificationCenterWindow: React.FC = () => {
       return;
     }
 
+    const now = Date.now();
+    if (!opts?.force) {
+      if (notificationLoadInFlightRef.current) return;
+      if (now < notificationRetryAfterRef.current) return;
+      if (now - notificationLoadAtRef.current < notificationLoadCooldownMs) return;
+    }
+
+    notificationLoadInFlightRef.current = true;
+    notificationLoadAtRef.current = now;
     setLoading(true);
     setError(null);
 
@@ -89,13 +114,17 @@ export const NotificationCenterWindow: React.FC = () => {
       );
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : 'Could not load notifications');
+      if (isTooManyRequests(nextError)) {
+        notificationRetryAfterRef.current = Date.now() + retryAfterMs;
+      }
       setActive([]);
       setEarlier([]);
       setActiveCount(0);
     } finally {
       setLoading(false);
+      notificationLoadInFlightRef.current = false;
     }
-  }, [api, user]);
+  }, [api, isTooManyRequests, notificationLoadCooldownMs, retryAfterMs, user]);
 
   useEffect(() => {
     void loadNotifications();
@@ -108,12 +137,25 @@ export const NotificationCenterWindow: React.FC = () => {
     }
 
     try {
+      const now = Date.now();
+      if (inboxLoadInFlightRef.current) return;
+      if (now < inboxRetryAfterRef.current) return;
+      if (now - inboxLoadAtRef.current < inboxLoadCooldownMs) return;
+
+      inboxLoadInFlightRef.current = true;
+      inboxLoadAtRef.current = now;
+
       const payload = (await api.getInboxCount()) as { count?: number };
       setInboxCount(Math.max(0, Number(payload?.count ?? 0)));
-    } catch {
+    } catch (nextError) {
+      if (isTooManyRequests(nextError)) {
+        inboxRetryAfterRef.current = Date.now() + retryAfterMs;
+      }
       setInboxCount(0);
+    } finally {
+      inboxLoadInFlightRef.current = false;
     }
-  }, [api, user]);
+  }, [api, inboxLoadCooldownMs, isTooManyRequests, retryAfterMs, user]);
 
   useEffect(() => {
     if (!user) return;
@@ -142,7 +184,7 @@ export const NotificationCenterWindow: React.FC = () => {
 
     const refreshTimer = window.setInterval(() => {
       if (!cancelled) void loadInboxCount();
-    }, 10_000);
+    }, 30_000);
 
     return () => {
       cancelled = true;
@@ -221,15 +263,15 @@ export const NotificationCenterWindow: React.FC = () => {
           <>
             <button
               type="button"
-              onClick={() => void loadNotifications()}
-              className="inline-flex h-8 items-center gap-1.5 rounded-full border border-gray-200 bg-white px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-50"
+              onClick={() => void loadNotifications({ force: true })}
+              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-700 transition hover:bg-gray-50"
             >
               <RotateCcw size={12} />
             </button>
             <button
               type="button"
               onClick={() => window.desktopWindow?.toggleModule('settings', { kind: 'settings', focusContext: 'notifications' } as any)}
-              className="inline-flex h-8 items-center gap-1.5 rounded-full border border-gray-200 bg-white px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-50"
+              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-700 transition hover:bg-gray-50"
             >
               <Settings size={12} />
             </button>

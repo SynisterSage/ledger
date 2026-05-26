@@ -80,7 +80,11 @@ export const useApi = () => {
 
       if (!response.ok) {
         const error = await response.json().catch(() => ({}));
-        throw new Error(error.error || 'Request failed');
+        const requestError = new Error(error.error || `Request failed: ${response.status}`) as Error & {
+          status?: number;
+        };
+        requestError.status = response.status;
+        throw requestError;
       }
 
       if (options.skipJson) {

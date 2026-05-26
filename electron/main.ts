@@ -362,6 +362,7 @@ const macDockHelperScript = `
 const modulePath = process.env.LEDGER_NWM_PATH || 'node-window-manager'
 const { windowManager } = require(modulePath)
 const readline = require('node:readline')
+const parentPid = Number(process.env.LEDGER_DOCK_PARENT_PID || 0)
 
 let tracking = null
 let trackingTimer = null
@@ -397,11 +398,13 @@ const toInfo = (window, sidebar = null) => {
   try {
     const bounds = window.getBounds && window.getBounds()
     if (!bounds) return null
+    const processId = Number(window.processId ?? 0)
     const x = Number(bounds.x)
     const y = Number(bounds.y)
     const width = Number(bounds.width)
     const height = Number(bounds.height)
     if (![x, y, width, height].every(Number.isFinite)) return null
+    if (parentPid && processId === parentPid) return null
     if (isSidebarRect(x, y, width, height, sidebar)) return null
     if (width < 80 || height < 80) return null
     if (typeof window.isVisible === 'function' && !window.isVisible()) return null
@@ -635,6 +638,7 @@ let currentSidebarPreferences = { ...defaultSidebarPreferences };
 let currentFloatingDockTarget: FloatingDockTarget | null = null;
 let currentFloatingDockBounds: Rect | null = null;
 let currentFloatingDockMisses = 0;
+let floatingDockHoldUntil = 0;
 let floatingDockDragActive = false;
 let floatingDockTrackingTimer: NodeJS.Timeout | null = null;
 let floatingDockNativeTracker: ChildProcessWithoutNullStreams | null = null;
@@ -686,7 +690,9 @@ const NOTIFICATION_CENTER_MIN_HEIGHT = 600;
 const QUICK_CAPTURE_WIDTH = 400;
 const QUICK_CAPTURE_HEIGHT = 320;
 const MODULE_GAP = 12;
-const NOTIFICATION_SCHEDULER_INTERVAL_MS = 15_000;
+const NOTIFICATION_SCHEDULER_INTERVAL_MS = 60_000;
+const NOTIFICATION_PREFS_REFRESH_MS = 5 * 60_000;
+const NOTIFICATION_SCHEDULER_BACKOFF_MS = 90_000;
 
 type NotificationSchedulerItem = {
   id: string;
@@ -712,8 +718,11 @@ type NotificationPreferencesPayload = {
 
 let notificationSchedulerTimer: NodeJS.Timeout | null = null;
 let notificationSchedulerInFlight = false;
+let notificationSchedulerCooldownUntil = 0;
 let notificationAccessToken: string | null = null;
 let notificationApiUrl = LEDGER_API_URL;
+let cachedNotificationPreferences: NotificationPreferencesPayload | null = null;
+let cachedNotificationPreferencesAt = 0;
 const notificationSeenIds = new Set<string>();
 let notificationSeenAccessToken: string | null = null;
 
@@ -788,15 +797,25 @@ const fetchLedgerApi = async <T,>(
   return response.json() as Promise<T>;
 };
 
+const shouldRefreshNotificationPreferences = () =>
+  !cachedNotificationPreferences ||
+  Date.now() - cachedNotificationPreferencesAt > NOTIFICATION_PREFS_REFRESH_MS;
+
 const runNotificationScheduler = async () => {
   if (notificationSchedulerInFlight || !notificationAccessToken) return;
+  if (Date.now() < notificationSchedulerCooldownUntil) return;
   notificationSchedulerInFlight = true;
 
   try {
-    const prefs = await fetchLedgerApi<NotificationPreferencesPayload>(
-      '/api/notifications/preferences',
-      notificationAccessToken
-    );
+    if (shouldRefreshNotificationPreferences()) {
+      cachedNotificationPreferences = await fetchLedgerApi<NotificationPreferencesPayload>(
+        '/api/notifications/preferences',
+        notificationAccessToken
+      );
+      cachedNotificationPreferencesAt = Date.now();
+    }
+
+    const prefs = cachedNotificationPreferences ?? {};
     const shouldDeliverDesktop = Boolean(prefs.desktopEnabled);
     const shouldDeliverInApp = prefs.inAppEnabled !== false;
 
@@ -833,6 +852,12 @@ const runNotificationScheduler = async () => {
     }
     broadcastNotificationSummary(Number(summary?.counts?.active ?? 0));
   } catch (error) {
+    if (typeof (error as { status?: number } | null)?.status === 'number' && (error as { status?: number }).status === 429) {
+      notificationSchedulerCooldownUntil = Date.now() + NOTIFICATION_SCHEDULER_BACKOFF_MS;
+      console.warn(
+        `[electron] Notification scheduler backed off for ${NOTIFICATION_SCHEDULER_BACKOFF_MS}ms after 429`
+      );
+    }
     console.warn('[electron] Notification scheduler failed', error);
   } finally {
     notificationSchedulerInFlight = false;
@@ -852,6 +877,9 @@ const syncNotificationSession = (payload: {
   if (nextAccessToken !== notificationSeenAccessToken) {
     notificationSeenIds.clear();
     notificationSeenAccessToken = nextAccessToken;
+    cachedNotificationPreferences = null;
+    cachedNotificationPreferencesAt = 0;
+    notificationSchedulerCooldownUntil = 0;
   }
   notificationAccessToken = nextAccessToken;
   void runNotificationScheduler();
@@ -1229,6 +1257,15 @@ function setCurrentFloatingDockTarget(target: FloatingDockTarget | null, bounds:
   sendFloatingDockChanged(Boolean(target && bounds), target && bounds ? 'attached' : 'detached');
 }
 
+function holdCurrentFloatingDockTarget(durationMs = 1500) {
+  if (!currentFloatingDockTarget || !currentFloatingDockBounds) return;
+  floatingDockHoldUntil = Math.max(floatingDockHoldUntil, Date.now() + durationMs);
+}
+
+function isFloatingDockHoldActive() {
+  return Date.now() < floatingDockHoldUntil;
+}
+
 function clearCurrentFloatingDockTarget(
   attachmentStatus: Exclude<FloatingDockAttachmentStatus, 'attached'> = 'detached'
 ) {
@@ -1237,6 +1274,7 @@ function clearCurrentFloatingDockTarget(
   currentFloatingDockTarget = null;
   currentFloatingDockBounds = null;
   currentFloatingDockMisses = 0;
+  floatingDockHoldUntil = 0;
   sendFloatingDockChanged(false, attachmentStatus);
 }
 
@@ -1313,6 +1351,13 @@ function handleMacDockHelperMessage(message: MacDockHelperMessage) {
 
   if (message.kind === 'missing') {
     if (!currentFloatingDockTarget || currentFloatingDockTarget.id !== message.target.id) return;
+    if (isFloatingDockHoldActive()) {
+      currentFloatingDockMisses = 0;
+      if (currentFloatingDockBounds) {
+        applyFloatingDockTargetBounds(currentFloatingDockBounds, currentFloatingDockTarget.side);
+      }
+      return;
+    }
     currentFloatingDockMisses += 1;
     if (currentFloatingDockMisses > 24) {
       clearCurrentFloatingDockTarget();
@@ -1851,6 +1896,11 @@ async function refreshFloatingDockTarget() {
   if (!sidebarWin || sidebarWin.isDestroyed()) return;
 
   if (!target) {
+    if (isFloatingDockHoldActive() && currentFloatingDockTarget && currentFloatingDockBounds) {
+      currentFloatingDockMisses = 0;
+      applyFloatingDockTargetBounds(currentFloatingDockBounds, currentFloatingDockTarget.side);
+      return;
+    }
     currentFloatingDockMisses += 1;
     if (currentFloatingDockMisses <= 24 && currentFloatingDockBounds) {
       const fallbackBounds = getDockedBoundsForTarget(
@@ -1923,6 +1973,7 @@ $sidebarTop = ${Math.floor(sidebarBounds.y)}
 $sidebarRight = ${Math.floor(sidebarBounds.x + sidebarBounds.width)}
 $sidebarBottom = ${Math.floor(sidebarBounds.y + sidebarBounds.height)}
 $sidebarHeight = ${Math.floor(sidebarBounds.height)}
+$parentPid = ${process.pid}
 $threshold = ${Math.floor(snapDistance)}
 $script:result = $null
 $script:bestScore = [Double]::PositiveInfinity
@@ -1934,6 +1985,9 @@ $script:bestScore = [Double]::PositiveInfinity
   if (-not [Win32]::GetWindowRect($hWnd, [ref]$rect)) { return $true }
   $width = $rect.Right - $rect.Left
   $height = $rect.Bottom - $rect.Top
+  $pid = 0
+  [Win32]::GetWindowThreadProcessId($hWnd, [ref]$pid) | Out-Null
+  if ($pid -eq $parentPid) { return $true }
   if ([Math]::Abs($rect.Left - $sidebarLeft) -le 2 -and [Math]::Abs($rect.Top - $sidebarTop) -le 2 -and [Math]::Abs($width - ${Math.floor(
     sidebarBounds.width
   )}) -le 2 -and [Math]::Abs($height - $sidebarHeight) -le 2) { return $true }
@@ -2075,6 +2129,7 @@ $sidebarLeft = ${Math.floor(sidebarBounds.x)}
 $sidebarTop = ${Math.floor(sidebarBounds.y)}
 $sidebarWidth = ${Math.floor(sidebarBounds.width)}
 $sidebarHeight = ${Math.floor(sidebarBounds.height)}
+$parentPid = ${process.pid}
 $cursor = [Win32+POINT]::new()
 $cursor.X = ${Math.floor(probeX)}
 $cursor.Y = ${Math.floor(probeY)}
@@ -2087,6 +2142,9 @@ $script:result = $null
   if (-not [Win32]::GetWindowRect($hWnd, [ref]$rect)) { return $true }
   $width = $rect.Right - $rect.Left
   $height = $rect.Bottom - $rect.Top
+  $pid = 0
+  [Win32]::GetWindowThreadProcessId($hWnd, [ref]$pid) | Out-Null
+  if ($pid -eq $parentPid) { return $true }
   if ([Math]::Abs($rect.Left - $sidebarLeft) -le 2 -and [Math]::Abs($rect.Top - $sidebarTop) -le 2 -and [Math]::Abs($width - $sidebarWidth) -le 2 -and [Math]::Abs($height - $sidebarHeight) -le 2) { return $true }
   if ($cursor.X -ge $rect.Left -and $cursor.X -le $rect.Right -and $cursor.Y -ge $rect.Top -and $cursor.Y -le $rect.Bottom) {
     $script:result = "$($hWnd.ToInt64())|$($rect.Left)|$($rect.Top)|$width|$height"
@@ -2241,8 +2299,16 @@ function resolveModuleBounds(kind: ModuleWindowKind): Electron.Rectangle {
   const display = screen.getDisplayNearestPoint(sidebarAnchorPoint);
   const workArea = display.workArea;
 
+  const shouldUseDockRelativePlacement =
+    currentSidebarPosition === 'floating' &&
+    Boolean(currentFloatingDockTarget && currentFloatingDockBounds);
+
   const remembered = moduleWindowBoundsMemory.get(kind);
-  if (remembered && remembered.sidebarPosition === currentSidebarPosition) {
+  if (
+    !shouldUseDockRelativePlacement &&
+    remembered &&
+    remembered.sidebarPosition === currentSidebarPosition
+  ) {
     const width = Math.max(
       MODULE_MIN_WIDTH,
       Math.min(remembered.bounds.width, workArea.width - WINDOW_MARGIN * 2)
@@ -2663,6 +2729,14 @@ function openModuleWindow(
 ) {
   const existing = moduleWins.get(kind);
   if (existing && !existing.isDestroyed()) {
+    holdCurrentFloatingDockTarget();
+    if (
+      currentSidebarPosition === 'floating' &&
+      currentFloatingDockTarget &&
+      currentFloatingDockBounds
+    ) {
+      existing.setBounds(resolveModuleBounds(kind), false);
+    }
     existing.show();
     existing.focus();
     sendModuleFocus(
@@ -2680,6 +2754,7 @@ function openModuleWindow(
   // Quick capture modules use smaller dimensions
   const isQuickCapture = kind === 'quick-task' || kind === 'quick-note' || kind === 'quick-event';
   const isNotificationCenter = kind === 'notifications';
+  holdCurrentFloatingDockTarget();
   let initialBounds = resolveModuleBounds(kind);
 
   if (isQuickCapture) {
@@ -2953,9 +3028,6 @@ ipcMain.handle(
         clearCurrentFloatingDockTarget();
         stopFloatingDockTracking();
       }
-    } else {
-      clearCurrentFloatingDockTarget();
-      stopFloatingDockTracking();
     }
     if (typeof preferences.opacity === 'number') {
       applySidebarOpacity(preferences.opacity);

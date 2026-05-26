@@ -481,6 +481,8 @@ export const SettingsWindow = () => {
   const notificationAutosaveTokenRef = useRef(0);
   const lastSavedNotificationSettingsRef = useRef<string>('');
   const notificationSettingsHydratedRef = useRef(false);
+  const sidebarPreferencesSyncInitializedRef = useRef(false);
+  const sidebarOpacitySyncInitializedRef = useRef(false);
 
   const sidebarPositionOptions: Array<{
     value: SidebarPosition;
@@ -648,6 +650,11 @@ export const SettingsWindow = () => {
   // Sync structural sidebar preferences separately from opacity so the range slider does not
   // trigger window-mode reapplication on every pointer move.
   useEffect(() => {
+    if (!sidebarPreferencesSyncInitializedRef.current) {
+      sidebarPreferencesSyncInitializedRef.current = true;
+      return;
+    }
+
     const { opacity: _opacity, ...restPreferences } = sidebarPreferences;
     void window.desktopWindow?.applySidebarPreferences(restPreferences).catch(() => {
       // No-op outside Electron (browser dev mode)
@@ -670,6 +677,11 @@ export const SettingsWindow = () => {
   ]);
 
   useEffect(() => {
+    if (!sidebarOpacitySyncInitializedRef.current) {
+      sidebarOpacitySyncInitializedRef.current = true;
+      return;
+    }
+
     void window.desktopWindow
       ?.applySidebarPreferences({ opacity: sidebarPreferences.opacity })
       .catch(() => {

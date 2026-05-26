@@ -138,7 +138,7 @@ export const ModuleWindowHeader = ({
             aria-label={closeLabel}
             className={controlClassName}
           >
-            <X size={13} />
+            <X size={12} />
           </button>
           {onMinimize && (
             <button
@@ -149,7 +149,7 @@ export const ModuleWindowHeader = ({
               aria-label={minimizeLabel}
               className={controlClassName}
             >
-              <Minus size={13} />
+              <Minus size={12} />
             </button>
           )}
           {onToggleFullscreen && (
@@ -161,7 +161,7 @@ export const ModuleWindowHeader = ({
               aria-label={fullscreenLabel}
               className={controlClassName}
             >
-              <Maximize2 size={13} />
+              <Maximize2 size={12} />
             </button>
           )}
         </div>
