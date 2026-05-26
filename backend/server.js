@@ -1133,7 +1133,7 @@ const buildDueNotificationCandidates = async (userId, prefs) => {
       .from('events')
       .select('id, workspace_id, title, start_at, end_at, calendar_id, color, status, project_id, note_id')
       .in('workspace_id', workspaceIds)
-      .gte('start_at', todayStart.toISOString())
+      .gte('start_at', now.toISOString())
       .lte('start_at', endWindow.toISOString())
       .limit(250);
 
@@ -1482,7 +1482,13 @@ const mapNotificationCenterRow = (row, maps) => {
   }
 
   const actionTaken = String(row.action_taken ?? '').trim().toLowerCase();
-  const isActive = !row.dismissed_at && actionTaken !== 'complete';
+  const event = sourceType === 'event' ? maps.eventById.get(sourceId) ?? null : null;
+  const eventStartAt = event?.start_at ? new Date(event.start_at) : null;
+  const eventHasStarted =
+    eventStartAt instanceof Date &&
+    !Number.isNaN(eventStartAt.getTime()) &&
+    eventStartAt <= new Date();
+  const isActive = !row.dismissed_at && actionTaken !== 'complete' && !eventHasStarted;
 
   return {
     id: row.id,
@@ -1568,23 +1574,7 @@ const processNotificationEventsForUser = async (userId) => {
 
   if (insertError) throw insertError;
 
-  const eventRows = Array.isArray(insertedRows) ? insertedRows : [];
-  const eventIds = eventRows.map((row) => row.id).filter(Boolean);
-  if (!eventIds.length) return [];
-
-  const nowIso = new Date().toISOString();
-  const { data: claimedRows, error: claimError } = await supabase
-    .from('notification_events')
-    .update({ delivered_in_app_at: nowIso, updated_at: nowIso })
-    .in('id', eventIds)
-    .is('delivered_in_app_at', null)
-    .is('dismissed_at', null)
-    .select(
-      'id, user_id, workspace_id, source_type, source_id, notification_type, scheduled_for, delivered_in_app_at, delivered_desktop_at, dismissed_at, action_taken, metadata'
-    );
-
-  if (claimError) throw claimError;
-  return Array.isArray(claimedRows) ? claimedRows : [];
+  return Array.isArray(insertedRows) ? insertedRows : [];
 };
 
 const runNotificationScheduler = async () => {

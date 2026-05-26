@@ -800,17 +800,29 @@ const runNotificationScheduler = async () => {
     const shouldDeliverDesktop = Boolean(prefs.desktopEnabled);
     const shouldDeliverInApp = prefs.inAppEnabled !== false;
 
+    const notifications = await fetchLedgerApi<NotificationSchedulerItem[]>(
+      '/api/notifications/check',
+      notificationAccessToken,
+      { method: 'POST' }
+    );
     const summary = await fetchLedgerApi<{ counts?: { active?: number } }>(
       '/api/notifications/summary',
       notificationAccessToken
     );
-    const notifications = await fetchLedgerApi<{ active?: NotificationSchedulerItem[] }>(
-      '/api/notifications',
-      notificationAccessToken
-    );
-    const activeItems = Array.isArray(notifications?.active) ? notifications.active : [];
+    const activeItems = Array.isArray(notifications) ? notifications : [];
     if (shouldDeliverInApp || shouldDeliverDesktop) {
-      const unseenItems = activeItems.filter((item) => !notificationSeenIds.has(item.id));
+      const batchKeys = new Set<string>();
+      const unseenItems = activeItems.filter((item) => {
+        if (notificationSeenIds.has(item.id)) return false;
+        const batchKey = [
+          item.sourceType,
+          item.sourceId,
+          item.notificationType,
+        ].join(':');
+        if (batchKeys.has(batchKey)) return false;
+        batchKeys.add(batchKey);
+        return true;
+      });
       unseenItems.forEach((item) => notificationSeenIds.add(item.id));
       if (shouldDeliverInApp) {
         broadcastNotificationBatch(unseenItems);
