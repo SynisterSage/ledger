@@ -20,6 +20,7 @@ type ToastContextShape = {
     opts?: { detail?: string; variant?: ToastVariant; duration?: number; actions?: ToastAction[] }
   ) => string;
   dismiss: (id: string) => void;
+  clear: () => void;
 };
 
 const ToastContext = createContext<ToastContextShape | null>(null);
@@ -35,6 +36,10 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const dismiss = useCallback((id: string) => {
     setToasts((t) => t.filter((x) => x.id !== id));
+  }, []);
+
+  const clear = useCallback(() => {
+    setToasts([]);
   }, []);
 
   const show = useCallback(
@@ -67,7 +72,7 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     [dismiss]
   );
 
-  const value = useMemo(() => ({ show, dismiss }), [show, dismiss]);
+  const value = useMemo(() => ({ show, dismiss, clear }), [show, dismiss, clear]);
 
   return (
     <ToastContext.Provider value={value}>

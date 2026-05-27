@@ -330,7 +330,7 @@ const ToolbarPlugin = ({ onAutoCorrect }: { onAutoCorrect?: () => void | Promise
       <div ref={toolbarSentinelRef} aria-hidden="true" className="pointer-events-none h-px w-full" />
       <div
         style={{ top: 'var(--notes-toolbar-sticky-top, 0px)' }}
-        className={`sticky z-20 mb-2 flex w-full flex-wrap items-center gap-1.5 rounded-xl px-1.5 py-1 transition-[background-color,border-color,box-shadow,opacity,transform,backdrop-filter] duration-150 ease-out ${
+        className={`sticky z-20 mb-2 mx-auto flex w-fit max-w-full flex-wrap items-center gap-1.5 rounded-xl px-1.5 py-1 transition-[background-color,border-color,box-shadow,opacity,transform,backdrop-filter] duration-150 ease-out ${
           isSticky
             ? 'border border-gray-200/80 bg-[rgba(255,255,255,0.86)] shadow-[0_8px_24px_rgba(17,24,39,0.08)] backdrop-blur-[14px]'
             : 'border border-transparent bg-transparent shadow-none backdrop-blur-none'

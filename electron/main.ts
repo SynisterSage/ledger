@@ -680,6 +680,7 @@ let currentFloatingPosition = { ...defaultSidebarPreferences.floatingPosition };
 let currentSidebarPreferences = { ...defaultSidebarPreferences };
 let currentFloatingDockTarget: FloatingDockTarget | null = null;
 let currentFloatingDockBounds: Rect | null = null;
+let currentFloatingDockAttachmentStatus: FloatingDockAttachmentStatus = 'detached';
 let currentFloatingDockMisses = 0;
 let floatingDockHoldUntil = 0;
 let floatingDockDragActive = false;
@@ -767,6 +768,7 @@ type NotificationPreferencesPayload = {
 let notificationSchedulerTimer: NodeJS.Timeout | null = null;
 let notificationSchedulerInFlight = false;
 let notificationSchedulerCooldownUntil = 0;
+let notificationSchedulerLastRunAt = 0;
 let notificationAccessToken: string | null = null;
 let notificationApiUrl = LEDGER_API_URL;
 let cachedNotificationPreferences: NotificationPreferencesPayload | null = null;
@@ -911,6 +913,7 @@ const runNotificationScheduler = async () => {
   if (notificationSchedulerInFlight || !notificationAccessToken) return;
   if (Date.now() < notificationSchedulerCooldownUntil) return;
   notificationSchedulerInFlight = true;
+  notificationSchedulerLastRunAt = Date.now();
 
   try {
     if (shouldRefreshNotificationPreferences()) {
@@ -976,12 +979,14 @@ const syncNotificationSession = (payload: {
   userId?: string | null;
   apiUrl?: string | null;
 } | null) => {
-  if (payload?.apiUrl?.trim()) {
-    notificationApiUrl = payload.apiUrl.trim();
-  }
+  const previousApiUrl = notificationApiUrl;
+  if (payload?.apiUrl?.trim()) notificationApiUrl = payload.apiUrl.trim();
   const accessToken = payload?.accessToken ?? null;
   const nextAccessToken = accessToken && accessToken.trim() ? accessToken.trim() : null;
-  if (nextAccessToken !== notificationSeenAccessToken) {
+  const sessionChanged =
+    nextAccessToken !== notificationSeenAccessToken || notificationApiUrl !== previousApiUrl;
+
+  if (sessionChanged) {
     notificationSeenIds.clear();
     notificationSeenAccessToken = nextAccessToken;
     cachedNotificationPreferences = null;
@@ -989,7 +994,9 @@ const syncNotificationSession = (payload: {
     notificationSchedulerCooldownUntil = 0;
   }
   notificationAccessToken = nextAccessToken;
-  void runNotificationScheduler();
+  if (sessionChanged || Date.now() - notificationSchedulerLastRunAt > NOTIFICATION_SCHEDULER_INTERVAL_MS) {
+    void runNotificationScheduler();
+  }
 };
 
 const broadcastCalendarItemsUpdated = () => {
@@ -1285,6 +1292,48 @@ function isFullscreenLikeBounds(rect: Rect) {
   );
 }
 
+function isLikelyMinimizingToDock(nextBounds: Rect, previousBounds: Rect | null) {
+  if (!previousBounds) return false;
+  if (![nextBounds.x, nextBounds.y, nextBounds.width, nextBounds.height].every(Number.isFinite)) {
+    return false;
+  }
+
+  const previousArea = Math.max(1, previousBounds.width * previousBounds.height);
+  const nextArea = Math.max(1, nextBounds.width * nextBounds.height);
+  const widthRatio = nextBounds.width / Math.max(1, previousBounds.width);
+  const heightRatio = nextBounds.height / Math.max(1, previousBounds.height);
+  const areaRatio = nextArea / previousArea;
+  const isShrinking =
+    areaRatio < 0.72 ||
+    widthRatio < 0.82 ||
+    heightRatio < 0.82 ||
+    nextBounds.width < 120 ||
+    nextBounds.height < 120;
+
+  if (!isShrinking) return false;
+
+  const workArea = screen.getDisplayMatching(previousBounds).workArea;
+  const tolerance = 28;
+  const nextRight = nextBounds.x + nextBounds.width;
+  const nextBottom = nextBounds.y + nextBounds.height;
+  const workRight = workArea.x + workArea.width;
+  const workBottom = workArea.y + workArea.height;
+  const centerX = nextBounds.x + nextBounds.width / 2;
+  const centerY = nextBounds.y + nextBounds.height / 2;
+  const isMovingOutsideWorkArea =
+    centerX < workArea.x ||
+    centerX > workRight ||
+    centerY < workArea.y ||
+    centerY > workBottom;
+  const isNearDockEdge =
+    nextBounds.x <= workArea.x + tolerance ||
+    nextBounds.y <= workArea.y + tolerance ||
+    nextRight >= workRight - tolerance ||
+    nextBottom >= workBottom - tolerance;
+
+  return isMovingOutsideWorkArea || isNearDockEdge;
+}
+
 function getFullscreenWorkAreaForWindow(win: BrowserWindow) {
   const bounds = win.getBounds();
   return screen.getDisplayMatching(bounds).workArea;
@@ -1345,6 +1394,7 @@ function sendFloatingDockChanged(
   isDocked: boolean,
   attachmentStatus: FloatingDockAttachmentStatus = isDocked ? 'attached' : 'detached'
 ) {
+  currentFloatingDockAttachmentStatus = attachmentStatus;
   try {
     if (sidebarWin && !sidebarWin.isDestroyed() && !sidebarWin.webContents.isDestroyed()) {
       sidebarWin.webContents.send('sidebar:floating-dock-changed', {
@@ -1626,12 +1676,24 @@ function applyFloatingDockTargetBounds(targetBounds: Rect, side: DockSide) {
   if (currentSidebarMode === 'auth' || currentSidebarMode === 'fullscreen') return;
   if (floatingDockDragActive) return;
   if (isFullscreenLikeBounds(targetBounds)) {
-    suspendCurrentFloatingDockTarget('suspended_fullscreen');
+    currentFloatingDockBounds = targetBounds;
+    currentFloatingDockMisses = 0;
+    sendFloatingDockChanged(false, 'suspended_fullscreen');
+    return;
+  }
+  if (isLikelyMinimizingToDock(targetBounds, currentFloatingDockBounds)) {
+    const currentBounds = sidebarWin.getBounds();
+    currentFloatingPosition = { x: currentBounds.x, y: currentBounds.y };
+    suspendCurrentFloatingDockTarget('suspended_minimized');
+    applySidebarWindowMode(currentSidebarMode);
     return;
   }
 
   currentFloatingDockBounds = targetBounds;
   currentFloatingDockMisses = 0;
+  if (currentFloatingDockAttachmentStatus !== 'attached') {
+    sendFloatingDockChanged(true, 'attached');
+  }
   const nextBounds = getDockedBoundsForTarget(targetBounds, side, currentSidebarMode);
   if (rectsMatch(sidebarWin.getBounds(), nextBounds)) return;
   if (!setSidebarBounds(nextBounds)) return;
@@ -2038,6 +2100,13 @@ async function refreshFloatingDockTarget() {
   currentFloatingDockMisses = 0;
   currentFloatingDockTarget = target.target;
   currentFloatingDockBounds = target.bounds;
+  if (isFullscreenLikeBounds(target.bounds)) {
+    sendFloatingDockChanged(false, 'suspended_fullscreen');
+    return;
+  }
+  if (currentFloatingDockAttachmentStatus !== 'attached') {
+    sendFloatingDockChanged(true, 'attached');
+  }
   const nextBounds = getDockedBoundsForTarget(
     target.bounds,
     currentFloatingDockTarget.side,
@@ -2777,7 +2846,6 @@ function createSidebarWindow() {
 
     sidebarWin.webContents.on('did-finish-load', () => {
       try {
-        console.log('[electron][sidebar] did-finish-load');
         if (sidebarWin && !sidebarWin.isDestroyed()) {
           sidebarWin.webContents.send('app:did-finish-load');
           processPendingInviteToken();
@@ -2950,6 +3018,7 @@ function openModuleWindow(
   moduleWins.set(kind, moduleWin);
 
   moduleWin.on('minimize', () => {
+    suspendCurrentFloatingDockTarget('suspended_minimized');
     sidebarWin?.webContents.send('module:state-changed', { kind, state: 'minimized' });
   });
 
@@ -3317,6 +3386,7 @@ ipcMain.handle('window:close-module', (_event, kind: ModuleWindowKind) => {
 ipcMain.handle('window:minimize-module', (_event, kind: ModuleWindowKind) => {
   const existing = moduleWins.get(kind);
   if (!existing || existing.isDestroyed()) return;
+  suspendCurrentFloatingDockTarget('suspended_minimized');
   existing.minimize();
 });
 

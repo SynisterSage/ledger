@@ -91,6 +91,15 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           ? (workspaceRowsResult.value as WorkspaceSummary[])
           : [];
 
+      if (workspaceRowsResult.status === 'rejected') {
+        setError(
+          workspaceRowsResult.reason instanceof Error
+            ? workspaceRowsResult.reason.message
+            : 'Could not load workspaces'
+        );
+        return;
+      }
+
       const activeWorkspaceFromApi =
         activeResult.status === 'fulfilled'
           ? String((activeResult.value as { workspace_id?: string })?.workspace_id ?? '').trim() ||
@@ -134,7 +143,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     } finally {
       setIsLoading(false);
     }
-  }, [authedRequest, session?.access_token, user]);
+  }, [activeWorkspaceId, authedRequest, session?.access_token, user]);
 
   useEffect(() => {
     void refreshWorkspaces();

@@ -183,6 +183,10 @@ export const useAuth = (): UseAuthReturn => {
       setSession(null);
       setUser(null);
       writeCachedSession(null);
+      if (typeof window !== 'undefined') {
+        void window.desktopWindow?.setMode('auth').catch(() => undefined);
+        void window.desktopWindow?.setVisible(true).catch(() => undefined);
+      }
     } catch (err) {
       const error = err instanceof Error ? err : new Error('Sign out failed');
       setError(error);

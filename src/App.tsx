@@ -324,6 +324,25 @@ function InviteSuccessScreen({
   );
 }
 
+function AuthSessionToastReset() {
+  const { user } = useAuthContext();
+  const { clear } = useToast();
+  const previousUserIdRef = useRef<string | null>(user?.id ?? null);
+
+  useEffect(() => {
+    const previousUserId = previousUserIdRef.current;
+    const nextUserId = user?.id ?? null;
+
+    if (previousUserId && !nextUserId) {
+      clear();
+    }
+
+    previousUserIdRef.current = nextUserId;
+  }, [clear, user?.id]);
+
+  return null;
+}
+
 function OnboardingFlow({
   step,
   mode,
@@ -3275,6 +3294,13 @@ function AppShell() {
   }, [pendingInviteToken, isLoading, user, api, refreshWorkspaces, inviteFlowStatus, setActiveWorkspace]);
 
   useEffect(() => {
+    if (user) return;
+
+    setInviteFlowNotice(null);
+    setInviteFlowError(null);
+  }, [user]);
+
+  useEffect(() => {
     if (postAuthStage !== 'onboarding') {
       onboardingResetUserRef.current = null;
       return;
@@ -3696,10 +3722,15 @@ function AppShell() {
 }
 
 function App() {
+  const { user } = useAuthContext();
+  const { state } = useSidebar();
+  const shouldShowNotificationMonitor = Boolean(user) && (isModuleWindow || state === 'expanded');
+
   return (
     <SearchProvider>
       <ToastProvider>
-        <NotificationMonitor />
+        {shouldShowNotificationMonitor ? <NotificationMonitor /> : null}
+        <AuthSessionToastReset />
         <AppShell />
         <SearchModal />
       </ToastProvider>

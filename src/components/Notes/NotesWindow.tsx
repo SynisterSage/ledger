@@ -1154,81 +1154,6 @@ export const NotesWindow = () => {
     return `${activeViewerNames.slice(0, 2).join(', ')} +${activeViewerNames.length - 2}`;
   }, [activeViewerNames]);
 
-  const dismissRemoteNoteUpdateToast = useCallback(() => {
-    if (!remoteNoteUpdateToastIdRef.current) return;
-    toast.dismiss(remoteNoteUpdateToastIdRef.current);
-    remoteNoteUpdateToastIdRef.current = null;
-  }, [toast]);
-
-  const showRemoteNoteUpdateToast = useCallback(
-    (detail: string) => {
-      dismissRemoteNoteUpdateToast();
-      remoteNoteUpdatePendingRef.current = true;
-      remoteNoteUpdateToastIdRef.current = toast.show('New version available', {
-        detail,
-        variant: 'info',
-        duration: 0,
-        actions: [
-          {
-            label: 'Reload',
-            onClick: () => {
-              void (async () => {
-                if (!selectedNoteIdRef.current) return;
-                let reloaded = false;
-                try {
-                  const latest = (await api.getNoteById(selectedNoteIdRef.current)) as NoteRow;
-                  setNotes((prev) =>
-                    prev.map((note) => (note.id === latest.id ? { ...note, ...latest } : note))
-                  );
-                  setNoteTree((prev) => replaceNoteInTree(prev, latest));
-                  hydrationNoteIdRef.current = latest.id;
-                  setIsHydratingNote(true);
-                  setDraftTitle(latest.title);
-                  setDraftContent(normalizeEditorHtml(latest.content));
-                  setDraftDate(latest.date || todayKey());
-                  setDraftMood(latest.mood ?? '');
-                  setDraftMode(latest.mode || 'text');
-                  setDraftMindMapStructure(latest.mind_map_structure || null);
-                  setLastSavedAt(latest.updated_at);
-                  setIsDirty(false);
-                  setHasUserEdited(false);
-                  setHasHydratedNote(true);
-                  setEditorRefreshTick((current) => current + 1);
-                  selectedNoteServerUpdatedAtRef.current = latest.updated_at ?? null;
-                  selectedNoteServerUpdatedByRef.current = latest.updated_by ?? latest.user_id ?? null;
-                  try {
-                    sessionCheckpointMapRef.current.set(latest.id, false);
-                    lastAutosaveCheckpointRef.current.delete(latest.id);
-                  } catch {
-                    // ignore
-                  }
-                  window.setTimeout(() => {
-                    if (hydrationNoteIdRef.current === latest.id) {
-                      setIsHydratingNote(false);
-                    }
-                  }, 0);
-                  reloaded = true;
-                } catch (error) {
-                  setError(error instanceof Error ? error.message : 'Could not reload note.');
-                } finally {
-                  remoteNoteUpdatePendingRef.current = !reloaded;
-                  dismissRemoteNoteUpdateToast();
-                }
-              })();
-            },
-          },
-          {
-            label: 'Dismiss',
-            onClick: () => {
-              dismissRemoteNoteUpdateToast();
-            },
-          },
-        ],
-      });
-    },
-    [api, dismissRemoteNoteUpdateToast, setError, setNoteTree, setNotes, toast]
-  );
-
   const getNoteUpdatedByLabel = useCallback(
     (updatedById?: string | null) => {
       if (!updatedById) return null;
@@ -1238,106 +1163,10 @@ export const NotesWindow = () => {
     [workspaceMemberById]
   );
 
-  useEffect(() => {
-    if (!user?.id || !activeWorkspaceId) return;
-
-    const channel = supabase
-      .channel(`notes-realtime-${activeWorkspaceId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'notes',
-          filter: `workspace_id=eq.${activeWorkspaceId}`,
-        },
-        (payload) => {
-          const incoming = (payload.new ?? null) as NoteRow | null;
-          if (!incoming?.id) return;
-
-          setNotes((prev) =>
-            prev.some((note) => note.id === incoming.id)
-              ? prev.map((note) => (note.id === incoming.id ? { ...note, ...incoming } : note))
-              : prev
-          );
-          setNoteTree((prev) => replaceNoteInTree(prev, incoming));
-
-          if (payload.eventType !== 'UPDATE' && payload.eventType !== 'INSERT') return;
-
-          const selectedId = selectedNoteIdRef.current;
-          if (selectedId !== incoming.id) return;
-
-          const incomingUpdatedAt = incoming.updated_at ?? null;
-          const incomingUpdatedBy = incoming.updated_by ?? null;
-          const baseUpdatedAt = selectedNoteServerUpdatedAtRef.current;
-          const currentUserId = user.id;
-
-          if (incomingUpdatedBy && incomingUpdatedBy === currentUserId) {
-            selectedNoteServerUpdatedAtRef.current = incomingUpdatedAt;
-            selectedNoteServerUpdatedByRef.current = incomingUpdatedBy;
-            return;
-          }
-
-          if (incomingUpdatedAt && incomingUpdatedAt !== baseUpdatedAt) {
-            selectedNoteServerUpdatedByRef.current = incomingUpdatedBy;
-            if (!remoteNoteUpdatePendingRef.current) {
-              remoteNoteUpdatePendingRef.current = true;
-              const updaterName = getNoteUpdatedByLabel(incomingUpdatedBy);
-              showRemoteNoteUpdateToast(
-                updaterName
-                  ? `${updaterName} updated this note.`
-                  : 'This note was updated elsewhere.'
-              );
-            }
-          }
-        }
-      )
-      .subscribe();
-
-    return () => {
-      void supabase.removeChannel(channel);
-    };
-  }, [activeWorkspaceId, getNoteUpdatedByLabel, showRemoteNoteUpdateToast, user?.id]);
-
   const saveStatus = useMemo(
     () => formatSavedStatus(lastSavedAt, showSavingIndicator, isDirty),
     [isDirty, lastSavedAt, saveStatusTick, showSavingIndicator]
   );
-
-  useEffect(() => {
-    if (!selectedNoteId || !selectedNote) return;
-    if (isDirty || isHydratingNote) return;
-
-    const currentServerUpdatedAt = selectedNote.updated_at ?? null;
-    const currentServerUpdatedBy = selectedNote.updated_by ?? null;
-    const baseUpdatedAt = selectedNoteServerUpdatedAtRef.current;
-    const currentUserId = user?.id ?? null;
-
-    if (!currentServerUpdatedAt || !baseUpdatedAt) return;
-    if (currentServerUpdatedAt === baseUpdatedAt) return;
-    if (String(currentServerUpdatedBy ?? '') === String(currentUserId ?? '')) {
-      selectedNoteServerUpdatedAtRef.current = currentServerUpdatedAt;
-      selectedNoteServerUpdatedByRef.current = currentServerUpdatedBy;
-      return;
-    }
-
-    selectedNoteServerUpdatedByRef.current = currentServerUpdatedBy;
-    if (!remoteNoteUpdatePendingRef.current) {
-      remoteNoteUpdatePendingRef.current = true;
-      const updaterName = getNoteUpdatedByLabel(currentServerUpdatedBy);
-      showRemoteNoteUpdateToast(
-        updaterName ? `${updaterName} updated this note.` : 'This note was updated elsewhere.'
-      );
-    }
-  }, [
-    getNoteUpdatedByLabel,
-    isDirty,
-    isHydratingNote,
-    selectedNote,
-    selectedNoteId,
-    showRemoteNoteUpdateToast,
-    user?.id,
-  ]);
 
   const syncDraftFromNote = useCallback((note: NoteRow) => {
     hydrationNoteIdRef.current = note.id;
@@ -1609,14 +1438,6 @@ export const NotesWindow = () => {
     setHasUserEdited(false);
   }, [selectedNoteId]);
 
-  useEffect(() => {
-    if (selectedNoteId) return;
-    remoteNoteUpdatePendingRef.current = false;
-    selectedNoteServerUpdatedAtRef.current = null;
-    selectedNoteServerUpdatedByRef.current = null;
-    dismissRemoteNoteUpdateToast();
-  }, [dismissRemoteNoteUpdateToast, selectedNoteId]);
-
   const loadNotes = useCallback(
     async (opts?: { silent?: boolean }) => {
       if (!user || !activeWorkspaceId) {
@@ -1713,8 +1534,8 @@ export const NotesWindow = () => {
   );
 
   const refreshCurrentNoteFromServer = useCallback(
-    async (opts?: { silent?: boolean }) => {
-      if (!user || !activeWorkspaceId) return;
+    async (opts?: { silent?: boolean; force?: boolean }) => {
+      if (!user || !activeWorkspaceId) return false;
 
       if (opts?.silent) {
         setIsRefreshing(true);
@@ -1724,15 +1545,17 @@ export const NotesWindow = () => {
         await loadNotes({ silent: true });
 
         const currentNoteId = selectedNoteIdRef.current;
-        if (!currentNoteId) return;
-        if (isEditingRef.current || isDirtyRef.current) return;
+        if (!currentNoteId) return false;
+        if (!opts?.force && (isEditingRef.current || isDirtyRef.current)) return false;
 
         const fetched = (await api.getNoteById(currentNoteId)) as NoteRow;
         setNotes((prev) => prev.map((note) => (note.id === fetched.id ? fetched : note)));
         setNoteTree((prev) => replaceNoteInTree(prev, fetched));
         syncDraftFromNote(fetched);
+        return true;
       } catch (error) {
         setError(error instanceof Error ? error.message : 'Could not sync note.');
+        return false;
       } finally {
         if (opts?.silent) {
           setIsRefreshing(false);
@@ -1750,6 +1573,158 @@ export const NotesWindow = () => {
       user,
     ]
   );
+
+  const dismissRemoteNoteUpdateToast = useCallback(() => {
+    if (!remoteNoteUpdateToastIdRef.current) return;
+    toast.dismiss(remoteNoteUpdateToastIdRef.current);
+    remoteNoteUpdateToastIdRef.current = null;
+  }, [toast]);
+
+  const showRemoteNoteUpdateToast = useCallback(
+    (detail: string) => {
+      dismissRemoteNoteUpdateToast();
+      remoteNoteUpdatePendingRef.current = true;
+      remoteNoteUpdateToastIdRef.current = toast.show('New version available', {
+        detail,
+        variant: 'info',
+        duration: 0,
+        actions: [
+          {
+            label: 'Reload',
+            onClick: () => {
+              void (async () => {
+                let reloaded = false;
+                try {
+                  reloaded = await refreshCurrentNoteFromServer({ silent: true });
+                } catch (error) {
+                  setError(error instanceof Error ? error.message : 'Could not reload note.');
+                } finally {
+                  remoteNoteUpdatePendingRef.current = !reloaded;
+                  dismissRemoteNoteUpdateToast();
+                }
+              })();
+            },
+          },
+          {
+            label: 'Dismiss',
+            onClick: () => {
+              dismissRemoteNoteUpdateToast();
+            },
+          },
+        ],
+      });
+    },
+    [
+      dismissRemoteNoteUpdateToast,
+      refreshCurrentNoteFromServer,
+      setError,
+      toast,
+    ]
+  );
+
+  useEffect(() => {
+    if (selectedNoteId) return;
+    remoteNoteUpdatePendingRef.current = false;
+    selectedNoteServerUpdatedAtRef.current = null;
+    selectedNoteServerUpdatedByRef.current = null;
+    dismissRemoteNoteUpdateToast();
+  }, [dismissRemoteNoteUpdateToast, selectedNoteId]);
+
+  useEffect(() => {
+    if (!user?.id || !activeWorkspaceId) return;
+
+    const channel = supabase
+      .channel(`notes-realtime-${activeWorkspaceId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'notes',
+          filter: `workspace_id=eq.${activeWorkspaceId}`,
+        },
+        (payload) => {
+          const incoming = (payload.new ?? null) as NoteRow | null;
+          if (!incoming?.id) return;
+
+          setNotes((prev) =>
+            prev.some((note) => note.id === incoming.id)
+              ? prev.map((note) => (note.id === incoming.id ? { ...note, ...incoming } : note))
+              : prev
+          );
+          setNoteTree((prev) => replaceNoteInTree(prev, incoming));
+
+          if (payload.eventType !== 'UPDATE' && payload.eventType !== 'INSERT') return;
+
+          const selectedId = selectedNoteIdRef.current;
+          if (selectedId !== incoming.id) return;
+
+          const incomingUpdatedAt = incoming.updated_at ?? null;
+          const incomingUpdatedBy = incoming.updated_by ?? null;
+          const baseUpdatedAt = selectedNoteServerUpdatedAtRef.current;
+          const currentUserId = user.id;
+
+          if (incomingUpdatedBy && incomingUpdatedBy === currentUserId) {
+            selectedNoteServerUpdatedAtRef.current = incomingUpdatedAt;
+            selectedNoteServerUpdatedByRef.current = incomingUpdatedBy;
+            return;
+          }
+
+          if (incomingUpdatedAt && incomingUpdatedAt !== baseUpdatedAt) {
+            selectedNoteServerUpdatedByRef.current = incomingUpdatedBy;
+            if (!remoteNoteUpdatePendingRef.current) {
+              remoteNoteUpdatePendingRef.current = true;
+              const updaterName = getNoteUpdatedByLabel(incomingUpdatedBy);
+              showRemoteNoteUpdateToast(
+                updaterName
+                  ? `${updaterName} updated this note.`
+                  : 'This note was updated elsewhere.'
+              );
+            }
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [activeWorkspaceId, getNoteUpdatedByLabel, showRemoteNoteUpdateToast, user?.id]);
+
+  useEffect(() => {
+    if (!selectedNoteId || !selectedNote) return;
+    if (isDirty || isHydratingNote) return;
+
+    const currentServerUpdatedAt = selectedNote.updated_at ?? null;
+    const currentServerUpdatedBy = selectedNote.updated_by ?? null;
+    const baseUpdatedAt = selectedNoteServerUpdatedAtRef.current;
+    const currentUserId = user?.id ?? null;
+
+    if (!currentServerUpdatedAt || !baseUpdatedAt) return;
+    if (currentServerUpdatedAt === baseUpdatedAt) return;
+    if (String(currentServerUpdatedBy ?? '') === String(currentUserId ?? '')) {
+      selectedNoteServerUpdatedAtRef.current = currentServerUpdatedAt;
+      selectedNoteServerUpdatedByRef.current = currentServerUpdatedBy;
+      return;
+    }
+
+    selectedNoteServerUpdatedByRef.current = currentServerUpdatedBy;
+    if (!remoteNoteUpdatePendingRef.current) {
+      remoteNoteUpdatePendingRef.current = true;
+      const updaterName = getNoteUpdatedByLabel(currentServerUpdatedBy);
+      showRemoteNoteUpdateToast(
+        updaterName ? `${updaterName} updated this note.` : 'This note was updated elsewhere.'
+      );
+    }
+  }, [
+    getNoteUpdatedByLabel,
+    isDirty,
+    isHydratingNote,
+    selectedNote,
+    selectedNoteId,
+    showRemoteNoteUpdateToast,
+    user?.id,
+  ]);
 
   const loadSections = useCallback(async () => {
     try {
@@ -1947,6 +1922,19 @@ export const NotesWindow = () => {
       notes,
     ]
   );
+
+  const saveCurrentNoteAndRefresh = useCallback(async () => {
+    const currentNoteId = selectedNoteIdRef.current;
+    if (!currentNoteId) return;
+
+    if (autosaveTimerRef.current) {
+      window.clearTimeout(autosaveTimerRef.current);
+      autosaveTimerRef.current = null;
+    }
+
+    await flushAutosave();
+    await refreshCurrentNoteFromServer({ silent: true, force: true });
+  }, [flushAutosave, refreshCurrentNoteFromServer]);
 
   const runQuickAutosaveThen = useCallback(
     (after: () => void, timeoutMs = 120) => {
@@ -2858,6 +2846,23 @@ export const NotesWindow = () => {
     }
     void openNoteById(initialFocusNoteId);
   }, [initialFocusNoteId, notes, openNote, openNoteById, selectedNoteId]);
+
+  useEffect(() => {
+    if (!selectedNoteId) return;
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented) return;
+      if (!(event.metaKey || event.ctrlKey)) return;
+      if (event.key.toLowerCase() !== 's') return;
+
+      event.preventDefault();
+      event.stopPropagation();
+      void saveCurrentNoteAndRefresh();
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [saveCurrentNoteAndRefresh, selectedNoteId]);
 
   useEffect(() => {
     const focusNoteListener = (
