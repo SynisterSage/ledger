@@ -597,6 +597,21 @@ const normalizeInviteOrigin = (value) => {
   return null;
 };
 
+const getInviteBaseUrl = () => {
+  const explicit = normalizeInviteOrigin(process.env.INVITE_BASE_URL?.trim());
+  if (explicit) return explicit;
+
+  const frontendUrl = normalizeInviteOrigin(process.env.FRONTEND_URL?.trim());
+  if (frontendUrl) return frontendUrl;
+
+  if (process.env.NODE_ENV !== 'production') {
+    const publicFrontendUrl = normalizeInviteOrigin(process.env.PUBLIC_FRONTEND_URL?.trim());
+    if (publicFrontendUrl) return publicFrontendUrl;
+  }
+
+  return null;
+};
+
 const mapWorkspaceInvite = (row, nowIso = new Date().toISOString()) => {
   const isAccepted = Boolean(row.accepted_at || row.accepted_by);
   const isExpired = !isAccepted && row.expires_at && String(row.expires_at) <= nowIso;
@@ -4504,14 +4519,14 @@ app.post(
         },
       });
 
-      const appOrigin = normalizeInviteOrigin(req.body?.origin || req.get('origin'));
-      if (!appOrigin) {
+      const inviteBaseUrl = getInviteBaseUrl();
+      if (!inviteBaseUrl) {
         return res.status(400).json({
           error:
-            'Invite base URL is required. Set VITE_INVITE_BASE_URL or send the request origin.',
+            'Invite base URL is required. Set INVITE_BASE_URL or FRONTEND_URL on the backend.',
         });
       }
-      const inviteUrl = `${appOrigin}/invite/${encodeURIComponent(token)}`;
+      const inviteUrl = `${inviteBaseUrl}/invite/${encodeURIComponent(token)}`;
 
       res.json({
         invitation: mapWorkspaceInvite(insertResult.data),
@@ -4607,6 +4622,16 @@ app.get('/api/invitations/:token', rateLimit('read'), async (req, res) => {
 
     if (workspaceResult.error) throw workspaceResult.error;
 
+    const inviterResult = invite.created_by
+      ? await supabase
+          .from('users')
+          .select('id, email, full_name')
+          .eq('id', invite.created_by)
+          .maybeSingle()
+      : { data: null, error: null };
+
+    if (inviterResult.error) throw inviterResult.error;
+
     const mapped = mapWorkspaceInvite(invite);
     if (mapped.status === 'expired') {
       return res.status(400).json({ error: 'Invitation has expired', status: 'expired' });
@@ -4626,6 +4651,13 @@ app.get('/api/invitations/:token', rateLimit('read'), async (req, res) => {
         expires_at: mapped.expires_at,
         workspace_id: invite.workspace_id,
         workspace_name: workspaceResult.data?.name ?? 'Workspace',
+        invited_by: inviterResult.data
+          ? {
+              id: inviterResult.data.id,
+              email: inviterResult.data.email ?? null,
+              full_name: inviterResult.data.full_name ?? null,
+            }
+          : null,
       },
     });
   } catch (error) {

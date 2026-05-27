@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useApi } from '../../hooks/useApi';
 import { useToast } from './ToastProvider';
 
@@ -41,6 +41,7 @@ const buildModuleLaunch = (item: NotificationItem) => {
 export const NotificationMonitor: React.FC = () => {
   const api = useApi();
   const toast = useToast();
+  const seenToastIdsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     const openNotificationTarget = async (item: NotificationItem) => {
@@ -51,7 +52,14 @@ export const NotificationMonitor: React.FC = () => {
     const handleBatch = (_event: unknown, notifications?: NotificationItem[]) => {
       if (!Array.isArray(notifications) || !notifications.length) return;
 
-      notifications.forEach((item) => {
+      const unseenItems = notifications.filter((item) => {
+        if (!item?.id) return false;
+        if (seenToastIdsRef.current.has(item.id)) return false;
+        seenToastIdsRef.current.add(item.id);
+        return true;
+      });
+
+      unseenItems.forEach((item) => {
         const snoozeMinutes = 10;
         toast.show(item.title ?? 'Ledger notification', {
           detail: item.body ?? undefined,

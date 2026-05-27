@@ -20,6 +20,8 @@ npm run dev
 - `SUPABASE_SERVICE_ROLE_KEY` - Service role key (backend only, full permissions)
 - `PORT` - Server port (default: 3000)
 - `PUBLIC_BACKEND_URL` - Public HTTPS backend URL for integration callbacks during local testing or production
+- `FRONTEND_URL` - Public website URL for `ledgerworkspace.com`
+- `INVITE_BASE_URL` - Public invite landing base. Use `https://ledgerworkspace.com` in production.
 - `SLACK_CLIENT_ID` - Slack app client id
 - `SLACK_CLIENT_SECRET` - Slack app client secret
 - `SLACK_SIGNING_SECRET` - Slack request signing secret
@@ -30,6 +32,7 @@ npm run dev
 Create the backend env file from `backend/.env.example`. Slack secrets stay on the server and are not exposed to the renderer.
 
 For production Slack setup, point callbacks at `https://api.ledgerworkspace.com/api/integrations/slack/...`.
+Invite links should be generated from `INVITE_BASE_URL` or `FRONTEND_URL`, not the request origin.
 
 ### Deployment to Render
 

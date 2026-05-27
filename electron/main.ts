@@ -32,6 +32,7 @@ const SETTINGS_SECTIONS = new Set([
 ]);
 
 let pendingLedgerProtocolUrl: string | null = null;
+let pendingInviteToken: string | null = null;
 let sidebarTouchBar: InstanceType<typeof TouchBar> | null = null;
 
 if (process.platform === 'win32') {
@@ -142,6 +143,31 @@ const handleLedgerProtocolUrl = (url: string) => {
       host === 'settings' ? pathnameParts[0] : pathnameParts[0] === 'settings' ? pathnameParts[1] : null;
     const section = isSettingsSection(sectionCandidate) ? sectionCandidate : 'integrations';
 
+    const inviteToken =
+      host === 'invite'
+        ? pathnameParts[0] || parsed.searchParams.get('token')
+        : pathnameParts[0] === 'invite'
+        ? pathnameParts[1] || parsed.searchParams.get('token')
+        : parsed.searchParams.get('token');
+
+    if (host === 'invite' || pathnameParts[0] === 'invite') {
+      const token = String(inviteToken ?? '').trim();
+      if (!token) return;
+
+      pendingInviteToken = token;
+      if (!sidebarWin || sidebarWin.isDestroyed()) {
+        createSidebarWindow();
+      } else {
+        if (!sidebarWin.isVisible()) sidebarWin.show();
+        sidebarWin.focus();
+        if (!sidebarWin.webContents.isLoading()) {
+          sidebarWin.webContents.send('ledger:open-invite', { token });
+          pendingInviteToken = null;
+        }
+      }
+      return;
+    }
+
     if (host === 'settings' || pathnameParts[0] === 'settings') {
       if (!sidebarWin || sidebarWin.isDestroyed()) {
         createSidebarWindow();
@@ -161,6 +187,16 @@ const processPendingLedgerProtocolUrl = () => {
   const url = pendingLedgerProtocolUrl;
   pendingLedgerProtocolUrl = null;
   handleLedgerProtocolUrl(url);
+};
+
+const processPendingInviteToken = () => {
+  if (!pendingInviteToken) return;
+  if (!sidebarWin || sidebarWin.isDestroyed()) return;
+  if (sidebarWin.webContents.isLoading()) return;
+
+  const token = pendingInviteToken;
+  pendingInviteToken = null;
+  sidebarWin.webContents.send('ledger:open-invite', { token });
 };
 
 const singleInstanceLock = app.requestSingleInstanceLock();
@@ -394,43 +430,44 @@ try {
   send({ kind: 'debug', message: 'mac helper accessibility check failed: ' + String(error) })
 }
 
-const toInfo = (window, sidebar = null) => {
+const toInfo = (window, sidebar = null, allowLedgerWindows = false) => {
   try {
     const bounds = window.getBounds && window.getBounds()
     if (!bounds) return null
     const processId = Number(window.processId ?? 0)
+    const isLedgerWindow = Boolean(parentPid && processId === parentPid)
     const x = Number(bounds.x)
     const y = Number(bounds.y)
     const width = Number(bounds.width)
     const height = Number(bounds.height)
     if (![x, y, width, height].every(Number.isFinite)) return null
-    if (parentPid && processId === parentPid) return null
+    if (isLedgerWindow && !allowLedgerWindows) return null
     if (isSidebarRect(x, y, width, height, sidebar)) return null
     if (width < 80 || height < 80) return null
     if (typeof window.isVisible === 'function' && !window.isVisible()) return null
-    return { id: String(window.id), x, y, width, height }
+    return { id: String(window.id), x, y, width, height, isLedgerWindow }
   } catch {
     return null
   }
 }
 
-const getWindowsWithInfo = (sidebar = null) => {
+const getWindowsWithInfo = (sidebar = null, allowLedgerWindows = false) => {
   const out = []
   for (const window of windowManager.getWindows()) {
-    const info = toInfo(window, sidebar)
+    const info = toInfo(window, sidebar, allowLedgerWindows)
     if (info) out.push({ window, info })
   }
   return out
 }
 
-const findWindowById = (id) => {
-  for (const item of getWindowsWithInfo()) {
+const findWindowById = (id, allowLedgerWindows = false) => {
+  for (const item of getWindowsWithInfo(null, allowLedgerWindows)) {
     if (item.info.id === id) return item.window
   }
   return null
 }
 
-const scoreDockTarget = ({ sidebar, threshold }) => {
+const scoreDockTarget = ({ sidebar, threshold, allowLedgerWindows = false }) => {
   const sidebarLeft = Math.floor(sidebar.x)
   const sidebarTop = Math.floor(sidebar.y)
   const sidebarRight = Math.floor(sidebar.x + sidebar.width)
@@ -441,7 +478,7 @@ const scoreDockTarget = ({ sidebar, threshold }) => {
   let bestScore = Infinity
   let best = null
 
-  for (const item of getWindowsWithInfo(sidebar)) {
+  for (const item of getWindowsWithInfo(sidebar, allowLedgerWindows)) {
     const window = item.info
     const rectLeft = window.x
     const rectTop = window.y
@@ -470,8 +507,8 @@ const scoreDockTarget = ({ sidebar, threshold }) => {
   return best
 }
 
-const findAtEdge = ({ probes, sidebar }) => {
-  const windows = getWindowsWithInfo(sidebar).map((item) => item.info)
+const findAtEdge = ({ probes, sidebar, allowLedgerWindows = false }) => {
+  const windows = getWindowsWithInfo(sidebar, allowLedgerWindows).map((item) => item.info)
   for (const probe of probes) {
     const probeX = Math.floor(probe.x)
     const probeY = Math.floor(probe.y)
@@ -494,7 +531,12 @@ const toResponse = (requestId, result) => {
   send({
     kind: 'response',
     requestId,
-    target: { platform: 'darwin', id: result.window.id, side: result.side },
+    target: {
+      platform: 'darwin',
+      id: result.window.id,
+      side: result.side,
+      isLedgerWindow: Boolean(result.window.isLedgerWindow),
+    },
     bounds: { x: result.window.x, y: result.window.y, width: result.window.width, height: result.window.height },
   })
 }
@@ -510,12 +552,12 @@ const stopTracking = () => {
 const startTracking = ({ target, intervalMs }) => {
   stopTracking()
   tracking = target
-  trackingWindow = findWindowById(target.id)
+  trackingWindow = findWindowById(target.id, Boolean(target.isLedgerWindow))
   trackingTimer = setInterval(() => {
     let bounds = null
     try {
       if (!trackingWindow) {
-        trackingWindow = findWindowById(target.id)
+        trackingWindow = findWindowById(target.id, Boolean(target.isLedgerWindow))
       }
       if (trackingWindow && typeof trackingWindow.isVisible === 'function' && !trackingWindow.isVisible()) {
         send({ kind: 'missing', target })
@@ -529,7 +571,7 @@ const startTracking = ({ target, intervalMs }) => {
     if (!bounds) {
       trackingMisses += 1
       if (trackingMisses % 4 === 0) {
-        trackingWindow = findWindowById(target.id)
+        trackingWindow = findWindowById(target.id, Boolean(target.isLedgerWindow))
       }
       if (trackingMisses > 24) {
         send({ kind: 'missing', target })
@@ -621,6 +663,7 @@ type FloatingDockTarget = {
   platform: 'win32' | 'darwin';
   id: string;
   side: DockSide;
+  isLedgerWindow?: boolean;
 };
 type FloatingDockAttachmentStatus =
   | 'attached'
@@ -1851,6 +1894,7 @@ async function getMacAccessibilityDockTargetAtCursor(
 ): Promise<DockTargetResult | null> {
   return requestMacDockHelper({
     kind: 'dockAtCursor',
+    allowLedgerWindows: true,
     sidebar: {
       x: sidebarBounds.x,
       y: sidebarBounds.y,
@@ -1865,11 +1909,13 @@ async function getMacAccessibilityDockTargetAtEdge(probe: {
   side: DockSide;
   x: number;
   y: number;
+  allowLedgerWindows?: boolean;
 }): Promise<DockTargetResult | null> {
   const sidebarBounds = sidebarWin?.getBounds();
   return requestMacDockHelper({
     kind: 'dockAtEdge',
     probes: [probe],
+    allowLedgerWindows: Boolean(probe.allowLedgerWindows),
     sidebar: sidebarBounds
       ? {
           x: sidebarBounds.x,
@@ -1891,7 +1937,11 @@ async function refreshFloatingDockTarget() {
 
   const sidebarBounds = sidebarWin.getBounds();
   const dockTarget = currentFloatingDockTarget;
-  const target = await getFloatingDockTargetAtEdge(sidebarBounds, dockTarget.side);
+  const target = await getFloatingDockTargetAtEdge(
+    sidebarBounds,
+    dockTarget.side,
+    Boolean(dockTarget.isLedgerWindow)
+  );
 
   if (!sidebarWin || sidebarWin.isDestroyed()) return;
 
@@ -1987,7 +2037,7 @@ $script:bestScore = [Double]::PositiveInfinity
   $height = $rect.Bottom - $rect.Top
   $pid = 0
   [Win32]::GetWindowThreadProcessId($hWnd, [ref]$pid) | Out-Null
-  if ($pid -eq $parentPid) { return $true }
+  $isLedgerWindow = $pid -eq $parentPid
   if ([Math]::Abs($rect.Left - $sidebarLeft) -le 2 -and [Math]::Abs($rect.Top - $sidebarTop) -le 2 -and [Math]::Abs($width - ${Math.floor(
     sidebarBounds.width
   )}) -le 2 -and [Math]::Abs($height - $sidebarHeight) -le 2) { return $true }
@@ -2017,7 +2067,8 @@ $script:bestScore = [Double]::PositiveInfinity
   $score = $edgeDistance + ($verticalPenalty * 0.5) - ($verticalOverlap * 0.01)
   if ($score -lt $script:bestScore) {
     $script:bestScore = $score
-    $script:result = "$side|$($hWnd.ToInt64())|$($rect.Left)|$($rect.Top)|$width|$height"
+    $ledgerFlag = if ($isLedgerWindow) { "1" } else { "0" }
+    $script:result = "$side|$($hWnd.ToInt64())|$($rect.Left)|$($rect.Top)|$width|$height|$ledgerFlag"
   }
   return $true
 }, [IntPtr]::Zero) | Out-Null
@@ -2032,7 +2083,7 @@ if ($script:result) { Write-Output $script:result }
           timeout: 1200,
         }
       );
-      const [side, id, x, y, width, height] = String(stdout).trim().split('|');
+      const [side, id, x, y, width, height, isLedgerWindow] = String(stdout).trim().split('|');
       const parsed = [x, y, width, height].map((value) => Number(value));
       if (
         parsed.some((value) => Number.isNaN(value) || value <= 0) ||
@@ -2052,6 +2103,7 @@ if ($script:result) { Write-Output $script:result }
           platform: 'win32',
           id,
           side,
+          isLedgerWindow: isLedgerWindow === '1',
         },
         bounds,
       };
@@ -2069,7 +2121,8 @@ if ($script:result) { Write-Output $script:result }
 
 async function getFloatingDockTargetAtEdge(
   sidebarBounds: Electron.Rectangle,
-  side: DockSide
+  side: DockSide,
+  allowLedgerWindows = false
 ): Promise<DockTargetResult | null> {
   const centerY = sidebarBounds.y + Math.floor(sidebarBounds.height / 2);
   const xOffsets = [16, 48, 96, 160];
@@ -2130,6 +2183,7 @@ $sidebarTop = ${Math.floor(sidebarBounds.y)}
 $sidebarWidth = ${Math.floor(sidebarBounds.width)}
 $sidebarHeight = ${Math.floor(sidebarBounds.height)}
 $parentPid = ${process.pid}
+$allowLedgerWindows = ${allowLedgerWindows ? '$true' : '$false'}
 $cursor = [Win32+POINT]::new()
 $cursor.X = ${Math.floor(probeX)}
 $cursor.Y = ${Math.floor(probeY)}
@@ -2144,10 +2198,12 @@ $script:result = $null
   $height = $rect.Bottom - $rect.Top
   $pid = 0
   [Win32]::GetWindowThreadProcessId($hWnd, [ref]$pid) | Out-Null
-  if ($pid -eq $parentPid) { return $true }
+  $isLedgerWindow = $pid -eq $parentPid
+  if ($isLedgerWindow -and -not $allowLedgerWindows) { return $true }
   if ([Math]::Abs($rect.Left - $sidebarLeft) -le 2 -and [Math]::Abs($rect.Top - $sidebarTop) -le 2 -and [Math]::Abs($width - $sidebarWidth) -le 2 -and [Math]::Abs($height - $sidebarHeight) -le 2) { return $true }
   if ($cursor.X -ge $rect.Left -and $cursor.X -le $rect.Right -and $cursor.Y -ge $rect.Top -and $cursor.Y -le $rect.Bottom) {
-    $script:result = "$($hWnd.ToInt64())|$($rect.Left)|$($rect.Top)|$width|$height"
+    $ledgerFlag = if ($isLedgerWindow) { "1" } else { "0" }
+    $script:result = "$($hWnd.ToInt64())|$($rect.Left)|$($rect.Top)|$width|$height|$ledgerFlag"
     return $false
   }
   return $true
@@ -2171,7 +2227,7 @@ if ($script:result) { Write-Output $script:result }
           timeout: 1200,
         }
       );
-      const [id, x, y, width, height] = String(stdout).trim().split('|');
+      const [id, x, y, width, height, isLedgerWindow] = String(stdout).trim().split('|');
       const parsed = [x, y, width, height].map((value) => Number(value));
       if (parsed.some((value) => Number.isNaN(value) || value <= 0) || !id) continue;
       return {
@@ -2179,6 +2235,7 @@ if ($script:result) { Write-Output $script:result }
           platform: 'win32',
           id,
           side: probe.side,
+          isLedgerWindow: isLedgerWindow === '1',
         },
         bounds: { x: parsed[0], y: parsed[1], width: parsed[2], height: parsed[3] },
       };
@@ -2188,7 +2245,10 @@ if ($script:result) { Write-Output $script:result }
 
   if (process.platform === 'darwin') {
     for (const probe of probePoints) {
-      const target = await getMacAccessibilityDockTargetAtEdge(probe);
+      const target = await getMacAccessibilityDockTargetAtEdge({
+        ...probe,
+        allowLedgerWindows,
+      });
       if (target) return target;
     }
     return null;
@@ -2651,6 +2711,7 @@ function createSidebarWindow() {
         console.log('[electron][sidebar] did-finish-load');
         if (sidebarWin && !sidebarWin.isDestroyed()) {
           sidebarWin.webContents.send('app:did-finish-load');
+          processPendingInviteToken();
           if (sidebarWin.isMinimized()) {
             sidebarWin.restore();
           }

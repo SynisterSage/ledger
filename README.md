@@ -10,6 +10,7 @@ Required variables:
 
 - `VITE_API_URL` - Controls which backend the desktop app talks to. For production this should point at `https://api.ledgerworkspace.com`.
 - `VITE_LEDGER_WEB_URL` - Public website URL for `ledgerworkspace.com`.
+- `VITE_INVITE_BASE_URL` - Public invite landing base. For production this should point at `https://ledgerworkspace.com`.
 - `VITE_SUPABASE_URL` - Supabase project URL if the renderer needs to talk to Supabase directly.
 - `VITE_SUPABASE_ANON_KEY` - Supabase anon key if the renderer needs to talk to Supabase directly.
 
@@ -19,6 +20,7 @@ Important:
 - Do not expose Slack secrets in renderer env vars.
 - `ledgerworkspace.com` is the public website only for now.
 - `api.ledgerworkspace.com` is the public API host for the desktop app and Slack integration routes.
+- Workspace invite links should resolve to `https://ledgerworkspace.com/invite/{token}`.
 - Slack OAuth and interactivity routes will live in `ledger-web`, not `ledger-app`.
 
 Ledger is a desktop-first productivity workspace built with intentionality in mind — designed to help people capture ideas quickly, organize work without friction, and maintain context across notes, projects, tasks, and calendars.

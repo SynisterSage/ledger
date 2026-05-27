@@ -20,6 +20,7 @@ import {
 } from '../../config/sidebarPreferences';
 import { useWorkspaceContext } from '../../context/WorkspaceContext';
 import { useApi } from '../../hooks/useApi';
+import { buildInviteUrl } from '../../config/invite';
 import { ModuleWindowHeader } from '../Common/ModuleWindowHeader';
 import { CloseGuardModal } from '../Common/CloseGuardModal';
 import authService from '../../services/auth';
@@ -1485,8 +1486,7 @@ export const SettingsWindow = () => {
   const getInviteUrl = (invite: WorkspaceInvitation) => {
     const token = invite.token?.trim();
     if (!token) return null;
-    const baseUrl = import.meta.env.VITE_INVITE_BASE_URL?.trim() || window.location.origin;
-    return `${baseUrl.replace(/\/$/, '')}/invite/${encodeURIComponent(token)}`;
+    return buildInviteUrl(token);
   };
 
   const handleCopySelectedInviteLink = async () => {

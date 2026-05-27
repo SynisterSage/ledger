@@ -2979,6 +2979,22 @@ function AppShell() {
     });
   }, [isLoading, isVisible, user]);
 
+  useEffect(() => {
+    const handleOpenInvite = (_event: unknown, payload: { token?: string } | string) => {
+      const token = String(typeof payload === 'string' ? payload : payload?.token ?? '').trim();
+      if (!token) return;
+
+      handledInviteTokenRef.current = null;
+      setPendingInviteToken(token);
+      window.history.replaceState({}, '', `/?token=${encodeURIComponent(token)}`);
+    };
+
+    window.ipcRenderer?.on('ledger:open-invite', handleOpenInvite);
+    return () => {
+      window.ipcRenderer?.off('ledger:open-invite', handleOpenInvite);
+    };
+  }, []);
+
   
 
   useEffect(() => {
@@ -3616,7 +3632,7 @@ function App() {
   return (
     <SearchProvider>
       <ToastProvider>
-        <NotificationMonitor />
+        {!isModuleWindow && <NotificationMonitor />}
         <AppShell />
         <SearchModal />
       </ToastProvider>

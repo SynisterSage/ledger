@@ -2,10 +2,10 @@ import { useMemo } from 'react';
 import { useAuthContext } from '../context/AuthContext';
 import { useWorkspaceContext } from '../context/WorkspaceContext';
 import { DEFAULT_API_URL } from '../config/runtime';
+import { getInviteBaseUrl } from '../config/invite';
 import authService from '../services/auth';
 
 const API_URL = import.meta.env.VITE_API_URL?.trim() || DEFAULT_API_URL;
-const INVITE_BASE_URL = import.meta.env.VITE_INVITE_BASE_URL?.trim() || window.location.origin;
 
 type ApiRequestOptions = RequestInit & {
   skipJson?: boolean;
@@ -202,7 +202,7 @@ export const useApi = () => {
           method: 'POST',
           body: JSON.stringify({
             ...payload,
-            origin: payload.origin ?? INVITE_BASE_URL,
+            origin: payload.origin ?? getInviteBaseUrl(),
           }),
         }),
       revokeWorkspaceInvitation: (workspaceId: string, invitationId: string) =>
