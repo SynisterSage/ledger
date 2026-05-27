@@ -797,12 +797,36 @@ const launchNotificationTarget = (item: NotificationSchedulerItem) => {
   );
 };
 
+const getNotificationFallbackTitle = (item: NotificationSchedulerItem) => {
+  if (item.title?.trim()) return item.title.trim();
+
+  switch (item.sourceType) {
+    case 'reminder':
+      return 'Reminder due';
+    case 'event':
+      return 'Event starting';
+    case 'task':
+      return 'Task due';
+    case 'project':
+      return 'Project deadline';
+    case 'inbox':
+      return 'Inbox capture';
+    default:
+      return 'Ledger notification';
+  }
+};
+
 const deliverDesktopNotification = (item: NotificationSchedulerItem) => {
   try {
     if (!Notification.isSupported()) return;
+    const iconPath = path.join(process.env.APP_ROOT ?? '', 'public', 'icon.png');
+    const subtitle = item.context?.trim() || item.workspaceName?.trim() || undefined;
+    const bodyParts = [item.body?.trim(), item.workspaceName?.trim()].filter(Boolean);
     const notification = new Notification({
-      title: item.title ?? 'Ledger notification',
-      body: item.body ?? '',
+      title: getNotificationFallbackTitle(item),
+      subtitle,
+      body: bodyParts.join(' · '),
+      icon: iconPath,
       silent: true,
     });
     notification.on('click', () => {

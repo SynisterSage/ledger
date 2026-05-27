@@ -2742,7 +2742,8 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
 // Main app component
 function AppShell() {
   const { user, isLoading, error: authError } = useAuthContext();
-  const { activeWorkspace, activeWorkspaceId, refreshWorkspaces } = useWorkspaceContext();
+  const { activeWorkspace, activeWorkspaceId, refreshWorkspaces, setActiveWorkspace } =
+    useWorkspaceContext();
   const api = useApi();
   const {
     state,
@@ -2770,6 +2771,7 @@ function AppShell() {
   >('idle');
   const [inviteFlowError, setInviteFlowError] = useState<string | null>(null);
   const [inviteFlowNotice, setInviteFlowNotice] = useState<string | null>(null);
+  const [inviteWorkspaceId, setInviteWorkspaceId] = useState<string | null>(null);
   const [inviteWorkspaceName, setInviteWorkspaceName] = useState<string | null>(null);
   const [onboardingStep, setOnboardingStep] = useState<OnboardingStep>('welcome');
   const [onboardingWorkspaceName, setOnboardingWorkspaceName] = useState('My Workspace');
@@ -3120,11 +3122,29 @@ function AppShell() {
         setInviteFlowError(null);
 
         const payload = (await api.getWorkspaceInvitation(pendingInviteToken)) as {
-          invitation?: { workspace_name?: string | null };
+          status?: string;
+          invitation?: {
+            workspace_id?: string | null;
+            workspace_name?: string | null;
+          };
         };
 
         if (cancelled) return;
+        setInviteWorkspaceId(payload.invitation?.workspace_id ?? null);
         setInviteWorkspaceName(payload.invitation?.workspace_name ?? 'Workspace');
+
+        if (payload.status === 'accepted') {
+          setInviteFlowStatus('accepted');
+          setInviteFlowNotice('This invite has already been accepted. Switching workspaces.');
+          return;
+        }
+
+        if (payload.status === 'expired') {
+          setInviteFlowStatus('error');
+          setInviteFlowError('Invite unavailable');
+          return;
+        }
+
         setInviteFlowStatus(user ? 'idle' : 'awaiting-auth');
       } catch (error) {
         if (cancelled) return;
@@ -3142,6 +3162,36 @@ function AppShell() {
   }, [pendingInviteToken, api]);
 
   useEffect(() => {
+    if (!pendingInviteToken || !inviteWorkspaceId) return;
+    if (inviteFlowStatus !== 'accepted' && inviteFlowStatus !== 'already-member') return;
+    if (!user) return;
+
+    let cancelled = false;
+    const activateWorkspace = async () => {
+      try {
+        await refreshWorkspaces();
+        if (cancelled) return;
+        await setActiveWorkspace(inviteWorkspaceId);
+      } catch {
+        // Leave the accepted state visible; the workspace can still be selected manually.
+      }
+    };
+
+    void activateWorkspace();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    inviteFlowStatus,
+    inviteWorkspaceId,
+    pendingInviteToken,
+    refreshWorkspaces,
+    setActiveWorkspace,
+    user,
+  ]);
+
+  useEffect(() => {
     if (!pendingInviteToken) {
       setInviteFlowStatus((current) => (current === 'error' ? current : 'idle'));
       return;
@@ -3156,7 +3206,13 @@ function AppShell() {
       return;
     }
 
-    if (inviteFlowStatus === 'checking' || inviteFlowStatus === 'error') return;
+    if (
+      inviteFlowStatus === 'checking' ||
+      inviteFlowStatus === 'error' ||
+      inviteFlowStatus === 'accepted' ||
+      inviteFlowStatus === 'already-member'
+    )
+      return;
 
     if (handledInviteTokenRef.current === pendingInviteToken) {
       return;
@@ -3173,8 +3229,12 @@ function AppShell() {
 
         const payload = (await api.acceptWorkspaceInvitation(pendingInviteToken)) as {
           already_member?: boolean;
+          workspace_id?: string | null;
         };
         await refreshWorkspaces();
+        if (payload.workspace_id) {
+          await setActiveWorkspace(payload.workspace_id);
+        }
 
         if (cancelled) return;
         setInviteFlowStatus(payload.already_member ? 'already-member' : 'accepted');
@@ -3200,7 +3260,7 @@ function AppShell() {
     return () => {
       cancelled = true;
     };
-  }, [pendingInviteToken, isLoading, user, api, refreshWorkspaces, inviteFlowStatus]);
+  }, [pendingInviteToken, isLoading, user, api, refreshWorkspaces, inviteFlowStatus, setActiveWorkspace]);
 
   useEffect(() => {
     if (postAuthStage !== 'onboarding') {

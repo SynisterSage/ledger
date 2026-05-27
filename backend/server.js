@@ -220,7 +220,7 @@ const projectStatusAliases = {
 const projectSelectColumns =
   'id, name, description, status, completeness, color, start_date, end_date, created_by, created_at, updated_at';
 const taskSelectColumns =
-  'id, workspace_id, project_id, title, description, notes, due_date, due_time, status, priority, assigned_to, tags, completed_at, created_at, updated_at';
+  'id, workspace_id, project_id, title, description, notes, due_date, due_time, status, priority, assigned_to, tags, completed_at, created_by, created_at, updated_at';
 const reminderSelectColumns =
   'id, workspace_id, user_id, title, body, remind_at, status, linked_type, linked_id, completed_at, dismissed_at, snoozed_until, created_at, updated_at, calendar_id, project_id, note_id, notes, color, is_done, created_by';
 const reminderDashboardSelectColumns =
@@ -4604,7 +4604,9 @@ app.get('/api/invitations/:token', rateLimit('read'), async (req, res) => {
 
     const inviteResult = await supabase
       .from('workspace_invites')
-      .select('id, workspace_id, email, role, expires_at, accepted_at, accepted_by, created_at')
+      .select(
+        'id, workspace_id, email, role, expires_at, accepted_at, accepted_by, created_at, created_by'
+      )
       .eq('token', token)
       .maybeSingle();
 
@@ -4635,11 +4637,6 @@ app.get('/api/invitations/:token', rateLimit('read'), async (req, res) => {
     const mapped = mapWorkspaceInvite(invite);
     if (mapped.status === 'expired') {
       return res.status(400).json({ error: 'Invitation has expired', status: 'expired' });
-    }
-    if (mapped.status === 'accepted') {
-      return res
-        .status(400)
-        .json({ error: 'Invitation has already been used', status: 'accepted' });
     }
 
     res.json({
@@ -5174,21 +5171,48 @@ app.get('/api/today', authMiddleware, rateLimit('read'), async (req, res) => {
     // Fetch workspace and project metadata
     const wsIds = Array.from(new Set(rows.map((r) => r.workspace_id).filter(Boolean)));
     const projIds = Array.from(new Set(rows.map((r) => r.project_id).filter(Boolean)));
+    const creatorIds = Array.from(
+      new Set(
+        [
+          ...rows.map((r) => r.created_by),
+          ...reminderRows.map((r) => r.created_by),
+          ...completedRows.map((r) => r.created_by),
+          ...completedReminderRows.map((r) => r.created_by),
+        ].filter(Boolean)
+      )
+    );
 
-    const [wsResult, projResult] = await Promise.all([
+    const [wsResult, projResult, creatorResult] = await Promise.all([
       wsIds.length
         ? supabase.from('workspaces').select('id, name, color').in('id', wsIds)
         : { data: [] },
       projIds.length
         ? supabase.from('projects').select('id, name').in('id', projIds)
         : { data: [] },
+      creatorIds.length
+        ? supabase
+            .from('workspace_members')
+            .select('workspace_id, user_id, full_name, email')
+            .in('workspace_id', wsIds)
+            .in('user_id', creatorIds)
+        : { data: [] },
     ]);
 
     if (wsResult?.error) throw wsResult.error;
     if (projResult?.error) throw projResult.error;
+    if (creatorResult?.error) throw creatorResult.error;
 
     const wsById = new Map((wsResult.data || []).map((w) => [w.id, w]));
     const projById = new Map((projResult.data || []).map((p) => [p.id, p]));
+    const creatorById = new Map((creatorResult.data || []).map((member) => [member.user_id, member]));
+
+    const formatCreatorName = (userId) => {
+      if (!userId) return null;
+      const member = creatorById.get(userId);
+      const rawName = String(member?.full_name ?? '').trim() || String(member?.email ?? '').trim();
+      if (!rawName) return null;
+      return rawName.split(/\s+/)[0] || null;
+    };
 
     const mapped = rows.map((r) => ({
       kind: 'task',
@@ -5203,6 +5227,8 @@ app.get('/api/today', authMiddleware, rateLimit('read'), async (req, res) => {
       workspace_name: wsById.get(r.workspace_id)?.name ?? null,
       workspace_color: wsById.get(r.workspace_id)?.color ?? null,
       assigned_to: r.assigned_to ?? null,
+      created_by: r.created_by ?? null,
+      created_by_name: formatCreatorName(r.created_by),
       is_today_focus: r.is_today_focus ?? false,
       show_in_today: r.show_in_today ?? false,
       completed_at: r.completed_at ?? null,
@@ -5280,6 +5306,8 @@ app.get('/api/today', authMiddleware, rateLimit('read'), async (req, res) => {
       workspace_name: reminderWsById.get(r.workspace_id)?.name ?? null,
       workspace_color: reminderWsById.get(r.workspace_id)?.color ?? null,
       assigned_to: null,
+      created_by: r.created_by ?? null,
+      created_by_name: formatCreatorName(r.created_by),
       is_today_focus: false,
       show_in_today: true,
       completed_at: null,
@@ -5314,6 +5342,8 @@ app.get('/api/today', authMiddleware, rateLimit('read'), async (req, res) => {
       workspace_color: wsById.get(r.workspace_id)?.color ?? null,
       project_id: r.project_id ?? null,
       project_name: r.project_id ? projById.get(r.project_id)?.name ?? null : null,
+      created_by: r.created_by ?? null,
+      created_by_name: formatCreatorName(r.created_by),
     }));
 
     const completedReminderResult = await withReminderTable((table) =>
@@ -5388,6 +5418,8 @@ app.get('/api/today', authMiddleware, rateLimit('read'), async (req, res) => {
       note_title: r.note_id ? completedReminderNoteById.get(r.note_id)?.title ?? null : null,
       calendar_id: r.calendar_id ?? null,
       calendar_name: null,
+      created_by: r.created_by ?? null,
+      created_by_name: formatCreatorName(r.created_by),
     }));
 
     res.json({ active: mapped, reminders, completed: completedMapped, completed_reminders: completedReminders });

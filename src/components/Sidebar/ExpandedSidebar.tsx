@@ -58,6 +58,8 @@ type TodayTask = {
   workspace_id?: string | null;
   workspace_name?: string | null;
   workspace_color?: string | null;
+  created_by?: string | null;
+  created_by_name?: string | null;
   assigned_to?: string | null;
   is_today_focus?: boolean;
   show_in_today?: boolean;
@@ -76,6 +78,8 @@ type CompletedTodayTask = {
   workspace_id?: string | null;
   workspace_name?: string | null;
   workspace_color?: string | null;
+  created_by?: string | null;
+  created_by_name?: string | null;
   project_id?: string | null;
   project_name?: string | null;
   note_id?: string | null;
@@ -100,11 +104,13 @@ const formatTodayTaskWorkspace = (item: {
   project_name?: string | null;
   note_title?: string | null;
   calendar_name?: string | null;
+  created_by_name?: string | null;
   kind?: 'task' | 'reminder';
   remind_at?: string | null;
 }) => {
   const parts = [
     item.workspace_name,
+    item.created_by_name ? `by ${item.created_by_name}` : null,
     item.project_name,
     item.note_title ? `Note: ${item.note_title}` : null,
     item.calendar_name ? `Calendar: ${item.calendar_name}` : null,
