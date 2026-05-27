@@ -222,6 +222,25 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     [authedRequest]
   );
 
+    useEffect(() => {
+      const handler = (_event: unknown, payload?: { workspaceId?: string | null }) => {
+        const next = payload?.workspaceId ?? null;
+        if (!next) return;
+        void (async () => {
+          try {
+            await setActiveWorkspace(next);
+          } catch (e) {
+            // ignore failures triggered from main process
+          }
+        })();
+      };
+
+      window.ipcRenderer?.on('ledger:set-active-workspace', handler as any);
+      return () => {
+        window.ipcRenderer?.off('ledger:set-active-workspace', handler as any);
+      };
+    }, [setActiveWorkspace]);
+
   const activeWorkspace = useMemo(() => {
     if (!activeWorkspaceId) return null;
     return workspaces.find((workspace) => workspace.id === activeWorkspaceId) ?? null;

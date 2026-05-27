@@ -74,11 +74,11 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       {children}
       {/* Toast container - top center */}
       <div className="pointer-events-none fixed inset-x-0 top-6 flex items-start justify-center z-50">
-        <div className="flex flex-col gap-2 items-center">
+        <div className="flex w-full flex-col items-center gap-2 px-4">
           {toasts.map((t) => (
             <div
               key={t.id}
-              className={`pointer-events-auto transform transition-all duration-200 ease-out flex flex-col gap-2 px-4 py-3 rounded-lg shadow-lg border min-w-[280px] max-w-[360px] ${
+              className={`pointer-events-auto transform transition-all duration-200 ease-out flex w-[320px] max-w-[calc(100vw-2rem)] flex-col gap-2 rounded-lg border px-4 py-3 shadow-lg ${
                 t.variant === 'success'
                   ? 'bg-white border-gray-200 text-gray-900'
                   : t.variant === 'error'

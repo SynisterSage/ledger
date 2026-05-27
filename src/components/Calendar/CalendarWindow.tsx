@@ -2084,6 +2084,43 @@ export const CalendarWindow = () => {
     setIsComposerOpen(true);
   };
 
+  const getListContextMenuSlot = () => {
+    if (!listContextMenu) return null;
+
+    if (listContextMenu.kind === 'event') {
+      const event = events.find((item) => item.id === baseEventId(listContextMenu.id));
+      if (!event) return null;
+      const start = new Date(event.start_at);
+      if (Number.isNaN(start.getTime())) return null;
+      return {
+        dateKey: formatDateKey(start),
+        hour: start.getHours(),
+        title: event.title,
+        kind: 'event' as const,
+        timeLabel: formatEventTimeLabel(event),
+      };
+    }
+
+    const reminder = reminders.find((item) => item.id === listContextMenu.id);
+    if (!reminder) return null;
+    const remindAt = new Date(reminder.remind_at);
+    if (Number.isNaN(remindAt.getTime())) return null;
+    return {
+      dateKey: formatDateKey(remindAt),
+      hour: remindAt.getHours(),
+      title: reminder.title,
+      kind: 'reminder' as const,
+      timeLabel: remindAt.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
+    };
+  };
+
+  const openNewItemFromListContextMenu = (mode: 'event' | 'reminder') => {
+    const slot = getListContextMenuSlot();
+    if (!slot) return;
+    openComposerAtSlot(slot.dateKey, slot.hour, mode === 'reminder' ? 'Reminder' : '', mode);
+    setListContextMenu(null);
+  };
+
   const moveView = (direction: -1 | 1) => {
     setSelectedEvent(null);
     setSelectedReminder(null);
@@ -3358,20 +3395,19 @@ export const CalendarWindow = () => {
             <div
               ref={centerScrollRef}
               className="flex-1 min-w-0 overflow-auto"
-                onWheel={(event) => {
-                  const container = centerScrollRef.current;
-                  if (!container) return;
+              onWheel={(event) => {
+                const container = centerScrollRef.current;
+                if (!container) return;
 
-                  const hasHorizontalOverflow = container.scrollWidth > container.clientWidth;
-                  if (!hasHorizontalOverflow) return;
+                const hasHorizontalOverflow = container.scrollWidth > container.clientWidth;
+                if (!hasHorizontalOverflow) return;
 
-                  const delta =
-                    Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
-                  if (delta === 0) return;
+                const horizontalIntent = Math.abs(event.deltaX) > Math.abs(event.deltaY) + 1;
+                if (!horizontalIntent) return;
 
-                  // Avoid calling preventDefault here to prevent passive event listener warnings.
-                  container.scrollLeft += delta;
-                }}
+                event.preventDefault();
+                container.scrollLeft += event.deltaX;
+              }}
             >
               {isInitialLoading ? (
                 loadingSkeleton
@@ -5369,114 +5405,180 @@ export const CalendarWindow = () => {
       )}
 
       {listContextMenu && (
+        (() => {
+          const menuWidth = 248;
+          const menuHeight = listContextMenu.kind === 'event' ? 292 : 280;
+          const viewportPadding = 8;
+          const menuActualWidth = Math.min(menuWidth, window.innerWidth - viewportPadding * 2);
+          const canOpenBelow = listContextMenu.y + menuHeight + viewportPadding <= window.innerHeight;
+          const top = canOpenBelow
+            ? listContextMenu.y + viewportPadding
+            : Math.max(viewportPadding, listContextMenu.y - menuHeight - viewportPadding);
+          const left = Math.max(
+            viewportPadding,
+            Math.min(listContextMenu.x, window.innerWidth - menuActualWidth - viewportPadding)
+          );
+          const menuTarget = getListContextMenuSlot();
+          const menuTitle = menuTarget?.title ?? (listContextMenu.kind === 'event' ? 'Event' : 'Reminder');
+          const menuTime = menuTarget?.timeLabel ?? null;
+
+          return (
         <div
-          className="fixed z-50 min-w-44 overflow-hidden rounded-xl border border-gray-200 bg-white py-1 shadow-xl"
+          className="fixed z-50 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-[0_16px_40px_rgba(15,23,42,0.14)]"
           style={{
-            left: Math.max(8, Math.min(listContextMenu.x, window.innerWidth - 168)),
-            top: Math.max(8, Math.min(listContextMenu.y, window.innerHeight - 74)),
+            left,
+            top,
+            width: `${menuActualWidth}px`,
           }}
           onClick={(e) => e.stopPropagation()}
           onMouseDown={(e) => e.stopPropagation()}
         >
-          {listContextMenu.kind === 'event' ? (
-            (() => {
-              const event = events.find((item) => item.id === baseEventId(listContextMenu.id));
-              const canEditMenuEvent = Boolean(event && canEditEvent(event));
+          <div className="border-b border-gray-100 px-3 py-2.5">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-gray-400">
+              {listContextMenu.kind === 'event' ? 'Event' : 'Reminder'}
+            </p>
+            <div className="mt-1 min-w-0">
+              <p className="truncate text-[14px] font-semibold leading-5 text-gray-900">
+                {menuTitle}
+              </p>
+              {menuTime ? (
+                <p className="mt-0.5 text-[11px] leading-4 text-gray-500">{menuTime}</p>
+              ) : null}
+            </div>
+          </div>
+          <div className="px-1.5 py-1.5">
+            {listContextMenu.kind === 'event' ? (
+              (() => {
+                const event = events.find((item) => item.id === baseEventId(listContextMenu.id));
+                const canEditMenuEvent = Boolean(event && canEditEvent(event));
 
-              return (
-                <button
-                  onClick={() => {
-                    if (!canEditMenuEvent || !event) return;
-                    openEventEditor(event);
-                    setListContextMenu(null);
-                  }}
-                  disabled={!canEditMenuEvent}
-                  className={`flex w-full items-center gap-2 px-4 py-2 text-left text-sm ${
-                    canEditMenuEvent
-                      ? 'text-gray-700 hover:bg-gray-50'
-                      : 'cursor-not-allowed text-gray-300'
-                  }`}
-                  title={canEditMenuEvent ? 'Edit Event' : 'Past events are read-only here'}
-                >
-                  <CalendarPlus size={14} className="shrink-0 text-gray-500" />
-                  <span className="text-[14px] font-medium tracking-tight">Edit Event</span>
-                </button>
-              );
-            })()
-          ) : (
+                return (
+                  <button
+                    onClick={() => {
+                      if (!canEditMenuEvent || !event) return;
+                      openEventEditor(event);
+                      setListContextMenu(null);
+                    }}
+                    disabled={!canEditMenuEvent}
+                    className={`flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm ${
+                      canEditMenuEvent
+                        ? 'text-gray-700 hover:bg-gray-50'
+                        : 'cursor-not-allowed text-gray-300'
+                    }`}
+                    title={canEditMenuEvent ? 'Edit Event' : 'Past events are read-only here'}
+                  >
+                    <PencilLine size={14} className="shrink-0 text-gray-500" />
+                    <span className="min-w-0 truncate text-[14px] font-medium tracking-tight">
+                      Edit Event
+                    </span>
+                  </button>
+                );
+              })()
+            ) : (
+              <button
+                onClick={() => {
+                  const reminder = reminders.find((item) => item.id === listContextMenu.id);
+                  if (reminder) openReminderEditor(reminder);
+                  setListContextMenu(null);
+                }}
+                className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm text-gray-700 hover:bg-gray-50"
+              >
+                <PencilLine size={14} className="shrink-0 text-gray-500" />
+                <span className="min-w-0 truncate text-[14px] font-medium tracking-tight">
+                  Edit Reminder
+                </span>
+              </button>
+            )}
+
             <button
-              onClick={() => {
-                const reminder = reminders.find((item) => item.id === listContextMenu.id);
-                if (reminder) openReminderEditor(reminder);
-                setListContextMenu(null);
-              }}
-              className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
+              onClick={() => openNewItemFromListContextMenu('event')}
+              className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm text-gray-700 hover:bg-gray-50"
             >
               <CalendarPlus size={14} className="shrink-0 text-gray-500" />
-              <span className="text-[14px] font-medium tracking-tight">Edit Reminder</span>
+              <span className="min-w-0 truncate text-[14px] font-medium tracking-tight">
+                New Event Here
+              </span>
             </button>
-          )}
-          {listContextMenu.kind === 'event' ? (
+
+            <button
+              onClick={() => openNewItemFromListContextMenu('reminder')}
+              className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm text-gray-700 hover:bg-gray-50"
+            >
+              <BellRing size={14} className="shrink-0 text-gray-500" />
+              <span className="min-w-0 truncate text-[14px] font-medium tracking-tight">
+                New Reminder Here
+              </span>
+            </button>
+
+            {listContextMenu.kind === 'event' ? (
+              <button
+                onClick={() => {
+                  const event = events.find((item) => item.id === baseEventId(listContextMenu.id));
+                  if (event) {
+                    const nextStatus = event.status === 'done' ? 'planned' : 'done';
+                    void api.updateEvent(event.id, { status: nextStatus });
+                    setEvents((prev) =>
+                      prev.map((item) =>
+                        item.id === event.id ? { ...item, status: nextStatus } : item
+                      )
+                    );
+                    setSelectedEvent((current) =>
+                      current && baseEventId(current.id) === event.id
+                        ? { ...current, status: nextStatus }
+                        : current
+                    );
+                  }
+                  setListContextMenu(null);
+                }}
+                className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm text-gray-700 hover:bg-gray-50"
+              >
+                <BellRing size={14} className="shrink-0 text-gray-500" />
+                <span className="min-w-0 truncate text-[14px] font-medium tracking-tight">
+                  Mark{' '}
+                  {events.find((item) => item.id === baseEventId(listContextMenu.id))?.status ===
+                  'done'
+                    ? 'Planned'
+                    : 'Done'}
+                </span>
+              </button>
+            ) : (
+              <button
+                onClick={() => {
+                  const reminder = reminders.find((item) => item.id === listContextMenu.id);
+                  if (reminder) void toggleReminderDone(reminder);
+                  setListContextMenu(null);
+                }}
+                className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm text-gray-700 hover:bg-gray-50"
+              >
+                <BellRing size={14} className="shrink-0 text-gray-500" />
+                <span className="min-w-0 truncate text-[14px] font-medium tracking-tight">
+                  Toggle Done
+                </span>
+              </button>
+            )}
+
+            <div className="my-1.5 border-t border-gray-100" />
+
             <button
               onClick={() => {
-                const event = events.find((item) => item.id === baseEventId(listContextMenu.id));
-                if (event) {
-                  const nextStatus = event.status === 'done' ? 'planned' : 'done';
-                  void api.updateEvent(event.id, { status: nextStatus });
-                  setEvents((prev) =>
-                    prev.map((item) =>
-                      item.id === event.id ? { ...item, status: nextStatus } : item
-                    )
-                  );
-                  setSelectedEvent((current) =>
-                    current && baseEventId(current.id) === event.id
-                      ? { ...current, status: nextStatus }
-                      : current
-                  );
+                if (listContextMenu.kind === 'event') {
+                  void quickDeleteEvent(listContextMenu.id);
+                } else {
+                  void quickDeleteReminder(listContextMenu.id);
                 }
                 setListContextMenu(null);
               }}
-              className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
+              className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm text-red-600 hover:bg-red-50"
             >
-              <BellRing size={14} className="shrink-0 text-gray-500" />
-              <span className="text-[14px] font-medium tracking-tight">
-                Mark{' '}
-                {events.find((item) => item.id === baseEventId(listContextMenu.id))?.status ===
-                'done'
-                  ? 'Planned'
-                  : 'Done'}
+              <Trash2 size={14} className="shrink-0 text-red-500" />
+              <span className="min-w-0 truncate text-[14px] font-medium tracking-tight">
+                Delete {listContextMenu.kind === 'event' ? 'Event' : 'Reminder'}
               </span>
             </button>
-          ) : (
-            <button
-              onClick={() => {
-                const reminder = reminders.find((item) => item.id === listContextMenu.id);
-                if (reminder) void toggleReminderDone(reminder);
-                setListContextMenu(null);
-              }}
-              className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
-            >
-              <BellRing size={14} className="shrink-0 text-gray-500" />
-              <span className="text-[14px] font-medium tracking-tight">Toggle Done</span>
-            </button>
-          )}
-          <button
-            onClick={() => {
-              if (listContextMenu.kind === 'event') {
-                void quickDeleteEvent(listContextMenu.id);
-              } else {
-                void quickDeleteReminder(listContextMenu.id);
-              }
-              setListContextMenu(null);
-            }}
-            className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50"
-          >
-            <Trash2 size={14} className="shrink-0 text-red-500" />
-            <span className="text-[14px] font-medium tracking-tight">
-              Delete {listContextMenu.kind === 'event' ? 'Event' : 'Reminder'}
-            </span>
-          </button>
+          </div>
         </div>
+          );
+        })()
       )}
     </div>
   );

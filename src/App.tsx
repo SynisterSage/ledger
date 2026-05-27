@@ -3699,7 +3699,7 @@ function App() {
   return (
     <SearchProvider>
       <ToastProvider>
-        {!isModuleWindow && <NotificationMonitor />}
+        <NotificationMonitor />
         <AppShell />
         <SearchModal />
       </ToastProvider>

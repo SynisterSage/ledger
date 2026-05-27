@@ -1712,6 +1712,45 @@ export const NotesWindow = () => {
     [api, activeWorkspaceId, hasLoadedOnce, user]
   );
 
+  const refreshCurrentNoteFromServer = useCallback(
+    async (opts?: { silent?: boolean }) => {
+      if (!user || !activeWorkspaceId) return;
+
+      if (opts?.silent) {
+        setIsRefreshing(true);
+      }
+
+      try {
+        await loadNotes({ silent: true });
+
+        const currentNoteId = selectedNoteIdRef.current;
+        if (!currentNoteId) return;
+        if (isEditingRef.current || isDirtyRef.current) return;
+
+        const fetched = (await api.getNoteById(currentNoteId)) as NoteRow;
+        setNotes((prev) => prev.map((note) => (note.id === fetched.id ? fetched : note)));
+        setNoteTree((prev) => replaceNoteInTree(prev, fetched));
+        syncDraftFromNote(fetched);
+      } catch (error) {
+        setError(error instanceof Error ? error.message : 'Could not sync note.');
+      } finally {
+        if (opts?.silent) {
+          setIsRefreshing(false);
+        }
+      }
+    },
+    [
+      activeWorkspaceId,
+      api,
+      loadNotes,
+      setError,
+      setNoteTree,
+      setNotes,
+      syncDraftFromNote,
+      user,
+    ]
+  );
+
   const loadSections = useCallback(async () => {
     try {
       const data = await api.getSections();
@@ -2977,7 +3016,7 @@ export const NotesWindow = () => {
               {isCreating ? 'Creating...' : 'New note'}
             </button>
             <button
-              onClick={() => void loadNotes({ silent: true })}
+              onClick={() => void refreshCurrentNoteFromServer({ silent: true })}
               className="h-8 rounded-full border border-gray-200 bg-white px-2.5 text-[11px] font-medium text-gray-600 hover:bg-gray-50 inline-flex items-center gap-1.5"
               title="Refresh notes"
             >

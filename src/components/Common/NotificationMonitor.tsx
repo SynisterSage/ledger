@@ -13,6 +13,7 @@ type NotificationItem = {
   body: string | null;
   workspaceName: string | null;
   workspaceColor: string | null;
+  workspaceId?: string | null;
   moduleKind: 'calendar' | 'dashboard' | 'projects' | 'inbox' | null;
   focusPayload: Record<string, unknown> | null;
   actions: NotificationAction[];
@@ -35,6 +36,23 @@ const buildModuleLaunch = (item: NotificationItem) => {
       return { kind: 'inbox' as const, focus: focusPayload };
     default:
       return { kind: 'dashboard' as const, focus: focusPayload };
+  }
+};
+
+const getToastFallbackTitle = (item: NotificationItem) => {
+  const workspacePart = item.workspaceName ? `${item.workspaceName}` : '';
+  switch (item.sourceType) {
+    case 'reminder':
+    case 'event':
+      return workspacePart ? `Reminder — ${workspacePart}` : 'Reminder';
+    case 'task':
+      return workspacePart ? `Task — ${workspacePart}` : 'Task';
+    case 'project':
+      return workspacePart ? `Project — ${workspacePart}` : 'Project';
+    case 'inbox':
+      return workspacePart ? `Inbox — ${workspacePart}` : 'Inbox';
+    default:
+      return 'Ledger notification';
   }
 };
 
@@ -61,8 +79,10 @@ export const NotificationMonitor: React.FC = () => {
 
       unseenItems.forEach((item) => {
         const snoozeMinutes = 10;
-        toast.show(item.title ?? 'Ledger notification', {
-          detail: item.body ?? undefined,
+        const title = item.title ?? getToastFallbackTitle(item);
+        const detail = item.body ?? (item.workspaceName ? `${item.workspaceName}` : undefined);
+        toast.show(title, {
+          detail,
           variant: 'info',
           duration: item.actions?.length ? 8000 : 2500,
           actions: (item.actions ?? []).map((action) => {
@@ -71,6 +91,13 @@ export const NotificationMonitor: React.FC = () => {
                 label: 'Open',
                 onClick: async () => {
                   await api.updateNotificationAction(item.id, 'open');
+                  try {
+                    if (item.workspaceId) {
+                      await api.setActiveWorkspace(item.workspaceId);
+                    }
+                  } catch (e) {
+                    // ignore workspace switch failures and proceed to open
+                  }
                   await openNotificationTarget(item);
                   window.ipcRenderer?.send('notifications:refresh');
                 },

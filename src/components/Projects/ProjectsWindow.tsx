@@ -425,6 +425,15 @@ export const ProjectsWindow = () => {
     return 'Unknown user';
   }, [createdByMember]);
 
+  const projectViewingSummary = useMemo(() => {
+    if (!selectedProject?.created_by) return 'Only you';
+    if (selectedProject.created_by === user?.id) return 'Only you';
+
+    const firstName = creatorDisplayName.trim().split(/\s+/)[0]?.trim();
+    if (!firstName) return 'Only you';
+    return firstName;
+  }, [creatorDisplayName, selectedProject?.created_by, user?.id]);
+
   const projectMenuPosition = useMemo(() => {
     if (!projectContextMenu) return null;
     return getClampedMenuPosition(projectContextMenu.x, projectContextMenu.y, 208, 304);
@@ -2327,7 +2336,9 @@ export const ProjectsWindow = () => {
                         </div>
                         <div className="flex items-center justify-between gap-3">
                           <span className="text-gray-500">Viewing</span>
-                          <span className="text-gray-900">Only you</span>
+                          <span className="max-w-[60%] truncate text-right text-gray-900">
+                            {projectViewingSummary}
+                          </span>
                         </div>
                       </div>
                     </section>

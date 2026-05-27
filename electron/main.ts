@@ -726,6 +726,10 @@ const MODULE_DEFAULT_WIDTH = 1440;
 const MODULE_DEFAULT_HEIGHT = 860;
 const MODULE_MIN_WIDTH = 1100;
 const MODULE_MIN_HEIGHT = 720;
+const INBOX_DEFAULT_WIDTH = 960;
+const INBOX_DEFAULT_HEIGHT = 720;
+const INBOX_MIN_WIDTH = 860;
+const INBOX_MIN_HEIGHT = 620;
 const NOTIFICATION_CENTER_WIDTH = 480;
 const NOTIFICATION_CENTER_HEIGHT = 680;
 const NOTIFICATION_CENTER_MIN_WIDTH = 420;
@@ -747,6 +751,7 @@ type NotificationSchedulerItem = {
   context: string | null;
   workspaceName: string | null;
   workspaceColor: string | null;
+  workspaceId?: string | null;
   moduleKind: ModuleWindowKind | null;
   focusPayload: Record<string, unknown> | null;
   actions: Array<'open' | 'dismiss' | 'complete' | 'snooze'>;
@@ -787,14 +792,38 @@ const broadcastNotificationBatch = (items: NotificationSchedulerItem[]) => {
 const launchNotificationTarget = (item: NotificationSchedulerItem) => {
   const focus = item.focusPayload ?? {};
   const kind = item.moduleKind ?? 'dashboard';
-  openModuleWindow(
-    kind,
-    typeof focus.focusDate === 'string' ? focus.focusDate : null,
-    typeof focus.focusProjectId === 'string' ? focus.focusProjectId : null,
-    typeof focus.focusNoteId === 'string' ? focus.focusNoteId : null,
-    typeof focus.focusTaskId === 'string' ? focus.focusTaskId : null,
-    typeof focus.focusContext === 'string' ? focus.focusContext : null
-  );
+
+  // If the notification is tied to a workspace, try to set that workspace active first
+  (async () => {
+    try {
+      if (item.workspaceId && notificationAccessToken) {
+        await fetchLedgerApi('/api/workspaces/active', notificationAccessToken, {
+          method: 'PATCH',
+          body: JSON.stringify({ workspace_id: item.workspaceId }),
+        });
+        // Notify renderer windows to refresh their workspace state
+        for (const win of getNotificationWindows()) {
+          try {
+            win.webContents.send('ledger:workspaces-changed');
+          } catch {
+            // ignore per-window send errors
+          }
+        }
+      }
+    } catch (err) {
+      // ignore workspace switch failures — still attempt to open module
+      console.warn('[electron] failed to set active workspace for notification', err);
+    } finally {
+      openModuleWindow(
+        kind,
+        typeof focus.focusDate === 'string' ? focus.focusDate : null,
+        typeof focus.focusProjectId === 'string' ? focus.focusProjectId : null,
+        typeof focus.focusNoteId === 'string' ? focus.focusNoteId : null,
+        typeof focus.focusTaskId === 'string' ? focus.focusTaskId : null,
+        typeof focus.focusContext === 'string' ? focus.focusContext : null
+      );
+    }
+  })();
 };
 
 const getNotificationFallbackTitle = (item: NotificationSchedulerItem) => {
@@ -830,6 +859,16 @@ const deliverDesktopNotification = (item: NotificationSchedulerItem) => {
       silent: true,
     });
     notification.on('click', () => {
+      // ensure workspace is switched before launching target
+      if (item.workspaceId) {
+        try {
+          for (const win of getNotificationWindows()) {
+            win.webContents.send('ledger:set-active-workspace', { workspaceId: item.workspaceId });
+          }
+        } catch (e) {
+          // ignore
+        }
+      }
       launchNotificationTarget(item);
     });
     notification.show();
@@ -924,6 +963,7 @@ const runNotificationScheduler = async () => {
       console.warn(
         `[electron] Notification scheduler backed off for ${NOTIFICATION_SCHEDULER_BACKOFF_MS}ms after 429`
       );
+      return;
     }
     console.warn('[electron] Notification scheduler failed', error);
   } finally {
@@ -2358,6 +2398,11 @@ function isRectInsideWorkArea(rect: Electron.Rectangle, workArea: Electron.Recta
 }
 
 function resolveModuleBounds(kind: ModuleWindowKind): Electron.Rectangle {
+  const defaultWidth = kind === 'inbox' ? INBOX_DEFAULT_WIDTH : MODULE_DEFAULT_WIDTH;
+  const defaultHeight = kind === 'inbox' ? INBOX_DEFAULT_HEIGHT : MODULE_DEFAULT_HEIGHT;
+  const minWidth = kind === 'inbox' ? INBOX_MIN_WIDTH : MODULE_MIN_WIDTH;
+  const minHeight = kind === 'inbox' ? INBOX_MIN_HEIGHT : MODULE_MIN_HEIGHT;
+
   if (kind === 'notifications') {
     const sidebarBounds = sidebarWin?.getBounds() ?? getDockedBounds(RAIL_SIZE);
     const sidebarAnchorPoint = {
@@ -2394,11 +2439,11 @@ function resolveModuleBounds(kind: ModuleWindowKind): Electron.Rectangle {
     remembered.sidebarPosition === currentSidebarPosition
   ) {
     const width = Math.max(
-      MODULE_MIN_WIDTH,
+      minWidth,
       Math.min(remembered.bounds.width, workArea.width - WINDOW_MARGIN * 2)
     );
     const height = Math.max(
-      MODULE_MIN_HEIGHT,
+      minHeight,
       Math.min(remembered.bounds.height, workArea.height - WINDOW_MARGIN * 2)
     );
     const candidate = clampRectToWorkArea(
@@ -2410,10 +2455,10 @@ function resolveModuleBounds(kind: ModuleWindowKind): Electron.Rectangle {
     }
   }
 
-  const maxWidth = Math.max(MODULE_MIN_WIDTH, workArea.width - WINDOW_MARGIN * 2);
-  const maxHeight = Math.max(MODULE_MIN_HEIGHT, workArea.height - WINDOW_MARGIN * 2);
-  const targetWidth = Math.min(MODULE_DEFAULT_WIDTH, maxWidth);
-  const targetHeight = Math.min(MODULE_DEFAULT_HEIGHT, maxHeight);
+  const maxWidth = Math.max(minWidth, workArea.width - WINDOW_MARGIN * 2);
+  const maxHeight = Math.max(minHeight, workArea.height - WINDOW_MARGIN * 2);
+  const targetWidth = Math.min(defaultWidth, maxWidth);
+  const targetHeight = Math.min(defaultHeight, maxHeight);
 
   const leftSpace = sidebarBounds.x - workArea.x - MODULE_GAP - WINDOW_MARGIN;
   const rightSpace =
@@ -2442,8 +2487,8 @@ function resolveModuleBounds(kind: ModuleWindowKind): Electron.Rectangle {
 
   const sideSpace = side === 'right' ? rightSpace : leftSpace;
   const width = Math.max(
-    MODULE_MIN_WIDTH,
-    Math.min(targetWidth, Math.max(MODULE_MIN_WIDTH, sideSpace))
+    minWidth,
+    Math.min(targetWidth, Math.max(minWidth, sideSpace))
   );
   const height = targetHeight;
 
@@ -2839,6 +2884,7 @@ function openModuleWindow(
   // Quick capture modules use smaller dimensions
   const isQuickCapture = kind === 'quick-task' || kind === 'quick-note' || kind === 'quick-event';
   const isNotificationCenter = kind === 'notifications';
+  const isInbox = kind === 'inbox';
   holdCurrentFloatingDockTarget();
   let initialBounds = resolveModuleBounds(kind);
 
@@ -2856,11 +2902,15 @@ function openModuleWindow(
     ? QUICK_CAPTURE_WIDTH
     : isNotificationCenter
     ? NOTIFICATION_CENTER_MIN_WIDTH
+    : isInbox
+    ? INBOX_MIN_WIDTH
     : MODULE_MIN_WIDTH;
   const minHeight = isQuickCapture
     ? QUICK_CAPTURE_HEIGHT
     : isNotificationCenter
     ? NOTIFICATION_CENTER_MIN_HEIGHT
+    : isInbox
+    ? INBOX_MIN_HEIGHT
     : MODULE_MIN_HEIGHT;
 
   const moduleWin = new BrowserWindow({

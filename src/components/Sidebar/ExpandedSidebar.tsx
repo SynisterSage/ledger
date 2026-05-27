@@ -182,6 +182,19 @@ const todayKey = () => {
   return `${year}-${month}-${day}`;
 };
 
+const formatDateKey = (date: Date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const addDays = (date: Date, amount: number) => {
+  const next = new Date(date);
+  next.setDate(next.getDate() + amount);
+  return next;
+};
+
 const parseDateKey = (value: string) => {
   const [yearRaw, monthRaw, dayRaw] = String(value ?? '').split('-');
   const year = Number(yearRaw);
@@ -214,22 +227,6 @@ const monthOptions = [
   { value: 11, label: 'Nov' },
   { value: 12, label: 'Dec' },
 ];
-
-const buildTimeOptions = () => {
-  const options: Array<{ value: string; label: string }> = [];
-  for (let hour = 0; hour < 24; hour += 1) {
-    for (let minute = 0; minute < 60; minute += 15) {
-      const value = `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
-      const suffix = hour >= 12 ? 'PM' : 'AM';
-      const hour12 = hour % 12 === 0 ? 12 : hour % 12;
-      const label = `${hour12}:${String(minute).padStart(2, '0')} ${suffix}`;
-      options.push({ value, label });
-    }
-  }
-  return options;
-};
-
-const timeOptions = buildTimeOptions();
 
 const getProgressStateColor = (value: number) => {
   const percent = Math.max(0, Math.min(100, value));
@@ -481,6 +478,9 @@ export const ExpandedSidebar = ({
       const handleClickOutside = (e: MouseEvent) => {
         if (buttonRef.current && buttonRef.current.contains(e.target as Node)) return;
         if (dropdownRef.current && dropdownRef.current.contains(e.target as Node)) return;
+        // Prevent closing immediately after toggle due to event ordering.
+        const last = lastToggleRef.current ?? 0;
+        if (Date.now() - last < 200) return;
         setOpen(false);
       };
 
@@ -501,6 +501,22 @@ export const ExpandedSidebar = ({
 
       setPortalStyle({ position: 'fixed', left: `${left}px`, top: `${top}px`, width: `${width}px`, zIndex: 9999 });
     }, [open]);
+
+    // Prevent the surrounding layout from showing a scrollbar when the dropdown is open.
+    useEffect(() => {
+      if (!open) return;
+      const prevOverflow = document.body.style.overflow;
+      try {
+        document.body.style.overflow = 'hidden';
+      } catch {}
+      return () => {
+        try {
+          document.body.style.overflow = prevOverflow;
+        } catch {}
+      };
+    }, [open]);
+
+    const lastToggleRef = useRef<number | null>(null);
 
     const dropdown = (
       <div
@@ -545,7 +561,9 @@ export const ExpandedSidebar = ({
           type="button"
           onClick={(e) => {
             e.stopPropagation();
-            setOpen((v) => !v);
+              // record toggle time to avoid immediate outside-click handlers closing the menu
+              lastToggleRef.current = Date.now();
+              setOpen((v) => !v);
           }}
           className={
             compact
@@ -1030,18 +1048,14 @@ export const ExpandedSidebar = ({
     const loadUpcoming = async () => {
       try {
         const events = await api.getUpcomingEvents({ scope: calendarScope });
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        const todayISO = today.toISOString().slice(0, 10);
-        const tomorrow = new Date(today);
-        tomorrow.setDate(tomorrow.getDate() + 1);
-        const tomorrowISO = tomorrow.toISOString().slice(0, 10);
+        const todayISO = formatDateKey(new Date());
+        const tomorrowISO = formatDateKey(addDays(new Date(), 1));
 
         const eventItems = (events || []).map((e: any) => {
           const startDate = new Date(e.start_at);
           const startAt = startDate.getTime();
           const isValidDate = Number.isFinite(startAt);
-          const eventDateISO = isValidDate ? startDate.toISOString().slice(0, 10) : '';
+          const eventDateISO = isValidDate ? formatDateKey(startDate) : '';
           let dateDisplay = '';
 
           if (eventDateISO === todayISO) {
@@ -1807,13 +1821,9 @@ export const ExpandedSidebar = ({
       const start = new Date(createdEvent.start_at);
       const startAt = start.getTime();
       const isValidDate = Number.isFinite(startAt);
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const tomorrow = new Date(today);
-      tomorrow.setDate(tomorrow.getDate() + 1);
-      const eventDateISO = isValidDate ? start.toISOString().slice(0, 10) : '';
-      const todayISO = today.toISOString().slice(0, 10);
-      const tomorrowISO = tomorrow.toISOString().slice(0, 10);
+      const eventDateISO = isValidDate ? formatDateKey(start) : '';
+      const todayISO = formatDateKey(new Date());
+      const tomorrowISO = formatDateKey(addDays(new Date(), 1));
       const dueDate =
         eventDateISO === todayISO
           ? 'Today'
@@ -2859,31 +2869,23 @@ export const ExpandedSidebar = ({
               <div className="grid grid-cols-2 gap-2">
                 <div className="flex flex-col gap-1">
                   <label className="text-xs font-medium text-gray-500">Start</label>
-                  <select
+                  <input
+                    type="time"
                     value={eventStartTime}
                     onChange={(e) => setEventStartTime(e.target.value)}
+                    step={60}
                     className="h-7 px-2 text-xs border border-gray-200 rounded-md focus:outline-none focus:border-gray-300 bg-gray-50 text-gray-900"
-                  >
-                    {timeOptions.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
+                  />
                 </div>
                 <div className="flex flex-col gap-1">
                   <label className="text-xs font-medium text-gray-500">End</label>
-                  <select
+                  <input
+                    type="time"
                     value={eventEndTime}
                     onChange={(e) => setEventEndTime(e.target.value)}
+                    step={60}
                     className="h-7 px-2 text-xs border border-gray-200 rounded-md focus:outline-none focus:border-gray-300 bg-gray-50 text-gray-900"
-                  >
-                    {timeOptions.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
+                  />
                 </div>
               </div>
               <div className="flex items-center gap-1.5">
