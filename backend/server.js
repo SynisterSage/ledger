@@ -663,6 +663,8 @@ const userPreferencesDefaults = {
   reduceMotion: false,
   highContrast: false,
   compactDensity: false,
+  showTrayIcon: true,
+  runInBackground: true,
 };
 
 const normalizeUserPreferences = (value) => {
@@ -810,6 +812,8 @@ const normalizeUserPreferences = (value) => {
     reduceMotion: Boolean(merged.reduceMotion),
     highContrast: Boolean(merged.highContrast),
     compactDensity: Boolean(merged.compactDensity),
+    showTrayIcon: Boolean(merged.showTrayIcon),
+    runInBackground: Boolean(merged.runInBackground),
   };
 };
 
@@ -822,6 +826,7 @@ const notificationPreferencesDefaults = {
   projectDeadlinesEnabled: true,
   inboxCapturesEnabled: false,
   overdueEnabled: true,
+  paused: false,
   defaultEventLeadMinutes: 10,
   defaultTaskTiming: 'morning_of',
   defaultProjectDeadlineLeadDays: 1,
@@ -834,7 +839,7 @@ const notificationPreferencesDefaults = {
 };
 
 const notificationPreferencesSelectColumns =
-  'id, user_id, desktop_enabled, in_app_enabled, reminders_enabled, events_enabled, tasks_enabled, project_deadlines_enabled, inbox_captures_enabled, overdue_enabled, default_event_lead_minutes, default_task_timing, default_project_deadline_lead_days, default_snooze_minutes, keep_overdue_visible, notify_while_fullscreen, quiet_hours_enabled, quiet_hours_start, quiet_hours_end, created_at, updated_at';
+  'id, user_id, desktop_enabled, in_app_enabled, reminders_enabled, events_enabled, tasks_enabled, project_deadlines_enabled, inbox_captures_enabled, overdue_enabled, paused, default_event_lead_minutes, default_task_timing, default_project_deadline_lead_days, default_snooze_minutes, keep_overdue_visible, notify_while_fullscreen, quiet_hours_enabled, quiet_hours_start, quiet_hours_end, created_at, updated_at';
 
 const normalizeNotificationClockTime = (value) => {
   const text = normalizeNullableText(value);
@@ -881,6 +886,7 @@ const normalizeNotificationPreferences = (value) => {
     projectDeadlinesEnabled: Boolean(merged.projectDeadlinesEnabled),
     inboxCapturesEnabled: Boolean(merged.inboxCapturesEnabled),
     overdueEnabled: Boolean(merged.overdueEnabled),
+    paused: Boolean(merged.paused),
     defaultEventLeadMinutes,
     defaultTaskTiming,
     defaultProjectDeadlineLeadDays,
@@ -904,6 +910,7 @@ const mapNotificationPreferencesRow = (row) => ({
   projectDeadlinesEnabled: Boolean(row?.project_deadlines_enabled),
   inboxCapturesEnabled: Boolean(row?.inbox_captures_enabled),
   overdueEnabled: Boolean(row?.overdue_enabled),
+  paused: Boolean(row?.paused),
   defaultEventLeadMinutes: Number(row?.default_event_lead_minutes ?? 10),
   defaultTaskTiming: String(row?.default_task_timing ?? notificationPreferencesDefaults.defaultTaskTiming),
   defaultProjectDeadlineLeadDays: Number(
@@ -931,6 +938,7 @@ const notificationPreferencesInsertPayload = (userId, value) => {
     project_deadlines_enabled: prefs.projectDeadlinesEnabled,
     inbox_captures_enabled: prefs.inboxCapturesEnabled,
     overdue_enabled: prefs.overdueEnabled,
+    paused: prefs.paused,
     default_event_lead_minutes: prefs.defaultEventLeadMinutes,
     default_task_timing: prefs.defaultTaskTiming,
     default_project_deadline_lead_days: prefs.defaultProjectDeadlineLeadDays,
@@ -1019,6 +1027,7 @@ const buildNotificationEventPayload = ({
   notificationType,
   scheduledFor,
   metadata = {},
+  deliveredInAppAt = null,
 }) => ({
   user_id: userId,
   workspace_id: workspaceId ?? null,
@@ -1026,6 +1035,7 @@ const buildNotificationEventPayload = ({
   source_id: String(sourceId),
   notification_type: notificationType,
   scheduled_for: scheduledFor,
+  delivered_in_app_at: deliveredInAppAt,
   metadata,
 });
 
@@ -1325,6 +1335,40 @@ const buildDueNotificationCandidates = async (userId, prefs) => {
     }
   }
 
+  const pendingInviteRows = await supabase
+    .from('notification_events')
+    .select(
+      'id, user_id, workspace_id, source_type, source_id, notification_type, scheduled_for, delivered_in_app_at, delivered_desktop_at, dismissed_at, action_taken, metadata, created_at, updated_at'
+    )
+    .eq('user_id', userId)
+    .in('workspace_id', workspaceIds)
+    .eq('source_type', 'workspace_invite')
+    .eq('notification_type', 'invite.accepted')
+    .is('delivered_in_app_at', null)
+    .is('dismissed_at', null)
+    .order('created_at', { ascending: false })
+    .limit(50);
+
+  if (pendingInviteRows.error) throw pendingInviteRows.error;
+
+  for (const row of Array.isArray(pendingInviteRows.data) ? pendingInviteRows.data : []) {
+    candidates.push({
+      user_id: userId,
+      workspace_id: row.workspace_id ?? null,
+      source_type: 'workspace_invite',
+      source_id: String(row.source_id ?? row.id),
+      notification_type: 'invite.accepted',
+      scheduled_for: row.scheduled_for ?? notificationScheduledBucket(row.created_at ?? now.toISOString()),
+      metadata: safeJson(row.metadata, {}) ?? {},
+      title: normalizeNullableText(row.metadata?.title) ?? 'Invite accepted',
+      body: normalizeNullableText(row.metadata?.body) ?? 'Someone joined your workspace.',
+      moduleKind: 'dashboard',
+      focusPayload: normalizeNullableText(row.metadata?.focusPayload) ? safeJson(row.metadata.focusPayload, null) : null,
+      actions: Array.isArray(row.metadata?.actions) ? row.metadata.actions : [],
+      workspace_id_for_fetch: row.workspace_id ?? null,
+    });
+  }
+
   return candidates;
 };
 
@@ -1436,10 +1480,10 @@ const mapNotificationCenterRow = (row, maps) => {
 
   let title = normalizeNullableText(metadata.title);
   let body = normalizeNullableText(metadata.body);
+  let context = normalizeNullableText(metadata.context);
   let moduleKind = metadata.moduleKind ?? null;
   let focusPayload = metadata.focusPayload ?? null;
   let actions = Array.isArray(metadata.actions) ? metadata.actions : null;
-  let context = null;
 
   if (sourceType === 'reminder') {
     const reminder = maps.reminderById.get(sourceId) ?? null;
@@ -1497,6 +1541,12 @@ const mapNotificationCenterRow = (row, maps) => {
     focusPayload = focusPayload ?? { kind: 'inbox' };
     context = inbox?.source ? `Capture from ${String(inbox.source)}` : 'Inbox capture';
     actions = actions ?? ['open', 'dismiss'];
+  } else if (sourceType === 'workspace_invite') {
+    title = title ?? 'Invite accepted';
+    body = body ?? 'Someone joined your workspace.';
+    moduleKind = moduleKind ?? 'dashboard';
+    context = context ?? 'Workspace invite';
+    actions = actions ?? [];
   }
 
   const actionTaken = String(row.action_taken ?? '').trim().toLowerCase();
@@ -1566,6 +1616,7 @@ let notificationSchedulerInFlight = false;
 const processNotificationEventsForUser = async (userId) => {
   const prefsRow = await getOrCreateNotificationPreferences(userId);
   const prefs = normalizeNotificationPreferences(mapNotificationPreferencesRow(prefsRow));
+  if (prefs.paused) return [];
   const candidates = await buildDueNotificationCandidates(userId, prefs);
   if (!candidates.length) return [];
 
@@ -3681,6 +3732,9 @@ app.post('/api/notifications/check', authMiddleware, rateLimit('read'), async (r
   try {
     const prefsRow = await getOrCreateNotificationPreferences(req.authUser.id);
     const prefs = normalizeNotificationPreferences(mapNotificationPreferencesRow(prefsRow));
+    if (prefs.paused) {
+      return res.json([]);
+    }
     const candidates = await buildDueNotificationCandidates(req.authUser.id, prefs);
 
     if (!candidates.length) {
@@ -4385,6 +4439,18 @@ app.delete(
           actor_role: access.role,
         },
       });
+      try {
+        // Dismiss any outstanding notifications for the removed user scoped to this workspace
+        const nowIso = new Date().toISOString();
+        await supabase
+          .from('notification_events')
+          .update({ dismissed_at: nowIso, updated_at: nowIso })
+          .eq('user_id', targetUserId)
+          .eq('workspace_id', workspaceId)
+          .is('dismissed_at', null);
+      } catch (err) {
+        console.error('Failed to dismiss notifications for removed workspace member', err?.message ?? err);
+      }
       res.json({ success: true });
     } catch (error) {
       res.status(error.statusCode || 500).json({ error: error.message });
@@ -4755,6 +4821,13 @@ app.post('/api/invitations/accept', authMiddleware, rateLimit('write'), async (r
     });
 
     try {
+      const { data: workspaceRow, error: workspaceLookupError } = await supabase
+        .from('workspaces')
+        .select('id, name')
+        .eq('id', invitation.workspace_id)
+        .maybeSingle();
+      if (workspaceLookupError) throw workspaceLookupError;
+
       // Create in-app notification events for existing workspace members
       const { data: memberRows } = await supabase
         .from('workspace_members')
@@ -4772,10 +4845,20 @@ app.post('/api/invitations/accept', authMiddleware, rateLimit('write'), async (r
             notificationType: 'invite.accepted',
             scheduledFor: nowIso,
             metadata: {
+              title: 'Invite accepted',
+              body: `${req.authUser.full_name ?? req.authUser.email ?? 'Someone'} joined ${
+                workspaceRow?.name ?? 'the workspace'
+              }`,
+              context: 'Workspace invite',
+              moduleKind: 'settings',
+              focusPayload: { kind: 'settings', focusContext: 'invites' },
+              actions: ['open', 'dismiss'],
               joined_user_id: req.authUser.id,
               joined_email: req.authUser.email ?? null,
               joined_full_name: req.authUser.full_name ?? null,
+              workspace_name: workspaceRow?.name ?? null,
             },
+            delivered_in_app_at: nowIso,
           })
         )
         .filter(Boolean);

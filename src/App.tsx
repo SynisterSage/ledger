@@ -779,7 +779,13 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
     const loadCalendarSettings = async () => {
       try {
         const payload = (await api.getUserSettings()) as {
-          preferences?: { calendarScope?: 'current_workspace' | 'all_accessible_workspaces' } | null;
+          preferences?:
+            | {
+                calendarScope?: 'current_workspace' | 'all_accessible_workspaces';
+                showTrayIcon?: boolean;
+                runInBackground?: boolean;
+              }
+            | null;
         };
         if (cancelled) return;
         setCalendarScope(
@@ -787,9 +793,17 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
             ? 'all_accessible_workspaces'
             : 'current_workspace'
         );
+        window.ipcRenderer?.send('tray:update-state', {
+          showTrayIcon: payload?.preferences?.showTrayIcon !== false,
+          runInBackground: payload?.preferences?.runInBackground !== false,
+        });
       } catch {
         if (!cancelled) {
           setCalendarScope('current_workspace');
+          window.ipcRenderer?.send('tray:update-state', {
+            showTrayIcon: true,
+            runInBackground: true,
+          });
         }
       }
     };
@@ -838,6 +852,13 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
       );
     };
   }, [api, user]);
+
+  useEffect(() => {
+    window.ipcRenderer?.send('tray:update-state', {
+      inboxCount,
+      notificationCount,
+    });
+  }, [inboxCount, notificationCount]);
 
   useEffect(() => {
     const syncCompletedFocusDay = () => {
@@ -3589,7 +3610,7 @@ function AppShell() {
         >
           <LoginForm
             notice={
-              pendingInviteToken
+              pendingInviteToken && inviteFlowStatus === 'awaiting-auth'
                 ? `Sign in to accept your ${inviteWorkspaceName ?? 'workspace'} invitation.`
                 : null
             }

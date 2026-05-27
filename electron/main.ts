@@ -9,6 +9,8 @@ import {
   systemPreferences,
   TouchBar,
   Menu,
+  Tray,
+  nativeImage,
 } from 'electron';
 import { execFile, spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { createRequire } from 'node:module';
@@ -34,6 +36,8 @@ const SETTINGS_SECTIONS = new Set([
 let pendingLedgerProtocolUrl: string | null = null;
 let pendingInviteToken: string | null = null;
 let sidebarTouchBar: InstanceType<typeof TouchBar> | null = null;
+let tray: Tray | null = null;
+let isQuittingApp = false;
 
 if (process.platform === 'win32') {
   // Command buffer / GPUControl errors on some Windows drivers can freeze
@@ -694,6 +698,13 @@ let lastSidebarToggleAt = 0;
 let allLedgerWindowsHidden = false;
 let sidebarWasVisibleBeforeHideAll = false;
 let sidebarBoundsAnimationTimer: NodeJS.Timeout | null = null;
+const trayState = {
+  showTrayIcon: true,
+  runInBackground: true,
+  inboxCount: 0,
+  notificationCount: 0,
+  notificationsPaused: false,
+};
 const moduleKindsVisibleBeforeHideAll = new Set<ModuleWindowKind>();
 const moduleWindowBoundsMemory = new Map<
   ModuleWindowKind,
@@ -763,6 +774,7 @@ type NotificationSchedulerItem = {
 type NotificationPreferencesPayload = {
   desktopEnabled?: boolean;
   inAppEnabled?: boolean;
+  paused?: boolean;
 };
 
 let notificationSchedulerTimer: NodeJS.Timeout | null = null;
@@ -789,6 +801,115 @@ const broadcastNotificationBatch = (items: NotificationSchedulerItem[]) => {
   for (const win of getNotificationWindows()) {
     win.webContents.send('ledger:notifications-batch', items);
   }
+};
+
+const getTrayIconPath = () =>
+  path.join(
+    process.env.VITE_PUBLIC ?? path.join(process.env.APP_ROOT ?? '', 'public'),
+    process.platform === 'win32' ? 'ledger-tray.ico' : 'ledgerTemplate@14.png'
+  );
+
+const getTrayIcon = () => {
+  const icon = nativeImage.createFromPath(getTrayIconPath());
+  if (process.platform === 'darwin') {
+    const resized = icon.resize({ width: 14, height: 14 });
+    resized.setTemplateImage(true);
+    return resized;
+  }
+  return icon;
+};
+
+const getTrayNotificationLabel = () =>
+  trayState.notificationCount > 0
+    ? `Open Notifications (${trayState.notificationCount})`
+    : 'Open Notifications';
+
+const getTrayInboxLabel = () =>
+  trayState.inboxCount > 0 ? `Open Inbox (${trayState.inboxCount})` : 'Open Inbox';
+
+const syncTray = () => {
+  if (!trayState.showTrayIcon) {
+    if (tray) {
+      tray.destroy();
+      tray = null;
+    }
+    return;
+  }
+
+  if (!tray) {
+    tray = new Tray(getTrayIcon());
+    tray.setToolTip(
+      trayState.notificationCount > 0
+        ? `Ledger — ${trayState.notificationCount} notification${
+            trayState.notificationCount === 1 ? '' : 's'
+          }`
+        : 'Ledger'
+    );
+    tray.on('click', () => {
+      focusSidebarWindow();
+    });
+    tray.on('double-click', () => {
+      focusSidebarWindow();
+    });
+    tray.on('right-click', () => {
+      tray?.popUpContextMenu();
+    });
+  } else {
+    tray.setImage(getTrayIcon());
+    tray.setToolTip(
+      trayState.notificationCount > 0
+        ? `Ledger — ${trayState.notificationCount} notification${
+            trayState.notificationCount === 1 ? '' : 's'
+          }`
+        : 'Ledger'
+    );
+  }
+
+  const trayMenu = Menu.buildFromTemplate([
+    { label: 'Ledger', enabled: false },
+    { type: 'separator' },
+    {
+      label: 'Open Ledger',
+      click: () => focusSidebarWindow(),
+    },
+    {
+      label: 'Quick Capture',
+      click: () => openModuleWindow('quick-task'),
+    },
+    {
+      label: getTrayInboxLabel(),
+      click: () => openModuleWindow('inbox'),
+    },
+    {
+      label: getTrayNotificationLabel(),
+      click: () => openModuleWindow('notifications'),
+    },
+    {
+      label: 'Settings',
+      click: () => openModuleWindow('settings'),
+    },
+    { type: 'separator' },
+    {
+      label: trayState.notificationsPaused ? 'Resume Notifications' : 'Pause Notifications',
+      click: () => {
+        void toggleNotificationsPaused();
+      },
+    },
+    { type: 'separator' },
+    {
+      label: 'Quit Ledger',
+      click: () => {
+        void quitLedgerApp();
+      },
+    },
+  ]);
+
+  tray.setContextMenu(trayMenu);
+};
+
+const updateTrayState = (nextState: Partial<typeof trayState>) => {
+  Object.assign(trayState, nextState);
+  syncTray();
 };
 
 const launchNotificationTarget = (item: NotificationSchedulerItem) => {
@@ -925,8 +1046,19 @@ const runNotificationScheduler = async () => {
     }
 
     const prefs = cachedNotificationPreferences ?? {};
+    updateTrayState({ notificationsPaused: Boolean(prefs.paused) });
     const shouldDeliverDesktop = Boolean(prefs.desktopEnabled);
     const shouldDeliverInApp = prefs.inAppEnabled !== false;
+    const shouldPauseDelivery = Boolean(prefs.paused);
+
+    if (shouldPauseDelivery) {
+      const summary = await fetchLedgerApi<{ counts?: { active?: number } }>(
+        '/api/notifications/summary',
+        notificationAccessToken
+      );
+      broadcastNotificationSummary(Number(summary?.counts?.active ?? 0));
+      return;
+    }
 
     const notifications = await fetchLedgerApi<NotificationSchedulerItem[]>(
       '/api/notifications/check',
@@ -2668,6 +2800,58 @@ function applySidebarVisibility(isVisible: boolean) {
   sidebarWin.webContents.send('sidebar:visibility-changed', { isVisible: true });
 }
 
+function focusSidebarWindow() {
+  if (!sidebarWin || sidebarWin.isDestroyed()) {
+    createSidebarWindow();
+    return;
+  }
+
+  if (sidebarWin.isMinimized()) {
+    sidebarWin.restore();
+  }
+
+  if (!sidebarWin.isVisible()) {
+    applySidebarVisibility(true);
+  } else {
+    sidebarWin.show();
+    applySidebarWindowMode(currentSidebarMode);
+    sidebarWin.webContents.send('sidebar:visibility-changed', { isVisible: true });
+  }
+
+  sidebarWin.focus();
+}
+
+function quitLedgerApp() {
+  isQuittingApp = true;
+  app.quit();
+}
+
+async function toggleNotificationsPaused() {
+  if (!notificationAccessToken) return;
+
+  try {
+    const preferences = await fetchLedgerApi<Record<string, unknown>>(
+      '/api/notifications/preferences',
+      notificationAccessToken
+    );
+    const nextPaused = !Boolean(preferences?.paused);
+    const updatedPreferences = await fetchLedgerApi<Record<string, unknown>>(
+      '/api/notifications/preferences',
+      notificationAccessToken,
+      {
+        method: 'PATCH',
+        body: JSON.stringify({ paused: nextPaused }),
+      }
+    );
+    cachedNotificationPreferences = updatedPreferences as NotificationPreferencesPayload;
+    cachedNotificationPreferencesAt = Date.now();
+    updateTrayState({ notificationsPaused: nextPaused });
+    void runNotificationScheduler();
+  } catch (error) {
+    console.warn('[electron] Failed to toggle notification pause state', error);
+  }
+}
+
 function hideAllLedgerWindows() {
   if (allLedgerWindowsHidden) return;
 
@@ -2815,6 +2999,11 @@ function createSidebarWindow() {
   });
 
   sidebarWin.on('close', (event) => {
+    if (!isQuittingApp && trayState.runInBackground) {
+      event.preventDefault();
+      applySidebarVisibility(false);
+      return;
+    }
     if (process.platform !== 'darwin') return;
     if (currentSidebarMode !== 'fullscreen') return;
 
@@ -3148,12 +3337,17 @@ function openModuleWindow(
 }
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
+  if (process.platform !== 'darwin' || !trayState.runInBackground) {
     app.quit();
   }
 });
 
 app.on('will-quit', () => {
+  isQuittingApp = true;
+  if (tray) {
+    tray.destroy();
+    tray = null;
+  }
   globalShortcut.unregisterAll();
 });
 
@@ -3188,7 +3382,7 @@ ipcMain.handle('window:hide-temporary', () => {
 });
 
 ipcMain.handle('window:quit-app', () => {
-  app.quit();
+  quitLedgerApp();
 });
 
 ipcMain.handle('window:set-always-on-top', (_event, alwaysOnTop: boolean) => {
@@ -3587,7 +3781,41 @@ function syncTouchBar() {
 app.whenReady().then(() => {
   registerLedgerProtocol();
   createSidebarWindow();
+  syncTray();
   processPendingLedgerProtocolUrl();
+  ipcMain.on(
+    'tray:update-state',
+    (
+      _event,
+      payload?: {
+        showTrayIcon?: boolean;
+        runInBackground?: boolean;
+        inboxCount?: number;
+        notificationCount?: number;
+        notificationsPaused?: boolean;
+      }
+    ) => {
+      if (!payload) return;
+      updateTrayState({
+        ...(typeof payload.showTrayIcon === 'boolean'
+          ? { showTrayIcon: payload.showTrayIcon }
+          : {}),
+        ...(typeof payload.runInBackground === 'boolean'
+          ? { runInBackground: payload.runInBackground }
+          : {}),
+        ...(typeof payload.inboxCount === 'number' && Number.isFinite(payload.inboxCount)
+          ? { inboxCount: Math.max(0, Math.floor(payload.inboxCount)) }
+          : {}),
+        ...(typeof payload.notificationCount === 'number' &&
+        Number.isFinite(payload.notificationCount)
+          ? { notificationCount: Math.max(0, Math.floor(payload.notificationCount)) }
+          : {}),
+        ...(typeof payload.notificationsPaused === 'boolean'
+          ? { notificationsPaused: payload.notificationsPaused }
+          : {}),
+      });
+    }
+  );
   ipcMain.on(
     'notifications:set-session',
     (_event, payload?: { accessToken?: string | null; userId?: string | null; apiUrl?: string | null }) => {
@@ -3632,6 +3860,7 @@ app.whenReady().then(() => {
 });
 
 app.on('before-quit', () => {
+  isQuittingApp = true;
   if (notificationSchedulerTimer !== null) {
     clearInterval(notificationSchedulerTimer);
     notificationSchedulerTimer = null;

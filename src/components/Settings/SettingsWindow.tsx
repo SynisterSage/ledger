@@ -54,12 +54,15 @@ type UserPreferences = {
   reduceMotion: boolean;
   highContrast: boolean;
   compactDensity: boolean;
+  showTrayIcon: boolean;
+  runInBackground: boolean;
   theme: 'light' | 'dark' | 'system';
 };
 
 type NotificationPreferences = {
   desktopEnabled: boolean;
   inAppEnabled: boolean;
+  paused: boolean;
   remindersEnabled: boolean;
   eventsEnabled: boolean;
   tasksEnabled: boolean;
@@ -256,12 +259,15 @@ const defaultPrefs: UserPreferences = {
   reduceMotion: false,
   highContrast: false,
   compactDensity: false,
+  showTrayIcon: true,
+  runInBackground: true,
   theme: 'system',
 };
 
 const defaultNotificationPrefs: NotificationPreferences = {
   desktopEnabled: false,
   inAppEnabled: true,
+  paused: false,
   remindersEnabled: true,
   eventsEnabled: true,
   tasksEnabled: false,
@@ -779,6 +785,10 @@ export const SettingsWindow = () => {
           }
 
           saveCachedPreferences(nextPreferences);
+          window.ipcRenderer?.send('tray:update-state', {
+            showTrayIcon: nextPreferences.showTrayIcon,
+            runInBackground: nextPreferences.runInBackground,
+          });
 
           if (saveToken !== autosaveTokenRef.current) return;
           lastSavedSettingsRef.current = nextSnapshot;
@@ -827,6 +837,10 @@ export const SettingsWindow = () => {
       void (async () => {
         try {
           await api.updateNotificationPreferences(notificationPreferences);
+          window.ipcRenderer?.send('notifications:refresh');
+          window.ipcRenderer?.send('tray:update-state', {
+            notificationsPaused: notificationPreferences.paused,
+          });
 
           if (saveToken !== notificationAutosaveTokenRef.current) return;
           lastSavedNotificationSettingsRef.current = nextSnapshot;
@@ -2830,6 +2844,40 @@ export const SettingsWindow = () => {
                   </div>
 
                   <div className="mt-8 space-y-8">
+                    <section
+                      className="border-t border-gray-200 pt-6"
+                      aria-labelledby="notification-control"
+                    >
+                      <h3 id="notification-control" className="text-sm font-semibold text-gray-900">
+                        Control
+                      </h3>
+                      <p className="mt-1 text-xs leading-5 text-gray-500">
+                        Pause new alerts without changing your delivery preferences.
+                      </p>
+                      <div className="mt-2 divide-y divide-gray-200 border-y border-gray-200">
+                        <div className="flex items-start justify-between gap-4 px-4 py-3">
+                          <span className="min-w-0">
+                            <span className="block text-sm font-medium text-gray-900">
+                              Pause notifications
+                            </span>
+                            <span className="mt-1 block text-xs leading-5 text-gray-500">
+                              Temporarily mute new reminders and alerts from Ledger.
+                            </span>
+                          </span>
+                          <InlineSwitch
+                            checked={notificationPreferences.paused}
+                            onToggle={() =>
+                              setNotificationPreferences((prev) => ({
+                                ...prev,
+                                paused: !prev.paused,
+                              }))
+                            }
+                            label="Pause notifications"
+                          />
+                        </div>
+                      </div>
+                    </section>
+
                     <section className="border-t border-gray-200 pt-6" aria-labelledby="notification-delivery">
                       <h3 id="notification-delivery" className="text-sm font-semibold text-gray-900">
                         Delivery
@@ -3398,6 +3446,57 @@ export const SettingsWindow = () => {
                           checked={sidebarPreferences.floatingDockEnabled}
                           onToggle={() => setFloatingDockEnabled(!sidebarPreferences.floatingDockEnabled)}
                           label="Dock to app windows"
+                        />
+                      </div>
+                    </div>
+                  </section>
+
+                  <section className="border-t border-gray-200 pt-6" aria-labelledby="sidebar-desktop-utility">
+                    <h3 id="sidebar-desktop-utility" className="text-sm font-semibold text-gray-900">
+                      Desktop utility
+                    </h3>
+                    <p className="mt-1 text-xs leading-5 text-gray-500">
+                      Keep Ledger available from the menu bar or system tray.
+                    </p>
+                    <div className="mt-2 divide-y divide-gray-200 border-y border-gray-200">
+                      <div className="flex items-start justify-between gap-4 px-4 py-3">
+                        <span className="min-w-0">
+                          <span className="block text-sm font-medium text-gray-900">
+                            Show tray icon
+                          </span>
+                          <span className="mt-1 block text-xs leading-5 text-gray-500">
+                            Keep a Ledger icon visible in the menu bar or system tray.
+                          </span>
+                        </span>
+                        <InlineSwitch
+                          checked={Boolean(preferences.showTrayIcon)}
+                          onToggle={() =>
+                            setPreferences((current) => ({
+                              ...current,
+                              showTrayIcon: !current.showTrayIcon,
+                            }))
+                          }
+                          label="Show tray icon"
+                        />
+                      </div>
+                      <div className="flex items-start justify-between gap-4 px-4 py-3">
+                        <span className="min-w-0">
+                          <span className="block text-sm font-medium text-gray-900">
+                            Run in background
+                          </span>
+                          <span className="mt-1 block text-xs leading-5 text-gray-500">
+                            Keep Ledger running after closing the window so reminders can still notify you.
+                          </span>
+                        </span>
+                        <InlineSwitch
+                          checked={Boolean(preferences.runInBackground)}
+                          onToggle={() =>
+                            setPreferences((current) => ({
+                              ...current,
+                              runInBackground: !current.runInBackground,
+                            }))
+                          }
+                          label="Run in background"
                         />
                       </div>
                     </div>
