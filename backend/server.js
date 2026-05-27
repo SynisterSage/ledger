@@ -4754,6 +4754,43 @@ app.post('/api/invitations/accept', authMiddleware, rateLimit('write'), async (r
       },
     });
 
+    try {
+      // Create in-app notification events for existing workspace members
+      const { data: memberRows } = await supabase
+        .from('workspace_members')
+        .select('user_id')
+        .eq('workspace_id', invitation.workspace_id)
+        .neq('user_id', req.authUser.id);
+
+      const notificationPayloads = (memberRows || [])
+        .map((r) =>
+          buildNotificationEventPayload({
+            userId: r.user_id,
+            workspaceId: invitation.workspace_id,
+            sourceType: 'workspace_invite',
+            sourceId: invitation.id,
+            notificationType: 'invite.accepted',
+            scheduledFor: nowIso,
+            metadata: {
+              joined_user_id: req.authUser.id,
+              joined_email: req.authUser.email ?? null,
+              joined_full_name: req.authUser.full_name ?? null,
+            },
+          })
+        )
+        .filter(Boolean);
+
+      if (notificationPayloads.length) {
+        // Upsert to avoid duplicates if called twice
+        await supabase.from('notification_events').upsert(notificationPayloads, {
+          onConflict: 'user_id,source_type,source_id,notification_type,scheduled_for',
+        });
+      }
+    } catch (err) {
+      // Non-fatal: log and continue; invite acceptance should not fail due to notification issues
+      console.error('Failed to create invite-accepted notifications', err?.message ?? err);
+    }
+
     res.json({
       success: true,
       workspace_id: invitation.workspace_id,

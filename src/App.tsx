@@ -2811,6 +2811,7 @@ function AppShell() {
   );
   const sidebarModeTimerRef = useRef<number | null>(null);
   const [showAuthenticatedShell, setShowAuthenticatedShell] = useState(false);
+  const [isAuthWindowReady, setIsAuthWindowReady] = useState(!window.desktopWindow);
   const authNativeWindowPinnedRef = useRef(false);
 
   // Initialize workspace for authenticated users
@@ -3020,13 +3021,17 @@ function AppShell() {
 
   useEffect(() => {
     if (!inviteFlowNotice) return;
+    if (!user) {
+      setInviteFlowNotice(null);
+      return;
+    }
 
     toast.show(inviteFlowNotice, {
       variant: 'success',
       duration: 4500,
     });
     setInviteFlowNotice(null);
-  }, [inviteFlowNotice, toast]);
+  }, [inviteFlowNotice, toast, user]);
 
   
 
@@ -3109,11 +3114,13 @@ function AppShell() {
   useEffect(() => {
     if (!user) {
       authNativeWindowPinnedRef.current = false;
+      setIsAuthWindowReady(false);
     }
 
     if (user && uiMode !== 'app') {
       setUiMode('app');
       setIsAuthExiting(false);
+      setIsAuthWindowReady(false);
       return;
     }
 
@@ -3131,12 +3138,26 @@ function AppShell() {
     if (authNativeWindowPinnedRef.current) return;
 
     authNativeWindowPinnedRef.current = true;
-    void window.desktopWindow?.setMode('auth').catch(() => {
-      // No-op outside Electron (browser dev mode)
-    });
-    void window.desktopWindow?.setVisible(true).catch(() => {
-      // No-op outside Electron (browser dev mode)
-    });
+    let cancelled = false;
+
+    const prepareAuthWindow = async () => {
+      await window.desktopWindow?.setMode('auth').catch(() => {
+        // No-op outside Electron (browser dev mode)
+      });
+      await window.desktopWindow?.setVisible(true).catch(() => {
+        // No-op outside Electron (browser dev mode)
+      });
+
+      window.requestAnimationFrame(() => {
+        if (!cancelled) setIsAuthWindowReady(true);
+      });
+    };
+
+    void prepareAuthWindow();
+
+    return () => {
+      cancelled = true;
+    };
   }, [isLoading, isModuleWindow, user]);
 
   useEffect(() => {
@@ -3464,7 +3485,7 @@ function AppShell() {
     }
 
     const applyMode = () => {
-      if (sidebarModeRef.current === mode) return;
+      if (sidebarModeRef.current === mode && mode !== 'auth') return;
       sidebarModeRef.current = mode;
       window.desktopWindow?.setMode(mode).catch(() => {
         // No-op outside Electron (browser dev mode)
@@ -3552,6 +3573,10 @@ function AppShell() {
 
   // Show login if not authenticated
   if (!user) {
+    if (!isAuthWindowReady) {
+      return <AuthStatusScreen title="Opening Ledger" subtitle="Preparing sign in." />;
+    }
+
     return (
       <div className="relative h-screen w-screen overflow-hidden bg-transparent">
         <div

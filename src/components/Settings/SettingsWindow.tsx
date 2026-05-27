@@ -3908,8 +3908,9 @@ export const SettingsWindow = () => {
             <ModalOverlay
               isOpen={!!inviteModal && !!selectedInvite}
               onClose={() => setInviteModal(null)}
-              classNameContainer="w-full max-w-[560px] rounded-2xl border border-gray-200 bg-white shadow-[0_24px_70px_rgba(15,23,42,0.12)]"
+              classNameContainer="w-full max-w-[560px] overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-[0_24px_70px_rgba(15,23,42,0.12)]"
             >
+              <div className="flex min-h-70 flex-col">
               <div className="flex items-start justify-between gap-4 px-5 pt-5">
                 <div>
                   <p className="text-xs font-medium text-gray-500">Manage invite</p>
@@ -3929,7 +3930,7 @@ export const SettingsWindow = () => {
                 </button>
               </div>
 
-              <div className="mt-4 border-t border-gray-100 px-5 pt-4">
+              <div className="mt-4 flex-1 border-t border-gray-100 px-5 pt-4 pb-5">
                 <p className="text-xs font-medium text-gray-500">Invite link</p>
                 {selectedInvite?.status === 'pending' ? (
                   <>
@@ -3959,6 +3960,7 @@ export const SettingsWindow = () => {
                 ) : (
                   <p className="mt-2 text-sm text-gray-600">This invite is no longer pending.</p>
                 )}
+              </div>
               </div>
             </ModalOverlay>
             </div>

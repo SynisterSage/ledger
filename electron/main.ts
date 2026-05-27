@@ -2605,7 +2605,7 @@ function applySidebarWindowMode(mode: SidebarWindowMode, animate = true) {
     sidebarWin.setAlwaysOnTop(false);
     sidebarWin.setResizable(false);
     setWindowButtonVisibility(sidebarWin, false);
-    setSidebarBounds(bounds, true);
+    setSidebarBounds(bounds, false);
     return;
   }
 

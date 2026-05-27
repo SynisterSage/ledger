@@ -83,7 +83,9 @@ export const ModalOverlay = ({
           onClick={(event) => event.stopPropagation()}
           onMouseDown={(event) => event.stopPropagation()}
         >
-          {children}
+          <div className="max-h-[calc(100vh-4rem)] overflow-y-auto">
+            {children}
+          </div>
         </div>
       </div>
     </div>,
