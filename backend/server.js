@@ -315,6 +315,9 @@ const mapNoteResponse = (row) => {
   };
 };
 
+const noteSelectColumns =
+  'id, workspace_id, user_id, updated_by, title, content, content_html, date, mood, source, mode, mind_map_structure, parent_id, section_id, sort_order, depth, created_at, updated_at';
+
 const NOTE_VERSION_LIMIT = 25;
 const NOTE_AUTOSAVE_CHECKPOINT_INTERVAL_MS = 10 * 60 * 1000;
 
@@ -3346,7 +3349,7 @@ app.post('/api/inbox/:id/convert', authMiddleware, rateLimit('write'), async (re
           depth: 0,
         })
         .select(
-          'id, workspace_id, user_id, title, content, content_html, date, mood, source, mode, mind_map_structure, parent_id, section_id, sort_order, depth, created_at, updated_at'
+          noteSelectColumns
         )
         .single();
       if (error) throw error;
@@ -6827,7 +6830,7 @@ app.get('/api/notes', authMiddleware, rateLimit('read'), async (req, res) => {
     const { data, error } = await supabase
       .from('notes')
       .select(
-        'id, workspace_id, user_id, title, content, content_html, date, mood, source, mode, mind_map_structure, parent_id, section_id, sort_order, depth, created_at, updated_at'
+        noteSelectColumns
       )
       .eq('workspace_id', workspaceId)
       .limit(500);
@@ -6848,7 +6851,7 @@ app.get('/api/notes/:id', authMiddleware, rateLimit('read'), async (req, res) =>
     const { data, error } = await supabase
       .from('notes')
       .select(
-        'id, workspace_id, user_id, title, content, content_html, date, mood, source, mode, mind_map_structure, parent_id, section_id, sort_order, depth, created_at, updated_at'
+        noteSelectColumns
       )
       .eq('workspace_id', workspaceId)
       .eq('id', req.params.id)
@@ -6944,6 +6947,7 @@ app.post(
         .insert({
           workspace_id: workspaceId,
           user_id: req.authUser.id,
+          updated_by: req.authUser.id,
           title,
           content: content_plain,
           content_html,
@@ -6958,7 +6962,7 @@ app.post(
           depth,
         })
         .select(
-          'id, workspace_id, user_id, title, content, content_html, date, mood, source, mode, mind_map_structure, parent_id, section_id, sort_order, depth, created_at, updated_at'
+          noteSelectColumns
         )
         .single();
 
@@ -6977,7 +6981,7 @@ app.patch('/api/notes/:id', authMiddleware, rateLimit('write'), async (req, res)
     const { data: existing, error: existingError } = await supabase
       .from('notes')
       .select(
-        'id, workspace_id, user_id, title, content, content_html, date, mood, source, mode, mind_map_structure, parent_id, section_id, sort_order, depth, created_at, updated_at'
+        noteSelectColumns
       )
       .eq('id', req.params.id)
       .eq('workspace_id', workspaceId)
@@ -7061,6 +7065,7 @@ app.patch('/api/notes/:id', authMiddleware, rateLimit('write'), async (req, res)
     }
 
     update.user_id = req.authUser.id;
+    update.updated_by = req.authUser.id;
     update.updated_at = new Date().toISOString();
 
     const { data, error } = await supabase
@@ -7069,7 +7074,7 @@ app.patch('/api/notes/:id', authMiddleware, rateLimit('write'), async (req, res)
       .eq('id', req.params.id)
       .eq('workspace_id', workspaceId)
       .select(
-        'id, workspace_id, user_id, title, content, content_html, date, mood, source, mode, mind_map_structure, parent_id, section_id, sort_order, depth, created_at, updated_at'
+        noteSelectColumns
       )
       .single();
 
@@ -7133,6 +7138,7 @@ app.post(
         .insert({
           workspace_id: workspaceId,
           user_id: req.authUser.id,
+          updated_by: req.authUser.id,
           title,
           content: content_plain,
           content_html,
@@ -7303,7 +7309,7 @@ app.post(
           depth: toNonNegativeInt(source.depth),
         })
         .select(
-          'id, workspace_id, user_id, title, content, content_html, date, mood, source, mode, mind_map_structure, parent_id, section_id, sort_order, depth, created_at, updated_at'
+          noteSelectColumns
         )
         .single();
 
@@ -7321,7 +7327,7 @@ app.delete('/api/notes/:id', authMiddleware, rateLimit('write'), async (req, res
     const { data: existing, error: existingError } = await supabase
       .from('notes')
       .select(
-        'id, workspace_id, user_id, title, content, content_html, date, mood, source, mode, mind_map_structure, parent_id, section_id, sort_order, depth, created_at, updated_at'
+        noteSelectColumns
       )
       .eq('id', req.params.id)
       .eq('workspace_id', workspaceId)
@@ -7379,7 +7385,7 @@ app.post('/api/notes/:id/versions', authMiddleware, rateLimit('write'), async (r
     const { data: existing, error: existingError } = await supabase
       .from('notes')
       .select(
-        'id, workspace_id, user_id, title, content, content_html, date, mood, source, mode, mind_map_structure, parent_id, section_id, sort_order, depth, created_at, updated_at'
+        noteSelectColumns
       )
       .eq('workspace_id', workspaceId)
       .eq('id', id)
@@ -7417,7 +7423,7 @@ app.post(
       const { data: existing, error: existingError } = await supabase
         .from('notes')
         .select(
-          'id, workspace_id, user_id, title, content, content_html, date, mood, source, mode, mind_map_structure, parent_id, section_id, sort_order, depth, created_at, updated_at'
+          noteSelectColumns
         )
         .eq('workspace_id', workspaceId)
         .eq('id', id)
@@ -7455,6 +7461,7 @@ app.post(
         sort_order: toNonNegativeInt(version.sort_order, 0),
         depth: toNonNegativeInt(version.depth, 0),
         user_id: req.authUser.id,
+        updated_by: req.authUser.id,
         updated_at: new Date().toISOString(),
       };
 
@@ -7464,7 +7471,7 @@ app.post(
         .eq('workspace_id', workspaceId)
         .eq('id', id)
         .select(
-          'id, workspace_id, user_id, title, content, content_html, date, mood, source, mode, mind_map_structure, parent_id, section_id, sort_order, depth, created_at, updated_at'
+          noteSelectColumns
         )
         .single();
       if (restoreError) throw restoreError;

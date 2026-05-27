@@ -59,7 +59,9 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           : toast.actions?.length
             ? 7000
             : 1800;
-      window.setTimeout(() => dismiss(id), duration);
+      if (duration > 0) {
+        window.setTimeout(() => dismiss(id), duration);
+      }
       return id;
     },
     [dismiss]

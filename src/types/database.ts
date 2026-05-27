@@ -146,6 +146,7 @@ export type Database = {
           id: string;
           workspace_id: string;
           user_id: string;
+          updated_by: string | null;
           title: string;
           content: string;
           date: string;
