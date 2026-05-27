@@ -800,9 +800,93 @@ export function RichTextEditor({
           <ListPlugin />
           <ImagePasteDropPlugin noteId={noteId} />
           <ResizableImagePlugin />
+          <ImageCopyPlugin />
           <OnChangePlugin onChange={handleChange} />
         </div>
       </div>
     </LexicalComposer>
   );
 }
+
+const ImageCopyPlugin = () => {
+  const [editor] = useLexicalComposerContext();
+  const toast = useToast();
+
+  useEffect(() => {
+    const root = editor.getRootElement();
+    if (!root) return;
+
+    const onContextMenu = async (event: MouseEvent) => {
+      const target = event.target as HTMLElement | null;
+      const wrapper = target?.closest?.('[data-lexical-image-node-key]') as HTMLElement | null;
+      if (!wrapper) return;
+
+      // Right-clicked on an image node — copy it.
+      try {
+        event.preventDefault();
+        const img = wrapper.querySelector('img') as HTMLImageElement | null;
+        const src = img?.src ?? '';
+        if (!src) {
+          toast.show('No image source found to copy', { variant: 'error' });
+          return;
+        }
+
+        // Try to fetch the image as a blob and write as an image ClipboardItem
+        let copied = false;
+        try {
+          const response = await fetch(src, { cache: 'no-store' });
+          if (response.ok) {
+            const blob = await response.blob();
+            // Some environments may not support writing images; try best-effort
+            if (navigator.clipboard && (window as any).ClipboardItem) {
+              const clipboardItemInput: any = {};
+              clipboardItemInput[blob.type || 'image/png'] = blob;
+              await navigator.clipboard.write([new (window as any).ClipboardItem(clipboardItemInput)]);
+              copied = true;
+            }
+          }
+        } catch (e) {
+          // ignore fetch errors and fall back to HTML/text copy
+        }
+
+        if (!copied) {
+          // Fallback: write HTML and plain text (image tag + URL)
+          const html = `<img src="${src}" alt="${img?.alt ?? ''}" />`;
+          try {
+            if (navigator.clipboard && (navigator.clipboard as any).write) {
+              const blob = new Blob([html], { type: 'text/html' });
+              await (navigator.clipboard as any).write([new (window as any).ClipboardItem({ 'text/html': blob })]);
+            } else if (navigator.clipboard && navigator.clipboard.writeText) {
+              await navigator.clipboard.writeText(src);
+            }
+            copied = true;
+          } catch (e) {
+            // final fallback: try writeText
+            try {
+              await navigator.clipboard.writeText(src);
+              copied = true;
+            } catch (err) {
+              copied = false;
+            }
+          }
+        }
+
+        if (copied) {
+          toast.show('Copied image to clipboard', { variant: 'success' });
+        } else {
+          toast.show('Could not copy image to clipboard', { variant: 'error' });
+        }
+      } catch (err) {
+        console.error('[image-copy] failed', err);
+        toast.show('Could not copy image', { variant: 'error' });
+      }
+    };
+
+    root.addEventListener('contextmenu', onContextMenu as EventListener);
+    return () => {
+      root.removeEventListener('contextmenu', onContextMenu as EventListener);
+    };
+  }, [editor, toast]);
+
+  return null;
+};

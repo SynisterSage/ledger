@@ -98,6 +98,7 @@ type NoteSection = {
 };
 
 const POLL_INTERVAL_MS = 15000;
+const NOTE_VIEWERS_POLL_MS = 30_000;
 const LEFT_PANE_MIN_WIDTH = 260;
 const LEFT_PANE_MAX_WIDTH = 380;
 const RIGHT_PANE_MIN_WIDTH = 250;
@@ -1089,20 +1090,62 @@ export const NotesWindow = () => {
 
   const editorMember = creatorMember;
 
-  const activeViewerNames = useMemo(() => {
-    const names = workspaceMembers
-      .map((member) => {
-        const displayName = displayUserName(member).trim();
-        return displayName ? displayFirstName(displayName) : null;
-      })
-      .filter((name): name is string => Boolean(name));
+  const [noteViewers, setNoteViewers] = useState<WorkspaceMember[]>([]);
 
-    if (user?.id && !workspaceMemberById.has(user.id)) {
-      names.unshift('You');
+  useEffect(() => {
+    if (!selectedNoteId) {
+      setNoteViewers([]);
+      return;
     }
 
-    return Array.from(new Set(names));
-  }, [user?.id, workspaceMemberById, workspaceMembers]);
+    let cancelled = false;
+
+    const loadNoteViewers = async () => {
+      if (!selectedNoteId) return;
+      try {
+        const versions = (await api.getNoteVersions(selectedNoteId)) as NoteVersion[] | null;
+        if (cancelled) return;
+        const ids = Array.from(
+          new Set((Array.isArray(versions) ? versions : []).map((v) => v.versioned_by).filter(Boolean))
+        );
+        const members = ids.map((id) => workspaceMemberById.get(String(id))).filter(Boolean) as WorkspaceMember[];
+        setNoteViewers(members);
+      } catch (e) {
+        if (!cancelled) setNoteViewers([]);
+      }
+    };
+
+    // initial load
+    void loadNoteViewers();
+
+    const timer = window.setInterval(() => {
+      if (document.visibilityState !== 'visible') return;
+      if (isDirty || isEditingRef.current) return;
+      void loadNoteViewers();
+    }, NOTE_VIEWERS_POLL_MS);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [selectedNoteId, api, workspaceMemberById, isDirty]);
+
+  const activeViewerNames = useMemo(() => {
+    if (!selectedNoteId) return [];
+    const membersWithoutCurrent = noteViewers.filter(
+      (m) => String(m.user_id) !== String(user?.id ?? '')
+    );
+    const names = membersWithoutCurrent
+      .map((member) => displayUserName(member).trim())
+      .filter(Boolean)
+      .map((n) => displayFirstName(n));
+
+    const unique = Array.from(new Set(names));
+    if (user?.id) {
+      return ['You', ...unique];
+    }
+    return unique;
+  }, [noteViewers, selectedNoteId, user?.id]);
 
   const viewingSummary = useMemo(() => {
     if (activeViewerNames.length === 0) return 'Only you';

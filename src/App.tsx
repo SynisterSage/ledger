@@ -48,6 +48,7 @@ import {
   saveSidebarPreferences,
   type SidebarPosition,
 } from './config/sidebarPreferences';
+import { useToast } from './components/Common/ToastProvider';
 
 type PostAuthStage = 'idle' | 'loading' | 'onboarding' | 'ready';
 type OnboardingStep = 'welcome' | 'workspace' | 'position';
@@ -2741,6 +2742,7 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
 
 // Main app component
 function AppShell() {
+  const toast = useToast();
   const { user, isLoading, error: authError } = useAuthContext();
   const { activeWorkspace, activeWorkspaceId, refreshWorkspaces, setActiveWorkspace } =
     useWorkspaceContext();
@@ -2996,6 +2998,16 @@ function AppShell() {
       window.ipcRenderer?.off('ledger:open-invite', handleOpenInvite);
     };
   }, []);
+
+  useEffect(() => {
+    if (!inviteFlowNotice) return;
+
+    toast.show(inviteFlowNotice, {
+      variant: 'success',
+      duration: 4500,
+    });
+    setInviteFlowNotice(null);
+  }, [inviteFlowNotice, toast]);
 
   
 
@@ -3671,11 +3683,6 @@ function AppShell() {
 
   return (
     <>
-      {inviteFlowNotice && (
-        <div className="mx-auto mt-4 w-full max-w-3xl rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
-          {inviteFlowNotice}
-        </div>
-      )}
       {inviteFlowStatus === 'error' && inviteFlowError && (
         <div className="mx-auto mt-4 w-full max-w-3xl rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
           {inviteFlowError}
