@@ -481,6 +481,7 @@ export const SettingsWindow = () => {
   const autosaveTimerRef = useRef<number | null>(null);
   const saveStatusTimerRef = useRef<number | null>(null);
   const autosaveTokenRef = useRef(0);
+  const activeWorkspaceIdRef = useRef<string | null>(null);
   const lastSavedSettingsRef = useRef<string>('');
   const lastSavedFullNameRef = useRef<string>('');
   const settingsHydratedRef = useRef(false);
@@ -1184,7 +1185,11 @@ export const SettingsWindow = () => {
   const canUseWorkspaceIntegrations = workspaceUserRole !== 'viewer';
 
   useEffect(() => {
-    if (!activeWorkspace) {
+    const nextWorkspaceId = activeWorkspace?.id ?? null;
+    const previousWorkspaceId = activeWorkspaceIdRef.current;
+    activeWorkspaceIdRef.current = nextWorkspaceId;
+
+    if (!nextWorkspaceId) {
       setWorkspaceEditName('');
       setWorkspaceEditDescription('');
       setWorkspaceDeleteConfirm('');
@@ -1193,12 +1198,21 @@ export const SettingsWindow = () => {
       return;
     }
 
-    setWorkspaceEditName(activeWorkspace.name);
-    setWorkspaceEditDescription(activeWorkspace.description ?? '');
-    setWorkspaceDeleteConfirm('');
-    setIsWorkspaceManageModalOpen(false);
-    setIsWorkspaceDeleteModalOpen(false);
-  }, [activeWorkspace]);
+    if (previousWorkspaceId && previousWorkspaceId !== nextWorkspaceId) {
+      setWorkspaceEditName(activeWorkspace.name);
+      setWorkspaceEditDescription(activeWorkspace.description ?? '');
+      setWorkspaceDeleteConfirm('');
+      setIsWorkspaceManageModalOpen(false);
+      setIsWorkspaceDeleteModalOpen(false);
+      return;
+    }
+
+    if (!isWorkspaceManageModalOpen && !isWorkspaceDeleteModalOpen) {
+      setWorkspaceEditName(activeWorkspace.name);
+      setWorkspaceEditDescription(activeWorkspace.description ?? '');
+      setWorkspaceDeleteConfirm('');
+    }
+  }, [activeWorkspace?.id, activeWorkspace?.name, activeWorkspace?.description, isWorkspaceDeleteModalOpen, isWorkspaceManageModalOpen]);
 
   const handleUpdateWorkspace = async () => {
     if (!activeWorkspaceId) return false;

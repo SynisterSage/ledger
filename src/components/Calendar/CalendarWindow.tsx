@@ -92,11 +92,13 @@ type EventRow = {
   color?: string;
   status?: 'planned' | 'done' | 'missed' | 'cancelled';
   visibility?: 'private' | 'workspace';
-  recurrence_rule?: 'none' | 'daily' | 'weekly' | 'weekdays';
+  recurrence_rule?: 'none' | 'daily' | 'weekly' | 'monthly' | 'weekdays' | 'specific_dates';
   all_day?: boolean;
   project_id?: string | null;
   note_id?: string | null;
   notes?: string | null;
+  series_id?: string | null;
+  series_type?: string | null;
   workspace_id?: string | null;
   workspace_name?: string | null;
   workspace_color?: string | null;
@@ -109,9 +111,12 @@ type ReminderRow = {
   calendar_id: string;
   color?: string;
   is_done: boolean;
+  recurrence_rule?: 'none' | 'daily' | 'weekly' | 'monthly' | 'weekdays' | 'specific_dates';
   project_id?: string | null;
   note_id?: string | null;
   notes?: string | null;
+  series_id?: string | null;
+  series_type?: string | null;
   workspace_id?: string | null;
   workspace_name?: string | null;
   workspace_color?: string | null;
@@ -263,6 +268,34 @@ const parseDateKey = (key: string) => {
   return new Date(year, (month || 1) - 1, day || 1, 0, 0, 0, 0);
 };
 
+const uniqueSortedDateKeys = (dates: string[]) => Array.from(new Set(dates)).sort();
+
+const formatSpecificDatesPreview = (dates: string[], maxVisible = 5) => {
+  const sorted = uniqueSortedDateKeys(dates);
+  if (sorted.length === 0) return 'No dates selected';
+
+  const preview = sorted
+    .slice(0, maxVisible)
+    .map((dateKey) =>
+      parseDateKey(dateKey).toLocaleDateString([], { month: 'short', day: 'numeric' })
+    )
+    .join(', ');
+
+  if (sorted.length > maxVisible) {
+    return `${preview} +${sorted.length - maxVisible} more`;
+  }
+
+  return preview;
+};
+
+const formatSpecificDatesLabel = (count: number) =>
+  count > 0 ? `Specific dates · ${count} date${count === 1 ? '' : 's'}` : 'Specific dates';
+
+const buildMonthGrid = (anchor: Date) => {
+  const start = startOfMonthGrid(anchor);
+  return Array.from({ length: 42 }, (_, index) => addDays(start, index));
+};
+
 const parseValidCalendarDate = (value: string | null | undefined) => {
   if (!value) return null;
   const date = new Date(value);
@@ -274,6 +307,7 @@ const endOfLocalDay = (date: Date) => {
   return d;
 };
 const baseEventId = (id: string) => id.split('__')[0];
+const baseReminderId = (id: string) => id.split('__')[0];
 const ICAL_SERVICE_URL = (import.meta.env.VITE_ICAL_SERVICE_URL ?? '').replace(/\/$/, '');
 
 type ParsedIcsEvent = {
@@ -705,8 +739,9 @@ export const CalendarWindow = () => {
   const [newEventDurationValue, setNewEventDurationValue] = useState(30);
   const [newEventDurationUnit, setNewEventDurationUnit] = useState<'minutes' | 'hours'>('minutes');
   const [newEventRecurrence, setNewEventRecurrence] = useState<
-    'none' | 'daily' | 'weekly' | 'weekdays'
+    'none' | 'daily' | 'weekly' | 'monthly' | 'weekdays' | 'specific_dates'
   >('none');
+  const [newEventSpecificDates, setNewEventSpecificDates] = useState<string[]>([]);
   const [composerMode, setComposerMode] = useState<'event' | 'reminder'>('event');
   const [composerCalendarId, setComposerCalendarId] = useState('');
   const [composerProjectId, setComposerProjectId] = useState('');
@@ -759,9 +794,9 @@ export const CalendarWindow = () => {
   const [editProjectId, setEditProjectId] = useState('');
   const [editNoteId, setEditNoteId] = useState('');
   const [editVisibility, setEditVisibility] = useState<'private' | 'workspace'>('private');
-  const [editRecurrence, setEditRecurrence] = useState<'none' | 'daily' | 'weekly' | 'weekdays'>(
-    'none'
-  );
+  const [editRecurrence, setEditRecurrence] = useState<
+    'none' | 'daily' | 'weekly' | 'monthly' | 'weekdays'
+  >('none');
   const [reminderEditTitle, setReminderEditTitle] = useState('');
   const [reminderEditDate, setReminderEditDate] = useState('');
   const [reminderEditTime, setReminderEditTime] = useState('');
@@ -774,6 +809,13 @@ export const CalendarWindow = () => {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [, setCalendarColorDrafts] = useState<Record<string, string>>({});
   const [isSavingColorId, setIsSavingColorId] = useState<string | null>(null);
+  const [isSpecificDatesModalOpen, setIsSpecificDatesModalOpen] = useState(false);
+  const [specificDatesDraft, setSpecificDatesDraft] = useState<string[]>([]);
+  const [specificDatesMonthAnchor, setSpecificDatesMonthAnchor] = useState(() =>
+    startOfMonth(new Date())
+  );
+  const [specificDatesCleared, setSpecificDatesCleared] = useState(false);
+  const specificDatesPreviousRepeatRef = useRef<'none' | 'daily' | 'weekly' | 'monthly' | 'weekdays' | 'specific_dates'>('none');
   const [defaultEventDurationMinutes, setDefaultEventDurationMinutes] = useState(30);
   const [showCloseGuardModal, setShowCloseGuardModal] = useState(false);
   const [isNewCalendarModalOpen, setIsNewCalendarModalOpen] = useState(false);
@@ -816,7 +858,7 @@ export const CalendarWindow = () => {
   );
   const [isResizingRightPane, setIsResizingRightPane] = useState(false);
   const [isLeftPaneCollapsed, setIsLeftPaneCollapsed] = useState(false);
-  const [isRightPaneCollapsed, setIsRightPaneCollapsed] = useState(false);
+  const [isRightPaneCollapsed, setIsRightPaneCollapsed] = useState(true);
   const [overflowDayKey, setOverflowDayKey] = useState<string | null>(null);
   const areSidePanelsCollapsed = isLeftPaneCollapsed && isRightPaneCollapsed;
 
@@ -937,6 +979,14 @@ export const CalendarWindow = () => {
       dates: Array.from({ length: 42 }, (_, i) => addDays(start, i)),
     };
   }, [viewAnchor]);
+  const specificDatesMonthGrid = useMemo(
+    () => buildMonthGrid(specificDatesMonthAnchor),
+    [specificDatesMonthAnchor]
+  );
+  const specificDatesDraftPreview = useMemo(
+    () => formatSpecificDatesPreview(specificDatesDraft),
+    [specificDatesDraft]
+  );
   const selectedEventPreview = useMemo(() => {
     if (!selectedEvent) return null;
     const fresh = events.find((row) => row.id === baseEventId(selectedEvent.id));
@@ -1151,7 +1201,7 @@ export const CalendarWindow = () => {
       if (calendarPreferences.showCompletedItems === 'hidden' && event.status === 'done') continue;
       if (shouldHidePastEvent(event)) continue;
       const recurrence = event.recurrence_rule ?? 'none';
-      if (recurrence === 'none') {
+      if (recurrence === 'none' || recurrence === 'specific_dates') {
         expanded.push(event);
         continue;
       }
@@ -1165,10 +1215,12 @@ export const CalendarWindow = () => {
 
       while (cursor <= hardEnd) {
         const sameWeekday = cursor.getDay() === baseStart.getDay();
+        const sameMonthDay = cursor.getDate() === baseStart.getDate();
         const isWeekday = cursor.getDay() >= 1 && cursor.getDay() <= 5;
         const matches =
           recurrence === 'daily' ||
           (recurrence === 'weekly' && sameWeekday) ||
+          (recurrence === 'monthly' && sameMonthDay) ||
           (recurrence === 'weekdays' && isWeekday);
 
         if (matches) {
@@ -1290,13 +1342,54 @@ export const CalendarWindow = () => {
       // only include reminders from visible calendars
       if (!visibleCalendarIdsMemo.has(reminder.calendar_id)) continue;
       if (shouldHideReminder(reminder)) continue;
-      const isOverdue = isPastReminder(reminder) && !reminder.is_done;
-      const key =
-        isOverdue && (calendarPreferences.missedReminderBehavior ?? 'needs_attention') === 'today'
-          ? todayKey
-          : formatDateKey(new Date(reminder.remind_at));
-      if (!grouped[key]) grouped[key] = [];
-      grouped[key].push(reminder);
+      const recurrence = reminder.recurrence_rule ?? 'none';
+      if (recurrence === 'none' || recurrence === 'specific_dates') {
+        const isOverdue = isPastReminder(reminder) && !reminder.is_done;
+        const key =
+          isOverdue && (calendarPreferences.missedReminderBehavior ?? 'needs_attention') === 'today'
+            ? todayKey
+            : formatDateKey(new Date(reminder.remind_at));
+        if (!grouped[key]) grouped[key] = [];
+        grouped[key].push(reminder);
+        continue;
+      }
+
+      const baseStart = new Date(reminder.remind_at);
+      const hardEnd = endOfLocalDay(viewConfig.end);
+      let cursor = startOfDay(viewConfig.start);
+
+      while (cursor <= hardEnd) {
+        const sameWeekday = cursor.getDay() === baseStart.getDay();
+        const sameMonthDay = cursor.getDate() === baseStart.getDate();
+        const isWeekday = cursor.getDay() >= 1 && cursor.getDay() <= 5;
+        const matches =
+          recurrence === 'daily' ||
+          (recurrence === 'weekly' && sameWeekday) ||
+          (recurrence === 'monthly' && sameMonthDay) ||
+          (recurrence === 'weekdays' && isWeekday);
+
+        if (matches) {
+          const occurrenceAt = new Date(cursor);
+          occurrenceAt.setHours(
+            baseStart.getHours(),
+            baseStart.getMinutes(),
+            baseStart.getSeconds(),
+            baseStart.getMilliseconds()
+          );
+
+          if (occurrenceAt >= baseStart && occurrenceAt >= viewConfig.start && occurrenceAt < viewConfig.end) {
+            const key = formatDateKey(occurrenceAt);
+            if (!grouped[key]) grouped[key] = [];
+            grouped[key].push({
+              ...reminder,
+              id: `${reminder.id}__${key}`,
+              remind_at: occurrenceAt.toISOString(),
+            });
+          }
+        }
+
+        cursor = addDays(cursor, 1);
+      }
     }
 
     for (const key of Object.keys(grouped)) {
@@ -2071,6 +2164,7 @@ export const CalendarWindow = () => {
     setNewEventDurationUnit(defaultDuration.unit);
     setNewEventTitle(title);
     setNewEventRecurrence('none');
+    setNewEventSpecificDates([]);
     setComposerCalendarId(
       mode === 'reminder' && (calendarPreferences.reminderDestination ?? 'today-calendar') === 'today'
         ? getPreferredCalendar('workspace')?.id ?? ''
@@ -2081,7 +2175,65 @@ export const CalendarWindow = () => {
     setComposerNotes('');
     setNewEventVisibility(calendarPreferences.defaultEventVisibility ?? 'private');
     setComposerMode(mode);
+    setIsSpecificDatesModalOpen(false);
+    setSpecificDatesDraft([]);
+    setSpecificDatesCleared(false);
     setIsComposerOpen(true);
+  };
+
+  const openSpecificDatesPicker = () => {
+    specificDatesPreviousRepeatRef.current = newEventRecurrence;
+    const fallbackDateKey = newEventDate || formatDateKey(new Date());
+    const initialDraft =
+      newEventSpecificDates.length > 0 ? newEventSpecificDates : [fallbackDateKey];
+    const anchorDate = parseDateKey(uniqueSortedDateKeys(initialDraft)[0] ?? fallbackDateKey);
+
+    setSpecificDatesDraft(uniqueSortedDateKeys(initialDraft));
+    setSpecificDatesMonthAnchor(startOfMonth(anchorDate));
+    setSpecificDatesCleared(false);
+    setNewEventRecurrence('specific_dates');
+    setIsSpecificDatesModalOpen(true);
+  };
+
+  const closeSpecificDatesPicker = (restorePreviousRepeat = true) => {
+    if (restorePreviousRepeat) {
+      setNewEventRecurrence(specificDatesPreviousRepeatRef.current);
+    }
+    setIsSpecificDatesModalOpen(false);
+    setSpecificDatesDraft([]);
+    setSpecificDatesCleared(false);
+  };
+
+  const saveSpecificDatesPicker = () => {
+    if (specificDatesDraft.length === 0 && !specificDatesCleared) return;
+
+    if (specificDatesDraft.length === 0) {
+      setNewEventSpecificDates([]);
+      setNewEventRecurrence('none');
+    } else {
+      setNewEventSpecificDates(uniqueSortedDateKeys(specificDatesDraft));
+      setNewEventRecurrence('specific_dates');
+    }
+    setIsSpecificDatesModalOpen(false);
+    setSpecificDatesCleared(false);
+  };
+
+  const toggleSpecificDate = (dateKey: string) => {
+    setSpecificDatesCleared(false);
+    setSpecificDatesDraft((current) => {
+      const set = new Set(current);
+      if (set.has(dateKey)) {
+        set.delete(dateKey);
+      } else {
+        set.add(dateKey);
+      }
+      return Array.from(set).sort();
+    });
+  };
+
+  const clearSpecificDatesDraft = () => {
+    setSpecificDatesDraft([]);
+    setSpecificDatesCleared(true);
   };
 
   const getListContextMenuSlot = () => {
@@ -2139,6 +2291,10 @@ export const CalendarWindow = () => {
 
   const createQuickEvent = async () => {
     if (!user || !newEventTitle.trim() || calendars.length === 0) return;
+    if (newEventRecurrence === 'specific_dates' && newEventSpecificDates.length === 0) {
+      setError('Choose at least one date.');
+      return;
+    }
 
     const selectedCalendar =
       calendars.find((calendar) => calendar.id === composerCalendarId) ?? getDefaultCalendar();
@@ -2159,7 +2315,7 @@ export const CalendarWindow = () => {
         reminderCalendarPreference === 'today'
           ? getPreferredCalendar('workspace') ?? selectedCalendar
           : selectedCalendar;
-      const createdReminder = (await api.createReminder({
+      const reminderPayload = {
         title: newEventTitle.trim(),
         remind_at: start.toISOString(),
         calendar_id: selectedReminderCalendar.id,
@@ -2168,17 +2324,30 @@ export const CalendarWindow = () => {
         project_id: composerProjectId || null,
         note_id: composerNoteId || null,
         notes: composerNotes.trim() || null,
-      })) as ReminderRow;
+        recurrence_rule:
+          newEventRecurrence === 'specific_dates' ? 'specific_dates' : newEventRecurrence,
+        specific_dates:
+          newEventRecurrence === 'specific_dates' ? newEventSpecificDates : undefined,
+        series_type: newEventRecurrence === 'specific_dates' ? 'specific_dates' : undefined,
+      };
+      const createdReminderResponse = await api.createReminder(reminderPayload);
+      const createdReminders = Array.isArray(
+        (createdReminderResponse as { created?: ReminderRow[] })?.created
+      )
+        ? ((createdReminderResponse as { created: ReminderRow[] }).created ?? [])
+        : createdReminderResponse
+        ? [createdReminderResponse as ReminderRow]
+        : [];
 
       setIsSavingEvent(false);
 
-      if (!createdReminder) {
+      if (createdReminders.length === 0) {
         setError('Could not create reminder.');
         return;
       }
 
       setReminders((prev) =>
-        [...prev, createdReminder].sort(
+        [...prev, ...createdReminders].sort(
           (a, b) => new Date(a.remind_at).getTime() - new Date(b.remind_at).getTime()
         )
       );
@@ -2187,6 +2356,7 @@ export const CalendarWindow = () => {
       setIsComposerOpen(false);
       setComposerMode('event');
       setNewEventRecurrence('none');
+      setNewEventSpecificDates([]);
       setComposerCalendarId(getPreferredCalendar('event')?.id ?? '');
       setComposerProjectId('');
       setComposerNoteId('');
@@ -2206,32 +2376,43 @@ export const CalendarWindow = () => {
       end_at: end.toISOString(),
       calendar_id: selectedCalendar.id,
       color: selectedCalendar.color,
-      recurrence_rule: newEventRecurrence,
+      recurrence_rule:
+        newEventRecurrence === 'specific_dates' ? 'specific_dates' : newEventRecurrence,
       status: calendarPreferences.defaultEventStatus ?? 'planned',
       visibility: newEventVisibility ?? calendarPreferences.defaultEventVisibility ?? 'private',
       project_id: composerProjectId || null,
       note_id: composerNoteId || null,
       notes: composerNotes.trim() || null,
-    })) as EventRow;
+      specific_dates:
+        newEventRecurrence === 'specific_dates' ? newEventSpecificDates : undefined,
+      series_type: newEventRecurrence === 'specific_dates' ? 'specific_dates' : undefined,
+    })) as EventRow | { created?: EventRow[] };
 
     setIsSavingEvent(false);
 
-    if (!createdEvent) {
+    const createdEvents = Array.isArray((createdEvent as { created?: EventRow[] })?.created)
+      ? ((createdEvent as { created: EventRow[] }).created ?? [])
+      : createdEvent
+      ? [createdEvent as EventRow]
+      : [];
+
+    if (createdEvents.length === 0) {
       setError('Could not create event.');
       return;
     }
 
     setEvents((prev) =>
-      [...prev, createdEvent].sort(
+      [...prev, ...createdEvents].sort(
         (a, b) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime()
       )
     );
-    setSelectedEvent(createdEvent);
+    setSelectedEvent(createdEvents[0] ?? null);
     setSelectedReminder(null);
     setNewEventTitle('');
     setIsComposerOpen(false);
     setComposerMode('event');
     setNewEventRecurrence('none');
+    setNewEventSpecificDates([]);
     setComposerCalendarId(getPreferredCalendar('event')?.id ?? '');
     setComposerProjectId('');
     setComposerNoteId('');
@@ -2275,7 +2456,8 @@ export const CalendarWindow = () => {
 
   const toggleReminderDone = async (reminder: ReminderRow) => {
     try {
-      const updated = (await api.updateReminder(reminder.id, {
+      const targetId = baseReminderId(reminder.id);
+      const updated = (await api.updateReminder(targetId, {
         is_done: !reminder.is_done,
       })) as ReminderRow;
 
@@ -2284,7 +2466,9 @@ export const CalendarWindow = () => {
         return;
       }
 
-      setReminders((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
+      setReminders((prev) =>
+        prev.map((item) => (baseReminderId(item.id) === baseReminderId(updated.id) ? updated : item))
+      );
     } catch (error) {
       setError('Could not update reminder.');
       return;
@@ -2293,8 +2477,11 @@ export const CalendarWindow = () => {
 
   const quickDeleteReminder = async (reminderId: string) => {
     try {
-      await api.deleteReminder(reminderId);
-      setReminders((prev) => prev.filter((item) => item.id !== reminderId));
+      const targetId = baseReminderId(reminderId);
+      await api.deleteReminder(targetId);
+      setReminders((prev) =>
+        prev.filter((item) => baseReminderId(item.id) !== baseReminderId(reminderId))
+      );
     } catch (error) {
       setError('Could not delete reminder.');
       return;
@@ -2303,27 +2490,31 @@ export const CalendarWindow = () => {
 
   const openReminderEditor = (reminder: ReminderRow) => {
     const start = new Date(reminder.remind_at);
+    const source = reminders.find((row) => row.id === baseReminderId(reminder.id)) ?? reminder;
     setSelectedReminder(reminder);
-    setReminderEditTitle(reminder.title);
+    setReminderEditTitle(source.title);
     setReminderEditDate(formatDateKey(start));
     setReminderEditTime(
       `${String(start.getHours()).padStart(2, '0')}:${String(start.getMinutes()).padStart(2, '0')}`
     );
-    setReminderEditCalendarId(reminder.calendar_id);
-    setReminderEditColor(reminder.color ?? '#F59E0B');
-    setReminderEditDone(reminder.is_done);
+    setReminderEditCalendarId(source.calendar_id);
+    setReminderEditColor(source.color ?? '#F59E0B');
+    setReminderEditDone(source.is_done);
   };
 
   const snoozeReminderByMinutes = async (reminder: ReminderRow, minutes: number) => {
     const snoozeUntil = new Date(Date.now() + minutes * 60 * 1000).toISOString();
     try {
-      const updated = (await api.snoozeReminder(reminder.id, snoozeUntil)) as ReminderRow;
+      const targetId = baseReminderId(reminder.id);
+      const updated = (await api.snoozeReminder(targetId, snoozeUntil)) as ReminderRow;
       setReminders((prev) =>
         prev
           .map((item) => (item.id === updated.id ? updated : item))
           .sort((a, b) => new Date(a.remind_at).getTime() - new Date(b.remind_at).getTime())
       );
-      setSelectedReminder((current) => (current?.id === updated.id ? updated : current));
+      setSelectedReminder((current) =>
+        current && baseReminderId(current.id) === baseReminderId(updated.id) ? updated : current
+      );
     } catch (error) {
       setError('Could not snooze reminder.');
     }
@@ -2341,7 +2532,7 @@ export const CalendarWindow = () => {
     const resolvedReminderColor =
       calendarById.get(resolvedReminderCalendarId)?.color ?? reminderEditColor;
 
-    const updated = (await api.updateReminder(selectedReminder.id, {
+    const updated = (await api.updateReminder(baseReminderId(selectedReminder.id), {
       title: reminderEditTitle.trim(),
       remind_at: remindAt.toISOString(),
       calendar_id: resolvedReminderCalendarId,
@@ -2358,7 +2549,9 @@ export const CalendarWindow = () => {
 
     setReminders((prev) =>
       prev
-        .map((item) => (item.id === updated.id ? updated : item))
+        .map((item) =>
+          baseReminderId(item.id) === baseReminderId(updated.id) ? updated : item
+        )
         .sort((a, b) => new Date(a.remind_at).getTime() - new Date(b.remind_at).getTime())
     );
 
@@ -2382,8 +2575,10 @@ export const CalendarWindow = () => {
     setError(null);
 
     try {
-      await api.deleteReminder(selectedReminder.id);
-      setReminders((prev) => prev.filter((item) => item.id !== selectedReminder.id));
+      await api.deleteReminder(baseReminderId(selectedReminder.id));
+      setReminders((prev) =>
+        prev.filter((item) => baseReminderId(item.id) !== baseReminderId(selectedReminder.id))
+      );
       setSelectedReminder(null);
       notifyCalendarItemsUpdated();
     } catch (error) {
@@ -2416,7 +2611,7 @@ export const CalendarWindow = () => {
     setEditProjectId(source.project_id ?? '');
     setEditNoteId(source.note_id ?? '');
     setEditVisibility(source.visibility ?? calendarPreferences.defaultEventVisibility ?? 'private');
-    setEditRecurrence(source.recurrence_rule ?? 'none');
+    setEditRecurrence(source.recurrence_rule === 'specific_dates' ? 'none' : source.recurrence_rule ?? 'none');
     setEventNotesDrafts((prev) => ({
       ...prev,
       [source.id]: source.notes ?? prev[source.id] ?? '',
@@ -2475,11 +2670,17 @@ export const CalendarWindow = () => {
           current && baseEventId(current.id) === updated.id ? { ...current, ...updated } : current
         );
       } else if (selectedReminder) {
-        const updated = (await api.updateReminder(selectedReminder.id, {
+        const updated = (await api.updateReminder(baseReminderId(selectedReminder.id), {
           project_id: projectId,
         })) as ReminderRow;
-        setReminders((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
-        setSelectedReminder((current) => (current?.id === updated.id ? updated : current));
+        setReminders((prev) =>
+          prev.map((item) =>
+            baseReminderId(item.id) === baseReminderId(updated.id) ? updated : item
+          )
+        );
+        setSelectedReminder((current) =>
+          current && baseReminderId(current.id) === baseReminderId(updated.id) ? updated : current
+        );
       }
       setIsLinkProjectModalOpen(false);
     } catch (err) {
@@ -2505,11 +2706,17 @@ export const CalendarWindow = () => {
           current && baseEventId(current.id) === updated.id ? { ...current, ...updated } : current
         );
       } else if (selectedReminder) {
-        const updated = (await api.updateReminder(selectedReminder.id, {
+        const updated = (await api.updateReminder(baseReminderId(selectedReminder.id), {
           note_id: noteId,
         })) as ReminderRow;
-        setReminders((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
-        setSelectedReminder((current) => (current?.id === updated.id ? updated : current));
+        setReminders((prev) =>
+          prev.map((item) =>
+            baseReminderId(item.id) === baseReminderId(updated.id) ? updated : item
+          )
+        );
+        setSelectedReminder((current) =>
+          current && baseReminderId(current.id) === baseReminderId(updated.id) ? updated : current
+        );
       }
       setIsLinkNoteModalOpen(false);
     } catch (err) {
@@ -4404,11 +4611,11 @@ export const CalendarWindow = () => {
         createPortal(
           <div
             className="fixed inset-0 z-100 bg-black/20 flex items-start justify-center pt-20"
-            onClick={() => setIsComposerOpen(false)}
+            onMouseDown={() => setIsComposerOpen(false)}
           >
           <div
             className="w-105 rounded-xl border border-gray-200 bg-white shadow-xl p-4"
-            onClick={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-sm font-semibold text-gray-900">
@@ -4558,28 +4765,38 @@ export const CalendarWindow = () => {
                 rows={3}
                 className="w-full rounded-md border border-gray-200 px-3 py-2 text-sm text-gray-800 placeholder:text-gray-400 outline-none focus:border-gray-400"
               />
-              {composerMode === 'event' && (
-                <div className="relative">
-                  <select
-                    value={newEventRecurrence}
-                    onChange={(e) =>
-                      setNewEventRecurrence(
-                        e.target.value as 'none' | 'daily' | 'weekly' | 'weekdays'
-                      )
+              <div className="relative">
+                <select
+                  value={newEventRecurrence}
+                  onChange={(e) => {
+                    const nextValue = e.target.value as
+                      | 'none'
+                      | 'daily'
+                      | 'weekly'
+                      | 'monthly'
+                      | 'weekdays'
+                      | 'specific_dates';
+                    if (nextValue === 'specific_dates') {
+                      openSpecificDatesPicker();
+                      return;
                     }
-                    className="w-full h-9 pr-9 pl-2 text-sm border border-gray-200 rounded-md focus:outline-none focus:border-gray-400 bg-white appearance-none"
-                  >
-                    <option value="none">Does not repeat</option>
-                    <option value="daily">Daily</option>
-                    <option value="weekly">Weekly</option>
-                    <option value="weekdays">Weekdays</option>
-                  </select>
-                  <ChevronDown
-                    size={16}
-                    className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500"
-                  />
-                </div>
-              )}
+                    setNewEventRecurrence(nextValue);
+                  }}
+                  className="w-full h-9 pr-9 pl-2 text-sm border border-gray-200 rounded-md focus:outline-none focus:border-gray-400 bg-white appearance-none"
+                >
+                  <option value="none">Does not repeat</option>
+                  <option value="daily">Daily</option>
+                  <option value="weekly">Weekly</option>
+                  <option value="monthly">Monthly</option>
+                  <option value="specific_dates">
+                    {formatSpecificDatesLabel(newEventSpecificDates.length)}
+                  </option>
+                </select>
+                <ChevronDown
+                  size={16}
+                  className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500"
+                />
+              </div>
             </div>
             <div className="mt-4 flex justify-end gap-2">
               <button
@@ -4605,15 +4822,128 @@ export const CalendarWindow = () => {
           document.body
         )}
 
+      <ModalOverlay
+        isOpen={isSpecificDatesModalOpen}
+        onClose={() => closeSpecificDatesPicker(true)}
+        classNameContainer="w-full max-w-[460px] rounded-2xl border border-gray-200 bg-white shadow-xl"
+      >
+        <div className="border-b border-gray-100 px-5 py-4">
+          <h3 className="text-base font-semibold text-gray-900">Specific dates</h3>
+          <p className="mt-1 text-sm text-gray-600">Choose each date this should appear.</p>
+        </div>
+
+        <div className="space-y-4 px-5 py-4">
+          <div className="flex items-center justify-between gap-3">
+            <button
+              type="button"
+              onClick={() => setSpecificDatesMonthAnchor((current) => addMonths(current, -1))}
+              className="flex h-8 w-8 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
+              aria-label="Previous month"
+            >
+              <ChevronLeft size={14} />
+            </button>
+            <p className="text-sm font-semibold text-gray-900">
+              {specificDatesMonthAnchor.toLocaleDateString([], { month: 'long', year: 'numeric' })}
+            </p>
+            <button
+              type="button"
+              onClick={() => setSpecificDatesMonthAnchor((current) => addMonths(current, 1))}
+              className="flex h-8 w-8 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
+              aria-label="Next month"
+            >
+              <ChevronRight size={14} />
+            </button>
+          </div>
+
+          <div className="grid grid-cols-7 gap-1 text-[10px] font-medium text-gray-500">
+            {['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((dayLabel, index) => (
+              <div key={`${dayLabel}-${index}`} className="text-center">
+                {dayLabel}
+              </div>
+            ))}
+          </div>
+
+          <div className="grid grid-cols-7 gap-1">
+            {specificDatesMonthGrid.map((date) => {
+              const dateKey = formatDateKey(date);
+              const isSelected = specificDatesDraft.includes(dateKey);
+              const isToday = dateKey === formatDateKey(new Date());
+              const inMonth = date.getMonth() === specificDatesMonthAnchor.getMonth();
+
+              return (
+                <button
+                  key={dateKey}
+                  type="button"
+                  onClick={() => toggleSpecificDate(dateKey)}
+                  className={`flex h-9 items-center justify-center rounded-full text-sm transition ${
+                    isSelected
+                      ? 'bg-[#FF5F40] text-white shadow-sm'
+                      : isToday
+                      ? 'border border-[#FDBA74] text-gray-900'
+                      : inMonth
+                      ? 'text-gray-800 hover:bg-[#FFF7ED]'
+                      : 'text-gray-300 hover:bg-gray-50'
+                  }`}
+                >
+                  {date.getDate()}
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="space-y-1.5 rounded-xl border border-gray-100 bg-[#FFFBF7] px-3 py-2.5">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-sm font-medium text-gray-900">
+                Selected: {specificDatesDraft.length} date
+                {specificDatesDraft.length === 1 ? '' : 's'}
+              </p>
+              {specificDatesDraft.length > 0 && (
+                <p className="text-xs text-gray-500">
+                  {specificDatesDraft.length === 1 ? '1 selected date' : `${specificDatesDraft.length} selected dates`}
+                </p>
+              )}
+            </div>
+            <p className="text-sm text-gray-700">{specificDatesDraftPreview}</p>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between border-t border-gray-100 px-5 py-3">
+          <button
+            type="button"
+            onClick={clearSpecificDatesDraft}
+            className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+          >
+            Clear
+          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => closeSpecificDatesPicker(true)}
+              className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={saveSpecificDatesPicker}
+              disabled={specificDatesDraft.length === 0 && !specificDatesCleared}
+              className="rounded-lg bg-[#FF5F40] px-3 py-1.5 text-sm font-medium text-white hover:bg-[#f4583a] disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Save dates
+            </button>
+          </div>
+        </div>
+      </ModalOverlay>
+
       {isNewCalendarModalOpen &&
         createPortal(
           <div
             className="fixed inset-0 z-105 bg-black/20 flex items-start justify-center pt-24"
-            onClick={() => setIsNewCalendarModalOpen(false)}
+            onMouseDown={() => setIsNewCalendarModalOpen(false)}
           >
           <div
             className="w-96 rounded-xl border border-gray-200 bg-white shadow-xl p-4"
-            onClick={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-sm font-semibold text-gray-900">New Calendar</h3>
@@ -4779,14 +5109,14 @@ export const CalendarWindow = () => {
         createPortal(
           <div
             className="fixed inset-0 z-110 bg-black/20 flex items-start justify-center pt-20"
-            onClick={() => {
+            onMouseDown={() => {
               setEventEditorEvent(null);
               setConfirmDelete(false);
             }}
           >
           <div
             className="w-110 rounded-xl border border-gray-200 bg-white shadow-xl p-4"
-            onClick={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-sm font-semibold text-gray-900">Edit Event</h3>
@@ -4920,13 +5250,16 @@ export const CalendarWindow = () => {
                 <select
                   value={editRecurrence}
                   onChange={(e) =>
-                    setEditRecurrence(e.target.value as 'none' | 'daily' | 'weekly' | 'weekdays')
+                    setEditRecurrence(
+                      e.target.value as 'none' | 'daily' | 'weekly' | 'monthly' | 'weekdays'
+                    )
                   }
                   className="w-full h-9 pr-9 pl-2 text-sm border border-gray-200 rounded-md focus:outline-none focus:border-gray-400 bg-white appearance-none"
                 >
                   <option value="none">Does not repeat</option>
                   <option value="daily">Daily</option>
                   <option value="weekly">Weekly</option>
+                  <option value="monthly">Monthly</option>
                   <option value="weekdays">Weekdays</option>
                 </select>
                 <ChevronDown
@@ -5013,11 +5346,11 @@ export const CalendarWindow = () => {
         createPortal(
           <div
             className="fixed inset-0 z-112 bg-black/20 flex items-start justify-center pt-20"
-            onClick={() => setSelectedReminder(null)}
+            onMouseDown={() => setSelectedReminder(null)}
           >
           <div
             className="w-110 rounded-xl border border-gray-200 bg-white shadow-xl p-4"
-            onClick={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-sm font-semibold text-gray-900">Edit Reminder</h3>
@@ -5136,11 +5469,11 @@ export const CalendarWindow = () => {
         createPortal(
           <div
             className="fixed inset-0 z-111 bg-black/20 flex items-start justify-center pt-20"
-            onClick={() => setOverflowDayKey(null)}
+            onMouseDown={() => setOverflowDayKey(null)}
           >
           <div
             className="w-130 max-h-[72vh] rounded-xl border border-gray-200 bg-white shadow-xl p-4 overflow-auto"
-            onClick={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-sm font-semibold text-gray-900">

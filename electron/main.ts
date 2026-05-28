@@ -954,9 +954,9 @@ const getNotificationFallbackTitle = (item: NotificationSchedulerItem) => {
 
   switch (item.sourceType) {
     case 'reminder':
-      return 'Reminder due';
+      return 'Reminder: Due';
     case 'event':
-      return 'Event starting';
+      return 'Event: Starting';
     case 'task':
       return 'Task due';
     case 'project':
@@ -968,16 +968,44 @@ const getNotificationFallbackTitle = (item: NotificationSchedulerItem) => {
   }
 };
 
+const getNotificationDisplayTitle = (item: NotificationSchedulerItem) => {
+  const title = item.title?.trim();
+  const context = item.context?.trim();
+
+  if (item.sourceType === 'reminder') {
+    if (title && !/^reminder(?:\s+due)?$/i.test(title)) return title;
+    return context ? `Reminder: ${context}` : getNotificationFallbackTitle(item);
+  }
+
+  if (item.sourceType === 'event') {
+    if (title && !/^event(?:\s+starting)?$/i.test(title)) return title;
+    return context ? `Event: ${context}` : getNotificationFallbackTitle(item);
+  }
+
+  return title || getNotificationFallbackTitle(item);
+};
+
+const getNotificationDisplayBody = (item: NotificationSchedulerItem) => {
+  const body = item.body?.trim() || '';
+  const context = item.context?.trim() || '';
+
+  if (item.sourceType === 'reminder' || item.sourceType === 'event') {
+    return [body, context].filter(Boolean).join(' · ') || null;
+  }
+
+  return body || context || null;
+};
+
 const deliverDesktopNotification = (item: NotificationSchedulerItem) => {
   try {
     if (!Notification.isSupported()) return;
     const iconPath = path.join(process.env.APP_ROOT ?? '', 'public', 'icon.png');
-    const subtitle = item.context?.trim() || item.workspaceName?.trim() || undefined;
-    const bodyParts = [item.body?.trim(), item.workspaceName?.trim()].filter(Boolean);
+    const subtitle = [item.context?.trim(), item.workspaceName?.trim()].filter(Boolean).join(' · ') || undefined;
+    const body = getNotificationDisplayBody(item);
     const notification = new Notification({
-      title: getNotificationFallbackTitle(item),
+      title: getNotificationDisplayTitle(item),
       subtitle,
-      body: bodyParts.join(' · '),
+      body: [body, item.workspaceName?.trim()].filter(Boolean).join(' · '),
       icon: iconPath,
       silent: true,
     });
@@ -2795,7 +2823,11 @@ function applySidebarVisibility(isVisible: boolean) {
     return;
   }
 
-  sidebarWin.show();
+  if (app.isFocused()) {
+    sidebarWin.show();
+  } else {
+    sidebarWin.showInactive();
+  }
   applySidebarWindowMode(currentSidebarMode);
   sidebarWin.webContents.send('sidebar:visibility-changed', { isVisible: true });
 }
@@ -3056,8 +3088,12 @@ function createSidebarWindow() {
               ? getDockedBounds(HORIZONTAL_DOCK_WIDTH)
               : getDockedBounds(EXPANDED_WIDTH);
           sidebarWin.setBounds(nextBounds);
-          sidebarWin.show();
-          sidebarWin.focus();
+          if (app.isFocused()) {
+            sidebarWin.show();
+            sidebarWin.focus();
+          } else {
+            sidebarWin.showInactive();
+          }
           console.log('[electron][sidebar] window bounds reset:', nextBounds);
         }
       } catch (err) {

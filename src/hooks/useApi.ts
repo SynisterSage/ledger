@@ -479,6 +479,8 @@ export const useApi = () => {
         note_id?: string | null;
         color?: string;
         recurrence_rule?: string;
+        specific_dates?: string[];
+        series_type?: string | null;
         notes?: string | null;
         location?: string | null;
         all_day?: boolean;
@@ -515,6 +517,9 @@ export const useApi = () => {
         notes?: string | null;
         color?: string;
         is_done?: boolean;
+        recurrence_rule?: string | null;
+        specific_dates?: string[];
+        series_type?: string | null;
       }) =>
         request('/api/reminders', {
           method: 'POST',

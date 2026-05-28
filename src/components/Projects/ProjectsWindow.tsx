@@ -250,7 +250,7 @@ export const ProjectsWindow = () => {
     getPaneWidthForViewport(viewportWidth, modulePaneSizing.projects.right)
   );
   const [isLeftPaneCollapsed, setIsLeftPaneCollapsed] = useState(false);
-  const [isRightPaneCollapsed, setIsRightPaneCollapsed] = useState(false);
+  const [isRightPaneCollapsed, setIsRightPaneCollapsed] = useState(true);
   const [isResizingLeftPane, setIsResizingLeftPane] = useState(false);
   const [isResizingRightPane, setIsResizingRightPane] = useState(false);
   const [projectContextMenu, setProjectContextMenu] = useState<ProjectContextMenuState | null>(

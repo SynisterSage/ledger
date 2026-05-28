@@ -222,9 +222,9 @@ const projectSelectColumns =
 const taskSelectColumns =
   'id, workspace_id, project_id, title, description, notes, due_date, due_time, status, priority, assigned_to, tags, completed_at, created_at, updated_at';
 const reminderSelectColumns =
-  'id, workspace_id, user_id, title, body, remind_at, status, linked_type, linked_id, completed_at, dismissed_at, snoozed_until, created_at, updated_at, calendar_id, project_id, note_id, notes, color, is_done, created_by';
+  'id, workspace_id, user_id, title, body, remind_at, status, linked_type, linked_id, completed_at, dismissed_at, snoozed_until, created_at, updated_at, calendar_id, project_id, note_id, notes, color, is_done, created_by, series_id, series_type, recurrence_rule';
 const reminderDashboardSelectColumns =
-  'id, workspace_id, user_id, title, body, remind_at, status, linked_type, linked_id, completed_at, dismissed_at, snoozed_until, created_at, updated_at, calendar_id, project_id, note_id, notes, color, is_done, created_by';
+  'id, workspace_id, user_id, title, body, remind_at, status, linked_type, linked_id, completed_at, dismissed_at, snoozed_until, created_at, updated_at, calendar_id, project_id, note_id, notes, color, is_done, created_by, series_id, series_type, recurrence_rule';
 const reminderLinkedTypes = ['task', 'event', 'note', 'project', 'inbox', 'none'];
 const reminderStatusValues = ['active', 'completed', 'dismissed', 'overdue'];
 const reminderLinkedLabels = {
@@ -276,6 +276,103 @@ const normalizeNullableDate = (value, fieldName) => {
     throw new Error(`Invalid ${fieldName} format`);
   }
   return normalized;
+};
+
+const SPECIFIC_DATES_SERIES_TYPE = 'specific_dates';
+
+const normalizeDateKeyList = (value, fieldName = 'specific_dates') => {
+  if (value == null) return [];
+  if (!Array.isArray(value)) {
+    const error = new Error(`${fieldName} must be an array`);
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const seen = new Set();
+  const dates = [];
+  for (const rawValue of value) {
+    const normalized = normalizeNullableText(rawValue);
+    if (!normalized) continue;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(normalized)) {
+      const error = new Error(`Invalid ${fieldName} entry`);
+      error.statusCode = 400;
+      throw error;
+    }
+    if (seen.has(normalized)) continue;
+    seen.add(normalized);
+    dates.push(normalized);
+  }
+
+  return dates.sort();
+};
+
+const parseDateKey = (value) => {
+  const normalized = normalizeNullableText(value);
+  if (!normalized || !/^\d{4}-\d{2}-\d{2}$/.test(normalized)) {
+    const error = new Error('Invalid date key');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const [year, month, day] = normalized.split('-').map(Number);
+  const date = new Date(year, month - 1, day, 0, 0, 0, 0);
+  if (Number.isNaN(date.getTime())) {
+    const error = new Error('Invalid date key');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  return date;
+};
+
+const buildLocalDateTimeFromDateKey = (dateKey, sourceDate) => {
+  const day = parseDateKey(dateKey);
+  const time = sourceDate instanceof Date && !Number.isNaN(sourceDate.getTime()) ? sourceDate : new Date();
+  day.setHours(
+    time.getHours(),
+    time.getMinutes(),
+    time.getSeconds(),
+    time.getMilliseconds()
+  );
+  return day.toISOString();
+};
+
+const buildSpecificDateSeriesPayload = ({
+  baseStartAt,
+  baseEndAt,
+  dateKeys,
+  sharedFields,
+  seriesType = SPECIFIC_DATES_SERIES_TYPE,
+  recurrenceRule = null,
+  includeEndAt = true,
+}) => {
+  const startSource = new Date(baseStartAt);
+  if (Number.isNaN(startSource.getTime())) {
+    const error = new Error('Invalid start_at');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const endSource = baseEndAt ? new Date(baseEndAt) : null;
+  const durationMs =
+    endSource && !Number.isNaN(endSource.getTime())
+      ? Math.max(1, endSource.getTime() - startSource.getTime())
+      : 60 * 60 * 1000;
+
+  return dateKeys.map((dateKey) => {
+    const occurrenceStart = buildLocalDateTimeFromDateKey(dateKey, startSource);
+    const payload = {
+      ...sharedFields,
+      start_at: occurrenceStart,
+      series_id: sharedFields.series_id,
+      series_type: seriesType,
+      recurrence_rule: recurrenceRule,
+    };
+    if (includeEndAt) {
+      payload.end_at = new Date(new Date(occurrenceStart).getTime() + durationMs).toISOString();
+    }
+    return payload;
+  });
 };
 
 const normalizeEventVisibility = (value) => {
@@ -2549,6 +2646,9 @@ const mapReminderRow = (row, nowMs = Date.now()) => {
     color: row.color ?? null,
     is_done: Boolean(row.is_done ?? false),
     created_by: row.created_by ?? null,
+    series_id: row.series_id ?? null,
+    series_type: row.series_type ?? null,
+    recurrence_rule: row.recurrence_rule ?? null,
     completed_at: row.completed_at ?? null,
     dismissed_at: row.dismissed_at ?? null,
     snoozed_until: row.snoozed_until ?? null,
@@ -2557,13 +2657,26 @@ const mapReminderRow = (row, nowMs = Date.now()) => {
   };
 };
 
-const getReminderLegacyFields = ({ userId, linkedType, linkedId, body, status, calendarId }) => ({
+const getReminderLegacyFields = ({
+  userId,
+  linkedType,
+  linkedId,
+  body,
+  status,
+  calendarId,
+  recurrenceRule = null,
+  seriesId = null,
+  seriesType = null,
+}) => ({
   created_by: userId,
   notes: body,
   is_done: status === 'completed' || status === 'dismissed',
   calendar_id: calendarId ?? null,
   project_id: linkedType === 'project' ? linkedId : null,
   note_id: linkedType === 'note' ? linkedId : null,
+  recurrence_rule: recurrenceRule,
+  series_id: seriesId,
+  series_type: seriesType,
 });
 
 const validateReminderLink = async ({ workspaceId, linkedType, linkedId }) => {
@@ -3523,7 +3636,7 @@ app.post('/api/inbox/:id/convert', authMiddleware, rateLimit('write'), async (re
           note_id: req.body?.note_id || null,
         })
         .select(
-          'id, title, start_at, end_at, all_day, calendar_id, color, status, recurrence_rule, notes, project_id, note_id'
+          'id, title, start_at, end_at, all_day, calendar_id, color, status, recurrence_rule, notes, project_id, note_id, series_id, series_type'
         )
         .single();
       if (error) throw error;
@@ -5877,7 +5990,7 @@ app.get('/api/events', authMiddleware, rateLimit('read'), async (req, res) => {
     let query = supabase
       .from('events')
       .select(
-        'id, title, start_at, end_at, all_day, calendar_id, color, status, recurrence_rule, notes, project_id, note_id, created_at'
+        'id, title, start_at, end_at, all_day, calendar_id, color, status, recurrence_rule, notes, project_id, note_id, series_id, series_type, created_at'
       )
       .in('workspace_id', workspaceIds);
 
@@ -5951,7 +6064,7 @@ app.get('/api/events/upcoming', authMiddleware, rateLimit('read'), async (req, r
     const { data, error } = await supabase
       .from('events')
       .select(
-        'id, workspace_id, title, start_at, end_at, all_day, calendar_id, color, status, visibility, recurrence_rule'
+        'id, workspace_id, title, start_at, end_at, all_day, calendar_id, color, status, visibility, recurrence_rule, series_id, series_type'
       )
       .in('workspace_id', workspaceIds)
       .gte('start_at', now.toISOString())
@@ -6046,30 +6159,74 @@ app.post(
         : parsedStartAt
         ? new Date(parsedStartAt.getTime() + 60 * 60 * 1000).toISOString()
         : null;
+      const recurrenceRuleRaw = normalizeNullableText(req.body?.recurrence_rule);
+      const recurrenceRule = recurrenceRuleRaw ? recurrenceRuleRaw.toLowerCase() : null;
+      const specificDates = normalizeDateKeyList(req.body?.specific_dates);
+      const isSpecificDates = recurrenceRule === SPECIFIC_DATES_SERIES_TYPE || specificDates.length > 0;
+      if (isSpecificDates && specificDates.length === 0) {
+        return res.status(400).json({ error: 'specific_dates is required for specific date events' });
+      }
+      const seriesId = isSpecificDates ? crypto.randomUUID() : null;
+      const basePayload = {
+        workspace_id: workspaceId,
+        calendar_id: calendarId,
+        created_by: req.authUser.id,
+        updated_by: req.authUser.id,
+        title,
+        color: req.body?.color || null,
+        status: req.body?.status || 'planned',
+        visibility: normalizeEventVisibility(req.body?.visibility),
+        recurrence_rule: isSpecificDates ? null : recurrenceRule,
+        notes: req.body?.notes || null,
+        location: req.body?.location || null,
+        all_day: Boolean(req.body?.all_day ?? false),
+        project_id: projectId || null,
+        linked_project_id: projectId || null,
+        note_id: noteId || null,
+        series_id: seriesId,
+        series_type: isSpecificDates ? SPECIFIC_DATES_SERIES_TYPE : null,
+      };
+
+      if (isSpecificDates) {
+        const specificDatePayloads = buildSpecificDateSeriesPayload({
+          baseStartAt: req.body?.start_at,
+          baseEndAt: endAt,
+          dateKeys: specificDates,
+          sharedFields: {
+            ...basePayload,
+            recurrence_rule: null,
+            series_id: seriesId,
+            series_type: SPECIFIC_DATES_SERIES_TYPE,
+          },
+          seriesType: SPECIFIC_DATES_SERIES_TYPE,
+          recurrenceRule: null,
+        });
+
+        const { data, error } = await supabase
+          .from('events')
+          .insert(specificDatePayloads)
+          .select(
+            'id, title, start_at, end_at, all_day, calendar_id, color, status, visibility, recurrence_rule, notes, project_id, note_id, series_id, series_type'
+          );
+
+        if (error) throw error;
+        res.json({
+          created: Array.isArray(data) ? data : [],
+          series_id: seriesId,
+          series_type: SPECIFIC_DATES_SERIES_TYPE,
+        });
+        return;
+      }
 
       const { data, error } = await supabase
         .from('events')
         .insert({
-          workspace_id: workspaceId,
-          calendar_id: calendarId,
-          created_by: req.authUser.id,
-          updated_by: req.authUser.id,
-          title,
+          ...basePayload,
           start_at: req.body?.start_at,
           end_at: endAt,
-          color: req.body?.color || null,
-          status: req.body?.status || 'planned',
-          visibility: normalizeEventVisibility(req.body?.visibility),
-          recurrence_rule: req.body?.recurrence_rule || null,
-          notes: req.body?.notes || null,
-          location: req.body?.location || null,
-          all_day: Boolean(req.body?.all_day ?? false),
-          project_id: projectId || null,
-          linked_project_id: projectId || null,
-          note_id: noteId || null,
         })
         .select(
-          'id, title, start_at, end_at, all_day, calendar_id, color, status, visibility, recurrence_rule, notes, project_id, note_id'
+          'id, title, start_at, end_at, all_day, calendar_id, color, status, visibility, recurrence_rule, notes, project_id, note_id, series_id, series_type'
         )
         .single();
 
@@ -6190,7 +6347,7 @@ app.patch('/api/events/:id', authMiddleware, rateLimit('write'), async (req, res
       .eq('id', req.params.id)
       .eq('workspace_id', eventWorkspaceId)
       .select(
-        'id, title, start_at, end_at, all_day, calendar_id, color, status, visibility, recurrence_rule, notes, project_id, note_id'
+        'id, title, start_at, end_at, all_day, calendar_id, color, status, visibility, recurrence_rule, notes, project_id, note_id, series_id, series_type'
       )
       .single();
 
@@ -6590,6 +6747,9 @@ app.post(
 
       const linkedType = normalizeReminderLinkedType(req.body?.linked_type);
       const linkedId = normalizeNullableText(req.body?.linked_id);
+      const recurrenceRuleRaw = normalizeNullableText(req.body?.recurrence_rule);
+      const recurrenceRule = recurrenceRuleRaw ? recurrenceRuleRaw.toLowerCase() : null;
+      const specificDates = normalizeDateKeyList(req.body?.specific_dates);
 
       if (linkedId && !isUuidLike(linkedId)) {
         return res.status(400).json({ error: 'Invalid linked_id' });
@@ -6601,6 +6761,11 @@ app.post(
       await validateReminderLink({ workspaceId, linkedType, linkedId });
 
       const status = 'active';
+      const isSpecificDates = recurrenceRule === SPECIFIC_DATES_SERIES_TYPE || specificDates.length > 0;
+      if (isSpecificDates && specificDates.length === 0) {
+        return res.status(400).json({ error: 'specific_dates is required for specific date reminders' });
+      }
+      const seriesId = isSpecificDates ? crypto.randomUUID() : null;
       const legacyFields = getReminderLegacyFields({
         userId: req.authUser.id,
         linkedType,
@@ -6608,6 +6773,9 @@ app.post(
         body,
         status,
         calendarId,
+        recurrenceRule: isSpecificDates ? null : recurrenceRule,
+        seriesId,
+        seriesType: isSpecificDates ? SPECIFIC_DATES_SERIES_TYPE : null,
       });
 
       const insertPayload = {
@@ -6625,6 +6793,36 @@ app.post(
         snoozed_until: null,
         ...legacyFields,
       };
+
+      if (isSpecificDates) {
+        const specificDatePayloads = buildSpecificDateSeriesPayload({
+          baseStartAt: remindAt,
+          baseEndAt: null,
+          dateKeys: specificDates,
+          sharedFields: {
+            ...insertPayload,
+            recurrence_rule: null,
+            series_id: seriesId,
+            series_type: SPECIFIC_DATES_SERIES_TYPE,
+          },
+          seriesType: SPECIFIC_DATES_SERIES_TYPE,
+          recurrenceRule: null,
+          includeEndAt: false,
+        });
+
+        const { data, error } = await supabase
+          .from('reminders')
+          .insert(specificDatePayloads)
+          .select(reminderSelectColumns);
+
+        if (error) throw error;
+        res.json({
+          created: Array.isArray(data) ? data.map((row) => mapReminderRow(row)) : [],
+          series_id: seriesId,
+          series_type: SPECIFIC_DATES_SERIES_TYPE,
+        });
+        return;
+      }
 
       const { data, error } = await supabase
         .from('reminders')

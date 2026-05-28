@@ -483,7 +483,7 @@ export const NotesWindow = () => {
     getPaneWidthForViewport(viewportWidth, modulePaneSizing.notes.right)
   );
   const [isLeftPaneCollapsed, setIsLeftPaneCollapsed] = useState(false);
-  const [isRightPaneCollapsed, setIsRightPaneCollapsed] = useState(false);
+  const [isRightPaneCollapsed, setIsRightPaneCollapsed] = useState(true);
   const [isResizingLeftPane, setIsResizingLeftPane] = useState(false);
   const [isResizingRightPane, setIsResizingRightPane] = useState(false);
   const [noteContextMenu, setNoteContextMenu] = useState<NoteContextMenuState | null>(null);
