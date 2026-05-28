@@ -987,6 +987,10 @@ export const CalendarWindow = () => {
     () => formatSpecificDatesPreview(specificDatesDraft),
     [specificDatesDraft]
   );
+  const specificDatesValidationMessage =
+    newEventRecurrence === 'specific_dates' && newEventSpecificDates.length === 0
+      ? 'Choose at least one date.'
+      : null;
   const selectedEventPreview = useMemo(() => {
     if (!selectedEvent) return null;
     const fresh = events.find((row) => row.id === baseEventId(selectedEvent.id));
@@ -4797,6 +4801,9 @@ export const CalendarWindow = () => {
                   className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500"
                 />
               </div>
+              {specificDatesValidationMessage && (
+                <p className="text-xs text-red-600">{specificDatesValidationMessage}</p>
+              )}
             </div>
             <div className="mt-4 flex justify-end gap-2">
               <button
@@ -4807,7 +4814,12 @@ export const CalendarWindow = () => {
               </button>
               <button
                 onClick={() => void createQuickEvent()}
-                disabled={isSavingEvent || !newEventTitle.trim() || calendars.length === 0}
+                disabled={
+                  isSavingEvent ||
+                  !newEventTitle.trim() ||
+                  calendars.length === 0 ||
+                  Boolean(specificDatesValidationMessage)
+                }
                 className="px-3 py-2 text-xs font-medium text-white bg-gray-900 hover:bg-gray-800 rounded-md disabled:opacity-60"
               >
                 {isSavingEvent
