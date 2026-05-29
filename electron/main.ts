@@ -1427,6 +1427,10 @@ function getDisplayMatchingNativeRect(rect: Rect) {
 }
 
 function nativeRectToDipRect(rect: Rect) {
+  if (process.platform === 'win32') {
+    return screen.screenToDipRect(null, rect);
+  }
+
   const display = getDisplayMatchingNativeRect(rect);
   return {
     x: Math.round(rect.x / display.scaleFactor),
@@ -1434,6 +1438,28 @@ function nativeRectToDipRect(rect: Rect) {
     width: Math.max(1, Math.round(rect.width / display.scaleFactor)),
     height: Math.max(1, Math.round(rect.height / display.scaleFactor)),
   };
+}
+
+function dipPointToNativePoint(point: Electron.Point) {
+  if (process.platform === 'win32') {
+    return screen.dipToScreenPoint(point);
+  }
+
+  return point;
+}
+
+function dipRectToNativeRect(rect: Electron.Rectangle) {
+  if (process.platform === 'win32') {
+    return screen.dipToScreenRect(null, rect);
+  }
+
+  return rect;
+}
+
+function dipDistanceToNativeDistance(distance: number, bounds: Electron.Rectangle) {
+  if (process.platform !== 'win32') return distance;
+  const display = screen.getDisplayMatching(bounds);
+  return Math.max(1, Math.round(distance * display.scaleFactor));
 }
 
 function isFullscreenLikeBounds(rect: Rect) {
@@ -2290,6 +2316,8 @@ async function getFloatingDockTargetAtCursor(): Promise<DockTargetResult | null>
         : Math.max(8, Math.floor(threshold * 1.5));
 
     if (process.platform === 'win32') {
+      const nativeSidebarBounds = dipRectToNativeRect(sidebarBounds);
+      const nativeSnapDistance = dipDistanceToNativeDistance(snapDistance, sidebarBounds);
       const script = `
 Add-Type @"
 using System;
@@ -2315,13 +2343,13 @@ public class Win32 {
   }
 }
 "@
-$sidebarLeft = ${Math.floor(sidebarBounds.x)}
-$sidebarTop = ${Math.floor(sidebarBounds.y)}
-$sidebarRight = ${Math.floor(sidebarBounds.x + sidebarBounds.width)}
-$sidebarBottom = ${Math.floor(sidebarBounds.y + sidebarBounds.height)}
-$sidebarHeight = ${Math.floor(sidebarBounds.height)}
+$sidebarLeft = ${Math.floor(nativeSidebarBounds.x)}
+$sidebarTop = ${Math.floor(nativeSidebarBounds.y)}
+$sidebarRight = ${Math.floor(nativeSidebarBounds.x + nativeSidebarBounds.width)}
+$sidebarBottom = ${Math.floor(nativeSidebarBounds.y + nativeSidebarBounds.height)}
+$sidebarHeight = ${Math.floor(nativeSidebarBounds.height)}
 $parentPid = ${process.pid}
-$threshold = ${Math.floor(snapDistance)}
+$threshold = ${Math.floor(nativeSnapDistance)}
 $script:result = $null
 $script:bestScore = [Double]::PositiveInfinity
 [Win32]::EnumWindows({
@@ -2332,11 +2360,11 @@ $script:bestScore = [Double]::PositiveInfinity
   if (-not [Win32]::GetWindowRect($hWnd, [ref]$rect)) { return $true }
   $width = $rect.Right - $rect.Left
   $height = $rect.Bottom - $rect.Top
-  $pid = 0
-  [Win32]::GetWindowThreadProcessId($hWnd, [ref]$pid) | Out-Null
-  $isLedgerWindow = $pid -eq $parentPid
+  $windowProcessId = 0
+  [Win32]::GetWindowThreadProcessId($hWnd, [ref]$windowProcessId) | Out-Null
+  $isLedgerWindow = $windowProcessId -eq $parentPid
   if ([Math]::Abs($rect.Left - $sidebarLeft) -le 2 -and [Math]::Abs($rect.Top - $sidebarTop) -le 2 -and [Math]::Abs($width - ${Math.floor(
-    sidebarBounds.width
+    nativeSidebarBounds.width
   )}) -le 2 -and [Math]::Abs($height - $sidebarHeight) -le 2) { return $true }
   if ($width -lt 80 -or $height -lt 80) { return $true }
 
@@ -2445,7 +2473,9 @@ async function getFloatingDockTargetAtEdge(
   }
 
   if (process.platform === 'win32') {
-    const script = (probeX: number, probeY: number) => `
+    try {
+      const nativeSidebarBounds = dipRectToNativeRect(sidebarBounds);
+      const script = (probeX: number, probeY: number) => `
 Add-Type @"
 using System;
 using System.Runtime.InteropServices;
@@ -2475,10 +2505,10 @@ public class Win32 {
   }
 }
 "@
-$sidebarLeft = ${Math.floor(sidebarBounds.x)}
-$sidebarTop = ${Math.floor(sidebarBounds.y)}
-$sidebarWidth = ${Math.floor(sidebarBounds.width)}
-$sidebarHeight = ${Math.floor(sidebarBounds.height)}
+$sidebarLeft = ${Math.floor(nativeSidebarBounds.x)}
+$sidebarTop = ${Math.floor(nativeSidebarBounds.y)}
+$sidebarWidth = ${Math.floor(nativeSidebarBounds.width)}
+$sidebarHeight = ${Math.floor(nativeSidebarBounds.height)}
 $parentPid = ${process.pid}
 $allowLedgerWindows = ${allowLedgerWindows ? '$true' : '$false'}
 $cursor = [Win32+POINT]::new()
@@ -2493,9 +2523,9 @@ $script:result = $null
   if (-not [Win32]::GetWindowRect($hWnd, [ref]$rect)) { return $true }
   $width = $rect.Right - $rect.Left
   $height = $rect.Bottom - $rect.Top
-  $pid = 0
-  [Win32]::GetWindowThreadProcessId($hWnd, [ref]$pid) | Out-Null
-  $isLedgerWindow = $pid -eq $parentPid
+  $windowProcessId = 0
+  [Win32]::GetWindowThreadProcessId($hWnd, [ref]$windowProcessId) | Out-Null
+  $isLedgerWindow = $windowProcessId -eq $parentPid
   if ($isLedgerWindow -and -not $allowLedgerWindows) { return $true }
   if ([Math]::Abs($rect.Left - $sidebarLeft) -le 2 -and [Math]::Abs($rect.Top - $sidebarTop) -le 2 -and [Math]::Abs($width - $sidebarWidth) -le 2 -and [Math]::Abs($height - $sidebarHeight) -le 2) { return $true }
   if ($cursor.X -ge $rect.Left -and $cursor.X -le $rect.Right -and $cursor.Y -ge $rect.Top -and $cursor.Y -le $rect.Bottom) {
@@ -2508,34 +2538,43 @@ $script:result = $null
 
 if ($script:result) { Write-Output $script:result }
 `;
-    for (const probe of probePoints) {
-      const { stdout } = await execFileAsync(
-        'powershell.exe',
-        [
-          '-NoProfile',
-          '-NonInteractive',
-          '-ExecutionPolicy',
-          'Bypass',
-          '-Command',
-          script(probe.x, probe.y),
-        ],
-        {
-          windowsHide: true,
-          timeout: 1200,
-        }
-      );
-      const [id, x, y, width, height, isLedgerWindow] = String(stdout).trim().split('|');
-      const parsed = [x, y, width, height].map((value) => Number(value));
-      if (parsed.some((value) => Number.isNaN(value) || value <= 0) || !id) continue;
-      return {
-        target: {
-          platform: 'win32',
-          id,
-          side: probe.side,
-          isLedgerWindow: isLedgerWindow === '1',
-        },
-        bounds: { x: parsed[0], y: parsed[1], width: parsed[2], height: parsed[3] },
-      };
+      for (const probe of probePoints) {
+        const nativeProbe = dipPointToNativePoint({ x: probe.x, y: probe.y });
+        const { stdout } = await execFileAsync(
+          'powershell.exe',
+          [
+            '-NoProfile',
+            '-NonInteractive',
+            '-ExecutionPolicy',
+            'Bypass',
+            '-Command',
+            script(nativeProbe.x, nativeProbe.y),
+          ],
+          {
+            windowsHide: true,
+            timeout: 1200,
+          }
+        );
+        const [id, x, y, width, height, isLedgerWindow] = String(stdout).trim().split('|');
+        const parsed = [x, y, width, height].map((value) => Number(value));
+        if (parsed.some((value) => Number.isNaN(value) || value <= 0) || !id) continue;
+        return {
+          target: {
+            platform: 'win32',
+            id,
+            side: probe.side,
+            isLedgerWindow: isLedgerWindow === '1',
+          },
+          bounds: nativeRectToDipRect({
+            x: parsed[0],
+            y: parsed[1],
+            width: parsed[2],
+            height: parsed[3],
+          }),
+        };
+      }
+    } catch (error) {
+      console.warn('[electron] Could not determine Windows dock target at edge:', error);
     }
     return null;
   }
