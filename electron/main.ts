@@ -2159,7 +2159,8 @@ public static class LedgerDockTracker {
       floatingDockNativeBuffer = '';
     }
     if (currentFloatingDockTarget?.platform === 'win32' && currentFloatingDockTarget.id === target.id) {
-      clearCurrentFloatingDockTarget('target_closed');
+      dockLog(`[dock-debug] Windows native dock tracker exited for ${target.id}; falling back to polling`);
+      startFloatingDockTracking();
     }
   });
 
@@ -2283,7 +2284,10 @@ async function getFloatingDockTargetAtCursor(): Promise<DockTargetResult | null>
     const sidebarBounds = sidebarWin?.getBounds();
     if (!sidebarBounds) return null;
     const threshold = currentSidebarPreferences.floatingDockThreshold;
-    const snapDistance = Math.max(8, Math.floor(threshold * 1.5));
+    const snapDistance =
+      process.platform === 'win32'
+        ? Math.max(8, Math.floor(threshold * 2))
+        : Math.max(8, Math.floor(threshold * 1.5));
 
     if (process.platform === 'win32') {
       const script = `
@@ -2578,7 +2582,10 @@ async function dockFloatingSidebarToTarget() {
 
   const currentBounds = sidebarWin.getBounds();
   const threshold = currentSidebarPreferences.floatingDockThreshold;
-  const snapDistance = Math.max(8, Math.floor(threshold * 1.5));
+  const snapDistance =
+    process.platform === 'win32'
+      ? Math.max(8, Math.floor(threshold * 2))
+      : Math.max(8, Math.floor(threshold * 1.5));
   const leftDistance = Math.abs(currentBounds.x - (target.bounds.x - currentBounds.width));
   const rightDistance = Math.abs(currentBounds.x - (target.bounds.x + target.bounds.width));
   const nearestDistance = Math.min(leftDistance, rightDistance);
