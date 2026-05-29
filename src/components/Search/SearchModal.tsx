@@ -8,12 +8,12 @@ import {
   Maximize2,
   Minimize2,
   Search,
-  X,
 } from 'lucide-react';
 import { useAuthContext } from '../../context/AuthContext';
 import { useWorkspaceContext } from '../../context/WorkspaceContext';
 import { useSearch } from '../../context/SearchContext';
 import { useApi } from '../../hooks/useApi';
+import { ModalCloseButton } from '../Common/ModalCloseButton';
 
 type SearchResultType = 'note' | 'project' | 'task' | 'event';
 
@@ -250,14 +250,7 @@ export const SearchModal = () => {
             >
               {isFullscreen ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
             </button>
-            <button
-              type="button"
-              onClick={closeSearch}
-              className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-gray-200 text-gray-600 transition hover:bg-gray-50"
-              title="Close"
-            >
-              <X size={15} />
-            </button>
+            <ModalCloseButton onClick={closeSearch} ariaLabel="Close search" />
           </div>
         </div>
 

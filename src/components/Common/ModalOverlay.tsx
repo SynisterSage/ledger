@@ -1,6 +1,25 @@
 import { ReactNode, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 
+let openModalCount = 0;
+
+const setModalWindowChrome = (isOpen: boolean) => {
+  if (typeof document === 'undefined') return;
+  if (isOpen) {
+    document.body.classList.add('has-modal-open');
+  } else {
+    document.body.classList.remove('has-modal-open');
+  }
+
+  void (async () => {
+    try {
+      await (window as any).desktopWindow?.setHasShadow?.(!isOpen);
+    } catch {
+      // Ignore desktop-window chrome failures in web/test environments.
+    }
+  })();
+};
+
 export interface ModalOverlayProps {
   isOpen: boolean;
   onClose: () => void;
@@ -8,6 +27,9 @@ export interface ModalOverlayProps {
   classNameBackdrop?: string;
   classNameContainer?: string;
   closeOnBackdropClick?: boolean;
+  backdropBorderRadius?: string;
+  manageWindowChrome?: boolean;
+  disablePortal?: boolean;
 }
 
 /**
@@ -22,6 +44,9 @@ export const ModalOverlay = ({
   classNameBackdrop = '',
   classNameContainer = '',
   closeOnBackdropClick = true,
+  backdropBorderRadius = 'var(--modal-backdrop-radius, 28px)',
+  manageWindowChrome = true,
+  disablePortal = false,
 }: ModalOverlayProps) => {
   if (!isOpen) return null;
   const handleBackdropClick = (event: React.MouseEvent) => {
@@ -33,40 +58,35 @@ export const ModalOverlay = ({
   // Use CSS variables so the backdrop radius matches the app/window radius.
   // The outer wrapper clips the absolute backdrop so corners are clean inside rounded windows.
   const wrapperStyle: React.CSSProperties = {
-    borderRadius: 'var(--modal-backdrop-radius, 28px)',
+    borderRadius: backdropBorderRadius,
     overflow: 'hidden',
-    // Expand slightly to cover 1px window borders/antialiasing artifacts.
-    position: 'fixed',
-    top: 'calc(-1px)',
-    left: 'calc(-1px)',
-    right: 'calc(-1px)',
-    bottom: 'calc(-1px)',
+    position: disablePortal ? 'absolute' : 'fixed',
+    top: disablePortal ? 'calc(-1px)' : 'calc(-1px)',
+    left: disablePortal ? 'calc(-1px)' : 'calc(-1px)',
+    right: disablePortal ? 'calc(-1px)' : 'calc(-1px)',
+    bottom: disablePortal ? 'calc(-1px)' : 'calc(-1px)',
     // Ensure overlay sits above shadows and outlines
     boxShadow: 'none',
   };
 
   useEffect(() => {
-    document.body.classList.add('has-modal-open');
-    // Hide native window shadow while modal is open to avoid corner artifacts
-    void (async () => {
-      try {
-        await (window as any).desktopWindow?.setHasShadow?.(false);
-      } catch {}
-    })();
+    if (!manageWindowChrome) return;
+    openModalCount += 1;
+    if (openModalCount === 1) {
+      setModalWindowChrome(true);
+    }
 
     return () => {
-      document.body.classList.remove('has-modal-open');
-      void (async () => {
-        try {
-          await (window as any).desktopWindow?.setHasShadow?.(true);
-        } catch {}
-      })();
+      openModalCount = Math.max(0, openModalCount - 1);
+      if (openModalCount === 0) {
+        setModalWindowChrome(false);
+      }
     };
-  }, []);
+  }, [manageWindowChrome]);
 
-  return createPortal(
+  const overlay = (
     <div
-      className={`fixed inset-0 z-9999 isolate ${classNameBackdrop}`}
+      className={`fixed inset-0 z-[9999] isolate ${classNameBackdrop}`}
       style={wrapperStyle}
     >
       <div
@@ -88,7 +108,8 @@ export const ModalOverlay = ({
           </div>
         </div>
       </div>
-    </div>,
-    document.body
+    </div>
   );
+
+  return disablePortal ? overlay : createPortal(overlay, document.body);
 };

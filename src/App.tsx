@@ -25,7 +25,11 @@ import { useWorkspaceInit } from './hooks/useWorkspaceInit';
 import { useApi } from './hooks/useApi';
 import { useSidebar } from './context/SidebarContext';
 import { MainLayout } from './components/Common/MainLayout';
-import { ModuleHeaderStripAction, ModuleWindowHeader } from './components/Common/ModuleWindowHeader';
+import {
+  ModuleHeaderActionButton,
+  ModuleHeaderStripAction,
+  ModuleWindowHeader,
+} from './components/Common/ModuleWindowHeader';
 import { CloseGuardModal } from './components/Common/CloseGuardModal';
 import { ModalOverlay } from './components/Common/ModalOverlay';
 import LoginForm from './components/Common/LoginForm';
@@ -1852,7 +1856,7 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
             : 'Dashboard overview'
         }
         icon={<img src="./logo-color.svg" alt="" className="h-5 w-5" />}
-        stripActions={
+        globalActions={
           <>
             <ModuleHeaderStripAction
               icon={<Inbox size={12} />}
@@ -1870,7 +1874,7 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
             />
           </>
         }
-        actions={
+        primaryActions={
           <>
             {[
               {
@@ -1894,15 +1898,14 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
                   }),
               },
             ].map(({ label, action }) => (
-              <button
+              <ModuleHeaderActionButton
                 key={label}
-                type="button"
                 onClick={() => void action()}
-                className="inline-flex items-center gap-1.5 text-xs font-medium text-[#64748B] transition hover:text-[#FF5F40]"
+                title={`Create ${label.toLowerCase()}`}
               >
-                <Plus size={14} />
+                <Plus size={12} />
                 {label}
-              </button>
+              </ModuleHeaderActionButton>
             ))}
           </>
         }

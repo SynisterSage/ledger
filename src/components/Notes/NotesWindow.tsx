@@ -3,7 +3,6 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
-  Clock,
   Copy,
   Download,
   Folder,
@@ -35,7 +34,12 @@ import {
 import { useApi } from '../../hooks/useApi';
 import { useWorkspaceContext } from '../../context/WorkspaceContext';
 import { supabase } from '../../services/supabase';
-import { ModuleHeaderStripAction, ModuleWindowHeader } from '../Common/ModuleWindowHeader';
+import {
+  ModuleHeaderActionButton,
+  ModuleHeaderStatus,
+  ModuleHeaderStripAction,
+  ModuleWindowHeader,
+} from '../Common/ModuleWindowHeader';
 import { CloseGuardModal } from '../Common/CloseGuardModal';
 import { SkeletonLoader, SkeletonNoteCard } from '../Common/Skeleton';
 import { MindMapEditor } from './MindMapEditor';
@@ -2935,10 +2939,12 @@ export const NotesWindow = () => {
     };
   }, [showNewMenu]);
 
+  const isNotesModalOpen = showCreateNoteModal || showExportModal || showVersionHistoryModal;
+
   return (
     <div
-      className="h-screen overflow-hidden rounded-3xl border border-gray-200 bg-[#f5f7fb] flex flex-col shadow-[0_24px_80px_rgba(15,23,42,0.08)]"
-      style={{ scrollbarGutter: 'stable' }}
+      className="ledger-notes-shell relative h-screen overflow-hidden rounded-3xl border border-gray-200 bg-[#f5f7fb] flex flex-col shadow-[0_24px_80px_rgba(15,23,42,0.08)]"
+      style={{ scrollbarGutter: isNotesModalOpen ? 'auto' : 'stable' }}
     >
       <CloseGuardModal
         isOpen={showCloseGuardModal}
@@ -2960,8 +2966,8 @@ export const NotesWindow = () => {
       />
       <ModuleWindowHeader
         title="Notes"
-        subtitle="Your simple note workspace"
-        icon={<StickyNote size={18} className="text-amber-600" />}
+        subtitle="Ideas, meetings, and workspace context"
+        icon={<StickyNote size={18} className="text-[#FF5F40]" />}
         closeLabel="Close notes"
         minimizeLabel="Minimize notes"
         onMinimize={() => {
@@ -2974,7 +2980,18 @@ export const NotesWindow = () => {
           void window.desktopWindow?.toggleModuleFullscreen('notes');
         }}
         onClose={attemptCloseNotes}
-        stripActions={
+        showPanelToggle
+        panelToggleLabel={areSidePanelsCollapsed ? 'Show panels' : 'Hide panels'}
+        onTogglePanels={() => {
+          if (areSidePanelsCollapsed) {
+            setIsLeftPaneCollapsed(false);
+            setIsRightPaneCollapsed(false);
+          } else {
+            setIsLeftPaneCollapsed(true);
+            setIsRightPaneCollapsed(true);
+          }
+        }}
+        globalActions={
           <>
             <ModuleHeaderStripAction
               icon={<Inbox size={12} />}
@@ -2992,55 +3009,39 @@ export const NotesWindow = () => {
             />
           </>
         }
-        actions={
+        primaryActions={
           <div className="flex items-center gap-2">
-            <button
-              onClick={() => {
-                if (areSidePanelsCollapsed) {
-                  setIsLeftPaneCollapsed(false);
-                  setIsRightPaneCollapsed(false);
-                } else {
-                  setIsLeftPaneCollapsed(true);
-                  setIsRightPaneCollapsed(true);
-                }
-              }}
-              className="h-8 px-3 rounded-full border border-gray-200 bg-gray-50 text-xs font-medium text-gray-700 hover:bg-gray-100 transition"
-              title={areSidePanelsCollapsed ? 'Show panels' : 'Hide panels'}
-            >
-              {areSidePanelsCollapsed ? 'Show panels' : 'Hide panels'}
-            </button>
-            <button
+            <ModuleHeaderActionButton
               onClick={() => {
                 setNoteCreationSectionId(null);
                 setShowCreateNoteModal(true);
               }}
+              title="Create a new note"
               disabled={isCreating}
-              className="h-8 px-3 rounded-full bg-white border border-gray-200 hover:bg-gray-100 text-gray-700 text-xs font-semibold inline-flex items-center justify-center leading-none disabled:opacity-60"
             >
-              <Plus size={13} />
+              <Plus size={12} />
               {isCreating ? 'Creating...' : 'New note'}
-            </button>
-            <button
-              onClick={() => void refreshCurrentNoteFromServer({ silent: true })}
-              className="h-8 rounded-full border border-gray-200 bg-white px-2.5 text-[11px] font-medium text-gray-600 hover:bg-gray-50 inline-flex items-center gap-1.5"
-              title="Refresh notes"
-            >
-              <Clock size={13} />
-              {isRefreshing ? 'Syncing' : 'Live'}
-            </button>
-            <button
+            </ModuleHeaderActionButton>
+            <ModuleHeaderActionButton
               onClick={() => {
                 setExportType(selectedNote?.mode === 'mind_map' ? 'mindmaps' : 'notes');
                 setShowExportModal(true);
               }}
-              disabled={notes.length === 0}
-              className="h-8 rounded-full border border-gray-200 bg-white px-2.5 text-[11px] font-medium text-gray-600 hover:bg-gray-50 inline-flex items-center gap-1.5 disabled:opacity-40"
               title="Export notes or mind maps"
+              disabled={notes.length === 0}
             >
-              <Download size={13} />
+              <Download size={12} />
               Export
-            </button>
+            </ModuleHeaderActionButton>
           </div>
+        }
+        syncStatus={
+          <ModuleHeaderStatus
+            label={isRefreshing ? 'Syncing' : 'Synced'}
+            state={isRefreshing || showSavingIndicator ? 'syncing' : 'synced'}
+            onClick={() => void refreshCurrentNoteFromServer({ silent: true })}
+            title="Refresh notes"
+          />
         }
       />
       {/* Toasts handled by global ToastProvider */}

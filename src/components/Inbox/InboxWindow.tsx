@@ -2,7 +2,6 @@ import {
   Bell,
   CalendarDays,
   CheckSquare,
-  X,
   FileText,
   Inbox as InboxIcon,
   Loader2,
@@ -14,6 +13,7 @@ import { useAuthContext } from '../../context/AuthContext';
 import { useWorkspaceContext } from '../../context/WorkspaceContext';
 import { ModuleHeaderStripAction, ModuleWindowHeader } from '../Common/ModuleWindowHeader';
 import { useToast } from '../Common/ToastProvider';
+import { ModalCloseButton } from '../Common/ModalCloseButton';
 import { ModalOverlay } from '../Common/ModalOverlay';
 import { createPortal } from 'react-dom';
 
@@ -854,24 +854,11 @@ export default function InboxWindow() {
                           .join(' · ')}
                       </p>
                     </div>
-                    <button
-                      type="button"
-                      onMouseDown={(event) => {
-                        event.preventDefault();
-                        event.stopPropagation();
-                        closeConversion();
-                      }}
-                      onClick={(event) => {
-                        event.preventDefault();
-                        event.stopPropagation();
-                        closeConversion();
-                      }}
-                      className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-600 shadow-sm hover:bg-gray-50"
-                      style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
-                      aria-label="Close convert modal"
-                    >
-                      <X size={16} />
-                    </button>
+                    <ModalCloseButton
+                      onClick={closeConversion}
+                      ariaLabel="Close convert modal"
+                      className="shrink-0"
+                    />
                   </div>
 
                   <div className="min-h-0 flex-1 overflow-y-auto p-5">

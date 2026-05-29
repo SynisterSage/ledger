@@ -2807,7 +2807,7 @@ function applySidebarOpacity(_opacity: number) {
   if (currentSidebarMode === 'auth' || currentSidebarMode === 'fullscreen') return;
 }
 
-function applySidebarVisibility(isVisible: boolean) {
+function applySidebarVisibility(isVisible: boolean, activate = false) {
   if (!sidebarWin || sidebarWin.isDestroyed()) return;
 
   if (allLedgerWindowsHidden && isVisible) {
@@ -2823,8 +2823,9 @@ function applySidebarVisibility(isVisible: boolean) {
     return;
   }
 
-  if (app.isFocused()) {
+  if (activate) {
     sidebarWin.show();
+    sidebarWin.focus();
   } else {
     sidebarWin.showInactive();
   }
@@ -3088,12 +3089,7 @@ function createSidebarWindow() {
               ? getDockedBounds(HORIZONTAL_DOCK_WIDTH)
               : getDockedBounds(EXPANDED_WIDTH);
           sidebarWin.setBounds(nextBounds);
-          if (app.isFocused()) {
-            sidebarWin.show();
-            sidebarWin.focus();
-          } else {
-            sidebarWin.showInactive();
-          }
+          sidebarWin.showInactive();
           console.log('[electron][sidebar] window bounds reset:', nextBounds);
         }
       } catch (err) {
@@ -3409,7 +3405,7 @@ ipcMain.handle('window:set-mode', (_event, mode: SidebarWindowMode) => {
 });
 
 ipcMain.handle('window:set-visible', (_event, isVisible: boolean) => {
-  applySidebarVisibility(isVisible);
+  applySidebarVisibility(isVisible, true);
 });
 
 ipcMain.handle('window:hide-temporary', () => {
@@ -3649,7 +3645,7 @@ ipcMain.handle('window:open-external', async (_event, url: string) => {
 });
 
 ipcMain.handle('window:open-checkin', () => {
-  applySidebarVisibility(true);
+  applySidebarVisibility(true, true);
   applySidebarWindowMode('expanded');
   if (sidebarWin && !sidebarWin.isDestroyed()) {
     sidebarWin.webContents.send('sidebar:state-changed', { state: 'expanded' });
@@ -3875,7 +3871,7 @@ app.whenReady().then(() => {
     if (now - lastSidebarToggleAt < 250) return;
     lastSidebarToggleAt = now;
     const nextVisible = sidebarWin && !sidebarWin.isDestroyed() ? !sidebarIsVisible : false;
-    applySidebarVisibility(nextVisible);
+    applySidebarVisibility(nextVisible, true);
   });
 
   if (!registered) {

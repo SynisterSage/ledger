@@ -1,7 +1,8 @@
-import { ChevronRight, FileText, Lightbulb, User, BookOpen, X } from 'lucide-react';
-import { createPortal } from 'react-dom';
+import { ChevronRight, FileText, Lightbulb, User, BookOpen } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useApi } from '../../hooks/useApi';
+import { ModalCloseButton } from '../Common/ModalCloseButton';
+import { ModalOverlay } from '../Common/ModalOverlay';
 import { TemplateGallery } from './TemplateGallery';
 
 interface CreateNoteModalProps {
@@ -238,31 +239,32 @@ export const CreateNoteModal = ({
 
   if (!isOpen) return null;
 
-  return createPortal(
-    <div
-      className="fixed inset-0 z-50 isolate"
+  return (
+    <ModalOverlay
+      isOpen={isOpen}
+      onClose={() => {
+        if (!isCreating) onClose();
+      }}
+      closeOnBackdropClick={!isCreating}
+      backdropBorderRadius="inherit"
+      disablePortal
+      manageWindowChrome={false}
+      classNameContainer="w-full max-w-[760px] overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-lg"
     >
-      <div className="absolute inset-0 bg-black/50" onClick={() => !isCreating && onClose()} />
-      <div className="relative z-10 flex h-full w-full items-center justify-center p-4">
-        <div
-          className="bg-white rounded-xl shadow-lg max-w-190 w-full mx-4 max-h-[88vh] overflow-y-auto border border-gray-200"
-          onClick={(e) => e.stopPropagation()}
-        >
-          {/* Header */}
-          <div className="sticky top-0 bg-white/95 backdrop-blur border-b border-gray-200 px-5 py-3 flex items-center justify-between">
-            <h2 className="font-semibold text-gray-900">
-              {step === 'main' && 'Create Note'}
-              {step === 'gallery' && 'Browse Templates'}
-              {step === 'custom-form' && 'Create Custom Template'}
-            </h2>
-            <button
-              onClick={onClose}
-              disabled={isCreating}
-              className="text-gray-400 hover:text-gray-600 disabled:opacity-50"
-            >
-              <X size={20} />
-            </button>
-          </div>
+      <div className="flex max-h-[88vh] flex-col">
+        {/* Header */}
+        <div className="sticky top-0 flex items-center justify-between rounded-t-2xl border-b border-gray-200 bg-white/95 px-5 py-3 backdrop-blur">
+          <h2 className="font-semibold text-gray-900">
+            {step === 'main' && 'Create Note'}
+            {step === 'gallery' && 'Browse Templates'}
+            {step === 'custom-form' && 'Create Custom Template'}
+          </h2>
+          <ModalCloseButton
+            onClick={onClose}
+            ariaLabel="Close create note modal"
+            disabled={isCreating}
+          />
+        </div>
 
           {/* Body */}
           <div className="p-5">
@@ -346,9 +348,7 @@ export const CreateNoteModal = ({
             </div>
           )}
           </div>
-        </div>
       </div>
-    </div>,
-    document.body
+    </ModalOverlay>
   );
 };

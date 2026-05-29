@@ -14,7 +14,6 @@ import {
   Trash2,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
 import { ModalOverlay } from '../Common/ModalOverlay';
 import { useAuthContext } from '../../context/AuthContext';
 import {
@@ -24,8 +23,14 @@ import {
 } from '../../config/modulePaneSizes';
 import { useApi } from '../../hooks/useApi';
 import { useWorkspaceContext } from '../../context/WorkspaceContext';
-import { ModuleHeaderStripAction, ModuleWindowHeader } from '../Common/ModuleWindowHeader';
+import {
+  ModuleHeaderActionButton,
+  ModuleHeaderStatus,
+  ModuleHeaderStripAction,
+  ModuleWindowHeader,
+} from '../Common/ModuleWindowHeader';
 import { CloseGuardModal } from '../Common/CloseGuardModal';
+import { ModalCloseButton } from '../Common/ModalCloseButton';
 import { SkeletonProjectCard, SkeletonTaskItem } from '../Common/Skeleton';
 import { useViewportWidth } from '../../hooks/useViewportWidth';
 
@@ -1349,7 +1354,7 @@ export const ProjectsWindow = () => {
       <ModuleWindowHeader
         title="Projects"
         subtitle="Simple outcomes, clear next steps"
-        icon={<Folder size={18} className="text-blue-600" />}
+        icon={<Folder size={18} className="text-[#FF5F40]" />}
         closeLabel="Close projects"
         minimizeLabel="Minimize projects"
         onMinimize={() => {
@@ -1360,7 +1365,18 @@ export const ProjectsWindow = () => {
           void window.desktopWindow?.toggleModuleFullscreen('projects');
         }}
         onClose={attemptCloseProjects}
-        stripActions={
+        showPanelToggle
+        panelToggleLabel={areSidePanelsCollapsed ? 'Show panels' : 'Hide panels'}
+        onTogglePanels={() => {
+          if (areSidePanelsCollapsed) {
+            setIsLeftPaneCollapsed(false);
+            setIsRightPaneCollapsed(false);
+          } else {
+            setIsLeftPaneCollapsed(true);
+            setIsRightPaneCollapsed(true);
+          }
+        }}
+        globalActions={
           <>
             <ModuleHeaderStripAction
               icon={<Inbox size={12} />}
@@ -1378,38 +1394,27 @@ export const ProjectsWindow = () => {
             />
           </>
         }
-        actions={
+        primaryActions={
           <div className="flex items-center gap-2">
-            <button
+            <ModuleHeaderActionButton
               onClick={() => {
-                if (areSidePanelsCollapsed) {
-                  setIsLeftPaneCollapsed(false);
-                  setIsRightPaneCollapsed(false);
-                } else {
-                  setIsLeftPaneCollapsed(true);
-                  setIsRightPaneCollapsed(true);
-                }
+                setIsCreatingProject(!isCreatingProject);
               }}
-              className="h-8 px-3 rounded-full border border-gray-200 bg-gray-50 text-xs font-medium text-gray-700 hover:bg-gray-100 transition"
-              title={areSidePanelsCollapsed ? 'Show panels' : 'Hide panels'}
+              title={isCreatingProject ? 'Cancel new project' : 'Create a new project'}
             >
-              {areSidePanelsCollapsed ? 'Show panels' : 'Hide panels'}
-            </button>
-            <button
-              onClick={() => setIsCreatingProject(!isCreatingProject)}
-              className="h-8 px-3 rounded-full bg-white border border-gray-200 hover:bg-gray-100 text-gray-700 text-xs font-semibold inline-flex items-center justify-center leading-none"
-            >
-              <Plus size={13} />
+              <Plus size={12} />
               {isCreatingProject ? 'Cancel' : 'New project'}
-            </button>
-            <button
-              onClick={() => void loadProjects()}
-              className="h-8 w-8 rounded-full border border-gray-200 bg-white hover:bg-gray-100 text-gray-600 flex items-center justify-center shadow-sm"
-              title="Refresh projects"
-            >
-              <Clock3 size={15} />
-            </button>
+            </ModuleHeaderActionButton>
           </div>
+        }
+        syncStatus={
+          <ModuleHeaderStatus
+            label=""
+            state={isLoadingProjects ? 'syncing' : 'synced'}
+            onClick={() => void loadProjects()}
+            title="Refresh projects"
+            ariaLabel="Refresh projects"
+          />
         }
       />
 
@@ -2387,26 +2392,33 @@ export const ProjectsWindow = () => {
         )}
       </div>
 
-      {taskNotesTask &&
-        createPortal(
-          <div
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/25 p-4"
-            onClick={() => {
-              setTaskNotesTaskId(null);
-              setTaskNotesDraft('');
-            }}
-          >
-          <div
-            className="w-full max-w-xl rounded-2xl border border-gray-200 bg-white shadow-xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="border-b border-gray-100 px-5 py-4">
-              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500">
-                Task notes
-              </p>
-              <p className="mt-1 truncate text-base font-semibold text-gray-900">
-                {taskNotesTask.title}
-              </p>
+      {taskNotesTask && (
+        <ModalOverlay
+          isOpen={Boolean(taskNotesTask)}
+          onClose={() => {
+            setTaskNotesTaskId(null);
+            setTaskNotesDraft('');
+          }}
+          classNameContainer="w-full max-w-xl overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-xl"
+        >
+          <div>
+            <div className="flex items-start justify-between gap-4 border-b border-gray-100 px-5 py-4">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500">
+                  Task notes
+                </p>
+                <p className="mt-1 truncate text-base font-semibold text-gray-900">
+                  {taskNotesTask.title}
+                </p>
+              </div>
+              <ModalCloseButton
+                onClick={() => {
+                  setTaskNotesTaskId(null);
+                  setTaskNotesDraft('');
+                }}
+                ariaLabel="Close task notes modal"
+                className="shrink-0"
+              />
             </div>
             <div className="p-5">
               <textarea
@@ -2435,9 +2447,8 @@ export const ProjectsWindow = () => {
               </div>
             </div>
           </div>
-          </div>,
-          document.body
-        )}
+        </ModalOverlay>
+      )}
 
       {linkedNoteContextMenu && linkedNoteMenuPosition && (
         <div
@@ -2477,13 +2488,20 @@ export const ProjectsWindow = () => {
         onClose={() => setIsLinkNoteModalOpen(false)}
         classNameContainer="w-full max-w-xl rounded-2xl border border-gray-200 bg-white shadow-xl"
       >
-        <div className="border-b border-gray-100 px-5 py-4">
-          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500">
-            Link note
-          </p>
-          <p className="mt-1 text-base font-semibold text-gray-900">
-            Attach a workspace note to this project
-          </p>
+        <div className="flex items-start justify-between gap-4 border-b border-gray-100 px-5 py-4">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500">
+              Link note
+            </p>
+            <p className="mt-1 text-base font-semibold text-gray-900">
+              Attach a workspace note to this project
+            </p>
+          </div>
+          <ModalCloseButton
+            onClick={() => setIsLinkNoteModalOpen(false)}
+            ariaLabel="Close link note modal"
+            className="shrink-0"
+          />
         </div>
         <div className="space-y-3 p-5">
           <input
@@ -2522,7 +2540,7 @@ export const ProjectsWindow = () => {
             onClick={() => setIsLinkNoteModalOpen(false)}
             className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
           >
-            Close
+            Cancel
           </button>
         </div>
       </ModalOverlay>

@@ -23,6 +23,7 @@ import { useApi } from '../../hooks/useApi';
 import { buildInviteUrl } from '../../config/invite';
 import { ModuleWindowHeader } from '../Common/ModuleWindowHeader';
 import { CloseGuardModal } from '../Common/CloseGuardModal';
+import { ModalCloseButton } from '../Common/ModalCloseButton';
 import authService from '../../services/auth';
 
 type UserPreferences = {
@@ -1199,8 +1200,8 @@ export const SettingsWindow = () => {
     }
 
     if (previousWorkspaceId && previousWorkspaceId !== nextWorkspaceId) {
-      setWorkspaceEditName(activeWorkspace.name);
-      setWorkspaceEditDescription(activeWorkspace.description ?? '');
+      setWorkspaceEditName(activeWorkspace?.name ?? '');
+      setWorkspaceEditDescription(activeWorkspace?.description ?? '');
       setWorkspaceDeleteConfirm('');
       setIsWorkspaceManageModalOpen(false);
       setIsWorkspaceDeleteModalOpen(false);
@@ -1208,8 +1209,8 @@ export const SettingsWindow = () => {
     }
 
     if (!isWorkspaceManageModalOpen && !isWorkspaceDeleteModalOpen) {
-      setWorkspaceEditName(activeWorkspace.name);
-      setWorkspaceEditDescription(activeWorkspace.description ?? '');
+      setWorkspaceEditName(activeWorkspace?.name ?? '');
+      setWorkspaceEditDescription(activeWorkspace?.description ?? '');
       setWorkspaceDeleteConfirm('');
     }
   }, [activeWorkspace?.id, activeWorkspace?.name, activeWorkspace?.description, isWorkspaceDeleteModalOpen, isWorkspaceManageModalOpen]);
@@ -3749,11 +3750,14 @@ export const SettingsWindow = () => {
               onClose={closeExtensionTokenModal}
               classNameContainer="w-full max-w-115 rounded-2xl border border-gray-200 bg-white"
             >
-              <div className="px-5 pt-5">
-                <h3 className="text-lg font-semibold text-gray-900">Connect browser extension</h3>
-                <p className="mt-1 text-sm leading-5 text-gray-600">
-                  Use this token in the Ledger browser extension.
-                </p>
+              <div className="flex items-start justify-between gap-4 px-5 pt-5">
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900">Connect browser extension</h3>
+                  <p className="mt-1 text-sm leading-5 text-gray-600">
+                    Use this token in the Ledger browser extension.
+                  </p>
+                </div>
+                <ModalCloseButton onClick={closeExtensionTokenModal} ariaLabel="Close extension token modal" />
               </div>
 
               <div className="mt-5 border-y border-gray-100 px-5 py-4">
@@ -3802,12 +3806,18 @@ export const SettingsWindow = () => {
               onClose={() => setExtensionTokenConfirmAction(null)}
               classNameContainer="w-full max-w-115 rounded-2xl border border-gray-200 bg-white"
             >
-              <div className="px-5 pt-5">
-                <h3 className="text-lg font-semibold text-gray-900">Regenerate extension token?</h3>
-                <p className="mt-1 text-sm leading-5 text-gray-600">
-                  Your existing browser extension token will stop working. You’ll need to paste the
-                  new token into the extension.
-                </p>
+              <div className="flex items-start justify-between gap-4 px-5 pt-5">
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900">Regenerate extension token?</h3>
+                  <p className="mt-1 text-sm leading-5 text-gray-600">
+                    Your existing browser extension token will stop working. You’ll need to paste the
+                    new token into the extension.
+                  </p>
+                </div>
+                <ModalCloseButton
+                  onClick={() => setExtensionTokenConfirmAction(null)}
+                  ariaLabel="Close regenerate token modal"
+                />
               </div>
               <div className="mt-5 flex items-center justify-end gap-2 border-t border-gray-100 px-5 py-4">
                 <button
@@ -3833,11 +3843,17 @@ export const SettingsWindow = () => {
               onClose={() => setExtensionTokenConfirmAction(null)}
               classNameContainer="w-full max-w-115 rounded-2xl border border-gray-200 bg-white"
             >
-              <div className="px-5 pt-5">
-                <h3 className="text-lg font-semibold text-gray-900">Revoke extension token?</h3>
-                <p className="mt-1 text-sm leading-5 text-gray-600">
-                  The browser extension will no longer be able to save captures to Ledger.
-                </p>
+              <div className="flex items-start justify-between gap-4 px-5 pt-5">
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900">Revoke extension token?</h3>
+                  <p className="mt-1 text-sm leading-5 text-gray-600">
+                    The browser extension will no longer be able to save captures to Ledger.
+                  </p>
+                </div>
+                <ModalCloseButton
+                  onClick={() => setExtensionTokenConfirmAction(null)}
+                  ariaLabel="Close revoke token modal"
+                />
               </div>
               <div className="mt-5 flex items-center justify-end gap-2 border-t border-gray-100 px-5 py-4">
                 <button
@@ -3871,13 +3887,7 @@ export const SettingsWindow = () => {
                   </h3>
                   <p className="mt-0.5 text-xs text-gray-500">{activeWorkspaceKindLabel}</p>
                 </div>
-                <button
-                  type="button"
-                  onClick={closeWorkspaceManageModal}
-                  className="rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xs font-medium text-gray-600 transition hover:bg-gray-50"
-                >
-                  Close
-                </button>
+                <ModalCloseButton onClick={closeWorkspaceManageModal} ariaLabel="Close workspace settings modal" />
               </div>
 
               <div className="mt-4 border-t border-gray-100 px-5 pt-4">
@@ -3960,14 +3970,17 @@ export const SettingsWindow = () => {
               onClose={closeWorkspaceDeleteModal}
               classNameContainer="w-full max-w-[640px] rounded-2xl border border-gray-200 bg-white shadow-[0_24px_70px_rgba(15,23,42,0.12)]"
             >
-              <div className="px-5 pt-5">
-                <p className="text-xs font-medium text-gray-500">Danger zone</p>
-                <h3 id="workspace-delete-title" className="mt-1 text-lg font-semibold text-gray-900">
-                  Delete workspace
-                </h3>
-                <p className="mt-1 text-sm text-gray-600">
-                  Type <span className="font-medium text-gray-900">{activeWorkspace?.name}</span> to confirm deletion.
-                </p>
+              <div className="flex items-start justify-between gap-4 px-5 pt-5">
+                <div>
+                  <p className="text-xs font-medium text-gray-500">Danger zone</p>
+                  <h3 id="workspace-delete-title" className="mt-1 text-lg font-semibold text-gray-900">
+                    Delete workspace
+                  </h3>
+                  <p className="mt-1 text-sm text-gray-600">
+                    Type <span className="font-medium text-gray-900">{activeWorkspace?.name}</span> to confirm deletion.
+                  </p>
+                </div>
+                <ModalCloseButton onClick={closeWorkspaceDeleteModal} ariaLabel="Close delete workspace modal" />
               </div>
 
               <div className="mt-4 border-t border-gray-100 px-5 pt-4">
@@ -4034,13 +4047,7 @@ export const SettingsWindow = () => {
                     {selectedInvite?.role} · {selectedInvite?.status}
                   </p>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setInviteModal(null)}
-                  className="rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xs font-medium text-gray-600 transition hover:bg-gray-50"
-                >
-                  Close
-                </button>
+                <ModalCloseButton onClick={() => setInviteModal(null)} ariaLabel="Close invite modal" />
               </div>
 
               <div className="mt-4 flex-1 border-t border-gray-100 px-5 pt-4 pb-5">

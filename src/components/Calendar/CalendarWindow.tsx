@@ -3,7 +3,6 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronDown,
-  X,
   BellRing,
   ClipboardPaste,
   CalendarPlus,
@@ -18,7 +17,6 @@ import {
   Inbox,
 } from 'lucide-react';
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
 import { ModalOverlay } from '../Common/ModalOverlay';
 import * as rruleModule from 'rrule';
 import { useAuthContext } from '../../context/AuthContext';
@@ -29,8 +27,14 @@ import {
 } from '../../config/modulePaneSizes';
 import { useWorkspaceContext } from '../../context/WorkspaceContext';
 import { useApi } from '../../hooks/useApi';
-import { ModuleHeaderStripAction, ModuleWindowHeader } from '../Common/ModuleWindowHeader';
+import {
+  ModuleHeaderSegmentedButton,
+  ModuleHeaderSegmentedGroup,
+  ModuleHeaderStripAction,
+  ModuleWindowHeader,
+} from '../Common/ModuleWindowHeader';
 import { CloseGuardModal } from '../Common/CloseGuardModal';
+import { ModalCloseButton } from '../Common/ModalCloseButton';
 import { useViewportWidth } from '../../hooks/useViewportWidth';
 
 // Get RRule from the module - handles both ESM and CommonJS
@@ -726,7 +730,6 @@ export const CalendarWindow = () => {
   const [projects, setProjects] = useState<ProjectRow[]>([]);
   const [notes, setNotes] = useState<NoteRow[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [isRefreshing, setIsRefreshing] = useState(false);
   const [hasLoadedData, setHasLoadedData] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [inboxCount, setInboxCount] = useState(0);
@@ -1798,7 +1801,6 @@ export const CalendarWindow = () => {
           setReminders([]);
           setHasLoadedData(false);
           setIsLoading(false);
-          setIsRefreshing(false);
         }
         return;
       }
@@ -1806,8 +1808,6 @@ export const CalendarWindow = () => {
       const isInitialLoad = !hasLoadedDataRef.current;
       if (isInitialLoad) {
         setIsLoading(true);
-      } else {
-        setIsRefreshing(true);
       }
       setError(null);
 
@@ -1916,7 +1916,6 @@ export const CalendarWindow = () => {
       } finally {
         if (!cancelled) {
           setIsLoading(false);
-          setIsRefreshing(false);
         }
       }
     };
@@ -3201,10 +3200,20 @@ export const CalendarWindow = () => {
     void window.desktopWindow?.closeModule('calendar');
   };
 
+  const isCalendarModalOpen =
+    isComposerOpen ||
+    isSpecificDatesModalOpen ||
+    isNewCalendarModalOpen ||
+    isLinkProjectModalOpen ||
+    isLinkNoteModalOpen ||
+    Boolean(eventEditorEvent) ||
+    Boolean(selectedReminder) ||
+    Boolean(overflowDayKey);
+
   return (
     <div
-      className="h-screen overflow-hidden rounded-3xl border border-gray-200 bg-[#f5f7fb] flex flex-col shadow-[0_24px_80px_rgba(15,23,42,0.08)]"
-      style={{ scrollbarGutter: 'stable' }}
+      className="relative h-screen overflow-hidden rounded-3xl border border-gray-200 bg-[#f5f7fb] flex flex-col shadow-[0_24px_80px_rgba(15,23,42,0.08)]"
+      style={{ scrollbarGutter: isCalendarModalOpen ? 'auto' : 'stable' }}
     >
       <CloseGuardModal
         isOpen={showCloseGuardModal}
@@ -3215,7 +3224,7 @@ export const CalendarWindow = () => {
       <ModuleWindowHeader
         title="Calendar"
         subtitle={viewConfig.label}
-        icon={<CalendarDays size={18} className="text-blue-600" />}
+        icon={<CalendarDays size={18} className="text-[#FF5F40]" />}
         closeLabel="Close calendar"
         minimizeLabel="Minimize calendar"
         onMinimize={() => {
@@ -3226,7 +3235,18 @@ export const CalendarWindow = () => {
           void window.desktopWindow?.toggleModuleFullscreen('calendar');
         }}
         onClose={attemptCloseCalendar}
-        stripActions={
+        showPanelToggle
+        panelToggleLabel={areSidePanelsCollapsed ? 'Show panels' : 'Hide panels'}
+        onTogglePanels={() => {
+          if (areSidePanelsCollapsed) {
+            setIsLeftPaneCollapsed(false);
+            setIsRightPaneCollapsed(false);
+          } else {
+            setIsLeftPaneCollapsed(true);
+            setIsRightPaneCollapsed(true);
+          }
+        }}
+        globalActions={
           <>
             <ModuleHeaderStripAction
               icon={<Inbox size={12} />}
@@ -3244,75 +3264,43 @@ export const CalendarWindow = () => {
             />
           </>
         }
-        actions={
-          <>
-            {isRefreshing && !isInitialLoading && (
-              <span className="text-[11px] text-gray-500 mr-1">Syncing...</span>
-            )}
-            <button
-              onClick={() => {
-                if (areSidePanelsCollapsed) {
-                  setIsLeftPaneCollapsed(false);
-                  setIsRightPaneCollapsed(false);
-                } else {
-                  setIsLeftPaneCollapsed(true);
-                  setIsRightPaneCollapsed(true);
-                }
-              }}
-              className="h-8 px-3 rounded-full border border-gray-200 bg-gray-50 text-xs font-medium text-gray-700 hover:bg-gray-100 transition"
-              title={areSidePanelsCollapsed ? 'Show panels' : 'Hide panels'}
-            >
-              {areSidePanelsCollapsed ? 'Show panels' : 'Hide panels'}
-            </button>
-            <div className="flex items-center gap-1 rounded-full border border-gray-200 bg-gray-50 p-1 shadow-sm">
-              <button
-                onClick={() => moveView(-1)}
-                onMouseDown={(e) => e.stopPropagation()}
-                className="h-8 w-8 rounded-full hover:bg-white text-gray-600 flex items-center justify-center"
+        viewControls={
+          <div className="flex items-center gap-1.5">
+            <ModuleHeaderSegmentedGroup>
+              <ModuleHeaderSegmentedButton
+                iconOnly
                 title="Previous period"
+                ariaLabel="Previous period"
+                onClick={() => moveView(-1)}
               >
-                <ChevronLeft size={15} />
-              </button>
-              <button
-                onClick={() => jumpToToday()}
-                className="h-8 px-3 rounded-full bg-white border border-gray-200 hover:bg-gray-100 text-gray-700 text-xs font-semibold inline-flex items-center justify-center leading-none"
-              >
+                <ChevronLeft size={14} />
+              </ModuleHeaderSegmentedButton>
+              <ModuleHeaderSegmentedButton title="Today" onClick={() => jumpToToday()}>
                 Today
-              </button>
-              <button
-                onClick={() => moveView(1)}
-                className="h-8 w-8 rounded-full hover:bg-white text-gray-600 flex items-center justify-center"
+              </ModuleHeaderSegmentedButton>
+              <ModuleHeaderSegmentedButton
+                iconOnly
                 title="Next period"
+                ariaLabel="Next period"
+                onClick={() => moveView(1)}
               >
-                <ChevronRight size={15} />
-              </button>
-            </div>
-            <div className="flex items-center rounded-full border border-gray-200 bg-gray-50 p-0.5 shadow-sm">
+                <ChevronRight size={14} />
+              </ModuleHeaderSegmentedButton>
+            </ModuleHeaderSegmentedGroup>
+
+            <ModuleHeaderSegmentedGroup>
               {(['day', 'week', 'month'] as CalendarViewMode[]).map((mode) => (
-                <button
+                <ModuleHeaderSegmentedButton
                   key={mode}
+                  title={`Switch to ${mode} view`}
                   onClick={() => setViewMode(mode)}
-                  className={`px-3 py-1.5 rounded-full text-xs font-medium capitalize transition-colors ${
-                    viewMode === mode
-                      ? 'bg-white text-gray-900 shadow-sm'
-                      : 'text-gray-600 hover:text-gray-900'
-                  }`}
+                  active={viewMode === mode}
                 >
-                  {mode}
-                </button>
+                  {mode[0].toUpperCase() + mode.slice(1)}
+                </ModuleHeaderSegmentedButton>
               ))}
-            </div>
-            <input
-              ref={importInputRef}
-              type="file"
-              accept=".ics,text/calendar"
-              className="hidden"
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (file) void importIcsFile(file);
-              }}
-            />
-          </>
+            </ModuleHeaderSegmentedGroup>
+          </div>
         }
       />
 
@@ -3571,6 +3559,16 @@ export const CalendarWindow = () => {
                     Sync iCal
                   </button>
                 </div>
+                <input
+                  ref={importInputRef}
+                  type="file"
+                  accept=".ics,text/calendar"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) void importIcsFile(file);
+                  }}
+                />
               </div>
 
               {error && <p className="text-xs text-red-600 mt-4">{error}</p>}
@@ -4611,51 +4609,51 @@ export const CalendarWindow = () => {
         )}
       </div>
 
-      {isComposerOpen &&
-        createPortal(
-          <div
-            className="fixed inset-0 z-100 bg-black/20 flex items-start justify-center pt-20"
-            onMouseDown={() => setIsComposerOpen(false)}
-          >
-          <div
-            className="w-105 rounded-xl border border-gray-200 bg-white shadow-xl p-4"
-            onMouseDown={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between mb-3">
+      {isComposerOpen && (
+        <ModalOverlay
+          isOpen={isComposerOpen}
+          onClose={() => {
+            if (!isSavingEvent) setIsComposerOpen(false);
+          }}
+          closeOnBackdropClick={!isSavingEvent}
+          backdropBorderRadius="inherit"
+          disablePortal
+          manageWindowChrome={false}
+          classNameContainer="w-full max-w-[420px] overflow-hidden rounded-xl border border-gray-200 bg-white shadow-xl"
+        >
+          <div className="p-4">
+            <div className="mb-3 flex items-center justify-between">
               <h3 className="text-sm font-semibold text-gray-900">
                 {composerMode === 'reminder' ? 'New Reminder' : 'New Event'}
               </h3>
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.preventDefault();
-                  setIsComposerOpen(false);
+              <ModalCloseButton
+                onClick={() => {
+                  if (!isSavingEvent) setIsComposerOpen(false);
                 }}
-                onMouseDown={(e) => e.stopPropagation()}
-                className="p-1 rounded hover:bg-gray-100"
-              >
-                <X size={14} className="text-gray-600" />
-              </button>
+                ariaLabel="Close event composer"
+                disabled={isSavingEvent}
+                className="shrink-0"
+              />
             </div>
             <div className="space-y-2.5">
               <input
                 value={newEventTitle}
                 onChange={(e) => setNewEventTitle(e.target.value)}
                 placeholder={composerMode === 'reminder' ? 'Reminder title' : 'Event title'}
-                className="w-full h-9 px-3 text-sm border border-gray-200 rounded-md focus:outline-none focus:border-gray-400"
+                className="h-9 w-full rounded-md border border-gray-200 px-3 text-sm focus:border-gray-400 focus:outline-none"
               />
               <div className="grid grid-cols-2 gap-2">
                 <input
                   type="date"
                   value={newEventDate}
                   onChange={(e) => setNewEventDate(e.target.value)}
-                  className="h-9 px-2 text-sm border border-gray-200 rounded-md focus:outline-none focus:border-gray-400"
+                  className="h-9 rounded-md border border-gray-200 px-2 text-sm focus:border-gray-400 focus:outline-none"
                 />
                 <input
                   type="time"
                   value={newEventTime}
                   onChange={(e) => setNewEventTime(e.target.value)}
-                  className="h-9 px-2 text-sm border border-gray-200 rounded-md focus:outline-none focus:border-gray-400"
+                  className="h-9 rounded-md border border-gray-200 px-2 text-sm focus:border-gray-400 focus:outline-none"
                 />
               </div>
               {composerMode === 'event' && (
@@ -4666,7 +4664,7 @@ export const CalendarWindow = () => {
                     step="1"
                     value={newEventDurationValue}
                     onChange={(e) => setNewEventDurationValue(Number(e.target.value) || 1)}
-                    className="h-9 px-2 text-sm border border-gray-200 rounded-md focus:outline-none focus:border-gray-400"
+                    className="h-9 rounded-md border border-gray-200 px-2 text-sm focus:border-gray-400 focus:outline-none"
                   />
                   <div className="relative">
                     <select
@@ -4674,7 +4672,7 @@ export const CalendarWindow = () => {
                       onChange={(e) =>
                         setNewEventDurationUnit(e.target.value as 'minutes' | 'hours')
                       }
-                      className="w-full h-9 pr-8 pl-2 text-sm border border-gray-200 rounded-md focus:outline-none focus:border-gray-400 bg-white appearance-none"
+                      className="h-9 w-full appearance-none rounded-md border border-gray-200 bg-white pl-2 pr-8 text-sm focus:border-gray-400 focus:outline-none"
                     >
                       <option value="minutes">minutes</option>
                       <option value="hours">hours</option>
@@ -4690,7 +4688,7 @@ export const CalendarWindow = () => {
                 <select
                   value={composerCalendarId || getDefaultCalendar()?.id || ''}
                   onChange={(e) => setComposerCalendarId(e.target.value)}
-                  className="w-full h-9 pr-9 pl-2 text-sm border border-gray-200 rounded-md focus:outline-none focus:border-gray-400 bg-white appearance-none"
+                  className="h-9 w-full appearance-none rounded-md border border-gray-200 bg-white pl-2 pr-9 text-sm focus:border-gray-400 focus:outline-none"
                   disabled={calendars.length === 0}
                 >
                   {calendars.map((calendar) => (
@@ -4711,7 +4709,7 @@ export const CalendarWindow = () => {
                     onChange={(e) =>
                       setNewEventVisibility(e.target.value as 'private' | 'workspace')
                     }
-                    className="w-full h-9 pr-9 pl-2 text-sm border border-gray-200 rounded-md focus:outline-none focus:border-gray-400 bg-white appearance-none"
+                    className="h-9 w-full appearance-none rounded-md border border-gray-200 bg-white pl-2 pr-9 text-sm focus:border-gray-400 focus:outline-none"
                   >
                     <option value="private">Private</option>
                     <option value="workspace">Workspace</option>
@@ -4726,7 +4724,7 @@ export const CalendarWindow = () => {
                 <select
                   value={composerProjectId}
                   onChange={(e) => setComposerProjectId(e.target.value)}
-                  className="w-full h-9 pr-9 pl-2 text-sm border border-gray-200 rounded-md focus:outline-none focus:border-gray-400 bg-white appearance-none"
+                  className="h-9 w-full appearance-none rounded-md border border-gray-200 bg-white pl-2 pr-9 text-sm focus:border-gray-400 focus:outline-none"
                 >
                   <option value="">None</option>
                   {projects.map((project) => (
@@ -4744,7 +4742,7 @@ export const CalendarWindow = () => {
                 <select
                   value={composerNoteId}
                   onChange={(e) => setComposerNoteId(e.target.value)}
-                  className="w-full h-9 pr-9 pl-2 text-sm border border-gray-200 rounded-md focus:outline-none focus:border-gray-400 bg-white appearance-none"
+                  className="h-9 w-full appearance-none rounded-md border border-gray-200 bg-white pl-2 pr-9 text-sm focus:border-gray-400 focus:outline-none"
                 >
                   <option value="">None</option>
                   {notes.map((note) => (
@@ -4786,7 +4784,7 @@ export const CalendarWindow = () => {
                     }
                     setNewEventRecurrence(nextValue);
                   }}
-                  className="w-full h-9 pr-9 pl-2 text-sm border border-gray-200 rounded-md focus:outline-none focus:border-gray-400 bg-white appearance-none"
+                  className="h-9 w-full appearance-none rounded-md border border-gray-200 bg-white pl-2 pr-9 text-sm focus:border-gray-400 focus:outline-none"
                 >
                   <option value="none">Does not repeat</option>
                   <option value="daily">Daily</option>
@@ -4808,7 +4806,7 @@ export const CalendarWindow = () => {
             <div className="mt-4 flex justify-end gap-2">
               <button
                 onClick={() => setIsComposerOpen(false)}
-                className="px-3 py-2 text-xs font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-md"
+                className="rounded-md bg-gray-100 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-200"
               >
                 Cancel
               </button>
@@ -4820,7 +4818,7 @@ export const CalendarWindow = () => {
                   calendars.length === 0 ||
                   Boolean(specificDatesValidationMessage)
                 }
-                className="px-3 py-2 text-xs font-medium text-white bg-gray-900 hover:bg-gray-800 rounded-md disabled:opacity-60"
+                className="rounded-md bg-gray-900 px-3 py-2 text-xs font-medium text-white hover:bg-gray-800 disabled:opacity-60"
               >
                 {isSavingEvent
                   ? 'Saving...'
@@ -4830,18 +4828,27 @@ export const CalendarWindow = () => {
               </button>
             </div>
           </div>
-          </div>,
-          document.body
-        )}
+        </ModalOverlay>
+      )}
 
       <ModalOverlay
         isOpen={isSpecificDatesModalOpen}
         onClose={() => closeSpecificDatesPicker(true)}
+        backdropBorderRadius="inherit"
+        disablePortal
+        manageWindowChrome={false}
         classNameContainer="w-full max-w-[460px] rounded-2xl border border-gray-200 bg-white shadow-xl"
       >
-        <div className="border-b border-gray-100 px-5 py-4">
-          <h3 className="text-base font-semibold text-gray-900">Specific dates</h3>
-          <p className="mt-1 text-sm text-gray-600">Choose each date this should appear.</p>
+        <div className="flex items-start justify-between gap-4 border-b border-gray-100 px-5 py-4">
+          <div>
+            <h3 className="text-base font-semibold text-gray-900">Specific dates</h3>
+            <p className="mt-1 text-sm text-gray-600">Choose each date this should appear.</p>
+          </div>
+          <ModalCloseButton
+            onClick={() => closeSpecificDatesPicker(true)}
+            ariaLabel="Close specific dates modal"
+            className="shrink-0"
+          />
         </div>
 
         <div className="space-y-4 px-5 py-4">
@@ -4947,74 +4954,88 @@ export const CalendarWindow = () => {
         </div>
       </ModalOverlay>
 
-      {isNewCalendarModalOpen &&
-        createPortal(
-          <div
-            className="fixed inset-0 z-105 bg-black/20 flex items-start justify-center pt-24"
-            onMouseDown={() => setIsNewCalendarModalOpen(false)}
-          >
-          <div
-            className="w-96 rounded-xl border border-gray-200 bg-white shadow-xl p-4"
-            onMouseDown={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between mb-3">
+      {isNewCalendarModalOpen && (
+        <ModalOverlay
+          isOpen={isNewCalendarModalOpen}
+          onClose={() => {
+            if (!isCreatingCalendar) setIsNewCalendarModalOpen(false);
+          }}
+          closeOnBackdropClick={!isCreatingCalendar}
+          backdropBorderRadius="inherit"
+          disablePortal
+          manageWindowChrome={false}
+          classNameContainer="w-full max-w-[384px] overflow-hidden rounded-xl border border-gray-200 bg-white shadow-xl"
+        >
+          <div className="p-4">
+            <div className="mb-3 flex items-center justify-between">
               <h3 className="text-sm font-semibold text-gray-900">New Calendar</h3>
-              <button
-                onClick={() => setIsNewCalendarModalOpen(false)}
-                className="p-1 rounded hover:bg-gray-100"
-              >
-                <X size={14} className="text-gray-600" />
-              </button>
+              <ModalCloseButton
+                onClick={() => {
+                  if (!isCreatingCalendar) setIsNewCalendarModalOpen(false);
+                }}
+                ariaLabel="Close new calendar modal"
+                disabled={isCreatingCalendar}
+                className="shrink-0"
+              />
             </div>
             <div className="space-y-2.5">
               <input
                 value={newCalendarName}
                 onChange={(e) => setNewCalendarName(e.target.value)}
                 placeholder="Calendar name"
-                className="w-full h-9 px-3 text-sm border border-gray-200 rounded-md focus:outline-none focus:border-gray-400"
+                className="h-9 w-full rounded-md border border-gray-200 px-3 text-sm focus:border-gray-400 focus:outline-none"
               />
-              <label className="flex items-center justify-between border border-gray-200 rounded-md px-2.5 h-9">
+              <label className="flex h-9 items-center justify-between rounded-md border border-gray-200 px-2.5">
                 <span className="text-sm text-gray-700">Color</span>
                 <input
                   type="color"
                   value={newCalendarColor}
                   onChange={(e) => setNewCalendarColor(e.target.value)}
-                  className="h-6 w-8 p-0 border-0 bg-transparent cursor-pointer"
+                  className="h-6 w-8 cursor-pointer border-0 bg-transparent p-0"
                 />
               </label>
             </div>
             <div className="mt-4 flex justify-end gap-2">
               <button
                 onClick={() => setIsNewCalendarModalOpen(false)}
-                className="px-3 py-2 text-xs font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-md"
+                className="rounded-md bg-gray-100 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-200"
               >
                 Cancel
               </button>
               <button
                 onClick={() => void createNewCalendar()}
                 disabled={isCreatingCalendar || !newCalendarName.trim()}
-                className="px-3 py-2 text-xs font-medium text-white bg-gray-900 hover:bg-gray-800 rounded-md disabled:opacity-60"
+                className="rounded-md bg-gray-900 px-3 py-2 text-xs font-medium text-white hover:bg-gray-800 disabled:opacity-60"
               >
                 {isCreatingCalendar ? 'Creating...' : 'Create'}
               </button>
             </div>
           </div>
-          </div>,
-          document.body
-        )}
+        </ModalOverlay>
+      )}
 
       <ModalOverlay
         isOpen={isLinkProjectModalOpen}
         onClose={() => setIsLinkProjectModalOpen(false)}
+        backdropBorderRadius="inherit"
+        disablePortal
+        manageWindowChrome={false}
         classNameContainer="w-full max-w-xl rounded-2xl border border-gray-200 bg-white shadow-xl"
       >
-        <div className="border-b border-gray-100 px-5 py-4">
-          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500">
-            Link project
-          </p>
-          <p className="mt-1 text-base font-semibold text-gray-900">
-            Attach this event to a project
-          </p>
+        <div className="flex items-start justify-between gap-4 border-b border-gray-100 px-5 py-4">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500">
+              Link project
+            </p>
+            <p className="mt-1 text-base font-semibold text-gray-900">
+              Attach this event to a project
+            </p>
+          </div>
+          <ModalCloseButton
+            onClick={() => setIsLinkProjectModalOpen(false)}
+            ariaLabel="Close link project modal"
+            className="shrink-0"
+          />
         </div>
         <div className="space-y-3 p-5">
           <input
@@ -5054,7 +5075,7 @@ export const CalendarWindow = () => {
             onClick={() => setIsLinkProjectModalOpen(false)}
             className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
           >
-            Close
+            Cancel
           </button>
         </div>
       </ModalOverlay>
@@ -5062,15 +5083,25 @@ export const CalendarWindow = () => {
       <ModalOverlay
         isOpen={isLinkNoteModalOpen}
         onClose={() => setIsLinkNoteModalOpen(false)}
+        backdropBorderRadius="inherit"
+        disablePortal
+        manageWindowChrome={false}
         classNameContainer="w-full max-w-xl rounded-2xl border border-gray-200 bg-white shadow-xl"
       >
-        <div className="border-b border-gray-100 px-5 py-4">
-          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500">
-            Link note
-          </p>
-          <p className="mt-1 text-base font-semibold text-gray-900">
-            Attach this event to a note
-          </p>
+        <div className="flex items-start justify-between gap-4 border-b border-gray-100 px-5 py-4">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500">
+              Link note
+            </p>
+            <p className="mt-1 text-base font-semibold text-gray-900">
+              Attach this event to a note
+            </p>
+          </div>
+          <ModalCloseButton
+            onClick={() => setIsLinkNoteModalOpen(false)}
+            ariaLabel="Close link note modal"
+            className="shrink-0"
+          />
         </div>
         <div className="space-y-3 p-5">
           <input
@@ -5112,35 +5143,36 @@ export const CalendarWindow = () => {
             onClick={() => setIsLinkNoteModalOpen(false)}
             className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
           >
-            Close
+            Cancel
           </button>
         </div>
       </ModalOverlay>
 
-      {eventEditorEvent &&
-        createPortal(
-          <div
-            className="fixed inset-0 z-110 bg-black/20 flex items-start justify-center pt-20"
-            onMouseDown={() => {
-              setEventEditorEvent(null);
-              setConfirmDelete(false);
-            }}
-          >
-          <div
-            className="w-110 rounded-xl border border-gray-200 bg-white shadow-xl p-4"
-            onMouseDown={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between mb-3">
+      {eventEditorEvent && (
+        <ModalOverlay
+          isOpen={Boolean(eventEditorEvent)}
+          onClose={() => {
+            setEventEditorEvent(null);
+            setConfirmDelete(false);
+          }}
+          closeOnBackdropClick={!isSavingEdit && !isDeletingEvent}
+          backdropBorderRadius="inherit"
+          disablePortal
+          manageWindowChrome={false}
+          classNameContainer="w-full max-w-[440px] overflow-hidden rounded-xl border border-gray-200 bg-white shadow-xl"
+        >
+          <div className="p-4">
+            <div className="mb-3 flex items-center justify-between">
               <h3 className="text-sm font-semibold text-gray-900">Edit Event</h3>
-              <button
+              <ModalCloseButton
                 onClick={() => {
                   setEventEditorEvent(null);
                   setConfirmDelete(false);
                 }}
-                className="p-1 rounded hover:bg-gray-100"
-              >
-                <X size={14} className="text-gray-600" />
-              </button>
+                ariaLabel="Close event editor"
+                disabled={isSavingEdit || isDeletingEvent}
+                className="shrink-0"
+              />
             </div>
 
             <div className="space-y-2.5">
@@ -5148,20 +5180,20 @@ export const CalendarWindow = () => {
                 value={editTitle}
                 onChange={(e) => setEditTitle(e.target.value)}
                 placeholder="Event title"
-                className="w-full h-9 px-3 text-sm border border-gray-200 rounded-md focus:outline-none focus:border-gray-400"
+                className="h-9 w-full rounded-md border border-gray-200 px-3 text-sm focus:border-gray-400 focus:outline-none"
               />
               <div className="grid grid-cols-2 gap-2">
                 <input
                   type="date"
                   value={editDate}
                   onChange={(e) => setEditDate(e.target.value)}
-                  className="h-9 px-2 text-sm border border-gray-200 rounded-md focus:outline-none focus:border-gray-400"
+                  className="h-9 rounded-md border border-gray-200 px-2 text-sm focus:border-gray-400 focus:outline-none"
                 />
                 <input
                   type="time"
                   value={editTime}
                   onChange={(e) => setEditTime(e.target.value)}
-                  className="h-9 px-2 text-sm border border-gray-200 rounded-md focus:outline-none focus:border-gray-400"
+                  className="h-9 rounded-md border border-gray-200 px-2 text-sm focus:border-gray-400 focus:outline-none"
                 />
               </div>
               <div className="grid grid-cols-[1fr_92px] gap-2">
@@ -5171,13 +5203,13 @@ export const CalendarWindow = () => {
                   step="1"
                   value={editDurationValue}
                   onChange={(e) => setEditDurationValue(Number(e.target.value) || 1)}
-                  className="h-9 px-2 text-sm border border-gray-200 rounded-md focus:outline-none focus:border-gray-400"
+                  className="h-9 rounded-md border border-gray-200 px-2 text-sm focus:border-gray-400 focus:outline-none"
                 />
                 <div className="relative">
                   <select
                     value={editDurationUnit}
                     onChange={(e) => setEditDurationUnit(e.target.value as 'minutes' | 'hours')}
-                    className="w-full h-9 pr-8 pl-2 text-sm border border-gray-200 rounded-md focus:outline-none focus:border-gray-400 bg-white appearance-none"
+                    className="h-9 w-full appearance-none rounded-md border border-gray-200 bg-white pl-2 pr-8 text-sm focus:border-gray-400 focus:outline-none"
                   >
                     <option value="minutes">minutes</option>
                     <option value="hours">hours</option>
@@ -5194,7 +5226,7 @@ export const CalendarWindow = () => {
                   onChange={(e) =>
                     setEditStatus(e.target.value as 'planned' | 'done' | 'missed' | 'cancelled')
                   }
-                  className="w-full h-9 pr-9 pl-2 text-sm border border-gray-200 rounded-md focus:outline-none focus:border-gray-400 bg-white appearance-none"
+                  className="h-9 w-full appearance-none rounded-md border border-gray-200 bg-white pl-2 pr-9 text-sm focus:border-gray-400 focus:outline-none"
                 >
                   <option value="planned">Planned</option>
                   <option value="done">Done</option>
@@ -5209,10 +5241,8 @@ export const CalendarWindow = () => {
               <div className="relative">
                 <select
                   value={editVisibility}
-                  onChange={(e) =>
-                    setEditVisibility(e.target.value as 'private' | 'workspace')
-                  }
-                  className="w-full h-9 pr-9 pl-2 text-sm border border-gray-200 rounded-md focus:outline-none focus:border-gray-400 bg-white appearance-none"
+                  onChange={(e) => setEditVisibility(e.target.value as 'private' | 'workspace')}
+                  className="h-9 w-full appearance-none rounded-md border border-gray-200 bg-white pl-2 pr-9 text-sm focus:border-gray-400 focus:outline-none"
                 >
                   <option value="private">Private</option>
                   <option value="workspace">Workspace</option>
@@ -5226,7 +5256,7 @@ export const CalendarWindow = () => {
                 <select
                   value={editProjectId}
                   onChange={(e) => setEditProjectId(e.target.value)}
-                  className="w-full h-9 pr-9 pl-2 text-sm border border-gray-200 rounded-md focus:outline-none focus:border-gray-400 bg-white appearance-none"
+                  className="h-9 w-full appearance-none rounded-md border border-gray-200 bg-white pl-2 pr-9 text-sm focus:border-gray-400 focus:outline-none"
                 >
                   <option value="">None</option>
                   {projects.map((project) => (
@@ -5244,7 +5274,7 @@ export const CalendarWindow = () => {
                 <select
                   value={editNoteId}
                   onChange={(e) => setEditNoteId(e.target.value)}
-                  className="w-full h-9 pr-9 pl-2 text-sm border border-gray-200 rounded-md focus:outline-none focus:border-gray-400 bg-white appearance-none"
+                  className="h-9 w-full appearance-none rounded-md border border-gray-200 bg-white pl-2 pr-9 text-sm focus:border-gray-400 focus:outline-none"
                 >
                   <option value="">None</option>
                   {notes.map((note) => (
@@ -5266,7 +5296,7 @@ export const CalendarWindow = () => {
                       e.target.value as 'none' | 'daily' | 'weekly' | 'monthly' | 'weekdays'
                     )
                   }
-                  className="w-full h-9 pr-9 pl-2 text-sm border border-gray-200 rounded-md focus:outline-none focus:border-gray-400 bg-white appearance-none"
+                  className="h-9 w-full appearance-none rounded-md border border-gray-200 bg-white pl-2 pr-9 text-sm focus:border-gray-400 focus:outline-none"
                 >
                   <option value="none">Does not repeat</option>
                   <option value="daily">Daily</option>
@@ -5283,7 +5313,7 @@ export const CalendarWindow = () => {
                 <select
                   value={editCalendarId}
                   onChange={(e) => setEditCalendarId(e.target.value)}
-                  className="w-full h-9 pr-9 pl-2 text-sm border border-gray-200 rounded-md focus:outline-none focus:border-gray-400 bg-white appearance-none"
+                  className="h-9 w-full appearance-none rounded-md border border-gray-200 bg-white pl-2 pr-9 text-sm focus:border-gray-400 focus:outline-none"
                 >
                   {calendars.map((calendar) => (
                     <option key={calendar.id} value={calendar.id}>
@@ -5292,7 +5322,7 @@ export const CalendarWindow = () => {
                   ))}
                 </select>
                 <span
-                  className="pointer-events-none absolute right-8 top-1/2 -translate-y-1/2 h-3.5 w-3.5 rounded-full border border-gray-200"
+                  className="pointer-events-none absolute right-8 top-1/2 h-3.5 w-3.5 -translate-y-1/2 rounded-full border border-gray-200"
                   style={{ backgroundColor: calendarById.get(editCalendarId)?.color ?? editColor }}
                 />
                 <ChevronDown
@@ -5307,7 +5337,7 @@ export const CalendarWindow = () => {
                 {!confirmDelete ? (
                   <button
                     onClick={() => setConfirmDelete(true)}
-                    className="px-3 py-2 text-xs font-medium text-red-700 bg-red-50 hover:bg-red-100 rounded-md"
+                    className="rounded-md bg-red-50 px-3 py-2 text-xs font-medium text-red-700 hover:bg-red-100"
                   >
                     Delete
                   </button>
@@ -5315,14 +5345,14 @@ export const CalendarWindow = () => {
                   <div className="flex items-center gap-1.5">
                     <button
                       onClick={() => setConfirmDelete(false)}
-                      className="px-2.5 py-2 text-xs text-gray-700 bg-gray-100 rounded-md"
+                      className="rounded-md bg-gray-100 px-2.5 py-2 text-xs text-gray-700"
                     >
                       Cancel
                     </button>
                     <button
                       onClick={() => void deleteEvent()}
                       disabled={isDeletingEvent}
-                      className="px-2.5 py-2 text-xs text-white bg-red-600 hover:bg-red-700 rounded-md disabled:opacity-60"
+                      className="rounded-md bg-red-600 px-2.5 py-2 text-xs text-white hover:bg-red-700 disabled:opacity-60"
                     >
                       {isDeletingEvent ? 'Deleting...' : 'Confirm'}
                     </button>
@@ -5336,42 +5366,42 @@ export const CalendarWindow = () => {
                     setEventEditorEvent(null);
                     setConfirmDelete(false);
                   }}
-                  className="px-3 py-2 text-xs font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-md"
+                  className="rounded-md bg-gray-100 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-200"
                 >
-                  Close
+                  Cancel
                 </button>
                 <button
                   onClick={() => void saveEventEdits()}
                   disabled={isSavingEdit || !editTitle.trim()}
-                  className="px-3 py-2 text-xs font-medium text-white bg-gray-900 hover:bg-gray-800 rounded-md disabled:opacity-60"
+                  className="rounded-md bg-gray-900 px-3 py-2 text-xs font-medium text-white hover:bg-gray-800 disabled:opacity-60"
                 >
                   {isSavingEdit ? 'Saving...' : 'Save'}
                 </button>
               </div>
             </div>
           </div>
-          </div>,
-          document.body
-        )}
+        </ModalOverlay>
+      )}
 
-      {selectedReminder &&
-        createPortal(
-          <div
-            className="fixed inset-0 z-112 bg-black/20 flex items-start justify-center pt-20"
-            onMouseDown={() => setSelectedReminder(null)}
-          >
-          <div
-            className="w-110 rounded-xl border border-gray-200 bg-white shadow-xl p-4"
-            onMouseDown={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between mb-3">
+      {selectedReminder && (
+        <ModalOverlay
+          isOpen={Boolean(selectedReminder)}
+          onClose={() => setSelectedReminder(null)}
+          closeOnBackdropClick={!isSavingEdit && !isDeletingReminder}
+          backdropBorderRadius="inherit"
+          disablePortal
+          manageWindowChrome={false}
+          classNameContainer="w-full max-w-[440px] overflow-hidden rounded-xl border border-gray-200 bg-white shadow-xl"
+        >
+          <div className="p-4">
+            <div className="mb-3 flex items-center justify-between">
               <h3 className="text-sm font-semibold text-gray-900">Edit Reminder</h3>
-              <button
+              <ModalCloseButton
                 onClick={() => setSelectedReminder(null)}
-                className="p-1 rounded hover:bg-gray-100"
-              >
-                <X size={14} className="text-gray-600" />
-              </button>
+                ariaLabel="Close reminder editor"
+                disabled={isSavingEdit || isDeletingReminder}
+                className="shrink-0"
+              />
             </div>
 
             <div className="space-y-2.5">
@@ -5379,23 +5409,23 @@ export const CalendarWindow = () => {
                 value={reminderEditTitle}
                 onChange={(e) => setReminderEditTitle(e.target.value)}
                 placeholder="Reminder title"
-                className="w-full h-9 px-3 text-sm border border-gray-200 rounded-md focus:outline-none focus:border-gray-400"
+                className="h-9 w-full rounded-md border border-gray-200 px-3 text-sm focus:border-gray-400 focus:outline-none"
               />
               <div className="grid grid-cols-2 gap-2">
                 <input
                   type="date"
                   value={reminderEditDate}
                   onChange={(e) => setReminderEditDate(e.target.value)}
-                  className="h-9 px-2 text-sm border border-gray-200 rounded-md focus:outline-none focus:border-gray-400"
+                  className="h-9 rounded-md border border-gray-200 px-2 text-sm focus:border-gray-400 focus:outline-none"
                 />
                 <input
                   type="time"
                   value={reminderEditTime}
                   onChange={(e) => setReminderEditTime(e.target.value)}
-                  className="h-9 px-2 text-sm border border-gray-200 rounded-md focus:outline-none focus:border-gray-400"
+                  className="h-9 rounded-md border border-gray-200 px-2 text-sm focus:border-gray-400 focus:outline-none"
                 />
               </div>
-              <label className="flex items-center justify-between border border-gray-200 rounded-md px-2.5 h-9">
+              <label className="flex h-9 items-center justify-between rounded-md border border-gray-200 px-2.5">
                 <span className="text-sm text-gray-700">Done</span>
                 <input
                   type="checkbox"
@@ -5412,7 +5442,8 @@ export const CalendarWindow = () => {
                         key={option.label}
                         type="button"
                         onClick={() =>
-                          selectedReminder && void snoozeReminderByMinutes(selectedReminder, option.minutes)
+                          selectedReminder &&
+                          void snoozeReminderByMinutes(selectedReminder, option.minutes)
                         }
                         className="rounded-md border border-gray-200 bg-white px-2.5 py-1.5 text-[11px] font-medium text-gray-700 hover:bg-gray-50"
                       >
@@ -5426,7 +5457,7 @@ export const CalendarWindow = () => {
                 <select
                   value={reminderEditCalendarId}
                   onChange={(e) => setReminderEditCalendarId(e.target.value)}
-                  className="w-full h-9 pr-9 pl-2 text-sm border border-gray-200 rounded-md focus:outline-none focus:border-gray-400 bg-white appearance-none"
+                  className="h-9 w-full appearance-none rounded-md border border-gray-200 bg-white pl-2 pr-9 text-sm focus:border-gray-400 focus:outline-none"
                 >
                   {calendars.map((calendar) => (
                     <option key={calendar.id} value={calendar.id}>
@@ -5435,7 +5466,7 @@ export const CalendarWindow = () => {
                   ))}
                 </select>
                 <span
-                  className="pointer-events-none absolute right-8 top-1/2 -translate-y-1/2 h-3.5 w-3.5 rounded-full border border-gray-200"
+                  className="pointer-events-none absolute right-8 top-1/2 h-3.5 w-3.5 -translate-y-1/2 rounded-full border border-gray-200"
                   style={{
                     backgroundColor:
                       calendarById.get(reminderEditCalendarId)?.color ?? reminderEditColor,
@@ -5452,42 +5483,41 @@ export const CalendarWindow = () => {
               <button
                 onClick={() => void deleteReminderFromEditor()}
                 disabled={isDeletingReminder}
-                className="px-3 py-2 text-xs font-medium text-red-700 bg-red-50 hover:bg-red-100 rounded-md disabled:opacity-60"
+                className="rounded-md bg-red-50 px-3 py-2 text-xs font-medium text-red-700 hover:bg-red-100 disabled:opacity-60"
               >
                 {isDeletingReminder ? 'Deleting...' : 'Delete'}
               </button>
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => setSelectedReminder(null)}
-                  className="px-3 py-2 text-xs font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-md"
+                  className="rounded-md bg-gray-100 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-200"
                 >
-                  Close
+                  Cancel
                 </button>
                 <button
                   onClick={() => void saveReminderEdits()}
                   disabled={isSavingEdit || !reminderEditTitle.trim()}
-                  className="px-3 py-2 text-xs font-medium text-white bg-gray-900 hover:bg-gray-800 rounded-md disabled:opacity-60"
+                  className="rounded-md bg-gray-900 px-3 py-2 text-xs font-medium text-white hover:bg-gray-800 disabled:opacity-60"
                 >
                   {isSavingEdit ? 'Saving...' : 'Save'}
                 </button>
               </div>
             </div>
           </div>
-          </div>,
-          document.body
-        )}
+        </ModalOverlay>
+      )}
 
-      {overflowDayKey &&
-        createPortal(
-          <div
-            className="fixed inset-0 z-111 bg-black/20 flex items-start justify-center pt-20"
-            onMouseDown={() => setOverflowDayKey(null)}
-          >
-          <div
-            className="w-130 max-h-[72vh] rounded-xl border border-gray-200 bg-white shadow-xl p-4 overflow-auto"
-            onMouseDown={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between mb-3">
+      {overflowDayKey && (
+        <ModalOverlay
+          isOpen={Boolean(overflowDayKey)}
+          onClose={() => setOverflowDayKey(null)}
+          backdropBorderRadius="inherit"
+          disablePortal
+          manageWindowChrome={false}
+          classNameContainer="w-full max-w-[520px] max-h-[72vh] overflow-hidden rounded-xl border border-gray-200 bg-white shadow-xl"
+        >
+          <div className="max-h-[72vh] overflow-auto p-4">
+            <div className="mb-3 flex items-center justify-between">
               <h3 className="text-sm font-semibold text-gray-900">
                 {parseDateKey(overflowDayKey).toLocaleDateString([], {
                   weekday: 'long',
@@ -5495,19 +5525,16 @@ export const CalendarWindow = () => {
                   day: 'numeric',
                 })}
               </h3>
-              <button
+              <ModalCloseButton
                 onClick={() => setOverflowDayKey(null)}
-                className="p-1 rounded hover:bg-gray-100"
-              >
-                <X size={14} className="text-gray-600" />
-              </button>
+                ariaLabel="Close overflow day modal"
+                className="shrink-0"
+              />
             </div>
 
             <div className="space-y-4">
               <div>
-                <p className="mb-2 text-xs font-medium text-gray-500">
-                  Reminders
-                </p>
+                <p className="mb-2 text-xs font-medium text-gray-500">Reminders</p>
                 <div className="space-y-1.5">
                   {overflowReminders.length === 0 && (
                     <p className="text-xs text-gray-500">No reminders.</p>
@@ -5516,7 +5543,7 @@ export const CalendarWindow = () => {
                     <button
                       key={reminder.id}
                       onClick={() => openReminderEditor(reminder)}
-                      className="w-full text-left rounded-md border border-amber-100 bg-amber-50 px-2.5 py-2 text-xs text-gray-800"
+                      className="w-full rounded-md border border-amber-100 bg-amber-50 px-2.5 py-2 text-left text-xs text-gray-800"
                     >
                       <span className="font-medium">{reminder.title}</span>
                       <span className="ml-2 text-gray-600">
@@ -5531,9 +5558,7 @@ export const CalendarWindow = () => {
               </div>
 
               <div>
-                <p className="mb-2 text-xs font-medium text-gray-500">
-                  Events
-                </p>
+                <p className="mb-2 text-xs font-medium text-gray-500">Events</p>
                 <div className="space-y-1.5">
                   {overflowEvents.length === 0 && (
                     <p className="text-xs text-gray-500">No events.</p>
@@ -5542,25 +5567,22 @@ export const CalendarWindow = () => {
                     <button
                       key={event.id}
                       onClick={() => setSelectedEvent(event)}
-                      className={`w-full text-left rounded-md border px-2.5 py-2 text-xs text-gray-800 ${
+                      className={`w-full rounded-md border px-2.5 py-2 text-left text-xs text-gray-800 ${
                         selectedEventPreview?.id === event.id
                           ? 'border-gray-400 bg-gray-100'
                           : 'border-gray-200 bg-gray-50'
                       }`}
-                      >
+                    >
                       <span className="font-medium">{event.title}</span>
-                      <span className="ml-2 text-gray-600">
-                        {formatEventTimeLabel(event)}
-                      </span>
+                      <span className="ml-2 text-gray-600">{formatEventTimeLabel(event)}</span>
                     </button>
                   ))}
                 </div>
               </div>
             </div>
           </div>
-          </div>,
-          document.body
-        )}
+        </ModalOverlay>
+      )}
 
       {contextMenu && (
         <div
@@ -5702,14 +5724,11 @@ export const CalendarWindow = () => {
             <p className="text-xs font-medium text-gray-500">
               Calendar Color
             </p>
-            <button
-              type="button"
+            <ModalCloseButton
               onClick={() => setCalendarColorMenu(null)}
-              className="h-6 w-6 rounded-full border border-gray-200 bg-white text-gray-500 hover:bg-gray-100 flex items-center justify-center"
-              title="Close"
-            >
-              <X size={12} />
-            </button>
+              ariaLabel="Close calendar color menu"
+              className="h-6 w-6 rounded-full"
+            />
           </div>
           <div className="grid grid-cols-6 gap-2">
             {[
