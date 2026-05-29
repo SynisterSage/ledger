@@ -2095,6 +2095,9 @@ public static class LedgerDockTracker {
   [DllImport("user32.dll")]
   private static extern bool GetWindowRect(IntPtr hWnd, out RECT rect);
 
+  [DllImport("dwmapi.dll")]
+  private static extern int DwmGetWindowAttribute(IntPtr hwnd, int dwAttribute, out RECT pvAttribute, int cbAttribute);
+
   [DllImport("user32.dll")]
   private static extern bool IsWindow(IntPtr hWnd);
 
@@ -2116,6 +2119,14 @@ public static class LedgerDockTracker {
     public RECT rcMonitor;
     public RECT rcWork;
     public uint dwFlags;
+  }
+
+  private static bool TryGetWindowBounds(IntPtr hwnd, out RECT rect) {
+    const int DWMWA_EXTENDED_FRAME_BOUNDS = 9;
+    if (DwmGetWindowAttribute(hwnd, DWMWA_EXTENDED_FRAME_BOUNDS, out rect, Marshal.SizeOf(typeof(RECT))) == 0) {
+      return true;
+    }
+    return GetWindowRect(hwnd, out rect);
   }
 
   public static void EnableDpiAwareness() {
@@ -2167,7 +2178,7 @@ public static class LedgerDockTracker {
     }
 
     RECT rect;
-    if (!GetWindowRect(targetHwnd, out rect)) return;
+    if (!TryGetWindowBounds(targetHwnd, out rect)) return;
     if (IsFullscreenLike(rect)) {
       Console.Out.WriteLine("state|fullscreen");
       Console.Out.Flush();
@@ -2375,6 +2386,8 @@ public class Win32 {
   public static extern bool IsIconic(IntPtr hWnd);
   [DllImport("user32.dll")]
   public static extern bool GetWindowRect(IntPtr hWnd, out RECT rect);
+  [DllImport("dwmapi.dll")]
+  public static extern int DwmGetWindowAttribute(IntPtr hwnd, int dwAttribute, out RECT pvAttribute, int cbAttribute);
   [DllImport("user32.dll")]
   public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out int lpdwProcessId);
   [DllImport("user32.dll")]
@@ -2386,6 +2399,13 @@ public class Win32 {
     public int Top;
     public int Right;
     public int Bottom;
+  }
+  public static bool TryGetWindowBounds(IntPtr hWnd, out RECT rect) {
+    const int DWMWA_EXTENDED_FRAME_BOUNDS = 9;
+    if (DwmGetWindowAttribute(hWnd, DWMWA_EXTENDED_FRAME_BOUNDS, out rect, System.Runtime.InteropServices.Marshal.SizeOf(typeof(RECT))) == 0) {
+      return true;
+    }
+    return GetWindowRect(hWnd, out rect);
   }
 }
 "@
@@ -2404,7 +2424,7 @@ $script:bestScore = [Double]::PositiveInfinity
   if (-not [Win32]::IsWindowVisible($hWnd)) { return $true }
   if ([Win32]::IsIconic($hWnd)) { return $true }
   $rect = [Win32+RECT]::new()
-  if (-not [Win32]::GetWindowRect($hWnd, [ref]$rect)) { return $true }
+  if (-not [Win32]::TryGetWindowBounds($hWnd, [ref]$rect)) { return $true }
   $width = $rect.Right - $rect.Left
   $height = $rect.Bottom - $rect.Top
   $windowProcessId = 0
@@ -2535,6 +2555,8 @@ public class Win32 {
   public static extern bool IsIconic(IntPtr hWnd);
   [DllImport("user32.dll")]
   public static extern bool GetWindowRect(IntPtr hWnd, out RECT rect);
+  [DllImport("dwmapi.dll")]
+  public static extern int DwmGetWindowAttribute(IntPtr hwnd, int dwAttribute, out RECT pvAttribute, int cbAttribute);
   [DllImport("user32.dll")]
   public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out int lpdwProcessId);
   [DllImport("user32.dll")]
@@ -2546,6 +2568,13 @@ public class Win32 {
     public int Top;
     public int Right;
     public int Bottom;
+  }
+  public static bool TryGetWindowBounds(IntPtr hWnd, out RECT rect) {
+    const int DWMWA_EXTENDED_FRAME_BOUNDS = 9;
+    if (DwmGetWindowAttribute(hWnd, DWMWA_EXTENDED_FRAME_BOUNDS, out rect, System.Runtime.InteropServices.Marshal.SizeOf(typeof(RECT))) == 0) {
+      return true;
+    }
+    return GetWindowRect(hWnd, out rect);
   }
   [StructLayout(LayoutKind.Sequential)]
   public struct POINT {
@@ -2570,7 +2599,7 @@ $script:result = $null
   if (-not [Win32]::IsWindowVisible($hWnd)) { return $true }
   if ([Win32]::IsIconic($hWnd)) { return $true }
   $rect = [Win32+RECT]::new()
-  if (-not [Win32]::GetWindowRect($hWnd, [ref]$rect)) { return $true }
+  if (-not [Win32]::TryGetWindowBounds($hWnd, [ref]$rect)) { return $true }
   $width = $rect.Right - $rect.Left
   $height = $rect.Bottom - $rect.Top
   $windowProcessId = 0
