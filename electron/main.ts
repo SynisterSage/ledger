@@ -1404,12 +1404,7 @@ function getDisplayMatchingNativeRect(rect: Rect) {
   let bestOverlap = -1;
 
   for (const display of displays) {
-    const physicalBounds = {
-      x: display.bounds.x * display.scaleFactor,
-      y: display.bounds.y * display.scaleFactor,
-      width: display.bounds.width * display.scaleFactor,
-      height: display.bounds.height * display.scaleFactor,
-    };
+    const physicalBounds = getDisplayNativeBounds(display);
 
     const overlapWidth = Math.max(
       0,
@@ -1432,15 +1427,38 @@ function getDisplayMatchingNativeRect(rect: Rect) {
   return bestDisplay;
 }
 
-function nativeRectToDipRect(rect: Rect) {
+function getDisplayNativeBounds(display: Electron.Display) {
   if (process.platform === 'win32') {
-    return screen.screenToDipRect(sidebarWin && !sidebarWin.isDestroyed() ? sidebarWin : null, rect);
+    const topLeft = screen.dipToScreenPoint({
+      x: display.bounds.x,
+      y: display.bounds.y,
+    });
+    const bottomRight = screen.dipToScreenPoint({
+      x: display.bounds.x + display.bounds.width,
+      y: display.bounds.y + display.bounds.height,
+    });
+    return {
+      x: topLeft.x,
+      y: topLeft.y,
+      width: bottomRight.x - topLeft.x,
+      height: bottomRight.y - topLeft.y,
+    };
   }
 
-  const display = getDisplayMatchingNativeRect(rect);
   return {
-    x: Math.round(rect.x / display.scaleFactor),
-    y: Math.round(rect.y / display.scaleFactor),
+    x: display.bounds.x * display.scaleFactor,
+    y: display.bounds.y * display.scaleFactor,
+    width: display.bounds.width * display.scaleFactor,
+    height: display.bounds.height * display.scaleFactor,
+  };
+}
+
+function nativeRectToDipRect(rect: Rect) {
+  const display = getDisplayMatchingNativeRect(rect);
+  const nativeBounds = getDisplayNativeBounds(display);
+  return {
+    x: Math.round(display.bounds.x + (rect.x - nativeBounds.x) / display.scaleFactor),
+    y: Math.round(display.bounds.y + (rect.y - nativeBounds.y) / display.scaleFactor),
     width: Math.max(1, Math.round(rect.width / display.scaleFactor)),
     height: Math.max(1, Math.round(rect.height / display.scaleFactor)),
   };
@@ -1456,7 +1474,17 @@ function dipPointToNativePoint(point: Electron.Point) {
 
 function dipRectToNativeRect(rect: Electron.Rectangle) {
   if (process.platform === 'win32') {
-    return screen.dipToScreenRect(sidebarWin && !sidebarWin.isDestroyed() ? sidebarWin : null, rect);
+    const topLeft = screen.dipToScreenPoint({ x: rect.x, y: rect.y });
+    const bottomRight = screen.dipToScreenPoint({
+      x: rect.x + rect.width,
+      y: rect.y + rect.height,
+    });
+    return {
+      x: topLeft.x,
+      y: topLeft.y,
+      width: Math.max(1, bottomRight.x - topLeft.x),
+      height: Math.max(1, bottomRight.y - topLeft.y),
+    };
   }
 
   return rect;
