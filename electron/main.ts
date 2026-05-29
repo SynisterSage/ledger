@@ -2079,12 +2079,21 @@ public static class LedgerDockTracker {
   [DllImport("user32.dll")]
   private static extern bool GetMonitorInfo(IntPtr hMonitor, ref MONITORINFO lpmi);
 
+  [DllImport("user32.dll")]
+  private static extern bool SetProcessDpiAwarenessContext(IntPtr dpiContext);
+
   [StructLayout(LayoutKind.Sequential)]
   public struct MONITORINFO {
     public int cbSize;
     public RECT rcMonitor;
     public RECT rcWork;
     public uint dwFlags;
+  }
+
+  public static void EnableDpiAwareness() {
+    try {
+      SetProcessDpiAwarenessContext(new IntPtr(-4));
+    } catch {}
   }
 
   public static void Start(long hwndValue) {
@@ -2160,6 +2169,7 @@ public static class LedgerDockTracker {
   }
 }
 "@
+[LedgerDockTracker]::EnableDpiAwareness()
 [LedgerDockTracker]::Start([Int64]${target.id})
 `;
 
@@ -2339,6 +2349,8 @@ public class Win32 {
   public static extern bool GetWindowRect(IntPtr hWnd, out RECT rect);
   [DllImport("user32.dll")]
   public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out int lpdwProcessId);
+  [DllImport("user32.dll")]
+  public static extern bool SetProcessDpiAwarenessContext(IntPtr dpiContext);
   public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
   [StructLayout(LayoutKind.Sequential)]
   public struct RECT {
@@ -2349,6 +2361,7 @@ public class Win32 {
   }
 }
 "@
+try { [Win32]::SetProcessDpiAwarenessContext([IntPtr](-4)) | Out-Null } catch {}
 $sidebarLeft = ${Math.floor(nativeSidebarBounds.x)}
 $sidebarTop = ${Math.floor(nativeSidebarBounds.y)}
 $sidebarRight = ${Math.floor(nativeSidebarBounds.x + nativeSidebarBounds.width)}
@@ -2496,6 +2509,8 @@ public class Win32 {
   public static extern bool GetWindowRect(IntPtr hWnd, out RECT rect);
   [DllImport("user32.dll")]
   public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out int lpdwProcessId);
+  [DllImport("user32.dll")]
+  public static extern bool SetProcessDpiAwarenessContext(IntPtr dpiContext);
   public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
   [StructLayout(LayoutKind.Sequential)]
   public struct RECT {
@@ -2511,6 +2526,7 @@ public class Win32 {
   }
 }
 "@
+try { [Win32]::SetProcessDpiAwarenessContext([IntPtr](-4)) | Out-Null } catch {}
 $sidebarLeft = ${Math.floor(nativeSidebarBounds.x)}
 $sidebarTop = ${Math.floor(nativeSidebarBounds.y)}
 $sidebarWidth = ${Math.floor(nativeSidebarBounds.width)}
