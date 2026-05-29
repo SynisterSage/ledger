@@ -691,6 +691,12 @@ let floatingDockDragActive = false;
 let floatingDockTrackingTimer: NodeJS.Timeout | null = null;
 let floatingDockNativeTracker: ChildProcessWithoutNullStreams | null = null;
 let floatingDockNativeBuffer = '';
+let floatingDragStart:
+  | {
+      cursor: Electron.Point;
+      bounds: Electron.Rectangle;
+    }
+  | null = null;
 let sidebarIsVisible = true;
 let sidebarAlwaysOnTop = true;
 let macAccessibilityPrompted = false;
@@ -1428,7 +1434,7 @@ function getDisplayMatchingNativeRect(rect: Rect) {
 
 function nativeRectToDipRect(rect: Rect) {
   if (process.platform === 'win32') {
-    return screen.screenToDipRect(null, rect);
+    return screen.screenToDipRect(sidebarWin && !sidebarWin.isDestroyed() ? sidebarWin : null, rect);
   }
 
   const display = getDisplayMatchingNativeRect(rect);
@@ -1450,7 +1456,7 @@ function dipPointToNativePoint(point: Electron.Point) {
 
 function dipRectToNativeRect(rect: Electron.Rectangle) {
   if (process.platform === 'win32') {
-    return screen.dipToScreenRect(null, rect);
+    return screen.dipToScreenRect(sidebarWin && !sidebarWin.isDestroyed() ? sidebarWin : null, rect);
   }
 
   return rect;
@@ -3571,18 +3577,43 @@ ipcMain.handle('window:begin-floating-drag', () => {
   clearCurrentFloatingDockTarget();
   stopFloatingDockTracking();
 
-  // Return the actual current bounds so React can calculate delta correctly
+  // Main process owns drag deltas so Windows stays in Electron's DIP coordinate space.
   if (!sidebarWin || sidebarWin.isDestroyed()) return { x: 0, y: 0 };
   const bounds = sidebarWin.getBounds();
+  floatingDragStart = {
+    cursor: screen.getCursorScreenPoint(),
+    bounds,
+  };
   return { x: bounds.x, y: bounds.y };
 });
 
+ipcMain.handle('window:update-floating-drag', () => {
+  if (!sidebarWin || sidebarWin.isDestroyed()) return null;
+  if (!floatingDragStart) return sidebarWin.getBounds();
+  if (currentSidebarPosition !== 'floating') return sidebarWin.getBounds();
+  if (currentSidebarMode === 'auth' || currentSidebarMode === 'fullscreen') {
+    return sidebarWin.getBounds();
+  }
+
+  const cursor = screen.getCursorScreenPoint();
+  const nextPosition = {
+    x: floatingDragStart.bounds.x + cursor.x - floatingDragStart.cursor.x,
+    y: floatingDragStart.bounds.y + cursor.y - floatingDragStart.cursor.y,
+  };
+
+  currentFloatingPosition = nextPosition;
+  sidebarWin.setPosition(nextPosition.x, nextPosition.y, false);
+  return sidebarWin.getBounds();
+});
+
 ipcMain.handle('window:dock-floating-window', async () => {
+  floatingDragStart = null;
   return dockFloatingSidebarToTarget();
 });
 
 ipcMain.handle('window:detach-floating-window', () => {
   floatingDockDragActive = false;
+  floatingDragStart = null;
   clearCurrentFloatingDockTarget();
   stopFloatingDockTracking();
   return null;

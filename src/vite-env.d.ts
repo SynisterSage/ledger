@@ -44,6 +44,12 @@ interface Window {
     setAlwaysOnTop: (alwaysOnTop: boolean) => Promise<void>;
     setFloatingPosition: (position: { x: number; y: number }) => Promise<void>;
     beginFloatingDrag: () => Promise<{ x: number; y: number }>;
+    updateFloatingDrag: () => Promise<{
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+    } | null>;
     applySidebarPreferences: (preferences: {
       position?: 'right' | 'left' | 'top' | 'bottom' | 'floating';
       opacity?: number;

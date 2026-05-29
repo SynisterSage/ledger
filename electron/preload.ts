@@ -65,6 +65,14 @@ contextBridge.exposeInMainWorld('desktopWindow', {
   beginFloatingDrag() {
     return ipcRenderer.invoke('window:begin-floating-drag') as Promise<{ x: number; y: number }>;
   },
+  updateFloatingDrag() {
+    return ipcRenderer.invoke('window:update-floating-drag') as Promise<{
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+    } | null>;
+  },
   applySidebarPreferences(preferences: {
     position?: 'right' | 'left' | 'top' | 'bottom' | 'floating';
     opacity?: number;

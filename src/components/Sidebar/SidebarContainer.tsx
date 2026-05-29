@@ -262,17 +262,8 @@ export const SidebarContainer = () => {
   // Floating mode drag handling - ONLY for ExpandedSidebar header
   const [isDragging, setIsDragging] = useState(false);
   const dragStateRef = useRef<{
-    startScreenX: number;
-    startScreenY: number;
-    startLeft: number;
-    startTop: number;
     currentPosition: { x: number; y: number };
   } | null>(null);
-  const moveFloatingWindow = (nextPosition: { x: number; y: number }) => {
-    void window.desktopWindow?.setFloatingPosition(nextPosition).catch(() => {
-      // No-op outside Electron
-    });
-  };
 
   // Reset dragging state when floating mode is disabled
   useEffect(() => {
@@ -296,10 +287,6 @@ export const SidebarContainer = () => {
     }
 
     dragStateRef.current = {
-      startScreenX: e.screenX,
-      startScreenY: e.screenY,
-      startLeft: (actualPos as { x: number; y: number }).x,
-      startTop: (actualPos as { x: number; y: number }).y,
       currentPosition: {
         x: (actualPos as { x: number; y: number }).x,
         y: (actualPos as { x: number; y: number }).y,
@@ -312,21 +299,19 @@ export const SidebarContainer = () => {
   useEffect(() => {
     if (!isDragging || !isFloating) return;
 
-    const handleMove = (moveEvent: MouseEvent) => {
+    const handleMove = () => {
       const state = dragStateRef.current;
       if (!state) return;
 
-      const dx = moveEvent.screenX - state.startScreenX;
-      const dy = moveEvent.screenY - state.startScreenY;
-
-      const nextPosition = {
-        x: state.startLeft + dx,
-        y: state.startTop + dy,
-      };
-
-      state.currentPosition = nextPosition;
-
-      moveFloatingWindow(nextPosition);
+      void window.desktopWindow
+        ?.updateFloatingDrag()
+        .then((bounds) => {
+          if (!bounds || !dragStateRef.current) return;
+          dragStateRef.current.currentPosition = { x: bounds.x, y: bounds.y };
+        })
+        .catch(() => {
+          // No-op outside Electron.
+        });
     };
 
     const handleUp = async () => {
