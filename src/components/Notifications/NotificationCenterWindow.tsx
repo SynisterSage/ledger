@@ -21,6 +21,84 @@ type NotificationCenterItem = {
   status: 'active' | 'earlier';
 };
 
+const isGenericTitle = (title: string | null | undefined, sourceType: NotificationCenterItem['sourceType']) => {
+  const normalized = String(title ?? '').trim().toLowerCase();
+  if (!normalized) return true;
+
+  if (sourceType === 'event') return /^event(?:\s*(?:soon|starting))?$/.test(normalized);
+  if (sourceType === 'reminder') return /^reminder(?:\s*due)?$/.test(normalized);
+  if (sourceType === 'task') return /^task(?:\s*due)?$/.test(normalized);
+  if (sourceType === 'project') return /^project(?:\s*deadline)?$/.test(normalized);
+  if (sourceType === 'inbox') return /^inbox(?:\s*capture)?$/.test(normalized);
+
+  return false;
+};
+
+const parseNotificationDate = (isoLike: string) => {
+  const parsed = new Date(isoLike);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
+
+const formatNotificationDate = (date: Date) =>
+  date.toLocaleDateString([], {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+  });
+
+const formatNotificationTime = (date: Date) =>
+  date.toLocaleTimeString([], {
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+
+const formatNotificationDateTime = (date: Date) => `${formatNotificationDate(date)} at ${formatNotificationTime(date)}`;
+
+const sourceLabel = (item: NotificationCenterItem) => {
+  if (item.sourceType === 'event') return 'Event';
+  if (item.sourceType === 'reminder') return 'Reminder';
+  if (item.sourceType === 'task') return item.notificationType === 'overdue_item' ? 'Overdue task' : 'Task';
+  if (item.sourceType === 'project') return item.notificationType === 'overdue_item' ? 'Overdue project' : 'Project';
+  return 'Inbox';
+};
+
+const defaultTitle = (item: NotificationCenterItem) => {
+  if (item.sourceType === 'event') return 'Upcoming event';
+  if (item.sourceType === 'reminder') return 'Reminder due';
+  if (item.sourceType === 'task') return item.notificationType === 'overdue_item' ? 'Task overdue' : 'Task due';
+  if (item.sourceType === 'project') return item.notificationType === 'overdue_item' ? 'Project overdue' : 'Project deadline';
+  return 'Inbox capture';
+};
+
+const fallbackBody = (item: NotificationCenterItem, scheduledAt: Date | null) => {
+  if (!scheduledAt) return null;
+  const when = formatNotificationDateTime(scheduledAt);
+
+  if (item.sourceType === 'event') return `Starts ${when}`;
+  if (item.sourceType === 'reminder') return `Due ${when}`;
+  if (item.sourceType === 'task') return item.notificationType === 'overdue_item' ? `Overdue since ${when}` : `Due ${when}`;
+  if (item.sourceType === 'project')
+    return item.notificationType === 'overdue_item' ? `Deadline passed ${when}` : `Deadline ${when}`;
+
+  return `Captured ${when}`;
+};
+
+const getDisplayData = (item: NotificationCenterItem) => {
+  const scheduledAt = parseNotificationDate(item.scheduledFor);
+  const title = !isGenericTitle(item.title, item.sourceType) ? String(item.title).trim() : defaultTitle(item);
+  const body = item.body?.trim() || fallbackBody(item, scheduledAt);
+  const detailParts = [sourceLabel(item), scheduledAt ? formatNotificationDateTime(scheduledAt) : null, item.workspaceName];
+  const detail = detailParts.filter(Boolean).join(' · ');
+  const time = scheduledAt ? formatNotificationTime(scheduledAt) : 'Now';
+
+  return {
+    title,
+    body,
+    detail,
+    time,
+  };
+};
+
 const iconForItem = (item: NotificationCenterItem) => {
   switch (item.sourceType) {
     case 'reminder':
@@ -315,6 +393,7 @@ export const NotificationCenterWindow: React.FC = () => {
               <div className="divide-y divide-gray-100 rounded-2xl border border-gray-200 bg-white">
                 {active.map((item) => {
                   const Icon = iconForItem(item);
+                  const display = getDisplayData(item);
                   return (
                     <div key={item.id} className="px-4 py-3">
                       <div className="flex items-start gap-3">
@@ -326,23 +405,19 @@ export const NotificationCenterWindow: React.FC = () => {
                           <div className="flex items-start justify-between gap-3">
                             <div className="min-w-0">
                               <p className="truncate text-sm font-medium text-gray-900">
-                                {item.title || 'Notification'}
+                                {display.title}
                               </p>
                               <p className="mt-0.5 text-xs text-gray-500">
-                                {item.context || item.workspaceName || 'Ledger'}
-                                {item.workspaceName ? ` · ${item.workspaceName}` : ''}
+                                {display.detail}
                               </p>
                             </div>
                             <p className="shrink-0 text-[11px] text-gray-400">
-                              {new Date(item.scheduledFor).toLocaleTimeString([], {
-                                hour: 'numeric',
-                                minute: '2-digit',
-                              })}
+                              {display.time}
                             </p>
                           </div>
 
-                          {item.body ? (
-                            <p className="text-sm text-gray-600">{item.body}</p>
+                          {display.body ? (
+                            <p className="text-sm text-gray-600">{display.body}</p>
                           ) : null}
 
                           <div className="flex flex-wrap gap-2 pt-1">
@@ -379,6 +454,7 @@ export const NotificationCenterWindow: React.FC = () => {
                 <div className="divide-y divide-gray-100 rounded-2xl border border-gray-200 bg-white">
                   {earlier.map((item) => {
                     const Icon = iconForItem(item);
+                    const display = getDisplayData(item);
                     return (
                       <div key={item.id} className="px-4 py-3 opacity-80">
                         <div className="flex items-start gap-3">
@@ -390,22 +466,18 @@ export const NotificationCenterWindow: React.FC = () => {
                             <div className="flex items-start justify-between gap-3">
                               <div className="min-w-0">
                                 <p className="truncate text-sm font-medium text-gray-700">
-                                  {item.title || 'Notification'}
+                                  {display.title}
                                 </p>
                                 <p className="mt-0.5 text-xs text-gray-500">
-                                  {item.context || item.workspaceName || 'Ledger'}
-                                  {item.workspaceName ? ` · ${item.workspaceName}` : ''}
+                                  {display.detail}
                                 </p>
                               </div>
                               <p className="shrink-0 text-[11px] text-gray-400">
-                                {new Date(item.scheduledFor).toLocaleTimeString([], {
-                                  hour: 'numeric',
-                                  minute: '2-digit',
-                                })}
+                                {display.time}
                               </p>
                             </div>
 
-                            {item.body ? <p className="text-sm text-gray-600">{item.body}</p> : null}
+                            {display.body ? <p className="text-sm text-gray-600">{display.body}</p> : null}
 
                             <div className="flex flex-wrap gap-2 pt-1">
                               <button

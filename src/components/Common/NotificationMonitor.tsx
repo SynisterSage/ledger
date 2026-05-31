@@ -43,14 +43,15 @@ const getToastFallbackTitle = (item: NotificationItem) => {
   const workspacePart = item.workspaceName ? `${item.workspaceName}` : '';
   switch (item.sourceType) {
     case 'reminder':
+      return workspacePart ? `Reminder due - ${workspacePart}` : 'Reminder due';
     case 'event':
-      return workspacePart ? `Reminder — ${workspacePart}` : 'Reminder';
+      return workspacePart ? `Event starting - ${workspacePart}` : 'Event starting';
     case 'task':
-      return workspacePart ? `Task — ${workspacePart}` : 'Task';
+      return workspacePart ? `Task due - ${workspacePart}` : 'Task due';
     case 'project':
-      return workspacePart ? `Project — ${workspacePart}` : 'Project';
+      return workspacePart ? `Project deadline - ${workspacePart}` : 'Project deadline';
     case 'inbox':
-      return workspacePart ? `Inbox — ${workspacePart}` : 'Inbox';
+      return workspacePart ? `Inbox capture - ${workspacePart}` : 'Inbox capture';
     default:
       return 'Ledger notification';
   }
@@ -84,6 +85,7 @@ export const NotificationMonitor: React.FC = () => {
         toast.show(title, {
           detail,
           variant: 'info',
+          icon: 'ledger',
           duration: item.actions?.length ? 8000 : 2500,
           actions: (item.actions ?? []).map((action) => {
             if (action === 'open') {

@@ -1116,6 +1116,63 @@ const isSameDay = (left, right) => {
   );
 };
 
+const formatNotificationDate = (dateLike) => {
+  const date = new Date(dateLike);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toLocaleDateString([], {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+  });
+};
+
+const formatNotificationTime = (dateLike) => {
+  const date = new Date(dateLike);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toLocaleTimeString([], {
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+};
+
+const formatNotificationDateTime = (dateLike) => {
+  const dateLabel = formatNotificationDate(dateLike);
+  const timeLabel = formatNotificationTime(dateLike);
+  if (dateLabel && timeLabel) return `${dateLabel} at ${timeLabel}`;
+  return dateLabel || timeLabel || null;
+};
+
+const isGenericNotificationTitle = (title, sourceType) => {
+  const normalized = String(title ?? '').trim().toLowerCase();
+  if (!normalized) return true;
+
+  if (sourceType === 'reminder') {
+    return /^reminder(?:\s*[:\-]\s*due)?$/.test(normalized);
+  }
+  if (sourceType === 'event') {
+    return /^event(?:\s*(?:soon|starting))?$/.test(normalized);
+  }
+  if (sourceType === 'task') {
+    return /^task(?:\s*due)?$/.test(normalized);
+  }
+  if (sourceType === 'project') {
+    return /^project(?:\s*deadline)?$/.test(normalized);
+  }
+  if (sourceType === 'inbox') {
+    return /^inbox(?:\s*capture)?$/.test(normalized);
+  }
+
+  return false;
+};
+
+const pickSpecificNotificationTitle = (title, sourceType) => {
+  const normalized = normalizeNullableText(title);
+  if (!normalized || isGenericNotificationTitle(normalized, sourceType)) {
+    return null;
+  }
+  return normalized;
+};
+
 const buildNotificationEventPayload = ({
   userId,
   workspaceId,
@@ -1222,6 +1279,10 @@ const buildDueNotificationCandidates = async (userId, prefs) => {
       if (Number.isNaN(remindAt.getTime())) continue;
       if (remindAt > now) continue;
       if (row?.dismissed_at) continue;
+      const reminderTitle = normalizeNullableText(row.title) || 'Reminder due';
+      const dueLabel = formatNotificationDateTime(remindAt);
+      const notesLabel = normalizeNullableText(row.body ?? row.notes);
+      const reminderBodyParts = [dueLabel ? `Due ${dueLabel}` : null, notesLabel].filter(Boolean);
 
       candidates.push({
         user_id: userId,
@@ -1236,8 +1297,8 @@ const buildDueNotificationCandidates = async (userId, prefs) => {
           note_id: row.note_id ?? null,
           calendar_id: row.calendar_id ?? null,
         },
-        title: row.title ?? 'Reminder due',
-        body: row.body ?? row.notes ?? null,
+        title: reminderTitle,
+        body: reminderBodyParts.join(' · ') || null,
         moduleKind: 'calendar',
         focusPayload: row.calendar_id
           ? { kind: 'calendar', focusContext: `focus-reminder:${row.id}` }
@@ -1270,6 +1331,8 @@ const buildDueNotificationCandidates = async (userId, prefs) => {
       if (Number.isNaN(startAt.getTime())) continue;
       const scheduledFor = new Date(startAt.getTime() - leadMinutes * 60 * 1000);
       if (scheduledFor > now) continue;
+      const eventTitle = normalizeNullableText(row.title) || 'Event starting';
+      const startsLabel = formatNotificationDateTime(startAt);
 
       candidates.push({
         user_id: userId,
@@ -1284,8 +1347,8 @@ const buildDueNotificationCandidates = async (userId, prefs) => {
           project_id: row.project_id ?? null,
           note_id: row.note_id ?? null,
         },
-        title: row.title ?? 'Event starting',
-        body: row.start_at ? new Date(row.start_at).toLocaleString() : null,
+        title: eventTitle,
+        body: startsLabel ? `Starts ${startsLabel}` : null,
         moduleKind: 'calendar',
         focusPayload: { kind: 'calendar', focusContext: `focus-event:${row.id}` },
         actions: ['open', 'dismiss'],
@@ -1328,6 +1391,9 @@ const buildDueNotificationCandidates = async (userId, prefs) => {
       if (!scheduledFor || scheduledFor > now) continue;
 
       const notificationType = isSameDay(dueDate, now) ? 'task_due' : 'overdue_item';
+      const taskDueAt = dueTime ? localDateAtTime(dueDate, dueTime) : dueDate;
+      const dueLabel = taskDueAt ? formatNotificationDateTime(taskDueAt) : formatNotificationDate(dueDate);
+      const taskTitle = normalizeNullableText(row.title) || 'Task due';
       candidates.push({
         user_id: userId,
         workspace_id: row.workspace_id ?? null,
@@ -1341,8 +1407,8 @@ const buildDueNotificationCandidates = async (userId, prefs) => {
           task_id: row.id,
           project_id: row.project_id ?? null,
         },
-        title: row.title ?? 'Task due',
-        body: row.due_date ? `Due ${row.due_date}${row.due_time ? ` · ${row.due_time}` : ''}` : null,
+        title: taskTitle,
+        body: dueLabel ? `Due ${dueLabel}` : null,
         moduleKind: 'dashboard',
         focusPayload: { kind: 'dashboard', focusTaskId: row.id },
         actions: ['open', 'complete', 'dismiss'],
@@ -1373,6 +1439,8 @@ const buildDueNotificationCandidates = async (userId, prefs) => {
       if (!scheduledFor || scheduledFor > now) continue;
 
       const notificationType = dueDate < todayStart ? 'overdue_item' : 'project_deadline';
+      const dueLabel = formatNotificationDate(dueDate);
+      const projectName = normalizeNullableText(row.name);
       candidates.push({
         user_id: userId,
         workspace_id: row.workspace_id ?? null,
@@ -1385,8 +1453,8 @@ const buildDueNotificationCandidates = async (userId, prefs) => {
         metadata: {
           project_id: row.id,
         },
-        title: row.name ?? 'Project deadline',
-        body: row.end_date ? `Due ${row.end_date}` : null,
+        title: projectName || 'Project deadline',
+        body: dueLabel ? `Project deadline · Due ${dueLabel}` : 'Project deadline',
         moduleKind: 'projects',
         focusPayload: { kind: 'projects', focusProjectId: row.id },
         actions: ['open', 'dismiss'],
@@ -1575,7 +1643,7 @@ const mapNotificationCenterRow = (row, maps) => {
   const sourceType = String(row.source_type ?? '');
   const workspace = maps.workspaceById.get(row.workspace_id ?? '') ?? null;
 
-  let title = normalizeNullableText(metadata.title);
+  let title = pickSpecificNotificationTitle(metadata.title, sourceType);
   let body = normalizeNullableText(metadata.body);
   let context = normalizeNullableText(metadata.context);
   let moduleKind = metadata.moduleKind ?? null;
@@ -1584,8 +1652,12 @@ const mapNotificationCenterRow = (row, maps) => {
 
   if (sourceType === 'reminder') {
     const reminder = maps.reminderById.get(sourceId) ?? null;
-    title = title ?? reminder?.title ?? 'Reminder due';
-    body = body ?? reminder?.notes ?? reminder?.body ?? null;
+    const reminderTitle = pickSpecificNotificationTitle(reminder?.title, sourceType);
+    const remindAt = reminder?.remind_at ? new Date(reminder.remind_at) : null;
+    const dueLabel = remindAt ? formatNotificationDateTime(remindAt) : null;
+    const reminderBody = normalizeNullableText(reminder?.body ?? reminder?.notes);
+    title = title ?? reminderTitle ?? 'Reminder due';
+    body = body ?? [dueLabel ? `Due ${dueLabel}` : null, reminderBody].filter(Boolean).join(' · ') || null;
     moduleKind = moduleKind ?? 'calendar';
     focusPayload = focusPayload ?? { kind: 'calendar', focusContext: `focus-reminder:${sourceId}` };
     context = reminder?.calendar_id
@@ -1596,36 +1668,37 @@ const mapNotificationCenterRow = (row, maps) => {
     actions = actions ?? ['open', 'complete', 'snooze', 'dismiss'];
   } else if (sourceType === 'event') {
     const event = maps.eventById.get(sourceId) ?? null;
-    title = title ?? event?.title ?? 'Event soon';
+    const eventTitle = pickSpecificNotificationTitle(event?.title, sourceType);
     const startAt = event?.start_at ? new Date(event.start_at) : null;
-    body =
-      body ??
-      (startAt && !Number.isNaN(startAt.getTime())
-        ? `Starts at ${startAt.toLocaleTimeString([], {
-            hour: 'numeric',
-            minute: '2-digit',
-          })}`
-        : null);
+    title = title ?? eventTitle ?? 'Event soon';
+    body = body ?? (startAt && !Number.isNaN(startAt.getTime()) ? `Starts ${formatNotificationDateTime(startAt)}` : null);
     moduleKind = moduleKind ?? 'calendar';
     focusPayload = focusPayload ?? { kind: 'calendar', focusContext: `focus-event:${sourceId}` };
     context = event?.calendar_id ? 'Calendar event' : 'Event';
     actions = actions ?? ['open', 'dismiss'];
   } else if (sourceType === 'task') {
     const task = maps.taskById.get(sourceId) ?? null;
-    title = title ?? task?.title ?? 'Task due';
-    body =
-      body ??
-      (task?.due_date
-        ? `Due ${task.due_date}${task?.due_time ? ` · ${task.due_time}` : ''}`
-        : null);
+    const taskTitle = pickSpecificNotificationTitle(task?.title, sourceType);
+    title = title ?? taskTitle ?? 'Task due';
+    if (!body && task?.due_date) {
+      const dueDate = new Date(`${String(task.due_date)}T00:00:00`);
+      const dueAt = task?.due_time ? localDateAtTime(dueDate, task.due_time) : dueDate;
+      const dueLabel = dueAt ? formatNotificationDateTime(dueAt) : formatNotificationDate(dueDate);
+      body = dueLabel ? `Due ${dueLabel}` : null;
+    }
     moduleKind = moduleKind ?? 'dashboard';
     focusPayload = focusPayload ?? { kind: 'dashboard', focusTaskId: sourceId };
     context = task?.project_id ? 'Task' : 'Today item';
     actions = actions ?? ['open', 'complete', 'dismiss'];
   } else if (sourceType === 'project') {
     const project = maps.projectById.get(sourceId) ?? null;
-    title = title ?? project?.name ?? 'Project deadline';
-    body = body ?? (project?.end_date ? `Due ${project.end_date}` : null);
+    const projectTitle = pickSpecificNotificationTitle(project?.name, sourceType);
+    title = title ?? projectTitle ?? 'Project deadline';
+    if (!body && project?.end_date) {
+      const dueDate = new Date(`${String(project.end_date)}T00:00:00`);
+      const dueLabel = formatNotificationDate(dueDate);
+      body = dueLabel ? `Project deadline · Due ${dueLabel}` : 'Project deadline';
+    }
     moduleKind = moduleKind ?? 'projects';
     focusPayload = focusPayload ?? { kind: 'projects', focusProjectId: sourceId };
     context = 'Project';

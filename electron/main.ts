@@ -815,6 +815,26 @@ const getTrayIconPath = () =>
     process.platform === 'win32' ? 'ledger-tray.ico' : 'ledgerTemplate@14.png'
   );
 
+const getDesktopNotificationIconPath = () => {
+  const publicRoot = process.env.VITE_PUBLIC ?? path.join(process.env.APP_ROOT ?? '', 'public');
+  const preferred =
+    process.platform === 'win32'
+      ? path.join(publicRoot, 'logo.ico')
+      : process.platform === 'darwin'
+      ? path.join(publicRoot, 'logo.icns')
+      : path.join(publicRoot, 'icon.png');
+
+  if (fs.existsSync(preferred)) {
+    return preferred;
+  }
+
+  const fallbacks = ['logo.ico', 'logo.icns', 'icon.png', 'logo-color.svg'].map((name) =>
+    path.join(publicRoot, name)
+  );
+  const firstExisting = fallbacks.find((iconPath) => fs.existsSync(iconPath));
+  return firstExisting ?? preferred;
+};
+
 const getTrayIcon = () => {
   const icon = nativeImage.createFromPath(getTrayIconPath());
   if (process.platform === 'darwin') {
@@ -974,21 +994,50 @@ const getNotificationFallbackTitle = (item: NotificationSchedulerItem) => {
   }
 };
 
+const isGenericNotificationTitle = (title: string | null | undefined, sourceType: string) => {
+  const normalized = String(title ?? '')
+    .trim()
+    .toLowerCase();
+  if (!normalized) return true;
+
+  if (sourceType === 'reminder') {
+    return /^reminder(?:\s*[:\-]\s*due)?$/.test(normalized);
+  }
+  if (sourceType === 'event') {
+    return /^event(?:\s*(?:soon|starting))?$/.test(normalized);
+  }
+  if (sourceType === 'task') {
+    return /^task(?:\s*due)?$/.test(normalized);
+  }
+  if (sourceType === 'project') {
+    return /^project(?:\s*deadline)?$/.test(normalized);
+  }
+  if (sourceType === 'inbox') {
+    return /^inbox(?:\s*capture)?$/.test(normalized);
+  }
+
+  return false;
+};
+
 const getNotificationDisplayTitle = (item: NotificationSchedulerItem) => {
   const title = item.title?.trim();
   const context = item.context?.trim();
 
   if (item.sourceType === 'reminder') {
-    if (title && !/^reminder(?:\s+due)?$/i.test(title)) return title;
+    if (title && !isGenericNotificationTitle(title, item.sourceType)) return title;
     return context ? `Reminder: ${context}` : getNotificationFallbackTitle(item);
   }
 
   if (item.sourceType === 'event') {
-    if (title && !/^event(?:\s+starting)?$/i.test(title)) return title;
+    if (title && !isGenericNotificationTitle(title, item.sourceType)) return title;
     return context ? `Event: ${context}` : getNotificationFallbackTitle(item);
   }
 
-  return title || getNotificationFallbackTitle(item);
+  if (title && !isGenericNotificationTitle(title, item.sourceType)) {
+    return title;
+  }
+
+  return getNotificationFallbackTitle(item);
 };
 
 const getNotificationDisplayBody = (item: NotificationSchedulerItem) => {
@@ -1005,7 +1054,7 @@ const getNotificationDisplayBody = (item: NotificationSchedulerItem) => {
 const deliverDesktopNotification = (item: NotificationSchedulerItem) => {
   try {
     if (!Notification.isSupported()) return;
-    const iconPath = path.join(process.env.APP_ROOT ?? '', 'public', 'icon.png');
+    const iconPath = getDesktopNotificationIconPath();
     const subtitle = [item.context?.trim(), item.workspaceName?.trim()].filter(Boolean).join(' · ') || undefined;
     const body = getNotificationDisplayBody(item);
     const notification = new Notification({
@@ -2045,6 +2094,7 @@ public static class LedgerDockTracker {
   private const uint WINEVENT_OUTOFCONTEXT = 0;
   private static IntPtr targetHwnd;
   private static WinEventDelegate callbackRef = Callback;
+  private static System.Timers.Timer pollTimer;
 
   public delegate void WinEventDelegate(
     IntPtr hWinEventHook,
@@ -2137,6 +2187,10 @@ public static class LedgerDockTracker {
 
   public static void Start(long hwndValue) {
     targetHwnd = new IntPtr(hwndValue);
+    pollTimer = new System.Timers.Timer(32);
+    pollTimer.AutoReset = true;
+    pollTimer.Elapsed += (sender, args) => EmitBounds();
+    pollTimer.Start();
     EmitBounds();
     IntPtr hook = SetWinEventHook(
       EVENT_SYSTEM_MINIMIZESTART,
@@ -2149,6 +2203,13 @@ public static class LedgerDockTracker {
     );
     MSG msg;
     while (IsWindow(targetHwnd) && GetMessage(out msg, IntPtr.Zero, 0, 0) > 0) {}
+    try {
+      if (pollTimer != null) {
+        pollTimer.Stop();
+        pollTimer.Dispose();
+        pollTimer = null;
+      }
+    } catch {}
     if (hook != IntPtr.Zero) UnhookWinEvent(hook);
   }
 

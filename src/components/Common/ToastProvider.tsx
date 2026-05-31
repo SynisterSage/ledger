@@ -1,6 +1,7 @@
 import React, { createContext, useCallback, useContext, useMemo, useState } from 'react';
 
 type ToastVariant = 'default' | 'success' | 'error' | 'info';
+type ToastIcon = 'ledger';
 type ToastAction = {
   label: string;
   onClick: () => void | Promise<void>;
@@ -11,13 +12,20 @@ type Toast = {
   message: string;
   detail?: string;
   variant?: ToastVariant;
+  icon?: ToastIcon;
   actions?: ToastAction[];
 };
 
 type ToastContextShape = {
   show: (
     message: string,
-    opts?: { detail?: string; variant?: ToastVariant; duration?: number; actions?: ToastAction[] }
+    opts?: {
+      detail?: string;
+      variant?: ToastVariant;
+      duration?: number;
+      actions?: ToastAction[];
+      icon?: ToastIcon;
+    }
   ) => string;
   dismiss: (id: string) => void;
   clear: () => void;
@@ -45,7 +53,13 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const show = useCallback(
     (
       message: string,
-      opts?: { detail?: string; variant?: ToastVariant; duration?: number; actions?: ToastAction[] }
+      opts?: {
+        detail?: string;
+        variant?: ToastVariant;
+        duration?: number;
+        actions?: ToastAction[];
+        icon?: ToastIcon;
+      }
     ) => {
       const id = Math.random().toString(36).slice(2, 9);
       const variant = opts?.variant ?? 'default';
@@ -54,6 +68,7 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         message,
         detail: opts?.detail ?? undefined,
         variant,
+        icon: opts?.icon,
         actions: opts?.actions ?? [],
       };
       setToasts((t) => [toast, ...t]);
@@ -92,6 +107,13 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
               }`}
             >
               <div className="flex items-start gap-3">
+                {t.icon === 'ledger' && (
+                  <img
+                    src="/logo-color.svg"
+                    alt="Ledger"
+                    className="mt-0.5 h-4 w-4 shrink-0"
+                  />
+                )}
                 {t.variant === 'success' && (
                   <svg className="mt-0.5 h-4 w-4 shrink-0 text-green-600" viewBox="0 0 24 24" fill="none" stroke="currentColor">
                     <path d="M20 6L9 17l-5-5" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />

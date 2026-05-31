@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { User, Session } from '@supabase/supabase-js';
 import { authService } from '../services/auth';
 import { supabaseConfigError } from '../services/supabase';
@@ -46,12 +46,29 @@ export const useAuth = (): UseAuthReturn => {
   const [session, setSession] = useState<Session | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
+  const hasEmittedSessionRef = useRef(false);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
+    const accessToken = session?.access_token ?? null;
+    const userId = session?.user?.id ?? null;
+
+    if (accessToken) {
+      hasEmittedSessionRef.current = true;
+      window.ipcRenderer?.send('notifications:set-session', {
+        accessToken,
+        userId,
+        apiUrl: DEFAULT_API_URL,
+      });
+      return;
+    }
+
+    if (!hasEmittedSessionRef.current) return;
+
+    hasEmittedSessionRef.current = false;
     window.ipcRenderer?.send('notifications:set-session', {
-      accessToken: session?.access_token ?? null,
-      userId: session?.user?.id ?? null,
+      accessToken: null,
+      userId: null,
       apiUrl: DEFAULT_API_URL,
     });
   }, [session?.access_token, session?.user?.id]);
