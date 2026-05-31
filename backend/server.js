@@ -10,6 +10,19 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const supabaseUrl = process.env.VITE_SUPABASE_URL || '';
 const supabaseServiceRole = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+const allowedCorsOrigins = new Set(
+  [
+    'https://ledgerworkspace.com',
+    'https://www.ledgerworkspace.com',
+    process.env.FRONTEND_URL?.trim(),
+    process.env.PUBLIC_FRONTEND_URL?.trim(),
+    process.env.DEV_FRONTEND_URL?.trim(),
+    'http://localhost:5173',
+    'http://127.0.0.1:5173',
+    'http://localhost:4173',
+    'http://127.0.0.1:4173',
+  ].filter((origin) => typeof origin === 'string' && origin.length > 0)
+);
 
 const supabase = createClient(supabaseUrl, supabaseServiceRole, {
   auth: { persistSession: false },
@@ -21,7 +34,22 @@ const captureRawBody = (req, _res, buffer) => {
   }
 };
 
-app.use(cors());
+app.use(
+  cors({
+    origin(origin, callback) {
+      if (!origin || origin === 'null') {
+        return callback(null, true);
+      }
+
+      if (allowedCorsOrigins.has(origin)) {
+        return callback(null, true);
+      }
+
+      return callback(new Error('CORS origin not allowed'));
+    },
+    credentials: true,
+  })
+);
 app.use(express.json({ limit: '256kb', verify: captureRawBody }));
 app.use(express.urlencoded({ extended: false, limit: '256kb', verify: captureRawBody }));
 
@@ -103,6 +131,32 @@ const rateLimit = (scope) => (req, res, next) => {
   }
 
   next();
+};
+
+const getPublicErrorStatus = (error) => {
+  const statusCode = Number(error?.statusCode ?? error?.status ?? 500);
+  if (Number.isInteger(statusCode) && statusCode >= 400 && statusCode < 600) {
+    return statusCode;
+  }
+  return 500;
+};
+
+const getPublicErrorMessage = (error, statusCode) => {
+  if (statusCode >= 500) {
+    return 'Internal server error';
+  }
+
+  const message = String(error?.message ?? '').trim();
+  return message || 'Request failed';
+};
+
+const respondWithError = (res, error) => {
+  const statusCode = getPublicErrorStatus(error);
+  if (statusCode >= 500) {
+    console.error('Request failed:', error);
+  }
+
+  return res.status(statusCode).json({ error: getPublicErrorMessage(error, statusCode) });
 };
 
 const authMiddleware = async (req, res, next) => {
@@ -712,7 +766,7 @@ const getInviteBaseUrl = () => {
   return null;
 };
 
-const mapWorkspaceInvite = (row, nowIso = new Date().toISOString()) => {
+const mapWorkspaceInvite = (row, nowIso = new Date().toISOString(), includeToken = false) => {
   const isAccepted = Boolean(row.accepted_at || row.accepted_by);
   const isExpired = !isAccepted && row.expires_at && String(row.expires_at) <= nowIso;
   return {
@@ -724,7 +778,7 @@ const mapWorkspaceInvite = (row, nowIso = new Date().toISOString()) => {
     expires_at: row.expires_at,
     accepted_at: row.accepted_at ?? null,
     accepted_by: row.accepted_by ?? null,
-    token: row.token ?? null,
+    token: includeToken ? row.token ?? null : null,
     invited_by: row.created_by,
     created_by: row.created_by,
     created_at: row.created_at,
@@ -2216,7 +2270,9 @@ const getSlackRedirectUri = () => {
 };
 
 const getSlackStateSecret = () =>
-  process.env.SLACK_SIGNING_SECRET?.trim() || supabaseServiceRole || 'ledger-slack-dev-state';
+  process.env.SLACK_STATE_SECRET?.trim() ||
+  process.env.SLACK_SIGNING_SECRET?.trim() ||
+  'ledger-slack-dev-state';
 
 const base64UrlEncode = (value) => Buffer.from(value).toString('base64url');
 
@@ -2596,7 +2652,7 @@ const withWorkspaceContext = async (req, res, next) => {
     };
     next();
   } catch (error) {
-    return res.status(500).json({ error: error.message });
+    return respondWithError(res, error);
   }
 };
 
@@ -2971,7 +3027,7 @@ app.get('/api/extension/token/status', authMiddleware, rateLimit('read'), async 
     if (isMissingRelationError(error, 'extension_tokens')) {
       return res.json({ exists: false, created_at: null, last_used_at: null, revoked_at: null });
     }
-    res.status(error.statusCode || 500).json({ error: error.message });
+    return respondWithError(res, error);
   }
 });
 
@@ -2988,7 +3044,7 @@ app.post('/api/extension/token', authMiddleware, rateLimit('write'), async (req,
     const payload = await createExtensionTokenForSettings(req.authUser.id, workspaceId);
     res.status(201).json(payload);
   } catch (error) {
-    res.status(error.statusCode || 500).json({ error: error.message });
+    return respondWithError(res, error);
   }
 });
 
@@ -3004,7 +3060,7 @@ app.post(
       const payload = await createExtensionTokenForSettings(req.authUser.id, workspaceId);
       res.status(201).json(payload);
     } catch (error) {
-      res.status(error.statusCode || 500).json({ error: error.message });
+      return respondWithError(res, error);
     }
   }
 );
@@ -3016,7 +3072,7 @@ app.post('/api/extension/token/revoke', authMiddleware, rateLimit('write'), asyn
     await revokeActiveExtensionTokensForSettings(req.authUser.id, workspaceId);
     res.json({ exists: false, created_at: null, last_used_at: null, revoked_at: new Date().toISOString() });
   } catch (error) {
-    res.status(error.statusCode || 500).json({ error: error.message });
+    return respondWithError(res, error);
   }
 });
 
@@ -3041,7 +3097,7 @@ app.get('/api/extension/me', extensionAuthMiddleware, rateLimit('read'), async (
       default_workspace: defaultWorkspace,
     });
   } catch (error) {
-    res.status(error.statusCode || 500).json({ error: error.message });
+    return respondWithError(res, error);
   }
 });
 
@@ -3064,7 +3120,7 @@ app.get(
         workspaces,
       });
     } catch (error) {
-      res.status(error.statusCode || 500).json({ error: error.message });
+      return respondWithError(res, error);
     }
   }
 );
@@ -3137,7 +3193,7 @@ app.post('/api/inbox/browser', extensionAuthMiddleware, rateLimit('write'), asyn
       item: mapInboxItemResponse(data),
     });
   } catch (error) {
-    res.status(error.statusCode || 500).json({ error: error.message });
+    return respondWithError(res, error);
   }
 });
 
@@ -3173,7 +3229,7 @@ app.get('/api/integrations/slack/status', authMiddleware, rateLimit('read'), asy
       updated_at: result.data.updated_at ?? null,
     });
   } catch (error) {
-    res.status(error.statusCode || 500).json({ error: error.message });
+    return respondWithError(res, error);
   }
 });
 
@@ -3199,7 +3255,7 @@ app.get('/api/integrations/slack/captures', authMiddleware, rateLimit('read'), a
 
     res.json(result.data ?? []);
   } catch (error) {
-    res.status(error.statusCode || 500).json({ error: error.message });
+    return respondWithError(res, error);
   }
 });
 
@@ -3223,7 +3279,7 @@ app.delete('/api/integrations/slack/disconnect', authMiddleware, rateLimit('writ
 
     res.json({ connected: false });
   } catch (error) {
-    res.status(error.statusCode || 500).json({ error: error.message });
+    return respondWithError(res, error);
   }
 });
 
@@ -3235,7 +3291,7 @@ app.get('/api/integrations/slack/install-url', authMiddleware, rateLimit('read')
       url: buildSlackAuthorizeUrl({ workspaceId, installedBy: req.authUser.id }),
     });
   } catch (error) {
-    res.status(error.statusCode || 500).json({ error: error.message });
+    return respondWithError(res, error);
   }
 });
 
@@ -3245,7 +3301,7 @@ app.get('/api/integrations/slack/install', authMiddleware, rateLimit('read'), as
     await requireWorkspaceAccess(req.authUser.id, workspaceId, 'admin');
     res.redirect(buildSlackAuthorizeUrl({ workspaceId, installedBy: req.authUser.id }));
   } catch (error) {
-    res.status(error.statusCode || 500).json({ error: error.message });
+    return respondWithError(res, error);
   }
 });
 
@@ -3283,9 +3339,8 @@ app.get('/api/integrations/slack/oauth/callback', rateLimit('auth'), async (req,
     });
     const tokenPayload = await tokenResponse.json();
     if (!tokenPayload?.ok) {
-      return res
-        .status(400)
-        .send(`Slack OAuth failed: ${tokenPayload?.error ?? 'unknown_error'}`);
+      console.error('Slack OAuth token exchange failed', tokenPayload?.error ?? 'unknown_error');
+      return res.status(400).type('text').send('Slack OAuth failed');
     }
 
     const teamId = tokenPayload.team?.id ?? null;
@@ -3333,7 +3388,9 @@ app.get('/api/integrations/slack/oauth/callback', rateLimit('auth'), async (req,
     res.status(200).type('html').send(buildSlackInstallCompleteHtml({ teamName }));
   } catch (error) {
     console.error('Slack OAuth callback failed', error);
-    res.status(error.statusCode || 500).send(error.message || 'Slack OAuth callback failed');
+    const statusCode = getPublicErrorStatus(error);
+    const message = getPublicErrorMessage(error, statusCode);
+    res.status(statusCode).type('text').send(message);
   }
 });
 
@@ -3387,7 +3444,7 @@ app.get('/api/inbox/count', authMiddleware, rateLimit('read'), async (req, res) 
     if (error) throw error;
     res.json({ count: count ?? 0 });
   } catch (error) {
-    res.status(error.statusCode || 500).json({ error: error.message });
+    return respondWithError(res, error);
   }
 });
 
@@ -3413,7 +3470,7 @@ app.get('/api/inbox', authMiddleware, rateLimit('read'), async (req, res) => {
     if (error) throw error;
     res.json((data ?? []).map(mapInboxItemResponse));
   } catch (error) {
-    res.status(error.statusCode || 500).json({ error: error.message });
+    return respondWithError(res, error);
   }
 });
 
@@ -3441,7 +3498,7 @@ app.post('/api/inbox/:id/archive', authMiddleware, rateLimit('write'), async (re
     if (error) throw error;
     res.json(mapInboxItemResponse(data));
   } catch (error) {
-    res.status(error.statusCode || 500).json({ error: error.message });
+    return respondWithError(res, error);
   }
 });
 
@@ -3462,7 +3519,7 @@ app.delete('/api/inbox/:id', authMiddleware, rateLimit('write'), async (req, res
     if (error) throw error;
     res.json({ ok: true });
   } catch (error) {
-    res.status(error.statusCode || 500).json({ error: error.message });
+    return respondWithError(res, error);
   }
 });
 
@@ -3737,7 +3794,7 @@ app.post('/api/inbox/:id/convert', authMiddleware, rateLimit('write'), async (re
 
     return res.status(400).json({ error: 'Unsupported inbox conversion type' });
   } catch (error) {
-    res.status(error.statusCode || 500).json({ error: error.message });
+    return respondWithError(res, error);
   }
 });
 
@@ -3752,7 +3809,7 @@ app.get('/api/user/onboarding', authMiddleware, rateLimit('read'), async (req, r
     if (error) throw error;
     res.json({ onboarding_completed: Boolean(data?.onboarding_completed) });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    return respondWithError(res, error);
   }
 });
 
@@ -3789,7 +3846,7 @@ app.patch('/api/user/onboarding', authMiddleware, rateLimit('write'), async (req
 
     res.json(data);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    return respondWithError(res, error);
   }
 });
 
@@ -3817,7 +3874,7 @@ app.get('/api/user/settings', authMiddleware, rateLimit('read'), async (req, res
       updated_at: data.updated_at ?? null,
     });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    return respondWithError(res, error);
   }
 });
 
@@ -3874,7 +3931,7 @@ app.patch('/api/user/settings', authMiddleware, rateLimit('write'), async (req, 
       updated_at: data.updated_at ?? null,
     });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    return respondWithError(res, error);
   }
 });
 
@@ -3883,7 +3940,7 @@ app.get('/api/notifications/preferences', authMiddleware, rateLimit('read'), asy
     const data = await getOrCreateNotificationPreferences(req.authUser.id);
     res.json(mapNotificationPreferencesRow(data));
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    return respondWithError(res, error);
   }
 });
 
@@ -3909,7 +3966,7 @@ app.patch(
       if (error) throw error;
       res.json(mapNotificationPreferencesRow(data));
     } catch (error) {
-      res.status(500).json({ error: error.message });
+      return respondWithError(res, error);
     }
   }
 );
@@ -4014,7 +4071,7 @@ app.post('/api/notifications/check', authMiddleware, rateLimit('read'), async (r
       })
     );
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    return respondWithError(res, error);
   }
 });
 
@@ -4153,7 +4210,7 @@ app.post('/api/notifications/:id/action', authMiddleware, rateLimit('write'), as
     if (error) throw error;
     res.json({ ok: true, notification: data, source: sourceUpdateResult });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    return respondWithError(res, error);
   }
 });
 
@@ -4162,7 +4219,7 @@ app.get('/api/notifications/summary', authMiddleware, rateLimit('read'), async (
     const data = await getNotificationCenterItems(req.authUser.id);
     res.json({ counts: data.counts });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    return respondWithError(res, error);
   }
 });
 
@@ -4171,7 +4228,7 @@ app.get('/api/notifications', authMiddleware, rateLimit('read'), async (req, res
     const data = await getNotificationCenterItems(req.authUser.id);
     res.json(data);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    return respondWithError(res, error);
   }
 });
 
@@ -4229,7 +4286,7 @@ app.get('/api/workspaces', authMiddleware, rateLimit('read'), async (req, res) =
 
     res.json(sorted);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    return respondWithError(res, error);
   }
 });
 
@@ -4278,7 +4335,7 @@ app.post('/api/workspaces', authMiddleware, rateLimit('write'), async (req, res)
       current_user_role: 'owner',
     });
   } catch (error) {
-    res.status(error.statusCode || 500).json({ error: error.message });
+    return respondWithError(res, error);
   }
 });
 
@@ -4294,7 +4351,7 @@ app.get('/api/workspaces/active', authMiddleware, rateLimit('read'), async (req,
     if (error) throw error;
     res.json({ workspace_id: activeWorkspaceId, workspace: data ?? null });
   } catch (error) {
-    res.status(error.statusCode || 500).json({ error: error.message });
+    return respondWithError(res, error);
   }
 });
 
@@ -4318,7 +4375,7 @@ app.patch('/api/workspaces/active', authMiddleware, rateLimit('write'), async (r
       current_user_role: access.role,
     });
   } catch (error) {
-    res.status(error.statusCode || 500).json({ error: error.message });
+    return respondWithError(res, error);
   }
 });
 
@@ -4369,7 +4426,7 @@ app.patch(
         current_user_role: access.role,
       });
     } catch (error) {
-      res.status(error.statusCode || 500).json({ error: error.message });
+      return respondWithError(res, error);
     }
   }
 );
@@ -4405,7 +4462,7 @@ app.delete(
 
       res.json({ deleted_workspace_id: workspaceId });
     } catch (error) {
-      res.status(error.statusCode || 500).json({ error: error.message });
+      return respondWithError(res, error);
     }
   }
 );
@@ -4469,7 +4526,7 @@ app.get(
         members: [ownerRow, ...normalizedMembers],
       });
     } catch (error) {
-      res.status(error.statusCode || 500).json({ error: error.message });
+      return respondWithError(res, error);
     }
   }
 );
@@ -4539,7 +4596,7 @@ app.patch(
       });
       res.json(updated.data);
     } catch (error) {
-      res.status(error.statusCode || 500).json({ error: error.message });
+      return respondWithError(res, error);
     }
   }
 );
@@ -4639,7 +4696,7 @@ app.delete(
       }
       res.json({ success: true });
     } catch (error) {
-      res.status(error.statusCode || 500).json({ error: error.message });
+      return respondWithError(res, error);
     }
   }
 );
@@ -4655,9 +4712,7 @@ app.get(
 
       const invitationsResult = await supabase
         .from('workspace_invites')
-        .select(
-          'id, email, role, token, expires_at, accepted_at, accepted_by, created_by, created_at'
-        )
+        .select('id, email, role, expires_at, accepted_at, accepted_by, created_by, created_at')
         .eq('workspace_id', workspaceId)
         .order('created_at', { ascending: false })
         .limit(100);
@@ -4669,7 +4724,7 @@ app.get(
         invitations: (invitationsResult.data ?? []).map((invite) => mapWorkspaceInvite(invite)),
       });
     } catch (error) {
-      res.status(error.statusCode || 500).json({ error: error.message });
+      return respondWithError(res, error);
     }
   }
 );
@@ -4784,13 +4839,13 @@ app.post(
       const inviteUrl = `${inviteBaseUrl}/invite/${encodeURIComponent(token)}`;
 
       res.json({
-        invitation: mapWorkspaceInvite(insertResult.data),
+        invitation: mapWorkspaceInvite(insertResult.data, new Date().toISOString(), false),
         invite_url: inviteUrl,
         invite_token: token,
         current_user_role: access.role,
       });
     } catch (error) {
-      res.status(error.statusCode || 500).json({ error: error.message });
+      return respondWithError(res, error);
     }
   }
 );
@@ -4845,7 +4900,7 @@ app.delete(
 
       res.json({ success: true });
     } catch (error) {
-      res.status(error.statusCode || 500).json({ error: error.message });
+      return respondWithError(res, error);
     }
   }
 );
@@ -4889,7 +4944,7 @@ app.get('/api/invitations/:token', rateLimit('read'), async (req, res) => {
 
     if (inviterResult.error) throw inviterResult.error;
 
-    const mapped = mapWorkspaceInvite(invite);
+    const mapped = mapWorkspaceInvite(invite, new Date().toISOString(), false);
     if (mapped.status === 'expired') {
       return res.status(400).json({ error: 'Invitation has expired', status: 'expired' });
     }
@@ -4913,7 +4968,7 @@ app.get('/api/invitations/:token', rateLimit('read'), async (req, res) => {
       },
     });
   } catch (error) {
-    res.status(error.statusCode || 500).json({ error: error.message });
+    return respondWithError(res, error);
   }
 });
 
@@ -5065,7 +5120,7 @@ app.post('/api/invitations/accept', authMiddleware, rateLimit('write'), async (r
       workspace_id: invitation.workspace_id,
     });
   } catch (error) {
-    res.status(error.statusCode || 500).json({ error: error.message });
+    return respondWithError(res, error);
   }
 });
 
@@ -5090,7 +5145,7 @@ app.get('/api/projects', authMiddleware, rateLimit('read'), async (req, res) => 
         : projects.filter((project) => !isCompletedProjectStatus(project.status)).slice(0, 8)
     );
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    return respondWithError(res, error);
   }
 });
 
@@ -5145,7 +5200,7 @@ app.post(
       if (error) throw error;
       res.json(data);
     } catch (error) {
-      res.status(500).json({ error: error.message });
+      return respondWithError(res, error);
     }
   }
 );
@@ -5208,7 +5263,7 @@ app.patch('/api/projects/:id', authMiddleware, rateLimit('write'), async (req, r
     if (error) throw error;
     res.json(data);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    return respondWithError(res, error);
   }
 });
 
@@ -5223,7 +5278,7 @@ app.delete('/api/projects/:id', authMiddleware, rateLimit('write'), async (req, 
     if (error) throw error;
     res.json({ success: true });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    return respondWithError(res, error);
   }
 });
 
@@ -5278,7 +5333,7 @@ app.get('/api/projects/:id/note-links', authMiddleware, rateLimit('read'), async
 
     res.json({ links });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    return respondWithError(res, error);
   }
 });
 
@@ -5350,7 +5405,7 @@ app.post('/api/projects/:id/note-links', authMiddleware, rateLimit('write'), asy
       },
     });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    return respondWithError(res, error);
   }
 });
 
@@ -5379,7 +5434,7 @@ app.delete(
       if (error) throw error;
       res.json({ success: true });
     } catch (error) {
-      res.status(500).json({ error: error.message });
+      return respondWithError(res, error);
     }
   }
 );
@@ -5397,7 +5452,7 @@ app.get('/api/tasks', authMiddleware, rateLimit('read'), async (req, res) => {
     if (error) throw error;
     res.json(data ?? []);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    return respondWithError(res, error);
   }
 });
 
@@ -5706,7 +5761,7 @@ app.get('/api/today', authMiddleware, rateLimit('read'), async (req, res) => {
 
     res.json({ active: mapped, reminders, completed: completedMapped, completed_reminders: completedReminders });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    return respondWithError(res, error);
   }
 });
 
@@ -5804,7 +5859,7 @@ app.post(
 
       throw new Error('Could not create task with today flags');
     } catch (error) {
-      res.status(500).json({ error: error.message });
+      return respondWithError(res, error);
     }
   }
 );
@@ -5938,7 +5993,7 @@ app.patch('/api/tasks/:id', authMiddleware, rateLimit('write'), async (req, res)
 
     throw new Error('Could not update task with today flags');
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    return respondWithError(res, error);
   }
 });
 
@@ -5953,7 +6008,7 @@ app.delete('/api/tasks/:id', authMiddleware, rateLimit('write'), async (req, res
     if (error) throw error;
     res.json({ success: true });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    return respondWithError(res, error);
   }
 });
 
@@ -5975,7 +6030,7 @@ app.get('/api/calendars', authMiddleware, rateLimit('read'), async (req, res) =>
     if (error) throw error;
     res.json(data ?? []);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    return respondWithError(res, error);
   }
 });
 
@@ -6002,7 +6057,7 @@ app.post('/api/calendars', authMiddleware, rateLimit('write'), async (req, res) 
     if (error) throw error;
     res.json(data);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    return respondWithError(res, error);
   }
 });
 
@@ -6029,7 +6084,7 @@ app.patch('/api/calendars/:id', authMiddleware, rateLimit('write'), async (req, 
     if (error) throw error;
     res.json(data);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    return respondWithError(res, error);
   }
 });
 
@@ -6050,7 +6105,7 @@ app.delete('/api/calendars/:id', authMiddleware, rateLimit('write'), async (req,
     if (error) throw error;
     res.json({ success: true });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    return respondWithError(res, error);
   }
 });
 
@@ -6120,7 +6175,7 @@ app.get('/api/events', authMiddleware, rateLimit('read'), async (req, res) => {
       )
     );
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    return respondWithError(res, error);
   }
 });
 
@@ -6169,7 +6224,7 @@ app.get('/api/events/upcoming', authMiddleware, rateLimit('read'), async (req, r
       }))
     );
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    return respondWithError(res, error);
   }
 });
 
@@ -6306,7 +6361,7 @@ app.post(
       if (error) throw error;
       res.json(data);
     } catch (error) {
-      res.status(500).json({ error: error.message });
+      return respondWithError(res, error);
     }
   }
 );
@@ -6427,7 +6482,7 @@ app.patch('/api/events/:id', authMiddleware, rateLimit('write'), async (req, res
     if (error) throw error;
     res.json(data);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    return respondWithError(res, error);
   }
 });
 
@@ -6454,7 +6509,7 @@ app.delete('/api/events/:id', authMiddleware, rateLimit('write'), async (req, re
     if (error) throw error;
     res.json({ success: true });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    return respondWithError(res, error);
   }
 });
 
@@ -6616,7 +6671,7 @@ app.post(
 
       res.json(combined);
     } catch (error) {
-      res.status(500).json({ error: error.message });
+      return respondWithError(res, error);
     }
   }
 );
@@ -6726,7 +6781,7 @@ app.get('/api/reminders', authMiddleware, rateLimit('read'), async (req, res) =>
 
     res.json(reminders);
   } catch (error) {
-    res.status(error.statusCode || 500).json({ error: error.message });
+    return respondWithError(res, error);
   }
 });
 
@@ -6742,7 +6797,7 @@ app.get('/api/reminders/due', authMiddleware, rateLimit('read'), async (req, res
 
     res.json(reminders);
   } catch (error) {
-    res.status(error.statusCode || 500).json({ error: error.message });
+    return respondWithError(res, error);
   }
 });
 
@@ -6756,7 +6811,7 @@ app.get('/api/reminders/overdue', authMiddleware, rateLimit('read'), async (req,
 
     res.json(reminders);
   } catch (error) {
-    res.status(error.statusCode || 500).json({ error: error.message });
+    return respondWithError(res, error);
   }
 });
 
@@ -6775,7 +6830,7 @@ app.get('/api/reminders/today', authMiddleware, rateLimit('read'), async (req, r
 
     res.json(reminders);
   } catch (error) {
-    res.status(error.statusCode || 500).json({ error: error.message });
+    return respondWithError(res, error);
   }
 });
 
@@ -6906,7 +6961,7 @@ app.post(
       if (error) throw error;
       res.json(mapReminderRow(data));
     } catch (error) {
-      res.status(error.statusCode || 500).json({ error: error.message });
+      return respondWithError(res, error);
     }
   }
 );
@@ -7048,7 +7103,7 @@ app.patch('/api/reminders/:id', authMiddleware, rateLimit('write'), async (req, 
     if (error) throw error;
     res.json(mapReminderRow(data));
   } catch (error) {
-    res.status(error.statusCode || 500).json({ error: error.message });
+    return respondWithError(res, error);
   }
 });
 
@@ -7084,7 +7139,7 @@ app.post('/api/reminders/:id/complete', authMiddleware, rateLimit('write'), asyn
     if (error) throw error;
     res.json(mapReminderRow(data));
   } catch (error) {
-    res.status(error.statusCode || 500).json({ error: error.message });
+    return respondWithError(res, error);
   }
 });
 
@@ -7120,7 +7175,7 @@ app.post('/api/reminders/:id/dismiss', authMiddleware, rateLimit('write'), async
     if (error) throw error;
     res.json(mapReminderRow(data));
   } catch (error) {
-    res.status(error.statusCode || 500).json({ error: error.message });
+    return respondWithError(res, error);
   }
 });
 
@@ -7158,7 +7213,7 @@ app.post('/api/reminders/:id/snooze', authMiddleware, rateLimit('write'), async 
     if (error) throw error;
     res.json(mapReminderRow(data));
   } catch (error) {
-    res.status(error.statusCode || 500).json({ error: error.message });
+    return respondWithError(res, error);
   }
 });
 
@@ -7184,7 +7239,7 @@ app.delete('/api/reminders/:id', authMiddleware, rateLimit('write'), async (req,
     if (error) throw error;
     res.json({ success: true });
   } catch (error) {
-    res.status(error.statusCode || 500).json({ error: error.message });
+    return respondWithError(res, error);
   }
 });
 
@@ -7205,7 +7260,7 @@ app.get('/api/notes', authMiddleware, rateLimit('read'), async (req, res) => {
     const flat = flattenNotesTree(tree, []);
     res.json({ notes: flat, tree });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    return respondWithError(res, error);
   }
 });
 
@@ -7224,7 +7279,7 @@ app.get('/api/notes/:id', authMiddleware, rateLimit('read'), async (req, res) =>
     if (!data) return res.status(404).json({ error: 'Note not found.' });
     res.json(mapNoteResponse(data));
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    return respondWithError(res, error);
   }
 });
 
@@ -7333,7 +7388,7 @@ app.post(
       if (error) throw error;
       res.json(mapNoteResponse(data));
     } catch (error) {
-      res.status(500).json({ error: error.message });
+      return respondWithError(res, error);
     }
   }
 );
@@ -7445,7 +7500,7 @@ app.patch('/api/notes/:id', authMiddleware, rateLimit('write'), async (req, res)
     if (error) throw error;
     res.json(mapNoteResponse(data));
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    return respondWithError(res, error);
   }
 });
 
@@ -7522,7 +7577,7 @@ app.post(
       if (error) throw error;
       res.json(mapNoteResponse(data));
     } catch (error) {
-      res.status(500).json({ error: error.message });
+      return respondWithError(res, error);
     }
   }
 );
@@ -7568,7 +7623,7 @@ app.patch('/api/notes/:id/parent', authMiddleware, rateLimit('write'), async (re
     if (error) throw error;
     res.json(mapNoteResponse(data));
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    return respondWithError(res, error);
   }
 });
 
@@ -7593,7 +7648,7 @@ app.patch('/api/notes/:id/sort_order', authMiddleware, rateLimit('write'), async
     if (error) throw error;
     res.json(mapNoteResponse(data));
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    return respondWithError(res, error);
   }
 });
 
@@ -7613,7 +7668,7 @@ app.get('/api/notes/:id/tree', authMiddleware, rateLimit('read'), async (req, re
     const breadcrumbs = buildNoteBreadcrumb(mapped, req.params.id);
     res.json({ tree, breadcrumbs });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    return respondWithError(res, error);
   }
 });
 
@@ -7680,7 +7735,7 @@ app.post(
       if (error) throw error;
       res.json(mapNoteResponse(data));
     } catch (error) {
-      res.status(500).json({ error: error.message });
+      return respondWithError(res, error);
     }
   }
 );
@@ -7708,7 +7763,7 @@ app.delete('/api/notes/:id', authMiddleware, rateLimit('write'), async (req, res
     if (error) throw error;
     res.json({ success: true });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    return respondWithError(res, error);
   }
 });
 
@@ -7736,7 +7791,7 @@ app.get('/api/notes/:id/versions', authMiddleware, rateLimit('read'), async (req
     if (error) throw error;
     res.json(Array.isArray(data) ? data : []);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    return respondWithError(res, error);
   }
 });
 
@@ -7771,7 +7826,7 @@ app.post('/api/notes/:id/versions', authMiddleware, rateLimit('write'), async (r
     if (newestError) throw newestError;
     res.json(Array.isArray(newest) && newest[0] ? newest[0] : null);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    return respondWithError(res, error);
   }
 });
 
@@ -7842,7 +7897,7 @@ app.post(
 
       res.json(mapNoteResponse(restored));
     } catch (error) {
-      res.status(500).json({ error: error.message });
+      return respondWithError(res, error);
     }
   }
 );
@@ -7863,7 +7918,7 @@ app.get('/api/daily-accountability', authMiddleware, rateLimit('read'), async (r
     if (error) throw error;
     res.json(data ?? null);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    return respondWithError(res, error);
   }
 });
 
@@ -7892,7 +7947,7 @@ app.post('/api/daily-accountability', authMiddleware, rateLimit('write'), async 
     if (error) throw error;
     res.json(data);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    return respondWithError(res, error);
   }
 });
 
@@ -7922,7 +7977,7 @@ app.get('/api/templates', authMiddleware, rateLimit('read'), async (req, res) =>
     if (error) throw error;
     res.json(data ?? []);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    return respondWithError(res, error);
   }
 });
 
@@ -7948,7 +8003,7 @@ app.get(
 
       res.json(data);
     } catch (error) {
-      res.status(500).json({ error: error.message });
+      return respondWithError(res, error);
     }
   }
 );
@@ -7997,7 +8052,7 @@ app.post('/api/templates', authMiddleware, rateLimit('write'), async (req, res) 
     if (error) throw error;
     res.status(201).json(data);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    return respondWithError(res, error);
   }
 });
 
@@ -8059,7 +8114,7 @@ app.patch(
       if (error) throw error;
       res.json(data);
     } catch (error) {
-      res.status(500).json({ error: error.message });
+      return respondWithError(res, error);
     }
   }
 );
@@ -8098,7 +8153,7 @@ app.delete(
       if (error) throw error;
       res.json({ success: true });
     } catch (error) {
-      res.status(500).json({ error: error.message });
+      return respondWithError(res, error);
     }
   }
 );
@@ -8146,7 +8201,7 @@ app.post(
       if (error) throw error;
       res.status(201).json(data);
     } catch (error) {
-      res.status(500).json({ error: error.message });
+      return respondWithError(res, error);
     }
   }
 );
@@ -8232,7 +8287,7 @@ app.post(
 
       res.status(201).json(mapNoteResponse(note));
     } catch (error) {
-      res.status(500).json({ error: error.message });
+      return respondWithError(res, error);
     }
   }
 );
@@ -8290,7 +8345,7 @@ app.post(
         message: 'Note saved as template successfully',
       });
     } catch (error) {
-      res.status(500).json({ error: error.message });
+      return respondWithError(res, error);
     }
   }
 );
@@ -8330,7 +8385,7 @@ app.patch(
       if (error) throw error;
       res.json(data);
     } catch (error) {
-      res.status(500).json({ error: error.message });
+      return respondWithError(res, error);
     }
   }
 );
@@ -8356,7 +8411,7 @@ app.get(
       if (error) throw error;
       res.json(data || []);
     } catch (error) {
-      res.status(500).json({ error: error.message });
+      return respondWithError(res, error);
     }
   }
 );
@@ -8437,7 +8492,7 @@ app.post(
       if (error) throw error;
       res.json(data);
     } catch (error) {
-      res.status(500).json({ error: error.message });
+      return respondWithError(res, error);
     }
   }
 );
@@ -8523,7 +8578,7 @@ app.patch(
       if (!data) return res.status(404).json({ error: 'Section not found' });
       res.json(data);
     } catch (error) {
-      res.status(500).json({ error: error.message });
+      return respondWithError(res, error);
     }
   }
 );
@@ -8565,7 +8620,7 @@ app.delete(
       if (deleteError) throw deleteError;
       res.json({ success: true });
     } catch (error) {
-      res.status(500).json({ error: error.message });
+      return respondWithError(res, error);
     }
   }
 );
@@ -8605,7 +8660,7 @@ app.patch(
 
       res.json({ success: true });
     } catch (error) {
-      res.status(500).json({ error: error.message });
+      return respondWithError(res, error);
     }
   }
 );

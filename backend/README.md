@@ -25,6 +25,7 @@ npm run dev
 - `SLACK_CLIENT_ID` - Slack app client id
 - `SLACK_CLIENT_SECRET` - Slack app client secret
 - `SLACK_SIGNING_SECRET` - Slack request signing secret
+- `SLACK_STATE_SECRET` - Optional separate HMAC secret for Slack OAuth state
 - `SLACK_REDIRECT_URI` - Slack OAuth callback URL
 - `SLACK_APP_ID` - Slack app id
 - `SLACK_SETTINGS_REDIRECT_URL` - Optional fallback redirect after install (Ledger deep link or HTTPS page)

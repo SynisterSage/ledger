@@ -4,32 +4,6 @@ import { authService } from '../services/auth';
 import { supabaseConfigError } from '../services/supabase';
 import { DEFAULT_API_URL } from '../config/runtime';
 
-const AUTH_SESSION_BACKUP_KEY = 'ledger-auth-session-backup:v1';
-
-const readCachedSession = (): Session | null => {
-  try {
-    const raw = window.localStorage.getItem(AUTH_SESSION_BACKUP_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as Session | null;
-    if (!parsed?.access_token || !parsed?.refresh_token) return null;
-    return parsed;
-  } catch {
-    return null;
-  }
-};
-
-const writeCachedSession = (session: Session | null) => {
-  try {
-    if (!session?.access_token || !session.refresh_token) {
-      window.localStorage.removeItem(AUTH_SESSION_BACKUP_KEY);
-      return;
-    }
-    window.localStorage.setItem(AUTH_SESSION_BACKUP_KEY, JSON.stringify(session));
-  } catch {
-    // Ignore storage failures; Supabase auth remains the primary source of truth.
-  }
-};
-
 export interface UseAuthReturn {
   user: User | null;
   session: Session | null;
@@ -93,7 +67,6 @@ export const useAuth = (): UseAuthReturn => {
 
       setSession(newSession);
       setUser(newSession?.user ?? null);
-      writeCachedSession(newSession);
 
       if (event === 'INITIAL_SESSION') {
         setIsLoading(false);
@@ -108,37 +81,11 @@ export const useAuth = (): UseAuthReturn => {
         if (currentSession) {
           setSession(currentSession);
           setUser(currentSession.user);
-          writeCachedSession(currentSession);
-          return;
-        }
-
-        const cachedSession = readCachedSession();
-        if (cachedSession) {
-          const restoredSession = await authService.restoreSession({
-            access_token: cachedSession.access_token,
-            refresh_token: cachedSession.refresh_token,
-          });
-
-          if (!isMounted) return;
-
-          if (restoredSession) {
-            setSession(restoredSession);
-            setUser(restoredSession.user);
-            writeCachedSession(restoredSession);
-            return;
-          }
-
-          // If restoration fails, keep the cached session optimistically so the UI
-          // doesn't bounce back to the login form on restart. Subsequent auth refresh
-          // or API calls can reconcile it.
-          setSession(cachedSession);
-          setUser(cachedSession.user);
           return;
         }
 
         setSession(null);
         setUser(null);
-        writeCachedSession(null);
       } catch (err) {
         if (!isMounted) return;
         setError(err instanceof Error ? err : new Error('Auth initialization failed'));
@@ -166,7 +113,6 @@ export const useAuth = (): UseAuthReturn => {
       if (data?.session) {
         setSession(data.session);
         setUser(data.session.user);
-        writeCachedSession(data.session);
       }
     } catch (err) {
       const error = err instanceof Error ? err : new Error('Sign in failed');
@@ -199,7 +145,6 @@ export const useAuth = (): UseAuthReturn => {
       if (error) throw error;
       setSession(null);
       setUser(null);
-      writeCachedSession(null);
       if (typeof window !== 'undefined') {
         void window.desktopWindow?.setMode('auth').catch(() => undefined);
         void window.desktopWindow?.setVisible(true).catch(() => undefined);
