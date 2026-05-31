@@ -1590,6 +1590,20 @@ function getDisplayNativeBounds(display: Electron.Display) {
 }
 
 function nativeRectToDipRect(rect: Rect) {
+  if (process.platform === 'win32') {
+    const topLeft = screen.screenToDipPoint({ x: Math.round(rect.x), y: Math.round(rect.y) });
+    const bottomRight = screen.screenToDipPoint({
+      x: Math.round(rect.x + rect.width),
+      y: Math.round(rect.y + rect.height),
+    });
+    return {
+      x: Math.round(topLeft.x),
+      y: Math.round(topLeft.y),
+      width: Math.max(1, Math.round(bottomRight.x - topLeft.x)),
+      height: Math.max(1, Math.round(bottomRight.y - topLeft.y)),
+    };
+  }
+
   const display = getDisplayMatchingNativeRect(rect);
   const nativeBounds = getDisplayNativeBounds(display);
   return {
@@ -1610,13 +1624,16 @@ function dipPointToNativePoint(point: Electron.Point) {
 
 function dipRectToNativeRect(rect: Electron.Rectangle) {
   if (process.platform === 'win32') {
-    const display = screen.getDisplayMatching(rect);
     const topLeft = screen.dipToScreenPoint({ x: rect.x, y: rect.y });
+    const bottomRight = screen.dipToScreenPoint({
+      x: rect.x + rect.width,
+      y: rect.y + rect.height,
+    });
     return {
       x: topLeft.x,
       y: topLeft.y,
-      width: Math.max(1, Math.round(rect.width * display.scaleFactor)),
-      height: Math.max(1, Math.round(rect.height * display.scaleFactor)),
+      width: Math.max(1, Math.round(bottomRight.x - topLeft.x)),
+      height: Math.max(1, Math.round(bottomRight.y - topLeft.y)),
     };
   }
 
