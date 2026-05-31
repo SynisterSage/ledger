@@ -679,6 +679,16 @@ type FloatingDockAttachmentStatus =
   | 'suspended_minimized'
   | 'suspended_fullscreen'
   | 'target_closed';
+type WindowsDockTraceInput = {
+  trackerType?: string;
+  targetId?: string | null;
+  targetWindowHandle?: string | null;
+  rawTargetBounds?: Rect | null;
+  rawTargetBoundsCoordinateSystem?: string;
+  normalizedTargetBounds?: Rect | null;
+  normalizedTargetBoundsCoordinateSystem?: string;
+  reason?: string;
+};
 
 let sidebarWin: BrowserWindow | null = null;
 const moduleWins = new Map<ModuleWindowKind, BrowserWindow>();
@@ -1576,9 +1586,16 @@ function getDisplayMatchingNativeRect(rect: Rect) {
 
   let bestDisplay = displays[0];
   let bestOverlap = -1;
+  let bestDistance = Number.POSITIVE_INFINITY;
+  const rectCenterX = rect.x + rect.width / 2;
+  const rectCenterY = rect.y + rect.height / 2;
 
   for (const display of displays) {
     const physicalBounds = getDisplayNativeBounds(display);
+    const physicalCenterX = physicalBounds.x + physicalBounds.width / 2;
+    const physicalCenterY = physicalBounds.y + physicalBounds.height / 2;
+    const distance =
+      (physicalCenterX - rectCenterX) ** 2 + (physicalCenterY - rectCenterY) ** 2;
 
     const overlapWidth = Math.max(
       0,
@@ -1592,8 +1609,9 @@ function getDisplayMatchingNativeRect(rect: Rect) {
     );
     const overlapArea = overlapWidth * overlapHeight;
 
-    if (overlapArea > bestOverlap) {
+    if (overlapArea > bestOverlap || (overlapArea === bestOverlap && distance < bestDistance)) {
       bestOverlap = overlapArea;
+      bestDistance = distance;
       bestDisplay = display;
     }
   }
@@ -1623,19 +1641,24 @@ function getDisplayNativeBounds(display: Electron.Display) {
   };
 }
 
+function normalizeWindowsBoundsToDip(rawBounds: Rect) {
+  const display = getDisplayMatchingNativeRect(rawBounds);
+  const nativeBounds = getDisplayNativeBounds(display);
+
+  // Windows DWM/GetWindowRect data from the native tracker is physical pixels.
+  // Electron BrowserWindow/screen placement uses DIP, so convert relative to
+  // the matched monitor instead of assuming primary-display scale or x/y >= 0.
+  return {
+    x: Math.round(display.bounds.x + (rawBounds.x - nativeBounds.x) / display.scaleFactor),
+    y: Math.round(display.bounds.y + (rawBounds.y - nativeBounds.y) / display.scaleFactor),
+    width: Math.max(1, Math.round(rawBounds.width / display.scaleFactor)),
+    height: Math.max(1, Math.round(rawBounds.height / display.scaleFactor)),
+  };
+}
+
 function nativeRectToDipRect(rect: Rect) {
   if (process.platform === 'win32') {
-    const topLeft = screen.screenToDipPoint({ x: Math.round(rect.x), y: Math.round(rect.y) });
-    const bottomRight = screen.screenToDipPoint({
-      x: Math.round(rect.x + rect.width),
-      y: Math.round(rect.y + rect.height),
-    });
-    return {
-      x: Math.round(topLeft.x),
-      y: Math.round(topLeft.y),
-      width: Math.max(1, Math.round(bottomRight.x - topLeft.x)),
-      height: Math.max(1, Math.round(bottomRight.y - topLeft.y)),
-    };
+    return normalizeWindowsBoundsToDip(rect);
   }
 
   const display = getDisplayMatchingNativeRect(rect);
@@ -1658,16 +1681,13 @@ function dipPointToNativePoint(point: Electron.Point) {
 
 function dipRectToNativeRect(rect: Electron.Rectangle) {
   if (process.platform === 'win32') {
+    const display = getDisplayForBounds(rect);
     const topLeft = screen.dipToScreenPoint({ x: rect.x, y: rect.y });
-    const bottomRight = screen.dipToScreenPoint({
-      x: rect.x + rect.width,
-      y: rect.y + rect.height,
-    });
     return {
       x: topLeft.x,
       y: topLeft.y,
-      width: Math.max(1, Math.round(bottomRight.x - topLeft.x)),
-      height: Math.max(1, Math.round(bottomRight.y - topLeft.y)),
+      width: Math.max(1, Math.round(rect.width * display.scaleFactor)),
+      height: Math.max(1, Math.round(rect.height * display.scaleFactor)),
     };
   }
 
@@ -1678,6 +1698,64 @@ function dipDistanceToNativeDistance(distance: number, bounds: Electron.Rectangl
   if (process.platform !== 'win32') return distance;
   const display = screen.getDisplayMatching(bounds);
   return Math.max(1, Math.round(distance * display.scaleFactor));
+}
+
+function rectForDockTrace(rect: Rect | Electron.Rectangle | null | undefined) {
+  if (!rect) return null;
+  return {
+    x: Math.round(rect.x),
+    y: Math.round(rect.y),
+    width: Math.round(rect.width),
+    height: Math.round(rect.height),
+  };
+}
+
+function pointForDockTrace(point: Electron.Point | null | undefined) {
+  if (!point) return null;
+  return {
+    x: Math.round(point.x),
+    y: Math.round(point.y),
+  };
+}
+
+function rectCenterForDockTrace(rect: Rect | null | undefined) {
+  if (!rect) return null;
+  return pointForDockTrace({
+    x: rect.x + rect.width / 2,
+    y: rect.y + rect.height / 2,
+  });
+}
+
+function displayForDockTrace(display: Electron.Display | null | undefined) {
+  if (!display) return null;
+  return {
+    id: display.id,
+    bounds: rectForDockTrace(display.bounds),
+    workArea: rectForDockTrace(display.workArea),
+    scaleFactor: display.scaleFactor,
+  };
+}
+
+function getWindowsDockTrackerType() {
+  if (floatingDockNativeTracker) return 'windows-native-tracker';
+  if (floatingDockTrackingTimer) return 'windows-edge-poll';
+  return 'none';
+}
+
+function writeWindowsDockTrace(event: string, details: Record<string, unknown> = {}) {
+  if (process.platform !== 'win32' || !dockDebugEnabled) return;
+  try {
+    dockLog(
+      `[dock-debug] win32-dock-trace ${JSON.stringify({
+        event,
+        platform: process.platform,
+        at: Date.now(),
+        ...details,
+      })}`
+    );
+  } catch (error) {
+    dockLog(`[dock-debug] win32-dock-trace-error event=${event} error=${String(error)}`);
+  }
 }
 
 function isFullscreenLikeBounds(rect: Rect) {
@@ -2077,20 +2155,100 @@ function startMacDockNativeTracker(target: FloatingDockTarget) {
   }
 }
 
-function applyFloatingDockTargetBounds(targetBounds: Rect, side: DockSide) {
-  if (!sidebarWin || sidebarWin.isDestroyed()) return;
-  if (currentSidebarPosition !== 'floating') return;
-  if (currentSidebarMode === 'auth' || currentSidebarMode === 'fullscreen') return;
-  if (floatingDockDragActive) return;
+function applyFloatingDockTargetBounds(
+  targetBounds: Rect,
+  side: DockSide,
+  trace: WindowsDockTraceInput = {}
+) {
+  const rawTargetBounds = trace.rawTargetBounds ?? null;
+  const normalizedTargetBounds = trace.normalizedTargetBounds ?? targetBounds;
+  const targetDisplay = getDisplayForBounds(normalizedTargetBounds);
+  const rawTargetDisplay = rawTargetBounds ? getDisplayMatchingNativeRect(rawTargetBounds) : null;
+  let currentLedgerBoundsBefore: Electron.Rectangle | null = null;
+
+  const baseTrace = () => ({
+    trackerType: trace.trackerType ?? getWindowsDockTrackerType(),
+    targetId: trace.targetId ?? currentFloatingDockTarget?.id ?? null,
+    targetWindowHandle:
+      trace.targetWindowHandle ?? trace.targetId ?? currentFloatingDockTarget?.id ?? null,
+    side,
+    rawTargetBounds: rectForDockTrace(rawTargetBounds),
+    rawTargetBoundsCoordinateSystem:
+      trace.rawTargetBoundsCoordinateSystem ??
+      (rawTargetBounds ? 'windows-native-physical-pixels' : null),
+    rawTargetMatchedDisplay: displayForDockTrace(rawTargetDisplay),
+    rawTargetMatchedDisplayNativeBounds: rawTargetDisplay
+      ? rectForDockTrace(getDisplayNativeBounds(rawTargetDisplay))
+      : null,
+    normalizedTargetBounds: rectForDockTrace(normalizedTargetBounds),
+    normalizedTargetBoundsCoordinateSystem:
+      trace.normalizedTargetBoundsCoordinateSystem ?? 'electron-dip',
+    targetBoundsUsedForPlacement: rectForDockTrace(targetBounds),
+    targetBoundsUsedForPlacementCoordinateSystem: 'electron-dip',
+    targetCenterPoint: rectCenterForDockTrace(normalizedTargetBounds),
+    matchedDisplayId: targetDisplay.id,
+    matchedDisplay: displayForDockTrace(targetDisplay),
+    currentTargetDisplayId: currentFloatingDockDisplayId,
+    currentLedgerBoundsBeforePlacement: rectForDockTrace(currentLedgerBoundsBefore),
+    traceReason: trace.reason ?? null,
+  });
+
+  const writeSkippedTrace = (
+    reason: string,
+    details: Record<string, unknown> = {}
+  ) => {
+    writeWindowsDockTrace('dock-tick', {
+      ...baseTrace(),
+      movementSkipped: true,
+      skipReason: reason,
+      setBoundsCalled: false,
+      boundsPassedToSetBounds: null,
+      ledgerBoundsImmediatelyAfterSetBounds: sidebarWin?.isDestroyed()
+        ? null
+        : rectForDockTrace(sidebarWin?.getBounds()),
+      ...details,
+    });
+  };
+
+  if (!sidebarWin || sidebarWin.isDestroyed()) {
+    writeSkippedTrace('sidebar_window_missing');
+    return;
+  }
+
+  currentLedgerBoundsBefore = sidebarWin.getBounds();
+
+  if (currentSidebarPosition !== 'floating') {
+    writeSkippedTrace('sidebar_not_floating', { currentSidebarPosition });
+    return;
+  }
+
+  if (currentSidebarMode === 'auth' || currentSidebarMode === 'fullscreen') {
+    writeSkippedTrace('sidebar_mode_blocks_docking', { currentSidebarMode });
+    return;
+  }
+
+  if (floatingDockDragActive) {
+    writeSkippedTrace('floating_drag_active');
+    return;
+  }
+
   if (isFullscreenLikeBounds(targetBounds)) {
     currentFloatingDockBounds = targetBounds;
     currentFloatingDockMisses = 0;
     sendFloatingDockChanged(false, 'suspended_fullscreen');
+    writeSkippedTrace('target_fullscreen_like', {
+      detachOrSuspendGuardTriggered: 'suspended_fullscreen',
+    });
     return;
   }
+
   if (isLikelyMinimizingToDock(targetBounds, currentFloatingDockBounds)) {
     const currentBounds = sidebarWin.getBounds();
     currentFloatingPosition = { x: currentBounds.x, y: currentBounds.y };
+    writeSkippedTrace('target_likely_minimizing', {
+      detachOrSuspendGuardTriggered: 'suspended_minimized',
+      previousTargetBounds: rectForDockTrace(currentFloatingDockBounds),
+    });
     suspendCurrentFloatingDockTarget('suspended_minimized');
     applySidebarWindowMode(currentSidebarMode);
     return;
@@ -2101,26 +2259,68 @@ function applyFloatingDockTargetBounds(targetBounds: Rect, side: DockSide) {
   if (currentFloatingDockAttachmentStatus !== 'attached') {
     sendFloatingDockChanged(true, 'attached');
   }
-  const targetDisplay = getDisplayForBounds(targetBounds);
-  if (process.platform === 'win32' && currentFloatingDockDisplayId !== targetDisplay.id) {
+
+  const previousTargetDisplayId = currentFloatingDockDisplayId;
+  const allowCrossDisplayMove =
+    process.platform === 'win32' &&
+    previousTargetDisplayId !== null &&
+    previousTargetDisplayId !== targetDisplay.id;
+
+  if (process.platform === 'win32' && previousTargetDisplayId !== targetDisplay.id) {
+    writeWindowsDockTrace('display-handoff', {
+      ...baseTrace(),
+      previousTargetDisplayId,
+      nextTargetDisplayId: targetDisplay.id,
+      allowCrossDisplayMove,
+      message: 'Windows dock display handoff',
+    });
     currentFloatingDockDisplayId = targetDisplay.id;
-    dockLog(
-      `[dock-debug] win32 target display changed id=${targetDisplay.id} scale=${targetDisplay.scaleFactor} target=${JSON.stringify(
-        targetBounds
-      )} workArea=${JSON.stringify(targetDisplay.workArea)}`
-    );
   }
-  const nextBounds = getDockedBoundsForTarget(targetBounds, side, currentSidebarMode);
-  if (process.platform === 'win32' && dockDebugEnabled) {
-    dockLog(
-      `[dock-debug] win32 apply side=${side} display=${targetDisplay.id} bounds=${JSON.stringify(
-        targetDisplay.bounds
-      )} workArea=${JSON.stringify(targetDisplay.workArea)} scale=${targetDisplay.scaleFactor} next=${JSON.stringify(nextBounds)}`
-    );
+
+  const computedBoundsBeforeFinalClamp = getDockedBoundsForTarget(
+    targetBounds,
+    side,
+    currentSidebarMode
+  );
+  const finalClampedBounds = computedBoundsBeforeFinalClamp;
+  if (rectsMatch(currentLedgerBoundsBefore, finalClampedBounds)) {
+    writeSkippedTrace('already_at_computed_bounds', {
+      allowCrossDisplayMove,
+      previousTargetDisplayId,
+      computedLedgerBoundsBeforeFinalClamp: rectForDockTrace(computedBoundsBeforeFinalClamp),
+      finalClampedLedgerBounds: rectForDockTrace(finalClampedBounds),
+    });
+    return;
   }
-  if (rectsMatch(sidebarWin.getBounds(), nextBounds)) return;
-  if (!setSidebarBounds(nextBounds)) return;
-  currentFloatingPosition = { x: nextBounds.x, y: nextBounds.y };
+
+  const setBoundsCalled = setSidebarBounds(finalClampedBounds);
+  const ledgerBoundsAfterSetBounds =
+    sidebarWin && !sidebarWin.isDestroyed() ? sidebarWin.getBounds() : null;
+
+  writeWindowsDockTrace('dock-tick', {
+    ...baseTrace(),
+    allowCrossDisplayMove,
+    previousTargetDisplayId,
+    computedLedgerBoundsBeforeFinalClamp: rectForDockTrace(computedBoundsBeforeFinalClamp),
+    finalClampedLedgerBounds: rectForDockTrace(finalClampedBounds),
+    boundsPassedToSetBounds: rectForDockTrace(finalClampedBounds),
+    setBoundsCalled,
+    movementSkipped: !setBoundsCalled,
+    skipReason: setBoundsCalled ? null : 'set_bounds_failed',
+    ledgerBoundsImmediatelyAfterSetBounds: rectForDockTrace(ledgerBoundsAfterSetBounds),
+    setBoundsDelta:
+      ledgerBoundsAfterSetBounds && setBoundsCalled
+        ? {
+            x: ledgerBoundsAfterSetBounds.x - finalClampedBounds.x,
+            y: ledgerBoundsAfterSetBounds.y - finalClampedBounds.y,
+            width: ledgerBoundsAfterSetBounds.width - finalClampedBounds.width,
+            height: ledgerBoundsAfterSetBounds.height - finalClampedBounds.height,
+          }
+        : null,
+  });
+
+  if (!setBoundsCalled) return;
+  currentFloatingPosition = { x: finalClampedBounds.x, y: finalClampedBounds.y };
 }
 
 function rectsMatch(a: Rect, b: Rect) {
@@ -2194,7 +2394,12 @@ function setSidebarBounds(bounds: Rect, animate = false) {
 
     sidebarWin.setBounds(bounds, true);
     return true;
-  } catch {
+  } catch (error) {
+    writeWindowsDockTrace('set-bounds-error', {
+      trackerType: getWindowsDockTrackerType(),
+      requestedBounds: rectForDockTrace(bounds),
+      error: String(error),
+    });
     return false;
   }
 }
@@ -2203,6 +2408,13 @@ function handleNativeDockTrackerLine(line: string, side: DockSide) {
   const [kind, a, b, c, d] = line.trim().split('|');
   if (kind === 'state') {
     const state = String(a ?? '').toLowerCase();
+    writeWindowsDockTrace('native-tracker-state', {
+      trackerType: 'windows-native-tracker',
+      targetId: currentFloatingDockTarget?.id ?? null,
+      targetWindowHandle: currentFloatingDockTarget?.id ?? null,
+      side,
+      state,
+    });
     if (state === 'minimized') {
       suspendCurrentFloatingDockTarget('suspended_minimized');
     } else if (state === 'fullscreen') {
@@ -2216,16 +2428,41 @@ function handleNativeDockTrackerLine(line: string, side: DockSide) {
   const [x, y, width, height] = [a, b, c, d];
   if (kind !== 'bounds') return;
   const parsed = [x, y, width, height].map((value) => Number(value));
-  if (parsed.some((value) => Number.isNaN(value) || value <= 0)) return;
-  const dipRect = nativeRectToDipRect({
+  const rawRect = {
     x: parsed[0],
     y: parsed[1],
     width: parsed[2],
     height: parsed[3],
-  });
+  };
+  if (
+    ![rawRect.x, rawRect.y, rawRect.width, rawRect.height].every(Number.isFinite) ||
+    rawRect.width <= 0 ||
+    rawRect.height <= 0
+  ) {
+    writeWindowsDockTrace('native-tracker-parse-skip', {
+      trackerType: 'windows-native-tracker',
+      targetId: currentFloatingDockTarget?.id ?? null,
+      targetWindowHandle: currentFloatingDockTarget?.id ?? null,
+      side,
+      rawLine: line.trim(),
+      parsed,
+      skipReason: 'invalid_or_non_positive_size',
+    });
+    return;
+  }
+  const dipRect = nativeRectToDipRect(rawRect);
   applyFloatingDockTargetBounds(
     { x: dipRect.x, y: dipRect.y, width: dipRect.width, height: dipRect.height },
-    side
+    side,
+    {
+      trackerType: 'windows-native-tracker',
+      targetId: currentFloatingDockTarget?.id ?? null,
+      targetWindowHandle: currentFloatingDockTarget?.id ?? null,
+      rawTargetBounds: rawRect,
+      rawTargetBoundsCoordinateSystem: 'windows-native-physical-pixels',
+      normalizedTargetBounds: dipRect,
+      normalizedTargetBoundsCoordinateSystem: 'electron-dip',
+    }
   );
 }
 
@@ -2526,7 +2763,23 @@ async function refreshFloatingDockTarget() {
     // Let the Windows native tracker drive authoritative target bounds,
     // including multi-display moves.
     if (currentFloatingDockBounds) {
-      applyFloatingDockTargetBounds(currentFloatingDockBounds, currentFloatingDockTarget.side);
+      writeWindowsDockTrace('refresh-skip-edge-probe', {
+        trackerType: 'windows-native-tracker',
+        targetId: currentFloatingDockTarget.id,
+        targetWindowHandle: currentFloatingDockTarget.id,
+        normalizedTargetBounds: rectForDockTrace(currentFloatingDockBounds),
+        normalizedTargetBoundsCoordinateSystem: 'electron-dip',
+        currentLedgerBounds: rectForDockTrace(sidebarWin.getBounds()),
+        reason: 'native_tracker_authoritative_edge_probe_skipped',
+      });
+      applyFloatingDockTargetBounds(currentFloatingDockBounds, currentFloatingDockTarget.side, {
+        trackerType: 'windows-native-cache-reapply',
+        targetId: currentFloatingDockTarget.id,
+        targetWindowHandle: currentFloatingDockTarget.id,
+        normalizedTargetBounds: currentFloatingDockBounds,
+        normalizedTargetBoundsCoordinateSystem: 'electron-dip',
+        reason: 'native_tracker_authoritative_edge_probe_skipped',
+      });
     }
     return;
   }
@@ -2558,8 +2811,28 @@ async function refreshFloatingDockTarget() {
       if (rectsMatch(sidebarWin.getBounds(), fallbackBounds)) return;
       if (!setSidebarBounds(fallbackBounds)) return;
       currentFloatingPosition = { x: fallbackBounds.x, y: fallbackBounds.y };
+      writeWindowsDockTrace('edge-poll-fallback', {
+        trackerType: getWindowsDockTrackerType(),
+        targetId: currentFloatingDockTarget.id,
+        targetWindowHandle: currentFloatingDockTarget.id,
+        missCount: currentFloatingDockMisses,
+        normalizedTargetBounds: rectForDockTrace(currentFloatingDockBounds),
+        computedLedgerBoundsBeforeFinalClamp: rectForDockTrace(fallbackBounds),
+        finalClampedLedgerBounds: rectForDockTrace(fallbackBounds),
+        boundsPassedToSetBounds: rectForDockTrace(fallbackBounds),
+        ledgerBoundsImmediatelyAfterSetBounds: rectForDockTrace(sidebarWin.getBounds()),
+        reason: 'target_probe_missing_using_last_known_bounds',
+      });
       return;
     }
+    writeWindowsDockTrace('edge-poll-clear-target', {
+      trackerType: getWindowsDockTrackerType(),
+      targetId: currentFloatingDockTarget?.id ?? null,
+      targetWindowHandle: currentFloatingDockTarget?.id ?? null,
+      missCount: currentFloatingDockMisses,
+      movementSkipped: true,
+      skipReason: 'target_missing_after_probe_misses',
+    });
     clearCurrentFloatingDockTarget();
     stopFloatingDockTracking();
     // Reflow to normal floating geometry once dock target is gone.
@@ -2583,8 +2856,48 @@ async function refreshFloatingDockTarget() {
     currentSidebarMode
   );
   if (!sidebarWin || sidebarWin.isDestroyed()) return;
-  if (rectsMatch(sidebarWin.getBounds(), nextBounds)) return;
-  if (!setSidebarBounds(nextBounds)) return;
+  const currentLedgerBoundsBefore = sidebarWin.getBounds();
+  if (rectsMatch(currentLedgerBoundsBefore, nextBounds)) {
+    writeWindowsDockTrace('dock-tick', {
+      trackerType: getWindowsDockTrackerType(),
+      targetId: target.target.id,
+      targetWindowHandle: target.target.id,
+      side: currentFloatingDockTarget.side,
+      normalizedTargetBounds: rectForDockTrace(target.bounds),
+      normalizedTargetBoundsCoordinateSystem: 'electron-dip',
+      targetCenterPoint: rectCenterForDockTrace(target.bounds),
+      matchedDisplayId: getDisplayForBounds(target.bounds).id,
+      matchedDisplay: displayForDockTrace(getDisplayForBounds(target.bounds)),
+      currentLedgerBoundsBeforePlacement: rectForDockTrace(currentLedgerBoundsBefore),
+      computedLedgerBoundsBeforeFinalClamp: rectForDockTrace(nextBounds),
+      finalClampedLedgerBounds: rectForDockTrace(nextBounds),
+      movementSkipped: true,
+      skipReason: 'already_at_computed_bounds',
+      setBoundsCalled: false,
+    });
+    return;
+  }
+  const setBoundsCalled = setSidebarBounds(nextBounds);
+  writeWindowsDockTrace('dock-tick', {
+    trackerType: getWindowsDockTrackerType(),
+    targetId: target.target.id,
+    targetWindowHandle: target.target.id,
+    side: currentFloatingDockTarget.side,
+    normalizedTargetBounds: rectForDockTrace(target.bounds),
+    normalizedTargetBoundsCoordinateSystem: 'electron-dip',
+    targetCenterPoint: rectCenterForDockTrace(target.bounds),
+    matchedDisplayId: getDisplayForBounds(target.bounds).id,
+    matchedDisplay: displayForDockTrace(getDisplayForBounds(target.bounds)),
+    currentLedgerBoundsBeforePlacement: rectForDockTrace(currentLedgerBoundsBefore),
+    computedLedgerBoundsBeforeFinalClamp: rectForDockTrace(nextBounds),
+    finalClampedLedgerBounds: rectForDockTrace(nextBounds),
+    boundsPassedToSetBounds: rectForDockTrace(nextBounds),
+    setBoundsCalled,
+    movementSkipped: !setBoundsCalled,
+    skipReason: setBoundsCalled ? null : 'set_bounds_failed',
+    ledgerBoundsImmediatelyAfterSetBounds: rectForDockTrace(sidebarWin.getBounds()),
+  });
+  if (!setBoundsCalled) return;
   currentFloatingPosition = { x: nextBounds.x, y: nextBounds.y };
 }
 
@@ -2703,32 +3016,63 @@ if ($script:result) { Write-Output $script:result }
           timeout: 1200,
         }
       );
-      const [side, id, x, y, width, height, isLedgerWindow] = String(stdout).trim().split('|');
-      const parsed = [x, y, width, height].map((value) => Number(value));
-      if (
-        parsed.some((value) => Number.isNaN(value) || value <= 0) ||
-        !id ||
-        (side !== 'left' && side !== 'right')
-      ) {
+      const output = String(stdout).trim();
+      if (!output) {
+        writeWindowsDockTrace('cursor-target-scan', {
+          trackerType: 'windows-cursor-scan',
+          sidebarBounds: rectForDockTrace(sidebarBounds),
+          nativeSidebarBounds: rectForDockTrace(nativeSidebarBounds),
+          snapDistance,
+          nativeSnapDistance,
+          movementSkipped: true,
+          skipReason: 'no_target_window_within_snap_distance',
+        });
         return null;
       }
-      const bounds = nativeRectToDipRect({
+      const [side, id, x, y, width, height, isLedgerWindow] = output.split('|');
+      const parsed = [x, y, width, height].map((value) => Number(value));
+      const rawBounds = {
         x: parsed[0],
         y: parsed[1],
         width: parsed[2],
         height: parsed[3],
-      });
-      if (dockDebugEnabled) {
-        const display = getDisplayForBounds(bounds);
-        dockLog(
-          `[dock-debug] win32 cursor target id=${id} side=${side} native=${JSON.stringify({
-            x: parsed[0],
-            y: parsed[1],
-            width: parsed[2],
-            height: parsed[3],
-          })} dip=${JSON.stringify(bounds)} display=${display.id} workArea=${JSON.stringify(display.workArea)} scale=${display.scaleFactor}`
-        );
+      };
+      if (
+        ![rawBounds.x, rawBounds.y, rawBounds.width, rawBounds.height].every(Number.isFinite) ||
+        rawBounds.width <= 0 ||
+        rawBounds.height <= 0 ||
+        !id ||
+        (side !== 'left' && side !== 'right')
+      ) {
+        writeWindowsDockTrace('cursor-target-scan', {
+          trackerType: 'windows-cursor-scan',
+          sidebarBounds: rectForDockTrace(sidebarBounds),
+          nativeSidebarBounds: rectForDockTrace(nativeSidebarBounds),
+          rawLine: output,
+          parsed,
+          movementSkipped: true,
+          skipReason: 'invalid_target_scan_output',
+        });
+        return null;
       }
+      const bounds = nativeRectToDipRect(rawBounds);
+      const display = getDisplayForBounds(bounds);
+      const rawDisplay = getDisplayMatchingNativeRect(rawBounds);
+      writeWindowsDockTrace('cursor-target-found', {
+        trackerType: 'windows-cursor-scan',
+        targetId: id,
+        targetWindowHandle: id,
+        side,
+        rawTargetBounds: rectForDockTrace(rawBounds),
+        rawTargetBoundsCoordinateSystem: 'windows-native-physical-pixels',
+        rawTargetMatchedDisplay: displayForDockTrace(rawDisplay),
+        rawTargetMatchedDisplayNativeBounds: rectForDockTrace(getDisplayNativeBounds(rawDisplay)),
+        normalizedTargetBounds: rectForDockTrace(bounds),
+        normalizedTargetBoundsCoordinateSystem: 'electron-dip',
+        targetCenterPoint: rectCenterForDockTrace(bounds),
+        matchedDisplayId: display.id,
+        matchedDisplay: displayForDockTrace(display),
+      });
       return {
         target: {
           platform: 'win32',
@@ -2875,24 +3219,52 @@ if ($script:result) { Write-Output $script:result }
         );
         const [id, x, y, width, height, isLedgerWindow] = String(stdout).trim().split('|');
         const parsed = [x, y, width, height].map((value) => Number(value));
-        if (parsed.some((value) => Number.isNaN(value) || value <= 0) || !id) continue;
-        const dipBounds = nativeRectToDipRect({
+        const rawBounds = {
           x: parsed[0],
           y: parsed[1],
           width: parsed[2],
           height: parsed[3],
-        });
-        if (dockDebugEnabled) {
-          const display = getDisplayForBounds(dipBounds);
-          dockLog(
-            `[dock-debug] win32 edge target id=${id} side=${probe.side} native=${JSON.stringify({
-              x: parsed[0],
-              y: parsed[1],
-              width: parsed[2],
-              height: parsed[3],
-            })} dip=${JSON.stringify(dipBounds)} display=${display.id} workArea=${JSON.stringify(display.workArea)} scale=${display.scaleFactor}`
-          );
+        };
+        if (
+          ![rawBounds.x, rawBounds.y, rawBounds.width, rawBounds.height].every(Number.isFinite) ||
+          rawBounds.width <= 0 ||
+          rawBounds.height <= 0 ||
+          !id
+        ) {
+          if (String(stdout).trim()) {
+            writeWindowsDockTrace('edge-target-probe-skip', {
+              trackerType: 'windows-edge-probe',
+              side: probe.side,
+              probePoint: pointForDockTrace(probe),
+              nativeProbePoint: pointForDockTrace(nativeProbe),
+              rawLine: String(stdout).trim(),
+              parsed,
+              movementSkipped: true,
+              skipReason: 'invalid_target_probe_output',
+            });
+          }
+          continue;
         }
+        const dipBounds = nativeRectToDipRect(rawBounds);
+        const display = getDisplayForBounds(dipBounds);
+        const rawDisplay = getDisplayMatchingNativeRect(rawBounds);
+        writeWindowsDockTrace('edge-target-found', {
+          trackerType: 'windows-edge-probe',
+          targetId: id,
+          targetWindowHandle: id,
+          side: probe.side,
+          probePoint: pointForDockTrace(probe),
+          nativeProbePoint: pointForDockTrace(nativeProbe),
+          rawTargetBounds: rectForDockTrace(rawBounds),
+          rawTargetBoundsCoordinateSystem: 'windows-native-physical-pixels',
+          rawTargetMatchedDisplay: displayForDockTrace(rawDisplay),
+          rawTargetMatchedDisplayNativeBounds: rectForDockTrace(getDisplayNativeBounds(rawDisplay)),
+          normalizedTargetBounds: rectForDockTrace(dipBounds),
+          normalizedTargetBoundsCoordinateSystem: 'electron-dip',
+          targetCenterPoint: rectCenterForDockTrace(dipBounds),
+          matchedDisplayId: display.id,
+          matchedDisplay: displayForDockTrace(display),
+        });
         return {
           target: {
             platform: 'win32',
@@ -2903,7 +3275,22 @@ if ($script:result) { Write-Output $script:result }
           bounds: dipBounds,
         };
       }
+      writeWindowsDockTrace('edge-target-scan', {
+        trackerType: 'windows-edge-probe',
+        sidebarBounds: rectForDockTrace(sidebarBounds),
+        nativeSidebarBounds: rectForDockTrace(nativeSidebarBounds),
+        probeCount: probePoints.length,
+        movementSkipped: true,
+        skipReason: 'no_target_window_at_probe_points',
+      });
     } catch (error) {
+      writeWindowsDockTrace('edge-target-scan-error', {
+        trackerType: 'windows-edge-probe',
+        sidebarBounds: rectForDockTrace(sidebarBounds),
+        error: String(error),
+        movementSkipped: true,
+        skipReason: 'probe_command_failed',
+      });
       console.warn('[electron] Could not determine Windows dock target at edge:', error);
     }
     return null;
@@ -2938,12 +3325,28 @@ async function dockFloatingSidebarToTarget() {
       : await getFloatingDockTargetAtCursor();
 
   if (!target) {
+    writeWindowsDockTrace('manual-dock-skip', {
+      trackerType: 'windows-cursor-scan',
+      currentLedgerBounds: rectForDockTrace(sidebarWin.getBounds()),
+      movementSkipped: true,
+      skipReason: 'no_cursor_target',
+    });
     clearCurrentFloatingDockTarget();
     stopFloatingDockTracking();
     return null;
   }
 
   if (isFullscreenLikeBounds(target.bounds)) {
+    writeWindowsDockTrace('manual-dock-skip', {
+      trackerType: 'windows-cursor-scan',
+      targetId: target.target.id,
+      targetWindowHandle: target.target.id,
+      normalizedTargetBounds: rectForDockTrace(target.bounds),
+      normalizedTargetBoundsCoordinateSystem: 'electron-dip',
+      movementSkipped: true,
+      skipReason: 'target_fullscreen_like',
+      detachOrSuspendGuardTriggered: 'suspended_fullscreen',
+    });
     clearCurrentFloatingDockTarget('suspended_fullscreen');
     stopFloatingDockTracking();
     return null;
@@ -2959,6 +3362,20 @@ async function dockFloatingSidebarToTarget() {
   const rightDistance = Math.abs(currentBounds.x - (target.bounds.x + target.bounds.width));
   const nearestDistance = Math.min(leftDistance, rightDistance);
   if (nearestDistance > snapDistance) {
+    writeWindowsDockTrace('manual-dock-skip', {
+      trackerType: 'windows-cursor-scan',
+      targetId: target.target.id,
+      targetWindowHandle: target.target.id,
+      normalizedTargetBounds: rectForDockTrace(target.bounds),
+      normalizedTargetBoundsCoordinateSystem: 'electron-dip',
+      currentLedgerBounds: rectForDockTrace(currentBounds),
+      leftDistance,
+      rightDistance,
+      nearestDistance,
+      snapDistance,
+      movementSkipped: true,
+      skipReason: 'outside_snap_distance',
+    });
     clearCurrentFloatingDockTarget();
     stopFloatingDockTracking();
     return null;
@@ -2966,16 +3383,51 @@ async function dockFloatingSidebarToTarget() {
 
   const side = getDockSide(currentBounds, target.bounds);
   const dockBounds = getDockedBoundsForTarget(target.bounds, side, currentSidebarMode);
+  const targetDisplay = getDisplayForBounds(target.bounds);
   const clamped = clampRectToWorkArea(
     dockBounds,
-    screen.getDisplayMatching(target.bounds).workArea
+    targetDisplay.workArea
   );
 
   setCurrentFloatingDockTarget({ ...target.target, side }, target.bounds);
-  if (!setSidebarBounds(clamped)) return null;
+  const setBoundsCalled = setSidebarBounds(clamped);
+  writeWindowsDockTrace('manual-dock-set-bounds', {
+    trackerType: 'windows-cursor-scan',
+    targetId: target.target.id,
+    targetWindowHandle: target.target.id,
+    side,
+    normalizedTargetBounds: rectForDockTrace(target.bounds),
+    normalizedTargetBoundsCoordinateSystem: 'electron-dip',
+    targetCenterPoint: rectCenterForDockTrace(target.bounds),
+    matchedDisplayId: targetDisplay.id,
+    matchedDisplay: displayForDockTrace(targetDisplay),
+    currentLedgerBoundsBeforePlacement: rectForDockTrace(currentBounds),
+    computedLedgerBoundsBeforeFinalClamp: rectForDockTrace(dockBounds),
+    finalClampedLedgerBounds: rectForDockTrace(clamped),
+    boundsPassedToSetBounds: rectForDockTrace(clamped),
+    setBoundsCalled,
+    movementSkipped: !setBoundsCalled,
+    skipReason: setBoundsCalled ? null : 'set_bounds_failed',
+    ledgerBoundsImmediatelyAfterSetBounds: rectForDockTrace(sidebarWin.getBounds()),
+  });
+  if (!setBoundsCalled) return null;
   currentFloatingPosition = { x: clamped.x, y: clamped.y };
   if (!startFloatingDockNativeTracker({ ...target.target, side })) {
+    writeWindowsDockTrace('native-tracker-start-skip', {
+      trackerType: 'windows-cursor-scan',
+      targetId: target.target.id,
+      targetWindowHandle: target.target.id,
+      side,
+      reason: 'native_tracker_start_failed_using_edge_poll',
+    });
     startFloatingDockTracking();
+  } else {
+    writeWindowsDockTrace('native-tracker-started', {
+      trackerType: 'windows-native-tracker',
+      targetId: target.target.id,
+      targetWindowHandle: target.target.id,
+      side,
+    });
   }
   return clamped;
 }
