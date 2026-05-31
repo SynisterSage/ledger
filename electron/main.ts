@@ -51,9 +51,13 @@ if (process.platform === 'win32') {
   app.commandLine.appendSwitch('disable-features', 'DirectComposition');
 }
 
-// File-based logging for dock debugging (disabled unless LEDGER_DOCK_DEBUG=1)
+// File-based logging for dock debugging (disabled unless LEDGER_DOCK_DEBUG=1/true)
 const logFile = path.join(app.getPath('userData'), 'dock-debug.log');
-const dockDebugEnabled = process.env.LEDGER_DOCK_DEBUG === '1';
+const dockDebugEnabled = ['1', 'true', 'yes', 'on'].includes(
+  String(process.env.LEDGER_DOCK_DEBUG ?? '')
+    .trim()
+    .toLowerCase()
+);
 const dockLog = (message: string) => {
   if (!dockDebugEnabled) return;
   try {
@@ -686,6 +690,7 @@ let currentFloatingDockTarget: FloatingDockTarget | null = null;
 let currentFloatingDockBounds: Rect | null = null;
 let currentFloatingDockAttachmentStatus: FloatingDockAttachmentStatus = 'detached';
 let currentFloatingDockMisses = 0;
+let currentFloatingDockDisplayId: number | null = null;
 let floatingDockHoldUntil = 0;
 let floatingDockDragActive = false;
 let floatingDockTrackingTimer: NodeJS.Timeout | null = null;
@@ -1536,6 +1541,35 @@ function clampRectToWorkArea(rect: Rect, workArea: Electron.Rectangle) {
   };
 }
 
+function getDisplayForBounds(bounds: Rect) {
+  if (
+    !Number.isFinite(bounds.x) ||
+    !Number.isFinite(bounds.y) ||
+    !Number.isFinite(bounds.width) ||
+    !Number.isFinite(bounds.height) ||
+    bounds.width <= 0 ||
+    bounds.height <= 0
+  ) {
+    return screen.getPrimaryDisplay();
+  }
+
+  const matchingDisplay = screen.getDisplayMatching({
+    x: Math.round(bounds.x),
+    y: Math.round(bounds.y),
+    width: Math.max(1, Math.round(bounds.width)),
+    height: Math.max(1, Math.round(bounds.height)),
+  });
+
+  if (matchingDisplay && Number.isFinite(matchingDisplay.id)) {
+    return matchingDisplay;
+  }
+
+  return screen.getDisplayNearestPoint({
+    x: Math.round(bounds.x + bounds.width / 2),
+    y: Math.round(bounds.y + bounds.height / 2),
+  });
+}
+
 function getDisplayMatchingNativeRect(rect: Rect) {
   const displays = screen.getAllDisplays();
   if (displays.length === 0) return screen.getPrimaryDisplay();
@@ -1736,7 +1770,8 @@ function getDockSide(currentBounds: Rect, targetBounds: Rect): DockSide {
 }
 
 function getDockedBoundsForTarget(targetBounds: Rect, side: DockSide, mode: SidebarWindowMode) {
-  const { width: workWidth, height: workHeight } = screen.getDisplayMatching(targetBounds).workArea;
+  const targetDisplay = getDisplayForBounds(targetBounds);
+  const { width: workWidth, height: workHeight } = targetDisplay.workArea;
   const width =
     mode === 'compact'
       ? Math.min(COLLAPSED_SIZE, workWidth - WINDOW_MARGIN * 2)
@@ -1756,7 +1791,7 @@ function getDockedBoundsForTarget(targetBounds: Rect, side: DockSide, mode: Side
   const y = targetBounds.y;
   return clampRectToWorkArea(
     { x, y, width, height },
-    screen.getDisplayMatching(targetBounds).workArea
+    targetDisplay.workArea
   );
 }
 
@@ -1781,6 +1816,7 @@ function setCurrentFloatingDockTarget(target: FloatingDockTarget | null, bounds:
   currentFloatingDockTarget = target;
   currentFloatingDockBounds = bounds;
   currentFloatingDockMisses = 0;
+  currentFloatingDockDisplayId = bounds ? getDisplayForBounds(bounds).id : null;
   sendFloatingDockChanged(Boolean(target && bounds), target && bounds ? 'attached' : 'detached');
 }
 
@@ -1801,6 +1837,7 @@ function clearCurrentFloatingDockTarget(
   currentFloatingDockTarget = null;
   currentFloatingDockBounds = null;
   currentFloatingDockMisses = 0;
+  currentFloatingDockDisplayId = null;
   floatingDockHoldUntil = 0;
   sendFloatingDockChanged(false, attachmentStatus);
 }
@@ -2064,7 +2101,23 @@ function applyFloatingDockTargetBounds(targetBounds: Rect, side: DockSide) {
   if (currentFloatingDockAttachmentStatus !== 'attached') {
     sendFloatingDockChanged(true, 'attached');
   }
+  const targetDisplay = getDisplayForBounds(targetBounds);
+  if (process.platform === 'win32' && currentFloatingDockDisplayId !== targetDisplay.id) {
+    currentFloatingDockDisplayId = targetDisplay.id;
+    dockLog(
+      `[dock-debug] win32 target display changed id=${targetDisplay.id} scale=${targetDisplay.scaleFactor} target=${JSON.stringify(
+        targetBounds
+      )} workArea=${JSON.stringify(targetDisplay.workArea)}`
+    );
+  }
   const nextBounds = getDockedBoundsForTarget(targetBounds, side, currentSidebarMode);
+  if (process.platform === 'win32' && dockDebugEnabled) {
+    dockLog(
+      `[dock-debug] win32 apply side=${side} display=${targetDisplay.id} bounds=${JSON.stringify(
+        targetDisplay.bounds
+      )} workArea=${JSON.stringify(targetDisplay.workArea)} scale=${targetDisplay.scaleFactor} next=${JSON.stringify(nextBounds)}`
+    );
+  }
   if (rectsMatch(sidebarWin.getBounds(), nextBounds)) return;
   if (!setSidebarBounds(nextBounds)) return;
   currentFloatingPosition = { x: nextBounds.x, y: nextBounds.y };
@@ -2465,6 +2518,19 @@ async function refreshFloatingDockTarget() {
   if (!currentSidebarPreferences.floatingDockEnabled) return;
   if (!currentFloatingDockTarget) return;
 
+  if (
+    process.platform === 'win32' &&
+    floatingDockNativeTracker &&
+    currentFloatingDockTarget.platform === 'win32'
+  ) {
+    // Let the Windows native tracker drive authoritative target bounds,
+    // including multi-display moves.
+    if (currentFloatingDockBounds) {
+      applyFloatingDockTargetBounds(currentFloatingDockBounds, currentFloatingDockTarget.side);
+    }
+    return;
+  }
+
   const sidebarBounds = sidebarWin.getBounds();
   const dockTarget = currentFloatingDockTarget;
   const target = await getFloatingDockTargetAtEdge(
@@ -2652,6 +2718,17 @@ if ($script:result) { Write-Output $script:result }
         width: parsed[2],
         height: parsed[3],
       });
+      if (dockDebugEnabled) {
+        const display = getDisplayForBounds(bounds);
+        dockLog(
+          `[dock-debug] win32 cursor target id=${id} side=${side} native=${JSON.stringify({
+            x: parsed[0],
+            y: parsed[1],
+            width: parsed[2],
+            height: parsed[3],
+          })} dip=${JSON.stringify(bounds)} display=${display.id} workArea=${JSON.stringify(display.workArea)} scale=${display.scaleFactor}`
+        );
+      }
       return {
         target: {
           platform: 'win32',
@@ -2799,6 +2876,23 @@ if ($script:result) { Write-Output $script:result }
         const [id, x, y, width, height, isLedgerWindow] = String(stdout).trim().split('|');
         const parsed = [x, y, width, height].map((value) => Number(value));
         if (parsed.some((value) => Number.isNaN(value) || value <= 0) || !id) continue;
+        const dipBounds = nativeRectToDipRect({
+          x: parsed[0],
+          y: parsed[1],
+          width: parsed[2],
+          height: parsed[3],
+        });
+        if (dockDebugEnabled) {
+          const display = getDisplayForBounds(dipBounds);
+          dockLog(
+            `[dock-debug] win32 edge target id=${id} side=${probe.side} native=${JSON.stringify({
+              x: parsed[0],
+              y: parsed[1],
+              width: parsed[2],
+              height: parsed[3],
+            })} dip=${JSON.stringify(dipBounds)} display=${display.id} workArea=${JSON.stringify(display.workArea)} scale=${display.scaleFactor}`
+          );
+        }
         return {
           target: {
             platform: 'win32',
@@ -2806,12 +2900,7 @@ if ($script:result) { Write-Output $script:result }
             side: probe.side,
             isLedgerWindow: isLedgerWindow === '1',
           },
-          bounds: nativeRectToDipRect({
-            x: parsed[0],
-            y: parsed[1],
-            width: parsed[2],
-            height: parsed[3],
-          }),
+          bounds: dipBounds,
         };
       }
     } catch (error) {
