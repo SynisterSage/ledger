@@ -1657,7 +1657,7 @@ const mapNotificationCenterRow = (row, maps) => {
     const dueLabel = remindAt ? formatNotificationDateTime(remindAt) : null;
     const reminderBody = normalizeNullableText(reminder?.body ?? reminder?.notes);
     title = title ?? reminderTitle ?? 'Reminder due';
-    body = body ?? [dueLabel ? `Due ${dueLabel}` : null, reminderBody].filter(Boolean).join(' · ') || null;
+    body = body ?? ([dueLabel ? `Due ${dueLabel}` : null, reminderBody].filter(Boolean).join(' · ') || null);
     moduleKind = moduleKind ?? 'calendar';
     focusPayload = focusPayload ?? { kind: 'calendar', focusContext: `focus-reminder:${sourceId}` };
     context = reminder?.calendar_id

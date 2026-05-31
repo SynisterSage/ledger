@@ -319,7 +319,7 @@ export const NotificationCenterWindow: React.FC = () => {
   );
 
   return (
-    <div className="flex h-screen flex-col bg-white">
+    <div className="relative h-screen overflow-hidden rounded-3xl border border-gray-200 bg-[#f5f7fb] flex flex-col shadow-[0_24px_80px_rgba(15,23,42,0.08)]">
       <ModuleWindowHeader
         eyebrow="Notification Center"
         title="Notifications"

@@ -85,7 +85,7 @@ export const NotificationMonitor: React.FC = () => {
         toast.show(title, {
           detail,
           variant: 'info',
-          icon: 'ledger',
+          icon: 'alert',
           duration: item.actions?.length ? 8000 : 2500,
           actions: (item.actions ?? []).map((action) => {
             if (action === 'open') {

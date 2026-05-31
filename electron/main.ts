@@ -792,7 +792,89 @@ let notificationApiUrl = LEDGER_API_URL;
 let cachedNotificationPreferences: NotificationPreferencesPayload | null = null;
 let cachedNotificationPreferencesAt = 0;
 const notificationSeenIds = new Set<string>();
-let notificationSeenAccessToken: string | null = null;
+let notificationSeenNamespace: string | null = null;
+let notificationSessionUserId: string | null = null;
+const notificationDeliveryStatePath = path.join(
+  app.getPath('userData'),
+  'notification-delivery-state.json'
+);
+const notificationDeliveryState = new Map<string, Record<string, number>>();
+let notificationSeenIdsLoadedNamespace: string | null = null;
+
+const getNotificationNamespace = (apiUrl: string | null, userId: string | null) => {
+  const normalizedApiUrl = apiUrl?.trim() || '';
+  const normalizedUserId = userId?.trim() || '';
+  if (!normalizedApiUrl || !normalizedUserId) return null;
+  return `${normalizedApiUrl}::${normalizedUserId}`;
+};
+
+const loadNotificationDeliveryState = () => {
+  try {
+    if (!fs.existsSync(notificationDeliveryStatePath)) return;
+    const raw = fs.readFileSync(notificationDeliveryStatePath, 'utf8');
+    const parsed = JSON.parse(raw) as { namespaces?: Record<string, Record<string, number>> } | null;
+    const namespaces = parsed?.namespaces;
+    if (!namespaces || typeof namespaces !== 'object') return;
+
+    notificationDeliveryState.clear();
+    for (const [namespace, value] of Object.entries(namespaces)) {
+      if (!namespace || !value || typeof value !== 'object') continue;
+      const next: Record<string, number> = {};
+      for (const [id, ts] of Object.entries(value)) {
+        const time = Number(ts);
+        if (!id || !Number.isFinite(time)) continue;
+        next[id] = time;
+      }
+      notificationDeliveryState.set(namespace, next);
+    }
+  } catch (error) {
+    dockLog(`[dock-debug] failed to load notification delivery state: ${String(error)}`);
+  }
+};
+
+const saveNotificationDeliveryState = () => {
+  try {
+    const namespaces: Record<string, Record<string, number>> = {};
+    for (const [namespace, value] of notificationDeliveryState.entries()) {
+      namespaces[namespace] = value;
+    }
+    fs.writeFileSync(
+      notificationDeliveryStatePath,
+      JSON.stringify({ version: 1, namespaces }, null, 2),
+      'utf8'
+    );
+  } catch (error) {
+    dockLog(`[dock-debug] failed to save notification delivery state: ${String(error)}`);
+  }
+};
+
+const pruneNotificationDeliveryState = (state: Record<string, number>) => {
+  const entries = Object.entries(state).filter(([, ts]) => Number.isFinite(Number(ts)));
+  if (entries.length <= 2000) return state;
+
+  const next = Object.fromEntries(entries.sort((a, b) => Number(b[1]) - Number(a[1])).slice(0, 2000));
+  return next;
+};
+
+const hydrateNotificationSeenIds = (namespace: string | null) => {
+  notificationSeenIds.clear();
+  notificationSeenIdsLoadedNamespace = namespace;
+  if (!namespace) return;
+
+  const cached = notificationDeliveryState.get(namespace);
+  if (!cached) return;
+
+  for (const id of Object.keys(cached)) {
+    notificationSeenIds.add(id);
+  }
+};
+
+const rememberDeliveredNotification = (namespace: string, id: string) => {
+  const next = { ...(notificationDeliveryState.get(namespace) ?? {}) };
+  next[id] = Date.now();
+  notificationDeliveryState.set(namespace, pruneNotificationDeliveryState(next));
+  saveNotificationDeliveryState();
+};
 
 const getNotificationWindows = () =>
   BrowserWindow.getAllWindows().filter((win) => !win.isDestroyed());
@@ -1154,6 +1236,10 @@ const runNotificationScheduler = async () => {
     );
     const activeItems = Array.isArray(notifications) ? notifications : [];
     if (shouldDeliverInApp || shouldDeliverDesktop) {
+      const currentNamespace = getNotificationNamespace(notificationApiUrl, notificationSessionUserId);
+      if (currentNamespace && notificationSeenIdsLoadedNamespace !== currentNamespace) {
+        hydrateNotificationSeenIds(currentNamespace);
+      }
       const batchKeys = new Set<string>();
       const unseenItems = activeItems.filter((item) => {
         if (notificationSeenIds.has(item.id)) return false;
@@ -1166,7 +1252,12 @@ const runNotificationScheduler = async () => {
         batchKeys.add(batchKey);
         return true;
       });
-      unseenItems.forEach((item) => notificationSeenIds.add(item.id));
+      unseenItems.forEach((item) => {
+        notificationSeenIds.add(item.id);
+        if (currentNamespace) {
+          rememberDeliveredNotification(currentNamespace, item.id);
+        }
+      });
       if (shouldDeliverInApp) {
         broadcastNotificationBatch(unseenItems);
       }
@@ -1194,16 +1285,16 @@ const syncNotificationSession = (payload: {
   userId?: string | null;
   apiUrl?: string | null;
 } | null) => {
-  const previousApiUrl = notificationApiUrl;
   if (payload?.apiUrl?.trim()) notificationApiUrl = payload.apiUrl.trim();
+  notificationSessionUserId = payload?.userId?.trim() || null;
   const accessToken = payload?.accessToken ?? null;
   const nextAccessToken = accessToken && accessToken.trim() ? accessToken.trim() : null;
-  const sessionChanged =
-    nextAccessToken !== notificationSeenAccessToken || notificationApiUrl !== previousApiUrl;
+  const nextNamespace = getNotificationNamespace(notificationApiUrl, notificationSessionUserId);
+  const sessionChanged = nextNamespace !== notificationSeenNamespace;
 
   if (sessionChanged) {
-    notificationSeenIds.clear();
-    notificationSeenAccessToken = nextAccessToken;
+    notificationSeenNamespace = nextNamespace;
+    hydrateNotificationSeenIds(nextNamespace);
     cachedNotificationPreferences = null;
     cachedNotificationPreferencesAt = 0;
     notificationSchedulerCooldownUntil = 0;
@@ -1482,15 +1573,11 @@ function getDisplayNativeBounds(display: Electron.Display) {
       x: display.bounds.x,
       y: display.bounds.y,
     });
-    const bottomRight = screen.dipToScreenPoint({
-      x: display.bounds.x + display.bounds.width,
-      y: display.bounds.y + display.bounds.height,
-    });
     return {
       x: topLeft.x,
       y: topLeft.y,
-      width: bottomRight.x - topLeft.x,
-      height: bottomRight.y - topLeft.y,
+      width: Math.round(display.bounds.width * display.scaleFactor),
+      height: Math.round(display.bounds.height * display.scaleFactor),
     };
   }
 
@@ -1523,16 +1610,13 @@ function dipPointToNativePoint(point: Electron.Point) {
 
 function dipRectToNativeRect(rect: Electron.Rectangle) {
   if (process.platform === 'win32') {
+    const display = screen.getDisplayMatching(rect);
     const topLeft = screen.dipToScreenPoint({ x: rect.x, y: rect.y });
-    const bottomRight = screen.dipToScreenPoint({
-      x: rect.x + rect.width,
-      y: rect.y + rect.height,
-    });
     return {
       x: topLeft.x,
       y: topLeft.y,
-      width: Math.max(1, bottomRight.x - topLeft.x),
-      height: Math.max(1, bottomRight.y - topLeft.y),
+      width: Math.max(1, Math.round(rect.width * display.scaleFactor)),
+      height: Math.max(1, Math.round(rect.height * display.scaleFactor)),
     };
   }
 
@@ -4022,6 +4106,7 @@ function syncTouchBar() {
 }
 
 app.whenReady().then(() => {
+  loadNotificationDeliveryState();
   registerLedgerProtocol();
   createSidebarWindow();
   syncTray();

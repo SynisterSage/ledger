@@ -1,7 +1,7 @@
 import React, { createContext, useCallback, useContext, useMemo, useState } from 'react';
 
 type ToastVariant = 'default' | 'success' | 'error' | 'info';
-type ToastIcon = 'ledger';
+type ToastIcon = 'ledger' | 'alert';
 type ToastAction = {
   label: string;
   onClick: () => void | Promise<void>;
@@ -107,6 +107,14 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
               }`}
             >
               <div className="flex items-start gap-3">
+                {t.icon === 'alert' && (
+                  <span
+                    aria-hidden="true"
+                    className="mt-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-[#FF5F40] text-[11px] font-semibold leading-none text-white"
+                  >
+                    !
+                  </span>
+                )}
                 {t.icon === 'ledger' && (
                   <img
                     src="/logo-color.svg"
