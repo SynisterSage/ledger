@@ -44,6 +44,12 @@ interface Window {
     setAlwaysOnTop: (alwaysOnTop: boolean) => Promise<void>;
     setFloatingPosition: (position: { x: number; y: number }) => Promise<void>;
     beginFloatingDrag: () => Promise<{ x: number; y: number }>;
+    finishFloatingDrag: () => Promise<{
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+    } | null>;
     updateFloatingDrag: () => Promise<{
       x: number;
       y: number;

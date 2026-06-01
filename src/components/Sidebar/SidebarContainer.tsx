@@ -24,6 +24,8 @@ export const SidebarContainer = () => {
   const autoHideFadeTimerRef = useRef<number | null>(null);
   const autoHideCollapseTimerRef = useRef<number | null>(null);
   const [isAutoHideFading, setIsAutoHideFading] = useState(false);
+  const isWindowsPlatform =
+    typeof navigator !== 'undefined' && navigator.platform.toLowerCase().includes('win');
   const prefersReducedMotion = useMemo(() => {
     if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return false;
     return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -318,6 +320,22 @@ export const SidebarContainer = () => {
       const finalPosition = dragStateRef.current?.currentPosition;
       setIsDragging(false);
       dragStateRef.current = null;
+
+      if (isWindowsPlatform && window.desktopWindow?.finishFloatingDrag) {
+        try {
+          const currentBounds = await window.desktopWindow.finishFloatingDrag();
+          if (
+            currentBounds &&
+            typeof currentBounds.x === 'number' &&
+            typeof currentBounds.y === 'number'
+          ) {
+            saveFloatingPosition({ x: currentBounds.x, y: currentBounds.y });
+            return;
+          }
+        } catch {
+          // Fall back to the last dragged position if the native finish call fails.
+        }
+      }
 
       if (window.desktopWindow) {
         try {

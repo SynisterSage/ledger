@@ -65,6 +65,14 @@ contextBridge.exposeInMainWorld('desktopWindow', {
   beginFloatingDrag() {
     return ipcRenderer.invoke('window:begin-floating-drag') as Promise<{ x: number; y: number }>;
   },
+  finishFloatingDrag() {
+    return ipcRenderer.invoke('window:finish-floating-drag') as Promise<{
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+    } | null>;
+  },
   updateFloatingDrag() {
     return ipcRenderer.invoke('window:update-floating-drag') as Promise<{
       x: number;

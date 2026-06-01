@@ -90,7 +90,7 @@ export async function signUpWithEmail(email: string, password: string, fullName:
 
 export async function signOut() {
   const supabase = getSupabaseClient();
-  const { error } = await supabase.auth.signOut();
+  const { error } = await supabase.auth.signOut({ scope: 'local' });
 
   if (error) throw error;
 }

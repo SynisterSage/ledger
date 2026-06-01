@@ -4090,6 +4090,36 @@ function openModuleWindow(
     moduleWindowFullscreenBoundsMemory.delete(kind);
   });
 
+  let resizeShadowRestoreTimer: NodeJS.Timeout | null = null;
+  const setModuleShadow = (enabled: boolean) => {
+    if (process.platform !== 'win32') return;
+    try {
+      if (!moduleWin.isDestroyed() && typeof (moduleWin as any).setHasShadow === 'function') {
+        (moduleWin as any).setHasShadow(Boolean(enabled));
+      }
+    } catch {}
+  };
+
+  moduleWin.on('will-resize', () => {
+    if (process.platform !== 'win32') return;
+    if (resizeShadowRestoreTimer !== null) {
+      clearTimeout(resizeShadowRestoreTimer);
+      resizeShadowRestoreTimer = null;
+    }
+    setModuleShadow(false);
+  });
+
+  moduleWin.on('resize', () => {
+    if (process.platform !== 'win32') return;
+    if (resizeShadowRestoreTimer !== null) {
+      clearTimeout(resizeShadowRestoreTimer);
+    }
+    resizeShadowRestoreTimer = setTimeout(() => {
+      resizeShadowRestoreTimer = null;
+      setModuleShadow(true);
+    }, 160);
+  });
+
   moduleWin.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL) => {
     console.error(`[electron][${kind}] did-fail-load`, {
       errorCode,
@@ -4376,6 +4406,34 @@ ipcMain.handle('window:begin-floating-drag', () => {
     bounds,
   };
   return { x: bounds.x, y: bounds.y };
+});
+
+ipcMain.handle('window:finish-floating-drag', () => {
+  floatingDockDragActive = false;
+  floatingDragStart = null;
+
+  if (!sidebarWin || sidebarWin.isDestroyed()) return null;
+  if (currentSidebarPosition !== 'floating') return sidebarWin.getBounds();
+  if (currentSidebarMode === 'auth' || currentSidebarMode === 'fullscreen') {
+    return sidebarWin.getBounds();
+  }
+
+  if (
+    currentFloatingDockAttachmentStatus === 'attached' &&
+    currentFloatingDockTarget &&
+    currentSidebarPreferences.floatingDockEnabled !== false
+  ) {
+    startFloatingDockTracking();
+  } else {
+    stopFloatingDockTracking();
+  }
+
+  currentFloatingPosition = {
+    x: sidebarWin.getBounds().x,
+    y: sidebarWin.getBounds().y,
+  };
+
+  return sidebarWin.getBounds();
 });
 
 ipcMain.handle('window:update-floating-drag', () => {

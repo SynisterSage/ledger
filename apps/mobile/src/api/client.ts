@@ -1,18 +1,22 @@
 import * as SecureStore from 'expo-secure-store';
+import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 import { createClient } from '@supabase/supabase-js';
 
 const STORAGE_KEY = 'ledger-mobile-auth';
 
+const extra = (Constants.expoConfig?.extra ?? {}) as {
+  ledgerSupabaseUrl?: string;
+  ledgerSupabaseAnonKey?: string;
+};
+
 const supabaseUrl =
-  process.env.VITE_SUPABASE_URL?.trim() ||
+  extra.ledgerSupabaseUrl?.trim() ||
   process.env.EXPO_PUBLIC_SUPABASE_URL?.trim() ||
   '';
 
 const supabaseKey =
-  process.env.VITE_SUPABASE_PUBLISHABLE_KEY?.trim() ||
-  process.env.VITE_SUPABASE_ANON_KEY?.trim() ||
-  process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY?.trim() ||
+  extra.ledgerSupabaseAnonKey?.trim() ||
   process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY?.trim() ||
   '';
 
