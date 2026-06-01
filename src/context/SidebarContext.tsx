@@ -75,10 +75,6 @@ export const SidebarProvider = ({ children }: { children: ReactNode }) => {
   const [focusDate, setFocusDate] = React.useState<string | null>(null);
 
   useEffect(() => {
-    if (isModuleWindow) {
-      if (!isHydrated) setIsHydrated(true);
-      return;
-    }
     if (saveTimerRef.current !== null) {
       window.clearTimeout(saveTimerRef.current);
     }

@@ -22,6 +22,14 @@ body {
   --modal-backdrop-radius: var(--window-radius);
 }
 
+/* Module window shells on Windows: use paint containment to optimize
+   border-radius repaints during resize. This isolates the rendering context
+   and helps the browser batch repaints more efficiently during live resize. */
+.platform-windows [class*="rounded-3xl"] {
+  contain: paint;
+  will-change: contents;
+}
+
 /* When a modal is open, hide the app shell border/shadow and match body background
    to the modal backdrop color so transparent window edges don't reveal a mismatched
    background or border. This helps avoid corner artifacts in rounded Electron windows. */
@@ -35,8 +43,34 @@ body.has-modal-open #root > * {
   outline: none !important;
 }
 
+/* Module window shell optimization for Windows resize responsiveness.
+   Use paint containment to help the browser efficiently batch border-radius
+   repaints during live edge-resize. This works with the removal of
+   setBackgroundMaterial('auto') to reduce compositing overhead. */
+@supports (contain: paint) {
+  /* Target full-screen module window shells with rounded corners and shadows */
+  html > body > #root > div[class*="rounded-3xl"] {
+    contain: paint;
+    /* Hint to browser that dimensions may change frequently during resize */
+    will-change: contents;
+  }
+}
+
 .sidebar-glass {
+  position: relative;
   isolation: isolate;
+  /* Glass background is applied via ::after pseudo-element below */
+  /* Content layers sit above the background via z-index */
+}
+
+/* Glass background layer - only this is affected by opacity CSS variables */
+.sidebar-glass::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: inherit;
+  pointer-events: none;
   background:
     linear-gradient(
       135deg,
@@ -46,18 +80,19 @@ body.has-modal-open #root > * {
   border: 1px solid rgba(255, 255, 255, 0.8);
   outline: 1px solid rgba(17, 24, 39, 0.05);
   box-shadow:
-    0 30px 90px rgba(17, 24, 39, 0.24),
+    0 30px 90px rgba(17, 23, 42, 0.24),
     inset 0 1px 0 rgba(255, 255, 255, 0.9),
     inset 0 -1px 0 rgba(17, 24, 39, 0.05);
   -webkit-backdrop-filter: blur(36px) saturate(0.9);
   backdrop-filter: blur(36px) saturate(0.9);
 }
 
+/* Highlight overlay - subtle bright spots on glass surface */
 .sidebar-glass::before {
   content: '';
   position: absolute;
   inset: 0;
-  z-index: 0;
+  z-index: 1;
   border-radius: inherit;
   pointer-events: none;
   background:
@@ -66,12 +101,16 @@ body.has-modal-open #root > * {
   opacity: 0.75;
 }
 
+/* All content stays fully opaque at z-index 2 */
 .sidebar-glass > * {
   position: relative;
-  z-index: 1;
+  z-index: 2;
+  opacity: 1;
 }
 
 .sidebar-glass-icon {
+  position: relative;
+  isolation: isolate;
   background:
     linear-gradient(
       135deg,
@@ -86,12 +125,19 @@ body.has-modal-open #root > * {
   backdrop-filter: blur(24px) saturate(0.9);
 }
 
-.platform-macos.sidebar-glass {
+/* Icon content stays fully opaque */
+.sidebar-glass-icon > * {
+  position: relative;
+  z-index: 1;
+  opacity: 1;
+}
+
+.platform-macos.sidebar-glass::after {
   -webkit-backdrop-filter: blur(40px) saturate(0.92);
   backdrop-filter: blur(40px) saturate(0.92);
 }
 
-.platform-windows.sidebar-glass {
+.platform-windows.sidebar-glass::after {
   background:
     linear-gradient(
       135deg,
@@ -101,13 +147,19 @@ body.has-modal-open #root > * {
   border-color: rgba(17, 24, 39, 0.06);
   outline-color: rgba(255, 255, 255, 0.6);
   box-shadow:
-    0 26px 76px rgba(17, 24, 39, 0.18),
+    0 26px 76px rgba(17, 23, 42, 0.18),
     inset 0 1px 0 rgba(255, 255, 255, 0.92);
   -webkit-backdrop-filter: blur(30px) saturate(0.94);
   backdrop-filter: blur(30px) saturate(0.94);
 }
 
-.sidebar-glass--solid {
+.sidebar-glass--solid::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: inherit;
+  pointer-events: none;
   background: rgba(255, 255, 255, 0.96);
   border-color: rgba(17, 24, 39, 0.06);
   box-shadow:
@@ -122,7 +174,7 @@ body.has-modal-open #root > * {
 }
 
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  .sidebar-glass {
+  .sidebar-glass::after {
     background:
       linear-gradient(
         135deg,
@@ -137,7 +189,7 @@ body.has-modal-open #root > * {
 }
 
 @media (prefers-reduced-transparency: reduce) {
-  .sidebar-glass {
+  .sidebar-glass::after {
     background: rgba(255, 255, 255, 0.97);
     border-color: rgba(17, 24, 39, 0.06);
     box-shadow:

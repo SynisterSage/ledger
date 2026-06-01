@@ -36,7 +36,7 @@ export const SidebarContainer = () => {
   const motionDurationMs = prefersReducedMotion ? 0 : 100;
   const motionClass = prefersReducedMotion
     ? ''
-    : 'transition-[width,height,opacity,transform] duration-[100ms] ease-[cubic-bezier(0.22,1,0.36,1)]';
+    : 'transition-[width,height,opacity,transform,border-radius,clip-path] duration-[100ms] ease-[cubic-bezier(0.22,1,0.36,1)]';
   const targetContentView = useMemo(
     () => ({ state, isExpanded }),
     [state, isExpanded]
@@ -388,11 +388,11 @@ export const SidebarContainer = () => {
         ? 'opacity'
         : isHorizontal
         ? 'opacity'
-        : 'opacity, transform, width, height',
+        : 'opacity, transform, width, height, border-radius, clip-path',
     transitionDuration: shouldDisableShellMotion ? '0ms' : `${motionDurationMs}ms`,
     transitionTimingFunction: 'cubic-bezier(0.22, 1, 0.36, 1)',
     willChange:
-      shouldDisableShellMotion ? 'opacity' : 'width, height, opacity, transform',
+      shouldDisableShellMotion ? 'opacity' : 'width, height, opacity, transform, border-radius, clip-path',
   };
 
   const renderSidebarContent = (

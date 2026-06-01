@@ -148,6 +148,7 @@ export const NotificationCenterWindow: React.FC = () => {
   const notificationLoadCooldownMs = 15_000;
   const inboxLoadCooldownMs = 30_000;
   const retryAfterMs = 30_000;
+  const defaultSnoozeMinutes = 10;
 
   const isTooManyRequests = useCallback((nextError: unknown) => {
     const message = nextError instanceof Error ? nextError.message : String(nextError ?? '');
@@ -293,24 +294,41 @@ export const NotificationCenterWindow: React.FC = () => {
   const applyAction = useCallback(
     async (item: NotificationCenterItem, action: NotificationCenterItem['actions'][number]) => {
       try {
+        // Optimistically remove the notification from the UI immediately
+        setActive((prev) => prev.filter((n) => n.id !== item.id));
+        setEarlier((prev) => prev.filter((n) => n.id !== item.id));
+
+        // Update the active count optimistically
+        setActiveCount((prev) => Math.max(0, prev - 1));
+        window.dispatchEvent(
+          new CustomEvent('ledger:notifications-summary', {
+            detail: { activeCount: Math.max(0, activeCount - 1) },
+          })
+        );
+
+        // Make the API call
         if (action === 'open') {
           await api.updateNotificationAction(item.id, 'open');
           await openTarget(item);
         } else if (action === 'complete') {
           await api.updateNotificationAction(item.id, 'complete');
         } else if (action === 'snooze') {
-          await api.updateNotificationAction(item.id, 'snooze');
+          const snoozeUntil = new Date(Date.now() + defaultSnoozeMinutes * 60_000).toISOString();
+          await api.updateNotificationAction(item.id, 'snooze', {
+            snooze_until: snoozeUntil,
+          });
         } else {
           await api.updateNotificationAction(item.id, 'dismiss');
         }
 
-        await loadNotifications();
         window.dispatchEvent(new CustomEvent('ledger:notifications-updated'));
       } catch (nextError) {
+        // On error, reload notifications to get the correct state
         setError(nextError instanceof Error ? nextError.message : 'Could not update notification');
+        await loadNotifications();
       }
     },
-    [api, loadNotifications, openTarget]
+    [api, loadNotifications, openTarget, activeCount, defaultSnoozeMinutes]
   );
 
   const headerSubtitle = useMemo(

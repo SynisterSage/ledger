@@ -1,5 +1,15 @@
-import { type ReactNode, type CSSProperties, type MouseEvent as ReactMouseEvent } from 'react';
-import { Loader2, Maximize2, Minus, RefreshCw, X } from 'lucide-react';
+import {
+  type ReactNode,
+  type CSSProperties,
+  type MouseEvent as ReactMouseEvent,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
+import { createPortal } from 'react-dom';
+import { ChevronDown, Loader2, Maximize2, Minus, RefreshCw, X } from 'lucide-react';
+import { useWorkspaceContext } from '../../context/WorkspaceContext';
 
 type ModuleWindowHeaderProps = {
   eyebrow?: string;
@@ -72,13 +82,166 @@ type ModuleHeaderStripActionProps = {
   ariaLabel: string;
 };
 
+const WorkspaceSwitcher = () => {
+  const { activeWorkspaceId, activeWorkspace, workspaces, setActiveWorkspace, isLoading } =
+    useWorkspaceContext();
+  const [isOpen, setIsOpen] = useState(false);
+  const [menuStyle, setMenuStyle] = useState<CSSProperties | null>(null);
+  const buttonRef = useRef<HTMLButtonElement | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+
+  const resolvedLabel = useMemo(
+    () => activeWorkspace?.name?.trim() || 'Workspace',
+    [activeWorkspace?.name]
+  );
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const updateMenuPosition = () => {
+      const rect = buttonRef.current?.getBoundingClientRect();
+      if (!rect) return;
+
+      const menuWidth = 240;
+      const left = Math.max(8, Math.min(rect.left, window.innerWidth - menuWidth - 8));
+      const top = Math.min(rect.bottom + 4, window.innerHeight - 8);
+
+      setMenuStyle({
+        position: 'fixed',
+        left,
+        top,
+        width: menuWidth,
+        zIndex: 9999,
+      });
+    };
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setIsOpen(false);
+      }
+    };
+
+    updateMenuPosition();
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('resize', updateMenuPosition);
+    window.addEventListener('scroll', updateMenuPosition, true);
+
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('resize', updateMenuPosition);
+      window.removeEventListener('scroll', updateMenuPosition, true);
+    };
+  }, [isOpen]);
+
+  if (isLoading || workspaces.length === 0) {
+    return (
+      <button
+        type="button"
+        disabled
+        title="No workspaces available"
+        aria-label="No workspaces available"
+        className="inline-flex h-7 min-w-28 max-w-60 items-center gap-1.5 text-left text-xs font-medium text-gray-400 opacity-70"
+        style={noDragRegionStyle}
+      >
+        <span className="min-w-0 flex-1 truncate">Workspace</span>
+        <ChevronDown size={13} className="shrink-0 text-gray-500" />
+      </button>
+    );
+  }
+
+  return (
+    <div className="relative" style={noDragRegionStyle}>
+      <button
+        ref={buttonRef}
+        type="button"
+        onClick={(event) => {
+          event.stopPropagation();
+          setIsOpen((current) => !current);
+        }}
+        onMouseDown={(event) => event.stopPropagation()}
+        title={resolvedLabel}
+        aria-label={`Switch workspace. Current workspace: ${resolvedLabel}`}
+        className={`inline-flex h-7 min-w-28 max-w-60 items-center gap-1.5 text-left text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-300/80 ${
+          isOpen ? 'text-gray-900' : 'text-gray-700 hover:text-gray-900'
+        }`}
+      >
+        <span className="min-w-0 flex-1 truncate">{resolvedLabel}</span>
+        <ChevronDown size={13} className="shrink-0 text-gray-500" />
+      </button>
+
+      {isOpen && typeof document !== 'undefined'
+        ? createPortal(
+            <div
+              className="fixed inset-0 z-9998 pointer-events-auto"
+              onMouseDown={(event) => {
+                if (event.target === event.currentTarget) {
+                  setIsOpen(false);
+                }
+              }}
+              onContextMenu={(event) => event.preventDefault()}
+            >
+              <div
+                ref={menuRef}
+                style={menuStyle ?? undefined}
+                className="max-h-60 overflow-y-auto rounded-2xl border border-gray-200 bg-white shadow-[0_16px_48px_rgba(15,23,42,0.14)] ring-0 outline-none"
+                onMouseDown={(event) => event.stopPropagation()}
+                onClick={(event) => event.stopPropagation()}
+                onMouseMove={(event) => event.stopPropagation()}
+                onMouseEnter={(event) => event.stopPropagation()}
+                onMouseLeave={(event) => event.stopPropagation()}
+              >
+                <div className="space-y-1 p-1.5" style={noDragRegionStyle}>
+                  {workspaces.map((workspace) => {
+                    const isActive = workspace.id === activeWorkspaceId;
+                    return (
+                      <button
+                        key={workspace.id}
+                        type="button"
+                        onClick={async (event) => {
+                          event.stopPropagation();
+                          try {
+                            if (!isActive) {
+                              await setActiveWorkspace(workspace.id);
+                            }
+                          } catch {
+                            // Keep current workspace if switch fails.
+                          } finally {
+                            setIsOpen(false);
+                          }
+                        }}
+                        className={`group flex min-h-10 w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF5F40]/20 ${
+                          isActive
+                            ? 'bg-gray-50 text-gray-950'
+                            : 'text-gray-700 hover:bg-gray-50 hover:text-gray-950'
+                        }`}
+                        style={noDragRegionStyle}
+                        aria-current={isActive ? 'true' : undefined}
+                      >
+                        <span
+                          className={`h-2 w-2 shrink-0 rounded-full ${
+                            isActive ? 'bg-[#FF5F40]' : 'bg-gray-300'
+                          }`}
+                        />
+                        <span className="min-w-0 flex-1 truncate">{workspace.name}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>,
+            document.body
+          )
+        : null}
+    </div>
+  );
+};
+
 type AppRegionStyle = CSSProperties & {
   WebkitAppRegion?: 'drag' | 'no-drag';
 };
 
 const dragRegionStyle: AppRegionStyle = { WebkitAppRegion: 'drag' };
 const noDragRegionStyle: AppRegionStyle = { WebkitAppRegion: 'no-drag' };
-
 const actionButtonClassName =
   'inline-flex h-9 items-center justify-center gap-1.5 rounded-full border border-gray-200 bg-white px-3.5 text-xs font-medium text-gray-700 transition hover:bg-gray-50 hover:text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-300/80';
 
@@ -334,11 +497,10 @@ export const ModuleWindowHeader = ({
           )}
         </div>
 
-        {topRightActions && (
-          <div className="flex items-center gap-1" style={noDragRegionStyle}>
-            {topRightActions}
-          </div>
-        )}
+        <div className="flex items-center gap-3" style={noDragRegionStyle}>
+          <WorkspaceSwitcher />
+          {topRightActions && <div className="flex items-center gap-1">{topRightActions}</div>}
+        </div>
       </div>
 
       <div className="flex min-h-12 items-center justify-between gap-4 px-6 py-3">

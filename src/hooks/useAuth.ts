@@ -129,7 +129,6 @@ export const useAuth = (): UseAuthReturn => {
       if (data?.session) {
         setSession(data.session);
         setUser(data.session.user);
-        writeCachedSession(data.session);
       }
     } catch (err) {
       const error = err instanceof Error ? err : new Error('Sign up failed');

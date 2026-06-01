@@ -3570,6 +3570,7 @@ function applySidebarWindowMode(mode: SidebarWindowMode, animate = true) {
   if (!sidebarWin || sidebarWin.isDestroyed()) return;
   const previousMode = currentSidebarMode;
   currentSidebarMode = mode;
+  applySidebarOpacity(currentSidebarPreferences.opacity);
 
   if (mode === 'fullscreen') {
     floatingDockDragActive = false;
@@ -3632,7 +3633,10 @@ function applySidebarAlwaysOnTop(alwaysOnTop: boolean) {
 
 function applySidebarOpacity(_opacity: number) {
   if (!sidebarWin || sidebarWin.isDestroyed()) return;
-  if (currentSidebarMode === 'auth' || currentSidebarMode === 'fullscreen') return;
+  // Do not use window.setOpacity() as it makes all content transparent.
+  // Instead, opacity is sent to renderer via IPC where it controls CSS variables
+  // that only affect the background glass layer, keeping content fully opaque.
+  // Renderer receives opacity via sidebar:preferences-updated IPC message.
 }
 
 function applySidebarVisibility(isVisible: boolean, activate = false) {
@@ -3985,7 +3989,12 @@ function openModuleWindow(
       existing.setBounds(resolveModuleBounds(kind), false);
     }
     existing.show();
-    existing.focus();
+    // Delay focus to prevent sidebar from stealing focus back
+    setTimeout(() => {
+      if (!existing.isDestroyed()) {
+        existing.focus();
+      }
+    }, 100);
     sendModuleFocus(
       kind,
       focusDate,
@@ -4032,6 +4041,7 @@ function openModuleWindow(
 
   const moduleWin = new BrowserWindow({
     ...initialBounds,
+    show: false,
     transparent: true,
     backgroundColor: '#00000000',
     ...getModuleWindowChromeOptions(),
@@ -4057,9 +4067,9 @@ function openModuleWindow(
     moduleWin.setVibrancy(null);
   }
 
-  if (process.platform === 'win32') {
-    moduleWin.setBackgroundMaterial('auto');
-  }
+  // Note: setBackgroundMaterial('auto') on Windows causes expensive compositing
+  // during resize that delays border-radius repaints. Disabled to improve resize
+  // responsiveness. CSS-based styling is sufficient for module windows.
 
   lockWindowZoom(moduleWin);
   attachNativeContextMenu(moduleWin);
@@ -4175,7 +4185,12 @@ function openModuleWindow(
     : '';
   moduleWin.webContents.once('did-finish-load', () => {
     moduleWin.show();
-    moduleWin.focus();
+    // Delay focus to prevent sidebar from stealing focus back
+    setTimeout(() => {
+      if (!moduleWin.isDestroyed()) {
+        moduleWin.focus();
+      }
+    }, 100);
     sendModuleFocus(
       kind,
       focusDate,
@@ -4306,9 +4321,9 @@ ipcMain.handle(
       ...currentSidebarPreferences,
       ...preferences,
     };
-    if (Object.keys(preferences).some((key) => key !== 'opacity')) {
-      sidebarWin.webContents.send('sidebar:preferences-updated', preferences);
-    }
+    // Always send preferences update including opacity to renderer so it can
+    // apply opacity only to the background glass layer via CSS variables
+    sidebarWin.webContents.send('sidebar:preferences-updated', preferences);
     if (
       hasModeRelevantChange &&
       currentSidebarMode !== 'auth' &&
@@ -4448,7 +4463,12 @@ ipcMain.handle('window:open-module', (_event, payload: ModuleWindowKind | Module
       existing.restore();
     }
     existing.show();
-    existing.focus();
+    // Delay focus slightly to prevent sidebar from stealing focus back
+    setTimeout(() => {
+      if (!existing.isDestroyed()) {
+        existing.focus();
+      }
+    }, 100);
     sendModuleFocus(kind, focusDate, focusProjectId, focusNoteId, focusTaskId, focusContext);
     return;
   }

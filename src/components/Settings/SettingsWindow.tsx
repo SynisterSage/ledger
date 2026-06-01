@@ -15,6 +15,7 @@ import { useAuthContext } from '../../context/AuthContext';
 import { useSidebar } from '../../context/SidebarContext';
 import {
   defaultSidebarPreferences,
+  saveSidebarPreferences,
   type SidebarDefaultState,
   type SidebarPosition,
 } from '../../config/sidebarPreferences';
@@ -691,6 +692,10 @@ export const SettingsWindow = () => {
       return;
     }
 
+    saveSidebarPreferences({
+      ...sidebarPreferences,
+      opacity: sidebarPreferences.opacity,
+    });
     void window.desktopWindow
       ?.applySidebarPreferences({ opacity: sidebarPreferences.opacity })
       .catch(() => {
