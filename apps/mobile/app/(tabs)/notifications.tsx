@@ -38,6 +38,7 @@ export default function NotificationsScreen() {
         <MobilePageHeader
           title="Notifications"
           workspaceLabel={workspaceState.isLoading ? 'Loading workspaces…' : selectedScopeLabel}
+          workspaceLoading={workspaceState.isLoading}
           workspaceExpanded={workspacePickerOpen}
           onWorkspacePress={() => setWorkspacePickerOpen(true)}
           onSettingsPress={() => router.push('/settings')}

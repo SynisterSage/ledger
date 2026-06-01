@@ -8,6 +8,7 @@ import { Screen } from '@/components/Screen';
 import { MobilePageHeader, MOBILE_PAGE_HEADER_SCROLL_SPACE } from '@/components/MobilePageHeader';
 import { WorkspaceSelectorSheet } from '@/components/WorkspaceSelectorSheet';
 import { TodayList } from '@/features/today/TodayList';
+import { TodaySkeleton } from '@/features/today/TodaySkeleton';
 import { getMobileToday } from '@/api/today';
 import { useLedgerTheme } from '@/theme';
 import type {
@@ -87,6 +88,7 @@ export default function TodayScreen() {
           <MobilePageHeader
           title="Today"
           workspaceLabel={workspaceState.isLoading ? 'Loading workspaces…' : selectedScopeLabel}
+          workspaceLoading={workspaceState.isLoading}
           onWorkspacePress={openWorkspaceSwitcher}
           workspaceExpanded={workspacePickerOpen}
           onSettingsPress={() => router.push('/settings')}
@@ -116,7 +118,7 @@ export default function TodayScreen() {
           showsVerticalScrollIndicator={false}>
           <View style={{ gap: theme.spacing['2xl'] }}>
             {isLoading ? (
-              <AppText variant="body">Loading Today...</AppText>
+              <TodaySkeleton />
             ) : error ? (
               <View style={{ gap: theme.spacing.md }}>
                 <AppText variant="body">{error || 'Could not load Today.'}</AppText>

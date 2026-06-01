@@ -4,6 +4,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SymbolView } from 'expo-symbols';
 
 import { AppText } from './AppText';
+import { Skeleton } from './Skeleton';
 
 import { useLedgerTheme } from '@/theme';
 
@@ -19,6 +20,7 @@ type MobilePageHeaderProps = {
   workspaceExpanded?: boolean;
   onSettingsPress?: () => void;
   showSettings?: boolean;
+  workspaceLoading?: boolean;
   scrollY: Animated.Value;
   rightAccessory?: ReactNode;
 };
@@ -30,6 +32,7 @@ export function MobilePageHeader({
   workspaceExpanded = false,
   onSettingsPress,
   showSettings = true,
+  workspaceLoading = false,
   scrollY,
   rightAccessory,
 }: MobilePageHeaderProps) {
@@ -76,7 +79,7 @@ export function MobilePageHeader({
                   },
                 ]}>
                 <SymbolView
-                  name={{ ios: 'gearshape', android: 'settings', web: 'settings' }}
+                  name={{ ios: 'gearshape.fill', android: 'settings', web: 'settings' }}
                   size={20}
                   weight="regular"
                   tintColor={theme.colors.accent}
@@ -87,36 +90,42 @@ export function MobilePageHeader({
           </View>
         </View>
 
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Change workspace"
-          hitSlop={8}
-          onPress={handleWorkspacePress}
-          style={({ pressed }) => [
-            styles.workspaceButton,
-            {
-              opacity: pressed ? 0.72 : 1,
-            },
-          ]}>
-          <AppText
-            variant="body"
-            style={{
-              color: theme.colors.textSecondary,
-              fontWeight: '400',
-            }}>
-            {workspaceLabel}
-          </AppText>
-          <SymbolView
-            name={{
-              ios: workspaceExpanded ? 'chevron.up' : 'chevron.down',
-              android: workspaceExpanded ? 'keyboard_arrow_up' : 'keyboard_arrow_down',
-              web: workspaceExpanded ? 'keyboard_arrow_up' : 'keyboard_arrow_down',
-            }}
-            size={11}
-            weight="regular"
-            tintColor={theme.colors.textSecondary}
-          />
-        </Pressable>
+        {workspaceLoading ? (
+          <View style={styles.workspaceLoadingWrap}>
+            <Skeleton width={96} height={16} radius={8} />
+          </View>
+        ) : (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Change workspace"
+            hitSlop={8}
+            onPress={handleWorkspacePress}
+            style={({ pressed }) => [
+              styles.workspaceButton,
+              {
+                opacity: pressed ? 0.72 : 1,
+              },
+            ]}>
+            <AppText
+              variant="body"
+              style={{
+                color: theme.colors.textSecondary,
+                fontWeight: '400',
+              }}>
+              {workspaceLabel}
+            </AppText>
+            <SymbolView
+              name={{
+                ios: workspaceExpanded ? 'chevron.up' : 'chevron.down',
+                android: workspaceExpanded ? 'keyboard_arrow_up' : 'keyboard_arrow_down',
+                web: workspaceExpanded ? 'keyboard_arrow_up' : 'keyboard_arrow_down',
+              }}
+              size={11}
+              weight="regular"
+              tintColor={theme.colors.textSecondary}
+            />
+          </Pressable>
+        )}
       </View>
     </Animated.View>
   );
@@ -156,5 +165,10 @@ const styles = StyleSheet.create({
     gap: 4,
     paddingVertical: 4,
     paddingHorizontal: 2,
+  },
+  workspaceLoadingWrap: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 7,
   },
 });

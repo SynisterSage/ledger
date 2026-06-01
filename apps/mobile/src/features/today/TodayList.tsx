@@ -1,7 +1,6 @@
 import { View } from 'react-native';
 
 import { AppText } from '@/components/AppText';
-import { Row } from '@/components/Row';
 import { Section } from '@/components/Section';
 import { useLedgerTheme } from '@/theme';
 
@@ -32,7 +31,7 @@ export function TodayList({
   const hasCaptures = captures.count > 0;
 
   return (
-    <View style={{ gap: theme.spacing['2xl'] }}>
+    <View style={{ gap: theme.spacing['3xl'] }}>
       <Section title="Upcoming">
         {hasUpcoming ? (
           upcoming.map((item) => (
@@ -72,7 +71,7 @@ export function TodayList({
       <Section title="Captures">
         {hasCaptures ? (
           <View style={{ gap: theme.spacing.xs }}>
-            <Row
+            <TodayItem
               title={`${captures.count} capture${captures.count === 1 ? '' : 's'} waiting`}
               subtitle="Waiting to be sorted"
             />

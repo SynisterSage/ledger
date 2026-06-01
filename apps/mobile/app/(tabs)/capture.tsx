@@ -32,6 +32,7 @@ export default function CaptureScreen() {
         <MobilePageHeader
           title="Capture"
           workspaceLabel={workspaceState.isLoading ? 'Loading workspaces…' : selectedScopeLabel}
+          workspaceLoading={workspaceState.isLoading}
           workspaceExpanded={workspacePickerOpen}
           onWorkspacePress={() => setWorkspacePickerOpen(true)}
           onSettingsPress={() => router.push('/settings')}
