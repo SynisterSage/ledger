@@ -1,5 +1,6 @@
 import { Tabs } from 'expo-router';
 
+import { FloatingTabBar } from '@/components/FloatingTabBar';
 import { useLedgerTheme } from '@/theme';
 
 export default function TabLayout() {
@@ -8,18 +9,11 @@ export default function TabLayout() {
   return (
     <Tabs
       initialRouteName="today"
+      tabBar={(props) => <FloatingTabBar {...props} />}
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: theme.colors.accent,
-        tabBarInactiveTintColor: theme.colors.textMuted,
-        tabBarStyle: {
-          backgroundColor: theme.colors.tabBar,
-          borderTopColor: theme.colors.tabBarBorder,
-        },
-        tabBarLabelStyle: {
-          fontSize: theme.typography.caption.fontSize,
-          fontWeight: theme.typography.caption.fontWeight as '400' | '500' | '600' | '700',
-        },
+        tabBarStyle: { display: 'none' },
+        sceneStyle: { backgroundColor: theme.colors.background },
       }}>
       <Tabs.Screen
         name="today"

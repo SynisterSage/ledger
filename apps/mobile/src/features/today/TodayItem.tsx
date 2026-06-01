@@ -2,9 +2,9 @@ import { Row } from '@/components/Row';
 
 type TodayItemProps = {
   title: string;
-  meta: string;
+  subtitle: string;
 };
 
-export function TodayItem({ title, meta }: TodayItemProps) {
-  return <Row title={title} subtitle={meta} />;
+export function TodayItem({ title, subtitle }: TodayItemProps) {
+  return <Row title={title} subtitle={subtitle} />;
 }

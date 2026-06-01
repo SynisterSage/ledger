@@ -2629,7 +2629,13 @@ const loadMobileTodayData = async ({ userId, scope, dateKey }) => {
   for (const task of taskRows) {
     if (!task?.id || !task.workspace_id) continue;
     const normalizedTaskStatus = String(task.status ?? '').toLowerCase();
-    if (normalizedTaskStatus === 'completed' || normalizedTaskStatus === 'done') continue;
+    if (
+      normalizedTaskStatus === 'completed' ||
+      normalizedTaskStatus === 'done' ||
+      normalizedTaskStatus.includes('archiv')
+    ) {
+      continue;
+    }
     const taskKey = `task:${task.id}`;
     if (focusTaskIds.has(String(task.id)) && isCurrentDate) {
       const focusItem = buildTaskPayload(task, {
@@ -2679,7 +2685,8 @@ const loadMobileTodayData = async ({ userId, scope, dateKey }) => {
 
   for (const reminder of reminderRows) {
     if (!reminder?.id || !reminder.workspace_id) continue;
-    if (String(reminder.status ?? '').toLowerCase() === 'dismissed') continue;
+    const normalizedReminderStatus = String(reminder.status ?? '').toLowerCase();
+    if (normalizedReminderStatus === 'dismissed' || normalizedReminderStatus.includes('archiv')) continue;
     if (Boolean(reminder.completed_at)) continue;
 
     const remindAt = new Date(reminder.remind_at ?? '');
@@ -2771,7 +2778,10 @@ const loadMobileTodayData = async ({ userId, scope, dateKey }) => {
 
   for (const project of projectRows) {
     if (!project?.id || !project.workspace_id) continue;
-    if (isCompletedProjectStatus(project.status)) continue;
+    const normalizedProjectStatus = String(project.status ?? '').toLowerCase();
+    if (isCompletedProjectStatus(project.status) || normalizedProjectStatus.includes('archiv')) {
+      continue;
+    }
     const projectEndDateText = normalizeNullableText(project.end_date);
     if (!projectEndDateText) continue;
 

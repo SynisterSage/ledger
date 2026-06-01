@@ -2,6 +2,7 @@ import type { ExpoConfig } from 'expo/config';
 
 const supabaseUrl = process.env.VITE_SUPABASE_URL?.trim() ?? '';
 const supabaseAnonKey = process.env.VITE_SUPABASE_ANON_KEY?.trim() ?? '';
+const apiUrl = process.env.VITE_API_URL?.trim() ?? '';
 
 const config: ExpoConfig = {
   name: 'mobile',
@@ -43,6 +44,7 @@ const config: ExpoConfig = {
     typedRoutes: true,
   },
   extra: {
+    ledgerApiUrl: apiUrl,
     ledgerSupabaseUrl: supabaseUrl,
     ledgerSupabaseAnonKey: supabaseAnonKey,
   },
