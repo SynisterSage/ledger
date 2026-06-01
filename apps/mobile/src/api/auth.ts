@@ -1,5 +1,96 @@
-import { mockSession } from '@/store/sessionStore';
+import type { Session } from '@supabase/supabase-js';
 
-export function getMockSession() {
-  return mockSession;
+import { getSupabaseClient, supabaseConfigError } from './client';
+import { getAuthState, resetAuthState, setAuthState } from '@/store/sessionStore';
+
+let authListenerAttached = false;
+let bootstrapPromise: Promise<void> | null = null;
+
+function syncSession(session: Session | null) {
+  setAuthState({
+    session,
+    user: session?.user ?? null,
+    isLoading: false,
+    error: null,
+    isConfigured: true,
+  });
+}
+
+export async function initializeAuth() {
+  if (bootstrapPromise) return bootstrapPromise;
+
+  bootstrapPromise = (async () => {
+    if (supabaseConfigError) {
+      resetAuthState();
+      setAuthState({
+        isConfigured: false,
+        isLoading: false,
+        error: supabaseConfigError.message,
+        session: null,
+        user: null,
+      });
+      return;
+    }
+
+    const supabase = getSupabaseClient();
+    const { data, error } = await supabase.auth.getSession();
+
+    if (error) {
+      setAuthState({
+        isLoading: false,
+        error: error.message,
+      });
+      return;
+    }
+
+    syncSession(data.session);
+
+    if (!authListenerAttached) {
+      authListenerAttached = true;
+      supabase.auth.onAuthStateChange((_event, nextSession) => {
+        syncSession(nextSession);
+      });
+    }
+  })();
+
+  return bootstrapPromise;
+}
+
+export function isAuthReady() {
+  const state = getAuthState();
+  return state.isConfigured && !state.isLoading;
+}
+
+export async function signInWithEmail(email: string, password: string) {
+  const supabase = getSupabaseClient();
+  const { data, error } = await supabase.auth.signInWithPassword({
+    email,
+    password,
+  });
+
+  if (error) throw error;
+  return data.session ?? null;
+}
+
+export async function signUpWithEmail(email: string, password: string, fullName: string) {
+  const supabase = getSupabaseClient();
+  const { data, error } = await supabase.auth.signUp({
+    email,
+    password,
+    options: {
+      data: {
+        full_name: fullName,
+      },
+    },
+  });
+
+  if (error) throw error;
+  return data.session ?? null;
+}
+
+export async function signOut() {
+  const supabase = getSupabaseClient();
+  const { error } = await supabase.auth.signOut();
+
+  if (error) throw error;
 }
