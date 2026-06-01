@@ -159,6 +159,25 @@ const respondWithError = (res, error) => {
   return res.status(statusCode).json({ error: getPublicErrorMessage(error, statusCode) });
 };
 
+const getMobileErrorMessage = (error, statusCode) => {
+  if (statusCode === 401) return 'Not authenticated.';
+  if (statusCode === 403) return 'Not authorized.';
+  if (statusCode === 404) return 'Workspace not found.';
+  if (statusCode >= 500) return 'Could not load mobile data.';
+
+  const message = String(error?.message ?? '').trim();
+  return message || 'Could not load mobile data.';
+};
+
+const respondWithMobileError = (res, error) => {
+  const statusCode = getPublicErrorStatus(error);
+  if (statusCode >= 500) {
+    console.error('Mobile request failed:', error);
+  }
+
+  return res.status(statusCode).json({ error: getMobileErrorMessage(error, statusCode) });
+};
+
 const authMiddleware = async (req, res, next) => {
   const token = getBearerToken(req);
   if (!token) {
@@ -176,6 +195,25 @@ const authMiddleware = async (req, res, next) => {
   } catch (error) {
     return res.status(401).json({ error: 'Auth failed' });
   }
+};
+
+const requireAuth = async (req) => {
+  const token = getBearerToken(req);
+  if (!token) {
+    const error = new Error('Not authenticated.');
+    error.statusCode = 401;
+    throw error;
+  }
+
+  const { data, error } = await supabase.auth.getUser(token);
+  if (error || !data.user) {
+    const authError = new Error('Not authenticated.');
+    authError.statusCode = 401;
+    throw authError;
+  }
+
+  req.authUser = data.user;
+  return data.user;
 };
 
 const loadExtensionTokenContext = async (token) => {
@@ -2218,6 +2256,637 @@ const getAccessibleWorkspaces = async (userId) => {
 
   if (result.error) throw result.error;
   return result.data ?? [];
+};
+
+const getUserWorkspaces = async (userId) => {
+  const [ownedResult, memberResult] = await Promise.all([
+    supabase
+      .from('workspaces')
+      .select('id, name, description, is_personal, color, owner_id, created_at, updated_at')
+      .eq('owner_id', userId)
+      .order('created_at', { ascending: true }),
+    supabase
+      .from('workspace_members')
+      .select('workspace_id, role, joined_at')
+      .eq('user_id', userId),
+  ]);
+
+  if (ownedResult.error) throw ownedResult.error;
+  if (memberResult.error) throw memberResult.error;
+
+  const memberWorkspaceIds = (memberResult.data ?? []).map((row) => row.workspace_id);
+  const memberRoleByWorkspaceId = new Map(
+    (memberResult.data ?? []).map((row) => [row.workspace_id, String(row.role ?? '').toLowerCase()])
+  );
+
+  let memberWorkspaces = [];
+  if (memberWorkspaceIds.length > 0) {
+    const memberWorkspaceResult = await supabase
+      .from('workspaces')
+      .select('id, name, description, is_personal, color, owner_id, created_at, updated_at')
+      .in('id', memberWorkspaceIds);
+
+    if (memberWorkspaceResult.error) throw memberWorkspaceResult.error;
+    memberWorkspaces = memberWorkspaceResult.data ?? [];
+  }
+
+  const dedupedById = new Map();
+  for (const workspace of [...(ownedResult.data ?? []), ...memberWorkspaces]) {
+    if (!workspace?.id) continue;
+    const role =
+      workspace.owner_id === userId
+        ? 'owner'
+        : memberRoleByWorkspaceId.get(workspace.id) ?? 'member';
+
+    dedupedById.set(workspace.id, {
+      ...workspace,
+      role,
+    });
+  }
+
+  return [...dedupedById.values()].sort((a, b) => {
+    if (a.is_personal !== b.is_personal) return a.is_personal ? -1 : 1;
+    return String(a.name ?? '').localeCompare(String(b.name ?? ''));
+  });
+};
+
+const requireWorkspaceMember = async (userId, workspaceId) => {
+  const access = await getWorkspaceAccess(userId, workspaceId);
+  if (!access) {
+    const error = new Error('Not authorized.');
+    error.statusCode = 403;
+    throw error;
+  }
+
+  return access;
+};
+
+const resolveMobileWorkspaceScope = async (userId, workspaceId = 'all') => {
+  const normalizedWorkspaceId = normalizeNullableText(workspaceId) || 'all';
+
+  if (normalizedWorkspaceId === 'all') {
+    const workspaces = await getUserWorkspaces(userId);
+    return {
+      workspaceIds: workspaces.map((workspace) => workspace.id).filter(Boolean),
+      label: 'All Workspaces',
+      workspaceId: 'all',
+      workspace: null,
+    };
+  }
+
+  if (!isUuidLike(normalizedWorkspaceId)) {
+    const error = new Error('Workspace not found.');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const workspace = await getWorkspaceSummary(normalizedWorkspaceId);
+  if (!workspace) {
+    const error = new Error('Workspace not found.');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  await requireWorkspaceMember(userId, normalizedWorkspaceId);
+
+  return {
+    workspaceIds: [normalizedWorkspaceId],
+    label: workspace.name ?? 'Workspace',
+    workspaceId: normalizedWorkspaceId,
+    workspace,
+  };
+};
+
+const MOBILE_TODAY_TASK_SELECT_COLUMNS =
+  'id, workspace_id, project_id, title, due_date, due_time, status, priority, show_in_today, is_today_focus, completed_at, created_at, updated_at';
+const MOBILE_TODAY_PROJECT_SELECT_COLUMNS =
+  'id, workspace_id, name, status, completeness, color, start_date, end_date, created_at, updated_at';
+
+// Temporary fallback until mobile user timezone preferences are wired through the backend.
+const getLocalDateKey = (dateLike = new Date()) => {
+  const date = new Date(dateLike);
+  if (Number.isNaN(date.getTime())) return null;
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const parseMobileDateKey = (value) => {
+  const normalized = normalizeNullableText(value);
+  if (!normalized) return getLocalDateKey(new Date());
+
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(normalized)) {
+    const error = new Error('Invalid date.');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const parsed = new Date(`${normalized}T00:00:00`);
+  if (Number.isNaN(parsed.getTime())) {
+    const error = new Error('Invalid date.');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  return normalized;
+};
+
+const getMobileDateWindow = (dateKey) => {
+  const start = new Date(`${dateKey}T00:00:00`);
+  const end = new Date(`${dateKey}T23:59:59.999`);
+
+  return {
+    start,
+    end,
+    startIso: start.toISOString(),
+    endIso: end.toISOString(),
+  };
+};
+
+const hasExplicitTimeComponent = (value) => {
+  const text = String(value ?? '');
+  return /T\d{2}:\d{2}/.test(text);
+};
+
+const isTimeBasedDateValue = (dateLike) => {
+  const date = new Date(dateLike);
+  if (Number.isNaN(date.getTime())) return false;
+  return (
+    date.getHours() !== 0 ||
+    date.getMinutes() !== 0 ||
+    date.getSeconds() !== 0 ||
+    date.getMilliseconds() !== 0
+  );
+};
+
+const getTaskPriorityRank = (priority) => {
+  const normalized = String(priority ?? '').trim().toLowerCase();
+  if (normalized === 'urgent' || normalized === 'highest') return 4;
+  if (normalized === 'high') return 3;
+  if (normalized === 'medium' || normalized === 'normal') return 2;
+  if (normalized === 'low' || normalized === 'lowest') return 1;
+  return 0;
+};
+
+const loadMobileTodayData = async ({ userId, scope, dateKey }) => {
+  const selectedDateKey = parseMobileDateKey(dateKey);
+  const currentDateKey = getLocalDateKey(new Date());
+  const isCurrentDate = selectedDateKey === currentDateKey;
+  const { startIso, endIso } = getMobileDateWindow(selectedDateKey);
+  const now = new Date();
+  const workspaceIds = Array.isArray(scope.workspaceIds) ? scope.workspaceIds.filter(Boolean) : [];
+
+  if (!workspaceIds.length) {
+    return {
+      date: selectedDateKey,
+      scope: {
+        workspaceId: scope.workspaceId,
+        label: scope.label,
+      },
+      upcoming: [],
+      today: [],
+      captures: {
+        count: 0,
+        items: [],
+      },
+    };
+  }
+
+  const focusTaskPromise = isCurrentDate
+    ? (async () => {
+        const result = await supabase
+          .from('tasks')
+          .select(`${MOBILE_TODAY_TASK_SELECT_COLUMNS}, show_in_today, is_today_focus`)
+          .in('workspace_id', workspaceIds)
+          .neq('status', 'completed')
+          .or('show_in_today.eq.true,is_today_focus.eq.true')
+          .order('updated_at', { ascending: false })
+          .limit(200);
+
+        if (result.error && isMissingTaskTodayColumnError(result.error)) {
+          return { data: [], error: null };
+        }
+
+        return result;
+      })()
+    : Promise.resolve({ data: [] });
+
+  const [workspaceResult, taskResult, focusTaskResult, reminderResult, eventResult, projectResult, captureCountResult, captureItemsResult] =
+    await Promise.all([
+      supabase.from('workspaces').select('id, name, color').in('id', workspaceIds),
+      supabase
+        .from('tasks')
+        .select(MOBILE_TODAY_TASK_SELECT_COLUMNS)
+        .in('workspace_id', workspaceIds)
+        .neq('status', 'completed')
+        .lte('due_date', selectedDateKey)
+        .order('due_date', { ascending: true })
+        .order('created_at', { ascending: false })
+        .limit(500),
+      focusTaskPromise,
+      withReminderTable((table) =>
+        supabase
+          .from(table)
+          .select(reminderSelectColumns)
+          .in('workspace_id', workspaceIds)
+          .or('status.eq.active,status.eq.overdue')
+          .is('dismissed_at', null)
+          .is('completed_at', null)
+          .lte('remind_at', endIso)
+          .order('remind_at', { ascending: true })
+          .limit(500)
+      ),
+      supabase
+        .from('events')
+        .select(
+          'id, workspace_id, title, start_at, end_at, all_day, calendar_id, color, status, recurrence_rule, project_id, note_id, series_id, series_type, created_at'
+        )
+        .in('workspace_id', workspaceIds)
+        .gte('start_at', startIso)
+        .lte('start_at', endIso)
+        .neq('status', 'done')
+        .order('start_at', { ascending: true })
+        .limit(200),
+      supabase
+        .from('projects')
+        .select(MOBILE_TODAY_PROJECT_SELECT_COLUMNS)
+        .in('workspace_id', workspaceIds)
+        .not('end_date', 'is', null)
+        .limit(500),
+      supabase
+        .from('inbox_items')
+        .select('id', { count: 'exact', head: true })
+        .in('workspace_id', workspaceIds)
+        .eq('status', 'unprocessed'),
+      supabase
+        .from('inbox_items')
+        .select(
+          'id, workspace_id, user_id, source, source_id, source_url, title, body, raw_payload, suggested_type, status, converted_type, converted_id, created_at, updated_at'
+        )
+        .in('workspace_id', workspaceIds)
+        .eq('status', 'unprocessed')
+        .order('created_at', { ascending: false })
+        .limit(3),
+    ]);
+
+  const queryErrors = [
+    workspaceResult.error,
+    taskResult.error,
+    focusTaskResult?.error,
+    reminderResult.error,
+    eventResult.error,
+    projectResult.error,
+    captureCountResult.error,
+    captureItemsResult.error,
+  ].filter(Boolean);
+  if (queryErrors.length > 0) throw queryErrors[0];
+
+  const workspaceById = new Map((workspaceResult.data ?? []).map((workspace) => [workspace.id, workspace]));
+  const taskRows = Array.isArray(taskResult.data) ? taskResult.data : [];
+  const focusRows = isCurrentDate && Array.isArray(focusTaskResult?.data) ? focusTaskResult.data : [];
+  const reminderRows = Array.isArray(reminderResult.data) ? reminderResult.data : [];
+  const eventRows = Array.isArray(eventResult.data) ? eventResult.data : [];
+  const projectRows = Array.isArray(projectResult.data) ? projectResult.data : [];
+
+  const seenKeys = new Set();
+  const upcoming = [];
+  const today = [];
+
+  const addUpcomingItem = (item, key) => {
+    if (!item || !key || seenKeys.has(key)) return;
+    seenKeys.add(key);
+    upcoming.push(item);
+  };
+
+  const addTodayItem = (item, key) => {
+    if (!item || !key || seenKeys.has(key)) return;
+    seenKeys.add(key);
+    today.push(item);
+  };
+
+  const focusTaskIds = new Set(focusRows.map((row) => String(row.id)));
+
+  const buildWorkspaceContext = (workspaceId) => ({
+    workspaceId,
+    workspaceName: workspaceById.get(workspaceId)?.name ?? null,
+  });
+
+  const toTaskDueAt = (task) => {
+    if (!task?.due_date || !task?.due_time) return null;
+    const dueDate = new Date(`${String(task.due_date)}T00:00:00`);
+    if (Number.isNaN(dueDate.getTime())) return null;
+    const dueAt = localDateAtTime(dueDate, task.due_time);
+    return dueAt && !Number.isNaN(dueAt.getTime()) ? dueAt : null;
+  };
+
+  const isTaskOverdueForSelectedDate = (task) => {
+    if (!task?.due_date) return false;
+    const taskDateKey = String(task.due_date);
+    if (taskDateKey < selectedDateKey) return true;
+    if (!isCurrentDate || taskDateKey !== selectedDateKey) return false;
+    const dueAt = toTaskDueAt(task);
+    return Boolean(dueAt && dueAt.getTime() <= now.getTime());
+  };
+
+  const isTaskTimeBasedUpcoming = (task) => {
+    if (!task?.due_date || !task?.due_time) return false;
+    const taskDateKey = String(task.due_date);
+    if (taskDateKey !== selectedDateKey) return false;
+    if (!isCurrentDate) return true;
+    const dueAt = toTaskDueAt(task);
+    return Boolean(dueAt && dueAt.getTime() > now.getTime());
+  };
+
+  const isTaskSelectedDate = (task) => Boolean(task?.due_date && String(task.due_date) === selectedDateKey);
+
+  const buildTaskPayload = (task, overrides = {}) => {
+    const dueAt = toTaskDueAt(task);
+    const workspaceContext = buildWorkspaceContext(task.workspace_id);
+    const hasProject = Boolean(task.project_id);
+    const isOverdue = overrides.isOverdue ?? isTaskOverdueForSelectedDate(task);
+    const type = overrides.type ?? (hasProject ? 'project_action' : 'task');
+    const sourceType = overrides.sourceType ?? (hasProject ? 'project_action' : 'task');
+    const meta = overrides.meta ?? (isOverdue ? 'Overdue' : hasProject ? 'Project action' : 'Due today');
+    const dueLabel = overrides.dueLabel ?? (isOverdue ? 'Overdue' : 'Today');
+
+    return {
+      id: `${sourceType}:${task.id}`,
+      type,
+      title: task.title ?? 'Untitled task',
+      workspaceId: task.workspace_id,
+      workspaceName: workspaceContext.workspaceName,
+      meta,
+      dueLabel,
+      status: isOverdue ? 'overdue' : 'active',
+      sourceType,
+      sourceId: task.id,
+      sortAt: dueAt?.toISOString() ?? `${task.due_date ?? selectedDateKey}T00:00:00.000Z`,
+      priorityRank: getTaskPriorityRank(task.priority),
+    };
+  };
+
+  for (const task of taskRows) {
+    if (!task?.id || !task.workspace_id) continue;
+    const normalizedTaskStatus = String(task.status ?? '').toLowerCase();
+    if (normalizedTaskStatus === 'completed' || normalizedTaskStatus === 'done') continue;
+    const taskKey = `task:${task.id}`;
+    if (focusTaskIds.has(String(task.id)) && isCurrentDate) {
+      const focusItem = buildTaskPayload(task, {
+        type: 'focus',
+        sourceType: 'task',
+        meta: 'Focus',
+        dueLabel: 'Today',
+      });
+      addTodayItem(focusItem, taskKey);
+      continue;
+    }
+
+    if (isTaskTimeBasedUpcoming(task)) {
+      const dueAt = toTaskDueAt(task);
+      const upcomingItem = {
+        id: `task:${task.id}`,
+        type: 'task',
+        title: task.title ?? 'Untitled task',
+        workspaceId: task.workspace_id,
+        workspaceName: workspaceById.get(task.workspace_id)?.name ?? null,
+        timeLabel: dueAt ? formatNotificationTime(dueAt) ?? null : null,
+        startsAt: dueAt ? dueAt.toISOString() : null,
+        endsAt: null,
+        status: 'upcoming',
+        sourceType: 'task',
+        sourceId: task.id,
+        sortAt: dueAt?.toISOString() ?? null,
+        priorityRank: getTaskPriorityRank(task.priority),
+      };
+      addUpcomingItem(upcomingItem, taskKey);
+      continue;
+    }
+
+    if (!isTaskSelectedDate(task) && !isTaskOverdueForSelectedDate(task)) {
+      continue;
+    }
+
+    const todayItem = buildTaskPayload(task, {
+      isOverdue: isTaskOverdueForSelectedDate(task),
+      type: task.project_id ? 'project_action' : 'task',
+      sourceType: task.project_id ? 'project_action' : 'task',
+      meta: task.project_id ? (isTaskOverdueForSelectedDate(task) ? 'Overdue' : 'Project action') : (isTaskOverdueForSelectedDate(task) ? 'Overdue' : 'Due today'),
+      dueLabel: isTaskOverdueForSelectedDate(task) ? 'Overdue' : 'Today',
+    });
+    addTodayItem(todayItem, taskKey);
+  }
+
+  for (const reminder of reminderRows) {
+    if (!reminder?.id || !reminder.workspace_id) continue;
+    if (String(reminder.status ?? '').toLowerCase() === 'dismissed') continue;
+    if (Boolean(reminder.completed_at)) continue;
+
+    const remindAt = new Date(reminder.remind_at ?? '');
+    if (Number.isNaN(remindAt.getTime())) continue;
+    const reminderDateKey = getLocalDateKey(remindAt);
+    if (!reminderDateKey) continue;
+    const hasSpecificTime = isTimeBasedDateValue(remindAt);
+    const isOverdue = reminderDateKey < selectedDateKey || (isCurrentDate && reminderDateKey === selectedDateKey && hasSpecificTime && remindAt.getTime() <= now.getTime());
+    const isUpcoming = reminderDateKey === selectedDateKey && hasSpecificTime && !isOverdue;
+    const reminderKey = `reminder:${reminder.id}`;
+
+    if (isUpcoming) {
+      addUpcomingItem(
+        {
+          id: reminderKey,
+          type: 'reminder',
+          title: reminder.title ?? 'Untitled reminder',
+          workspaceId: reminder.workspace_id,
+          workspaceName: workspaceById.get(reminder.workspace_id)?.name ?? null,
+          timeLabel: formatNotificationTime(remindAt) ?? null,
+          startsAt: remindAt.toISOString(),
+          endsAt: null,
+          status: 'upcoming',
+          sourceType: 'reminder',
+          sourceId: reminder.id,
+          sortAt: remindAt.toISOString(),
+        },
+        reminderKey
+      );
+      continue;
+    }
+
+    if (reminderDateKey > selectedDateKey && !isOverdue) {
+      continue;
+    }
+
+    addTodayItem(
+      {
+        id: reminderKey,
+        type: 'reminder',
+        title: reminder.title ?? 'Untitled reminder',
+        workspaceId: reminder.workspace_id,
+        workspaceName: workspaceById.get(reminder.workspace_id)?.name ?? null,
+        meta: isOverdue ? 'Overdue' : 'Due today',
+        dueLabel: isOverdue ? 'Overdue' : 'Today',
+        status: isOverdue ? 'overdue' : 'active',
+        sourceType: 'reminder',
+        sourceId: reminder.id,
+        sortAt: remindAt.toISOString(),
+        priorityRank: 0,
+      },
+      reminderKey
+    );
+  }
+
+  for (const event of eventRows) {
+    if (!event?.id || !event.workspace_id) continue;
+    if (String(event.status ?? '').toLowerCase() === 'done') continue;
+    if (Boolean(event.all_day)) continue;
+
+    const startAt = new Date(event.start_at ?? '');
+    if (Number.isNaN(startAt.getTime())) continue;
+    if (isCurrentDate && startAt.getTime() <= now.getTime()) {
+      continue;
+    }
+
+    const eventDateKey = getLocalDateKey(startAt);
+    if (!eventDateKey || eventDateKey !== selectedDateKey) continue;
+
+    const eventKey = `calendar_event:${event.id}`;
+    addUpcomingItem(
+      {
+        id: eventKey,
+        type: 'event',
+        title: event.title ?? 'Untitled event',
+        workspaceId: event.workspace_id,
+        workspaceName: workspaceById.get(event.workspace_id)?.name ?? null,
+        timeLabel: formatNotificationTime(startAt) ?? null,
+        startsAt: startAt.toISOString(),
+        endsAt: event.end_at ?? null,
+        status: 'upcoming',
+        sourceType: 'calendar_event',
+        sourceId: event.id,
+        sortAt: startAt.toISOString(),
+      },
+      eventKey
+    );
+  }
+
+  for (const project of projectRows) {
+    if (!project?.id || !project.workspace_id) continue;
+    if (isCompletedProjectStatus(project.status)) continue;
+    const projectEndDateText = normalizeNullableText(project.end_date);
+    if (!projectEndDateText) continue;
+
+    const projectDate = hasExplicitTimeComponent(projectEndDateText)
+      ? getLocalDateKey(new Date(projectEndDateText))
+      : normalizeNullableDate(projectEndDateText, 'end date');
+    if (!projectDate) continue;
+
+    const projectDateKey = String(projectDate);
+    if (projectDateKey > selectedDateKey) continue;
+
+    const projectEndAt = hasExplicitTimeComponent(projectEndDateText)
+      ? new Date(projectEndDateText)
+      : new Date(`${projectDateKey}T00:00:00`);
+    if (Number.isNaN(projectEndAt.getTime())) continue;
+
+    const isProjectOverdue = projectDateKey < selectedDateKey;
+    const isProjectTimeBased = hasExplicitTimeComponent(projectEndDateText);
+    const projectKey = `project:${project.id}`;
+
+    if (isProjectTimeBased && projectDateKey === selectedDateKey) {
+      addUpcomingItem(
+        {
+          id: `deadline:${project.id}`,
+          type: 'deadline',
+          title: project.name ?? 'Untitled project',
+          workspaceId: project.workspace_id,
+          workspaceName: workspaceById.get(project.workspace_id)?.name ?? null,
+          timeLabel: formatNotificationTime(projectEndAt) ?? null,
+          startsAt: projectEndAt.toISOString(),
+          endsAt: null,
+          status: 'upcoming',
+          sourceType: 'project',
+          sourceId: project.id,
+          sortAt: projectEndAt.toISOString(),
+        },
+        projectKey
+      );
+      continue;
+    }
+
+    addTodayItem(
+      {
+        id: `project_action:${project.id}`,
+        type: 'project_action',
+        title: project.name ?? 'Untitled project',
+        workspaceId: project.workspace_id,
+        workspaceName: workspaceById.get(project.workspace_id)?.name ?? null,
+        meta: isProjectOverdue ? 'Overdue' : 'Project action',
+        dueLabel: isProjectOverdue ? 'Overdue' : 'Today',
+        status: isProjectOverdue ? 'overdue' : 'active',
+        sourceType: 'project_action',
+        sourceId: project.id,
+        sortAt: projectEndAt.toISOString(),
+        priorityRank: 0,
+      },
+      projectKey
+    );
+  }
+
+  upcoming.sort((left, right) => {
+    const leftTime = new Date(left.sortAt ?? 0).getTime();
+    const rightTime = new Date(right.sortAt ?? 0).getTime();
+    if (leftTime !== rightTime) return leftTime - rightTime;
+
+    const leftPriority = Number(right.priorityRank ?? 0) - Number(left.priorityRank ?? 0);
+    if (leftPriority !== 0) return leftPriority;
+
+    return String(left.title ?? '').localeCompare(String(right.title ?? ''));
+  });
+
+  today.sort((left, right) => {
+    const bucket = (item) => {
+      if (item.type === 'focus') return 0;
+      if (item.status === 'overdue') return 1;
+      if (item.type === 'project_action') return 3;
+      return 2;
+    };
+
+    const bucketDiff = bucket(left) - bucket(right);
+    if (bucketDiff !== 0) return bucketDiff;
+
+    const priorityDiff = Number(right.priorityRank ?? 0) - Number(left.priorityRank ?? 0);
+    if (priorityDiff !== 0) return priorityDiff;
+
+    const leftTime = new Date(left.sortAt ?? 0).getTime();
+    const rightTime = new Date(right.sortAt ?? 0).getTime();
+    if (leftTime !== rightTime) return leftTime - rightTime;
+
+    return String(left.title ?? '').localeCompare(String(right.title ?? ''));
+  });
+
+  const captureCount = Number(captureCountResult.count ?? 0);
+  const captures = (captureItemsResult.data ?? []).map((item) => ({
+    id: item.id,
+    title: item.title ?? 'Untitled capture',
+    source: item.source ?? 'inbox',
+    workspaceId: item.workspace_id,
+    workspaceName: workspaceById.get(item.workspace_id)?.name ?? null,
+    createdAt: item.created_at ?? null,
+  }));
+
+  return {
+    date: selectedDateKey,
+    scope: {
+      workspaceId: scope.workspaceId,
+      label: scope.label,
+    },
+    upcoming: upcoming.map(({ sortAt, priorityRank, ...item }) => item),
+    today: today.map(({ sortAt, priorityRank, ...item }) => item),
+    captures: {
+      count: captureCount,
+      items: captures,
+    },
+  };
 };
 
 const getCalendarScopeWorkspaceIds = async (req) => {
@@ -4376,6 +5045,85 @@ app.patch('/api/workspaces/active', authMiddleware, rateLimit('write'), async (r
     });
   } catch (error) {
     return respondWithError(res, error);
+  }
+});
+
+// Mobile API
+app.get('/api/mobile/session', async (req, res) => {
+  try {
+    const user = await requireAuth(req);
+    const { data, error } = await supabase
+      .from('users')
+      .select('full_name')
+      .eq('id', user.id)
+      .maybeSingle();
+
+    if (error) throw error;
+
+    res.json({
+      user: {
+        id: user.id,
+        email: user.email ?? null,
+        name:
+          normalizeNullableText(data?.full_name) ??
+          normalizeNullableText(user.user_metadata?.full_name) ??
+          normalizeNullableText(user.user_metadata?.name) ??
+          null,
+      },
+    });
+  } catch (error) {
+    return respondWithMobileError(res, error);
+  }
+});
+
+app.get('/api/mobile/workspaces', async (req, res) => {
+  try {
+    const user = await requireAuth(req);
+    const [workspaces, activeWorkspaceId] = await Promise.all([
+      getUserWorkspaces(user.id),
+      getUserActiveWorkspaceId(user.id),
+    ]);
+
+    const accessibleWorkspaceIds = new Set(workspaces.map((workspace) => workspace.id));
+    const defaultWorkspaceId =
+      activeWorkspaceId && accessibleWorkspaceIds.has(activeWorkspaceId) ? activeWorkspaceId : null;
+
+    res.json({
+      defaultWorkspaceId,
+      scopeOptions: [
+        {
+          id: 'all',
+          name: 'All Workspaces',
+          type: 'scope',
+        },
+        ...workspaces.map((workspace) => ({
+          id: workspace.id,
+          name: workspace.name,
+          type: workspace.is_personal || workspace.role === 'owner' ? 'personal' : 'workspace',
+          role: workspace.role,
+          isDefault: workspace.id === defaultWorkspaceId,
+        })),
+      ],
+    });
+  } catch (error) {
+    return respondWithMobileError(res, error);
+  }
+});
+
+app.get('/api/mobile/today', async (req, res) => {
+  try {
+    const user = await requireAuth(req);
+    const requestedWorkspaceId = normalizeNullableText(req.query?.workspace_id) || 'all';
+    const scope = await resolveMobileWorkspaceScope(user.id, requestedWorkspaceId);
+    const payload = await loadMobileTodayData({
+      userId: user.id,
+      scope,
+      dateKey: req.query?.date,
+    });
+
+    res.json(payload);
+  } catch (error) {
+    return respondWithMobileError(res, error);
   }
 });
 
