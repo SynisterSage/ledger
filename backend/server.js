@@ -2404,6 +2404,24 @@ const getMobileDateWindow = (dateKey) => {
   };
 };
 
+const addDaysToDate = (date, amount) => {
+  const next = new Date(date);
+  next.setDate(next.getDate() + amount);
+  return next;
+};
+
+const getMobileUpcomingWindow = (dateKey, daysAhead = 7) => {
+  const start = new Date(`${dateKey}T00:00:00`);
+  const end = addDaysToDate(start, daysAhead);
+  end.setHours(23, 59, 59, 999);
+
+  return {
+    end,
+    endDateKey: getLocalDateKey(end) ?? dateKey,
+    endIso: end.toISOString(),
+  };
+};
+
 const hasExplicitTimeComponent = (value) => {
   const text = String(value ?? '');
   return /T\d{2}:\d{2}/.test(text);
@@ -2434,6 +2452,10 @@ const loadMobileTodayData = async ({ userId, scope, dateKey }) => {
   const currentDateKey = getLocalDateKey(new Date());
   const isCurrentDate = selectedDateKey === currentDateKey;
   const { startIso, endIso } = getMobileDateWindow(selectedDateKey);
+  const { endDateKey: upcomingEndDateKey, endIso: upcomingEndIso } = getMobileUpcomingWindow(
+    selectedDateKey,
+    7
+  );
   const now = new Date();
   const workspaceIds = Array.isArray(scope.workspaceIds) ? scope.workspaceIds.filter(Boolean) : [];
 
@@ -2453,26 +2475,41 @@ const loadMobileTodayData = async ({ userId, scope, dateKey }) => {
     };
   }
 
-  const focusTaskPromise = isCurrentDate
-    ? (async () => {
-        const result = await supabase
-          .from('tasks')
-          .select(`${MOBILE_TODAY_TASK_SELECT_COLUMNS}, show_in_today, is_today_focus`)
-          .in('workspace_id', workspaceIds)
-          .neq('status', 'completed')
-          .or('show_in_today.eq.true,is_today_focus.eq.true')
-          .order('updated_at', { ascending: false })
-          .limit(200);
+  const explicitTaskPromise = (async () => {
+    const result = await supabase
+      .from('tasks')
+      .select(`${MOBILE_TODAY_TASK_SELECT_COLUMNS}, show_in_today, is_today_focus`)
+      .in('workspace_id', workspaceIds)
+      .neq('status', 'completed')
+      .or('show_in_today.eq.true,is_today_focus.eq.true')
+      .order('updated_at', { ascending: false })
+      .limit(200);
 
-        if (result.error && isMissingTaskTodayColumnError(result.error)) {
-          return { data: [], error: null };
-        }
+    if (result.error && isMissingTaskTodayColumnError(result.error)) {
+      return { data: [], error: null };
+    }
 
-        return result;
-      })()
-    : Promise.resolve({ data: [] });
+    return result;
+  })();
 
-  const [workspaceResult, taskResult, focusTaskResult, reminderResult, eventResult, projectResult, captureCountResult, captureItemsResult] =
+  const upcomingTaskPromise = (async () => {
+    const result = await supabase
+      .from('tasks')
+      .select(MOBILE_TODAY_TASK_SELECT_COLUMNS)
+      .in('workspace_id', workspaceIds)
+      .neq('status', 'completed')
+      .gt('due_date', selectedDateKey)
+      .lte('due_date', upcomingEndDateKey)
+      .not('due_time', 'is', null)
+      .order('due_date', { ascending: true })
+      .order('due_time', { ascending: true })
+      .order('created_at', { ascending: false })
+      .limit(500);
+
+    return result;
+  })();
+
+  const [workspaceResult, taskResult, explicitTaskResult, upcomingTaskResult, reminderResult, eventResult, projectResult, captureCountResult, captureItemsResult] =
     await Promise.all([
       supabase.from('workspaces').select('id, name, color').in('id', workspaceIds),
       supabase
@@ -2484,7 +2521,8 @@ const loadMobileTodayData = async ({ userId, scope, dateKey }) => {
         .order('due_date', { ascending: true })
         .order('created_at', { ascending: false })
         .limit(500),
-      focusTaskPromise,
+      explicitTaskPromise,
+      upcomingTaskPromise,
       withReminderTable((table) =>
         supabase
           .from(table)
@@ -2493,7 +2531,7 @@ const loadMobileTodayData = async ({ userId, scope, dateKey }) => {
           .or('status.eq.active,status.eq.overdue')
           .is('dismissed_at', null)
           .is('completed_at', null)
-          .lte('remind_at', endIso)
+          .lte('remind_at', upcomingEndIso)
           .order('remind_at', { ascending: true })
           .limit(500)
       ),
@@ -2504,7 +2542,7 @@ const loadMobileTodayData = async ({ userId, scope, dateKey }) => {
         )
         .in('workspace_id', workspaceIds)
         .gte('start_at', startIso)
-        .lte('start_at', endIso)
+        .lte('start_at', upcomingEndIso)
         .neq('status', 'done')
         .order('start_at', { ascending: true })
         .limit(200),
@@ -2527,13 +2565,14 @@ const loadMobileTodayData = async ({ userId, scope, dateKey }) => {
         .in('workspace_id', workspaceIds)
         .eq('status', 'unprocessed')
         .order('created_at', { ascending: false })
-        .limit(3),
+        .limit(500),
     ]);
 
   const queryErrors = [
     workspaceResult.error,
     taskResult.error,
-    focusTaskResult?.error,
+    explicitTaskResult?.error,
+    upcomingTaskResult?.error,
     reminderResult.error,
     eventResult.error,
     projectResult.error,
@@ -2544,10 +2583,21 @@ const loadMobileTodayData = async ({ userId, scope, dateKey }) => {
 
   const workspaceById = new Map((workspaceResult.data ?? []).map((workspace) => [workspace.id, workspace]));
   const taskRows = Array.isArray(taskResult.data) ? taskResult.data : [];
-  const focusRows = isCurrentDate && Array.isArray(focusTaskResult?.data) ? focusTaskResult.data : [];
+  const explicitTaskRows = Array.isArray(explicitTaskResult?.data) ? explicitTaskResult.data : [];
+  const upcomingTaskRows = Array.isArray(upcomingTaskResult?.data) ? upcomingTaskResult.data : [];
   const reminderRows = Array.isArray(reminderResult.data) ? reminderResult.data : [];
   const eventRows = Array.isArray(eventResult.data) ? eventResult.data : [];
   const projectRows = Array.isArray(projectResult.data) ? projectResult.data : [];
+  const combinedTaskRows = [...taskRows, ...explicitTaskRows, ...upcomingTaskRows];
+  const uniqueTaskRows = [];
+  const seenTaskIds = new Set();
+  for (const row of combinedTaskRows) {
+    if (!row?.id) continue;
+    const taskId = String(row.id);
+    if (seenTaskIds.has(taskId)) continue;
+    seenTaskIds.add(taskId);
+    uniqueTaskRows.push(row);
+  }
 
   const seenKeys = new Set();
   const upcoming = [];
@@ -2565,7 +2615,11 @@ const loadMobileTodayData = async ({ userId, scope, dateKey }) => {
     today.push(item);
   };
 
-  const focusTaskIds = new Set(focusRows.map((row) => String(row.id)));
+  const focusTaskIds = new Set(
+    explicitTaskRows.filter((row) => row?.is_today_focus).map((row) => String(row.id))
+  );
+  const explicitTaskIds = new Set(explicitTaskRows.map((row) => String(row.id)));
+  const upcomingTaskIds = new Set(upcomingTaskRows.map((row) => String(row.id)));
 
   const buildWorkspaceContext = (workspaceId) => ({
     workspaceId,
@@ -2626,7 +2680,7 @@ const loadMobileTodayData = async ({ userId, scope, dateKey }) => {
     };
   };
 
-  for (const task of taskRows) {
+  for (const task of uniqueTaskRows) {
     if (!task?.id || !task.workspace_id) continue;
     const normalizedTaskStatus = String(task.status ?? '').toLowerCase();
     if (
@@ -2645,6 +2699,38 @@ const loadMobileTodayData = async ({ userId, scope, dateKey }) => {
         dueLabel: 'Today',
       });
       addTodayItem(focusItem, taskKey);
+      continue;
+    }
+
+    if (explicitTaskIds.has(String(task.id))) {
+      const explicitItem = buildTaskPayload(task, {
+        type: task.project_id ? 'project_action' : 'task',
+        sourceType: task.project_id ? 'project_action' : 'task',
+        meta: task.project_id ? 'Project action' : 'Due today',
+        dueLabel: 'Today',
+      });
+      addTodayItem(explicitItem, taskKey);
+      continue;
+    }
+
+    if (upcomingTaskIds.has(String(task.id))) {
+      const dueAt = toTaskDueAt(task);
+      const upcomingItem = {
+        id: `task:${task.id}`,
+        type: 'task',
+        title: task.title ?? 'Untitled task',
+        workspaceId: task.workspace_id,
+        workspaceName: workspaceById.get(task.workspace_id)?.name ?? null,
+        timeLabel: dueAt ? formatNotificationTime(dueAt) ?? null : null,
+        startsAt: dueAt ? dueAt.toISOString() : null,
+        endsAt: null,
+        status: 'upcoming',
+        sourceType: 'task',
+        sourceId: task.id,
+        sortAt: dueAt?.toISOString() ?? null,
+        priorityRank: getTaskPriorityRank(task.priority),
+      };
+      addUpcomingItem(upcomingItem, taskKey);
       continue;
     }
 
@@ -2695,10 +2781,9 @@ const loadMobileTodayData = async ({ userId, scope, dateKey }) => {
     if (!reminderDateKey) continue;
     const hasSpecificTime = isTimeBasedDateValue(remindAt);
     const isOverdue = reminderDateKey < selectedDateKey || (isCurrentDate && reminderDateKey === selectedDateKey && hasSpecificTime && remindAt.getTime() <= now.getTime());
-    const isUpcoming = reminderDateKey === selectedDateKey && hasSpecificTime && !isOverdue;
     const reminderKey = `reminder:${reminder.id}`;
 
-    if (isUpcoming) {
+    if (reminderDateKey > selectedDateKey && hasSpecificTime) {
       addUpcomingItem(
         {
           id: reminderKey,
@@ -2719,7 +2804,28 @@ const loadMobileTodayData = async ({ userId, scope, dateKey }) => {
       continue;
     }
 
-    if (reminderDateKey > selectedDateKey && !isOverdue) {
+    if (reminderDateKey === selectedDateKey && hasSpecificTime && !isOverdue) {
+      addUpcomingItem(
+        {
+          id: reminderKey,
+          type: 'reminder',
+          title: reminder.title ?? 'Untitled reminder',
+          workspaceId: reminder.workspace_id,
+          workspaceName: workspaceById.get(reminder.workspace_id)?.name ?? null,
+          timeLabel: formatNotificationTime(remindAt) ?? null,
+          startsAt: remindAt.toISOString(),
+          endsAt: null,
+          status: 'upcoming',
+          sourceType: 'reminder',
+          sourceId: reminder.id,
+          sortAt: remindAt.toISOString(),
+        },
+        reminderKey
+      );
+      continue;
+    }
+
+    if (reminderDateKey > selectedDateKey && !hasSpecificTime) {
       continue;
     }
 
@@ -2749,12 +2855,12 @@ const loadMobileTodayData = async ({ userId, scope, dateKey }) => {
 
     const startAt = new Date(event.start_at ?? '');
     if (Number.isNaN(startAt.getTime())) continue;
-    if (isCurrentDate && startAt.getTime() <= now.getTime()) {
+    const eventDateKey = getLocalDateKey(startAt);
+    if (!eventDateKey) continue;
+    if (eventDateKey < selectedDateKey) continue;
+    if (eventDateKey === selectedDateKey && isCurrentDate && startAt.getTime() <= now.getTime()) {
       continue;
     }
-
-    const eventDateKey = getLocalDateKey(startAt);
-    if (!eventDateKey || eventDateKey !== selectedDateKey) continue;
 
     const eventKey = `calendar_event:${event.id}`;
     addUpcomingItem(
@@ -2801,8 +2907,10 @@ const loadMobileTodayData = async ({ userId, scope, dateKey }) => {
     const isProjectOverdue = projectDateKey < selectedDateKey;
     const isProjectTimeBased = hasExplicitTimeComponent(projectEndDateText);
     const projectKey = `project:${project.id}`;
+    if (projectDateKey > upcomingEndDateKey) continue;
+    if (projectDateKey > selectedDateKey && !isProjectTimeBased) continue;
 
-    if (isProjectTimeBased && projectDateKey === selectedDateKey) {
+    if (isProjectTimeBased && projectDateKey >= selectedDateKey) {
       addUpcomingItem(
         {
           id: `deadline:${project.id}`,

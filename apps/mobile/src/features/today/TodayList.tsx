@@ -71,10 +71,6 @@ export function TodayList({
       <Section title="Captures">
         {hasCaptures ? (
           <View style={{ gap: theme.spacing.xs }}>
-            <TodayItem
-              title={`${captures.count} capture${captures.count === 1 ? '' : 's'} waiting`}
-              subtitle="Waiting to be sorted"
-            />
             {captures.items.map((item) => (
               <TodayItem
                 key={item.id}
