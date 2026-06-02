@@ -1,4 +1,4 @@
-import { forwardRef } from 'react';
+import { forwardRef, useState } from 'react';
 import { StyleSheet, TextInput, View, type TextInputProps } from 'react-native';
 
 import { AppText } from './AppText';
@@ -14,6 +14,7 @@ export const AppTextInput = forwardRef<TextInput, AppTextInputProps>(function Ap
   ref
 ) {
   const theme = useLedgerTheme();
+  const [isFocused, setIsFocused] = useState(false);
 
   return (
     <View style={styles.container}>
@@ -26,17 +27,24 @@ export const AppTextInput = forwardRef<TextInput, AppTextInputProps>(function Ap
         ref={ref}
         {...props}
         multiline={multiline}
+        onFocus={(event) => {
+          setIsFocused(true);
+          props.onFocus?.(event);
+        }}
+        onBlur={(event) => {
+          setIsFocused(false);
+          props.onBlur?.(event);
+        }}
         placeholderTextColor={theme.colors.placeholder}
         style={[
           styles.input,
           {
             color: theme.colors.textPrimary,
-            backgroundColor: theme.colors.inputBackground,
             borderColor: theme.colors.borderSubtle,
-            borderRadius: theme.radius.control,
-            minHeight: multiline ? theme.spacing['2xl'] * 5 : 48,
-            paddingHorizontal: theme.spacing.lg,
-            paddingVertical: multiline ? theme.spacing.lg : theme.spacing.md,
+            backgroundColor: isFocused ? theme.colors.surface : theme.colors.background,
+            minHeight: multiline ? 92 : 44,
+            paddingHorizontal: 0,
+            paddingVertical: multiline ? theme.spacing.sm : theme.spacing.xs,
           },
           multiline && styles.multiline,
           style,
@@ -51,10 +59,10 @@ const styles = StyleSheet.create({
     alignSelf: 'stretch',
   },
   label: {
-    marginBottom: 6,
+    marginBottom: 8,
   },
   input: {
-    borderWidth: 1,
+    borderBottomWidth: 1,
     fontSize: 16,
     lineHeight: 22,
   },

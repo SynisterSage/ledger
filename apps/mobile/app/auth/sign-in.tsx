@@ -1,7 +1,8 @@
-import { Link, useRouter } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { useState } from 'react';
-import { Alert, View } from 'react-native';
+import { Alert, Pressable, View } from 'react-native';
 
+import { AuthHeader } from '@/components/AuthHeader';
 import { AppButton } from '@/components/AppButton';
 import { AppText } from '@/components/AppText';
 import { AppTextInput } from '@/components/AppTextInput';
@@ -42,14 +43,11 @@ export default function SignInScreen() {
   }
 
   return (
-    <Screen scroll>
-      <View style={{ gap: theme.spacing['2xl'] }}>
-        <View style={{ gap: theme.spacing.sm }}>
-          <AppText variant="screenTitle">Sign in</AppText>
-          <AppText variant="body">Use your Ledger account to access your workspaces.</AppText>
-        </View>
+    <Screen contentStyle={{ paddingTop: 0 }}>
+      <View style={[styles.container, { paddingVertical: theme.spacing.lg }]}>
+        <AuthHeader title="Welcome Back" />
 
-        <View style={{ gap: theme.spacing.lg }}>
+        <View style={styles.form}>
           <AppTextInput
             label="Email"
             placeholder="you@example.com"
@@ -68,13 +66,41 @@ export default function SignInScreen() {
           {error ? <AppText variant="caption">{error}</AppText> : null}
         </View>
 
-        <View style={{ gap: theme.spacing.sm }}>
-          <AppButton title="Sign in" onPress={handleSignIn} disabled={isSubmitting} />
-          <Link href="/auth/sign-up" style={{ color: theme.colors.accent }}>
-            Create account
-          </Link>
+        <View style={styles.actions}>
+          <AppButton title="Sign In" variant="primary" size="lg" onPress={handleSignIn} disabled={isSubmitting} />
+          <View style={styles.footerRow}>
+            <AppText variant="body" style={{ color: theme.colors.textMuted }}>
+              New to Ledger?{' '}
+            </AppText>
+            <Pressable onPress={() => router.push('/auth/sign-up')}>
+              <AppText variant="body" style={{ color: theme.colors.accent }}>
+                Create account
+              </AppText>
+            </Pressable>
+          </View>
         </View>
       </View>
     </Screen>
   );
 }
+
+const styles = {
+  container: {
+    flex: 1,
+    justifyContent: 'space-between' as const,
+  },
+  form: {
+    gap: 20,
+    marginTop: 0,
+    marginBottom: 170,
+  },
+  actions: {
+    gap: 14,
+  },
+  footerRow: {
+    flexDirection: 'row' as const,
+    justifyContent: 'center' as const,
+    flexWrap: 'wrap' as const,
+    alignItems: 'center' as const,
+  },
+};

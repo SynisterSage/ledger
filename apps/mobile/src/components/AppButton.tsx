@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 
 import { AppText } from './AppText';
 
@@ -14,9 +14,20 @@ type AppButtonProps = {
   variant?: AppButtonVariant;
   right?: ReactNode;
   fullWidth?: boolean;
+  size?: 'md' | 'lg';
+  containerStyle?: StyleProp<ViewStyle>;
 };
 
-export function AppButton({ title, onPress, disabled, variant = 'primary', right, fullWidth = true }: AppButtonProps) {
+export function AppButton({
+  title,
+  onPress,
+  disabled,
+  variant = 'primary',
+  right,
+  fullWidth = true,
+  size = 'md',
+  containerStyle,
+}: AppButtonProps) {
   const theme = useLedgerTheme();
 
   const backgroundColor =
@@ -30,14 +41,14 @@ export function AppButton({ title, onPress, disabled, variant = 'primary', right
     variant === 'primary'
       ? theme.colors.accent
       : variant === 'secondary'
-        ? theme.colors.borderStrong
+        ? theme.colors.accent
         : 'transparent';
 
   const textColor =
     variant === 'primary'
       ? '#FFFFFF'
       : variant === 'secondary'
-        ? theme.colors.textPrimary
+        ? theme.colors.accent
         : theme.colors.textSecondary;
 
   return (
@@ -50,12 +61,13 @@ export function AppButton({ title, onPress, disabled, variant = 'primary', right
         {
           backgroundColor,
           borderColor,
-          borderRadius: theme.radius.control,
+          borderRadius: size === 'lg' ? theme.radius.pill : theme.radius.control,
           opacity: disabled ? 0.5 : pressed ? 0.86 : 1,
           alignSelf: fullWidth ? 'stretch' : 'flex-start',
         },
+        containerStyle,
       ]}>
-      <View style={styles.content}>
+      <View style={[styles.content, size === 'lg' ? styles.contentLarge : styles.contentMedium]}>
         <AppText variant="button" style={{ color: textColor }}>
           {title}
         </AppText>
@@ -70,10 +82,16 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   content: {
-    paddingVertical: 12,
-    paddingHorizontal: 16,
     alignItems: 'center',
     justifyContent: 'center',
     flexDirection: 'row',
+  },
+  contentMedium: {
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+  },
+  contentLarge: {
+    paddingVertical: 18,
+    paddingHorizontal: 24,
   },
 });

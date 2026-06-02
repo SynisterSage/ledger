@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, View } from 'react-native';
 import { useRouter } from 'expo-router';
+import * as Haptics from 'expo-haptics';
 
 import { AppButton } from '@/components/AppButton';
 import { AppText } from '@/components/AppText';
@@ -8,10 +9,12 @@ import { Screen } from '@/components/Screen';
 import { MobilePageHeader, MOBILE_PAGE_HEADER_SCROLL_SPACE } from '@/components/MobilePageHeader';
 import { WorkspaceSelectorSheet } from '@/components/WorkspaceSelectorSheet';
 import { TodayList } from '@/features/today/TodayList';
+import { TodayItemSheet, type TodaySheetMode } from '@/features/today/TodayItemSheet';
 import { TodaySkeleton } from '@/features/today/TodaySkeleton';
 import { getMobileToday } from '@/api/today';
 import { useLedgerTheme } from '@/theme';
 import type {
+  MobileTodayInteractionItem,
   MobileTodayResponse,
 } from '@/types/ledger';
 import {
@@ -39,6 +42,8 @@ export default function TodayScreen() {
   const [error, setError] = useState<string | null>(null);
   const [refreshNonce, setRefreshNonce] = useState(0);
   const [workspacePickerOpen, setWorkspacePickerOpen] = useState(false);
+  const [selectedItem, setSelectedItem] = useState<MobileTodayInteractionItem | null>(null);
+  const [sheetMode, setSheetMode] = useState<TodaySheetMode>('detail');
 
   const selectedScopeLabel = useMemo(() => {
     return getWorkspaceLabel(workspaceState.selectedWorkspaceId, workspaceState.options);
@@ -81,6 +86,20 @@ export default function TodayScreen() {
 
   const hasContent =
     today.upcoming.length > 0 || today.today.length > 0 || today.captures.count > 0;
+
+  const closeItemSheet = () => {
+    setSelectedItem(null);
+  };
+
+  const handleTodayItemAction = (actionId: string, item: MobileTodayInteractionItem) => {
+    console.log('[mobile.today.action]', { actionId, itemId: item.id, type: 'source' in item ? 'capture' : item.type });
+    closeItemSheet();
+  };
+
+  const openItemSheet = (item: MobileTodayInteractionItem, mode: TodaySheetMode) => {
+    setSelectedItem(item);
+    setSheetMode(mode);
+  };
 
   return (
     <Screen contentStyle={{ paddingTop: 0 }}>
@@ -135,6 +154,15 @@ export default function TodayScreen() {
                 today={today.today}
                 captures={today.captures}
                 showWorkspaceNames={workspaceState.selectedWorkspaceId === 'all'}
+                onItemPress={(item) => openItemSheet(item, 'detail')}
+                onItemLongPress={async (item) => {
+                  try {
+                    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  } catch {
+                    // Ignore haptic failures on unsupported devices.
+                  }
+                  openItemSheet(item, 'actions');
+                }}
               />
             ) : (
               <View style={{ gap: theme.spacing.md }}>
@@ -144,6 +172,14 @@ export default function TodayScreen() {
             )}
           </View>
         </Animated.ScrollView>
+
+        <TodayItemSheet
+          visible={Boolean(selectedItem)}
+          item={selectedItem}
+          mode={sheetMode}
+          onClose={closeItemSheet}
+          onAction={handleTodayItemAction}
+        />
       </View>
     </Screen>
   );

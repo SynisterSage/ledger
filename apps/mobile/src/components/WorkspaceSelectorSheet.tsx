@@ -201,7 +201,9 @@ export function WorkspaceSelectorSheet({
             <View style={[styles.handle, { backgroundColor: theme.colors.borderSubtle }]} />
           </View>
           <View style={styles.header}>
-            <AppText variant="sectionTitle">Workspace</AppText>
+            <AppText variant="body" style={styles.headerTitle}>
+              Workspace
+            </AppText>
           </View>
 
           <View style={styles.list}>
@@ -214,13 +216,23 @@ export function WorkspaceSelectorSheet({
                   accessibilityState={{ selected }}
                   accessibilityLabel={`${option.name}${selected ? ', selected' : ''}`}
                   onPress={() => handleSelect(option.id)}
-                  style={[
+                  style={({ pressed }) => [
                     styles.row,
                     index === workspaces.length - 1 ? styles.rowLast : styles.rowBorder,
-                    { borderBottomColor: theme.colors.borderSubtle },
+                    {
+                      borderBottomColor: theme.colors.borderSubtle,
+                      opacity: pressed ? 0.72 : 1,
+                    },
                   ]}>
                   <View style={styles.rowText}>
-                    <AppText variant="bodyStrong">{option.name}</AppText>
+                    <AppText
+                      variant="body"
+                      style={[
+                        styles.rowTitle,
+                        selected ? styles.rowTitleSelected : null,
+                      ]}>
+                      {option.name}
+                    </AppText>
                     {option.subtitle ? <AppText variant="meta">{option.subtitle}</AppText> : null}
                   </View>
                   {selected ? (
@@ -280,6 +292,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingBottom: 12,
   },
+  headerTitle: {
+    fontSize: 16,
+    lineHeight: 20,
+    fontWeight: '500',
+    letterSpacing: -0.2,
+  },
   list: {
     paddingHorizontal: 12,
     paddingBottom: 28,
@@ -303,5 +321,14 @@ const styles = StyleSheet.create({
   rowText: {
     flex: 1,
     gap: 2,
+  },
+  rowTitle: {
+    fontSize: 16,
+    lineHeight: 20,
+    fontWeight: '400',
+    letterSpacing: -0.2,
+  },
+  rowTitleSelected: {
+    fontWeight: '500',
   },
 });

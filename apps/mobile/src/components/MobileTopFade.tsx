@@ -2,7 +2,7 @@ import { StyleSheet, View } from 'react-native';
 
 import { useLedgerTheme } from '@/theme';
 
-const MOBILE_TOP_FADE_HEIGHT = 120;
+const MOBILE_TOP_FADE_HEIGHT = 10;
 
 type MobileTopFadeProps = {
   topOffset: number;

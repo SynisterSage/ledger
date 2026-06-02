@@ -1,7 +1,8 @@
-import { Link, useRouter } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { useState } from 'react';
-import { Alert, View } from 'react-native';
+import { Alert, Pressable, View } from 'react-native';
 
+import { AuthHeader } from '@/components/AuthHeader';
 import { AppButton } from '@/components/AppButton';
 import { AppText } from '@/components/AppText';
 import { AppTextInput } from '@/components/AppTextInput';
@@ -44,15 +45,18 @@ export default function SignUpScreen() {
   }
 
   return (
-    <Screen scroll>
-      <View style={{ gap: theme.spacing['2xl'] }}>
-        <View style={{ gap: theme.spacing.sm }}>
-          <AppText variant="screenTitle">Create account</AppText>
-          <AppText variant="body">Set up access for your Ledger workspaces.</AppText>
-        </View>
+    <Screen contentStyle={{ paddingTop: 0 }}>
+      <View style={[styles.container, { paddingVertical: theme.spacing.lg }]}>
+        <AuthHeader title="Create Your Account" />
 
-        <View style={{ gap: theme.spacing.lg }}>
-          <AppTextInput label="Name" placeholder="Lex" autoCapitalize="words" value={name} onChangeText={setName} />
+        <View style={styles.form}>
+          <AppTextInput
+            label="Name"
+            placeholder="John Doe"
+            autoCapitalize="words"
+            value={name}
+            onChangeText={setName}
+          />
           <AppTextInput
             label="Email"
             placeholder="you@example.com"
@@ -71,13 +75,41 @@ export default function SignUpScreen() {
           {error ? <AppText variant="caption">{error}</AppText> : null}
         </View>
 
-        <View style={{ gap: theme.spacing.sm }}>
-          <AppButton title="Create account" onPress={handleSignUp} disabled={isSubmitting} />
-          <Link href="/auth/sign-in" style={{ color: theme.colors.accent }}>
-            Sign in
-          </Link>
+        <View style={styles.actions}>
+          <AppButton title="Create Account" variant="primary" size="lg" onPress={handleSignUp} disabled={isSubmitting} />
+          <View style={styles.footerRow}>
+            <AppText variant="body" style={{ color: theme.colors.textMuted }}>
+              Already have an account?{' '}
+            </AppText>
+            <Pressable onPress={() => router.push('/auth/sign-in')}>
+              <AppText variant="body" style={{ color: theme.colors.accent }}>
+                Sign in
+              </AppText>
+            </Pressable>
+          </View>
         </View>
       </View>
     </Screen>
   );
 }
+
+const styles = {
+  container: {
+    flex: 1,
+    justifyContent: 'space-between' as const,
+  },
+  form: {
+    gap: 20,
+    marginTop: 0,
+    marginBottom: 80,
+  },
+  actions: {
+    gap: 14,
+  },
+  footerRow: {
+    flexDirection: 'row' as const,
+    justifyContent: 'center' as const,
+    flexWrap: 'wrap' as const,
+    alignItems: 'center' as const,
+  },
+};

@@ -37,15 +37,17 @@ export type MobileUpcomingItem = {
 
 export type MobileTodayItem = {
   id: string;
-  type: 'focus' | 'task' | 'reminder' | 'project_action';
+  type: 'focus' | 'task' | 'reminder' | 'project_action' | 'event';
   title: string;
   workspaceId: string;
   workspaceName: string | null;
   meta: string;
   dueLabel: string;
   status: 'active' | 'overdue';
-  sourceType: 'task' | 'reminder' | 'project_action';
+  sourceType: 'task' | 'reminder' | 'project_action' | 'calendar_event';
   sourceId: string;
+  timeLabel?: string | null;
+  urgency?: string | null;
 };
 
 export type MobileCaptureItem = {
@@ -61,6 +63,8 @@ export type MobileCaptureSummary = {
   count: number;
   items: MobileCaptureItem[];
 };
+
+export type MobileTodayInteractionItem = MobileUpcomingItem | MobileTodayItem | MobileCaptureItem;
 
 export type MobileTodayResponse = {
   date: string;
