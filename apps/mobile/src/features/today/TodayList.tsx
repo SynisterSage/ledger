@@ -119,7 +119,7 @@ function buildTodaySubtitle(item: MobileTodayItem, showWorkspaceNames: boolean) 
 
   if (item.type !== 'project_action' && item.type !== 'event' && item.timeLabel) {
     parts.push(item.timeLabel);
-  } else if (item.dueLabel) {
+  } else if (item.dueLabel && !item.timeLabel) {
     const shouldAddDueLabel =
       item.meta !== item.dueLabel ||
       !item.meta;

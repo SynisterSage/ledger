@@ -2995,10 +2995,11 @@ const loadMobileTodayData = async ({ userId, scope, dateKey }) => {
 
   today.sort((left, right) => {
     const bucket = (item) => {
-      if (item.type === 'focus') return 0;
-      if (item.status === 'overdue') return 1;
-      if (item.type === 'project_action') return 3;
-      return 2;
+      if (item.type === 'event') return 0;
+      if (item.type === 'focus') return 1;
+      if (item.status === 'overdue') return 2;
+      if (item.type === 'project_action') return 4;
+      return 3;
     };
 
     const bucketDiff = bucket(left) - bucket(right);

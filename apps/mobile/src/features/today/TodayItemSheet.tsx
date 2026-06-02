@@ -62,7 +62,8 @@ function getActionsForItem(item: TodaySheetItem, mode: TodaySheetMode): SheetAct
       { id: 'convert_task', label: 'Convert to task', primary: mode === 'actions' },
       { id: 'convert_reminder', label: 'Convert to reminder' },
       { id: 'convert_note', label: 'Convert to note' },
-      { id: 'archive', label: 'Archive', danger: true },
+      { id: 'archive', label: 'Archive' },
+      { id: 'delete', label: 'Delete', danger: true },
     ];
   }
 
@@ -71,11 +72,14 @@ function getActionsForItem(item: TodaySheetItem, mode: TodaySheetMode): SheetAct
       return mode === 'actions'
         ? [
             { id: 'mark_done', label: 'Mark as done', primary: true },
+            { id: 'move_tomorrow', label: 'Move to tomorrow' },
             { id: 'remove_today', label: 'Remove from Today' },
+            { id: 'edit', label: 'Edit' },
             { id: 'delete', label: 'Delete', danger: true },
           ]
         : [
             { id: 'mark_done', label: 'Mark as done', primary: true },
+            { id: 'move_tomorrow', label: 'Move to tomorrow' },
             { id: 'remove_today', label: 'Remove from Today' },
           ];
     case 'event':
@@ -86,6 +90,7 @@ function getActionsForItem(item: TodaySheetItem, mode: TodaySheetMode): SheetAct
             { id: 'create_follow_up', label: 'Create follow-up' },
             { id: 'reschedule', label: 'Reschedule' },
             { id: 'dismiss_today', label: 'Dismiss from Today', danger: true },
+            { id: 'delete', label: 'Delete', danger: true },
           ]
         : [
             { id: 'open', label: 'Open', primary: true },
@@ -128,6 +133,7 @@ function getActionsForItem(item: TodaySheetItem, mode: TodaySheetMode): SheetAct
             { id: 'move_tomorrow', label: 'Move to tomorrow' },
             { id: 'open_project', label: 'Open project' },
             { id: 'edit', label: 'Edit' },
+            { id: 'delete', label: 'Delete', danger: true },
           ]
         : [
             { id: 'complete', label: 'Complete', primary: true },
