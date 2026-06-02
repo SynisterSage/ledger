@@ -209,7 +209,7 @@ export const QuickCaptureWindow = ({
   };
 
   const footer = (onSave: () => void, canSave: boolean) => (
-    <div className="border-t border-gray-200 bg-white p-4">
+    <div className="border-t border-gray-200 bg-[#FFFBF7] p-4">
       <div className="flex gap-2">
         <button
           type="button"
@@ -231,7 +231,7 @@ export const QuickCaptureWindow = ({
   );
 
   const shellClassName =
-    'grid h-screen w-screen grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden rounded-3xl border border-gray-200 bg-[#f5f7fb] shadow-[0_24px_80px_rgba(15,23,42,0.08)]';
+    'grid h-screen w-screen grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden rounded-3xl border border-gray-200 bg-[#FFF9F4] shadow-[0_24px_80px_rgba(15,23,42,0.08)]';
 
   const scrollAreaClassName =
     'min-h-0 overflow-y-auto overflow-x-hidden p-4 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden';
@@ -436,7 +436,7 @@ export const QuickCaptureWindow = ({
         />
 
         {truncatedContext && (
-          <div className="border-b border-gray-200 bg-white px-4 py-2">
+          <div className="border-b border-gray-200 bg-[#FFFDFB] px-4 py-2">
             <p className="text-[11px] text-gray-500">From Calendar</p>
             <p className="mt-0.5 text-xs font-medium text-gray-900 truncate whitespace-nowrap">
               {truncatedContext}
@@ -460,7 +460,7 @@ export const QuickCaptureWindow = ({
                     void saveQuickTask();
                   }
                 }}
-                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm placeholder:text-gray-400 focus:border-gray-400 focus:bg-white focus:outline-none"
+                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm placeholder:text-gray-400 focus:border-gray-400 focus:bg-[#FFFDFB] focus:outline-none"
               />
             </div>
 
@@ -501,7 +501,7 @@ export const QuickCaptureWindow = ({
         />
 
         {contextText && (
-          <div className="border-b border-gray-200 bg-white px-4 py-2">
+          <div className="border-b border-gray-200 bg-[#FFFDFB] px-4 py-2">
             <p className="text-[11px] text-gray-500">From Calendar</p>
             <p className="mt-0.5 text-xs font-medium text-gray-900 truncate">{contextText}</p>
           </div>
@@ -516,7 +516,7 @@ export const QuickCaptureWindow = ({
                 value={noteTitle}
                 onChange={(e) => setNoteTitle(e.target.value)}
                 placeholder="Note title..."
-                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm placeholder:text-gray-400 focus:border-gray-400 focus:bg-white focus:outline-none"
+                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm placeholder:text-gray-400 focus:border-gray-400 focus:bg-[#FFFDFB] focus:outline-none"
               />
             </div>
 
@@ -528,7 +528,7 @@ export const QuickCaptureWindow = ({
                 onChange={(e) => setNoteContent(e.target.value)}
                 placeholder="Add your notes here..."
                 rows={4}
-                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm placeholder:text-gray-400 focus:border-gray-400 focus:bg-white focus:outline-none resize-none"
+                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm placeholder:text-gray-400 focus:border-gray-400 focus:bg-[#FFFDFB] focus:outline-none resize-none"
               />
             </div>
 
@@ -569,7 +569,7 @@ export const QuickCaptureWindow = ({
         />
 
         {contextText && (
-          <div className="border-b border-gray-200 bg-white px-4 py-2">
+          <div className="border-b border-gray-200 bg-[#FFFDFB] px-4 py-2">
             <p className="text-[11px] text-gray-500">From Calendar</p>
             <p className="mt-0.5 text-xs font-medium text-gray-900 truncate">{contextText}</p>
           </div>
@@ -585,7 +585,7 @@ export const QuickCaptureWindow = ({
                 value={eventTitle}
                 onChange={(e) => setEventTitle(e.target.value)}
                 placeholder="Event name..."
-                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm placeholder:text-gray-400 focus:border-gray-400 focus:bg-white focus:outline-none"
+                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm placeholder:text-gray-400 focus:border-gray-400 focus:bg-[#FFFDFB] focus:outline-none"
               />
             </div>
 
@@ -596,7 +596,7 @@ export const QuickCaptureWindow = ({
                   type="date"
                   value={eventDate}
                   onChange={(e) => setEventDate(e.target.value)}
-                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-gray-400 focus:bg-white focus:outline-none"
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-gray-400 focus:bg-[#FFFDFB] focus:outline-none"
                 />
               </div>
               <div>
@@ -605,7 +605,7 @@ export const QuickCaptureWindow = ({
                   type="time"
                   value={eventTime}
                   onChange={(e) => setEventTime(e.target.value)}
-                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-gray-400 focus:bg-white focus:outline-none"
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-gray-400 focus:bg-[#FFFDFB] focus:outline-none"
                 />
               </div>
             </div>
@@ -619,7 +619,7 @@ export const QuickCaptureWindow = ({
                   step="1"
                   value={eventDurationValue}
                   onChange={(e) => setEventDurationValue(Number(e.target.value) || 1)}
-                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-gray-400 focus:bg-white focus:outline-none"
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-gray-400 focus:bg-[#FFFDFB] focus:outline-none"
                 />
               </div>
               <div>
@@ -629,7 +629,7 @@ export const QuickCaptureWindow = ({
                 <select
                   value={eventDurationUnit}
                   onChange={(e) => setEventDurationUnit(e.target.value as 'minutes' | 'hours')}
-                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-gray-400 focus:bg-white focus:outline-none bg-white"
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-gray-400 focus:bg-[#FFFDFB] focus:outline-none bg-[#FFFDFB]"
                 >
                   <option value="minutes">minutes</option>
                   <option value="hours">hours</option>

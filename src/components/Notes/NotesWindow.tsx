@@ -2943,7 +2943,7 @@ export const NotesWindow = () => {
 
   return (
     <div
-      className="ledger-notes-shell relative h-screen overflow-hidden rounded-3xl border border-gray-200 bg-[#f5f7fb] flex flex-col shadow-[0_24px_80px_rgba(15,23,42,0.08)]"
+      className="ledger-notes-shell relative h-screen overflow-hidden rounded-3xl border border-gray-200 bg-[#FFF9F4] flex flex-col shadow-[0_24px_80px_rgba(15,23,42,0.08)]"
       style={{ scrollbarGutter: isNotesModalOpen ? 'auto' : 'stable' }}
     >
       <CloseGuardModal
@@ -3055,7 +3055,7 @@ export const NotesWindow = () => {
         {!isLeftPaneCollapsed && hasLoadedOnce ? (
           <>
             <aside
-              className={`border-r border-gray-200 bg-white flex flex-col overflow-hidden shrink-0 ${
+              className={`border-r border-gray-200 bg-[#FFFBF7] flex flex-col overflow-hidden shrink-0 ${
                 isCompactLayout ? 'text-sm' : ''
               }`}
               style={{ width: `${leftPaneWidth}px` }}
@@ -3068,7 +3068,7 @@ export const NotesWindow = () => {
                     </h2>
                     <button
                       onClick={() => setIsLeftPaneCollapsed(true)}
-                      className="h-7 w-7 rounded-lg border border-gray-200 bg-white text-gray-500 hover:bg-gray-100 flex items-center justify-center shadow-sm"
+                    className="h-7 w-7 rounded-lg border border-[#E8DDD4] bg-[#FFFBF7] text-gray-500 hover:bg-[#FFF4EA] flex items-center justify-center shadow-sm"
                       title="Hide left panel"
                       aria-label="Hide left panel"
                     >
@@ -3079,7 +3079,7 @@ export const NotesWindow = () => {
                     <button
                       onClick={() => setShowNewMenu((current) => !current)}
                       disabled={isCreating}
-                      className="h-7 px-2.5 rounded-lg bg-gray-900 text-white text-xs font-semibold hover:bg-gray-800 transition inline-flex items-center gap-1.5 disabled:opacity-60"
+                      className="h-7 px-2.5 rounded-lg bg-[#FF5F40] text-white text-xs font-semibold hover:bg-[#f4583a] transition inline-flex items-center gap-1.5 disabled:opacity-60"
                       title="Create new"
                     >
                       <Plus size={11} />
@@ -3087,7 +3087,7 @@ export const NotesWindow = () => {
                       <ChevronDown size={11} />
                     </button>
                     {showNewMenu && (
-                      <div className="absolute right-0 top-8 z-40 min-w-32 rounded-lg border border-gray-200 bg-white p-1 shadow-lg">
+                      <div className="absolute right-0 top-8 z-40 min-w-32 rounded-lg border border-[#E8DDD4] bg-[#FFFBF7] p-1 shadow-lg">
                         <button
                           type="button"
                           onClick={() => {
@@ -3096,7 +3096,7 @@ export const NotesWindow = () => {
                             setNoteCreationSectionId(null);
                             setShowCreateNoteModal(true);
                           }}
-                          className="w-full rounded-md px-2.5 py-1.5 text-left text-xs font-medium text-gray-800 hover:bg-gray-50"
+                          className="w-full rounded-md px-2.5 py-1.5 text-left text-xs font-medium text-gray-800 hover:bg-[#FFF4EA]"
                         >
                           New note
                         </button>
@@ -3106,7 +3106,7 @@ export const NotesWindow = () => {
                             setShowNewMenu(false);
                             setShowNewSectionPrompt(true);
                           }}
-                          className="w-full rounded-md px-2.5 py-1.5 text-left text-xs font-medium text-gray-800 hover:bg-gray-50"
+                          className="w-full rounded-md px-2.5 py-1.5 text-left text-xs font-medium text-gray-800 hover:bg-[#FFF4EA]"
                         >
                           New folder
                         </button>
@@ -3124,12 +3124,12 @@ export const NotesWindow = () => {
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
                     placeholder="Search notes"
-                    className="w-full h-8 pl-9 pr-3 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:border-gray-300 focus:ring-1 focus:ring-gray-200"
+                    className="w-full h-8 pl-9 pr-3 text-sm border border-gray-200 rounded-lg bg-[#FFFDFB] focus:outline-none focus:border-gray-300 focus:ring-1 focus:ring-gray-200"
                   />
                 </div>
 
                 {showNewSectionPrompt && (
-                  <div className="mt-3 flex items-center gap-2 rounded-lg border border-gray-200 bg-white p-1.5">
+                  <div className="mt-3 flex items-center gap-2 rounded-lg border border-[#E8DDD4] bg-[#FFFBF7] p-1.5">
                     <input
                       autoFocus
                       value={newSectionName}
@@ -3158,7 +3158,7 @@ export const NotesWindow = () => {
                         });
                       }}
                       disabled={!newSectionName.trim()}
-                      className="h-7 rounded-full bg-gray-900 px-3 text-xs font-semibold text-white hover:bg-gray-800 disabled:opacity-50"
+                      className="h-7 rounded-full bg-[#FF5F40] px-3 text-xs font-semibold text-white hover:bg-[#f4583a] disabled:opacity-50"
                     >
                       Create
                     </button>
@@ -3194,8 +3194,8 @@ export const NotesWindow = () => {
                           onContextMenu={(event) => handleSidebarNoteContextMenu(note, event)}
                           className={`w-full text-left px-3 py-2 rounded text-sm transition ${
                             active
-                              ? 'bg-gray-50 text-gray-900'
-                              : 'bg-transparent hover:bg-gray-50/50 text-gray-700'
+                            ? 'bg-[#FFF0EA] text-gray-900 ring-1 ring-[#E8DDD4]'
+                            : 'bg-transparent hover:bg-[#FFF4EA] text-gray-700'
                           }`}
                         >
                           <div className="flex items-center gap-2 min-w-0">
@@ -3315,13 +3315,13 @@ export const NotesWindow = () => {
                                 sectionName: section.name,
                               });
                             }}
-                            className={`w-full text-left px-3 py-2 flex items-center gap-2 text-sm font-semibold text-gray-800 hover:bg-gray-50 rounded-lg transition group ${
+                            className={`w-full text-left px-3 py-2 flex items-center gap-2 text-sm font-semibold text-gray-800 hover:bg-[#FFF4EA] rounded-lg transition group ${
                               sectionDropTargetId === section.id
-                                ? 'bg-orange-50 ring-1 ring-orange-200 border border-dashed border-orange-300'
+                                ? 'bg-[#FFF0EA] ring-1 ring-[#E8DDD4] border border-dashed border-[#D8C6B6]'
                                 : draggedSectionId === section.id
-                                ? 'bg-orange-50/60 ring-1 ring-orange-100'
+                                ? 'bg-[#FFF4EA]/80 ring-1 ring-[#E8DDD4]'
                                 : dropPreview?.targetId === section.id
-                                ? 'bg-orange-50 ring-1 ring-orange-200'
+                                ? 'bg-[#FFF0EA] ring-1 ring-[#E8DDD4]'
                                 : ''
                             }`}
                           >
@@ -3410,8 +3410,8 @@ export const NotesWindow = () => {
                                         }
                                         className={`flex-1 min-w-0 px-2.5 py-1.5 rounded text-left text-sm transition ${
                                           active
-                                            ? 'bg-gray-50 text-gray-900'
-                                            : 'bg-transparent hover:bg-gray-50/50 text-gray-700'
+                                          ? 'bg-[#FFF0EA] text-gray-900 ring-1 ring-[#E8DDD4]'
+                                            : 'bg-transparent hover:bg-[#FFF4EA] text-gray-700'
                                         } ${getDropPreviewClasses(dropPreview, note.id)}`}
                                       >
                                         <div className="flex items-center gap-2 min-w-0">
@@ -3528,8 +3528,8 @@ export const NotesWindow = () => {
                                                 }}
                                                 className={`flex-1 min-w-0 px-2.5 py-1.5 rounded text-left text-xs transition ${
                                                   selectedNoteIdSet.has(child.id)
-                                                    ? 'bg-gray-50 text-gray-900'
-                                                    : 'bg-transparent hover:bg-gray-50/50 text-gray-600'
+                                                    ? 'bg-[#FFF0EA] text-gray-900 ring-1 ring-[#E8DDD4]'
+                                                    : 'bg-transparent hover:bg-[#FFF4EA] text-gray-600'
                                                 } ${getDropPreviewClasses(dropPreview, child.id)}`}
                                               >
                                                 <div className="flex items-center gap-2 min-w-0">
@@ -3557,7 +3557,7 @@ export const NotesWindow = () => {
                                   setNoteCreationSectionId(section.id);
                                   setShowCreateNoteModal(true);
                                 }}
-                                className="w-full text-left px-2.5 py-1.5 rounded text-xs font-medium text-gray-400 hover:text-gray-600 hover:bg-gray-50/50 transition flex items-center gap-2"
+                                        className="w-full text-left px-2.5 py-1.5 rounded text-xs font-medium text-gray-400 hover:text-gray-600 hover:bg-[#FFF4EA] transition flex items-center gap-2"
                               >
                                 <Plus size={12} />
                                 Add note
@@ -3610,7 +3610,7 @@ export const NotesWindow = () => {
                               event.preventDefault();
                               void handleDropOnSection(null);
                             }}
-                            className="w-full text-left px-3 py-1.5 flex items-center gap-2 text-sm font-semibold text-gray-800 hover:bg-gray-50 rounded-lg transition group"
+                            className="w-full text-left px-3 py-1.5 flex items-center gap-2 text-sm font-semibold text-gray-800 hover:bg-[#FFF4EA] rounded-lg transition group"
                           >
                             <div
                               className={`h-1.5 w-1.5 rounded-full shrink-0 ${sectionColor.dot}`}
@@ -3662,8 +3662,8 @@ export const NotesWindow = () => {
                                         }
                                         className={`flex-1 min-w-0 text-left px-2.5 py-1 rounded text-sm transition flex items-center gap-2 ${
                                           active
-                                            ? 'bg-gray-50 text-gray-900'
-                                            : 'bg-transparent hover:bg-gray-50/50 text-gray-700'
+                                            ? 'bg-[#FFF0EA] text-gray-900 ring-1 ring-[#E8DDD4]'
+                                            : 'bg-transparent hover:bg-[#FFF4EA] text-gray-700'
                                         } ${getDropPreviewClasses(dropPreview, note.id)}`}
                                       >
                                         {childCount > 0 ? (
@@ -3775,8 +3775,8 @@ export const NotesWindow = () => {
                                                 }
                                                 className={`w-full text-left px-2.5 py-1 rounded text-xs transition flex items-center gap-2 ${
                                                   childActive
-                                                    ? 'bg-gray-50 text-gray-900'
-                                                    : 'bg-transparent hover:bg-gray-50/50 text-gray-600'
+                                                    ? 'bg-[#FFF0EA] text-gray-900 ring-1 ring-[#E8DDD4]'
+                                                    : 'bg-transparent hover:bg-[#FFF4EA] text-gray-600'
                                                 } ${getDropPreviewClasses(dropPreview, child.id)}`}
                                               >
                                                 <StickyNote
@@ -3852,7 +3852,7 @@ export const NotesWindow = () => {
                       console.error('Failed to save templates state:', e);
                     }
                   }}
-                  className="w-full flex items-center justify-between px-4 py-3 text-sm font-medium text-gray-700 hover:bg-gray-50 transition"
+                  className="w-full flex items-center justify-between px-4 py-3 text-sm font-medium text-gray-700 hover:bg-[#FFF4EA] transition"
                 >
                   <span className="flex items-center gap-2">
                     <Zap size={13} className="text-gray-500" />
@@ -3878,7 +3878,7 @@ export const NotesWindow = () => {
                           }
                           void handleQuickTemplate(template.name);
                         }}
-                        className="w-full text-left px-2.5 py-1 rounded text-sm text-gray-700 bg-transparent hover:bg-gray-50 transition truncate"
+                        className="w-full text-left px-2.5 py-1 rounded text-sm text-gray-700 bg-transparent hover:bg-[#FFF4EA] transition truncate"
                       >
                         {template.name}
                       </button>
@@ -3888,7 +3888,7 @@ export const NotesWindow = () => {
                         setNoteCreationSectionId(null);
                         setShowCreateNoteModal(true);
                       }}
-                      className="w-full text-left px-2.5 py-1.5 rounded text-xs font-medium text-gray-600 bg-gray-50 border border-gray-200 hover:bg-gray-100 hover:border-gray-300 transition"
+                      className="w-full text-left px-2.5 py-1.5 rounded text-xs font-medium text-gray-600 bg-[#FFFBF7] border border-[#E8DDD4] hover:bg-[#FFF4EA] hover:border-[#D8C6B6] transition"
                     >
                       Browse All Templates
                     </button>
@@ -3906,10 +3906,10 @@ export const NotesWindow = () => {
             />
           </>
         ) : (
-          <div className="w-10 shrink-0 border-r border-gray-200 bg-white flex items-start justify-center pt-4">
+          <div className="w-10 shrink-0 border-r border-gray-200 bg-[#FFFBF7] flex items-start justify-center pt-4">
             <button
               onClick={() => setIsLeftPaneCollapsed(false)}
-              className="h-7 w-7 rounded-lg border border-gray-200 bg-white text-gray-500 hover:bg-gray-100 flex items-center justify-center shadow-sm"
+              className="h-7 w-7 rounded-lg border border-gray-200 bg-[#FFFDFB] text-gray-500 hover:bg-gray-100 flex items-center justify-center shadow-sm"
               title="Show left panel"
               aria-label="Show left panel"
             >
@@ -3923,7 +3923,7 @@ export const NotesWindow = () => {
             areSidePanelsCollapsed ? 'p-4' : isCompactLayout ? 'p-2' : 'p-2.5'
           }`}
         >
-          <div className="h-full rounded-3xl border border-gray-200 bg-white shadow-sm overflow-hidden flex flex-col">
+          <div className="h-full rounded-3xl border border-[#E8DDD4] bg-[#FFF8F1] shadow-sm overflow-hidden flex flex-col">
             {isLoading ? (
               <div className="flex-1 p-5 space-y-4">
                 <SkeletonLoader />
@@ -3935,7 +3935,7 @@ export const NotesWindow = () => {
               </div>
             ) : selectedNote ? (
               <div className="flex-1 flex flex-col min-h-0">
-                <div className="border-b border-gray-100 px-6 py-4">
+                <div className="border-b border-[#E8DDD4] bg-[#FFFBF7] px-6 py-4">
                   <div className="flex items-center justify-between gap-4">
                     <p className="text-[11px] text-gray-500 truncate">
                       Home
@@ -3952,19 +3952,19 @@ export const NotesWindow = () => {
                             event.stopPropagation();
                             setIsNoteActionsOpen((current) => !current);
                           }}
-                          className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
+                          className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-[#E8DDD4] bg-[#FFFBF7] text-gray-600 hover:bg-[#FFF4EA]"
                           aria-label="Note actions"
                         >
                           <MoreHorizontal size={14} />
                         </button>
                         {isNoteActionsOpen && (
-                          <div className="absolute right-0 top-9 z-40 min-w-44 rounded-xl border border-gray-200 bg-white p-1.5 shadow-lg">
+                          <div className="absolute right-0 top-9 z-40 min-w-44 rounded-xl border border-[#E8DDD4] bg-[#FFFBF7] p-1.5 shadow-lg">
                             <button
                               onClick={() => {
                                 setIsNoteActionsOpen(false);
                                 void createChildNote(selectedNote.id);
                               }}
-                              className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-50"
+                              className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-gray-700 hover:bg-[#FFF4EA]"
                             >
                               Add child note
                             </button>
@@ -3973,7 +3973,7 @@ export const NotesWindow = () => {
                                 setIsNoteActionsOpen(false);
                                 titleRef.current?.focus();
                               }}
-                              className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-50"
+                              className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-gray-700 hover:bg-[#FFF4EA]"
                             >
                               Rename
                             </button>
@@ -3983,7 +3983,7 @@ export const NotesWindow = () => {
                                 setIsNoteActionsOpen(false);
                                 runAutoCorrectSpelling();
                               }}
-                              className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:text-gray-400"
+                              className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-gray-700 hover:bg-[#FFF4EA] disabled:cursor-not-allowed disabled:text-gray-400"
                             >
                               Auto-correct spelling
                             </button>
@@ -4001,7 +4001,7 @@ export const NotesWindow = () => {
                                     );
                                   });
                               }}
-                              className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-50"
+                              className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-gray-700 hover:bg-[#FFF4EA]"
                             >
                               Move to section...
                             </button>
@@ -4013,7 +4013,7 @@ export const NotesWindow = () => {
                                   draftTitle || selectedNote.title || 'Untitled note'
                                 );
                               }}
-                              className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-50"
+                              className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-gray-700 hover:bg-[#FFF4EA]"
                             >
                               Save as template
                             </button>
@@ -4025,7 +4025,7 @@ export const NotesWindow = () => {
                                 setShowVersionHistoryModal(true);
                                 void openVersionHistory(id);
                               }}
-                              className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-50"
+                              className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-gray-700 hover:bg-[#FFF4EA]"
                             >
                               Version history
                             </button>
@@ -4034,7 +4034,7 @@ export const NotesWindow = () => {
                                 setIsNoteActionsOpen(false);
                                 void duplicateNoteById(selectedNote.id);
                               }}
-                              className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-50"
+                              className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-gray-700 hover:bg-[#FFF4EA]"
                             >
                               Duplicate
                             </button>
@@ -4070,7 +4070,7 @@ export const NotesWindow = () => {
                       placeholder="Untitled note"
                       className="block w-full bg-transparent py-1.5 text-4xl font-semibold leading-tight tracking-tight text-gray-900 placeholder:text-gray-300 focus:outline-none"
                     />
-                    <div className="flex items-center rounded-lg border border-gray-200 bg-white p-0.5 shrink-0">
+                    <div className="flex items-center rounded-lg border border-[#E8DDD4] bg-[#FFFBF7] p-0.5 shrink-0">
                       <button
                         type="button"
                         onClick={() => {
@@ -4079,8 +4079,8 @@ export const NotesWindow = () => {
                         }}
                         className={`h-7 rounded-md px-2.5 text-xs font-medium ${
                           draftMode === 'text'
-                            ? 'bg-gray-900 text-white'
-                            : 'text-gray-600 hover:bg-gray-50'
+                            ? 'bg-[#FF5F40] text-white'
+                            : 'text-gray-600 hover:bg-[#FFF4EA]'
                         }`}
                       >
                         Write
@@ -4093,8 +4093,8 @@ export const NotesWindow = () => {
                         }}
                         className={`h-7 rounded-md px-2.5 text-xs font-medium ${
                           draftMode === 'mind_map'
-                            ? 'bg-gray-900 text-white'
-                            : 'text-gray-600 hover:bg-gray-50'
+                            ? 'bg-[#FF5F40] text-white'
+                            : 'text-gray-600 hover:bg-[#FFF4EA]'
                         }`}
                       >
                         Mind Map
@@ -4103,7 +4103,7 @@ export const NotesWindow = () => {
                   </div>
                 </div>
 
-                <div className="flex-1 min-h-0 overflow-auto p-6">
+                <div className="flex-1 min-h-0 overflow-auto bg-[#FFFBF7]/60 p-6">
                   <div className="max-w-3xl mx-auto space-y-6">
                     {draftMode === 'text' ? (
                       <RichTextEditor
@@ -4183,7 +4183,7 @@ export const NotesWindow = () => {
             />
 
             <aside
-              className={`border-l border-gray-200 bg-[#fbfcfe] overflow-auto ${
+              className={`border-l border-gray-200 bg-[#FFFBF7] overflow-auto ${
                 isCompactLayout ? 'p-3 space-y-3' : 'p-4 space-y-4'
               } shrink-0`}
               style={{ width: `${rightPaneWidth}px` }}
@@ -4210,7 +4210,7 @@ export const NotesWindow = () => {
                     <button
                       type="button"
                       onClick={() => setIsRightPaneCollapsed(true)}
-                      className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-gray-200 bg-[#FFFDFB] text-gray-600 hover:bg-gray-50"
                       aria-label="Hide right panel"
                       title="Hide right panel"
                     >
@@ -4224,14 +4224,14 @@ export const NotesWindow = () => {
                             event.stopPropagation();
                             setIsInspectorActionsOpen((current) => !current);
                           }}
-                          className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-gray-200 bg-[#FFFDFB] text-gray-600 hover:bg-gray-50"
                           aria-label="Inspector actions"
                         >
                           <MoreHorizontal size={14} />
                         </button>
 
                         {isInspectorActionsOpen && selectedNote && (
-                          <div className="absolute right-0 top-10 z-40 min-w-52 rounded-xl border border-gray-200 bg-white p-1.5 shadow-lg">
+                          <div className="absolute right-0 top-10 z-40 min-w-52 rounded-xl border border-gray-200 bg-[#FFFDFB] p-1.5 shadow-lg">
                             <button
                               onClick={() => {
                                 setIsInspectorActionsOpen(false);
@@ -4417,7 +4417,7 @@ export const NotesWindow = () => {
                             if (event.shiftKey) event.preventDefault();
                           }}
                           onClick={(event) => void handleSidebarNoteClick(note, event.shiftKey)}
-                          className="flex w-full items-center justify-between gap-3 rounded-lg bg-[#fbfcfe] px-2 py-1.5 text-left text-sm transition hover:bg-gray-100 active:bg-gray-100/80"
+                          className="flex w-full items-center justify-between gap-3 rounded-lg bg-[#FFFBF7] px-2 py-1.5 text-left text-sm transition hover:bg-[#FFF4EA] active:bg-[#FFF0EA]"
                         >
                           <div className="min-w-0">
                             <p className="truncate font-medium text-gray-900">
@@ -4438,10 +4438,10 @@ export const NotesWindow = () => {
             </aside>
           </>
         ) : (
-          <div className="w-10 shrink-0 border-l border-gray-200 bg-[#fbfcfe] flex items-start justify-center pt-4">
+          <div className="w-10 shrink-0 border-l border-gray-200 bg-[#FFFBF7] flex items-start justify-center pt-4">
             <button
               onClick={() => setIsRightPaneCollapsed(false)}
-              className="h-7 w-7 rounded-lg border border-gray-200 bg-white text-gray-500 hover:bg-gray-100 flex items-center justify-center shadow-sm"
+              className="h-7 w-7 rounded-lg border border-gray-200 bg-[#FFFDFB] text-gray-500 hover:bg-gray-100 flex items-center justify-center shadow-sm"
               title="Show right panel"
               aria-label="Show right panel"
             >
@@ -4452,9 +4452,9 @@ export const NotesWindow = () => {
       </div>
 
       {draftMode === 'mind_map' && isMindMapFullscreen && (
-        <div className="fixed inset-0 z-80 bg-[#f5f7fb]">
+        <div className="fixed inset-0 z-80 bg-[#FFF9F4]">
           <div className="flex h-full w-full flex-col">
-            <div className="flex items-center justify-between border-b border-gray-200 bg-white px-5 py-4 shadow-sm">
+            <div className="flex items-center justify-between border-b border-gray-200 bg-[#FFFDFB] px-5 py-4 shadow-sm">
               <div className="min-w-0">
                 <p className="text-xs font-medium text-gray-500">
                   Mind map fullscreen
@@ -4489,7 +4489,7 @@ export const NotesWindow = () => {
 
       {sectionContextMenu && (
         <div
-          className="fixed z-210 min-w-40 rounded-lg border border-gray-200 bg-white text-gray-900 shadow-lg p-0"
+          className="fixed z-210 min-w-40 rounded-lg border border-gray-200 bg-[#FFFDFB] text-gray-900 shadow-lg p-0"
           style={{
             left: Math.max(8, Math.min(sectionContextMenu.x, window.innerWidth - 180)),
             top: Math.max(8, Math.min(sectionContextMenu.y, window.innerHeight - 220)),
@@ -4603,7 +4603,7 @@ export const NotesWindow = () => {
           if (isBulkSelection) {
             return (
               <div
-                className="fixed z-210 min-w-44 rounded-lg border border-gray-200 bg-white text-gray-900 shadow-lg p-0"
+                className="fixed z-210 min-w-44 rounded-lg border border-gray-200 bg-[#FFFDFB] text-gray-900 shadow-lg p-0"
                 style={{
                   left: Math.max(8, Math.min(noteContextMenu.x, window.innerWidth - 180)),
                   top: Math.max(8, Math.min(noteContextMenu.y, window.innerHeight - 180)),
@@ -4651,7 +4651,7 @@ export const NotesWindow = () => {
 
           return (
         <div
-          className="fixed z-210 min-w-44 rounded-lg border border-gray-200 bg-white text-gray-900 shadow-lg p-0"
+          className="fixed z-210 min-w-44 rounded-lg border border-gray-200 bg-[#FFFDFB] text-gray-900 shadow-lg p-0"
           style={{
             left: Math.max(8, Math.min(noteContextMenu.x, window.innerWidth - 180)),
             top: Math.max(8, Math.min(noteContextMenu.y, window.innerHeight - 280)),

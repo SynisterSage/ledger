@@ -1329,7 +1329,7 @@ export const ProjectsWindow = () => {
 
   return (
     <div
-      className="h-screen overflow-hidden rounded-3xl border border-gray-200 bg-[#f5f7fb] flex flex-col text-gray-900 shadow-[0_24px_80px_rgba(15,23,42,0.08)]"
+      className="h-screen overflow-hidden rounded-3xl border border-gray-200 bg-[#FFF9F4] flex flex-col text-gray-900 shadow-[0_24px_80px_rgba(15,23,42,0.08)]"
       style={{ scrollbarGutter: 'stable' }}
     >
       <CloseGuardModal
@@ -1427,10 +1427,10 @@ export const ProjectsWindow = () => {
         {!isLeftPaneCollapsed ? (
           <>
             <aside
-              className="border-r border-gray-200 bg-white flex flex-col overflow-hidden shrink-0"
+              className="border-r border-[#E8DDD4] bg-[#FFFBF7] flex flex-col overflow-hidden shrink-0"
               style={{ width: `${leftPaneWidth}px` }}
             >
-              <div className={`${isCompactLayout ? 'p-3' : 'p-4'} border-b border-gray-100`}>
+              <div className={`${isCompactLayout ? 'p-3' : 'p-4'} border-b border-[#E8DDD4] bg-[#FFFBF7]`}>
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-2 min-w-0">
                     <div>
@@ -1443,7 +1443,7 @@ export const ProjectsWindow = () => {
                     </div>
                     <button
                       onClick={() => setIsLeftPaneCollapsed(true)}
-                      className="h-7 w-7 rounded-lg border border-gray-200 bg-white text-gray-500 hover:bg-gray-100 flex items-center justify-center shadow-sm"
+                      className="h-7 w-7 rounded-lg border border-[#E8DDD4] bg-[#FFFBF7] text-gray-500 hover:bg-[#FFF4EA] flex items-center justify-center shadow-sm"
                       title="Hide left panel"
                       aria-label="Hide left panel"
                     >
@@ -1464,7 +1464,7 @@ export const ProjectsWindow = () => {
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
                     placeholder="Search projects"
-                    className="w-full h-9 pl-9 pr-3 text-sm border border-gray-200 rounded-xl focus:outline-none focus:border-gray-300 bg-gray-50 text-gray-900 placeholder-gray-500"
+                    className="w-full h-9 pl-9 pr-3 text-sm border border-[#E8DDD4] rounded-xl focus:outline-none focus:border-gray-300 bg-[#FFFBF7] text-gray-900 placeholder-gray-500"
                   />
                 </div>
 
@@ -1496,7 +1496,7 @@ export const ProjectsWindow = () => {
                 </div>
 
                 {isCreatingProject && (
-                  <div className="mt-3 space-y-2 rounded-2xl border border-gray-200 bg-gray-50 p-3">
+                  <div className="mt-3 space-y-2 rounded-2xl border border-[#E8DDD4] bg-[#FFFBF7] p-3">
                     <input
                       ref={createProjectInputRef}
                       value={newProjectName}
@@ -1508,12 +1508,12 @@ export const ProjectsWindow = () => {
                         }
                       }}
                       placeholder="Project name"
-                      className="w-full h-9 px-3 text-sm border border-gray-200 rounded-lg focus:outline-none focus:border-gray-300 bg-white text-gray-900 placeholder-gray-500"
+                        className="w-full h-9 px-3 text-sm border border-[#E8DDD4] rounded-lg focus:outline-none focus:border-gray-300 bg-[#FFFBF7] text-gray-900 placeholder-gray-500"
                     />
                     <button
                       onClick={() => void createProject()}
                       disabled={!newProjectName.trim() || isCreatingProjectNow}
-                      className="w-full h-9 rounded-lg bg-gray-900 text-white text-sm font-medium hover:bg-gray-800 disabled:opacity-60"
+                      className="w-full h-9 rounded-lg bg-[#FF5F40] text-white text-sm font-medium hover:bg-[#f4583a] disabled:opacity-60"
                     >
                       {isCreatingProjectNow ? 'Creating...' : 'Create project'}
                     </button>
@@ -1531,7 +1531,7 @@ export const ProjectsWindow = () => {
                     ))}
                   </div>
                 ) : visibleProjects.length === 0 ? (
-                  <div className="rounded-2xl border border-dashed border-gray-200 bg-gray-50 p-5">
+                  <div className="rounded-2xl border border-dashed border-[#E8DDD4] bg-[#FFFBF7] p-5">
                     <p className="text-sm font-medium text-gray-800">No matching projects.</p>
                     <p className="mt-1 text-sm text-gray-500">
                       Create one for internships, classes, or job applications.
@@ -1569,8 +1569,8 @@ export const ProjectsWindow = () => {
                         }}
                         className={`w-full rounded-xl border px-2.5 py-2.5 text-left transition ${
                           active
-                            ? 'border-gray-200 bg-gray-100'
-                            : 'border-gray-200 bg-white hover:bg-gray-50 hover:border-gray-200'
+                          ? 'border-[#E8DDD4] bg-[#FFF0EA]'
+                            : 'border-[#E8DDD4] bg-[#FFFBF7] hover:bg-[#FFF4EA] hover:border-[#D8C6B6]'
                         }`}
                         title={project.name}
                       >
@@ -1610,7 +1610,7 @@ export const ProjectsWindow = () => {
             </aside>
 
             <div
-              className="w-1.5 cursor-col-resize bg-gray-100 hover:bg-gray-200 transition touch-none"
+              className="w-1.5 cursor-col-resize bg-[#FFF4EA] hover:bg-[#FFE8D7] transition touch-none"
               onMouseDown={(e) => {
                 e.preventDefault();
                 setIsResizingLeftPane(true);
@@ -1618,10 +1618,10 @@ export const ProjectsWindow = () => {
             />
           </>
         ) : (
-          <div className="w-10 shrink-0 border-r border-gray-200 bg-white flex items-start justify-center pt-4">
+          <div className="w-10 shrink-0 border-r border-[#E8DDD4] bg-[#FFF8F1] flex items-start justify-center pt-4">
             <button
               onClick={() => setIsLeftPaneCollapsed(false)}
-              className="h-7 w-7 rounded-lg border border-gray-200 bg-white text-gray-500 hover:bg-gray-100 flex items-center justify-center shadow-sm"
+              className="h-7 w-7 rounded-lg border border-[#E8DDD4] bg-[#FFFBF7] text-gray-500 hover:bg-[#FFF4EA] flex items-center justify-center shadow-sm"
               title="Show left panel"
               aria-label="Show left panel"
             >
@@ -1630,11 +1630,11 @@ export const ProjectsWindow = () => {
           </div>
         )}
 
-        <main className="flex-1 overflow-hidden bg-[#f5f7fb]">
+        <main className="flex-1 overflow-hidden bg-[#FFF9F4]">
           <div className={`h-full overflow-auto ${isCompactLayout ? 'p-4' : 'p-5'}`}>
             {selectedProject ? (
               <div className="mx-auto max-w-4xl space-y-4">
-                <section className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm">
+                <section className="rounded-3xl border border-gray-200 bg-[#FFFDFB] p-6 shadow-sm">
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="min-w-0">
                       <div className="flex items-center gap-2 min-w-0">
@@ -1663,7 +1663,7 @@ export const ProjectsWindow = () => {
                             e.target.value as ProjectSemanticStatus
                           )
                         }
-                        className="h-9 appearance-none rounded-xl border border-gray-200 bg-white py-0 pl-3 pr-8 text-sm font-medium text-gray-800 outline-none focus:border-gray-300"
+                        className="h-9 appearance-none rounded-xl border border-gray-200 bg-[#FFFDFB] py-0 pl-3 pr-8 text-sm font-medium text-gray-800 outline-none focus:border-gray-300"
                       >
                         {(Object.keys(projectStatusLabels) as ProjectSemanticStatus[]).map(
                           (status) => (
@@ -1720,7 +1720,7 @@ export const ProjectsWindow = () => {
                   </div>
                 </section>
 
-                <section className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm">
+                <section className="rounded-3xl border border-gray-200 bg-[#FFFDFB] p-6 shadow-sm">
                   <p className="text-xs font-medium text-gray-500">
                     Timeline
                   </p>
@@ -1748,7 +1748,7 @@ export const ProjectsWindow = () => {
                       <div className="h-9 w-full rounded-lg border border-gray-200 bg-gray-50 px-1.5 text-sm text-gray-800 inline-flex items-center gap-1.5">
                         <button
                           type="button"
-                          className="h-6 w-6 rounded border border-gray-200 bg-white text-gray-700 hover:bg-gray-100 disabled:opacity-40"
+                          className="h-6 w-6 rounded border border-gray-200 bg-[#FFFDFB] text-gray-700 hover:bg-gray-100 disabled:opacity-40"
                           onClick={() => {
                             if (!projectDurationDays) return;
                             setDurationDays(projectDurationDays - 1);
@@ -1775,7 +1775,7 @@ export const ProjectsWindow = () => {
                         <span className="text-xs text-gray-600">days</span>
                         <button
                           type="button"
-                          className="ml-auto h-6 w-6 rounded border border-gray-200 bg-white text-gray-700 hover:bg-gray-100 disabled:opacity-40"
+                          className="ml-auto h-6 w-6 rounded border border-gray-200 bg-[#FFFDFB] text-gray-700 hover:bg-gray-100 disabled:opacity-40"
                           onClick={() => setDurationDays((projectDurationDays ?? 0) + 1)}
                           disabled={!projectDraft.startDate}
                           aria-label="Increase duration"
@@ -1787,7 +1787,7 @@ export const ProjectsWindow = () => {
                   </div>
                 </section>
 
-                <section className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm">
+                <section className="rounded-3xl border border-gray-200 bg-[#FFFDFB] p-6 shadow-sm">
                   <p className="text-xs font-medium text-gray-500">
                     Objective
                   </p>
@@ -1799,7 +1799,7 @@ export const ProjectsWindow = () => {
                   />
                 </section>
 
-                <section className="min-w-0 overflow-hidden rounded-3xl border border-gray-200 bg-white shadow-sm">
+                <section className="min-w-0 overflow-hidden rounded-3xl border border-gray-200 bg-[#FFFDFB] shadow-sm">
                   <div className="border-b border-gray-100 px-6 py-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
                     <div className="min-w-0">
                       <p className="text-xs font-medium text-gray-500">Tasks</p>
@@ -1835,7 +1835,7 @@ export const ProjectsWindow = () => {
                             }
                           }}
                           placeholder="Add a next action"
-                          className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 outline-none focus:border-gray-300"
+                          className="w-full rounded-lg border border-gray-200 bg-[#FFFDFB] px-3 py-2 text-sm text-gray-900 outline-none focus:border-gray-300"
                         />
                         <div
                           className={`grid gap-2 ${
@@ -1850,7 +1850,7 @@ export const ProjectsWindow = () => {
                               onChange={(e) =>
                                 setNewTaskPriority(e.target.value as typeof newTaskPriority)
                               }
-                              className={`w-full min-w-0 appearance-none rounded-lg border border-gray-200 bg-white text-sm text-gray-700 outline-none ${
+                              className={`w-full min-w-0 appearance-none rounded-lg border border-gray-200 bg-[#FFFDFB] text-sm text-gray-700 outline-none ${
                                 isCompactLayout ? 'py-2 pl-3 pr-9' : 'py-2 pl-3 pr-10'
                               }`}
                             >
@@ -1869,7 +1869,7 @@ export const ProjectsWindow = () => {
                             type="date"
                             value={newTaskDueDate}
                             onChange={(e) => setNewTaskDueDate(e.target.value)}
-                            className="w-full min-w-0 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 outline-none"
+                            className="w-full min-w-0 rounded-lg border border-gray-200 bg-[#FFFDFB] px-3 py-2 text-sm text-gray-700 outline-none"
                           />
                           <button
                             onClick={() => void createTask()}
@@ -1930,12 +1930,12 @@ export const ProjectsWindow = () => {
                                   }}
                                   className={`w-full rounded-lg border px-3 py-2 text-left transition ${
                                     activeTask
-                                      ? 'border-gray-300 bg-white'
-                                      : 'border-gray-200 bg-gray-50 hover:bg-white'
+                                      ? 'border-gray-300 bg-[#FFFDFB]'
+                                      : 'border-gray-200 bg-gray-50 hover:bg-[#FFFDFB]'
                                   }`}
                                 >
                                   <div className="flex items-center gap-2">
-                                    <span className="flex h-4 w-4 items-center justify-center rounded-full border border-gray-300 bg-white" />
+                                    <span className="flex h-4 w-4 items-center justify-center rounded-full border border-gray-300 bg-[#FFFDFB]" />
                                     <p className="min-w-0 flex-1 truncate text-sm font-medium text-gray-900">
                                       {task.title}
                                     </p>
@@ -1984,8 +1984,8 @@ export const ProjectsWindow = () => {
                                   }}
                                   className={`w-full rounded-lg border px-3 py-2 text-left transition ${
                                     activeTask
-                                      ? 'border-gray-300 bg-white'
-                                      : 'border-gray-200 bg-gray-50 hover:bg-white'
+                                      ? 'border-gray-300 bg-[#FFFDFB]'
+                                      : 'border-gray-200 bg-gray-50 hover:bg-[#FFFDFB]'
                                   }`}
                                 >
                                   <div className="flex items-center gap-2">
@@ -2009,7 +2009,7 @@ export const ProjectsWindow = () => {
                   </div>
                 </section>
 
-                <section className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm">
+                <section className="rounded-3xl border border-gray-200 bg-[#FFFDFB] p-6 shadow-sm">
                   <div className="flex items-center justify-between gap-3">
                     <p className="text-xs font-medium text-gray-500">
                       Linked notes
@@ -2071,7 +2071,7 @@ export const ProjectsWindow = () => {
               </div>
             ) : (
               <div className="mx-auto flex h-full max-w-3xl items-center justify-center">
-                <div className="rounded-3xl border border-dashed border-gray-200 bg-white px-8 py-10 text-center shadow-sm">
+                <div className="rounded-3xl border border-dashed border-gray-200 bg-[#FFFDFB] px-8 py-10 text-center shadow-sm">
                   <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl border border-gray-200 bg-gray-50">
                     <Folder size={18} className="text-gray-700" />
                   </div>
@@ -2106,7 +2106,7 @@ export const ProjectsWindow = () => {
             />
 
             <aside
-              className="flex shrink-0 flex-col overflow-hidden border-l border-gray-200 bg-[#fbfcfe]"
+              className="flex shrink-0 flex-col overflow-hidden border-l border-[#E8DDD4] bg-[#FFF8F1]"
               style={{ width: `${rightPaneWidth}px` }}
             >
               <div className="flex-1 overflow-auto p-4 space-y-5">
@@ -2126,7 +2126,7 @@ export const ProjectsWindow = () => {
                     <button
                       type="button"
                       onClick={() => setIsRightPaneCollapsed(true)}
-                      className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-[#E8DDD4] bg-[#FFFBF7] text-gray-600 hover:bg-[#FFF4EA]"
                       aria-label="Hide right panel"
                       title="Hide right panel"
                     >
@@ -2137,15 +2137,15 @@ export const ProjectsWindow = () => {
                         <button
                           type="button"
                           onClick={() => setIsContextMenuOpen((current) => !current)}
-                          className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-[#E8DDD4] bg-[#FFFBF7] text-gray-600 hover:bg-[#FFF4EA]"
                           aria-label="Project context actions"
                         >
                           <MoreHorizontal size={14} />
                         </button>
                         {isContextMenuOpen && (
-                          <div className="absolute right-0 top-9 z-50 min-w-44 rounded-lg border border-gray-200 bg-white py-1 shadow-lg">
+                          <div className="absolute right-0 top-9 z-50 min-w-44 rounded-lg border border-[#E8DDD4] bg-[#FFFBF7] py-1 shadow-lg">
                             <button
-                              className="w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
+                              className="w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-[#FFF4EA]"
                               onClick={() => {
                                 setIsContextMenuOpen(false);
                               }}
@@ -2153,7 +2153,7 @@ export const ProjectsWindow = () => {
                               Edit project notes
                             </button>
                             <button
-                              className="w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
+                              className="w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-[#FFF4EA]"
                               onClick={() => {
                                 setIsContextMenuOpen(false);
                                 void openLinkNoteModal();
@@ -2162,7 +2162,7 @@ export const ProjectsWindow = () => {
                               Link note
                             </button>
                             <button
-                              className="w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
+                              className="w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-[#FFF4EA]"
                               onClick={() => {
                                 setIsContextMenuOpen(false);
                               }}
@@ -2170,7 +2170,7 @@ export const ProjectsWindow = () => {
                               Copy project link
                             </button>
                             <button
-                              className="w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
+                              className="w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-[#FFF4EA]"
                               onClick={() => {
                                 setIsContextMenuOpen(false);
                                 if (!selectedProject) return;
@@ -2248,7 +2248,7 @@ export const ProjectsWindow = () => {
                                 });
                               }}
                               onDoubleClick={() => openLinkedNoteInNotesModule(link.note_id)}
-                              className="flex items-start justify-between gap-2 rounded-md px-1 py-1 hover:bg-white"
+                              className="flex items-start justify-between gap-2 rounded-md px-1 py-1 hover:bg-[#FFF4EA]"
                             >
                               <div className="min-w-0">
                                 <p className="truncate text-sm font-medium text-gray-900">
@@ -2359,7 +2359,7 @@ export const ProjectsWindow = () => {
                             <button
                               key={item.id}
                               type="button"
-                              className="flex w-full items-center justify-between gap-3 rounded-lg px-2 py-1.5 text-left text-sm hover:bg-gray-50 transition"
+                            className="flex w-full items-center justify-between gap-3 rounded-lg px-2 py-1.5 text-left text-sm hover:bg-[#FFF4EA] transition"
                             >
                               <span className="min-w-0 truncate font-medium text-gray-900">
                                 {item.label}
@@ -2378,10 +2378,10 @@ export const ProjectsWindow = () => {
             </aside>
           </>
         ) : (
-          <div className="w-10 shrink-0 border-l border-gray-200 bg-[#fbfcfe] flex items-start justify-center pt-4">
+          <div className="w-10 shrink-0 border-l border-[#E8DDD4] bg-[#FFF8F1] flex items-start justify-center pt-4">
             <button
               onClick={() => setIsRightPaneCollapsed(false)}
-              className="h-7 w-7 rounded-lg border border-gray-200 bg-white text-gray-500 hover:bg-gray-100 flex items-center justify-center shadow-sm"
+              className="h-7 w-7 rounded-lg border border-[#E8DDD4] bg-[#FFFBF7] text-gray-500 hover:bg-[#FFF4EA] flex items-center justify-center shadow-sm"
               title="Show right panel"
               aria-label="Show right panel"
             >
@@ -2398,7 +2398,7 @@ export const ProjectsWindow = () => {
             setTaskNotesTaskId(null);
             setTaskNotesDraft('');
           }}
-          classNameContainer="w-full max-w-xl overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-xl"
+          classNameContainer="w-full max-w-xl overflow-hidden rounded-2xl border border-gray-200 bg-[#FFFDFB] shadow-xl"
         >
           <div>
             <div className="flex items-start justify-between gap-4 border-b border-gray-100 px-5 py-4">
@@ -2432,7 +2432,7 @@ export const ProjectsWindow = () => {
                     setTaskNotesTaskId(null);
                     setTaskNotesDraft('');
                   }}
-                  className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                  className="rounded-xl border border-gray-200 bg-[#FFFDFB] px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
                 >
                   Cancel
                 </button>
@@ -2452,7 +2452,7 @@ export const ProjectsWindow = () => {
       {linkedNoteContextMenu && linkedNoteMenuPosition && (
         <div
           ref={linkedNoteContextRef}
-          className="fixed z-50 min-w-44 overflow-hidden rounded-xl border border-gray-200 bg-white py-1 shadow-xl"
+          className="fixed z-50 min-w-44 overflow-hidden rounded-xl border border-gray-200 bg-[#FFFDFB] py-1 shadow-xl"
           style={{ left: `${linkedNoteMenuPosition.x}px`, top: `${linkedNoteMenuPosition.y}px` }}
           role="menu"
           aria-label="Linked note actions"
@@ -2485,7 +2485,7 @@ export const ProjectsWindow = () => {
       <ModalOverlay
         isOpen={isLinkNoteModalOpen}
         onClose={() => setIsLinkNoteModalOpen(false)}
-        classNameContainer="w-full max-w-xl rounded-2xl border border-gray-200 bg-white shadow-xl"
+        classNameContainer="w-full max-w-xl rounded-2xl border border-gray-200 bg-[#FFFDFB] shadow-xl"
       >
         <div className="flex items-start justify-between gap-4 border-b border-gray-100 px-5 py-4">
           <div>
@@ -2510,7 +2510,7 @@ export const ProjectsWindow = () => {
             placeholder="Search notes"
             className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-900 outline-none focus:border-gray-300"
           />
-          <div className="max-h-80 overflow-auto rounded-lg border border-gray-200 bg-white">
+          <div className="max-h-80 overflow-auto rounded-lg border border-gray-200 bg-[#FFFDFB]">
             {isLoadingLinkableNotes ? (
               <p className="p-3 text-sm text-gray-500">Loading notes…</p>
             ) : filteredLinkableNotes.length === 0 ? (
@@ -2547,7 +2547,7 @@ export const ProjectsWindow = () => {
       {projectContextMenu && projectMenuPosition && (
         <div
           ref={projectContextRef}
-          className="fixed z-50 min-w-44 overflow-hidden rounded-xl border border-gray-200 bg-white py-1 shadow-xl"
+          className="fixed z-50 min-w-44 overflow-hidden rounded-xl border border-gray-200 bg-[#FFFDFB] py-1 shadow-xl"
           style={{ left: `${projectMenuPosition.x}px`, top: `${projectMenuPosition.y}px` }}
           onClick={(e) => e.stopPropagation()}
         >
@@ -2630,7 +2630,7 @@ export const ProjectsWindow = () => {
       {taskContextMenu && taskMenuPosition && (
         <div
           ref={taskContextRef}
-          className="fixed z-50 min-w-44 overflow-hidden rounded-xl border border-gray-200 bg-white py-1 shadow-xl"
+          className="fixed z-50 min-w-44 overflow-hidden rounded-xl border border-gray-200 bg-[#FFFDFB] py-1 shadow-xl"
           style={{ left: `${taskMenuPosition.x}px`, top: `${taskMenuPosition.y}px` }}
           onClick={(e) => e.stopPropagation()}
         >

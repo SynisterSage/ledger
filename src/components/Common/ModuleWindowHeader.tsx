@@ -183,7 +183,7 @@ const WorkspaceSwitcher = () => {
               <div
                 ref={menuRef}
                 style={menuStyle ?? undefined}
-                className="max-h-60 overflow-y-auto rounded-2xl border border-gray-200 bg-white shadow-[0_16px_48px_rgba(15,23,42,0.14)] ring-0 outline-none"
+                className="max-h-60 overflow-y-auto rounded-2xl border border-[#E8DDD4] bg-[#FFFBF7] shadow-[0_16px_48px_rgba(15,23,42,0.14)] ring-0 outline-none"
                 onMouseDown={(event) => event.stopPropagation()}
                 onClick={(event) => event.stopPropagation()}
                 onMouseMove={(event) => event.stopPropagation()}
@@ -243,13 +243,13 @@ type AppRegionStyle = CSSProperties & {
 const dragRegionStyle: AppRegionStyle = { WebkitAppRegion: 'drag' };
 const noDragRegionStyle: AppRegionStyle = { WebkitAppRegion: 'no-drag' };
 const actionButtonClassName =
-  'inline-flex h-9 items-center justify-center gap-1.5 rounded-full border border-gray-200 bg-white px-3.5 text-xs font-medium text-gray-700 transition hover:bg-gray-50 hover:text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-300/80';
+  'inline-flex h-9 items-center justify-center gap-1.5 rounded-full border border-[#E8DDD4] bg-[#FFFBF7] px-3.5 text-xs font-medium text-gray-700 transition hover:bg-[#FFF4EA] hover:text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-300/80';
 
 const iconButtonClassName =
-  'inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-700 transition hover:bg-gray-50 hover:text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-300/80';
+  'inline-flex h-9 w-9 items-center justify-center rounded-full border border-[#E8DDD4] bg-[#FFFBF7] text-gray-700 transition hover:bg-[#FFF4EA] hover:text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-300/80';
 
 const segmentedGroupClassName =
-  'inline-flex h-9 items-center rounded-full border border-gray-200 bg-gray-50 p-0.5';
+  'inline-flex h-9 items-center rounded-full border border-[#E8DDD4] bg-[#FFF4EA] p-0.5';
 
 const segmentedButtonBaseClassName =
   'inline-flex h-8 items-center justify-center rounded-full px-3 text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-300/80';
@@ -302,7 +302,7 @@ export const ModuleHeaderSegmentedButton = ({
       title={title}
       aria-label={ariaLabel ?? title}
       className={`${segmentedButtonBaseClassName} ${
-        active ? 'bg-white text-gray-900 shadow-[0_1px_2px_rgba(15,23,42,0.08)]' : 'text-gray-600 hover:bg-white hover:text-gray-900'
+        active ? 'bg-[#FFFBF7] text-gray-900 shadow-[0_1px_2px_rgba(15,23,42,0.08)]' : 'text-gray-600 hover:bg-[#FFFBF7] hover:text-gray-900'
       } ${iconOnly ? 'w-8 px-0' : ''}`}
     >
       {children}
@@ -324,8 +324,8 @@ export const ModuleHeaderStatus = ({
       : state === 'syncing'
         ? 'text-[#FF5F40] border-orange-200 bg-orange-50'
         : state === 'offline'
-          ? 'text-gray-600 border-gray-200 bg-gray-50'
-          : 'text-[#FF5F40] border-orange-200 bg-white';
+          ? 'text-gray-600 border-[#E8DDD4] bg-[#FFF7EF]'
+          : 'text-[#FF5F40] border-orange-200 bg-[#FFFBF7]';
 
   const icon =
     state === 'syncing' ? (
@@ -373,7 +373,7 @@ export const ModuleHeaderCounterAction = ({
       onClick={onClick}
       title={title}
       aria-label={ariaLabel}
-      className="relative inline-flex h-8 items-center gap-1.5 rounded-full border border-gray-200 bg-white px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-50"
+      className="relative inline-flex h-8 items-center gap-1.5 rounded-full border border-[#E8DDD4] bg-[#FFFBF7] px-3 text-xs font-medium text-gray-700 transition hover:bg-[#FFF4EA]"
     >
       {icon}
       <span>{label}</span>
@@ -399,7 +399,7 @@ export const ModuleHeaderStripAction = ({
       onClick={onClick}
       title={title}
       aria-label={ariaLabel}
-      className="relative inline-flex h-6 w-6 items-center justify-center rounded-full border border-gray-300 bg-white text-gray-700 shadow-[0_1px_2px_rgba(15,23,42,0.06)] transition hover:border-gray-400 hover:bg-gray-50 hover:text-gray-950"
+      className="relative inline-flex h-6 w-6 items-center justify-center rounded-full border border-[#D8C6B6] bg-[#FFFBF7] text-gray-700 shadow-[0_1px_2px_rgba(15,23,42,0.06)] transition hover:border-[#CBB6A3] hover:bg-[#FFF4EA] hover:text-gray-950"
     >
       {icon}
       {typeof count === 'number' && count > 0 && (
@@ -434,7 +434,7 @@ export const ModuleWindowHeader = ({
   actions,
 }: ModuleWindowHeaderProps) => {
   const controlClassName =
-    'flex h-5 w-5 items-center justify-center rounded-full border border-gray-300 bg-white text-gray-700 shadow-[0_1px_2px_rgba(15,23,42,0.05)] transition hover:border-gray-400 hover:bg-gray-50 hover:text-gray-950';
+    'flex h-5 w-5 items-center justify-center rounded-full border border-[#D8C6B6] bg-[#FFFBF7] text-gray-700 shadow-[0_1px_2px_rgba(15,23,42,0.05)] transition hover:border-[#CBB6A3] hover:bg-[#FFF4EA] hover:text-gray-950';
 
   const topRightActions = globalActions ?? stripActions;
   const rightActions = primaryActions ?? actions;
@@ -454,9 +454,9 @@ export const ModuleWindowHeader = ({
   };
 
   return (
-    <div className="border-b border-gray-200 bg-white" style={dragRegionStyle}>
+    <div className="border-b border-[#E8DDD4] bg-[#FFF8F1]" style={dragRegionStyle}>
       <div
-        className="flex h-8 items-center justify-between border-b border-gray-200 bg-gray-50 px-4 cursor-default"
+        className="flex h-8 items-center justify-between border-b border-[#E8DDD4] bg-[#FFF4EA] px-4 cursor-default"
         style={dragRegionStyle}
         onDoubleClick={handleTitleBarDoubleClick}
       >
@@ -505,7 +505,7 @@ export const ModuleWindowHeader = ({
 
       <div className="flex min-h-12 items-center justify-between gap-4 px-6 py-3">
         <div className="flex min-w-0 items-center gap-3" style={dragRegionStyle}>
-          <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-gray-200 bg-gray-50 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
+          <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-[#E8DDD4] bg-[#FFFBF7] shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
             {icon}
           </div>
 

@@ -144,8 +144,8 @@ export const LoginForm: React.FC<LoginProps> = ({ onSuccess, notice }) => {
 
   return (
     <div className="relative h-screen w-screen overflow-hidden bg-transparent p-3">
-      <div className="absolute inset-3 rounded-3xl border border-white/60 bg-[#f5f5f7] shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]" />
-      <div className="relative z-10 h-full w-full overflow-hidden rounded-3xl bg-[#F9FBFA]">
+      <div className="absolute inset-3 rounded-3xl border border-white/60 bg-[#FEF9F5] shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]" />
+      <div className="relative z-10 h-full w-full overflow-hidden rounded-3xl bg-[#FEF9F5]">
         {!splashOverlayVisible && (
           <button
             type="button"
@@ -169,7 +169,7 @@ export const LoginForm: React.FC<LoginProps> = ({ onSuccess, notice }) => {
 
         {(showPreLoginSplash || isSplashDismissing) && (
           <div
-            className={`absolute inset-0 z-20 bg-[#F9FBFA] transition-opacity duration-200 ease-out ${
+            className={`absolute inset-0 z-20 bg-[#FEF9F5] transition-opacity duration-200 ease-out ${
               showPreLoginSplash && !isSplashDismissing ? 'opacity-100' : 'pointer-events-none opacity-0'
             }`}
             aria-hidden={!splashOverlayVisible}
@@ -190,14 +190,14 @@ export const LoginForm: React.FC<LoginProps> = ({ onSuccess, notice }) => {
           </div>
         )}
 
-        <div className="relative z-10 grid h-full min-h-full w-full overflow-hidden bg-[#F9FBFA] min-[820px]:grid-cols-[0.42fr_0.58fr]">
+        <div className="relative z-10 grid h-full min-h-full w-full overflow-hidden bg-[#FEF9F5] min-[820px]:grid-cols-[0.42fr_0.58fr]">
         <div
-          className={`relative hidden overflow-hidden bg-[#F9FBFA] min-[820px]:block ${
+          className={`relative hidden overflow-hidden bg-[#FEF9F5] min-[820px]:block ${
             prefersReducedMotion ? '' : shouldPlayAuthIntro ? 'ledger-auth-left-enter' : 'opacity-0'
           }`}
         >
           {prefersReducedMotion ? (
-            <div className="flex h-full min-h-full items-center justify-center bg-[#F9FBFA]">
+            <div className="flex h-full min-h-full items-center justify-center bg-[#FEF9F5]">
               <img src="./logo-color.svg" alt="Ledger" className="h-16 w-16" />
             </div>
           ) : (
@@ -211,7 +211,7 @@ export const LoginForm: React.FC<LoginProps> = ({ onSuccess, notice }) => {
               loop
             />
           )}
-          <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(17,24,39,0.04),rgba(17,24,39,0.34)),linear-gradient(135deg,rgba(255,255,255,0.12),rgba(249,251,250,0.12))]" />
+          <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(17,24,39,0.04),rgba(17,24,39,0.34)),linear-gradient(135deg,rgba(255,255,255,0.12),rgba(255,249,244,0.12))]" />
           <div className="absolute bottom-0 left-0 right-0 p-8 text-white">
             <p className="max-w-65 text-[24px] font-semibold leading-0.5 [text-shadow:0_1px_12px_rgba(17,24,39,0.42)]">
               Live a little simpler.
@@ -223,7 +223,7 @@ export const LoginForm: React.FC<LoginProps> = ({ onSuccess, notice }) => {
         </div>
 
         <div
-          className={`flex h-full min-h-full items-center justify-center bg-[#F9FBFA] px-7 py-10 sm:px-10 min-[820px]:px-16 ${
+          className={`flex h-full min-h-full items-center justify-center bg-[#FEF9F5] px-7 py-10 sm:px-10 min-[820px]:px-16 ${
             prefersReducedMotion ? '' : shouldPlayAuthIntro ? 'ledger-auth-pane-enter' : 'opacity-0'
           }`}
         >

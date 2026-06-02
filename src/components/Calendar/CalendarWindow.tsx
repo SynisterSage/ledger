@@ -3173,7 +3173,7 @@ export const CalendarWindow = () => {
   };
 
   const loadingSkeleton = (
-    <div className="h-full overflow-auto bg-white">
+    <div className="h-full overflow-auto bg-[#FFFDFB]">
       <div className="p-4 space-y-4 animate-pulse">
         <div className="h-6 w-56 rounded bg-gray-200" />
         <div className="grid grid-cols-7 gap-px overflow-hidden rounded-2xl border border-gray-200">
@@ -3212,7 +3212,7 @@ export const CalendarWindow = () => {
 
   return (
     <div
-      className="relative h-screen overflow-hidden rounded-3xl border border-gray-200 bg-[#f5f7fb] flex flex-col shadow-[0_24px_80px_rgba(15,23,42,0.08)]"
+      className="relative h-screen overflow-hidden rounded-3xl border border-gray-200 bg-[#FFF9F4] flex flex-col shadow-[0_24px_80px_rgba(15,23,42,0.08)]"
       style={{ scrollbarGutter: isCalendarModalOpen ? 'auto' : 'stable' }}
     >
       <CloseGuardModal
@@ -3327,7 +3327,7 @@ export const CalendarWindow = () => {
         {!isLeftPaneCollapsed ? (
           <>
             <aside
-              className="border-r border-gray-200 p-4 overflow-auto shrink-0 bg-white"
+              className="border-r border-[#E8DDD4] p-4 overflow-auto shrink-0 bg-[#FFF8F1]"
               style={{ width: `${leftPaneWidth}px` }}
             >
               <div className="flex items-center justify-between mb-3">
@@ -3336,13 +3336,13 @@ export const CalendarWindow = () => {
                 </p>
                 <button
                   onClick={() => setIsLeftPaneCollapsed(true)}
-                  className="h-7 w-7 rounded-lg border border-gray-200 bg-white text-gray-500 hover:bg-gray-100 flex items-center justify-center shadow-sm"
+                  className="h-7 w-7 rounded-lg border border-gray-200 bg-[#FFFDFB] text-gray-500 hover:bg-gray-100 flex items-center justify-center shadow-sm"
                   title="Hide left panel"
                 >
                   <ChevronLeft size={13} strokeWidth={2.25} className="-translate-x-px" />
                 </button>
               </div>
-              <div className="mb-5 rounded-2xl border border-gray-200 bg-gray-50 p-3">
+              <div className="mb-5 rounded-2xl border border-[#E8DDD4] bg-[#FFFBF7] p-3">
                 <div className="flex items-start justify-between mb-3">
                   <div>
                     <p className="text-xs font-medium text-gray-500">
@@ -3353,20 +3353,20 @@ export const CalendarWindow = () => {
                   <div className="flex items-center gap-1">
                     <button
                       onClick={() => moveView(-1)}
-                      className="h-7 w-7 rounded-full border border-gray-200 bg-white text-gray-600 hover:bg-gray-100 flex items-center justify-center shadow-sm"
+                      className="h-7 w-7 rounded-full border border-[#E8DDD4] bg-[#FFFBF7] text-gray-600 hover:bg-[#FFF4EA] flex items-center justify-center shadow-sm"
                       title="Previous period"
                     >
                       <ChevronLeft size={13} strokeWidth={2.25} />
                     </button>
                     <button
                       onClick={() => jumpToToday()}
-                      className="h-7 px-2 rounded-md border border-gray-200 bg-white text-[11px] font-medium text-gray-700 hover:bg-gray-100"
+                      className="h-7 px-2 rounded-md border border-[#E8DDD4] bg-[#FFFBF7] text-[11px] font-medium text-gray-700 hover:bg-[#FFF4EA]"
                     >
                       Today
                     </button>
                     <button
                       onClick={() => moveView(1)}
-                      className="h-7 w-7 rounded-full border border-gray-200 bg-white text-gray-600 hover:bg-gray-100 flex items-center justify-center shadow-sm"
+                      className="h-7 w-7 rounded-full border border-[#E8DDD4] bg-[#FFFBF7] text-gray-600 hover:bg-[#FFF4EA] flex items-center justify-center shadow-sm"
                       title="Next period"
                     >
                       <ChevronRight size={13} strokeWidth={2.25} />
@@ -3396,12 +3396,12 @@ export const CalendarWindow = () => {
                         }}
                         className={`h-7 rounded-md text-[11px] font-medium transition ${
                           isActive
-                            ? 'bg-gray-900 text-white'
+                            ? 'bg-[#FF5F40] text-white shadow-[0_1px_2px_rgba(15,23,42,0.12)]'
                             : isToday
-                            ? 'bg-blue-50 text-blue-700'
+                            ? 'bg-[#FFF0EA] text-[#FF5F40]'
                             : inMonth
-                            ? 'text-gray-700 hover:bg-white'
-                            : 'text-gray-300 hover:bg-white'
+                            ? 'text-gray-700 hover:bg-[#FFF0EA] hover:text-[#FF5F40]'
+                            : 'text-gray-300 hover:bg-[#FFF0EA] hover:text-[#FF5F40]'
                         }`}
                       >
                         {dayDate.getDate()}
@@ -3447,7 +3447,7 @@ export const CalendarWindow = () => {
                       setNewCalendarColor(preferenceColorMap[calendarPreferences.calendarColor ?? 'ledger-orange']);
                       setIsNewCalendarModalOpen(true);
                     }}
-                    className="h-6 w-6 rounded-full border border-gray-200 bg-white text-gray-500 hover:bg-gray-100 flex items-center justify-center shadow-sm"
+                    className="h-6 w-6 rounded-full border border-gray-200 bg-[#FFFDFB] text-gray-500 hover:bg-gray-100 flex items-center justify-center shadow-sm"
                     title="New calendar"
                     aria-label="New calendar"
                   >
@@ -3471,8 +3471,8 @@ export const CalendarWindow = () => {
                       }}
                       className={`flex items-center justify-between gap-2 rounded-lg border px-2 py-1.5 text-sm ${
                         calendar.is_visible === false
-                          ? 'border-gray-100 bg-gray-50 text-gray-400'
-                          : 'border-transparent text-gray-800 hover:bg-gray-50'
+                          ? 'border-[#F1E4D7] bg-[#FFF4EA] text-gray-400'
+                          : 'border-transparent text-gray-800 hover:bg-[#FFF4EA]'
                       }`}
                     >
                       <div className="flex items-center gap-2 min-w-0">
@@ -3494,11 +3494,11 @@ export const CalendarWindow = () => {
                                 setEditingCalendarId(null);
                               }
                             }}
-                            className="truncate font-medium bg-white border border-gray-300 rounded px-1 py-0.5 text-sm focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                            className="truncate font-medium bg-[#FFFBF7] border border-[#D8C6B6] rounded px-1 py-0.5 text-sm focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
                           />
                         ) : (
                           <span
-                            className="truncate font-medium cursor-pointer hover:bg-gray-100 rounded px-1 py-0.5"
+                            className="truncate font-medium cursor-pointer hover:bg-[#FFF4EA] rounded px-1 py-0.5"
                             onDoubleClick={() => {
                               setEditingCalendarId(calendar.id);
                               setEditingCalendarName(calendar.name);
@@ -3526,7 +3526,7 @@ export const CalendarWindow = () => {
                     onClick={() => {
                       openComposerAtSlot(formatDateKey(viewAnchor), 9, '', 'event');
                     }}
-                    className="h-9 rounded-md bg-gray-900 text-white text-xs font-medium hover:bg-gray-800 transition"
+                    className="h-9 rounded-md bg-[#FF5F40] text-white text-xs font-medium hover:bg-[#f4583a] transition"
                   >
                     New Event
                   </button>
@@ -3534,14 +3534,14 @@ export const CalendarWindow = () => {
                     onClick={() => {
                       openComposerAtSlot(formatDateKey(viewAnchor), 9, '', 'reminder');
                     }}
-                    className="h-9 rounded-md bg-gray-100 text-gray-800 text-xs font-medium hover:bg-gray-200 transition"
+                    className="h-9 rounded-md bg-[#FF5F40] text-white text-xs font-medium hover:bg-[#f4583a] transition"
                   >
                     New Reminder
                   </button>
                   <button
                     onClick={() => importInputRef.current?.click()}
                     disabled={isImportingIcs}
-                    className="h-9 rounded-md border border-gray-200 bg-white text-gray-700 text-xs font-medium hover:bg-gray-50 transition disabled:opacity-60 disabled:cursor-not-allowed inline-flex items-center justify-center gap-1.5"
+                    className="h-9 rounded-md border border-[#E8DDD4] bg-[#FFFBF7] text-gray-700 text-xs font-medium hover:bg-[#FFF4EA] transition disabled:opacity-60 disabled:cursor-not-allowed inline-flex items-center justify-center gap-1.5"
                   >
                     {isImportingIcs ? (
                       <>
@@ -3554,7 +3554,7 @@ export const CalendarWindow = () => {
                   </button>
                   <button
                     onClick={() => void syncAppleCalendar()}
-                    className="h-9 rounded-md border border-gray-200 bg-white text-gray-700 text-xs font-medium hover:bg-gray-50 transition"
+                    className="h-9 rounded-md border border-[#E8DDD4] bg-[#FFFBF7] text-gray-700 text-xs font-medium hover:bg-[#FFF4EA] transition"
                   >
                     Sync iCal
                   </button>
@@ -3588,10 +3588,10 @@ export const CalendarWindow = () => {
             />
           </>
         ) : (
-          <div className="w-10 shrink-0 border-r border-gray-200 bg-white flex items-start justify-center pt-4">
+          <div className="w-10 shrink-0 border-r border-[#E8DDD4] bg-[#FFF8F1] flex items-start justify-center pt-4">
             <button
               onClick={() => setIsLeftPaneCollapsed(false)}
-              className="h-7 w-7 rounded-lg border border-gray-200 bg-white text-gray-500 hover:bg-gray-100 flex items-center justify-center shadow-sm"
+              className="h-7 w-7 rounded-lg border border-[#E8DDD4] bg-[#FFFBF7] text-gray-500 hover:bg-[#FFF4EA] flex items-center justify-center shadow-sm"
               title="Show left panel"
             >
               <ChevronRight size={14} />
@@ -3600,7 +3600,7 @@ export const CalendarWindow = () => {
         )}
 
         <section className="flex-1 min-w-0 p-2.5">
-          <div className="h-full rounded-3xl border border-gray-200 bg-white shadow-sm overflow-hidden flex flex-col">
+          <div className="h-full rounded-3xl border border-[#E8DDD4] bg-[#FFFBF7] shadow-sm overflow-hidden flex flex-col">
             <div
               ref={centerScrollRef}
               className="flex-1 min-w-0 overflow-auto"
@@ -3622,11 +3622,11 @@ export const CalendarWindow = () => {
                 loadingSkeleton
               ) : viewMode === 'month' ? (
                 <div className="min-w-210 p-3">
-                  <div className="grid grid-cols-7 border-l border-t border-gray-200 rounded-t-lg overflow-hidden">
+                  <div className="grid grid-cols-7 border-l border-t border-[#E8DDD4] rounded-t-lg overflow-hidden">
                     {days.map((day) => (
                       <div
                         key={day}
-                        className="h-10 flex items-center justify-center bg-gray-50 border-r border-b border-gray-200 text-xs font-semibold text-gray-600"
+                        className="h-10 flex items-center justify-center bg-[#FFF4EA] border-r border-b border-[#E8DDD4] text-xs font-semibold text-gray-600"
                       >
                         {day}
                       </div>
@@ -3663,7 +3663,7 @@ export const CalendarWindow = () => {
                             });
                           }}
                           className={`min-h-29 border-r border-b border-gray-200 text-left p-2 align-top hover:bg-blue-50/40 transition-colors ${
-                            inMonth ? 'bg-white' : 'bg-gray-50 text-gray-400'
+                            inMonth ? 'bg-[#FFFDFB]' : 'bg-gray-50 text-gray-400'
                           }`}
                         >
                           <div className="flex items-start justify-between">
@@ -3825,11 +3825,11 @@ export const CalendarWindow = () => {
                       gridTemplateColumns: `72px repeat(${viewConfig.dates.length}, minmax(0, 1fr))`,
                     }}
                   >
-                  <div className="sticky top-0 z-10 h-12 bg-white border-b border-gray-200" />
+                  <div className="sticky top-0 z-10 h-12 bg-[#FFFDFB] border-b border-gray-200" />
                   {viewConfig.dates.map((dayDate) => (
                     <div
                       key={dayDate.toISOString()}
-                      className="sticky top-0 z-10 h-12 bg-white border-b border-l border-gray-200 flex flex-col items-center justify-center"
+                      className="sticky top-0 z-10 h-12 bg-[#FFFDFB] border-b border-l border-gray-200 flex flex-col items-center justify-center"
                     >
                       <span className="text-xs font-semibold text-gray-600">
                         {dayDate.toLocaleDateString([], { weekday: 'short' })}
@@ -4012,7 +4012,7 @@ export const CalendarWindow = () => {
                                 >
                             {isQuickAddOpen && (
                               <div
-                                className="absolute top-1 left-1 right-1 z-20 rounded-md border border-gray-200 bg-white shadow-lg p-1.5"
+                                className="absolute top-1 left-1 right-1 z-20 rounded-md border border-gray-200 bg-[#FFFDFB] shadow-lg p-1.5"
                                 onClick={(e) => e.stopPropagation()}
                               >
                                 <input
@@ -4238,7 +4238,7 @@ export const CalendarWindow = () => {
             />
 
             <aside
-              className="border-l border-gray-200 bg-[#fbfcfe] overflow-auto px-5 py-6"
+              className="border-l border-gray-200 bg-[#FFFBF7] overflow-auto px-5 py-6"
               style={{ width: `${rightPaneWidth}px` }}
             >
               <div className="flex items-start justify-between gap-3">
@@ -4259,7 +4259,7 @@ export const CalendarWindow = () => {
                 </div>
                 <button
                   onClick={() => setIsRightPaneCollapsed(true)}
-                  className="h-7 w-7 shrink-0 rounded-lg border border-gray-200 bg-white text-gray-500 shadow-sm hover:bg-gray-100 flex items-center justify-center"
+                  className="h-7 w-7 shrink-0 rounded-lg border border-gray-200 bg-[#FFFDFB] text-gray-500 shadow-sm hover:bg-gray-100 flex items-center justify-center"
                   title="Hide right panel"
                   aria-label="Hide right panel"
                 >
@@ -4482,7 +4482,7 @@ export const CalendarWindow = () => {
                       }}
                       rows={2}
                       placeholder="Add notes for this event..."
-                      className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-[13px] text-gray-800 placeholder:text-gray-400 outline-none focus:border-gray-300"
+                      className="w-full rounded-lg border border-gray-200 bg-[#FFFDFB] px-3 py-2 text-[13px] text-gray-800 placeholder:text-gray-400 outline-none focus:border-gray-300"
                     />
                     <div className="flex items-center justify-between gap-2">
                       <p className="text-[12px] text-gray-500">Saved to the event.</p>
@@ -4534,7 +4534,7 @@ export const CalendarWindow = () => {
                                 focusTaskId: task.id,
                               })
                             }
-                            className="flex h-8 w-full items-center justify-between gap-2 rounded-md px-2 text-left text-[13px] hover:bg-gray-50"
+                            className="flex h-8 w-full items-center justify-between gap-2 rounded-md px-2 text-left text-[13px] hover:bg-[#FFF4EA]"
                             title={task.title}
                           >
                             <span className="min-w-0 truncate text-gray-800">{task.title}</span>
@@ -4566,7 +4566,7 @@ export const CalendarWindow = () => {
                               key={event.id}
                               onClick={() => setSelectedEvent(event)}
                               className={`flex h-8 w-full items-center gap-2 rounded-md px-2 text-left transition ${
-                                isSelected ? 'bg-gray-50 ring-1 ring-gray-200' : 'hover:bg-gray-50'
+                                isSelected ? 'bg-[#FFF4EA] ring-1 ring-[#E8DDD4]' : 'hover:bg-[#FFF4EA]'
                               }`}
                             >
                               <span
@@ -4597,10 +4597,10 @@ export const CalendarWindow = () => {
           </>
         )}
         {isRightPaneCollapsed && (
-          <div className="w-10 shrink-0 border-l border-gray-200 bg-[#fbfcfe] flex items-start justify-center pt-4">
+          <div className="w-10 shrink-0 border-l border-gray-200 bg-[#FFFBF7] flex items-start justify-center pt-4">
             <button
               onClick={() => setIsRightPaneCollapsed(false)}
-              className="h-7 w-7 rounded-lg border border-gray-200 bg-white text-gray-500 hover:bg-gray-100 flex items-center justify-center shadow-sm"
+              className="h-7 w-7 rounded-lg border border-gray-200 bg-[#FFFDFB] text-gray-500 hover:bg-gray-100 flex items-center justify-center shadow-sm"
               title="Show right panel"
             >
               <ChevronLeft size={13} strokeWidth={2.25} />
@@ -4619,7 +4619,7 @@ export const CalendarWindow = () => {
           backdropBorderRadius="inherit"
           disablePortal
           manageWindowChrome={false}
-          classNameContainer="w-full max-w-[420px] overflow-hidden rounded-xl border border-gray-200 bg-white shadow-xl"
+          classNameContainer="w-full max-w-[420px] overflow-hidden rounded-xl border border-gray-200 bg-[#FFFDFB] shadow-xl"
         >
           <div className="p-4">
             <div className="mb-3 flex items-center justify-between">
@@ -4672,7 +4672,7 @@ export const CalendarWindow = () => {
                       onChange={(e) =>
                         setNewEventDurationUnit(e.target.value as 'minutes' | 'hours')
                       }
-                      className="h-9 w-full appearance-none rounded-md border border-gray-200 bg-white pl-2 pr-8 text-sm focus:border-gray-400 focus:outline-none"
+                      className="h-9 w-full appearance-none rounded-md border border-gray-200 bg-[#FFFDFB] pl-2 pr-8 text-sm focus:border-gray-400 focus:outline-none"
                     >
                       <option value="minutes">minutes</option>
                       <option value="hours">hours</option>
@@ -4688,7 +4688,7 @@ export const CalendarWindow = () => {
                 <select
                   value={composerCalendarId || getDefaultCalendar()?.id || ''}
                   onChange={(e) => setComposerCalendarId(e.target.value)}
-                  className="h-9 w-full appearance-none rounded-md border border-gray-200 bg-white pl-2 pr-9 text-sm focus:border-gray-400 focus:outline-none"
+                  className="h-9 w-full appearance-none rounded-md border border-gray-200 bg-[#FFFDFB] pl-2 pr-9 text-sm focus:border-gray-400 focus:outline-none"
                   disabled={calendars.length === 0}
                 >
                   {calendars.map((calendar) => (
@@ -4709,7 +4709,7 @@ export const CalendarWindow = () => {
                     onChange={(e) =>
                       setNewEventVisibility(e.target.value as 'private' | 'workspace')
                     }
-                    className="h-9 w-full appearance-none rounded-md border border-gray-200 bg-white pl-2 pr-9 text-sm focus:border-gray-400 focus:outline-none"
+                    className="h-9 w-full appearance-none rounded-md border border-gray-200 bg-[#FFFDFB] pl-2 pr-9 text-sm focus:border-gray-400 focus:outline-none"
                   >
                     <option value="private">Private</option>
                     <option value="workspace">Workspace</option>
@@ -4724,7 +4724,7 @@ export const CalendarWindow = () => {
                 <select
                   value={composerProjectId}
                   onChange={(e) => setComposerProjectId(e.target.value)}
-                  className="h-9 w-full appearance-none rounded-md border border-gray-200 bg-white pl-2 pr-9 text-sm focus:border-gray-400 focus:outline-none"
+                  className="h-9 w-full appearance-none rounded-md border border-gray-200 bg-[#FFFDFB] pl-2 pr-9 text-sm focus:border-gray-400 focus:outline-none"
                 >
                   <option value="">None</option>
                   {projects.map((project) => (
@@ -4742,7 +4742,7 @@ export const CalendarWindow = () => {
                 <select
                   value={composerNoteId}
                   onChange={(e) => setComposerNoteId(e.target.value)}
-                  className="h-9 w-full appearance-none rounded-md border border-gray-200 bg-white pl-2 pr-9 text-sm focus:border-gray-400 focus:outline-none"
+                  className="h-9 w-full appearance-none rounded-md border border-gray-200 bg-[#FFFDFB] pl-2 pr-9 text-sm focus:border-gray-400 focus:outline-none"
                 >
                   <option value="">None</option>
                   {notes.map((note) => (
@@ -4784,7 +4784,7 @@ export const CalendarWindow = () => {
                     }
                     setNewEventRecurrence(nextValue);
                   }}
-                  className="h-9 w-full appearance-none rounded-md border border-gray-200 bg-white pl-2 pr-9 text-sm focus:border-gray-400 focus:outline-none"
+                  className="h-9 w-full appearance-none rounded-md border border-gray-200 bg-[#FFFDFB] pl-2 pr-9 text-sm focus:border-gray-400 focus:outline-none"
                 >
                   <option value="none">Does not repeat</option>
                   <option value="daily">Daily</option>
@@ -4837,7 +4837,7 @@ export const CalendarWindow = () => {
         backdropBorderRadius="inherit"
         disablePortal
         manageWindowChrome={false}
-        classNameContainer="w-full max-w-[460px] rounded-2xl border border-gray-200 bg-white shadow-xl"
+        classNameContainer="w-full max-w-[460px] rounded-2xl border border-gray-200 bg-[#FFFDFB] shadow-xl"
       >
         <div className="flex items-start justify-between gap-4 border-b border-gray-100 px-5 py-4">
           <div>
@@ -4856,7 +4856,7 @@ export const CalendarWindow = () => {
             <button
               type="button"
               onClick={() => setSpecificDatesMonthAnchor((current) => addMonths(current, -1))}
-              className="flex h-8 w-8 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
+              className="flex h-8 w-8 items-center justify-center rounded-full border border-gray-200 bg-[#FFFDFB] text-gray-600 hover:bg-gray-50"
               aria-label="Previous month"
             >
               <ChevronLeft size={14} />
@@ -4867,7 +4867,7 @@ export const CalendarWindow = () => {
             <button
               type="button"
               onClick={() => setSpecificDatesMonthAnchor((current) => addMonths(current, 1))}
-              className="flex h-8 w-8 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
+              className="flex h-8 w-8 items-center justify-center rounded-full border border-gray-200 bg-[#FFFDFB] text-gray-600 hover:bg-gray-50"
               aria-label="Next month"
             >
               <ChevronRight size={14} />
@@ -4930,7 +4930,7 @@ export const CalendarWindow = () => {
           <button
             type="button"
             onClick={clearSpecificDatesDraft}
-            className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+            className="rounded-lg border border-gray-200 bg-[#FFFDFB] px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
           >
             Clear
           </button>
@@ -4938,7 +4938,7 @@ export const CalendarWindow = () => {
             <button
               type="button"
               onClick={() => closeSpecificDatesPicker(true)}
-              className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+              className="rounded-lg border border-gray-200 bg-[#FFFDFB] px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
             >
               Cancel
             </button>
@@ -4964,7 +4964,7 @@ export const CalendarWindow = () => {
           backdropBorderRadius="inherit"
           disablePortal
           manageWindowChrome={false}
-          classNameContainer="w-full max-w-[384px] overflow-hidden rounded-xl border border-gray-200 bg-white shadow-xl"
+          classNameContainer="w-full max-w-[384px] overflow-hidden rounded-xl border border-gray-200 bg-[#FFFDFB] shadow-xl"
         >
           <div className="p-4">
             <div className="mb-3 flex items-center justify-between">
@@ -5020,7 +5020,7 @@ export const CalendarWindow = () => {
         backdropBorderRadius="inherit"
         disablePortal
         manageWindowChrome={false}
-        classNameContainer="w-full max-w-xl rounded-2xl border border-gray-200 bg-white shadow-xl"
+        classNameContainer="w-full max-w-xl rounded-2xl border border-gray-200 bg-[#FFFDFB] shadow-xl"
       >
         <div className="flex items-start justify-between gap-4 border-b border-gray-100 px-5 py-4">
           <div>
@@ -5045,7 +5045,7 @@ export const CalendarWindow = () => {
             placeholder="Search projects"
             className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-900 outline-none focus:border-gray-300"
           />
-          <div className="max-h-80 overflow-auto rounded-lg border border-gray-200 bg-white">
+          <div className="max-h-80 overflow-auto rounded-lg border border-gray-200 bg-[#FFFDFB]">
             {isLoadingLinkProjects ? (
               <p className="p-3 text-sm text-gray-500">Loading projects…</p>
             ) : linkProjects.filter((p) =>
@@ -5086,7 +5086,7 @@ export const CalendarWindow = () => {
         backdropBorderRadius="inherit"
         disablePortal
         manageWindowChrome={false}
-        classNameContainer="w-full max-w-xl rounded-2xl border border-gray-200 bg-white shadow-xl"
+        classNameContainer="w-full max-w-xl rounded-2xl border border-gray-200 bg-[#FFFDFB] shadow-xl"
       >
         <div className="flex items-start justify-between gap-4 border-b border-gray-100 px-5 py-4">
           <div>
@@ -5111,7 +5111,7 @@ export const CalendarWindow = () => {
             placeholder="Search notes"
             className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-900 outline-none focus:border-gray-300"
           />
-          <div className="max-h-80 overflow-auto rounded-lg border border-gray-200 bg-white">
+          <div className="max-h-80 overflow-auto rounded-lg border border-gray-200 bg-[#FFFDFB]">
             {isLoadingLinkNotes ? (
               <p className="p-3 text-sm text-gray-500">Loading notes…</p>
             ) : linkNotes.filter((note) =>
@@ -5159,7 +5159,7 @@ export const CalendarWindow = () => {
           backdropBorderRadius="inherit"
           disablePortal
           manageWindowChrome={false}
-          classNameContainer="w-full max-w-[440px] overflow-hidden rounded-xl border border-gray-200 bg-white shadow-xl"
+          classNameContainer="w-full max-w-[440px] overflow-hidden rounded-xl border border-gray-200 bg-[#FFFDFB] shadow-xl"
         >
           <div className="p-4">
             <div className="mb-3 flex items-center justify-between">
@@ -5209,7 +5209,7 @@ export const CalendarWindow = () => {
                   <select
                     value={editDurationUnit}
                     onChange={(e) => setEditDurationUnit(e.target.value as 'minutes' | 'hours')}
-                    className="h-9 w-full appearance-none rounded-md border border-gray-200 bg-white pl-2 pr-8 text-sm focus:border-gray-400 focus:outline-none"
+                    className="h-9 w-full appearance-none rounded-md border border-gray-200 bg-[#FFFDFB] pl-2 pr-8 text-sm focus:border-gray-400 focus:outline-none"
                   >
                     <option value="minutes">minutes</option>
                     <option value="hours">hours</option>
@@ -5226,7 +5226,7 @@ export const CalendarWindow = () => {
                   onChange={(e) =>
                     setEditStatus(e.target.value as 'planned' | 'done' | 'missed' | 'cancelled')
                   }
-                  className="h-9 w-full appearance-none rounded-md border border-gray-200 bg-white pl-2 pr-9 text-sm focus:border-gray-400 focus:outline-none"
+                  className="h-9 w-full appearance-none rounded-md border border-gray-200 bg-[#FFFDFB] pl-2 pr-9 text-sm focus:border-gray-400 focus:outline-none"
                 >
                   <option value="planned">Planned</option>
                   <option value="done">Done</option>
@@ -5242,7 +5242,7 @@ export const CalendarWindow = () => {
                 <select
                   value={editVisibility}
                   onChange={(e) => setEditVisibility(e.target.value as 'private' | 'workspace')}
-                  className="h-9 w-full appearance-none rounded-md border border-gray-200 bg-white pl-2 pr-9 text-sm focus:border-gray-400 focus:outline-none"
+                  className="h-9 w-full appearance-none rounded-md border border-gray-200 bg-[#FFFDFB] pl-2 pr-9 text-sm focus:border-gray-400 focus:outline-none"
                 >
                   <option value="private">Private</option>
                   <option value="workspace">Workspace</option>
@@ -5256,7 +5256,7 @@ export const CalendarWindow = () => {
                 <select
                   value={editProjectId}
                   onChange={(e) => setEditProjectId(e.target.value)}
-                  className="h-9 w-full appearance-none rounded-md border border-gray-200 bg-white pl-2 pr-9 text-sm focus:border-gray-400 focus:outline-none"
+                  className="h-9 w-full appearance-none rounded-md border border-gray-200 bg-[#FFFDFB] pl-2 pr-9 text-sm focus:border-gray-400 focus:outline-none"
                 >
                   <option value="">None</option>
                   {projects.map((project) => (
@@ -5274,7 +5274,7 @@ export const CalendarWindow = () => {
                 <select
                   value={editNoteId}
                   onChange={(e) => setEditNoteId(e.target.value)}
-                  className="h-9 w-full appearance-none rounded-md border border-gray-200 bg-white pl-2 pr-9 text-sm focus:border-gray-400 focus:outline-none"
+                  className="h-9 w-full appearance-none rounded-md border border-gray-200 bg-[#FFFDFB] pl-2 pr-9 text-sm focus:border-gray-400 focus:outline-none"
                 >
                   <option value="">None</option>
                   {notes.map((note) => (
@@ -5296,7 +5296,7 @@ export const CalendarWindow = () => {
                       e.target.value as 'none' | 'daily' | 'weekly' | 'monthly' | 'weekdays'
                     )
                   }
-                  className="h-9 w-full appearance-none rounded-md border border-gray-200 bg-white pl-2 pr-9 text-sm focus:border-gray-400 focus:outline-none"
+                  className="h-9 w-full appearance-none rounded-md border border-gray-200 bg-[#FFFDFB] pl-2 pr-9 text-sm focus:border-gray-400 focus:outline-none"
                 >
                   <option value="none">Does not repeat</option>
                   <option value="daily">Daily</option>
@@ -5313,7 +5313,7 @@ export const CalendarWindow = () => {
                 <select
                   value={editCalendarId}
                   onChange={(e) => setEditCalendarId(e.target.value)}
-                  className="h-9 w-full appearance-none rounded-md border border-gray-200 bg-white pl-2 pr-9 text-sm focus:border-gray-400 focus:outline-none"
+                  className="h-9 w-full appearance-none rounded-md border border-gray-200 bg-[#FFFDFB] pl-2 pr-9 text-sm focus:border-gray-400 focus:outline-none"
                 >
                   {calendars.map((calendar) => (
                     <option key={calendar.id} value={calendar.id}>
@@ -5391,7 +5391,7 @@ export const CalendarWindow = () => {
           backdropBorderRadius="inherit"
           disablePortal
           manageWindowChrome={false}
-          classNameContainer="w-full max-w-[440px] overflow-hidden rounded-xl border border-gray-200 bg-white shadow-xl"
+          classNameContainer="w-full max-w-[440px] overflow-hidden rounded-xl border border-gray-200 bg-[#FFFDFB] shadow-xl"
         >
           <div className="p-4">
             <div className="mb-3 flex items-center justify-between">
@@ -5445,7 +5445,7 @@ export const CalendarWindow = () => {
                           selectedReminder &&
                           void snoozeReminderByMinutes(selectedReminder, option.minutes)
                         }
-                        className="rounded-md border border-gray-200 bg-white px-2.5 py-1.5 text-[11px] font-medium text-gray-700 hover:bg-gray-50"
+                        className="rounded-md border border-gray-200 bg-[#FFFDFB] px-2.5 py-1.5 text-[11px] font-medium text-gray-700 hover:bg-gray-50"
                       >
                         {option.label}
                       </button>
@@ -5457,7 +5457,7 @@ export const CalendarWindow = () => {
                 <select
                   value={reminderEditCalendarId}
                   onChange={(e) => setReminderEditCalendarId(e.target.value)}
-                  className="h-9 w-full appearance-none rounded-md border border-gray-200 bg-white pl-2 pr-9 text-sm focus:border-gray-400 focus:outline-none"
+                  className="h-9 w-full appearance-none rounded-md border border-gray-200 bg-[#FFFDFB] pl-2 pr-9 text-sm focus:border-gray-400 focus:outline-none"
                 >
                   {calendars.map((calendar) => (
                     <option key={calendar.id} value={calendar.id}>
@@ -5514,7 +5514,7 @@ export const CalendarWindow = () => {
           backdropBorderRadius="inherit"
           disablePortal
           manageWindowChrome={false}
-          classNameContainer="w-full max-w-[520px] max-h-[72vh] overflow-hidden rounded-xl border border-gray-200 bg-white shadow-xl"
+          classNameContainer="w-full max-w-[520px] max-h-[72vh] overflow-hidden rounded-xl border border-gray-200 bg-[#FFFDFB] shadow-xl"
         >
           <div className="max-h-[72vh] overflow-auto p-4">
             <div className="mb-3 flex items-center justify-between">
@@ -5586,7 +5586,7 @@ export const CalendarWindow = () => {
 
       {contextMenu && (
         <div
-          className="fixed z-50 min-w-44 overflow-hidden rounded-xl border border-gray-200 bg-white py-1 shadow-xl"
+          className="fixed z-50 min-w-44 overflow-hidden rounded-xl border border-gray-200 bg-[#FFFDFB] py-1 shadow-xl"
           style={{
             left: Math.max(8, Math.min(contextMenu.x, window.innerWidth - 188)),
             top: Math.max(8, Math.min(contextMenu.y, window.innerHeight - 138)),
@@ -5626,7 +5626,7 @@ export const CalendarWindow = () => {
 
       {calendarRowContextMenu && (
         <div
-          className="fixed z-50 min-w-48 overflow-hidden rounded-xl border border-gray-200 bg-white py-1 shadow-xl"
+          className="fixed z-50 min-w-48 overflow-hidden rounded-xl border border-gray-200 bg-[#FFFDFB] py-1 shadow-xl"
           style={{
             left: Math.max(8, Math.min(calendarRowContextMenu.x, window.innerWidth - 192)),
             top: Math.max(8, Math.min(calendarRowContextMenu.y, window.innerHeight - 176)),
@@ -5712,7 +5712,7 @@ export const CalendarWindow = () => {
 
       {calendarColorMenu && (
         <div
-          className="fixed z-50 w-64 overflow-hidden rounded-xl border border-gray-200 bg-white p-3 shadow-xl"
+          className="fixed z-50 w-64 overflow-hidden rounded-xl border border-gray-200 bg-[#FFFDFB] p-3 shadow-xl"
           style={{
             left: Math.max(8, Math.min(calendarColorMenu.x, window.innerWidth - 264)),
             top: Math.max(8, Math.min(calendarColorMenu.y, window.innerHeight - 180)),
@@ -5788,7 +5788,7 @@ export const CalendarWindow = () => {
 
           return (
         <div
-          className="fixed z-50 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-[0_16px_40px_rgba(15,23,42,0.14)]"
+          className="fixed z-50 overflow-hidden rounded-2xl border border-gray-200 bg-[#FFFDFB] shadow-[0_16px_40px_rgba(15,23,42,0.14)]"
           style={{
             left,
             top,

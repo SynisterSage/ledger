@@ -260,14 +260,14 @@ function AuthStatusScreen({
       }`}
       style={dragRegionStyle}
     >
-      <div className="absolute inset-3 rounded-3xl border border-white/60 bg-[#f5f5f7] shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]" />
+      <div className="absolute inset-3 rounded-3xl border border-white/60 bg-[#fff9f4] shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]" />
       <button
         type="button"
         onClick={() => {
           void window.desktopWindow?.quitApp();
         }}
         aria-label="Close"
-        className="absolute right-6 top-7 z-20 inline-flex h-8 w-8 items-center justify-center rounded-full border border-black/5 bg-white/60 text-gray-500 transition hover:bg-white/90 hover:text-gray-900"
+        className="absolute right-6 top-7 z-20 inline-flex h-8 w-8 items-center justify-center rounded-full border border-black/5 bg-[#FFFDFB]/60 text-gray-500 transition hover:bg-[#FFFDFB]/90 hover:text-gray-900"
         style={noDragRegionStyle}
       >
         <X size={16} />
@@ -302,9 +302,9 @@ function InviteSuccessScreen({
       className="relative flex min-h-screen items-center justify-center bg-transparent p-3 text-gray-900"
       style={dragRegionStyle}
     >
-      <div className="absolute inset-3 rounded-3xl border border-white/60 bg-[#f5f5f7] shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]" />
+      <div className="absolute inset-3 rounded-3xl border border-white/60 bg-[#fff9f4] shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]" />
       <div className="relative z-10 flex min-h-[calc(100vh-1.5rem)] items-center justify-center px-8">
-        <div className="w-full max-w-sm rounded-3xl border border-gray-200 bg-white px-6 py-7 text-center shadow-[0_18px_50px_rgba(15,23,42,0.08)]">
+        <div className="w-full max-w-sm rounded-3xl border border-gray-200 bg-[#FFFDFB] px-6 py-7 text-center shadow-[0_18px_50px_rgba(15,23,42,0.08)]">
           <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-[#fff0eb]">
             <CheckCircle2 size={24} className="text-[#FF5F40]" />
           </div>
@@ -403,14 +403,14 @@ function OnboardingFlow({
       className="relative min-h-screen overflow-hidden bg-transparent p-3 text-[#111827]"
       style={dragRegionStyle}
     >
-      <div className="absolute inset-3 rounded-3xl border border-white/70 bg-[#f5f5f7] shadow-[inset_0_1px_0_rgba(255,255,255,0.9)]" />
+      <div className="absolute inset-3 rounded-3xl border border-white/70 bg-[#fff9f4] shadow-[inset_0_1px_0_rgba(255,255,255,0.9)]" />
       <button
         type="button"
         onClick={() => {
           void window.desktopWindow?.quitApp();
         }}
         aria-label="Close"
-        className="absolute right-6 top-7 z-20 inline-flex h-8 w-8 items-center justify-center rounded-full border border-black/5 bg-white/70 text-gray-500 transition hover:bg-white hover:text-gray-900"
+        className="absolute right-6 top-7 z-20 inline-flex h-8 w-8 items-center justify-center rounded-full border border-black/5 bg-[#FFFDFB]/70 text-gray-500 transition hover:bg-[#FFFDFB] hover:text-gray-900"
         style={noDragRegionStyle}
       >
         <X size={16} />
@@ -427,9 +427,9 @@ function OnboardingFlow({
         >
           {step === 'welcome' ? (
             <div className="grid items-center gap-10 md:grid-cols-[1.18fr_0.82fr]">
-              <div className="overflow-hidden rounded-[26px] bg-white/80 shadow-[0_24px_70px_rgba(17,24,39,0.12)]">
+              <div className="overflow-hidden rounded-[26px] bg-[#FFFDFB]/80 shadow-[0_24px_70px_rgba(17,24,39,0.12)]">
                 {prefersReducedMotion ? (
-                  <div className="flex aspect-video items-center justify-center bg-[#fffaf5]">
+                  <div className="flex aspect-video items-center justify-center bg-[#fff9f4]">
                     <img src="./logo-color.svg" alt="Ledger" className="h-16 w-16" />
                   </div>
                 ) : (
@@ -475,7 +475,7 @@ function OnboardingFlow({
           ) : null}
 
           {step === 'workspace' ? (
-            <div className="mx-auto rounded-3xl bg-white/72 p-7 shadow-[0_24px_70px_rgba(17,24,39,0.10)] backdrop-blur-xl">
+            <div className="mx-auto rounded-3xl bg-[#FFFDFB]/72 p-7 shadow-[0_24px_70px_rgba(17,24,39,0.10)] backdrop-blur-xl">
               <div className="mb-7">
                 <img src="./logo-color.svg" alt="Ledger" className="mb-5 h-10 w-10" />
                 <h1 className="text-[30px] font-semibold leading-tight text-gray-950">
@@ -500,7 +500,7 @@ function OnboardingFlow({
                       : onInviteValueChange(event.target.value)
                   }
                   placeholder={mode === 'create' ? 'My Workspace' : 'https://ledger.app/invite/...'}
-                  className="h-12 w-full rounded-2xl border border-gray-200 bg-white px-4 text-[15px] text-gray-950 outline-none transition focus:border-gray-300 focus:ring-4 focus:ring-gray-100"
+                  className="h-12 w-full rounded-2xl border border-gray-200 bg-[#FFFDFB] px-4 text-[15px] text-gray-950 outline-none transition focus:border-gray-300 focus:ring-4 focus:ring-gray-100"
                 />
               </label>
 
@@ -533,7 +533,7 @@ function OnboardingFlow({
           ) : null}
 
           {step === 'position' ? (
-            <div className="mx-auto rounded-3xl bg-white/72 p-7 shadow-[0_24px_70px_rgba(17,24,39,0.10)] backdrop-blur-xl">
+            <div className="mx-auto rounded-3xl bg-[#FFFDFB]/72 p-7 shadow-[0_24px_70px_rgba(17,24,39,0.10)] backdrop-blur-xl">
               <div className="mb-7">
                 <img src="./logo-color.svg" alt="Ledger" className="mb-5 h-10 w-10" />
                 <h1 className="text-[30px] font-semibold leading-tight text-gray-950">
@@ -558,10 +558,10 @@ function OnboardingFlow({
                       } ${
                         isSelected
                           ? 'border-[#FF5F40]/45 bg-[#fff7f2] text-gray-950 shadow-[0_8px_18px_rgba(255,95,64,0.08)]'
-                          : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:bg-gray-50'
+                          : 'border-gray-200 bg-[#FFFDFB] text-gray-600 hover:border-gray-300 hover:bg-gray-50'
                       }`}
                     >
-                      <span className="relative h-9 w-11 rounded-lg border border-gray-200 bg-white">
+                      <span className="relative h-9 w-11 rounded-lg border border-gray-200 bg-[#FFFDFB]">
                         <span
                           className={`absolute rounded-sm bg-[#FF5F40] ${
                             option.value === 'right'
@@ -577,8 +577,8 @@ function OnboardingFlow({
                         />
                         {option.value === 'floating' ? (
                           <>
-                            <span className="absolute left-2 top-2 h-1 w-1 rounded-full bg-white/90" />
-                            <span className="absolute right-2 top-2 h-1 w-1 rounded-full bg-white/90" />
+                            <span className="absolute left-2 top-2 h-1 w-1 rounded-full bg-[#FFFDFB]/90" />
+                            <span className="absolute right-2 top-2 h-1 w-1 rounded-full bg-[#FFFDFB]/90" />
                           </>
                         ) : null}
                       </span>
@@ -1820,7 +1820,7 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
 
   return (
     <div
-      className="flex h-screen flex-col overflow-hidden rounded-3xl border border-gray-200 bg-white shadow-none"
+      className="flex h-screen flex-col overflow-hidden rounded-3xl border border-[#E8DDD4] bg-[#FFF8F1] shadow-none"
       style={{ scrollbarGutter: 'stable' }}
     >
       <CloseGuardModal
@@ -1922,7 +1922,7 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
       />
 
       <div
-        className="flex-1 min-h-0 overflow-auto bg-white px-6 py-8"
+        className="flex-1 min-h-0 overflow-auto bg-[#FFF8F1] px-6 py-8"
         style={{ scrollbarGutter: 'stable' }}
       >
         <div className="mx-auto max-w-6xl space-y-10">
@@ -1936,7 +1936,7 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
               </p>
             </div>
 
-            <div className="flex flex-col gap-6 border-b border-gray-200 pb-8 sm:flex-row sm:items-end sm:justify-between">
+            <div className="flex flex-col gap-6 border-b border-[#E8DDD4] pb-8 sm:flex-row sm:items-end sm:justify-between">
               <div className="space-y-2">
                 <p className="text-xs font-medium text-[#64748B]">
                   {todayLabel}
@@ -1993,14 +1993,14 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
                 </div>
 
                 {isLoadingDashboard ? (
-                  <div className="space-y-3 border-y border-gray-200 py-10">
+                  <div className="space-y-3 border-y border-[#E8DDD4] py-10">
                     {Array.from({ length: 3 }).map((_, i) => (
                       <SkeletonTaskItem key={i} />
                     ))}
                   </div>
                 ) : (
                   <>
-                    <div className="border-y border-gray-200 py-10">
+                    <div className="border-y border-[#E8DDD4] py-10">
                       {focusTasksForDisplay.length === 0 ? (
                         <p className="text-sm font-light italic text-[#64748B]">No focus set yet.</p>
                       ) : (
@@ -2046,7 +2046,7 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
                             const expiryLabel = formatExpiryCounter(task);
                             return (
                               <div key={task.id} className="group flex items-start gap-3">
-                                <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-gray-200 text-[11px] font-medium text-[#64748B]">
+                                <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-[#E8DDD4] bg-[#FFFBF7] text-[11px] font-medium text-[#64748B]">
                                   {index + 1}
                                 </div>
                                 <div className="min-w-0 flex-1">
@@ -2110,9 +2110,9 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
                               return (
                                 <div
                                   key={task.id}
-                                  className="flex items-start gap-3 rounded-2xl border border-gray-100 bg-gray-50 px-3 py-2"
+                                  className="flex items-start gap-3 rounded-2xl border border-[#E8DDD4] bg-[#FFFBF7] px-3 py-2"
                                 >
-                                  <div className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-gray-200 bg-white text-[11px] text-[#64748B]">
+                                  <div className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-[#E8DDD4] bg-[#FFFBF7] text-[11px] text-[#64748B]">
                                     ✓
                                   </div>
                                   <div className="min-w-0 flex-1">
@@ -2149,7 +2149,7 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
                         void window.desktopWindow?.openCheckin();
                         setState('expanded');
                       }}
-                      className="shrink-0 whitespace-nowrap rounded-full border border-[#ffd9d0] bg-white px-3 py-1.5 text-xs font-medium text-[#FF5F40] transition hover:border-[#FFB7A6] hover:bg-[#FFF7F4]"
+                      className="shrink-0 whitespace-nowrap rounded-full border border-[#ffd9d0] bg-[#FFFDFB] px-3 py-1.5 text-xs font-medium text-[#FF5F40] transition hover:border-[#FFB7A6] hover:bg-[#FFF7F4]"
                     >
                       Open check-in
                     </button>
@@ -2180,7 +2180,7 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
                   </div>
                   <button
                     onClick={() => openModule('notes')}
-                    className="shrink-0 whitespace-nowrap rounded-full border border-[#ffd9d0] bg-white px-3 py-1.5 text-xs font-medium text-[#FF5F40] transition hover:border-[#FFB7A6] hover:bg-[#FFF7F4]"
+                    className="shrink-0 whitespace-nowrap rounded-full border border-[#ffd9d0] bg-[#FFFDFB] px-3 py-1.5 text-xs font-medium text-[#FF5F40] transition hover:border-[#FFB7A6] hover:bg-[#FFF7F4]"
                   >
                     Open notes
                   </button>
@@ -2228,7 +2228,7 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
               </div>
             </main>
 
-            <aside className="border-t border-gray-200 pt-8 lg:sticky lg:top-0 lg:self-start lg:border-l lg:border-t-0 lg:pl-12 lg:pt-0">
+            <aside className="border-t border-[#E8DDD4] pt-8 lg:sticky lg:top-0 lg:self-start lg:border-l lg:border-t-0 lg:pl-12 lg:pt-0">
               <section ref={followUpsRef} className="space-y-7">
                 <div className="space-y-3">
                   <div className="space-y-3">
@@ -2258,14 +2258,14 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
                       <button
                         type="button"
                         onClick={() => window.desktopWindow?.openModule('notifications')}
-                        className="whitespace-nowrap rounded-full border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 transition hover:bg-gray-50"
+                        className="whitespace-nowrap rounded-full border border-gray-200 bg-[#FFFDFB] px-3 py-1.5 text-xs font-medium text-gray-700 transition hover:bg-gray-50"
                       >
                         Open notifications
                       </button>
                       <button
                         type="button"
                         onClick={() => window.desktopWindow?.toggleModule('inbox')}
-                        className="whitespace-nowrap rounded-full border border-[#ffd9d0] bg-white px-3 py-1.5 text-xs font-medium text-[#FF5F40] transition hover:border-[#FFB7A6] hover:bg-[#FFF7F4]"
+                        className="whitespace-nowrap rounded-full border border-[#ffd9d0] bg-[#FFFDFB] px-3 py-1.5 text-xs font-medium text-[#FF5F40] transition hover:border-[#FFB7A6] hover:bg-[#FFF7F4]"
                       >
                         Open inbox
                       </button>
@@ -2277,7 +2277,7 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
                       <button
                         type="button"
                         onClick={() => window.desktopWindow?.toggleModule('inbox')}
-                        className="flex w-full items-start justify-between gap-3 rounded-xl border border-gray-100 bg-white px-3 py-3 text-left transition hover:border-gray-200 hover:bg-gray-50"
+                        className="flex w-full items-start justify-between gap-3 rounded-xl border border-[#E8DDD4] bg-[#FFFBF7] px-3 py-3 text-left transition hover:border-[#D8C6B6] hover:bg-[#FFF4EA]"
                       >
                         <div className="min-w-0 flex-1">
                           <p className="truncate text-sm font-medium text-[#4B5563]">
@@ -2294,7 +2294,7 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
                     )}
 
                     {followUpTasks.length === 0 ? (
-                      <div className="rounded-xl border border-dashed border-gray-200 bg-white px-3 py-3">
+                      <div className="rounded-xl border border-dashed border-[#E8DDD4] bg-[#FFFBF7] px-3 py-3">
                         <p className="text-sm font-light text-[#94A3B8]">No follow-ups yet.</p>
                       </div>
                     ) : (
@@ -2308,7 +2308,7 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
                               openContextMenu(event, { type: 'followup', taskId: task.id })
                             }
                             className={`flex items-start gap-3 rounded-lg px-0 py-3 transition ${
-                              isFocused ? 'bg-gray-50' : 'hover:bg-white/70'
+                              isFocused ? 'bg-[#FFF4EA]' : 'hover:bg-[#FFF4EA]'
                             }`}
                           >
                             <button
@@ -2338,7 +2338,7 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
                             <button
                               type="button"
                               onClick={() => void markFollowUpDone(task.id)}
-                              className="shrink-0 rounded-full px-2 py-1 text-[11px] font-medium text-[#94A3B8] hover:bg-gray-50 hover:text-[#4B5563]"
+                              className="shrink-0 rounded-full px-2 py-1 text-[11px] font-medium text-[#94A3B8] hover:bg-[#FFF4EA] hover:text-[#4B5563]"
                             >
                               {task.status === 'done' ? 'Undo' : 'Done'}
                             </button>
@@ -2358,7 +2358,7 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
                       <button
                         type="button"
                         onClick={() => openModule('calendar')}
-                        className="shrink-0 whitespace-nowrap rounded-full border border-[#ffd9d0] bg-white px-3 py-1.5 text-xs font-medium text-[#FF5F40] transition hover:border-[#FFB7A6] hover:bg-[#FFF7F4]"
+                        className="shrink-0 whitespace-nowrap rounded-full border border-[#ffd9d0] bg-[#FFFDFB] px-3 py-1.5 text-xs font-medium text-[#FF5F40] transition hover:border-[#FFB7A6] hover:bg-[#FFF7F4]"
                       >
                         Calendar
                       </button>
@@ -2390,7 +2390,7 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
                                 openContextMenu(event, { type: 'timeline', eventId: item.id })
                               }
                               onClick={() => openModule('calendar')}
-                              className="w-full rounded-lg px-2 py-3 text-left transition-colors hover:bg-gray-50 active:bg-gray-100"
+                              className="w-full rounded-lg px-2 py-3 text-left transition-colors hover:bg-[#FFF4EA] active:bg-[#FFF0EA]"
                             >
                               <div className="flex items-start justify-between gap-3">
                                 <p
@@ -2425,7 +2425,7 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
                       <button
                         type="button"
                         onClick={() => openModule('projects')}
-                        className="shrink-0 whitespace-nowrap rounded-full border border-[#ffd9d0] bg-white px-3 py-1.5 text-xs font-medium text-[#FF5F40] transition hover:border-[#FFB7A6] hover:bg-[#FFF7F4]"
+                        className="shrink-0 whitespace-nowrap rounded-full border border-[#ffd9d0] bg-[#FFFDFB] px-3 py-1.5 text-xs font-medium text-[#FF5F40] transition hover:border-[#FFB7A6] hover:bg-[#FFF7F4]"
                       >
                         Projects
                       </button>
@@ -2467,7 +2467,7 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
                                   focusProjectId: project.id,
                                 })
                               }
-                              className="w-full rounded-lg px-2 py-3 text-left transition-colors hover:bg-gray-50 active:bg-gray-100"
+                              className="w-full rounded-lg px-2 py-3 text-left transition-colors hover:bg-[#FFF4EA] active:bg-[#FFF0EA]"
                             >
                               <p className="truncate text-sm font-medium text-[#111827]">
                                 {project.name}
@@ -2494,7 +2494,7 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
       <ModalOverlay
         isOpen={isFocusPickerOpen}
         onClose={() => setIsFocusPickerOpen(false)}
-        classNameContainer="w-full max-w-xl rounded-2xl border border-gray-200 bg-white shadow-2xl"
+        classNameContainer="w-full max-w-xl rounded-2xl border border-gray-200 bg-[#FFFDFB] shadow-2xl"
       >
         <div className="border-b border-gray-100 px-5 py-4">
           <p className="text-xs font-medium text-gray-500">
@@ -2518,7 +2518,7 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
                 type="button"
                 onClick={() => void addTodayTaskToFocus(task.id)}
                 disabled={focusTasks.length >= 3 || focusActionId === task.id}
-                className="w-full rounded-2xl border border-gray-200 bg-gray-50 px-3 py-2.5 text-left transition hover:bg-white disabled:opacity-50"
+                className="w-full rounded-2xl border border-gray-200 bg-gray-50 px-3 py-2.5 text-left transition hover:bg-[#FFFDFB] disabled:opacity-50"
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
@@ -2528,7 +2528,7 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
                       {formatExpiryCounter(task) ? ` · ${formatExpiryCounter(task)}` : ''}
                     </p>
                   </div>
-                  <span className="shrink-0 rounded-full border border-gray-200 bg-white px-2 py-1 text-[11px] font-medium text-gray-600">
+                  <span className="shrink-0 rounded-full border border-gray-200 bg-[#FFFDFB] px-2 py-1 text-[11px] font-medium text-gray-600">
                     Add
                   </span>
                 </div>
@@ -2540,7 +2540,7 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
           <button
             type="button"
             onClick={() => setIsFocusPickerOpen(false)}
-            className="rounded-full border border-gray-200 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+            className="rounded-full border border-gray-200 bg-[#FFFDFB] px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
           >
             Close
           </button>
@@ -2552,7 +2552,7 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
           setIsNewFocusModalOpen(false);
           setFocusDraftTitle('');
         }}
-        classNameContainer="w-full max-w-lg rounded-2xl border border-gray-200 bg-white shadow-2xl"
+        classNameContainer="w-full max-w-lg rounded-2xl border border-gray-200 bg-[#FFFDFB] shadow-2xl"
       >
         <div className="border-b border-gray-100 px-5 py-4">
           <p className="text-xs font-medium text-gray-500">
@@ -2591,7 +2591,7 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
               setIsNewFocusModalOpen(false);
               setFocusDraftTitle('');
             }}
-            className="rounded-full border border-gray-200 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+            className="rounded-full border border-gray-200 bg-[#FFFDFB] px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
           >
             Cancel
           </button>
@@ -2608,7 +2608,7 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
       {dashboardContextMenu &&
         createPortal(
           <div
-            className="fixed z-140 min-w-46.5 rounded-lg border border-gray-200 bg-white py-1 shadow-lg"
+            className="fixed z-140 min-w-46.5 rounded-lg border border-gray-200 bg-[#FFFDFB] py-1 shadow-lg"
             style={{
               left: `${Math.max(8, Math.min(dashboardContextMenu.x, window.innerWidth - 200))}px`,
               top: `${Math.max(8, Math.min(dashboardContextMenu.y, window.innerHeight - 240))}px`,
@@ -3129,7 +3129,7 @@ function AppShell() {
     }
 
     return (
-      <div className="flex h-screen items-center justify-center bg-white">
+      <div className="flex h-screen items-center justify-center bg-[#FFFDFB]">
         <p className="text-sm text-gray-600">Unknown module</p>
       </div>
     );

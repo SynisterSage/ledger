@@ -324,12 +324,12 @@ const getSidebarOpacitySliderStyle = (value: number): CSSProperties => {
 };
 
 const compactFieldClassName =
-  'h-9 rounded-xl border border-gray-200 bg-gray-50/80 px-3 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 focus:border-gray-300 focus:bg-white focus:ring-4 focus:ring-gray-100 disabled:opacity-60';
+  'h-9 rounded-xl border border-gray-200 bg-gray-50/80 px-3 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 focus:border-gray-300 focus:bg-[#FFFDFB] focus:ring-4 focus:ring-gray-100 disabled:opacity-60';
 
 const compactSelectClassName =
-  'h-9 appearance-none rounded-xl border border-gray-200 bg-gray-50/80 px-3 pr-8 text-sm text-gray-900 outline-none transition focus:border-gray-300 focus:bg-white focus:ring-4 focus:ring-gray-100 disabled:opacity-60';
+  'h-9 appearance-none rounded-xl border border-gray-200 bg-gray-50/80 px-3 pr-8 text-sm text-gray-900 outline-none transition focus:border-gray-300 focus:bg-[#FFFDFB] focus:ring-4 focus:ring-gray-100 disabled:opacity-60';
 
-const preferenceSelectClassName = `${compactSelectClassName} w-full bg-white`;
+const preferenceSelectClassName = `${compactSelectClassName} w-full bg-[#FFFDFB]`;
 
 const preferenceRowClassName =
   'grid gap-3 py-5 sm:grid-cols-[minmax(0,1fr)_280px] sm:items-center';
@@ -378,7 +378,7 @@ const InlineSwitch = ({
       }`}
     >
       <span
-        className={`inline-block h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${
+        className={`inline-block h-5 w-5 rounded-full bg-[#FFFDFB] shadow-sm transition-transform ${
           checked ? 'translate-x-6' : 'translate-x-0.5'
         }`}
       />
@@ -1571,7 +1571,7 @@ export const SettingsWindow = () => {
 
   return (
     <div
-      className="h-screen overflow-hidden rounded-3xl border border-gray-200 bg-[#f5f7fb] text-gray-900 flex flex-col shadow-[0_24px_80px_rgba(15,23,42,0.08)]"
+      className="h-screen overflow-hidden rounded-3xl border border-gray-200 bg-[#FFF9F4] text-gray-900 flex flex-col shadow-[0_24px_80px_rgba(15,23,42,0.08)]"
       style={{ scrollbarGutter: 'stable' }}
     >
       <CloseGuardModal
@@ -1599,17 +1599,17 @@ export const SettingsWindow = () => {
             onClick={() => {
               void signOut();
             }}
-            className="h-9 px-3 rounded-full border border-gray-200 bg-white hover:bg-gray-100 text-gray-700 text-xs font-semibold"
+            className="h-9 px-3 rounded-full border border-gray-200 bg-[#FFFDFB] hover:bg-gray-100 text-gray-700 text-xs font-semibold"
           >
             Sign out
           </button>
         }
       />
 
-      <div className="flex-1 overflow-hidden bg-white">
+      <div className="flex-1 overflow-hidden bg-[#FFFBF7]">
         <div className="h-full grid grid-cols-[260px_1fr]">
           <aside
-            className="border-r border-gray-200 bg-white p-4 overflow-auto"
+            className="border-r border-gray-200 bg-[#FFFBF7] p-4 overflow-auto"
             aria-label="Settings sections"
           >
             <div className="mb-4 border-b border-gray-200 pb-4">
@@ -1639,7 +1639,7 @@ export const SettingsWindow = () => {
             </nav>
           </aside>
 
-          <main className="overflow-auto bg-white p-6" aria-live="polite">
+          <main className="overflow-auto bg-[#FFFBF7] p-6" aria-live="polite">
             <div className="mx-auto max-w-4xl space-y-5">
               {activeSection === 'account' && (
                 <section className="w-full max-w-215" aria-labelledby="settings-account">
@@ -1682,7 +1682,7 @@ export const SettingsWindow = () => {
                               id="settings-full-name"
                               value={fullName}
                               onChange={(e) => setFullName(e.target.value)}
-                              className="h-10 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm text-gray-900 outline-none transition focus:border-gray-300 focus:ring-4 focus:ring-gray-100"
+                              className="h-10 w-full rounded-xl border border-gray-200 bg-[#FFFDFB] px-3 text-sm text-gray-900 outline-none transition focus:border-gray-300 focus:ring-4 focus:ring-gray-100"
                             />
                           </div>
                         </div>
@@ -1718,7 +1718,7 @@ export const SettingsWindow = () => {
                           <button
                             type="button"
                             onClick={() => setShowPasswordEditor(true)}
-                            className="h-8 rounded-full border border-gray-200 bg-white px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-50"
+                            className="h-8 rounded-full border border-gray-200 bg-[#FFFDFB] px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-50"
                           >
                             Change password
                           </button>
@@ -1732,7 +1732,7 @@ export const SettingsWindow = () => {
                               setPasswordError(null);
                               setPasswordStatus(null);
                             }}
-                            className="h-8 rounded-full border border-gray-200 bg-white px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-50"
+                            className="h-8 rounded-full border border-gray-200 bg-[#FFFDFB] px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-50"
                           >
                             Cancel
                           </button>
@@ -1754,7 +1754,7 @@ export const SettingsWindow = () => {
                                 type="password"
                                 value={newPassword}
                                 onChange={(e) => setNewPassword(e.target.value)}
-                                className="h-10 rounded-xl border border-gray-200 bg-white px-3 text-sm text-gray-900 outline-none transition focus:border-gray-300 focus:ring-4 focus:ring-gray-100"
+                                className="h-10 rounded-xl border border-gray-200 bg-[#FFFDFB] px-3 text-sm text-gray-900 outline-none transition focus:border-gray-300 focus:ring-4 focus:ring-gray-100"
                               />
                             </div>
                             <div className="grid gap-2">
@@ -1769,7 +1769,7 @@ export const SettingsWindow = () => {
                                 type="password"
                                 value={confirmPassword}
                                 onChange={(e) => setConfirmPassword(e.target.value)}
-                                className="h-10 rounded-xl border border-gray-200 bg-white px-3 text-sm text-gray-900 outline-none transition focus:border-gray-300 focus:ring-4 focus:ring-gray-100"
+                                className="h-10 rounded-xl border border-gray-200 bg-[#FFFDFB] px-3 text-sm text-gray-900 outline-none transition focus:border-gray-300 focus:ring-4 focus:ring-gray-100"
                               />
                             </div>
                           </div>
@@ -1814,7 +1814,7 @@ export const SettingsWindow = () => {
                           onClick={() => {
                             void signOut();
                           }}
-                          className="h-8 rounded-full border border-gray-200 bg-white px-3 text-xs font-medium text-red-600 transition hover:bg-red-50"
+                          className="h-8 rounded-full border border-gray-200 bg-[#FFFDFB] px-3 text-xs font-medium text-red-600 transition hover:bg-red-50"
                         >
                           Sign out
                         </button>
@@ -1854,19 +1854,19 @@ export const SettingsWindow = () => {
                           <button
                             onClick={() => void refreshWorkspaces()}
                             disabled={isLoadingWorkspaces || isSwitchingWorkspace}
-                            className="h-8 rounded-full border border-gray-200 bg-white px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-50 disabled:opacity-60"
+                            className="h-8 rounded-full border border-gray-200 bg-[#FFFDFB] px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-50 disabled:opacity-60"
                           >
                             Refresh
                           </button>
                           {canManageWorkspace ? (
                             <button
                               onClick={openWorkspaceManageModal}
-                              className="h-8 rounded-full border border-gray-200 bg-white px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-50"
+                              className="h-8 rounded-full border border-gray-200 bg-[#FFFDFB] px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-50"
                             >
                               Manage
                             </button>
                           ) : (
-                            <span className="rounded-full border border-gray-200 bg-white px-3 py-2 text-xs font-medium text-gray-500">
+                            <span className="rounded-full border border-gray-200 bg-[#FFFDFB] px-3 py-2 text-xs font-medium text-gray-500">
                               Owner only
                             </span>
                           )}
@@ -1898,7 +1898,7 @@ export const SettingsWindow = () => {
                               value={activeWorkspaceId ?? ''}
                               onChange={(e) => void handleSwitchWorkspace(e.target.value)}
                               disabled={isLoadingWorkspaces || isSwitchingWorkspace || workspaces.length === 0}
-                              className="h-10 w-full appearance-none rounded-xl border border-gray-200 bg-white px-3 pr-9 text-sm text-gray-900 outline-none transition focus:border-gray-300 focus:ring-4 focus:ring-gray-100 disabled:opacity-60"
+                              className="h-10 w-full appearance-none rounded-xl border border-gray-200 bg-[#FFFDFB] px-3 pr-9 text-sm text-gray-900 outline-none transition focus:border-gray-300 focus:ring-4 focus:ring-gray-100 disabled:opacity-60"
                               style={selectChevronStyle}
                             >
                               {workspaces.length === 0 && (
@@ -1923,7 +1923,7 @@ export const SettingsWindow = () => {
                           </h3>
                           <p className="text-xs text-gray-500">Manage access for the selected workspace.</p>
                         </div>
-                        <span className="inline-flex rounded-full border border-gray-200 bg-white px-2.5 py-1 text-[11px] font-medium text-gray-700">
+                        <span className="inline-flex rounded-full border border-gray-200 bg-[#FFFDFB] px-2.5 py-1 text-[11px] font-medium text-gray-700">
                           {workspaceUserRole === 'owner' ? 'Owner' : `Role: ${workspaceUserRole}`}
                         </span>
                       </div>
@@ -1958,7 +1958,7 @@ export const SettingsWindow = () => {
                                     )
                                   }
                                   disabled={!canEditRole || memberActionId === member.user_id}
-                                  className="h-8 w-full appearance-none rounded-lg border border-gray-200 bg-white px-2 pr-8 text-xs text-gray-800 outline-none disabled:opacity-60 md:w-auto"
+                                  className="h-8 w-full appearance-none rounded-lg border border-gray-200 bg-[#FFFDFB] px-2 pr-8 text-xs text-gray-800 outline-none disabled:opacity-60 md:w-auto"
                                   style={selectChevronStyle}
                                   aria-label={`Update ${displayName} role`}
                                 >
@@ -1980,7 +1980,7 @@ export const SettingsWindow = () => {
                                     member.user_id === user?.id ||
                                     memberActionId === member.user_id
                                   }
-                                  className="h-8 rounded-lg border border-gray-200 bg-white px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-50 disabled:opacity-50"
+                                  className="h-8 rounded-lg border border-gray-200 bg-[#FFFDFB] px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-50 disabled:opacity-50"
                                 >
                                   Remove
                                 </button>
@@ -2013,14 +2013,14 @@ export const SettingsWindow = () => {
                           onChange={(e) => setInviteEmail(e.target.value)}
                           placeholder="name@example.com"
                           disabled={!canManageWorkspace || isSendingInvite}
-                          className="h-9 rounded-xl border border-gray-200 bg-white px-3 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 focus:border-gray-300 focus:ring-4 focus:ring-gray-100 disabled:opacity-60"
+                          className="h-9 rounded-xl border border-gray-200 bg-[#FFFDFB] px-3 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 focus:border-gray-300 focus:ring-4 focus:ring-gray-100 disabled:opacity-60"
                           aria-label="Invite email optional"
                         />
                         <select
                           value={inviteRole}
                           onChange={(e) => setInviteRole(e.target.value as 'admin' | 'member')}
                           disabled={!canManageWorkspace || isSendingInvite}
-                          className="h-9 appearance-none rounded-xl border border-gray-200 bg-white px-3 pr-8 text-sm text-gray-900 outline-none transition focus:border-gray-300 focus:ring-4 focus:ring-gray-100 disabled:opacity-60"
+                          className="h-9 appearance-none rounded-xl border border-gray-200 bg-[#FFFDFB] px-3 pr-8 text-sm text-gray-900 outline-none transition focus:border-gray-300 focus:ring-4 focus:ring-gray-100 disabled:opacity-60"
                           style={selectChevronStyle}
                           aria-label="Invite role"
                         >
@@ -2030,7 +2030,7 @@ export const SettingsWindow = () => {
                         <button
                           onClick={() => void handleCreateInvitation()}
                           disabled={!canManageWorkspace || isSendingInvite}
-                          className="h-9 rounded-xl border border-gray-200 bg-white px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-50 disabled:opacity-60"
+                          className="h-9 rounded-xl border border-gray-200 bg-[#FFFDFB] px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-50 disabled:opacity-60"
                         >
                           {isSendingInvite ? 'Creating...' : 'Create invite'}
                         </button>
@@ -2052,7 +2052,7 @@ export const SettingsWindow = () => {
                               type="button"
                               onClick={() => void handleCopyInvitationLink()}
                               disabled={!inviteLink}
-                              className="inline-flex h-8 items-center justify-center gap-2 rounded-full border border-gray-200 bg-white px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-50 disabled:opacity-50"
+                              className="inline-flex h-8 items-center justify-center gap-2 rounded-full border border-gray-200 bg-[#FFFDFB] px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-50 disabled:opacity-50"
                             >
                               <Copy size={14} />
                               Copy link
@@ -2092,7 +2092,7 @@ export const SettingsWindow = () => {
                                 <button
                                   onClick={() => setInviteModal({ id: invite.id })}
                                   disabled={!canManageWorkspace}
-                                  className="h-8 rounded-lg border border-gray-200 bg-white px-2 text-xs font-medium text-gray-700 transition hover:bg-gray-50 disabled:opacity-50"
+                                  className="h-8 rounded-lg border border-gray-200 bg-[#FFFDFB] px-2 text-xs font-medium text-gray-700 transition hover:bg-gray-50 disabled:opacity-50"
                                 >
                                   Manage
                                 </button>
@@ -2119,7 +2119,7 @@ export const SettingsWindow = () => {
                                 weekStartsOn: e.target.value as 'sunday' | 'monday',
                               }))
                             }
-                            className="h-10 w-full appearance-none rounded-xl border border-gray-200 bg-white px-3 pr-9 text-sm text-gray-900 outline-none focus:border-gray-300 focus:ring-4 focus:ring-gray-100"
+                            className="h-10 w-full appearance-none rounded-xl border border-gray-200 bg-[#FFFDFB] px-3 pr-9 text-sm text-gray-900 outline-none focus:border-gray-300 focus:ring-4 focus:ring-gray-100"
                             style={selectChevronStyle}
                           >
                             <option value="monday">Monday</option>
@@ -2139,7 +2139,7 @@ export const SettingsWindow = () => {
                                 timeFormat: e.target.value as '12h' | '24h',
                               }))
                             }
-                            className="h-10 w-full appearance-none rounded-xl border border-gray-200 bg-white px-3 pr-9 text-sm text-gray-900 outline-none focus:border-gray-300 focus:ring-4 focus:ring-gray-100"
+                            className="h-10 w-full appearance-none rounded-xl border border-gray-200 bg-[#FFFDFB] px-3 pr-9 text-sm text-gray-900 outline-none focus:border-gray-300 focus:ring-4 focus:ring-gray-100"
                             style={selectChevronStyle}
                           >
                             <option value="12h">12-hour (2:00 PM)</option>
@@ -2162,7 +2162,7 @@ export const SettingsWindow = () => {
                         <button
                           type="button"
                           onClick={() => setShowCreateWorkspaceForm((value) => !value)}
-                          className="h-8 rounded-full border border-gray-200 bg-white px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-50"
+                          className="h-8 rounded-full border border-gray-200 bg-[#FFFDFB] px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-50"
                           aria-label={showCreateWorkspaceForm ? 'Close workspace creation' : 'Create workspace'}
                         >
                           {showCreateWorkspaceForm ? 'Collapse' : 'Create workspace'}
@@ -2196,7 +2196,7 @@ export const SettingsWindow = () => {
                             value={workspaceCreateDescription}
                             onChange={(e) => setWorkspaceCreateDescription(e.target.value)}
                             placeholder="Optional description"
-                            className="min-h-14 w-full resize-none rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 focus:border-gray-300 focus:ring-4 focus:ring-gray-100"
+                            className="min-h-14 w-full resize-none rounded-xl border border-gray-200 bg-[#FFFDFB] px-3 py-2 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 focus:border-gray-300 focus:ring-4 focus:ring-gray-100"
                             aria-label="Workspace description"
                           />
                           <div className="flex items-center justify-between gap-3">
@@ -2230,7 +2230,7 @@ export const SettingsWindow = () => {
                         <button
                           onClick={openWorkspaceDeleteModal}
                           disabled={workspaceUserRole !== 'owner' || isDeletingWorkspace}
-                          className="h-8 rounded-full border border-red-200 bg-white px-3 text-xs font-medium text-red-700 transition hover:bg-red-50 disabled:opacity-50"
+                          className="h-8 rounded-full border border-red-200 bg-[#FFFDFB] px-3 text-xs font-medium text-red-700 transition hover:bg-red-50 disabled:opacity-50"
                         >
                           Delete workspace
                         </button>
@@ -3212,7 +3212,7 @@ export const SettingsWindow = () => {
                               disabled={isConnectingSlack || !activeWorkspaceId || !canManageWorkspace}
                               className={`h-8 rounded-lg px-3 text-xs font-medium transition disabled:opacity-50 ${
                                 slackStatus?.connected
-                                  ? 'border border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
+                                  ? 'border border-gray-200 bg-[#FFFDFB] text-gray-700 hover:bg-gray-50'
                                   : 'bg-[#FF5F40] text-white hover:bg-[#ea5336]'
                               }`}
                             >
@@ -3229,7 +3229,7 @@ export const SettingsWindow = () => {
                                 disabled={
                                   isDisconnectingSlack || !activeWorkspaceId || !canManageWorkspace
                                 }
-                                className="h-8 rounded-lg border border-gray-200 bg-white px-3 text-xs font-medium text-gray-600 transition hover:border-red-200 hover:bg-red-50 hover:text-red-700 disabled:opacity-50"
+                                className="h-8 rounded-lg border border-gray-200 bg-[#FFFDFB] px-3 text-xs font-medium text-gray-600 transition hover:border-red-200 hover:bg-red-50 hover:text-red-700 disabled:opacity-50"
                               >
                                 {isDisconnectingSlack ? 'Disconnecting...' : 'Disconnect'}
                               </button>
@@ -3269,7 +3269,7 @@ export const SettingsWindow = () => {
                                   <button
                                     type="button"
                                     onClick={() => void handleCopyExtensionToken()}
-                                    className="h-8 rounded-lg border border-gray-200 bg-white px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-50"
+                                    className="h-8 rounded-lg border border-gray-200 bg-[#FFFDFB] px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-50"
                                   >
                                     Copy token
                                   </button>
@@ -3282,7 +3282,7 @@ export const SettingsWindow = () => {
                                     !activeWorkspaceId ||
                                     !canUseWorkspaceIntegrations
                                   }
-                                  className="h-8 rounded-lg border border-gray-200 bg-white px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-50 disabled:opacity-50"
+                                  className="h-8 rounded-lg border border-gray-200 bg-[#FFFDFB] px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-50 disabled:opacity-50"
                                 >
                                   Regenerate
                                 </button>
@@ -3294,7 +3294,7 @@ export const SettingsWindow = () => {
                                     !activeWorkspaceId ||
                                     !canUseWorkspaceIntegrations
                                   }
-                                  className="h-8 rounded-lg border border-gray-200 bg-white px-3 text-xs font-medium text-gray-600 transition hover:border-red-200 hover:bg-red-50 hover:text-red-700 disabled:opacity-50"
+                                  className="h-8 rounded-lg border border-gray-200 bg-[#FFFDFB] px-3 text-xs font-medium text-gray-600 transition hover:border-red-200 hover:bg-red-50 hover:text-red-700 disabled:opacity-50"
                                 >
                                   Revoke
                                 </button>
@@ -3604,7 +3604,7 @@ export const SettingsWindow = () => {
                     <button
                       onClick={handleResetSidebarSettings}
                       type="button"
-                      className="h-9 rounded-xl border border-gray-200 bg-white px-4 text-sm font-medium text-gray-800 transition hover:bg-gray-50"
+                      className="h-9 rounded-xl border border-gray-200 bg-[#FFFDFB] px-4 text-sm font-medium text-gray-800 transition hover:bg-gray-50"
                     >
                       Reset to Defaults
                     </button>
@@ -3753,7 +3753,7 @@ export const SettingsWindow = () => {
             <ModalOverlay
               isOpen={isExtensionTokenModalOpen}
               onClose={closeExtensionTokenModal}
-              classNameContainer="w-full max-w-115 rounded-2xl border border-gray-200 bg-white"
+              classNameContainer="w-full max-w-115 rounded-2xl border border-gray-200 bg-[#FFFDFB]"
             >
               <div className="flex items-start justify-between gap-4 px-5 pt-5">
                 <div>
@@ -3784,14 +3784,14 @@ export const SettingsWindow = () => {
                   type="button"
                   onClick={() => setExtensionTokenConfirmAction('regenerate')}
                   disabled={isExtensionTokenBusy}
-                  className="h-8 rounded-lg border border-gray-200 bg-white px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-50 disabled:opacity-50"
+                  className="h-8 rounded-lg border border-gray-200 bg-[#FFFDFB] px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-50 disabled:opacity-50"
                 >
                   Regenerate
                 </button>
                 <button
                   type="button"
                   onClick={() => void handleCopyExtensionToken()}
-                  className="inline-flex h-8 items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-50"
+                  className="inline-flex h-8 items-center gap-2 rounded-lg border border-gray-200 bg-[#FFFDFB] px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-50"
                 >
                   <Copy size={13} />
                   Copy token
@@ -3809,7 +3809,7 @@ export const SettingsWindow = () => {
             <ModalOverlay
               isOpen={extensionTokenConfirmAction === 'regenerate'}
               onClose={() => setExtensionTokenConfirmAction(null)}
-              classNameContainer="w-full max-w-115 rounded-2xl border border-gray-200 bg-white"
+              classNameContainer="w-full max-w-115 rounded-2xl border border-gray-200 bg-[#FFFDFB]"
             >
               <div className="flex items-start justify-between gap-4 px-5 pt-5">
                 <div>
@@ -3828,7 +3828,7 @@ export const SettingsWindow = () => {
                 <button
                   type="button"
                   onClick={() => setExtensionTokenConfirmAction(null)}
-                  className="h-8 rounded-lg border border-gray-200 bg-white px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-50"
+                  className="h-8 rounded-lg border border-gray-200 bg-[#FFFDFB] px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-50"
                 >
                   Cancel
                 </button>
@@ -3846,7 +3846,7 @@ export const SettingsWindow = () => {
             <ModalOverlay
               isOpen={extensionTokenConfirmAction === 'revoke'}
               onClose={() => setExtensionTokenConfirmAction(null)}
-              classNameContainer="w-full max-w-115 rounded-2xl border border-gray-200 bg-white"
+              classNameContainer="w-full max-w-115 rounded-2xl border border-gray-200 bg-[#FFFDFB]"
             >
               <div className="flex items-start justify-between gap-4 px-5 pt-5">
                 <div>
@@ -3864,7 +3864,7 @@ export const SettingsWindow = () => {
                 <button
                   type="button"
                   onClick={() => setExtensionTokenConfirmAction(null)}
-                  className="h-8 rounded-lg border border-gray-200 bg-white px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-50"
+                  className="h-8 rounded-lg border border-gray-200 bg-[#FFFDFB] px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-50"
                 >
                   Cancel
                 </button>
@@ -3872,7 +3872,7 @@ export const SettingsWindow = () => {
                   type="button"
                   onClick={() => void handleRevokeExtensionToken()}
                   disabled={isExtensionTokenBusy}
-                  className="h-8 rounded-lg border border-red-200 bg-white px-3 text-xs font-medium text-red-700 transition hover:bg-red-50 disabled:opacity-50"
+                  className="h-8 rounded-lg border border-red-200 bg-[#FFFDFB] px-3 text-xs font-medium text-red-700 transition hover:bg-red-50 disabled:opacity-50"
                 >
                   {isExtensionTokenBusy ? 'Revoking...' : 'Revoke'}
                 </button>
@@ -3882,7 +3882,7 @@ export const SettingsWindow = () => {
             <ModalOverlay
               isOpen={isWorkspaceManageModalOpen && !!activeWorkspace}
               onClose={closeWorkspaceManageModal}
-              classNameContainer="w-full max-w-[720px] rounded-2xl border border-gray-200 bg-white shadow-[0_24px_70px_rgba(15,23,42,0.12)]"
+              classNameContainer="w-full max-w-[720px] rounded-2xl border border-gray-200 bg-[#FFFDFB] shadow-[0_24px_70px_rgba(15,23,42,0.12)]"
             >
               <div className="flex items-start justify-between gap-4 px-5 pt-5">
                 <div>
@@ -3906,7 +3906,7 @@ export const SettingsWindow = () => {
                     value={workspaceEditName}
                     onChange={(e) => setWorkspaceEditName(e.target.value)}
                     disabled={!canManageWorkspace || isSavingWorkspace}
-                    className="h-10 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 focus:border-gray-300 focus:ring-4 focus:ring-gray-100 disabled:opacity-60"
+                    className="h-10 w-full rounded-xl border border-gray-200 bg-[#FFFDFB] px-3 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 focus:border-gray-300 focus:ring-4 focus:ring-gray-100 disabled:opacity-60"
                     aria-label="Edit workspace name"
                   />
                 </div>
@@ -3923,7 +3923,7 @@ export const SettingsWindow = () => {
                     value={workspaceEditDescription}
                     onChange={(e) => setWorkspaceEditDescription(e.target.value)}
                     disabled={!canManageWorkspace || isSavingWorkspace}
-                    className="min-h-24 w-full resize-none rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 focus:border-gray-300 focus:ring-4 focus:ring-gray-100 disabled:opacity-60"
+                    className="min-h-24 w-full resize-none rounded-xl border border-gray-200 bg-[#FFFDFB] px-3 py-2 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 focus:border-gray-300 focus:ring-4 focus:ring-gray-100 disabled:opacity-60"
                     aria-label="Edit workspace description"
                   />
                 </div>
@@ -3939,7 +3939,7 @@ export const SettingsWindow = () => {
                     type="button"
                     onClick={openWorkspaceDeleteModal}
                     disabled={workspaceUserRole !== 'owner' || isDeletingWorkspace}
-                    className="h-8 rounded-full border border-red-200 bg-white px-3 text-xs font-medium text-red-700 transition hover:bg-red-50 disabled:opacity-50"
+                    className="h-8 rounded-full border border-red-200 bg-[#FFFDFB] px-3 text-xs font-medium text-red-700 transition hover:bg-red-50 disabled:opacity-50"
                   >
                     Delete workspace
                   </button>
@@ -3956,7 +3956,7 @@ export const SettingsWindow = () => {
                 <button
                   type="button"
                   onClick={closeWorkspaceManageModal}
-                  className="h-8 rounded-lg border border-gray-200 bg-white px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-50"
+                  className="h-8 rounded-lg border border-gray-200 bg-[#FFFDFB] px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-50"
                 >
                   Cancel
                 </button>
@@ -3973,7 +3973,7 @@ export const SettingsWindow = () => {
             <ModalOverlay
               isOpen={isWorkspaceDeleteModalOpen && !!activeWorkspace}
               onClose={closeWorkspaceDeleteModal}
-              classNameContainer="w-full max-w-[640px] rounded-2xl border border-gray-200 bg-white shadow-[0_24px_70px_rgba(15,23,42,0.12)]"
+              classNameContainer="w-full max-w-[640px] rounded-2xl border border-gray-200 bg-[#FFFDFB] shadow-[0_24px_70px_rgba(15,23,42,0.12)]"
             >
               <div className="flex items-start justify-between gap-4 px-5 pt-5">
                 <div>
@@ -4001,7 +4001,7 @@ export const SettingsWindow = () => {
                   onChange={(e) => setWorkspaceDeleteConfirm(e.target.value)}
                   disabled={workspaceUserRole !== 'owner' || isDeletingWorkspace}
                   placeholder={activeWorkspace?.name}
-                  className="h-9 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 focus:border-gray-300 focus:ring-4 focus:ring-gray-100 disabled:opacity-60"
+                  className="h-9 w-full rounded-xl border border-gray-200 bg-[#FFFDFB] px-3 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 focus:border-gray-300 focus:ring-4 focus:ring-gray-100 disabled:opacity-60"
                   aria-label="Confirm workspace deletion"
                 />
                 <p className="mt-2 text-xs text-gray-500">This removes the workspace and all data inside it.</p>
@@ -4017,7 +4017,7 @@ export const SettingsWindow = () => {
                 <button
                   type="button"
                   onClick={closeWorkspaceDeleteModal}
-                  className="h-8 rounded-lg border border-gray-200 bg-white px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-50"
+                  className="h-8 rounded-lg border border-gray-200 bg-[#FFFDFB] px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-50"
                 >
                   Cancel
                 </button>
@@ -4029,7 +4029,7 @@ export const SettingsWindow = () => {
                     isDeletingWorkspace ||
                     workspaceDeleteConfirm.trim() !== activeWorkspace?.name?.trim()
                   }
-                  className="h-8 rounded-lg border border-red-200 bg-white px-3 text-xs font-medium text-red-700 transition hover:bg-red-50 disabled:opacity-50"
+                  className="h-8 rounded-lg border border-red-200 bg-[#FFFDFB] px-3 text-xs font-medium text-red-700 transition hover:bg-red-50 disabled:opacity-50"
                 >
                   {isDeletingWorkspace ? 'Deleting...' : 'Delete workspace'}
                 </button>
@@ -4039,7 +4039,7 @@ export const SettingsWindow = () => {
             <ModalOverlay
               isOpen={!!inviteModal && !!selectedInvite}
               onClose={() => setInviteModal(null)}
-              classNameContainer="w-full max-w-[560px] overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-[0_24px_70px_rgba(15,23,42,0.12)]"
+              classNameContainer="w-full max-w-[560px] overflow-hidden rounded-2xl border border-gray-200 bg-[#FFFDFB] shadow-[0_24px_70px_rgba(15,23,42,0.12)]"
             >
               <div className="flex min-h-70 flex-col">
               <div className="flex items-start justify-between gap-4 px-5 pt-5">
@@ -4067,7 +4067,7 @@ export const SettingsWindow = () => {
                         type="button"
                         onClick={() => void handleCopySelectedInviteLink()}
                         disabled={!getInviteUrl(selectedInvite)}
-                        className="inline-flex h-8 flex-1 items-center justify-center gap-2 rounded-full border border-gray-200 bg-white px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-50 disabled:opacity-50"
+                        className="inline-flex h-8 flex-1 items-center justify-center gap-2 rounded-full border border-gray-200 bg-[#FFFDFB] px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-50 disabled:opacity-50"
                       >
                         <Copy size={14} />
                         Copy link
@@ -4076,7 +4076,7 @@ export const SettingsWindow = () => {
                         type="button"
                         onClick={() => void handleRevokeInvitation(selectedInvite.id)}
                         disabled={invitationActionId === selectedInvite.id}
-                        className="inline-flex h-8 flex-1 items-center justify-center rounded-full border border-red-200 bg-white px-3 text-xs font-medium text-red-700 transition hover:bg-red-50 disabled:opacity-50"
+                        className="inline-flex h-8 flex-1 items-center justify-center rounded-full border border-red-200 bg-[#FFFDFB] px-3 text-xs font-medium text-red-700 transition hover:bg-red-50 disabled:opacity-50"
                       >
                         {invitationActionId === selectedInvite.id ? 'Revoking...' : 'Revoke'}
                       </button>

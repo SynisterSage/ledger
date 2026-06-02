@@ -552,7 +552,6 @@ export default function InboxWindow() {
   };
 
   const renderCaptureRow = (item: InboxItem) => {
-    const isSelected = selectedCapture?.id === item.id;
     const sourceLabel = getSourceLabel(item);
     const sourceContext = getSourceContext(item);
     const title = getDisplayTitle(item);
@@ -568,9 +567,7 @@ export default function InboxWindow() {
           setContextMenu({ x: event.clientX, y: event.clientY, item });
           setSelectedItemId(item.id);
         }}
-        className={`group border-b border-gray-100 px-1 py-4 transition ${
-          isSelected ? 'bg-gray-50/70' : 'hover:bg-gray-50/50'
-        }`}
+        className="group border-b border-[#E8DDD4] px-1 py-4 transition hover:bg-[#FFF4EA]"
       >
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-1.5 text-xs text-gray-500">
@@ -634,7 +631,7 @@ export default function InboxWindow() {
         onMouseDown={(event) => event.stopPropagation()}
         onContextMenu={(event) => event.preventDefault()}
       >
-        <div className="min-w-40 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-xl">
+        <div className="min-w-40 overflow-hidden rounded-xl border border-[#E8DDD4] bg-[#FFFBF7] shadow-xl">
           <button
             type="button"
             onClick={() => void deleteItem(contextMenu.item)}
@@ -668,7 +665,7 @@ export default function InboxWindow() {
   }, [contextMenu]);
 
   return (
-    <div className="flex h-screen flex-col overflow-hidden rounded-3xl border border-gray-200 bg-white text-gray-950 shadow-none">
+    <div className="flex h-screen flex-col overflow-hidden rounded-3xl border border-[#E8DDD4] bg-[#FFF8F1] text-gray-950 shadow-none">
       <ModuleWindowHeader
         eyebrow="Ledger"
         title="Inbox"
@@ -690,7 +687,7 @@ export default function InboxWindow() {
           <button
             type="button"
             onClick={() => void loadInbox(true)}
-            className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-600 transition hover:bg-gray-50 hover:text-gray-900"
+            className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-[#E8DDD4] bg-[#FFFBF7] text-gray-600 transition hover:bg-[#FFF4EA] hover:text-gray-900"
             title="Refresh inbox"
             aria-label="Refresh inbox"
           >
@@ -699,9 +696,9 @@ export default function InboxWindow() {
         }
       />
 
-      <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_300px] overflow-hidden bg-white">
+      <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_300px] overflow-hidden bg-[#FFF8F1]">
         <section className="min-h-0 overflow-hidden px-7 py-6">
-          <div className="border-b border-gray-100 pb-4">
+          <div className="border-b border-[#E8DDD4] pb-4">
             <p className="text-sm font-semibold text-gray-900">Queue</p>
             <p className="mt-1 text-sm text-gray-600">
               Turn saved messages into tasks, notes, reminders, or events.
@@ -751,7 +748,7 @@ export default function InboxWindow() {
           </div>
         </section>
 
-        <aside className="min-h-0 overflow-y-auto border-l border-gray-100 px-6 py-6">
+        <aside className="min-h-0 overflow-y-auto border-l border-[#E8DDD4] px-6 py-6">
           <div className="space-y-7">
             <section>
               <p className="text-sm font-semibold text-gray-900">Sources</p>
@@ -792,7 +789,7 @@ export default function InboxWindow() {
               </div>
             </section>
 
-            <section className="border-t border-gray-100 pt-5">
+            <section className="border-t border-[#E8DDD4] pt-5">
               <p className="text-sm font-semibold text-gray-900">Selected</p>
               {selectedCapture ? (
                 <div className="mt-3 space-y-3">
@@ -838,11 +835,11 @@ export default function InboxWindow() {
       <ModalOverlay
         isOpen={!!selectedItem}
         onClose={closeConversion}
-        classNameContainer="flex max-h-[88vh] w-full max-w-2xl overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-xl"
+        classNameContainer="flex max-h-[88vh] w-full max-w-2xl overflow-hidden rounded-2xl border border-[#E8DDD4] bg-[#FFFBF7] shadow-xl"
       >
         {selectedItem && (
                 <div className="flex min-h-0 w-full flex-col" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
-                  <div className="flex items-start justify-between gap-4 border-b border-gray-100 bg-white px-6 py-5" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+                  <div className="flex items-start justify-between gap-4 border-b border-[#E8DDD4] bg-[#FFFBF7] px-6 py-5" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
                     <div className="min-w-0">
                       <p className="text-sm font-semibold text-gray-900">Convert capture</p>
                       <h2 className="mt-2 truncate text-lg font-semibold text-gray-950">
@@ -862,7 +859,7 @@ export default function InboxWindow() {
                   </div>
 
                   <div className="min-h-0 flex-1 overflow-y-auto p-5">
-                <div className="border-b border-gray-100 pb-4">
+                <div className="border-b border-[#E8DDD4] pb-4">
                   <p className="text-sm font-medium text-gray-900">{getDisplayTitle(selectedItem)}</p>
                   {getSlackLinkLabels(selectedItem.body || selectedItem.title).length > 0 && (
                     <p className="mt-1 text-xs text-gray-500">
@@ -873,7 +870,7 @@ export default function InboxWindow() {
   
                 <div className="mt-5">
                   <p className="mb-2 text-sm font-semibold text-gray-900">Save as</p>
-                  <div className="grid grid-cols-4 gap-1 rounded-full border border-gray-200 bg-gray-50 p-1">
+                  <div className="grid grid-cols-4 gap-1 rounded-full border border-[#E8DDD4] bg-[#FFF4EA] p-1">
                     {conversionTypes.map(({ value, label, icon: Icon }) => (
                       <button
                         key={value}
@@ -882,7 +879,7 @@ export default function InboxWindow() {
                         className={`inline-flex h-8 items-center justify-center gap-1.5 rounded-full px-2 text-xs font-semibold transition ${
                           conversionType === value
                             ? 'bg-gray-950 text-white'
-                            : 'text-gray-600 hover:bg-white hover:text-gray-950'
+                            : 'text-gray-600 hover:bg-[#FFF4EA] hover:text-gray-950'
                         }`}
                       >
                         <Icon size={13} />
@@ -898,7 +895,7 @@ export default function InboxWindow() {
                     <input
                       value={draftTitle}
                       onChange={(event) => setDraftTitle(event.target.value)}
-                      className="h-10 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm text-gray-900 outline-none transition focus:border-gray-400"
+                      className="h-10 w-full rounded-xl border border-[#E8DDD4] bg-[#FFFBF7] px-3 text-sm text-gray-900 outline-none transition focus:border-gray-400"
                     />
                   </label>
   
@@ -910,7 +907,7 @@ export default function InboxWindow() {
                       value={draftBody}
                       onChange={(event) => setDraftBody(event.target.value)}
                       rows={conversionType === 'note' ? 5 : 4}
-                      className="w-full resize-y rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm leading-6 text-gray-900 outline-none transition focus:border-gray-400"
+                      className="w-full resize-y rounded-xl border border-[#E8DDD4] bg-[#FFFBF7] px-3 py-2.5 text-sm leading-6 text-gray-900 outline-none transition focus:border-gray-400"
                     />
                   </label>
   
@@ -920,7 +917,7 @@ export default function InboxWindow() {
                       <input
                         value={activeWorkspace?.name ?? 'Current workspace'}
                         readOnly
-                        className="h-10 w-full rounded-xl border border-gray-200 bg-gray-50 px-3 text-sm text-gray-600 outline-none"
+                        className="h-10 w-full rounded-xl border border-[#E8DDD4] bg-[#FFF4EA] px-3 text-sm text-gray-600 outline-none"
                       />
                     </label>
                     <label className="block space-y-1">
@@ -928,7 +925,7 @@ export default function InboxWindow() {
                       <select
                         value={selectedProjectId}
                         onChange={(event) => setSelectedProjectId(event.target.value)}
-                        className="h-10 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm text-gray-900 outline-none transition focus:border-gray-400"
+                        className="h-10 w-full rounded-xl border border-[#E8DDD4] bg-[#FFFBF7] px-3 text-sm text-gray-900 outline-none transition focus:border-gray-400"
                       >
                         <option value="">No project</option>
                         {projects.map((project) => (
@@ -960,7 +957,7 @@ export default function InboxWindow() {
                           type="date"
                           value={reminderDate}
                           onChange={(event) => setReminderDate(event.target.value)}
-                          className="h-10 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm text-gray-900 outline-none transition focus:border-gray-400"
+                          className="h-10 w-full rounded-xl border border-[#E8DDD4] bg-[#FFFBF7] px-3 text-sm text-gray-900 outline-none transition focus:border-gray-400"
                         />
                       </label>
                       <label className="block space-y-1">
@@ -969,7 +966,7 @@ export default function InboxWindow() {
                           type="time"
                           value={reminderTime}
                           onChange={(event) => setReminderTime(event.target.value)}
-                          className="h-10 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm text-gray-900 outline-none transition focus:border-gray-400"
+                          className="h-10 w-full rounded-xl border border-[#E8DDD4] bg-[#FFFBF7] px-3 text-sm text-gray-900 outline-none transition focus:border-gray-400"
                         />
                       </label>
                     </div>
@@ -982,7 +979,7 @@ export default function InboxWindow() {
                         <select
                           value={selectedCalendarId}
                           onChange={(event) => setSelectedCalendarId(event.target.value)}
-                          className="h-10 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm text-gray-900 outline-none transition focus:border-gray-400"
+                          className="h-10 w-full rounded-xl border border-[#E8DDD4] bg-[#FFFBF7] px-3 text-sm text-gray-900 outline-none transition focus:border-gray-400"
                         >
                           <option value="">Default calendar</option>
                           {calendars.map((calendar) => (
@@ -997,7 +994,7 @@ export default function InboxWindow() {
                         <select
                           value={selectedNoteId}
                           onChange={(event) => setSelectedNoteId(event.target.value)}
-                          className="h-10 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm text-gray-900 outline-none transition focus:border-gray-400"
+                          className="h-10 w-full rounded-xl border border-[#E8DDD4] bg-[#FFFBF7] px-3 text-sm text-gray-900 outline-none transition focus:border-gray-400"
                         >
                           <option value="">No note</option>
                           {notes.map((note) => (
@@ -1018,7 +1015,7 @@ export default function InboxWindow() {
                           type="date"
                           value={eventDate}
                           onChange={(event) => setEventDate(event.target.value)}
-                          className="h-10 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm text-gray-900 outline-none transition focus:border-gray-400"
+                          className="h-10 w-full rounded-xl border border-[#E8DDD4] bg-[#FFFBF7] px-3 text-sm text-gray-900 outline-none transition focus:border-gray-400"
                         />
                       </label>
                       <label className="block space-y-1">
@@ -1027,7 +1024,7 @@ export default function InboxWindow() {
                           type="time"
                           value={eventTime}
                           onChange={(event) => setEventTime(event.target.value)}
-                          className="h-10 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm text-gray-900 outline-none transition focus:border-gray-400"
+                          className="h-10 w-full rounded-xl border border-gray-200 bg-[#FFFDFB] px-3 text-sm text-gray-900 outline-none transition focus:border-gray-400"
                         />
                       </label>
                       <label className="block space-y-1">
@@ -1038,7 +1035,7 @@ export default function InboxWindow() {
                           step="15"
                           value={eventDuration}
                           onChange={(event) => setEventDuration(event.target.value)}
-                          className="h-10 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm text-gray-900 outline-none transition focus:border-gray-400"
+                          className="h-10 w-full rounded-xl border border-gray-200 bg-[#FFFDFB] px-3 text-sm text-gray-900 outline-none transition focus:border-gray-400"
                         />
                       </label>
                     </div>
@@ -1046,7 +1043,7 @@ export default function InboxWindow() {
                 </div>
                   </div>
 
-                  <div className="flex shrink-0 items-center justify-between gap-3 border-t border-gray-100 bg-gray-50 px-5 py-4">
+                  <div className="flex shrink-0 items-center justify-between gap-3 border-t border-[#E8DDD4] bg-[#FFF4EA] px-5 py-4">
                     <p className="text-xs text-gray-500">
                       {conversionType === 'reminder'
                         ? 'Date and time are required for reminders.'
@@ -1058,7 +1055,7 @@ export default function InboxWindow() {
                       <button
                         type="button"
                         onClick={closeConversion}
-                        className="rounded-full border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-50"
+                        className="rounded-full border border-[#E8DDD4] bg-[#FFFBF7] px-4 py-2 text-sm font-medium text-gray-700 transition hover:bg-[#FFF4EA]"
                       >
                         Cancel
                       </button>
@@ -1095,13 +1092,13 @@ function FilterButton({
       type="button"
       onClick={onClick}
       className={`flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-sm transition ${
-        active ? 'bg-gray-100 text-gray-950' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-950'
+        active ? 'bg-[#FFF0EA] text-gray-950' : 'text-gray-600 hover:bg-[#FFF4EA] hover:text-gray-950'
       }`}
     >
       <span className="font-medium">{label}</span>
       <span
         className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
-          active ? 'bg-white text-gray-700' : 'bg-gray-100 text-gray-500'
+          active ? 'bg-[#FFFBF7] text-gray-700' : 'bg-[#FFF4EA] text-gray-500'
         }`}
       >
         {count}

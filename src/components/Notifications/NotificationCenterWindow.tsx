@@ -337,7 +337,7 @@ export const NotificationCenterWindow: React.FC = () => {
   );
 
   return (
-    <div className="relative h-screen overflow-hidden rounded-3xl border border-gray-200 bg-[#f5f7fb] flex flex-col shadow-[0_24px_80px_rgba(15,23,42,0.08)]">
+    <div className="relative flex h-screen flex-col overflow-hidden rounded-3xl border border-[#E8DDD4] bg-[#FFF8F1] shadow-[0_24px_80px_rgba(15,23,42,0.08)]">
       <ModuleWindowHeader
         eyebrow="Notification Center"
         title="Notifications"
@@ -360,14 +360,14 @@ export const NotificationCenterWindow: React.FC = () => {
             <button
               type="button"
               onClick={() => void loadNotifications({ force: true })}
-              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-700 transition hover:bg-gray-50"
+              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-[#E8DDD4] bg-[#FFFBF7] text-gray-700 transition hover:bg-[#FFF4EA]"
             >
               <RotateCcw size={12} />
             </button>
             <button
               type="button"
               onClick={() => window.desktopWindow?.toggleModule('settings', { kind: 'settings', focusContext: 'notifications' } as any)}
-              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-700 transition hover:bg-gray-50"
+              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-[#E8DDD4] bg-[#FFFBF7] text-gray-700 transition hover:bg-[#FFF4EA]"
             >
               <Settings size={12} />
             </button>
@@ -375,7 +375,7 @@ export const NotificationCenterWindow: React.FC = () => {
         }
       />
 
-      <div className="flex-1 min-h-0 overflow-auto bg-white px-5 py-4">
+      <div className="flex-1 min-h-0 overflow-auto bg-[#FFF8F1] px-5 py-4">
         {error && (
           <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
             {error}
@@ -387,7 +387,7 @@ export const NotificationCenterWindow: React.FC = () => {
             {Array.from({ length: 4 }).map((_, index) => (
               <div
                 key={index}
-                className="h-20 animate-pulse rounded-2xl border border-gray-200 bg-gray-50"
+                className="h-20 animate-pulse rounded-2xl border border-[#E8DDD4] bg-[#FFF4EA]"
               />
             ))}
           </div>
@@ -408,14 +408,14 @@ export const NotificationCenterWindow: React.FC = () => {
                 <span className="text-xs text-gray-500">{active.length}</span>
               </div>
 
-              <div className="divide-y divide-gray-100 rounded-2xl border border-gray-200 bg-white">
+              <div className="divide-y divide-[#E8DDD4] rounded-2xl border border-[#E8DDD4] bg-[#FFFBF7]">
                 {active.map((item) => {
                   const Icon = iconForItem(item);
                   const display = getDisplayData(item);
                   return (
                     <div key={item.id} className="px-4 py-3">
                       <div className="flex items-start gap-3">
-                        <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-gray-200 bg-gray-50 text-gray-600">
+                        <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-[#E8DDD4] bg-[#FFF4EA] text-gray-600">
                           <Icon size={14} />
                         </div>
 
@@ -469,14 +469,14 @@ export const NotificationCenterWindow: React.FC = () => {
                   <span className="text-xs text-gray-500">{earlier.length}</span>
                 </div>
 
-                <div className="divide-y divide-gray-100 rounded-2xl border border-gray-200 bg-white">
+                <div className="divide-y divide-[#E8DDD4] rounded-2xl border border-[#E8DDD4] bg-[#FFFBF7]">
                   {earlier.map((item) => {
                     const Icon = iconForItem(item);
                     const display = getDisplayData(item);
                     return (
                       <div key={item.id} className="px-4 py-3 opacity-80">
                         <div className="flex items-start gap-3">
-                          <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-gray-200 bg-gray-50 text-gray-500">
+                          <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-[#E8DDD4] bg-[#FFF4EA] text-gray-500">
                             <Icon size={14} />
                           </div>
 
