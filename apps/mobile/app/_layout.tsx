@@ -9,6 +9,7 @@ import { initializeAuth } from '@/api/auth';
 import { AppLoadingScreen } from '@/components/AppLoadingScreen';
 import { useAuthState } from '@/store/sessionStore';
 import { resetBootState, setBootState, useBootState } from '@/store/bootStore';
+import { bootstrapNotificationOnboardingState, useNotificationOnboardingState } from '@/store/notificationOnboardingStore';
 import { useLedgerTheme } from '@/theme';
 
 void SplashScreen.preventAutoHideAsync();
@@ -19,6 +20,7 @@ const MIN_SPLASH_MS = 900;
 export default function RootLayout() {
   const theme = useLedgerTheme();
   const auth = useAuthState();
+  const notificationOnboarding = useNotificationOnboardingState();
   const boot = useBootState();
   const overlayOpacity = useRef(new Animated.Value(1)).current;
   const [showOverlay, setShowOverlay] = useState(true);
@@ -51,7 +53,17 @@ export default function RootLayout() {
   }, []);
 
   useEffect(() => {
-    if (auth.isLoading) {
+    void bootstrapNotificationOnboardingState(auth.user?.id ?? null);
+  }, [auth.user?.id]);
+
+  useEffect(() => {
+    const notificationStateReady =
+      !auth.session ||
+      (notificationOnboarding.userId === auth.user?.id &&
+        notificationOnboarding.isHydrated &&
+        !notificationOnboarding.isLoading);
+
+    if (auth.isLoading || notificationOnboarding.isLoading || !notificationStateReady) {
       return;
     }
 
@@ -65,7 +77,16 @@ export default function RootLayout() {
       isBooting: false,
       isBootReady: true,
     });
-  }, [auth.isLoading, boot.minimumSplashElapsed, boot.isBootReady]);
+  }, [
+    auth.isLoading,
+    auth.session,
+    auth.user?.id,
+    boot.minimumSplashElapsed,
+    boot.isBootReady,
+    notificationOnboarding.isHydrated,
+    notificationOnboarding.isLoading,
+    notificationOnboarding.userId,
+  ]);
 
   useEffect(() => {
     if (!boot.isBootReady || !showOverlay) {

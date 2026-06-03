@@ -170,8 +170,8 @@ const ToolbarButton = ({
     title={title}
     className={`h-7 w-7 rounded-md border transition inline-flex items-center justify-center ${
       isActive
-        ? 'border-gray-900 bg-gray-900 text-white'
-        : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
+        ? 'border-[#D8C6B6] bg-[#FFF1E3] text-gray-900'
+        : 'border-[#E2D4C4] bg-[#FFF8F2] text-gray-700 hover:bg-[#FFF1E3]'
     }`}
   >
     {children}
@@ -328,11 +328,11 @@ const ToolbarPlugin = ({ onAutoCorrect }: { onAutoCorrect?: () => void | Promise
   return (
     <>
       <div ref={toolbarSentinelRef} aria-hidden="true" className="pointer-events-none h-px w-full" />
-      <div
+        <div
         style={{ top: 'var(--notes-toolbar-sticky-top, 0px)' }}
         className={`sticky z-20 mb-2 mx-auto flex w-fit max-w-full flex-wrap items-center gap-1.5 rounded-xl px-1.5 py-1 transition-[background-color,border-color,box-shadow,opacity,transform,backdrop-filter] duration-150 ease-out ${
           isSticky
-            ? 'border border-gray-200/80 bg-[rgba(255,255,255,0.86)] shadow-[0_8px_24px_rgba(17,24,39,0.08)] backdrop-blur-[14px]'
+            ? 'border border-[#E8DDD4] bg-[rgba(255,246,238,0.96)] shadow-[0_8px_24px_rgba(17,24,39,0.08)] backdrop-blur-[14px]'
             : 'border border-transparent bg-transparent shadow-none backdrop-blur-none'
         }`}
       >
@@ -343,13 +343,13 @@ const ToolbarPlugin = ({ onAutoCorrect }: { onAutoCorrect?: () => void | Promise
           onMouseDown={(event) => event.preventDefault()}
           onClick={() => setIsDropdownOpen(!isDropdownOpen)}
           onBlur={() => setTimeout(() => setIsDropdownOpen(false), 150)}
-          className="h-7 px-2.5 rounded-md border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 inline-flex items-center justify-center gap-1 text-[11px] font-medium transition"
+          className="h-7 px-2.5 rounded-md border border-[#E2D4C4] bg-[#FFF8F2] text-gray-700 hover:bg-[#FFF1E3] inline-flex items-center justify-center gap-1 text-[11px] font-medium transition"
         >
           {blockTypeLabels[blockType]}
           <ChevronDown size={13} />
         </button>
         {isDropdownOpen && (
-          <div className="absolute top-full mt-1 left-0 z-50 rounded-lg border border-gray-200 bg-white shadow-lg min-w-40">
+          <div className="absolute top-full mt-1 left-0 z-50 rounded-lg border border-[#E8DDD4] bg-[#FFF8F2] shadow-lg min-w-40">
             {(['paragraph', 'h1', 'h2', 'h3', 'quote'] as BlockType[]).map((type) => (
               <button
                 key={type}
@@ -358,8 +358,8 @@ const ToolbarPlugin = ({ onAutoCorrect }: { onAutoCorrect?: () => void | Promise
                 onClick={() => changeBlockType(type)}
                 className={`w-full text-left px-3 py-2 text-sm ${
                   blockType === type
-                    ? 'bg-gray-100 font-medium text-gray-900'
-                    : 'text-gray-700 hover:bg-gray-50'
+                    ? 'bg-[#FFF1E3] font-medium text-gray-900'
+                    : 'text-gray-700 hover:bg-[#FFF1E3]'
                 }`}
               >
                 {blockTypeLabels[type]}
@@ -369,7 +369,7 @@ const ToolbarPlugin = ({ onAutoCorrect }: { onAutoCorrect?: () => void | Promise
         )}
       </div>
 
-      <div className="mx-1 h-5 w-px bg-gray-200" />
+      <div className="mx-1 h-5 w-px bg-[#E8DDD4]" />
 
       <ToolbarButton
         title="Bold (Ctrl+B)"
@@ -393,7 +393,7 @@ const ToolbarPlugin = ({ onAutoCorrect }: { onAutoCorrect?: () => void | Promise
         <Underline size={14} />
       </ToolbarButton>
 
-      <div className="mx-1 h-5 w-px bg-gray-200" />
+      <div className="mx-1 h-5 w-px bg-[#E8DDD4]" />
 
       <ToolbarButton
         title="Bullet List"
@@ -415,7 +415,7 @@ const ToolbarPlugin = ({ onAutoCorrect }: { onAutoCorrect?: () => void | Promise
         <Code2 size={14} />
       </ToolbarButton>
 
-      <div className="mx-1 h-5 w-px bg-gray-200" />
+      <div className="mx-1 h-5 w-px bg-[#E8DDD4]" />
 
       <ToolbarButton
         title="Add Link"
@@ -782,7 +782,7 @@ export function RichTextEditor({
               <ContentEditable
                 onFocus={onFocus}
                 onBlur={onBlur}
-                className="outline-none min-h-[calc(100vh-420px)] rounded-2xl border border-gray-200/70 bg-[#fcfcfd] px-6 py-5 text-[16px] leading-8 text-gray-800 shadow-[0_1px_2px_rgba(15,23,42,0.03)] focus:border-gray-300 focus:ring-1 focus:ring-gray-200 transition"
+                className="outline-none min-h-[calc(100vh-420px)] rounded-2xl border border-[#E8DDD4] bg-[#FFF8F2] px-6 py-5 text-[16px] leading-8 text-gray-800 shadow-[0_1px_2px_rgba(15,23,42,0.03)] focus:border-[#D8C6B6] focus:ring-1 focus:ring-[#E8DDD4] transition"
               />
             }
             placeholder={

@@ -41,11 +41,6 @@ import { NotificationCenterWindow } from './components/Notifications/Notificatio
 import SettingsWindow from './components/Settings/SettingsWindow';
 import { SearchModal } from './components/Search/SearchModal';
 import { SearchProvider } from './context/SearchContext';
-import {
-  SkeletonProjectCard,
-  SkeletonNoteCard,
-  SkeletonTaskItem,
-} from './components/Common/Skeleton';
 import { useSearch } from './context/SearchContext';
 import { QuickCaptureWindow } from './components/Common/QuickCaptureWindow';
 import {
@@ -79,6 +74,9 @@ const dragRegionStyle = { WebkitAppRegion: 'drag' } as CSSProperties & { WebkitA
 const noDragRegionStyle = { WebkitAppRegion: 'no-drag' } as CSSProperties & {
   WebkitAppRegion: 'no-drag';
 };
+const dashboardSkeletonSurface = '#FFF8F2';
+const dashboardSkeletonFill = '#FFF3E7';
+const dashboardSkeletonBorder = '#E2D4C4';
 const OPEN_LEDGER_URL = (
   import.meta.env.VITE_LEDGER_OPEN_URL?.trim() || window.location.origin
 ).replace(/\/$/, '');
@@ -137,6 +135,86 @@ const getInviteTokenFromInput = (value: string) => {
 };
 
 const todayKey = () => new Date().toISOString().slice(0, 10);
+
+const DashboardSkeletonTaskItem = () => (
+  <div className="flex items-start gap-3 rounded-2xl border px-4 py-3 animate-pulse"
+    style={{ backgroundColor: dashboardSkeletonSurface, borderColor: dashboardSkeletonBorder }}>
+    <div
+      className="mt-0.5 h-5 w-5 shrink-0 rounded-full"
+      style={{ backgroundColor: dashboardSkeletonFill }}
+    />
+    <div className="flex-1 space-y-1.5">
+      <div
+        className="h-4 rounded w-3/4"
+        style={{ backgroundColor: dashboardSkeletonFill }}
+      />
+      <div
+        className="h-3 rounded w-1/2"
+        style={{ backgroundColor: dashboardSkeletonFill }}
+      />
+    </div>
+    <div
+      className="mt-0.5 h-5 w-5 shrink-0 rounded"
+      style={{ backgroundColor: dashboardSkeletonFill }}
+    />
+  </div>
+);
+
+const DashboardSkeletonNoteCard = () => (
+  <div
+    className="rounded-2xl border px-4 py-3 animate-pulse"
+    style={{ backgroundColor: dashboardSkeletonSurface, borderColor: dashboardSkeletonBorder }}
+  >
+    <div className="flex items-start justify-between gap-3">
+      <div className="min-w-0 flex-1 space-y-1.5">
+        <div
+          className="h-4 rounded w-2/3"
+          style={{ backgroundColor: dashboardSkeletonFill }}
+        />
+        <div
+          className="h-3 rounded w-full"
+          style={{ backgroundColor: dashboardSkeletonFill }}
+        />
+        <div
+          className="h-3 rounded w-3/4"
+          style={{ backgroundColor: dashboardSkeletonFill }}
+        />
+      </div>
+      <div
+        className="h-3 rounded w-12 shrink-0"
+        style={{ backgroundColor: dashboardSkeletonFill }}
+      />
+    </div>
+  </div>
+);
+
+const DashboardSkeletonProjectCard = () => (
+  <div
+    className="w-full rounded-2xl border px-4 py-4 animate-pulse"
+    style={{ backgroundColor: dashboardSkeletonSurface, borderColor: dashboardSkeletonBorder }}
+  >
+    <div className="flex items-start justify-between gap-3">
+      <div className="min-w-0 flex-1 space-y-1.5">
+        <div
+          className="h-4 rounded w-3/4"
+          style={{ backgroundColor: dashboardSkeletonFill }}
+        />
+        <div
+          className="h-3 rounded w-20"
+          style={{ backgroundColor: dashboardSkeletonFill }}
+        />
+      </div>
+      <div
+        className="h-4 rounded w-12 shrink-0"
+        style={{ backgroundColor: dashboardSkeletonFill }}
+      />
+    </div>
+    <div
+      className="mt-3 h-2 rounded-full"
+      style={{ backgroundColor: dashboardSkeletonFill }}
+    />
+  </div>
+);
 
 const isUpcomingEventActive = (event: {
   status?: string | null;
@@ -1995,7 +2073,7 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
                 {isLoadingDashboard ? (
                   <div className="space-y-3 border-y border-[#E8DDD4] py-10">
                     {Array.from({ length: 3 }).map((_, i) => (
-                      <SkeletonTaskItem key={i} />
+                      <DashboardSkeletonTaskItem key={i} />
                     ))}
                   </div>
                 ) : (
@@ -2149,7 +2227,7 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
                         void window.desktopWindow?.openCheckin();
                         setState('expanded');
                       }}
-                      className="shrink-0 whitespace-nowrap rounded-full border border-[#ffd9d0] bg-[#FFFDFB] px-3 py-1.5 text-xs font-medium text-[#FF5F40] transition hover:border-[#FFB7A6] hover:bg-[#FFF7F4]"
+                      className="shrink-0 whitespace-nowrap rounded-full border border-[#E8DDD4] bg-[#FFFBF7] px-3 py-1.5 text-xs font-medium text-gray-700 transition hover:border-[#D8C6B6] hover:bg-[#FFF4EA]"
                     >
                       Open check-in
                     </button>
@@ -2180,7 +2258,7 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
                   </div>
                   <button
                     onClick={() => openModule('notes')}
-                    className="shrink-0 whitespace-nowrap rounded-full border border-[#ffd9d0] bg-[#FFFDFB] px-3 py-1.5 text-xs font-medium text-[#FF5F40] transition hover:border-[#FFB7A6] hover:bg-[#FFF7F4]"
+                    className="shrink-0 whitespace-nowrap rounded-full border border-[#E8DDD4] bg-[#FFFBF7] px-3 py-1.5 text-xs font-medium text-gray-700 transition hover:border-[#D8C6B6] hover:bg-[#FFF4EA]"
                   >
                     Open notes
                   </button>
@@ -2188,7 +2266,9 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
 
                 <div className="space-y-1">
                   {isLoadingDashboard ? (
-                    Array.from({ length: 2 }).map((_, i) => <SkeletonNoteCard key={i} />)
+                    Array.from({ length: 2 }).map((_, i) => (
+                      <DashboardSkeletonNoteCard key={i} />
+                    ))
                   ) : recentNotes.length === 0 ? (
                     <p className="text-sm font-light italic text-[#64748B]">No notes yet.</p>
                   ) : (
@@ -2258,14 +2338,14 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
                       <button
                         type="button"
                         onClick={() => window.desktopWindow?.openModule('notifications')}
-                        className="whitespace-nowrap rounded-full border border-gray-200 bg-[#FFFDFB] px-3 py-1.5 text-xs font-medium text-gray-700 transition hover:bg-gray-50"
+                        className="whitespace-nowrap rounded-full border border-[#E8DDD4] bg-[#FFFBF7] px-3 py-1.5 text-xs font-medium text-gray-700 transition hover:bg-[#FFF4EA]"
                       >
                         Open notifications
                       </button>
                       <button
                         type="button"
                         onClick={() => window.desktopWindow?.toggleModule('inbox')}
-                        className="whitespace-nowrap rounded-full border border-[#ffd9d0] bg-[#FFFDFB] px-3 py-1.5 text-xs font-medium text-[#FF5F40] transition hover:border-[#FFB7A6] hover:bg-[#FFF7F4]"
+                        className="whitespace-nowrap rounded-full border border-[#E8DDD4] bg-[#FFFBF7] px-3 py-1.5 text-xs font-medium text-gray-700 transition hover:border-[#D8C6B6] hover:bg-[#FFF4EA]"
                       >
                         Open inbox
                       </button>
@@ -2358,14 +2438,16 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
                       <button
                         type="button"
                         onClick={() => openModule('calendar')}
-                        className="shrink-0 whitespace-nowrap rounded-full border border-[#ffd9d0] bg-[#FFFDFB] px-3 py-1.5 text-xs font-medium text-[#FF5F40] transition hover:border-[#FFB7A6] hover:bg-[#FFF7F4]"
+                        className="shrink-0 whitespace-nowrap rounded-full border border-[#E8DDD4] bg-[#FFFBF7] px-3 py-1.5 text-xs font-medium text-gray-700 transition hover:border-[#D8C6B6] hover:bg-[#FFF4EA]"
                       >
                         Calendar
                       </button>
                     </div>
                     <div className="mt-3 space-y-2">
                       {isLoadingDashboard ? (
-                        Array.from({ length: 3 }).map((_, i) => <SkeletonNoteCard key={i} />)
+                        Array.from({ length: 3 }).map((_, i) => (
+                          <DashboardSkeletonNoteCard key={i} />
+                        ))
                       ) : upcoming.length === 0 ? (
                         <p className="text-sm font-light text-[#64748B]">
                           No upcoming events today.
@@ -2425,14 +2507,16 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
                       <button
                         type="button"
                         onClick={() => openModule('projects')}
-                        className="shrink-0 whitespace-nowrap rounded-full border border-[#ffd9d0] bg-[#FFFDFB] px-3 py-1.5 text-xs font-medium text-[#FF5F40] transition hover:border-[#FFB7A6] hover:bg-[#FFF7F4]"
+                        className="shrink-0 whitespace-nowrap rounded-full border border-[#E8DDD4] bg-[#FFFBF7] px-3 py-1.5 text-xs font-medium text-gray-700 transition hover:border-[#D8C6B6] hover:bg-[#FFF4EA]"
                       >
                         Projects
                       </button>
                     </div>
                     <div className="mt-3 space-y-2">
                       {isLoadingDashboard ? (
-                        Array.from({ length: 3 }).map((_, i) => <SkeletonProjectCard key={i} />)
+                        Array.from({ length: 3 }).map((_, i) => (
+                          <DashboardSkeletonProjectCard key={i} />
+                        ))
                       ) : attentionProjects.length === 0 ? (
                         <p className="text-sm font-light text-[#64748B]">
                           No projects need attention.

@@ -854,11 +854,49 @@ const userPreferencesDefaults = {
   compactDensity: false,
   showTrayIcon: true,
   runInBackground: true,
+  mobileNotificationPreferences: {
+    pushNotifications: false,
+    remindersEnabled: true,
+    eventsEnabled: true,
+    projectActionsEnabled: true,
+    overdueItemsEnabled: true,
+  },
 };
 
 const normalizeUserPreferences = (value) => {
   const raw = value && typeof value === 'object' ? value : {};
   const merged = { ...userPreferencesDefaults, ...raw };
+  const mobileNotificationsRaw =
+    merged.mobileNotificationPreferences && typeof merged.mobileNotificationPreferences === 'object'
+      ? merged.mobileNotificationPreferences
+      : {};
+  const mobileNotificationPreferences = {
+    pushNotifications: Boolean(
+      mobileNotificationsRaw.pushNotifications ??
+        mobileNotificationsRaw.push_notifications ??
+        userPreferencesDefaults.mobileNotificationPreferences.pushNotifications
+    ),
+    remindersEnabled: Boolean(
+      mobileNotificationsRaw.remindersEnabled ??
+        mobileNotificationsRaw.reminders_enabled ??
+        userPreferencesDefaults.mobileNotificationPreferences.remindersEnabled
+    ),
+    eventsEnabled: Boolean(
+      mobileNotificationsRaw.eventsEnabled ??
+        mobileNotificationsRaw.events_enabled ??
+        userPreferencesDefaults.mobileNotificationPreferences.eventsEnabled
+    ),
+    projectActionsEnabled: Boolean(
+      mobileNotificationsRaw.projectActionsEnabled ??
+        mobileNotificationsRaw.project_actions_enabled ??
+        userPreferencesDefaults.mobileNotificationPreferences.projectActionsEnabled
+    ),
+    overdueItemsEnabled: Boolean(
+      mobileNotificationsRaw.overdueItemsEnabled ??
+        mobileNotificationsRaw.overdue_items_enabled ??
+        userPreferencesDefaults.mobileNotificationPreferences.overdueItemsEnabled
+    ),
+  };
 
   const defaultEventMinutes = [30, 45, 60].includes(Number(merged.defaultEventMinutes))
     ? Number(merged.defaultEventMinutes)
@@ -1003,6 +1041,7 @@ const normalizeUserPreferences = (value) => {
     compactDensity: Boolean(merged.compactDensity),
     showTrayIcon: Boolean(merged.showTrayIcon),
     runInBackground: Boolean(merged.runInBackground),
+    mobileNotificationPreferences,
   };
 };
 
@@ -4702,6 +4741,7 @@ app.patch('/api/user/settings', authMiddleware, rateLimit('write'), async (req, 
   try {
     const fullNameInput = req.body?.full_name;
     const preferencesInput = req.body?.preferences;
+    const activeWorkspaceIdInput = req.body?.active_workspace_id;
 
     const updatePayload = {};
 
@@ -4721,8 +4761,29 @@ app.patch('/api/user/settings', authMiddleware, rateLimit('write'), async (req, 
       }
     }
 
+    if (activeWorkspaceIdInput !== undefined) {
+      const normalizedWorkspaceId = normalizeNullableText(activeWorkspaceIdInput);
+      if (normalizedWorkspaceId !== null) {
+        await requireWorkspaceAccess(req.authUser.id, normalizedWorkspaceId);
+      }
+      updatePayload.active_workspace_id = normalizedWorkspaceId;
+    }
+
     if (preferencesInput !== undefined) {
-      updatePayload.preferences = normalizeUserPreferences(preferencesInput);
+      const existing = await supabase
+        .from('users')
+        .select('preferences')
+        .eq('id', req.authUser.id)
+        .maybeSingle();
+
+      if (existing.error) throw existing.error;
+
+      const existingPreferences = normalizeUserPreferences(safeJson(existing.data?.preferences, {}));
+      const incomingPreferences = safeJson(preferencesInput, {});
+      updatePayload.preferences = normalizeUserPreferences({
+        ...existingPreferences,
+        ...incomingPreferences,
+      });
     }
 
     if (Object.keys(updatePayload).length === 0) {

@@ -2097,7 +2097,7 @@ export const ExpandedSidebar = ({
             </button>
             <button
               onClick={signOut}
-              className="inline-flex h-9 w-9 items-center justify-center rounded-xl transition hover:bg-red-50 text-red-600"
+              className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-[#E2D4C4] bg-[#FFF6EE] text-gray-700 transition hover:bg-[#FFF1E3]"
               title="Sign out"
               aria-label="Sign out"
             >
@@ -3479,7 +3479,7 @@ export const ExpandedSidebar = ({
         </button>
         <button
           onClick={signOut}
-          className="w-full px-3 py-2 text-sm font-medium text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition flex items-center justify-center gap-2"
+          className="w-full px-3 py-2 text-sm font-medium text-gray-700 bg-[#FFF6EE] border border-[#E2D4C4] hover:bg-[#FFF1E3] rounded-lg transition flex items-center justify-center gap-2"
         >
           <LogOut size={15} />
           Sign Out

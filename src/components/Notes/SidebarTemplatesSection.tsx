@@ -51,16 +51,19 @@ export const SidebarTemplatesSection = ({
 
   return (
     <div className="space-y-2">
-      <p className="text-xs font-semibold text-gray-600 uppercase px-3">Templates</p>
+      <p className="px-3 text-xs font-semibold uppercase text-gray-600">Templates</p>
       {isLoading
         ? Array.from({ length: 3 }).map((_, i) => (
-            <div key={i} className="px-3 py-1.5 rounded bg-gray-100 animate-pulse h-8" />
+            <div
+              key={i}
+              className="h-8 animate-pulse rounded px-3 py-1.5 bg-[#FFF3E7]"
+            />
           ))
         : templates.map((template) => (
             <button
               key={template.id}
               onClick={() => onSelectTemplate?.(template.id)}
-              className="w-full text-left px-3 py-1.5 text-sm rounded transition hover:bg-gray-100 active:bg-gray-50 text-gray-700 hover:text-gray-900"
+              className="w-full rounded px-3 py-1.5 text-left text-sm text-gray-700 transition hover:bg-[#FFF1E3] active:bg-[#FFF0EA] hover:text-gray-900"
               title={`Used ${template.usage_count} times`}
             >
               <div className="flex items-center justify-between">

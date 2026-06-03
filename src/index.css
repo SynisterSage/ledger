@@ -229,6 +229,60 @@ button:focus {
   background-color: rgb(156 163 175);
 }
 
+.ledger-range {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 6px;
+  border-radius: 9999px;
+  outline: none;
+  background: linear-gradient(
+    to right,
+    var(--ledger-range-fill, #FF5F40) 0%,
+    var(--ledger-range-fill, #FF5F40) var(--ledger-range-progress, 50%),
+    #E8DDD4 var(--ledger-range-progress, 50%),
+    #E8DDD4 100%
+  );
+}
+
+.ledger-range::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: 9999px;
+  background: transparent;
+}
+
+.ledger-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 9999px;
+  border: 2px solid #FFF8F2;
+  background: var(--ledger-range-fill, #FF5F40);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.14);
+  margin-top: -4px;
+}
+
+.ledger-range::-moz-range-track {
+  height: 6px;
+  border-radius: 9999px;
+  background: transparent;
+}
+
+.ledger-range::-moz-range-progress {
+  background: var(--ledger-range-fill, #FF5F40);
+  height: 6px;
+  border-radius: 9999px;
+}
+
+.ledger-range::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 9999px;
+  border: 2px solid #FFF8F2;
+  background: var(--ledger-range-fill, #FF5F40);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.14);
+}
+
 @keyframes ledger-auth-left-enter {
   from {
     opacity: 0;

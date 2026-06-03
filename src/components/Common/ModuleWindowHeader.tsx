@@ -434,7 +434,7 @@ export const ModuleWindowHeader = ({
   actions,
 }: ModuleWindowHeaderProps) => {
   const controlClassName =
-    'flex h-5 w-5 items-center justify-center rounded-full border border-[#D8C6B6] bg-[#FFFBF7] text-gray-700 shadow-[0_1px_2px_rgba(15,23,42,0.05)] transition hover:border-[#CBB6A3] hover:bg-[#FFF4EA] hover:text-gray-950';
+    'flex h-5 w-5 items-center justify-center rounded-full border border-[#D2C0AD] bg-[#FFF8F2] text-gray-700 shadow-[0_1px_2px_rgba(15,23,42,0.05)] transition hover:border-[#C4B09B] hover:bg-[#FFF1E3] hover:text-gray-950';
 
   const topRightActions = globalActions ?? stripActions;
   const rightActions = primaryActions ?? actions;
@@ -454,9 +454,9 @@ export const ModuleWindowHeader = ({
   };
 
   return (
-    <div className="border-b border-[#E8DDD4] bg-[#FFF8F1]" style={dragRegionStyle}>
+    <div className="w-full border-b border-[#E2D4C4] bg-[#FFF6EE]" style={dragRegionStyle}>
       <div
-        className="flex h-8 items-center justify-between border-b border-[#E8DDD4] bg-[#FFF4EA] px-4 cursor-default"
+        className="flex h-8 w-full items-center justify-between border-b border-[#E2D4C4] bg-[#FFF1E3] px-4 cursor-default"
         style={dragRegionStyle}
         onDoubleClick={handleTitleBarDoubleClick}
       >
@@ -503,9 +503,9 @@ export const ModuleWindowHeader = ({
         </div>
       </div>
 
-      <div className="flex min-h-12 items-center justify-between gap-4 px-6 py-3">
+      <div className="flex min-h-12 w-full items-center justify-between gap-4 px-6 py-3">
         <div className="flex min-w-0 items-center gap-3" style={dragRegionStyle}>
-          <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-[#E8DDD4] bg-[#FFFBF7] shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
+          <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-[#E2D4C4] bg-[#FFF8F2] shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
             {icon}
           </div>
 

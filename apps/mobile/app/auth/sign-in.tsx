@@ -31,7 +31,7 @@ export default function SignInScreen() {
       const session = await signInWithEmail(email.trim(), password);
 
       if (session) {
-        router.replace('/onboarding/default-workspace');
+        router.replace('/');
       } else {
         Alert.alert('Check your inbox', 'If verification is required, finish sign-in from your email first.');
       }

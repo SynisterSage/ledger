@@ -32,6 +32,9 @@ type AppBottomSheetProps = {
   initialSnapPointIndex?: number;
   headerAccessory?: ReactNode;
   contentStyle?: StyleProp<ViewStyle>;
+  dragCloseThreshold?: number;
+  dragCloseVelocityThreshold?: number;
+  dragCloseSnapMargin?: number;
 };
 
 const DEFAULT_SNAP_POINTS: AppBottomSheetSnapPoint[] = ['35%', '55%', '85%'];
@@ -39,7 +42,9 @@ const OPEN_DURATION = 240;
 const CLOSE_DURATION = 280;
 const BACKDROP_OPEN_DURATION = 200;
 const BACKDROP_CLOSE_DURATION = 180;
-const DRAG_CLOSE_THRESHOLD = 110;
+const DEFAULT_DRAG_CLOSE_THRESHOLD = 110;
+const DEFAULT_DRAG_CLOSE_VELOCITY_THRESHOLD = 0.75;
+const DEFAULT_DRAG_CLOSE_SNAP_MARGIN = 24;
 
 function resolveSnapPoint(value: AppBottomSheetSnapPoint, sheetMaxHeight: number) {
   if (typeof value === 'string' && value.endsWith('%')) {
@@ -63,6 +68,9 @@ export function AppBottomSheet({
   initialSnapPointIndex = 1,
   headerAccessory,
   contentStyle,
+  dragCloseThreshold = DEFAULT_DRAG_CLOSE_THRESHOLD,
+  dragCloseVelocityThreshold = DEFAULT_DRAG_CLOSE_VELOCITY_THRESHOLD,
+  dragCloseSnapMargin = DEFAULT_DRAG_CLOSE_SNAP_MARGIN,
 }: AppBottomSheetProps) {
   const theme = useLedgerTheme();
   const { height: windowHeight } = useWindowDimensions();
@@ -168,26 +176,7 @@ export function AppBottomSheet({
 
     closingRef.current = true;
     currentTranslate.current = closedTranslateY;
-
-    Animated.parallel([
-      Animated.timing(translateY, {
-        toValue: closedTranslateY,
-        duration: CLOSE_DURATION,
-        easing: Easing.out(Easing.cubic),
-        useNativeDriver: true,
-      }),
-      Animated.timing(backdropOpacity, {
-        toValue: 0,
-        duration: BACKDROP_CLOSE_DURATION,
-        easing: Easing.out(Easing.quad),
-        useNativeDriver: true,
-      }),
-    ]).start(({ finished }) => {
-      closingRef.current = false;
-      if (finished) {
-        onClose();
-      }
-    });
+    onClose();
   };
 
   const snapToNearestPoint = (currentValue: number) => {
@@ -228,7 +217,12 @@ export function AppBottomSheet({
           translateY.setValue(nextValue);
         },
         onPanResponderRelease: (_: GestureResponderEvent, gestureState: PanResponderGestureState) => {
-          if (gestureState.vy > 1 || gestureState.dy > DRAG_CLOSE_THRESHOLD) {
+          const shouldClose =
+            gestureState.vy > dragCloseVelocityThreshold ||
+            gestureState.dy > dragCloseThreshold ||
+            currentTranslate.current > maxTranslateY + dragCloseSnapMargin;
+
+          if (shouldClose) {
             closeSheet();
             return;
           }
@@ -236,7 +230,7 @@ export function AppBottomSheet({
           snapToNearestPoint(currentTranslate.current);
         },
       }),
-    [closedTranslateY, translateY],
+    [closedTranslateY, dragCloseThreshold, dragCloseVelocityThreshold, dragCloseSnapMargin, translateY, maxTranslateY],
   );
 
   if (!mounted) {

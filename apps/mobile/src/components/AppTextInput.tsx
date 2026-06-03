@@ -40,8 +40,9 @@ export const AppTextInput = forwardRef<TextInput, AppTextInputProps>(function Ap
           styles.input,
           {
             color: theme.colors.textPrimary,
-            borderColor: theme.colors.borderSubtle,
-            backgroundColor: isFocused ? theme.colors.surface : theme.colors.background,
+          borderColor: theme.colors.borderSubtle,
+            backgroundColor: 'transparent',
+            borderBottomColor: isFocused ? theme.colors.textPrimary : theme.colors.borderSubtle,
             minHeight: multiline ? 92 : 44,
             paddingHorizontal: 0,
             paddingVertical: multiline ? theme.spacing.sm : theme.spacing.xs,
@@ -65,6 +66,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     fontSize: 16,
     lineHeight: 22,
+    backgroundColor: 'transparent',
   },
   multiline: {
     textAlignVertical: 'top',

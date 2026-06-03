@@ -271,7 +271,7 @@ const getColorClasses = (color: string) => {
     gray: {
       dot: 'bg-gray-400',
       text: 'text-gray-600',
-      bg: 'bg-gray-50',
+      bg: 'bg-[#FFF6EE]',
       border: 'border-l-2 border-gray-300',
     },
   };
@@ -413,7 +413,7 @@ const getDropPreviewClasses = (
   targetId: string
 ) => {
   if (!preview || preview.targetId !== targetId) return '';
-  if (preview.position === 'inside') return 'bg-gray-100 border-l-gray-400';
+  if (preview.position === 'inside') return 'bg-[#E8DDD4] border-l-gray-400';
   if (preview.position === 'before') return 'border-t border-gray-300';
   return 'border-b border-gray-300';
 };
@@ -2943,7 +2943,7 @@ export const NotesWindow = () => {
 
   return (
     <div
-      className="ledger-notes-shell relative h-screen overflow-hidden rounded-3xl border border-gray-200 bg-[#FFF9F4] flex flex-col shadow-[0_24px_80px_rgba(15,23,42,0.08)]"
+      className="ledger-notes-shell relative h-screen overflow-hidden rounded-3xl border border-[#E2D4C4] bg-[#FFF9F4] flex flex-col shadow-[0_24px_80px_rgba(15,23,42,0.08)]"
       style={{ scrollbarGutter: isNotesModalOpen ? 'auto' : 'stable' }}
     >
       <CloseGuardModal
@@ -3055,12 +3055,12 @@ export const NotesWindow = () => {
         {!isLeftPaneCollapsed && hasLoadedOnce ? (
           <>
             <aside
-              className={`border-r border-gray-200 bg-[#FFFBF7] flex flex-col overflow-hidden shrink-0 ${
+              className={`border-r border-[#E2D4C4] bg-[#FFF6EE] flex flex-col overflow-hidden shrink-0 ${
                 isCompactLayout ? 'text-sm' : ''
               }`}
               style={{ width: `${leftPaneWidth}px` }}
             >
-              <div className={`${isCompactLayout ? 'p-3' : 'p-4'} border-b border-gray-100`}>
+              <div className={`${isCompactLayout ? 'p-3' : 'p-4'} border-b border-[#E2D4C4] bg-[#FFF6EE]`}>
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-2 min-w-0">
                     <h2 className="text-xs font-medium text-gray-500">
@@ -3068,7 +3068,7 @@ export const NotesWindow = () => {
                     </h2>
                     <button
                       onClick={() => setIsLeftPaneCollapsed(true)}
-                    className="h-7 w-7 rounded-lg border border-[#E8DDD4] bg-[#FFFBF7] text-gray-500 hover:bg-[#FFF4EA] flex items-center justify-center shadow-sm"
+                    className="h-7 w-7 rounded-lg border border-[#E2D4C4] bg-[#FFF6EE] text-gray-500 hover:bg-[#FFF1E3] flex items-center justify-center shadow-sm"
                       title="Hide left panel"
                       aria-label="Hide left panel"
                     >
@@ -3087,7 +3087,7 @@ export const NotesWindow = () => {
                       <ChevronDown size={11} />
                     </button>
                     {showNewMenu && (
-                      <div className="absolute right-0 top-8 z-40 min-w-32 rounded-lg border border-[#E8DDD4] bg-[#FFFBF7] p-1 shadow-lg">
+                      <div className="absolute right-0 top-8 z-40 min-w-32 rounded-lg border border-[#E8DDD4] bg-[#FFF6EE] p-1 shadow-lg">
                         <button
                           type="button"
                           onClick={() => {
@@ -3096,7 +3096,7 @@ export const NotesWindow = () => {
                             setNoteCreationSectionId(null);
                             setShowCreateNoteModal(true);
                           }}
-                          className="w-full rounded-md px-2.5 py-1.5 text-left text-xs font-medium text-gray-800 hover:bg-[#FFF4EA]"
+                          className="w-full rounded-md px-2.5 py-1.5 text-left text-xs font-medium text-gray-800 hover:bg-[#FFF1E3]"
                         >
                           New note
                         </button>
@@ -3106,7 +3106,7 @@ export const NotesWindow = () => {
                             setShowNewMenu(false);
                             setShowNewSectionPrompt(true);
                           }}
-                          className="w-full rounded-md px-2.5 py-1.5 text-left text-xs font-medium text-gray-800 hover:bg-[#FFF4EA]"
+                          className="w-full rounded-md px-2.5 py-1.5 text-left text-xs font-medium text-gray-800 hover:bg-[#FFF1E3]"
                         >
                           New folder
                         </button>
@@ -3124,12 +3124,12 @@ export const NotesWindow = () => {
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
                     placeholder="Search notes"
-                    className="w-full h-8 pl-9 pr-3 text-sm border border-gray-200 rounded-lg bg-[#FFFDFB] focus:outline-none focus:border-gray-300 focus:ring-1 focus:ring-gray-200"
+                    className="w-full h-8 pl-9 pr-3 text-sm border border-[#E2D4C4] rounded-lg bg-[#FFF6EE] focus:outline-none focus:border-gray-300 focus:ring-1 focus:ring-[#E2D4C4]"
                   />
                 </div>
 
                 {showNewSectionPrompt && (
-                  <div className="mt-3 flex items-center gap-2 rounded-lg border border-[#E8DDD4] bg-[#FFFBF7] p-1.5">
+                  <div className="mt-3 flex items-center gap-2 rounded-lg border border-[#E2D4C4] bg-[#FFF6EE] p-1.5">
                     <input
                       autoFocus
                       value={newSectionName}
@@ -3194,8 +3194,8 @@ export const NotesWindow = () => {
                           onContextMenu={(event) => handleSidebarNoteContextMenu(note, event)}
                           className={`w-full text-left px-3 py-2 rounded text-sm transition ${
                             active
-                            ? 'bg-[#FFF0EA] text-gray-900 ring-1 ring-[#E8DDD4]'
-                            : 'bg-transparent hover:bg-[#FFF4EA] text-gray-700'
+                            ? 'bg-[#FFF1E3] text-gray-900 ring-1 ring-[#E8DDD4]'
+                            : 'bg-transparent hover:bg-[#FFF1E3] text-gray-700'
                           }`}
                         >
                           <div className="flex items-center gap-2 min-w-0">
@@ -3315,13 +3315,13 @@ export const NotesWindow = () => {
                                 sectionName: section.name,
                               });
                             }}
-                            className={`w-full text-left px-3 py-2 flex items-center gap-2 text-sm font-semibold text-gray-800 hover:bg-[#FFF4EA] rounded-lg transition group ${
+                            className={`w-full text-left px-3 py-2 flex items-center gap-2 text-sm font-semibold text-gray-800 hover:bg-[#FFF1E3] rounded-lg transition group ${
                               sectionDropTargetId === section.id
-                                ? 'bg-[#FFF0EA] ring-1 ring-[#E8DDD4] border border-dashed border-[#D8C6B6]'
+                                ? 'bg-[#FFF1E3] ring-1 ring-[#E8DDD4] border border-dashed border-[#D8C6B6]'
                                 : draggedSectionId === section.id
-                                ? 'bg-[#FFF4EA]/80 ring-1 ring-[#E8DDD4]'
+                                ? 'bg-[#FFF1E3]/80 ring-1 ring-[#E8DDD4]'
                                 : dropPreview?.targetId === section.id
-                                ? 'bg-[#FFF0EA] ring-1 ring-[#E8DDD4]'
+                                ? 'bg-[#FFF1E3] ring-1 ring-[#E8DDD4]'
                                 : ''
                             }`}
                           >
@@ -3410,8 +3410,8 @@ export const NotesWindow = () => {
                                         }
                                         className={`flex-1 min-w-0 px-2.5 py-1.5 rounded text-left text-sm transition ${
                                           active
-                                          ? 'bg-[#FFF0EA] text-gray-900 ring-1 ring-[#E8DDD4]'
-                                            : 'bg-transparent hover:bg-[#FFF4EA] text-gray-700'
+                                          ? 'bg-[#FFF1E3] text-gray-900 ring-1 ring-[#E8DDD4]'
+                                            : 'bg-transparent hover:bg-[#FFF1E3] text-gray-700'
                                         } ${getDropPreviewClasses(dropPreview, note.id)}`}
                                       >
                                         <div className="flex items-center gap-2 min-w-0">
@@ -3528,8 +3528,8 @@ export const NotesWindow = () => {
                                                 }}
                                                 className={`flex-1 min-w-0 px-2.5 py-1.5 rounded text-left text-xs transition ${
                                                   selectedNoteIdSet.has(child.id)
-                                                    ? 'bg-[#FFF0EA] text-gray-900 ring-1 ring-[#E8DDD4]'
-                                                    : 'bg-transparent hover:bg-[#FFF4EA] text-gray-600'
+                                                    ? 'bg-[#FFF1E3] text-gray-900 ring-1 ring-[#E8DDD4]'
+                                                    : 'bg-transparent hover:bg-[#FFF1E3] text-gray-600'
                                                 } ${getDropPreviewClasses(dropPreview, child.id)}`}
                                               >
                                                 <div className="flex items-center gap-2 min-w-0">
@@ -3557,7 +3557,7 @@ export const NotesWindow = () => {
                                   setNoteCreationSectionId(section.id);
                                   setShowCreateNoteModal(true);
                                 }}
-                                        className="w-full text-left px-2.5 py-1.5 rounded text-xs font-medium text-gray-400 hover:text-gray-600 hover:bg-[#FFF4EA] transition flex items-center gap-2"
+                                        className="w-full text-left px-2.5 py-1.5 rounded text-xs font-medium text-gray-400 hover:text-gray-600 hover:bg-[#FFF1E3] transition flex items-center gap-2"
                               >
                                 <Plus size={12} />
                                 Add note
@@ -3610,7 +3610,7 @@ export const NotesWindow = () => {
                               event.preventDefault();
                               void handleDropOnSection(null);
                             }}
-                            className="w-full text-left px-3 py-1.5 flex items-center gap-2 text-sm font-semibold text-gray-800 hover:bg-[#FFF4EA] rounded-lg transition group"
+                            className="w-full text-left px-3 py-1.5 flex items-center gap-2 text-sm font-semibold text-gray-800 hover:bg-[#FFF1E3] rounded-lg transition group"
                           >
                             <div
                               className={`h-1.5 w-1.5 rounded-full shrink-0 ${sectionColor.dot}`}
@@ -3662,8 +3662,8 @@ export const NotesWindow = () => {
                                         }
                                         className={`flex-1 min-w-0 text-left px-2.5 py-1 rounded text-sm transition flex items-center gap-2 ${
                                           active
-                                            ? 'bg-[#FFF0EA] text-gray-900 ring-1 ring-[#E8DDD4]'
-                                            : 'bg-transparent hover:bg-[#FFF4EA] text-gray-700'
+                                            ? 'bg-[#FFF1E3] text-gray-900 ring-1 ring-[#E8DDD4]'
+                                            : 'bg-transparent hover:bg-[#FFF1E3] text-gray-700'
                                         } ${getDropPreviewClasses(dropPreview, note.id)}`}
                                       >
                                         {childCount > 0 ? (
@@ -3775,8 +3775,8 @@ export const NotesWindow = () => {
                                                 }
                                                 className={`w-full text-left px-2.5 py-1 rounded text-xs transition flex items-center gap-2 ${
                                                   childActive
-                                                    ? 'bg-[#FFF0EA] text-gray-900 ring-1 ring-[#E8DDD4]'
-                                                    : 'bg-transparent hover:bg-[#FFF4EA] text-gray-600'
+                                                    ? 'bg-[#FFF1E3] text-gray-900 ring-1 ring-[#E8DDD4]'
+                                                    : 'bg-transparent hover:bg-[#FFF1E3] text-gray-600'
                                                 } ${getDropPreviewClasses(dropPreview, child.id)}`}
                                               >
                                                 <StickyNote
@@ -3841,7 +3841,7 @@ export const NotesWindow = () => {
               </div>
 
               {/* Collapsible Templates section */}
-              <div className="border-t border-gray-100">
+              <div className="border-t border-[#E8DDD4]">
                 <button
                   onClick={() => {
                     const newState = !isTemplatesExpanded;
@@ -3852,7 +3852,7 @@ export const NotesWindow = () => {
                       console.error('Failed to save templates state:', e);
                     }
                   }}
-                  className="w-full flex items-center justify-between px-4 py-3 text-sm font-medium text-gray-700 hover:bg-[#FFF4EA] transition"
+                  className="w-full flex items-center justify-between px-4 py-3 text-sm font-medium text-gray-700 hover:bg-[#FFF1E3] transition"
                 >
                   <span className="flex items-center gap-2">
                     <Zap size={13} className="text-gray-500" />
@@ -3878,7 +3878,7 @@ export const NotesWindow = () => {
                           }
                           void handleQuickTemplate(template.name);
                         }}
-                        className="w-full text-left px-2.5 py-1 rounded text-sm text-gray-700 bg-transparent hover:bg-[#FFF4EA] transition truncate"
+                        className="w-full text-left px-2.5 py-1 rounded text-sm text-gray-700 bg-transparent hover:bg-[#FFF1E3] transition truncate"
                       >
                         {template.name}
                       </button>
@@ -3888,7 +3888,7 @@ export const NotesWindow = () => {
                         setNoteCreationSectionId(null);
                         setShowCreateNoteModal(true);
                       }}
-                      className="w-full text-left px-2.5 py-1.5 rounded text-xs font-medium text-gray-600 bg-[#FFFBF7] border border-[#E8DDD4] hover:bg-[#FFF4EA] hover:border-[#D8C6B6] transition"
+                      className="w-full text-left px-2.5 py-1.5 rounded text-xs font-medium text-gray-600 bg-[#FFF6EE] border border-[#E8DDD4] hover:bg-[#FFF1E3] hover:border-[#D8C6B6] transition"
                     >
                       Browse All Templates
                     </button>
@@ -3906,10 +3906,10 @@ export const NotesWindow = () => {
             />
           </>
         ) : (
-          <div className="w-10 shrink-0 border-r border-gray-200 bg-[#FFFBF7] flex items-start justify-center pt-4">
+          <div className="w-10 shrink-0 border-r border-[#E2D4C4] bg-[#FFF6EE] flex items-start justify-center pt-4">
             <button
               onClick={() => setIsLeftPaneCollapsed(false)}
-              className="h-7 w-7 rounded-lg border border-gray-200 bg-[#FFFDFB] text-gray-500 hover:bg-gray-100 flex items-center justify-center shadow-sm"
+              className="h-7 w-7 rounded-lg border border-[#E2D4C4] bg-[#FFF6EE] text-gray-500 hover:bg-[#FFF1E3] flex items-center justify-center shadow-sm"
               title="Show left panel"
               aria-label="Show left panel"
             >
@@ -3923,19 +3923,19 @@ export const NotesWindow = () => {
             areSidePanelsCollapsed ? 'p-4' : isCompactLayout ? 'p-2' : 'p-2.5'
           }`}
         >
-          <div className="h-full rounded-3xl border border-[#E8DDD4] bg-[#FFF8F1] shadow-sm overflow-hidden flex flex-col">
+          <div className="h-full rounded-3xl border border-[#E8DDD4] bg-[#FFF6EE] shadow-sm overflow-hidden flex flex-col">
             {isLoading ? (
               <div className="flex-1 p-5 space-y-4">
                 <SkeletonLoader />
                 <div className="grid grid-cols-3 gap-3">
-                  <div className="h-20 rounded-2xl bg-gray-100 animate-pulse" />
-                  <div className="h-20 rounded-2xl bg-gray-100 animate-pulse" />
-                  <div className="h-20 rounded-2xl bg-gray-100 animate-pulse" />
+                  <div className="h-20 rounded-2xl bg-[#FFF3E7] animate-pulse" />
+                  <div className="h-20 rounded-2xl bg-[#FFF3E7] animate-pulse" />
+                  <div className="h-20 rounded-2xl bg-[#FFF3E7] animate-pulse" />
                 </div>
               </div>
             ) : selectedNote ? (
               <div className="flex-1 flex flex-col min-h-0">
-                <div className="border-b border-[#E8DDD4] bg-[#FFFBF7] px-6 py-4">
+                <div className="border-b border-[#E8DDD4] bg-[#FFF6EE] px-6 py-4">
                   <div className="flex items-center justify-between gap-4">
                     <p className="text-[11px] text-gray-500 truncate">
                       Home
@@ -3952,19 +3952,19 @@ export const NotesWindow = () => {
                             event.stopPropagation();
                             setIsNoteActionsOpen((current) => !current);
                           }}
-                          className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-[#E8DDD4] bg-[#FFFBF7] text-gray-600 hover:bg-[#FFF4EA]"
+                          className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-[#E8DDD4] bg-[#FFF6EE] text-gray-600 hover:bg-[#FFF1E3]"
                           aria-label="Note actions"
                         >
                           <MoreHorizontal size={14} />
                         </button>
                         {isNoteActionsOpen && (
-                          <div className="absolute right-0 top-9 z-40 min-w-44 rounded-xl border border-[#E8DDD4] bg-[#FFFBF7] p-1.5 shadow-lg">
+                          <div className="absolute right-0 top-9 z-40 min-w-44 rounded-xl border border-[#E8DDD4] bg-[#FFF6EE] p-1.5 shadow-lg">
                             <button
                               onClick={() => {
                                 setIsNoteActionsOpen(false);
                                 void createChildNote(selectedNote.id);
                               }}
-                              className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-gray-700 hover:bg-[#FFF4EA]"
+                              className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-gray-700 hover:bg-[#FFF1E3]"
                             >
                               Add child note
                             </button>
@@ -3973,7 +3973,7 @@ export const NotesWindow = () => {
                                 setIsNoteActionsOpen(false);
                                 titleRef.current?.focus();
                               }}
-                              className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-gray-700 hover:bg-[#FFF4EA]"
+                              className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-gray-700 hover:bg-[#FFF1E3]"
                             >
                               Rename
                             </button>
@@ -3983,7 +3983,7 @@ export const NotesWindow = () => {
                                 setIsNoteActionsOpen(false);
                                 runAutoCorrectSpelling();
                               }}
-                              className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-gray-700 hover:bg-[#FFF4EA] disabled:cursor-not-allowed disabled:text-gray-400"
+                              className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-gray-700 hover:bg-[#FFF1E3] disabled:cursor-not-allowed disabled:text-gray-400"
                             >
                               Auto-correct spelling
                             </button>
@@ -4001,7 +4001,7 @@ export const NotesWindow = () => {
                                     );
                                   });
                               }}
-                              className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-gray-700 hover:bg-[#FFF4EA]"
+                              className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-gray-700 hover:bg-[#FFF1E3]"
                             >
                               Move to section...
                             </button>
@@ -4013,7 +4013,7 @@ export const NotesWindow = () => {
                                   draftTitle || selectedNote.title || 'Untitled note'
                                 );
                               }}
-                              className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-gray-700 hover:bg-[#FFF4EA]"
+                              className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-gray-700 hover:bg-[#FFF1E3]"
                             >
                               Save as template
                             </button>
@@ -4025,7 +4025,7 @@ export const NotesWindow = () => {
                                 setShowVersionHistoryModal(true);
                                 void openVersionHistory(id);
                               }}
-                              className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-gray-700 hover:bg-[#FFF4EA]"
+                              className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-gray-700 hover:bg-[#FFF1E3]"
                             >
                               Version history
                             </button>
@@ -4034,7 +4034,7 @@ export const NotesWindow = () => {
                                 setIsNoteActionsOpen(false);
                                 void duplicateNoteById(selectedNote.id);
                               }}
-                              className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-gray-700 hover:bg-[#FFF4EA]"
+                              className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-gray-700 hover:bg-[#FFF1E3]"
                             >
                               Duplicate
                             </button>
@@ -4070,7 +4070,7 @@ export const NotesWindow = () => {
                       placeholder="Untitled note"
                       className="block w-full bg-transparent py-1.5 text-4xl font-semibold leading-tight tracking-tight text-gray-900 placeholder:text-gray-300 focus:outline-none"
                     />
-                    <div className="flex items-center rounded-lg border border-[#E8DDD4] bg-[#FFFBF7] p-0.5 shrink-0">
+                    <div className="flex items-center rounded-lg border border-[#E8DDD4] bg-[#FFF6EE] p-0.5 shrink-0">
                       <button
                         type="button"
                         onClick={() => {
@@ -4080,7 +4080,7 @@ export const NotesWindow = () => {
                         className={`h-7 rounded-md px-2.5 text-xs font-medium ${
                           draftMode === 'text'
                             ? 'bg-[#FF5F40] text-white'
-                            : 'text-gray-600 hover:bg-[#FFF4EA]'
+                            : 'text-gray-600 hover:bg-[#FFF1E3]'
                         }`}
                       >
                         Write
@@ -4094,7 +4094,7 @@ export const NotesWindow = () => {
                         className={`h-7 rounded-md px-2.5 text-xs font-medium ${
                           draftMode === 'mind_map'
                             ? 'bg-[#FF5F40] text-white'
-                            : 'text-gray-600 hover:bg-[#FFF4EA]'
+                            : 'text-gray-600 hover:bg-[#FFF1E3]'
                         }`}
                       >
                         Mind Map
@@ -4103,7 +4103,7 @@ export const NotesWindow = () => {
                   </div>
                 </div>
 
-                <div className="flex-1 min-h-0 overflow-auto bg-[#FFFBF7]/60 p-6">
+                <div className="flex-1 min-h-0 overflow-auto bg-[#FFF6EE] p-6">
                   <div className="max-w-3xl mx-auto space-y-6">
                     {draftMode === 'text' ? (
                       <RichTextEditor
@@ -4150,8 +4150,8 @@ export const NotesWindow = () => {
             ) : (
               <div className="flex-1 flex items-center justify-center p-8">
                 <div className="max-w-md text-center">
-                  <div className="h-12 w-12 rounded-2xl bg-amber-50 border border-amber-100 flex items-center justify-center mx-auto">
-                    <StickyNote size={22} className="text-amber-600" />
+                  <div className="h-12 w-12 rounded-2xl bg-[#FFF3E7] border border-[#E8DDD4] flex items-center justify-center mx-auto">
+                    <StickyNote size={22} className="text-[#FF5F40]" />
                   </div>
                   <h2 className="mt-4 text-xl font-semibold text-gray-900">No note selected</h2>
                   <p className="mt-2 text-sm text-gray-600">
@@ -4162,7 +4162,7 @@ export const NotesWindow = () => {
                       setNoteCreationSectionId(null);
                       setShowCreateNoteModal(true);
                     }}
-                    className="mt-5 px-4 py-2 rounded-full bg-gray-900 text-white text-sm font-medium hover:bg-gray-800"
+                    className="mt-5 px-4 py-2 rounded-full bg-[#111827] text-white text-sm font-medium hover:bg-[#0f172a]"
                   >
                     New note
                   </button>
@@ -4178,12 +4178,12 @@ export const NotesWindow = () => {
               role="separator"
               aria-orientation="vertical"
               onMouseDown={() => setIsResizingRightPane(true)}
-              className="w-1.5 cursor-col-resize bg-transparent hover:bg-gray-200/70 transition"
+              className="w-1.5 cursor-col-resize bg-[#E8DDD4] hover:bg-[#D8C6B6] transition"
               title="Resize panels"
             />
 
             <aside
-              className={`border-l border-gray-200 bg-[#FFFBF7] overflow-auto ${
+              className={`border-l border-[#E2D4C4] bg-[#FFF6EE] overflow-auto ${
                 isCompactLayout ? 'p-3 space-y-3' : 'p-4 space-y-4'
               } shrink-0`}
               style={{ width: `${rightPaneWidth}px` }}
@@ -4210,7 +4210,7 @@ export const NotesWindow = () => {
                     <button
                       type="button"
                       onClick={() => setIsRightPaneCollapsed(true)}
-                      className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-gray-200 bg-[#FFFDFB] text-gray-600 hover:bg-gray-50"
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-[#E2D4C4] bg-[#FFF6EE] text-gray-600 hover:bg-[#FFF1E3]"
                       aria-label="Hide right panel"
                       title="Hide right panel"
                     >
@@ -4224,20 +4224,20 @@ export const NotesWindow = () => {
                             event.stopPropagation();
                             setIsInspectorActionsOpen((current) => !current);
                           }}
-                          className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-gray-200 bg-[#FFFDFB] text-gray-600 hover:bg-gray-50"
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-[#E2D4C4] bg-[#FFF6EE] text-gray-600 hover:bg-[#FFF1E3]"
                           aria-label="Inspector actions"
                         >
                           <MoreHorizontal size={14} />
                         </button>
 
                         {isInspectorActionsOpen && selectedNote && (
-                          <div className="absolute right-0 top-10 z-40 min-w-52 rounded-xl border border-gray-200 bg-[#FFFDFB] p-1.5 shadow-lg">
+                          <div className="absolute right-0 top-10 z-40 min-w-52 rounded-xl border border-[#E2D4C4] bg-[#FFF6EE] p-1.5 shadow-lg">
                             <button
                               onClick={() => {
                                 setIsInspectorActionsOpen(false);
                                 titleRef.current?.focus();
                               }}
-                              className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-50"
+                              className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-gray-700 hover:bg-[#FFF1E3]"
                             >
                               Rename
                             </button>
@@ -4247,7 +4247,7 @@ export const NotesWindow = () => {
                                 setIsInspectorActionsOpen(false);
                                 runAutoCorrectSpelling();
                               }}
-                              className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:text-gray-400"
+                              className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-gray-700 hover:bg-[#FFF1E3] disabled:cursor-not-allowed disabled:text-gray-400"
                             >
                               Auto-correct spelling
                             </button>
@@ -4256,7 +4256,7 @@ export const NotesWindow = () => {
                                 setIsInspectorActionsOpen(false);
                                 void duplicateNoteById(selectedNote.id);
                               }}
-                              className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-50"
+                              className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-gray-700 hover:bg-[#FFF1E3]"
                             >
                               Duplicate
                             </button>
@@ -4268,7 +4268,7 @@ export const NotesWindow = () => {
                                   draftTitle || selectedNote.title || 'Untitled note'
                                 );
                               }}
-                              className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-50"
+                              className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-gray-700 hover:bg-[#FFF1E3]"
                             >
                               Save as template
                             </button>
@@ -4280,7 +4280,7 @@ export const NotesWindow = () => {
                                 setShowVersionHistoryModal(true);
                                 void openVersionHistory(id);
                               }}
-                              className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-50"
+                              className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-gray-700 hover:bg-[#FFF1E3]"
                             >
                               Version history
                             </button>
@@ -4290,7 +4290,7 @@ export const NotesWindow = () => {
                                 setIsInspectorActionsOpen(false);
                                 void restoreLatestVersion();
                               }}
-                              className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-50"
+                              className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-gray-700 hover:bg-[#FFF1E3]"
                             >
                               Restore last version
                             </button>
@@ -4308,7 +4308,7 @@ export const NotesWindow = () => {
                                     );
                                   });
                               }}
-                              className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-50"
+                              className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-gray-700 hover:bg-[#FFF1E3]"
                             >
                               Move to section...
                             </button>
@@ -4317,11 +4317,11 @@ export const NotesWindow = () => {
                                 setIsInspectorActionsOpen(false);
                                 void createChildNote(selectedNote.id);
                               }}
-                              className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-50"
+                              className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-gray-700 hover:bg-[#FFF1E3]"
                             >
                               Add child note
                             </button>
-                            <div className="my-1 h-px bg-gray-100" />
+                            <div className="my-1 h-px bg-[#E8DDD4]" />
                             <button
                               disabled={isDeleting}
                               onClick={() => {
@@ -4339,7 +4339,7 @@ export const NotesWindow = () => {
                   </div>
                 </div>
 
-                <div className="space-y-2 border-t border-gray-100 pt-4">
+                <div className="space-y-2 border-t border-[#E2D4C4] pt-4">
                   <p className="text-xs font-medium text-gray-500">
                     Details
                   </p>
@@ -4373,7 +4373,7 @@ export const NotesWindow = () => {
                   )}
                 </div>
 
-                <div className="space-y-2 border-t border-gray-100 pt-4">
+                <div className="space-y-2 border-t border-[#E2D4C4] pt-4">
                   <p className="text-xs font-medium text-gray-500">
                     Workspace
                   </p>
@@ -4402,7 +4402,7 @@ export const NotesWindow = () => {
                   )}
                 </div>
 
-                <div className="space-y-2 border-t border-gray-100 pt-4">
+                <div className="space-y-2 border-t border-[#E2D4C4] pt-4">
                   <div className="flex items-center justify-between gap-3">
                     <p className="text-xs font-medium text-gray-500">
                       Recent updates
@@ -4417,7 +4417,7 @@ export const NotesWindow = () => {
                             if (event.shiftKey) event.preventDefault();
                           }}
                           onClick={(event) => void handleSidebarNoteClick(note, event.shiftKey)}
-                          className="flex w-full items-center justify-between gap-3 rounded-lg bg-[#FFFBF7] px-2 py-1.5 text-left text-sm transition hover:bg-[#FFF4EA] active:bg-[#FFF0EA]"
+                          className="flex w-full items-center justify-between gap-3 rounded-lg bg-[#FFF6EE] px-2 py-1.5 text-left text-sm transition hover:bg-[#FFF1E3] active:bg-[#FFF1E3]"
                         >
                           <div className="min-w-0">
                             <p className="truncate font-medium text-gray-900">
@@ -4438,10 +4438,10 @@ export const NotesWindow = () => {
             </aside>
           </>
         ) : (
-          <div className="w-10 shrink-0 border-l border-gray-200 bg-[#FFFBF7] flex items-start justify-center pt-4">
+          <div className="w-10 shrink-0 border-l border-[#E2D4C4] bg-[#FFF6EE] flex items-start justify-center pt-4">
             <button
               onClick={() => setIsRightPaneCollapsed(false)}
-              className="h-7 w-7 rounded-lg border border-gray-200 bg-[#FFFDFB] text-gray-500 hover:bg-gray-100 flex items-center justify-center shadow-sm"
+              className="h-7 w-7 rounded-lg border border-[#E2D4C4] bg-[#FFF6EE] text-gray-500 hover:bg-[#FFF1E3] flex items-center justify-center shadow-sm"
               title="Show right panel"
               aria-label="Show right panel"
             >
@@ -4452,9 +4452,9 @@ export const NotesWindow = () => {
       </div>
 
       {draftMode === 'mind_map' && isMindMapFullscreen && (
-        <div className="fixed inset-0 z-80 bg-[#FFF9F4]">
+        <div className="fixed inset-0 z-80 bg-[#FFF6EE]">
           <div className="flex h-full w-full flex-col">
-            <div className="flex items-center justify-between border-b border-gray-200 bg-[#FFFDFB] px-5 py-4 shadow-sm">
+            <div className="flex items-center justify-between border-b border-[#E2D4C4] bg-[#FFF6EE] px-5 py-4 shadow-sm">
               <div className="min-w-0">
                 <p className="text-xs font-medium text-gray-500">
                   Mind map fullscreen
@@ -4467,7 +4467,7 @@ export const NotesWindow = () => {
                 type="button"
                 onMouseDown={(event) => event.stopPropagation()}
                 onClick={exitMindMapFullscreen}
-                className="rounded-full border border-gray-200 bg-gray-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-gray-800"
+                className="rounded-full border border-[#E2D4C4] bg-gray-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-gray-800"
               >
                 Exit fullscreen
               </button>
@@ -4489,7 +4489,7 @@ export const NotesWindow = () => {
 
       {sectionContextMenu && (
         <div
-          className="fixed z-210 min-w-40 rounded-lg border border-gray-200 bg-[#FFFDFB] text-gray-900 shadow-lg p-0"
+          className="fixed z-210 min-w-40 rounded-lg border border-[#E2D4C4] bg-[#FFFDFB] text-gray-900 shadow-lg p-0"
           style={{
             left: Math.max(8, Math.min(sectionContextMenu.x, window.innerWidth - 180)),
             top: Math.max(8, Math.min(sectionContextMenu.y, window.innerHeight - 220)),
@@ -4501,7 +4501,7 @@ export const NotesWindow = () => {
             onClick={() => {
               beginInlineSectionRename(sectionContextMenu.sectionId);
             }}
-            className="w-full h-9 px-3 rounded-none text-left hover:bg-gray-50 flex items-center gap-3 text-sm transition border-b border-gray-100"
+            className="w-full h-9 px-3 rounded-none text-left hover:bg-[#FFF1E3] flex items-center gap-3 text-sm transition border-b border-[#E8DDD4]"
           >
             <span className="text-gray-500 shrink-0">Aa</span>
             <span className="font-medium">Rename folder</span>
@@ -4521,12 +4521,12 @@ export const NotesWindow = () => {
                 });
               });
             }}
-            className="w-full h-9 px-3 rounded-none text-left hover:bg-gray-50 flex items-center gap-3 text-sm transition border-b border-gray-100"
+            className="w-full h-9 px-3 rounded-none text-left hover:bg-[#FFF1E3] flex items-center gap-3 text-sm transition border-b border-[#E8DDD4]"
           >
             <Plus size={14} className="text-gray-500 shrink-0" />
             <span className="font-medium">Create subfolder</span>
           </button>
-          <div className="px-3 py-2 border-b border-gray-100">
+          <div className="px-3 py-2 border-b border-[#E8DDD4]">
             <p className="text-xs font-medium text-gray-500">
               Folder color
             </p>
@@ -4548,7 +4548,7 @@ export const NotesWindow = () => {
                         className={`h-5 w-5 rounded-full transition ${
                           isActive
                             ? 'border-2 border-gray-500 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.85)]'
-                            : 'border border-gray-200 hover:border-gray-300'
+                            : 'border border-[#E2D4C4] hover:border-gray-300'
                         }`}
                         title={`Set ${sectionContextMenu.sectionName} color to ${color}`}
                       >
@@ -4603,7 +4603,7 @@ export const NotesWindow = () => {
           if (isBulkSelection) {
             return (
               <div
-                className="fixed z-210 min-w-44 rounded-lg border border-gray-200 bg-[#FFFDFB] text-gray-900 shadow-lg p-0"
+                className="fixed z-210 min-w-44 rounded-lg border border-[#E2D4C4] bg-[#FFFDFB] text-gray-900 shadow-lg p-0"
                 style={{
                   left: Math.max(8, Math.min(noteContextMenu.x, window.innerWidth - 180)),
                   top: Math.max(8, Math.min(noteContextMenu.y, window.innerHeight - 180)),
@@ -4611,7 +4611,7 @@ export const NotesWindow = () => {
                 onClick={(e) => e.stopPropagation()}
                 onMouseDown={(e) => e.stopPropagation()}
               >
-                <div className="px-3 py-2 border-b border-gray-100">
+                <div className="px-3 py-2 border-b border-[#E8DDD4]">
                   <p className="text-xs font-medium text-gray-500">
                     {selectedCount} selected
                   </p>
@@ -4620,7 +4620,7 @@ export const NotesWindow = () => {
                   onClick={() => {
                     handleBulkExportSelectedNotes();
                   }}
-                  className="w-full h-9 px-3 rounded-none text-left hover:bg-gray-50 flex items-center gap-3 text-sm transition"
+                  className="w-full h-9 px-3 rounded-none text-left hover:bg-[#FFF1E3] flex items-center gap-3 text-sm transition"
                 >
                   <Download size={14} className="text-gray-600 shrink-0" />
                   <span className="font-medium">Export selected</span>
@@ -4630,12 +4630,12 @@ export const NotesWindow = () => {
                     clearSidebarSelection();
                     setNoteContextMenu(null);
                   }}
-                  className="w-full h-9 px-3 rounded-none text-left hover:bg-gray-50 flex items-center gap-3 text-sm transition"
+                  className="w-full h-9 px-3 rounded-none text-left hover:bg-[#FFF1E3] flex items-center gap-3 text-sm transition"
                 >
                   <X size={14} className="text-gray-600 shrink-0" />
                   <span className="font-medium">Clear selection</span>
                 </button>
-                <div className="h-px bg-gray-100 my-1" />
+                <div className="h-px bg-[#E8DDD4] my-1" />
                 <button
                   onClick={() => {
                     void handleBulkDeleteSelectedNotes();
@@ -4651,7 +4651,7 @@ export const NotesWindow = () => {
 
           return (
         <div
-          className="fixed z-210 min-w-44 rounded-lg border border-gray-200 bg-[#FFFDFB] text-gray-900 shadow-lg p-0"
+          className="fixed z-210 min-w-44 rounded-lg border border-[#E2D4C4] bg-[#FFFDFB] text-gray-900 shadow-lg p-0"
           style={{
             left: Math.max(8, Math.min(noteContextMenu.x, window.innerWidth - 180)),
             top: Math.max(8, Math.min(noteContextMenu.y, window.innerHeight - 280)),
@@ -4666,7 +4666,7 @@ export const NotesWindow = () => {
               if (note) void openNote(note);
               setNoteContextMenu(null);
             }}
-            className="w-full h-9 px-3 rounded-none text-left hover:bg-gray-50 flex items-center gap-3 text-sm transition"
+            className="w-full h-9 px-3 rounded-none text-left hover:bg-[#FFF1E3] flex items-center gap-3 text-sm transition"
           >
             <StickyNote size={14} className="text-gray-600 shrink-0" />
             <span className="font-medium">Open</span>
@@ -4676,7 +4676,7 @@ export const NotesWindow = () => {
               beginInlineRename(noteContextMenu.noteId);
               setNoteContextMenu(null);
             }}
-            className="w-full h-9 px-3 rounded-none text-left hover:bg-gray-50 flex items-center gap-3 text-sm transition"
+            className="w-full h-9 px-3 rounded-none text-left hover:bg-[#FFF1E3] flex items-center gap-3 text-sm transition"
           >
             <span className="text-gray-500 shrink-0">Aa</span>
             <span className="font-medium">Rename</span>
@@ -4686,7 +4686,7 @@ export const NotesWindow = () => {
               void createChildNote(noteContextMenu.noteId);
               setNoteContextMenu(null);
             }}
-            className="w-full h-9 px-3 rounded-none text-left hover:bg-gray-50 flex items-center gap-3 text-sm transition"
+            className="w-full h-9 px-3 rounded-none text-left hover:bg-[#FFF1E3] flex items-center gap-3 text-sm transition"
           >
             <Plus size={14} className="text-gray-600 shrink-0" />
             <span className="font-medium">Create child</span>
@@ -4699,14 +4699,14 @@ export const NotesWindow = () => {
                 .catch(() => {});
               setNoteContextMenu(null);
             }}
-            className="w-full h-9 px-3 rounded-none text-left hover:bg-gray-50 flex items-center gap-3 text-sm transition"
+            className="w-full h-9 px-3 rounded-none text-left hover:bg-[#FFF1E3] flex items-center gap-3 text-sm transition"
           >
             <Folder size={14} className="text-gray-600 shrink-0" />
             <span className="font-medium">Move to root</span>
           </button>
 
           {/* Divider */}
-          <div className="h-px bg-gray-100 my-1" />
+          <div className="h-px bg-[#E8DDD4] my-1" />
 
           {/* Second group: Duplicate, Save as template */}
           <button
@@ -4714,7 +4714,7 @@ export const NotesWindow = () => {
               void duplicateNoteById(noteContextMenu.noteId);
               setNoteContextMenu(null);
             }}
-            className="w-full h-9 px-3 rounded-none text-left hover:bg-gray-50 flex items-center gap-3 text-sm transition"
+            className="w-full h-9 px-3 rounded-none text-left hover:bg-[#FFF1E3] flex items-center gap-3 text-sm transition"
           >
             <Copy size={14} className="text-gray-600 shrink-0" />
             <span className="font-medium">Duplicate</span>
@@ -4729,14 +4729,14 @@ export const NotesWindow = () => {
               }
               setNoteContextMenu(null);
             }}
-            className="w-full h-9 px-3 rounded-none text-left hover:bg-gray-50 flex items-center gap-3 text-sm transition"
+            className="w-full h-9 px-3 rounded-none text-left hover:bg-[#FFF1E3] flex items-center gap-3 text-sm transition"
           >
             <Zap size={14} className="text-gray-600 shrink-0" />
             <span className="font-medium">Save as template</span>
           </button>
 
           {/* Divider */}
-          <div className="h-px bg-gray-100 my-1" />
+          <div className="h-px bg-[#E8DDD4] my-1" />
 
           {/* Third group: Delete (destructive) */}
           <button
