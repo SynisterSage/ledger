@@ -2732,6 +2732,7 @@ const loadMobileTodayData = async ({ userId, scope, dateKey }) => {
       status: isOverdue ? 'overdue' : 'active',
       sourceType,
       sourceId: task.id,
+      startsAt: dueAt?.toISOString() ?? null,
       timeLabel,
       dateLabel,
       sortAt: dueAt?.toISOString() ?? `${task.due_date ?? selectedDateKey}T00:00:00.000Z`,
@@ -2864,6 +2865,7 @@ const loadMobileTodayData = async ({ userId, scope, dateKey }) => {
           sourceType: 'reminder',
           sourceId: reminder.id,
           sortAt: remindAt.toISOString(),
+          startsAt: remindAt.toISOString(),
           timeLabel: formatNotificationTime(remindAt) ?? null,
           dateLabel: formatNotificationDateTime(remindAt),
         },
@@ -2889,6 +2891,7 @@ const loadMobileTodayData = async ({ userId, scope, dateKey }) => {
           sourceType: 'reminder',
           sourceId: reminder.id,
           sortAt: remindAt.toISOString(),
+          startsAt: remindAt.toISOString(),
           dateLabel: formatNotificationDateTime(remindAt),
           priorityRank: 0,
         },
@@ -2936,6 +2939,7 @@ const loadMobileTodayData = async ({ userId, scope, dateKey }) => {
           status: 'active',
           sourceType: 'calendar_event',
           sourceId: event.id,
+          startsAt: startAt.toISOString(),
         },
         eventKey
       );
@@ -3017,6 +3021,7 @@ const loadMobileTodayData = async ({ userId, scope, dateKey }) => {
           sourceId: project.id,
           timeLabel: formatNotificationTime(projectEndAt) ?? null,
           dateLabel: formatNotificationDateTime(projectEndAt),
+          startsAt: projectEndAt.toISOString(),
           sortAt: projectEndAt.toISOString(),
           priorityRank: 0,
         },
@@ -3039,6 +3044,7 @@ const loadMobileTodayData = async ({ userId, scope, dateKey }) => {
           sourceId: project.id,
           sortAt: projectEndAt.toISOString(),
           dateLabel: formatNotificationDateTime(projectEndAt),
+          startsAt: projectEndAt.toISOString(),
           priorityRank: 0,
         },
         projectKey

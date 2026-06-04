@@ -47,6 +47,7 @@ export type MobileTodayItem = {
   status: 'active' | 'overdue';
   sourceType: 'task' | 'reminder' | 'project_action' | 'calendar_event';
   sourceId: string;
+  startsAt?: string | null;
   timeLabel?: string | null;
   dateLabel?: string | null;
   urgency?: string | null;
@@ -119,4 +120,35 @@ export type NotificationItem = {
   workspace: Workspace;
   meta: string;
   actions: string[];
+};
+
+export type MobileNotificationCenterItem = {
+  id: string;
+  sourceType: 'reminder' | 'event' | 'task' | 'project' | 'inbox' | 'workspace_invite';
+  sourceId: string;
+  notificationType: string | null;
+  title: string;
+  body: string | null;
+  context: string | null;
+  workspaceId: string | null;
+  workspaceName: string | null;
+  workspaceColor: string | null;
+  moduleKind: string | null;
+  actions: string[];
+  scheduledFor: string | null;
+  deliveredInAppAt: string | null;
+  deliveredDesktopAt: string | null;
+  dismissedAt: string | null;
+  actionTaken: string | null;
+  status: 'active' | 'earlier';
+};
+
+export type MobileNotificationCenterResponse = {
+  active: MobileNotificationCenterItem[];
+  earlier: MobileNotificationCenterItem[];
+  counts: {
+    active: number;
+    earlier: number;
+    total: number;
+  };
 };

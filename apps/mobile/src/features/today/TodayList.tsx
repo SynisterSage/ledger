@@ -61,23 +61,34 @@ function formatUpcomingLabel(item: MobileUpcomingItem) {
 }
 
 function formatUpcomingTime(item: MobileUpcomingItem) {
-  if (item.timeLabel) {
-    return item.timeLabel;
-  }
+  return formatTimeFromDate(item.startsAt, item.timeLabel);
+}
 
-  if (!item.startsAt) {
-    return null;
-  }
+function formatDateTimeLabel(dateLike: string | null | undefined) {
+  if (!dateLike) return null;
 
-  const startDate = new Date(item.startsAt);
-  if (Number.isNaN(startDate.getTime())) {
-    return null;
-  }
+  const date = new Date(dateLike);
+  if (Number.isNaN(date.getTime())) return null;
+
+  return new Intl.DateTimeFormat('en-US', {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(date);
+}
+
+function formatTimeFromDate(dateLike: string | null | undefined, fallback: string | null = null) {
+  if (!dateLike) return fallback;
+
+  const date = new Date(dateLike);
+  if (Number.isNaN(date.getTime())) return fallback;
 
   return new Intl.DateTimeFormat('en-US', {
     hour: 'numeric',
     minute: '2-digit',
-  }).format(startDate);
+  }).format(date);
 }
 
 function buildTodaySubtitle(item: MobileTodayItem, showWorkspaceNames: boolean) {
@@ -101,15 +112,17 @@ function buildTodaySubtitle(item: MobileTodayItem, showWorkspaceNames: boolean) 
     parts.push('Project');
     if (item.status === 'overdue') {
       parts.push('Overdue');
-    } else if (item.timeLabel) {
-      parts.push(item.timeLabel);
+    } else if (item.startsAt) {
+      const timeLabel = formatTimeFromDate(item.startsAt, item.timeLabel ?? item.dueLabel);
+      if (timeLabel) parts.push(timeLabel);
     } else {
       parts.push(item.dueLabel);
     }
   } else if (item.type === 'event') {
     parts.push('Event');
-    if (item.timeLabel) {
-      parts.push(item.timeLabel);
+    if (item.startsAt) {
+      const timeLabel = formatTimeFromDate(item.startsAt, item.timeLabel ?? item.dueLabel);
+      if (timeLabel) parts.push(timeLabel);
     }
   } else if (item.meta && item.meta !== item.dueLabel) {
     parts.push(item.meta);
@@ -117,8 +130,9 @@ function buildTodaySubtitle(item: MobileTodayItem, showWorkspaceNames: boolean) 
     parts.push(item.meta);
   }
 
-  if (item.type !== 'project_action' && item.type !== 'event' && item.timeLabel) {
-    parts.push(item.timeLabel);
+  if (item.type !== 'project_action' && item.type !== 'event' && item.startsAt) {
+    const timeLabel = formatTimeFromDate(item.startsAt, item.timeLabel ?? item.dueLabel);
+    if (timeLabel) parts.push(timeLabel);
   } else if (item.dueLabel && !item.timeLabel) {
     const shouldAddDueLabel =
       item.meta !== item.dueLabel ||
@@ -162,7 +176,7 @@ export function TodayList({
               subtitle={
                 [
                   showWorkspaceNames ? item.workspaceName : null,
-                  `${formatUpcomingLabel(item)}${formatUpcomingTime(item) ? ` · ${formatUpcomingTime(item)}` : ''}`,
+                  `${formatUpcomingLabel(item)}${formatTimeFromDate(item.startsAt ?? null, item.timeLabel) ? ` · ${formatTimeFromDate(item.startsAt ?? null, item.timeLabel)}` : ''}`,
                 ]
                   .filter(Boolean)
                   .join(' · ')
@@ -199,11 +213,11 @@ export function TodayList({
               <TodayItem
                 key={item.id}
                 title={item.title}
-                subtitle={
-                  showWorkspaceNames && item.workspaceName
-                    ? [item.workspaceName, item.source].filter(Boolean).join(' · ')
-                    : item.source
-                }
+              subtitle={
+                showWorkspaceNames && item.workspaceName
+                  ? [item.workspaceName, formatDateTimeLabel(item.createdAt) ?? null, item.source].filter(Boolean).join(' · ')
+                  : [formatDateTimeLabel(item.createdAt), item.source].filter(Boolean).join(' · ') || item.source
+              }
                 onPress={() => onItemPress?.(item)}
                 onLongPress={() => onItemLongPress?.(item)}
               />

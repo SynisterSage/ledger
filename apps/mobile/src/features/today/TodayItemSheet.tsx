@@ -46,14 +46,28 @@ function getItemMeta(item: TodaySheetItem) {
   }
 
   if ('source' in item) {
-    const captureParts = [item.workspaceName, item.dateLabel ?? null, item.source].filter(Boolean);
+    const captureParts = [item.workspaceName, item.createdAt ? formatDateTimeLabel(item.createdAt) : item.dateLabel ?? null, item.source].filter(Boolean);
     return captureParts.length ? captureParts.join(' · ') : item.source;
   }
 
-  const dateMeta = 'dateLabel' in item ? item.dateLabel : null;
-  const timeMeta = 'timeLabel' in item ? item.timeLabel : null;
-  const metaParts = [item.workspaceName, dateMeta ?? timeMeta ?? null].filter(Boolean);
+  const dateMeta = 'startsAt' in item ? formatDateTimeLabel(item.startsAt) : 'dateLabel' in item ? item.dateLabel : null;
+  const metaParts = [item.workspaceName, dateMeta].filter(Boolean);
   return metaParts.join(' · ');
+}
+
+function formatDateTimeLabel(dateLike: string | null | undefined) {
+  if (!dateLike) return null;
+
+  const date = new Date(dateLike);
+  if (Number.isNaN(date.getTime())) return null;
+
+  return new Intl.DateTimeFormat('en-US', {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(date);
 }
 
 function getActionsForItem(item: TodaySheetItem, mode: TodaySheetMode): SheetAction[] {
