@@ -6,8 +6,10 @@ import { SymbolView } from 'expo-symbols';
 
 import { signOut, updateDisplayName, updatePassword } from '@/api/auth';
 import {
+  defaultMobileCapturePreferences,
   defaultMobileNotificationPreferences,
   getMobileUserSettings,
+  readMobileCapturePreferences,
   readMobileNotificationPreferences,
   updateMobileUserSettings,
 } from '@/api/userSettings';
@@ -16,6 +18,7 @@ import { Section } from '@/components/Section';
 import { SettingsRow } from '@/components/SettingsRow';
 import { WorkspaceSelectorSheet } from '@/components/WorkspaceSelectorSheet';
 import { SettingsEditSheet, type SettingsEditSheetMode } from '@/features/settings/SettingsEditSheet';
+import { SettingsChoiceSheet } from '@/features/settings/SettingsChoiceSheet';
 import { useAuthState } from '@/store/sessionStore';
 import {
   bootstrapWorkspaceState,
@@ -44,10 +47,13 @@ export default function SettingsScreen() {
   const scrollY = useRef(new Animated.Value(0)).current;
   const [notificationPrefs, setNotificationPrefs] = useState(defaultMobileNotificationPreferences);
   const [notificationPrefsLoading, setNotificationPrefsLoading] = useState(true);
+  const [capturePrefs, setCapturePrefs] = useState(defaultMobileCapturePreferences);
+  const [capturePrefsLoading, setCapturePrefsLoading] = useState(true);
   const [hapticsEnabled, setHapticsEnabled] = useState(true);
   const [reduceMotionEnabled, setReduceMotionEnabled] = useState(false);
   const [sheetMode, setSheetMode] = useState<SettingsEditSheetMode | null>(null);
   const [workspaceSheetTarget, setWorkspaceSheetTarget] = useState<'default_capture' | 'today_scope' | null>(null);
+  const [captureSheetTarget, setCaptureSheetTarget] = useState<'shared_items' | 'default_type' | null>(null);
 
   const switchTrackColor = useMemo(
     () => ({
@@ -75,6 +81,9 @@ export default function SettingsScreen() {
     const filtered = workspaceState.options.filter((option) => option.id !== 'all');
     return filtered.length ? filtered : workspaceState.options;
   }, [workspaceState.options]);
+  const captureTypeLabel = useMemo(() => {
+    return formatCaptureTypeLabel(capturePrefs.defaultCaptureType);
+  }, [capturePrefs.defaultCaptureType]);
 
   useEffect(() => {
     setSheetMode(null);
@@ -89,18 +98,22 @@ export default function SettingsScreen() {
 
     const loadNotificationPreferences = async () => {
       setNotificationPrefsLoading(true);
+      setCapturePrefsLoading(true);
 
       try {
         const settings = await getMobileUserSettings();
         if (cancelled) return;
         setNotificationPrefs(readMobileNotificationPreferences(settings));
+        setCapturePrefs(readMobileCapturePreferences(settings));
       } catch {
         if (!cancelled) {
           setNotificationPrefs(defaultMobileNotificationPreferences);
+          setCapturePrefs(defaultMobileCapturePreferences);
         }
       } finally {
         if (!cancelled) {
           setNotificationPrefsLoading(false);
+          setCapturePrefsLoading(false);
         }
       }
     };
@@ -144,6 +157,22 @@ export default function SettingsScreen() {
         'Could not save notifications',
         'You can change this later in Settings.',
       );
+    }
+  };
+
+  const patchCapturePreferences = async (nextPreferences: typeof defaultMobileCapturePreferences) => {
+    const previousPreferences = capturePrefs;
+    setCapturePrefs(nextPreferences);
+
+    try {
+      await updateMobileUserSettings({
+        preferences: {
+          mobileCapturePreferences: nextPreferences,
+        },
+      });
+    } catch {
+      setCapturePrefs(previousPreferences);
+      Alert.alert('Could not save capture settings', 'You can change this later in Settings.');
     }
   };
 
@@ -253,14 +282,14 @@ export default function SettingsScreen() {
             />
             <SettingsRow
               title="Remember last used workspace"
-                right={
-                  <Switch
+              right={
+                <Switch
                   value={workspaceState.rememberLastWorkspace}
                   onValueChange={setRememberLastWorkspace}
-                    trackColor={switchTrackColor}
-                    thumbColor={theme.colors.surface}
-                  />
-                }
+                  trackColor={switchTrackColor}
+                  thumbColor={theme.colors.surface}
+                />
+              }
             />
           </Section>
 
@@ -353,14 +382,29 @@ export default function SettingsScreen() {
           </Section>
 
           <Section title="Capture">
-            <SettingsRow title="Shared items" value="Save to Inbox" chevron />
-            <SettingsRow title="Default capture type" value="Reminder" chevron />
+            <SettingsRow
+              title="Shared items"
+              value={
+                capturePrefsLoading
+                  ? 'Loading...'
+                  : capturePrefs.sharedItemsDestination === 'inbox'
+                  ? 'Save to Inbox'
+                  : 'Save to Notes'
+              }
+              chevron
+              onPress={() => setCaptureSheetTarget('shared_items')}
+            />
+            <SettingsRow
+              title="Default capture type"
+              value={capturePrefsLoading ? 'Loading...' : captureTypeLabel}
+              chevron
+              onPress={() => setCaptureSheetTarget('default_type')}
+            />
             <SettingsRow title="Siri Shortcuts" value="Coming soon" />
             <SettingsRow title="Share Sheet" value="Coming soon" />
           </Section>
 
           <Section title="App">
-            <SettingsRow title="Appearance" value="System" chevron />
             <SettingsRow
               title="Haptics"
               right={
@@ -429,6 +473,45 @@ export default function SettingsScreen() {
         }}
         onClose={() => setWorkspaceSheetTarget(null)}
       />
+
+      <SettingsChoiceSheet
+        visible={captureSheetTarget === 'shared_items'}
+        title="Shared items"
+        subtitle="Choose where shared items should go on this device."
+        selectedValue={capturePrefs.sharedItemsDestination}
+        options={[
+          { value: 'inbox', title: 'Save to Inbox', subtitle: 'Recommended for quick triage.' },
+          { value: 'notes', title: 'Save to Notes', subtitle: 'For things you want to keep as reference.' },
+        ]}
+        onSelect={(value) =>
+          void patchCapturePreferences({
+            ...capturePrefs,
+            sharedItemsDestination: value as typeof capturePrefs.sharedItemsDestination,
+          })
+        }
+        onClose={() => setCaptureSheetTarget(null)}
+      />
+
+      <SettingsChoiceSheet
+        visible={captureSheetTarget === 'default_type'}
+        title="Default capture type"
+        subtitle="Choose which capture form should be preselected for mobile capture."
+        selectedValue={capturePrefs.defaultCaptureType}
+        options={[
+          { value: 'reminder', title: 'Reminder' },
+          { value: 'task', title: 'Task' },
+          { value: 'event', title: 'Event' },
+          { value: 'note', title: 'Note' },
+          { value: 'project-action', title: 'Project action' },
+        ]}
+        onSelect={(value) =>
+          void patchCapturePreferences({
+            ...capturePrefs,
+            defaultCaptureType: value as typeof capturePrefs.defaultCaptureType,
+          })
+        }
+        onClose={() => setCaptureSheetTarget(null)}
+      />
     </View>
   );
 }
@@ -481,3 +564,9 @@ const styles = {
     borderBottomWidth: 0.5,
   },
 } as const;
+
+function formatCaptureTypeLabel(captureType: string) {
+  if (captureType === 'project-action') return 'Project action';
+  if (!captureType) return 'Reminder';
+  return captureType.charAt(0).toUpperCase() + captureType.slice(1);
+}

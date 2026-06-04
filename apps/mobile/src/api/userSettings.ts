@@ -1,5 +1,7 @@
 import { mobileRequest } from './client';
 
+import type { CaptureType } from '@/types/ledger';
+
 export type MobileUserSettings = {
   full_name: string | null;
   email: string | null;
@@ -17,12 +19,22 @@ export type MobileNotificationPreferences = {
   overdueItemsEnabled: boolean;
 };
 
+export type MobileCapturePreferences = {
+  sharedItemsDestination: 'inbox' | 'notes';
+  defaultCaptureType: CaptureType;
+};
+
 export const defaultMobileNotificationPreferences: MobileNotificationPreferences = {
   pushNotifications: false,
   remindersEnabled: true,
   eventsEnabled: true,
   projectActionsEnabled: true,
   overdueItemsEnabled: true,
+};
+
+export const defaultMobileCapturePreferences: MobileCapturePreferences = {
+  sharedItemsDestination: 'inbox',
+  defaultCaptureType: 'reminder',
 };
 
 type MobileUserSettingsPatch = {
@@ -71,4 +83,26 @@ export function readMobileNotificationPreferences(settings: MobileUserSettings |
         ? mobilePreferences.overdueItemsEnabled
         : defaultMobileNotificationPreferences.overdueItemsEnabled,
   } satisfies MobileNotificationPreferences;
+}
+
+export function readMobileCapturePreferences(settings: MobileUserSettings | null | undefined) {
+  const preferences = settings?.preferences;
+  const mobilePreferences =
+    preferences && typeof preferences === 'object' && 'mobileCapturePreferences' in preferences
+      ? (preferences as { mobileCapturePreferences?: Record<string, unknown> }).mobileCapturePreferences
+      : null;
+
+  const sharedItemsDestination =
+    mobilePreferences?.sharedItemsDestination === 'notes' ? 'notes' : defaultMobileCapturePreferences.sharedItemsDestination;
+
+  const defaultCaptureType =
+    typeof mobilePreferences?.defaultCaptureType === 'string' &&
+    ['reminder', 'task', 'event', 'note', 'project-action'].includes(mobilePreferences.defaultCaptureType)
+      ? (mobilePreferences.defaultCaptureType as CaptureType)
+      : defaultMobileCapturePreferences.defaultCaptureType;
+
+  return {
+    sharedItemsDestination,
+    defaultCaptureType,
+  } satisfies MobileCapturePreferences;
 }

@@ -28,6 +28,7 @@ export type MobileUpcomingItem = {
   workspaceId: string;
   workspaceName: string | null;
   timeLabel: string | null;
+  dateLabel?: string | null;
   startsAt: string | null;
   endsAt: string | null;
   status: 'upcoming';
@@ -47,6 +48,7 @@ export type MobileTodayItem = {
   sourceType: 'task' | 'reminder' | 'project_action' | 'calendar_event';
   sourceId: string;
   timeLabel?: string | null;
+  dateLabel?: string | null;
   urgency?: string | null;
 };
 
@@ -57,6 +59,7 @@ export type MobileCaptureItem = {
   workspaceId: string;
   workspaceName: string | null;
   createdAt: string | null;
+  dateLabel?: string | null;
 };
 
 export type MobileCaptureSummary = {

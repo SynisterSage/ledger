@@ -2702,6 +2702,7 @@ const loadMobileTodayData = async ({ userId, scope, dateKey }) => {
 
   const buildTaskPayload = (task, overrides = {}) => {
     const dueAt = toTaskDueAt(task);
+    const dueDateKey = String(task.due_date ?? '').trim();
     const workspaceContext = buildWorkspaceContext(task.workspace_id);
     const hasProject = Boolean(task.project_id);
     const isOverdue = overrides.isOverdue ?? isTaskOverdueForSelectedDate(task);
@@ -2709,6 +2710,13 @@ const loadMobileTodayData = async ({ userId, scope, dateKey }) => {
     const sourceType = overrides.sourceType ?? (hasProject ? 'project_action' : 'task');
     const meta = overrides.meta ?? (isOverdue ? 'Overdue' : hasProject ? 'Project action' : 'Due today');
     const dueLabel = overrides.dueLabel ?? (isOverdue ? 'Overdue' : 'Today');
+    const dateLabel =
+      overrides.dateLabel ??
+      (dueAt
+        ? formatNotificationDateTime(dueAt)
+        : dueDateKey
+        ? formatNotificationDate(`${dueDateKey}T00:00:00`)
+        : null);
     const timeLabel =
       overrides.timeLabel ??
       (dueAt && String(task.due_date ?? '') === selectedDateKey ? formatNotificationTime(dueAt) ?? null : null);
@@ -2725,6 +2733,7 @@ const loadMobileTodayData = async ({ userId, scope, dateKey }) => {
       sourceType,
       sourceId: task.id,
       timeLabel,
+      dateLabel,
       sortAt: dueAt?.toISOString() ?? `${task.due_date ?? selectedDateKey}T00:00:00.000Z`,
       priorityRank: getTaskPriorityRank(task.priority),
     };
@@ -2773,6 +2782,12 @@ const loadMobileTodayData = async ({ userId, scope, dateKey }) => {
         workspaceId: task.workspace_id,
         workspaceName: workspaceById.get(task.workspace_id)?.name ?? null,
         timeLabel: dueAt ? formatNotificationTime(dueAt) ?? null : null,
+        dateLabel:
+          dueAt
+            ? formatNotificationDateTime(dueAt)
+            : task.due_date
+            ? formatNotificationDate(`${String(task.due_date)}T00:00:00`)
+            : null,
         startsAt: dueAt ? dueAt.toISOString() : null,
         endsAt: null,
         status: 'upcoming',
@@ -2822,6 +2837,7 @@ const loadMobileTodayData = async ({ userId, scope, dateKey }) => {
           workspaceId: reminder.workspace_id,
           workspaceName: workspaceById.get(reminder.workspace_id)?.name ?? null,
           timeLabel: formatNotificationTime(remindAt) ?? null,
+          dateLabel: formatNotificationDateTime(remindAt),
           startsAt: remindAt.toISOString(),
           endsAt: null,
           status: 'upcoming',
@@ -2849,6 +2865,7 @@ const loadMobileTodayData = async ({ userId, scope, dateKey }) => {
           sourceId: reminder.id,
           sortAt: remindAt.toISOString(),
           timeLabel: formatNotificationTime(remindAt) ?? null,
+          dateLabel: formatNotificationDateTime(remindAt),
         },
         reminderKey
       );
@@ -2860,22 +2877,23 @@ const loadMobileTodayData = async ({ userId, scope, dateKey }) => {
     }
 
     addTodayItem(
-      {
-        id: reminderKey,
-        type: 'reminder',
-        title: reminder.title ?? 'Untitled reminder',
-        workspaceId: reminder.workspace_id,
-        workspaceName: workspaceById.get(reminder.workspace_id)?.name ?? null,
-        meta: isOverdue ? 'Overdue' : 'Due today',
-        dueLabel: isOverdue ? 'Overdue' : 'Today',
-        status: isOverdue ? 'overdue' : 'active',
-        sourceType: 'reminder',
-        sourceId: reminder.id,
-        sortAt: remindAt.toISOString(),
-        priorityRank: 0,
-      },
-      reminderKey
-    );
+        {
+          id: reminderKey,
+          type: 'reminder',
+          title: reminder.title ?? 'Untitled reminder',
+          workspaceId: reminder.workspace_id,
+          workspaceName: workspaceById.get(reminder.workspace_id)?.name ?? null,
+          meta: isOverdue ? 'Overdue' : 'Due today',
+          dueLabel: isOverdue ? 'Overdue' : 'Today',
+          status: isOverdue ? 'overdue' : 'active',
+          sourceType: 'reminder',
+          sourceId: reminder.id,
+          sortAt: remindAt.toISOString(),
+          dateLabel: formatNotificationDateTime(remindAt),
+          priorityRank: 0,
+        },
+        reminderKey
+      );
   }
 
   for (const event of eventRows) {
@@ -2900,6 +2918,7 @@ const loadMobileTodayData = async ({ userId, scope, dateKey }) => {
       workspaceId: event.workspace_id,
       workspaceName: workspaceById.get(event.workspace_id)?.name ?? null,
       timeLabel: formatNotificationTime(startAt) ?? null,
+      dateLabel: formatNotificationDateTime(startAt),
       startsAt: startAt.toISOString(),
       endsAt: event.end_at ?? null,
       status: 'upcoming',
@@ -2970,6 +2989,7 @@ const loadMobileTodayData = async ({ userId, scope, dateKey }) => {
           workspaceId: project.workspace_id,
           workspaceName: workspaceById.get(project.workspace_id)?.name ?? null,
           timeLabel: formatNotificationTime(projectEndAt) ?? null,
+          dateLabel: formatNotificationDateTime(projectEndAt),
           startsAt: projectEndAt.toISOString(),
           endsAt: null,
           status: 'upcoming',
@@ -2996,6 +3016,7 @@ const loadMobileTodayData = async ({ userId, scope, dateKey }) => {
           sourceType: 'project_action',
           sourceId: project.id,
           timeLabel: formatNotificationTime(projectEndAt) ?? null,
+          dateLabel: formatNotificationDateTime(projectEndAt),
           sortAt: projectEndAt.toISOString(),
           priorityRank: 0,
         },
@@ -3005,22 +3026,23 @@ const loadMobileTodayData = async ({ userId, scope, dateKey }) => {
     }
 
     addTodayItem(
-      {
-        id: `project_action:${project.id}`,
-        type: 'project_action',
-        title: project.name ?? 'Untitled project',
-        workspaceId: project.workspace_id,
-        workspaceName: workspaceById.get(project.workspace_id)?.name ?? null,
-        meta: isProjectOverdue ? 'Overdue' : 'Project action',
-        dueLabel: isProjectOverdue ? 'Overdue' : 'Today',
-        status: isProjectOverdue ? 'overdue' : 'active',
-        sourceType: 'project_action',
-        sourceId: project.id,
-        sortAt: projectEndAt.toISOString(),
-        priorityRank: 0,
-      },
-      projectKey
-    );
+        {
+          id: `project_action:${project.id}`,
+          type: 'project_action',
+          title: project.name ?? 'Untitled project',
+          workspaceId: project.workspace_id,
+          workspaceName: workspaceById.get(project.workspace_id)?.name ?? null,
+          meta: isProjectOverdue ? 'Overdue' : 'Project action',
+          dueLabel: isProjectOverdue ? 'Overdue' : 'Today',
+          status: isProjectOverdue ? 'overdue' : 'active',
+          sourceType: 'project_action',
+          sourceId: project.id,
+          sortAt: projectEndAt.toISOString(),
+          dateLabel: formatNotificationDateTime(projectEndAt),
+          priorityRank: 0,
+        },
+        projectKey
+      );
   }
 
   upcoming.sort((left, right) => {
@@ -3064,6 +3086,7 @@ const loadMobileTodayData = async ({ userId, scope, dateKey }) => {
     workspaceId: item.workspace_id,
     workspaceName: workspaceById.get(item.workspace_id)?.name ?? null,
     createdAt: item.created_at ?? null,
+    dateLabel: item.created_at ? formatNotificationDateTime(item.created_at) : null,
   }));
 
   return {

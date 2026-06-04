@@ -41,18 +41,18 @@ function getItemTypeLabel(item: TodaySheetItem) {
 
 function getItemMeta(item: TodaySheetItem) {
   if ('type' in item && item.type === 'focus') {
-    return null;
+    const focusParts = [item.workspaceName, 'Focus', item.urgency ?? 'Low'].filter(Boolean);
+    return focusParts.length ? focusParts.join(' · ') : null;
   }
 
   if ('source' in item) {
-    return item.source;
+    const captureParts = [item.workspaceName, item.dateLabel ?? null, item.source].filter(Boolean);
+    return captureParts.length ? captureParts.join(' · ') : item.source;
   }
 
-  const metaParts = [
-    item.workspaceName,
-    'timeLabel' in item ? item.timeLabel : null,
-    'meta' in item ? item.meta : ('dueLabel' in item ? item.dueLabel : null),
-  ].filter(Boolean);
+  const dateMeta = 'dateLabel' in item ? item.dateLabel : null;
+  const timeMeta = 'timeLabel' in item ? item.timeLabel : null;
+  const metaParts = [item.workspaceName, dateMeta ?? timeMeta ?? null].filter(Boolean);
   return metaParts.join(' · ');
 }
 
