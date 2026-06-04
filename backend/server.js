@@ -1883,7 +1883,8 @@ const mapNotificationCenterRow = (row, maps) => {
   };
 };
 
-const getNotificationCenterItems = async (userId) => {
+const getNotificationCenterItems = async (userId, workspaceId = null) => {
+  const normalizedWorkspaceId = normalizeNullableText(workspaceId);
   const { data, error } = await supabase
     .from('notification_events')
     .select(
@@ -1896,7 +1897,12 @@ const getNotificationCenterItems = async (userId) => {
 
   if (error) throw error;
 
-  const rows = Array.isArray(data) ? data : [];
+  let rows = Array.isArray(data) ? data : [];
+  if (normalizedWorkspaceId && normalizedWorkspaceId !== 'all') {
+    const access = await requireWorkspaceAccess(userId, normalizedWorkspaceId, 'member');
+    rows = rows.filter((row) => String(row.workspace_id ?? '') === access.workspace.id);
+  }
+
   const maps = await buildNotificationCenterSourceMaps(rows);
   const items = rows.map((row) => mapNotificationCenterRow(row, maps));
   const active = items.filter((item) => item.status === 'active');
@@ -5137,7 +5143,8 @@ app.get('/api/notifications/summary', authMiddleware, rateLimit('read'), async (
 
 app.get('/api/notifications', authMiddleware, rateLimit('read'), async (req, res) => {
   try {
-    const data = await getNotificationCenterItems(req.authUser.id);
+    const workspaceId = normalizeNullableText(req.query?.workspace_id);
+    const data = await getNotificationCenterItems(req.authUser.id, workspaceId);
     res.json(data);
   } catch (error) {
     return respondWithError(res, error);

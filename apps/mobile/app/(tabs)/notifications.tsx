@@ -11,7 +11,7 @@ import { NotificationList } from '@/features/notifications/NotificationList';
 import { getMobileNotifications } from '@/api/notifications';
 import { useLedgerTheme } from '@/theme';
 import { bootstrapWorkspaceState, getWorkspaceLabel, selectWorkspace, useWorkspaceState } from '@/store/workspaceStore';
-import type { MobileNotificationCenterItem, MobileNotificationCenterResponse } from '@/types/ledger';
+import type { MobileNotificationCenterResponse } from '@/types/ledger';
 
 const EMPTY_NOTIFICATIONS: MobileNotificationCenterResponse = {
   active: [],
@@ -38,28 +38,6 @@ export default function NotificationsScreen() {
     return getWorkspaceLabel(workspaceState.selectedWorkspaceId, workspaceState.options);
   }, [workspaceState.options, workspaceState.selectedWorkspaceId]);
 
-  const filteredNotifications = useMemo(() => {
-    if (workspaceState.selectedWorkspaceId === 'all') {
-      return notifications;
-    }
-
-    const filterByWorkspace = (items: MobileNotificationCenterItem[]) =>
-      items.filter((item) => item.workspaceId === workspaceState.selectedWorkspaceId);
-
-    const active = filterByWorkspace(notifications.active);
-    const earlier = filterByWorkspace(notifications.earlier);
-
-    return {
-      active,
-      earlier,
-      counts: {
-        active: active.length,
-        earlier: earlier.length,
-        total: active.length + earlier.length,
-      },
-    };
-  }, [notifications, workspaceState.selectedWorkspaceId]);
-
   useEffect(() => {
     void bootstrapWorkspaceState();
   }, []);
@@ -82,7 +60,7 @@ export default function NotificationsScreen() {
       setError(null);
 
       try {
-        const response = await getMobileNotifications();
+        const response = await getMobileNotifications(workspaceState.selectedWorkspaceId);
         if (cancelled) return;
         setNotifications(response);
       } catch (err) {
@@ -98,14 +76,14 @@ export default function NotificationsScreen() {
     return () => {
       cancelled = true;
     };
-  }, [refreshNonce]);
+  }, [refreshNonce, workspaceState.selectedWorkspaceId]);
 
   const openWorkspaceSwitcher = () => {
     if (workspaceState.options.length <= 1) return;
     setWorkspacePickerOpen(true);
   };
 
-  const hasContent = filteredNotifications.active.length > 0 || filteredNotifications.earlier.length > 0;
+  const hasContent = notifications.active.length > 0 || notifications.earlier.length > 0;
 
   return (
     <Screen contentStyle={{ paddingTop: 0 }}>
@@ -161,13 +139,13 @@ export default function NotificationsScreen() {
             ) : hasContent ? (
               <View style={{ gap: theme.spacing.xl }}>
                 <AppText variant="body">{
-                  filteredNotifications.counts.active > 0
-                    ? `${filteredNotifications.counts.active} active`
+                  notifications.counts.active > 0
+                    ? `${notifications.counts.active} active`
                     : 'Nothing active'
                 }</AppText>
                 <NotificationList
-                  active={filteredNotifications.active}
-                  earlier={filteredNotifications.earlier}
+                  active={notifications.active}
+                  earlier={notifications.earlier}
                   showWorkspaceNames={workspaceState.selectedWorkspaceId === 'all'}
                 />
               </View>
