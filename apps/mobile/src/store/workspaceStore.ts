@@ -162,6 +162,20 @@ export function getWorkspaceLabel(workspaceId: string, options: MobileWorkspaceS
   return options.find((option) => option.id === workspaceId)?.name ?? 'Workspace';
 }
 
+export function resolveCaptureWorkspaceId(state = getWorkspaceState()) {
+  const validWorkspaceIds = new Set(state.options.map((option) => option.id));
+  const candidates = [state.defaultCaptureWorkspaceId, state.selectedWorkspaceId, state.todayScopeWorkspaceId];
+
+  for (const candidate of candidates) {
+    if (candidate && candidate !== 'all' && validWorkspaceIds.has(candidate)) {
+      return candidate;
+    }
+  }
+
+  const firstWorkspaceId = state.options.find((option) => option.id !== 'all')?.id;
+  return firstWorkspaceId ?? 'all';
+}
+
 export async function bootstrapWorkspaceState() {
   if (hydrationPromise) {
     await hydrationPromise;

@@ -861,6 +861,7 @@ const userPreferencesDefaults = {
     projectActionsEnabled: true,
     overdueItemsEnabled: true,
   },
+  mobileNotificationOnboardingCompleted: false,
 };
 
 const normalizeUserPreferences = (value) => {
@@ -1042,6 +1043,7 @@ const normalizeUserPreferences = (value) => {
     showTrayIcon: Boolean(merged.showTrayIcon),
     runInBackground: Boolean(merged.runInBackground),
     mobileNotificationPreferences,
+    mobileNotificationOnboardingCompleted: Boolean(merged.mobileNotificationOnboardingCompleted),
   };
 };
 

@@ -1,5 +1,7 @@
 import { useSyncExternalStore } from 'react';
 import * as SecureStore from 'expo-secure-store';
+import * as Notifications from 'expo-notifications';
+import { getMobileUserSettings, updateMobileUserSettings } from '@/api/userSettings';
 
 export type NotificationPermissionChoice = 'enabled' | 'denied' | 'skipped' | null;
 
@@ -98,10 +100,45 @@ export async function bootstrapNotificationOnboardingState(userId: string | null
     }
 
     const choice = parsed?.choice ?? null;
+    let completed = Boolean(parsed?.isComplete ?? choice);
+
+    if (!completed) {
+      try {
+        const settings = await getMobileUserSettings();
+        const backendCompleted = Boolean(
+          (settings?.preferences as { mobileNotificationOnboardingCompleted?: unknown } | null)
+            ?.mobileNotificationOnboardingCompleted,
+        );
+        completed = backendCompleted;
+      } catch {
+        // Ignore backend fallback errors and continue with local state.
+      }
+    }
+
+    if (!completed) {
+      try {
+        const permission = await Notifications.getPermissionsAsync();
+        if (permission.status !== 'undetermined') {
+          completed = true;
+          try {
+            await updateMobileUserSettings({
+              preferences: {
+                mobileNotificationOnboardingCompleted: true,
+              },
+            });
+          } catch {
+            // Ignore persistence failures; local state is still enough to bypass onboarding.
+          }
+        }
+      } catch {
+        // Ignore permission lookup failures and continue with local state.
+      }
+    }
+
     setState({
       isLoading: false,
       isHydrated: true,
-      isComplete: Boolean(parsed?.isComplete ?? choice),
+      isComplete: completed,
       choice,
       error: null,
       userId,
@@ -157,6 +194,17 @@ export async function setNotificationOnboardingChoice(
     await SecureStore.setItemAsync(getStorageKey(userId), JSON.stringify(payload));
   } catch {
     // Non-fatal. The user can still continue and the app will keep the in-memory choice.
+  }
+
+  try {
+    await updateMobileUserSettings({
+      preferences: {
+        mobileNotificationOnboardingCompleted: true,
+        mobileNotificationOnboardingChoice: choice,
+      },
+    });
+  } catch {
+    // Non-fatal. SecureStore remains the local fallback.
   }
 }
 

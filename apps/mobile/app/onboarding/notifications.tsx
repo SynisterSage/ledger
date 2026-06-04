@@ -19,7 +19,8 @@ export default function NotificationsOnboardingScreen() {
   const router = useRouter();
   const theme = useLedgerTheme();
   const authState = useNotificationOnboardingState();
-  const [isRequesting, setIsRequesting] = useState(false);
+  const [isEnablingNotifications, setIsEnablingNotifications] = useState(false);
+  const [isSkipping, setIsSkipping] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const routeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -49,11 +50,11 @@ export default function NotificationsOnboardingScreen() {
   };
 
   const handleEnableNotifications = async () => {
-    if (isRequesting) {
+    if (isEnablingNotifications || isSkipping) {
       return;
     }
 
-    setIsRequesting(true);
+    setIsEnablingNotifications(true);
     setStatusMessage(null);
 
     try {
@@ -76,21 +77,21 @@ export default function NotificationsOnboardingScreen() {
         'Couldn’t update notifications. You can change this later in Settings.',
       );
     } finally {
-      setIsRequesting(false);
+      setIsEnablingNotifications(false);
     }
   };
 
   const handleSkip = async () => {
-    if (isRequesting) {
+    if (isEnablingNotifications || isSkipping) {
       return;
     }
 
     setStatusMessage(null);
-    setIsRequesting(true);
+    setIsSkipping(true);
     try {
       await finishChoice('skipped');
     } finally {
-      setIsRequesting(false);
+      setIsSkipping(false);
     }
   };
 
@@ -115,16 +116,16 @@ export default function NotificationsOnboardingScreen() {
 
           <View style={styles.actions}>
             <AppButton
-              title={isRequesting ? 'Enabling...' : 'Enable notifications'}
+              title={isEnablingNotifications ? 'Enabling...' : 'Enable notifications'}
               onPress={handleEnableNotifications}
-              disabled={isRequesting}
+              disabled={isEnablingNotifications || isSkipping}
               size="lg"
             />
             <AppButton
               title="Not now"
               variant="secondary"
               onPress={handleSkip}
-              disabled={isRequesting}
+              disabled={isEnablingNotifications || isSkipping}
               size="lg"
             />
           </View>

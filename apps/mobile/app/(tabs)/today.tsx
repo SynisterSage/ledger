@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, View } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 
 import { AppButton } from '@/components/AppButton';
@@ -53,18 +53,28 @@ export default function TodayScreen() {
     void bootstrapWorkspaceState();
   }, []);
 
+  const refreshToday = useCallback(() => {
+    setRefreshNonce((value) => value + 1);
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      refreshToday();
+    }, [refreshToday]),
+  );
+
   useEffect(() => {
     let cancelled = false;
 
     const loadToday = async () => {
-        setIsLoading(true);
-        setError(null);
+      setIsLoading(true);
+      setError(null);
 
-        try {
-          const response = await getMobileToday({ workspaceId: workspaceState.selectedWorkspaceId });
-          if (cancelled) return;
-          setToday(response);
-        } catch (err) {
+      try {
+        const response = await getMobileToday({ workspaceId: workspaceState.selectedWorkspaceId });
+        if (cancelled) return;
+        setToday(response);
+      } catch (err) {
         if (cancelled) return;
         setError(err instanceof Error ? err.message : 'Could not load Today.');
       } finally {

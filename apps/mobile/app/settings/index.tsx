@@ -392,7 +392,7 @@ export default function SettingsScreen() {
             <SettingsRow title="Version" value={mockProfile.version} />
           </Section>
 
-          <Section title="Sign out">
+          <Section>
             <SettingsRow title="Sign out" destructive onPress={handleSignOut} />
           </Section>
         </View>

@@ -64,6 +64,17 @@ export type MobileCaptureSummary = {
   items: MobileCaptureItem[];
 };
 
+export type MobileProjectOption = {
+  id: string;
+  name: string;
+  description?: string | null;
+  status?: string | null;
+  completeness?: number | null;
+  color?: string | null;
+  startDate?: string | null;
+  endDate?: string | null;
+};
+
 export type MobileTodayInteractionItem = MobileUpcomingItem | MobileTodayItem | MobileCaptureItem;
 
 export type MobileTodayResponse = {
