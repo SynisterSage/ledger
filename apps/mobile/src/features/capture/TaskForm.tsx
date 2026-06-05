@@ -50,7 +50,7 @@ export function TaskForm({
     [workspaceId, workspaceState.options],
   );
   const { projects, isLoading: projectsLoading } = useCaptureProjects(workspaceId);
-  const [title, setTitle] = useState(initialTitle ?? 'Export homepage video');
+  const [title, setTitle] = useState(initialTitle ?? '');
   const [dateInput, setDateInput] = useState(initialDateInput ?? '');
   const [timeInput, setTimeInput] = useState(initialTimeInput ?? '');
   const [notes, setNotes] = useState(initialNotes ?? '');
@@ -126,7 +126,7 @@ export function TaskForm({
         />
       }>
       <Section childrenGap={theme.spacing.md}>
-        <AppTextInput label="Title" placeholder="Export homepage video" value={title} onChangeText={setTitle} />
+        <AppTextInput label="Title" placeholder="Add title" value={title} onChangeText={setTitle} />
         <Row
           title="Due date"
           subtitle={formatCaptureDateLabel(dateInput)}

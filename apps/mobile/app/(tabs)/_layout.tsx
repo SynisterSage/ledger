@@ -1,7 +1,7 @@
 import { Tabs } from 'expo-router';
 
 import { FloatingTabBar } from '@/components/FloatingTabBar';
-import { MobileSearchSheet } from '@/features/search/MobileSearchSheet';
+import { MobileSearchResultDetailSheet, MobileSearchSheet } from '@/features/search/MobileSearchSheet';
 import { SearchSheetProvider } from '@/features/search/SearchSheetContext';
 import { useLedgerTheme } from '@/theme';
 
@@ -38,6 +38,7 @@ export default function TabLayout() {
         />
       </Tabs>
       <MobileSearchSheet />
+      <MobileSearchResultDetailSheet />
     </SearchSheetProvider>
   );
 }

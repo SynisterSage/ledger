@@ -21,7 +21,7 @@ export const AppTextInput = forwardRef<TextInput, AppTextInputProps>(function Ap
   return (
     <View style={styles.container}>
       {label ? (
-        <AppText variant="meta" style={styles.label}>
+        <AppText variant="body" style={styles.label}>
           {label}
         </AppText>
       ) : null}
@@ -66,7 +66,7 @@ const styles = StyleSheet.create({
     alignSelf: 'stretch',
   },
   label: {
-    marginBottom: 8,
+    marginBottom: 6,
   },
   inputRow: {
     position: 'relative',

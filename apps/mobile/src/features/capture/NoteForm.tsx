@@ -28,8 +28,8 @@ export function NoteForm({ onSave, initialTitle, initialBody, autoSubmit = false
     () => getWorkspaceLabel(workspaceId, workspaceState.options),
     [workspaceId, workspaceState.options],
   );
-  const [title, setTitle] = useState(initialTitle ?? 'Capture note');
-  const [body, setBody] = useState(initialBody ?? 'Write a plain text note');
+  const [title, setTitle] = useState(initialTitle ?? '');
+  const [body, setBody] = useState(initialBody ?? '');
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const autoSubmittedRef = useRef(false);
@@ -82,7 +82,7 @@ export function NoteForm({ onSave, initialTitle, initialBody, autoSubmit = false
         />
       }>
       <Section childrenGap={theme.spacing.md}>
-        <AppTextInput label="Title" placeholder="Capture note" value={title} onChangeText={setTitle} />
+        <AppTextInput label="Title" placeholder="Add title" value={title} onChangeText={setTitle} />
         <AppTextInput label="Body" placeholder="Write a plain text note" multiline value={body} onChangeText={setBody} />
         <Row title="Workspace" subtitle={workspaceState.isLoading ? 'Loading workspaces…' : workspaceLabel} />
         {error ? (

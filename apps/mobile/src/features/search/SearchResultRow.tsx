@@ -9,19 +9,17 @@ import { getSearchResultSubtitle } from './searchAdapters';
 type SearchResultRowProps = {
   result: MobileSearchResult;
   onPress: () => void;
-  onLongPress?: () => void;
 };
 
-export function SearchResultRow({ result, onPress, onLongPress }: SearchResultRowProps) {
+export function SearchResultRow({ result, onPress }: SearchResultRowProps) {
   const theme = useLedgerTheme();
   const subtitle = getSearchResultSubtitle(result);
 
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityHint="Opens result details. Long press for actions."
+      accessibilityHint="Opens result details."
       onPress={onPress}
-      onLongPress={onLongPress}
       style={({ pressed }) => [
         styles.row,
         {

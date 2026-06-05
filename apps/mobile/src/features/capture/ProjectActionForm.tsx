@@ -34,7 +34,7 @@ export function ProjectActionForm({ onSave }: ProjectActionFormProps) {
     [workspaceId, workspaceState.options],
   );
   const { projects, isLoading: projectsLoading } = useCaptureProjects(workspaceId);
-  const [title, setTitle] = useState('Send client mockup');
+  const [title, setTitle] = useState('');
   const [dateInput, setDateInput] = useState('tomorrow');
   const [timeInput, setTimeInput] = useState('');
   const [notes, setNotes] = useState('');
@@ -94,7 +94,7 @@ export function ProjectActionForm({ onSave }: ProjectActionFormProps) {
         />
       }>
       <Section childrenGap={theme.spacing.md}>
-        <AppTextInput label="Action" placeholder="Send client mockup" value={title} onChangeText={setTitle} />
+        <AppTextInput label="Action" placeholder="Add title" value={title} onChangeText={setTitle} />
         <Row
           title="Due date"
           subtitle={formatCaptureDateLabel(dateInput)}

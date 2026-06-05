@@ -20,11 +20,6 @@ import {
 } from './searchAdapters';
 import { useSearchSheet } from './SearchSheetContext';
 
-type SearchActionSheetState = {
-  result: MobileSearchResult | null;
-  visible: boolean;
-};
-
 function SearchHeaderInput({
   value,
   onChangeText,
@@ -92,70 +87,15 @@ function SearchDetailSheet({
   );
 }
 
-function SearchActionsSheet({
-  result,
-  visible,
-  onClose,
-}: {
-  result: MobileSearchResult | null;
-  visible: boolean;
-  onClose: () => void;
-}) {
-  const theme = useLedgerTheme();
-  const actions = useMemo(() => (result ? getSearchResultActions(result) : []), [result]);
-
-  if (!result) return null;
+export function MobileSearchResultDetailSheet() {
+  const { activeSearchResult, closeSearchResult } = useSearchSheet();
 
   return (
-    <AppBottomSheet
-      visible={visible}
-      onClose={onClose}
-      title={undefined}
-      snapPoints={['38%', '55%']}
-      initialSnapPointIndex={1}>
-      <View style={{ gap: theme.spacing.sm }}>
-        <View style={{ gap: 4 }}>
-          <AppText variant="sectionTitle" style={styles.detailTitle}>
-            {result.title}
-          </AppText>
-          <AppText variant="meta" style={{ color: theme.colors.textSecondary }}>
-            {getSearchResultSubtitle(result)}
-          </AppText>
-          {getSearchResultBody(result) ? (
-            <AppText variant="meta" style={{ color: theme.colors.textMuted }}>
-              {getSearchResultBody(result)}
-            </AppText>
-          ) : null}
-        </View>
-
-        <View style={[styles.divider, { backgroundColor: theme.colors.borderSubtle }]} />
-
-        <View>
-          {actions.map((action) => (
-            <Pressable
-              key={action.id}
-              accessibilityRole="button"
-              onPress={onClose}
-              style={({ pressed }) => [
-                styles.actionRow,
-                {
-                  borderBottomColor: theme.colors.borderSubtle,
-                  opacity: pressed ? 0.72 : 1,
-                },
-              ]}>
-              <AppText
-                variant="body"
-                style={{
-                  color: action.variant === 'danger' ? theme.colors.danger : theme.colors.textPrimary,
-                  fontWeight: action.variant === 'primary' ? '500' : '400',
-                }}>
-                {action.label}
-              </AppText>
-            </Pressable>
-          ))}
-        </View>
-      </View>
-    </AppBottomSheet>
+    <SearchDetailSheet
+      result={activeSearchResult}
+      visible={Boolean(activeSearchResult)}
+      onClose={closeSearchResult}
+    />
   );
 }
 
@@ -163,16 +103,11 @@ export function MobileSearchSheet() {
   const theme = useLedgerTheme();
   const { height: windowHeight } = useWindowDimensions();
   const workspaceState = useWorkspaceState();
-  const { isSearchOpen, closeSearch } = useSearchSheet();
+  const { isSearchOpen, closeSearch, openSearchResult } = useSearchSheet();
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<MobileSearchResult[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [activeDetailResult, setActiveDetailResult] = useState<MobileSearchResult | null>(null);
-  const [actionSheetState, setActionSheetState] = useState<SearchActionSheetState>({
-    result: null,
-    visible: false,
-  });
   const searchRequestId = useRef(0);
 
   const workspaceLabel = useMemo(
@@ -188,8 +123,6 @@ export function MobileSearchSheet() {
       setResults([]);
       setError(null);
       setIsLoading(false);
-      setActiveDetailResult(null);
-      setActionSheetState({ result: null, visible: false });
     }
   }, [isSearchOpen]);
 
@@ -261,7 +194,7 @@ export function MobileSearchSheet() {
 
           {!query.trim() ? (
             <View style={styles.stateWrap}>
-              <AppText variant="body" style={{ color: theme.colors.textSecondary }}>
+              <AppText variant="body" style={{ paddingTop: theme.spacing.sm + 150, color: theme.colors.textSecondary}}>
                 Search across your Ledger workspaces.
               </AppText>
             </View>
@@ -295,26 +228,15 @@ export function MobileSearchSheet() {
                 <SearchResultRow
                   key={`${result.type}-${result.id}`}
                   result={result}
-                  onPress={() => setActiveDetailResult(result)}
-                  onLongPress={() => setActionSheetState({ result, visible: true })}
+                  onPress={() => {
+                    openSearchResult(result);
+                  }}
                 />
               ))}
             </View>
           )}
         </View>
       </AppBottomSheet>
-
-      <SearchDetailSheet
-        result={activeDetailResult}
-        visible={Boolean(activeDetailResult)}
-        onClose={() => setActiveDetailResult(null)}
-      />
-
-      <SearchActionsSheet
-        result={actionSheetState.result}
-        visible={actionSheetState.visible}
-        onClose={() => setActionSheetState({ result: null, visible: false })}
-      />
     </>
   );
 }
@@ -347,14 +269,5 @@ const styles = StyleSheet.create({
     fontSize: 26,
     lineHeight: 30,
     fontWeight: '400',
-  },
-  divider: {
-    height: StyleSheet.hairlineWidth,
-  },
-  actionRow: {
-    minHeight: 48,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    paddingVertical: 14,
-    justifyContent: 'center',
   },
 });

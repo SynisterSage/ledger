@@ -49,7 +49,7 @@ export function EventForm({
     [workspaceId, workspaceState.options],
   );
   const { projects, isLoading: projectsLoading } = useCaptureProjects(workspaceId);
-  const [title, setTitle] = useState(initialTitle ?? 'Remote internship');
+  const [title, setTitle] = useState(initialTitle ?? '');
   const [dateInput, setDateInput] = useState(initialDateInput ?? 'tomorrow');
   const [startTimeInput, setStartTimeInput] = useState(initialStartTimeInput ?? '11:00 AM');
   const [endTimeInput, setEndTimeInput] = useState(initialEndTimeInput ?? '12:00 PM');
@@ -142,7 +142,7 @@ export function EventForm({
         />
       }>
       <Section childrenGap={theme.spacing.md}>
-        <AppTextInput label="Title" placeholder="Remote internship" value={title} onChangeText={setTitle} />
+        <AppTextInput label="Title" placeholder="Add title" value={title} onChangeText={setTitle} />
         <Row
           title="Date"
           subtitle={formatCaptureDateLabel(dateInput)}

@@ -45,7 +45,7 @@ export function ReminderForm({
     [workspaceId, workspaceState.options],
   );
   const { projects, isLoading: projectsLoading } = useCaptureProjects(workspaceId);
-  const [title, setTitle] = useState(initialTitle ?? 'Submit Alfa hours');
+  const [title, setTitle] = useState(initialTitle ?? '');
   const [dateInput, setDateInput] = useState(initialDateInput ?? 'tomorrow');
   const [timeInput, setTimeInput] = useState(initialTimeInput ?? '2:00 PM');
   const [notes, setNotes] = useState(initialNotes ?? '');
@@ -124,7 +124,7 @@ export function ReminderForm({
         />
       }>
       <Section childrenGap={theme.spacing.md}>
-        <AppTextInput label="Title" placeholder="Submit Alfa hours" value={title} onChangeText={setTitle} />
+        <AppTextInput label="Title" placeholder="Add title" value={title} onChangeText={setTitle} />
         <Row
           title="Date"
           subtitle={formatCaptureDateLabel(dateInput)}
