@@ -1,12 +1,14 @@
 import { useEffect } from 'react';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 
-import { AppText } from '@/components/AppText';
+import { CaptureHeader } from '@/components/CaptureHeader';
 import { Screen } from '@/components/Screen';
 import { TaskForm } from '@/features/capture/TaskForm';
 import { bootstrapWorkspaceState } from '@/store/workspaceStore';
+import { useLedgerTheme } from '@/theme';
 
 export default function TaskCaptureScreen() {
+  const theme = useLedgerTheme();
   const router = useRouter();
   const params = useLocalSearchParams<{
     title?: string | string[];
@@ -41,8 +43,8 @@ export default function TaskCaptureScreen() {
   }, []);
 
   return (
-    <Screen scroll>
-      <AppText variant="screenTitle">Task</AppText>
+    <Screen contentStyle={{ paddingTop: theme.spacing.lg }}>
+      <CaptureHeader title="Task" />
       <TaskForm
         initialTitle={title}
         initialDateInput={formattedDate}

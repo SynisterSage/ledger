@@ -7,6 +7,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { initializeAuth } from '@/api/auth';
 import { AppLoadingScreen } from '@/components/AppLoadingScreen';
+import { bootstrapAppPreferencesState, resetAppPreferencesState } from '@/store/appPreferencesStore';
 import { useAuthState } from '@/store/sessionStore';
 import { resetBootState, setBootState, useBootState } from '@/store/bootStore';
 import { bootstrapNotificationOnboardingState, useNotificationOnboardingState } from '@/store/notificationOnboardingStore';
@@ -54,6 +55,15 @@ export default function RootLayout() {
 
   useEffect(() => {
     void bootstrapNotificationOnboardingState(auth.user?.id ?? null);
+  }, [auth.user?.id]);
+
+  useEffect(() => {
+    if (!auth.user?.id) {
+      resetAppPreferencesState();
+      return;
+    }
+
+    void bootstrapAppPreferencesState(auth.user.id);
   }, [auth.user?.id]);
 
   useEffect(() => {

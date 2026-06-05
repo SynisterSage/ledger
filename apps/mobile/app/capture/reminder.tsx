@@ -1,12 +1,14 @@
 import { useEffect } from 'react';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 
-import { AppText } from '@/components/AppText';
+import { CaptureHeader } from '@/components/CaptureHeader';
 import { Screen } from '@/components/Screen';
 import { ReminderForm } from '@/features/capture/ReminderForm';
 import { bootstrapWorkspaceState } from '@/store/workspaceStore';
+import { useLedgerTheme } from '@/theme';
 
 export default function ReminderCaptureScreen() {
+  const theme = useLedgerTheme();
   const router = useRouter();
   const params = useLocalSearchParams<{
     title?: string | string[];
@@ -34,8 +36,8 @@ export default function ReminderCaptureScreen() {
   }, []);
 
   return (
-    <Screen scroll>
-      <AppText variant="screenTitle">Reminder</AppText>
+    <Screen contentStyle={{ paddingTop: theme.spacing.lg }}>
+      <CaptureHeader title="Reminder" />
       <ReminderForm
         initialTitle={title}
         initialDateInput={formattedDate}

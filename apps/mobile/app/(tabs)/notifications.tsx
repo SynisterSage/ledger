@@ -4,6 +4,7 @@ import { useFocusEffect, useRouter } from 'expo-router';
 
 import { AppButton } from '@/components/AppButton';
 import { AppText } from '@/components/AppText';
+import { EmptyState } from '@/components/EmptyState';
 import {
   MobilePageHeader,
   MOBILE_PAGE_HEADER_SCROLL_SPACE,
@@ -173,6 +174,7 @@ export default function NotificationsScreen() {
           contentContainerStyle={{
             paddingTop: MOBILE_PAGE_HEADER_SCROLL_SPACE,
             paddingBottom: theme.spacing['3xl'] + 132,
+            flexGrow: 1,
           }}
           refreshControl={
             <RefreshControl
@@ -190,7 +192,7 @@ export default function NotificationsScreen() {
           })}
           scrollEventThrottle={16}
           showsVerticalScrollIndicator={false}>
-          <View style={{ gap: theme.spacing['2xl'] }}>
+          <View style={{ gap: theme.spacing['2xl'], flex: 1 }}>
             {isLoading ? (
               <NotificationSkeleton />
             ) : error ? (
@@ -214,10 +216,11 @@ export default function NotificationsScreen() {
                 />
               </View>
             ) : (
-              <View style={{ gap: theme.spacing.md }}>
-                <AppText variant="body">Nothing needs attention.</AppText>
-                <AppText variant="meta">Notifications will show up here when Ledger needs your attention.</AppText>
-              </View>
+              <EmptyState
+                iconName="bell"
+                title="Nothing needs attention."
+                description="Notifications will show up here when Ledger needs your attention."
+              />
             )}
           </View>
         </Animated.ScrollView>

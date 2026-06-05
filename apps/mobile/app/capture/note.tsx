@@ -1,12 +1,14 @@
 import { useEffect } from 'react';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 
-import { AppText } from '@/components/AppText';
+import { CaptureHeader } from '@/components/CaptureHeader';
 import { Screen } from '@/components/Screen';
 import { NoteForm } from '@/features/capture/NoteForm';
 import { bootstrapWorkspaceState } from '@/store/workspaceStore';
+import { useLedgerTheme } from '@/theme';
 
 export default function NoteCaptureScreen() {
+  const theme = useLedgerTheme();
   const router = useRouter();
   const params = useLocalSearchParams<{
     title?: string | string[];
@@ -23,8 +25,8 @@ export default function NoteCaptureScreen() {
   }, []);
 
   return (
-    <Screen scroll>
-      <AppText variant="screenTitle">Note</AppText>
+    <Screen contentStyle={{ paddingTop: theme.spacing.lg }}>
+      <CaptureHeader title="Note" />
       <NoteForm
         initialTitle={title}
         initialBody={body}

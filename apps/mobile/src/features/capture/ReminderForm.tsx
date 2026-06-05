@@ -1,14 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { SymbolView } from 'expo-symbols';
 
+import { CaptureFormShell } from '@/components/CaptureFormShell';
 import { AppButton } from '@/components/AppButton';
 import { AppText } from '@/components/AppText';
 import { AppTextInput } from '@/components/AppTextInput';
 import { ProjectPickerSheet } from '@/features/capture/ProjectPickerSheet';
+import { CaptureDateTimePickerSheet } from '@/features/capture/CaptureDateTimePickerSheet';
 import { useCaptureProjects } from '@/features/capture/useCaptureProjects';
 import { createMobileReminder } from '@/api/captures';
 import { useLedgerTheme } from '@/theme';
 import { buildLocalIsoDateTime } from '@/utils/captureDates';
+import { formatCaptureDateLabel, formatCaptureTimeLabel, parseMobileDateInput, parseMobileDateTimeInput } from '@/features/capture/dateUtils';
 import {
   getWorkspaceLabel,
   resolveCaptureWorkspaceId,
@@ -48,9 +51,13 @@ export function ReminderForm({
   const [notes, setNotes] = useState(initialNotes ?? '');
   const [projectId, setProjectId] = useState<string | null>(null);
   const [projectPickerOpen, setProjectPickerOpen] = useState(false);
+  const [datePickerOpen, setDatePickerOpen] = useState(false);
+  const [timePickerOpen, setTimePickerOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const autoSubmittedRef = useRef(false);
+  const parsedDate = useMemo(() => parseMobileDateInput(dateInput, new Date()), [dateInput]);
+  const parsedTime = useMemo(() => parseMobileDateTimeInput(timeInput, parsedDate), [parsedDate, timeInput]);
 
   const selectedProjectLabel = useMemo(() => {
     if (!projectId) return 'No project';
@@ -107,34 +114,52 @@ export function ReminderForm({
   }, [autoSubmit, handleSave, isSaving, title, workspaceId]);
 
   return (
-    <Section>
-      <AppTextInput label="Title" placeholder="Submit Alfa hours" value={title} onChangeText={setTitle} />
-      <AppTextInput label="Date" placeholder="Tomorrow" value={dateInput} onChangeText={setDateInput} />
-      <AppTextInput label="Time" placeholder="2:00 PM" value={timeInput} onChangeText={setTimeInput} />
-      <AppTextInput
-        label="Notes"
-        placeholder="Add details or context"
-        multiline
-        value={notes}
-        onChangeText={setNotes}
-      />
-      <Row
-        title="Workspace"
-        subtitle={workspaceState.isLoading ? 'Loading workspaces…' : workspaceLabel}
-      />
-      <Row
-        title="Project"
-        subtitle={selectedProjectLabel}
-        onPress={() => setProjectPickerOpen(true)}
-        right={<SymbolView name="chevron.down" size={14} weight="regular" tintColor={theme.colors.textSecondary} />}
-      />
-      {error ? (
-        <AppText variant="meta" style={{ color: theme.colors.danger }}>
-          {error}
-        </AppText>
-      ) : null}
-      <AppButton title={isSaving ? 'Saving…' : 'Save reminder'} disabled={!canSave || isSaving} onPress={handleSave} />
-
+    <CaptureFormShell
+      footer={
+        <AppButton
+          title={isSaving ? 'Saving…' : 'Save reminder'}
+          size="lg"
+          disabled={!canSave || isSaving}
+          onPress={handleSave}
+        />
+      }>
+      <Section childrenGap={theme.spacing.md}>
+        <AppTextInput label="Title" placeholder="Submit Alfa hours" value={title} onChangeText={setTitle} />
+        <Row
+          title="Date"
+          subtitle={formatCaptureDateLabel(dateInput)}
+          onPress={() => setDatePickerOpen(true)}
+          chevron
+        />
+        <Row
+          title="Time"
+          subtitle={formatCaptureTimeLabel(timeInput)}
+          onPress={() => setTimePickerOpen(true)}
+          chevron
+        />
+        <AppTextInput
+          label="Notes"
+          placeholder="Add details or context"
+          multiline
+          value={notes}
+          onChangeText={setNotes}
+        />
+        <Row
+          title="Workspace"
+          subtitle={workspaceState.isLoading ? 'Loading workspaces…' : workspaceLabel}
+        />
+        <Row
+          title="Project"
+          subtitle={selectedProjectLabel}
+          onPress={() => setProjectPickerOpen(true)}
+          right={<SymbolView name="chevron.down" size={14} weight="regular" tintColor={theme.colors.textSecondary} />}
+        />
+        {error ? (
+          <AppText variant="meta" style={{ color: theme.colors.danger }}>
+            {error}
+          </AppText>
+        ) : null}
+      </Section>
       <ProjectPickerSheet
         visible={projectPickerOpen}
         projects={projects}
@@ -143,6 +168,22 @@ export function ReminderForm({
         onClose={() => setProjectPickerOpen(false)}
         loading={projectsLoading}
       />
-    </Section>
+      <CaptureDateTimePickerSheet
+        visible={datePickerOpen}
+        title="Select date"
+        mode="date"
+        value={parsedDate}
+        onSelect={(next) => setDateInput(next.toISOString().slice(0, 10))}
+        onClose={() => setDatePickerOpen(false)}
+      />
+      <CaptureDateTimePickerSheet
+        visible={timePickerOpen}
+        title="Select time"
+        mode="time"
+        value={parsedTime}
+        onSelect={(next) => setTimeInput(new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit' }).format(next))}
+        onClose={() => setTimePickerOpen(false)}
+      />
+    </CaptureFormShell>
   );
 }

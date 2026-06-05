@@ -8,9 +8,10 @@ import { useLedgerTheme } from '@/theme';
 type SectionProps = {
   title?: string;
   children: ReactNode;
+  childrenGap?: number;
 };
 
-export function Section({ title, children }: SectionProps) {
+export function Section({ title, children, childrenGap }: SectionProps) {
   const theme = useLedgerTheme();
 
   return (
@@ -21,7 +22,7 @@ export function Section({ title, children }: SectionProps) {
           <View style={[styles.divider, { backgroundColor: theme.colors.borderSubtle }]} />
         </View>
       ) : null}
-      <View style={{ gap: theme.spacing.xs }}>{children}</View>
+      <View style={{ gap: childrenGap ?? theme.spacing.xs }}>{children}</View>
     </View>
   );
 }

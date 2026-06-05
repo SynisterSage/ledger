@@ -6,6 +6,7 @@ import { SymbolView } from 'expo-symbols';
 import { AppText } from './AppText';
 import { Skeleton } from './Skeleton';
 
+import { useAppPreferencesState } from '@/store/appPreferencesStore';
 import { useLedgerTheme } from '@/theme';
 
 export const MOBILE_PAGE_HEADER_SCROLL_SPACE = 156;
@@ -38,7 +39,9 @@ export function MobilePageHeader({
   rightAccessory,
 }: MobilePageHeaderProps) {
   const theme = useLedgerTheme();
+  const appPreferences = useAppPreferencesState();
   const insets = useSafeAreaInsets();
+  const reduceMotionEnabled = appPreferences.reduceMotionEnabled;
   const translateY = scrollY.interpolate({
     inputRange: [0, HEADER_COLLAPSE_DISTANCE],
     outputRange: [0, -HEADER_TRANSLATE_DISTANCE],
@@ -51,18 +54,20 @@ export function MobilePageHeader({
   });
   const handleWorkspacePress = onWorkspacePress ?? (() => {});
   const handleSettingsPress = onSettingsPress ?? (() => {});
+  const headerStyle = reduceMotionEnabled
+    ? { opacity: 1, transform: [{ translateY: 0 }] }
+    : { opacity, transform: [{ translateY }] };
 
   return (
     <Animated.View
       pointerEvents="box-none"
-      style={[
-        styles.wrapper,
-        {
-          paddingTop: insets.top + HEADER_TOP_SPACING,
-          opacity,
-          transform: [{ translateY }],
-        },
-      ]}>
+        style={[
+          styles.wrapper,
+          {
+            paddingTop: insets.top + HEADER_TOP_SPACING,
+          },
+          headerStyle,
+        ]}>
       <View style={styles.content}>
         <View style={styles.titleRow}>
           <View style={styles.titleCluster}>

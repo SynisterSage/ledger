@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { CaptureFormShell } from '@/components/CaptureFormShell';
 import { AppButton } from '@/components/AppButton';
 import { AppText } from '@/components/AppText';
 import { AppTextInput } from '@/components/AppTextInput';
@@ -71,16 +72,25 @@ export function NoteForm({ onSave, initialTitle, initialBody, autoSubmit = false
   }, [autoSubmit, handleSave, isSaving, title, workspaceId]);
 
   return (
-    <Section>
-      <AppTextInput label="Title" placeholder="Capture note" value={title} onChangeText={setTitle} />
-      <AppTextInput label="Body" placeholder="Write a plain text note" multiline value={body} onChangeText={setBody} />
-      <Row title="Workspace" subtitle={workspaceState.isLoading ? 'Loading workspaces…' : workspaceLabel} />
-      {error ? (
-        <AppText variant="meta" style={{ color: theme.colors.danger }}>
-          {error}
-        </AppText>
-      ) : null}
-      <AppButton title={isSaving ? 'Saving…' : 'Save note'} disabled={!canSave || isSaving} onPress={handleSave} />
-    </Section>
+    <CaptureFormShell
+      footer={
+        <AppButton
+          title={isSaving ? 'Saving…' : 'Save note'}
+          size="lg"
+          disabled={!canSave || isSaving}
+          onPress={handleSave}
+        />
+      }>
+      <Section childrenGap={theme.spacing.md}>
+        <AppTextInput label="Title" placeholder="Capture note" value={title} onChangeText={setTitle} />
+        <AppTextInput label="Body" placeholder="Write a plain text note" multiline value={body} onChangeText={setBody} />
+        <Row title="Workspace" subtitle={workspaceState.isLoading ? 'Loading workspaces…' : workspaceLabel} />
+        {error ? (
+          <AppText variant="meta" style={{ color: theme.colors.danger }}>
+            {error}
+          </AppText>
+        ) : null}
+      </Section>
+    </CaptureFormShell>
   );
 }

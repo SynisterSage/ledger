@@ -29,6 +29,11 @@ export type MobileSiriPreferences = {
   askEveryTime: boolean;
 };
 
+export type MobileAppPreferences = {
+  hapticsEnabled: boolean;
+  reduceMotionEnabled: boolean;
+};
+
 export const defaultMobileNotificationPreferences: MobileNotificationPreferences = {
   pushNotifications: false,
   remindersEnabled: true,
@@ -45,6 +50,11 @@ export const defaultMobileCapturePreferences: MobileCapturePreferences = {
 export const defaultMobileSiriPreferences: MobileSiriPreferences = {
   defaultWorkspaceId: null,
   askEveryTime: false,
+};
+
+export const defaultMobileAppPreferences: MobileAppPreferences = {
+  hapticsEnabled: true,
+  reduceMotionEnabled: false,
 };
 
 type MobileUserSettingsPatch = {
@@ -144,4 +154,23 @@ export function readMobileSiriPreferences(settings: MobileUserSettings | null | 
         ? mobilePreferences.askEveryTime
         : defaultMobileSiriPreferences.askEveryTime,
   } satisfies MobileSiriPreferences;
+}
+
+export function readMobileAppPreferences(settings: MobileUserSettings | null | undefined) {
+  const preferences = settings?.preferences;
+  const mobilePreferences =
+    preferences && typeof preferences === 'object' && 'mobileAppPreferences' in preferences
+      ? (preferences as { mobileAppPreferences?: Record<string, unknown> }).mobileAppPreferences
+      : null;
+
+  return {
+    hapticsEnabled:
+      typeof mobilePreferences?.hapticsEnabled === 'boolean'
+        ? mobilePreferences.hapticsEnabled
+        : defaultMobileAppPreferences.hapticsEnabled,
+    reduceMotionEnabled:
+      typeof mobilePreferences?.reduceMotionEnabled === 'boolean'
+        ? mobilePreferences.reduceMotionEnabled
+        : defaultMobileAppPreferences.reduceMotionEnabled,
+  } satisfies MobileAppPreferences;
 }

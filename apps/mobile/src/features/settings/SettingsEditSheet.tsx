@@ -13,6 +13,7 @@ import {
 import { AppButton } from '@/components/AppButton';
 import { AppText } from '@/components/AppText';
 import { AppTextInput } from '@/components/AppTextInput';
+import { useAppPreferencesState } from '@/store/appPreferencesStore';
 import { useLedgerTheme } from '@/theme';
 
 export type SettingsEditSheetMode = 'display_name' | 'password';
@@ -38,6 +39,8 @@ export function SettingsEditSheet({
   onSavePassword,
 }: SettingsEditSheetProps) {
   const theme = useLedgerTheme();
+  const appPreferences = useAppPreferencesState();
+  const reduceMotionEnabled = appPreferences.reduceMotionEnabled;
   const [mounted, setMounted] = useState(visible);
   const [displayName, setDisplayName] = useState(initialDisplayName);
   const [password, setPassword] = useState('');
@@ -56,12 +59,12 @@ export function SettingsEditSheet({
       dragY.setValue(0);
       Animated.timing(progress, {
         toValue: 1,
-        duration: 220,
+        duration: reduceMotionEnabled ? 1 : 220,
         useNativeDriver: true,
       }).start();
       Animated.timing(backdropProgress, {
         toValue: 1,
-        duration: 220,
+        duration: reduceMotionEnabled ? 1 : 220,
         useNativeDriver: true,
       }).start();
       return;
@@ -69,7 +72,7 @@ export function SettingsEditSheet({
 
     Animated.timing(progress, {
       toValue: 0,
-      duration: 180,
+      duration: reduceMotionEnabled ? 1 : 180,
       useNativeDriver: true,
     }).start(({ finished }) => {
       if (finished) {
@@ -78,10 +81,10 @@ export function SettingsEditSheet({
     });
     Animated.timing(backdropProgress, {
       toValue: 0,
-      duration: 120,
+      duration: reduceMotionEnabled ? 1 : 120,
       useNativeDriver: true,
     }).start();
-  }, [dragY, backdropProgress, progress, visible]);
+  }, [backdropProgress, dragY, progress, reduceMotionEnabled, visible]);
 
   useEffect(() => {
     if (!visible) {
@@ -101,26 +104,26 @@ export function SettingsEditSheet({
     if (!mounted || closingRef.current) return;
 
     closingRef.current = true;
-    Animated.parallel([
-      Animated.timing(backdropProgress, {
-        toValue: 0,
-        duration: 120,
-        useNativeDriver: true,
-      }),
-      Animated.timing(progress, {
-        toValue: 0,
-        duration: 180,
-        useNativeDriver: true,
-      }),
-      Animated.timing(dragY, {
-        toValue: 0,
-        duration: 180,
-        useNativeDriver: true,
-      }),
-    ]).start(() => {
-      closingRef.current = false;
-      onClose();
-    });
+      Animated.parallel([
+        Animated.timing(backdropProgress, {
+          toValue: 0,
+          duration: reduceMotionEnabled ? 1 : 120,
+          useNativeDriver: true,
+        }),
+        Animated.timing(progress, {
+          toValue: 0,
+          duration: reduceMotionEnabled ? 1 : 180,
+          useNativeDriver: true,
+        }),
+        Animated.timing(dragY, {
+          toValue: 0,
+          duration: reduceMotionEnabled ? 1 : 180,
+          useNativeDriver: true,
+        }),
+      ]).start(() => {
+        closingRef.current = false;
+        onClose();
+      });
   };
 
   const handleSave = async () => {
@@ -194,10 +197,11 @@ export function SettingsEditSheet({
             toValue: 0,
             useNativeDriver: true,
             bounciness: 0,
+            speed: reduceMotionEnabled ? 24 : 16,
           }).start();
         },
       }),
-    [backdropProgress, closeSheet, dragY],
+    [closeSheet, dragY, reduceMotionEnabled],
   );
 
   if (!mounted) {

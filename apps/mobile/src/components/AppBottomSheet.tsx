@@ -19,6 +19,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 
 import { AppText } from './AppText';
 
+import { useAppPreferencesState } from '@/store/appPreferencesStore';
 import { useLedgerTheme } from '@/theme';
 
 export type AppBottomSheetSnapPoint = number | `${number}%`;
@@ -26,7 +27,7 @@ export type AppBottomSheetSnapPoint = number | `${number}%`;
 type AppBottomSheetProps = {
   visible: boolean;
   onClose: () => void;
-  title?: string;
+  title?: ReactNode;
   children: ReactNode;
   snapPoints?: AppBottomSheetSnapPoint[];
   initialSnapPointIndex?: number;
@@ -35,6 +36,8 @@ type AppBottomSheetProps = {
   dragCloseThreshold?: number;
   dragCloseVelocityThreshold?: number;
   dragCloseSnapMargin?: number;
+  maxHeight?: number;
+  cornerRadius?: number;
 };
 
 const DEFAULT_SNAP_POINTS: AppBottomSheetSnapPoint[] = ['35%', '55%', '85%'];
@@ -42,9 +45,9 @@ const OPEN_DURATION = 240;
 const CLOSE_DURATION = 280;
 const BACKDROP_OPEN_DURATION = 200;
 const BACKDROP_CLOSE_DURATION = 180;
-const DEFAULT_DRAG_CLOSE_THRESHOLD = 110;
-const DEFAULT_DRAG_CLOSE_VELOCITY_THRESHOLD = 0.75;
-const DEFAULT_DRAG_CLOSE_SNAP_MARGIN = 24;
+const DEFAULT_DRAG_CLOSE_THRESHOLD = 72;
+const DEFAULT_DRAG_CLOSE_VELOCITY_THRESHOLD = 0.65;
+const DEFAULT_DRAG_CLOSE_SNAP_MARGIN = 12;
 
 function resolveSnapPoint(value: AppBottomSheetSnapPoint, sheetMaxHeight: number) {
   if (typeof value === 'string' && value.endsWith('%')) {
@@ -71,8 +74,11 @@ export function AppBottomSheet({
   dragCloseThreshold = DEFAULT_DRAG_CLOSE_THRESHOLD,
   dragCloseVelocityThreshold = DEFAULT_DRAG_CLOSE_VELOCITY_THRESHOLD,
   dragCloseSnapMargin = DEFAULT_DRAG_CLOSE_SNAP_MARGIN,
+  maxHeight,
+  cornerRadius = 28,
 }: AppBottomSheetProps) {
   const theme = useLedgerTheme();
+  const appPreferences = useAppPreferencesState();
   const { height: windowHeight } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const [mounted, setMounted] = useState(visible);
@@ -82,7 +88,7 @@ export function AppBottomSheet({
   const currentTranslate = useRef(windowHeight);
   const closingRef = useRef(false);
 
-  const sheetMaxHeight = Math.min(windowHeight * 0.9, 720);
+  const sheetMaxHeight = maxHeight ?? Math.min(windowHeight * 0.9, 720);
   const resolvedSnapPoints = useMemo(
     () =>
       [...snapPoints]
@@ -95,6 +101,11 @@ export function AppBottomSheet({
   const minTranslateY = sheetMaxHeight - resolvedSnapPoints[resolvedSnapPoints.length - 1];
   const maxTranslateY = sheetMaxHeight - resolvedSnapPoints[0];
   const closedTranslateY = sheetMaxHeight + insets.bottom + 24;
+  const reduceMotionEnabled = appPreferences.reduceMotionEnabled;
+  const openDuration = reduceMotionEnabled ? 1 : OPEN_DURATION;
+  const closeDuration = reduceMotionEnabled ? 1 : CLOSE_DURATION;
+  const backdropOpenDuration = reduceMotionEnabled ? 1 : BACKDROP_OPEN_DURATION;
+  const backdropCloseDuration = reduceMotionEnabled ? 1 : BACKDROP_CLOSE_DURATION;
 
   const clampTranslate = (value: number) => Math.min(closedTranslateY, Math.max(minTranslateY, value));
 
@@ -110,13 +121,13 @@ export function AppBottomSheet({
       Animated.parallel([
         Animated.timing(translateY, {
           toValue: targetTranslate,
-          duration: OPEN_DURATION,
+          duration: openDuration,
           easing: Easing.out(Easing.cubic),
           useNativeDriver: true,
         }),
         Animated.timing(backdropOpacity, {
           toValue: 1,
-          duration: BACKDROP_OPEN_DURATION,
+          duration: backdropOpenDuration,
           easing: Easing.out(Easing.quad),
           useNativeDriver: true,
         }),
@@ -131,13 +142,13 @@ export function AppBottomSheet({
     Animated.parallel([
       Animated.timing(translateY, {
         toValue: closedTranslateY,
-        duration: CLOSE_DURATION,
+        duration: closeDuration,
         easing: Easing.out(Easing.cubic),
         useNativeDriver: true,
       }),
       Animated.timing(backdropOpacity, {
         toValue: 0,
-        duration: BACKDROP_CLOSE_DURATION,
+        duration: backdropCloseDuration,
         easing: Easing.out(Easing.quad),
         useNativeDriver: true,
       }),
@@ -194,13 +205,13 @@ export function AppBottomSheet({
 
     const targetTranslate = sheetMaxHeight - target;
     currentTranslate.current = targetTranslate;
-    Animated.spring(translateY, {
-      toValue: targetTranslate,
-      useNativeDriver: true,
-      bounciness: 0,
-      speed: 16,
-    }).start();
-  };
+      Animated.spring(translateY, {
+        toValue: targetTranslate,
+        useNativeDriver: true,
+        bounciness: 0,
+        speed: reduceMotionEnabled ? 24 : 16,
+      }).start();
+    };
 
   const panResponder = useMemo(
     () =>
@@ -230,7 +241,15 @@ export function AppBottomSheet({
           snapToNearestPoint(currentTranslate.current);
         },
       }),
-    [closedTranslateY, dragCloseThreshold, dragCloseVelocityThreshold, dragCloseSnapMargin, translateY, maxTranslateY],
+    [
+      closedTranslateY,
+      dragCloseThreshold,
+      dragCloseVelocityThreshold,
+      dragCloseSnapMargin,
+      reduceMotionEnabled,
+      translateY,
+      maxTranslateY,
+    ],
   );
 
   if (!mounted) {
@@ -264,6 +283,8 @@ export function AppBottomSheet({
               backgroundColor: theme.colors.background,
               borderColor: theme.colors.borderSubtle,
               height: sheetMaxHeight,
+              borderTopLeftRadius: cornerRadius,
+              borderTopRightRadius: cornerRadius,
               transform: [{ translateY }],
             },
           ]}>
@@ -273,13 +294,15 @@ export function AppBottomSheet({
             </View>
 
             {title || headerAccessory ? (
-              <View style={styles.header}>
-                <View style={styles.headerTitle}>
-                  {title ? (
+            <View style={styles.header}>
+              <View style={styles.headerTitle}>
+                  {typeof title === 'string' ? (
                     <AppText variant="sectionTitle" style={styles.title}>
                       {title}
                     </AppText>
-                  ) : null}
+                  ) : (
+                    title ?? null
+                  )}
                 </View>
                 {headerAccessory ? <View>{headerAccessory}</View> : null}
               </View>
@@ -317,8 +340,6 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFill,
   },
   sheet: {
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
     borderTopWidth: StyleSheet.hairlineWidth,
     overflow: 'hidden',
     shadowColor: '#000',
@@ -335,8 +356,9 @@ const styles = StyleSheet.create({
   },
   handleRegion: {
     alignItems: 'center',
-    paddingTop: 10,
-    paddingBottom: 10,
+    paddingTop: 16,
+    paddingBottom: 16,
+    minHeight: 56,
   },
   handle: {
     width: 42,
@@ -344,7 +366,7 @@ const styles = StyleSheet.create({
     borderRadius: 999,
   },
   header: {
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
     paddingBottom: 12,
     flexDirection: 'row',
     alignItems: 'center',

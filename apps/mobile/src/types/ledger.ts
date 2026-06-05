@@ -153,3 +153,23 @@ export type MobileNotificationCenterResponse = {
     total: number;
   };
 };
+
+export type MobileSearchResult = {
+  id: string;
+  type: 'note' | 'project' | 'task' | 'reminder' | 'event';
+  title: string;
+  preview: string;
+  snippet: string | null;
+  workspace_id: string;
+  workspace_name: string | null;
+  source_type: string | null;
+  source_id: string | null;
+  project_id?: string | null;
+  note_id?: string | null;
+  remind_at?: string | null;
+  starts_at?: string | null;
+  ends_at?: string | null;
+  updated_at?: string | null;
+  icon?: string | null;
+  score?: number;
+};

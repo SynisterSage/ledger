@@ -7,5 +7,5 @@ type CaptureOptionRowProps = {
 };
 
 export function CaptureOptionRow({ title, subtitle, onPress }: CaptureOptionRowProps) {
-  return <Row title={title} subtitle={subtitle} onPress={onPress} />;
+  return <Row title={title} subtitle={subtitle} onPress={onPress} chevron titleVariant="body" />;
 }

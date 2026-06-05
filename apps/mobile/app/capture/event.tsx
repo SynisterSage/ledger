@@ -1,12 +1,14 @@
 import { useEffect } from 'react';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 
-import { AppText } from '@/components/AppText';
+import { CaptureHeader } from '@/components/CaptureHeader';
 import { Screen } from '@/components/Screen';
 import { EventForm } from '@/features/capture/EventForm';
 import { bootstrapWorkspaceState } from '@/store/workspaceStore';
+import { useLedgerTheme } from '@/theme';
 
 export default function EventCaptureScreen() {
+  const theme = useLedgerTheme();
   const router = useRouter();
   const params = useLocalSearchParams<{
     title?: string | string[];
@@ -43,8 +45,8 @@ export default function EventCaptureScreen() {
   }, []);
 
   return (
-    <Screen scroll>
-      <AppText variant="screenTitle">Event</AppText>
+    <Screen contentStyle={{ paddingTop: theme.spacing.lg }}>
+      <CaptureHeader title="Event" />
       <EventForm
         initialTitle={title}
         initialDateInput={formattedDate}

@@ -5,6 +5,7 @@ import { SymbolView } from 'expo-symbols';
 
 import { AppText } from './AppText';
 
+import { useSearchSheet } from '@/features/search/SearchSheetContext';
 import { useLedgerTheme } from '@/theme';
 
 const BAR_HEIGHT = 52;
@@ -51,6 +52,7 @@ function FadeStack() {
 
 export function FloatingTabBar({ state, descriptors, navigation }: any) {
   const theme = useLedgerTheme();
+  const { openSearch } = useSearchSheet();
   const insets = useSafeAreaInsets();
   const [tabLayouts, setTabLayouts] = useState<Record<string, { x: number; width: number }>>({});
   const pillX = useRef(new Animated.Value(0)).current;
@@ -222,8 +224,9 @@ export function FloatingTabBar({ state, descriptors, navigation }: any) {
 
         <Pressable
           accessibilityRole="button"
+          accessibilityLabel="Open search"
           onPress={() => {
-            // Placeholder for the future mobile search surface.
+            openSearch();
           }}
           style={({ pressed }) => [
             styles.searchButton,

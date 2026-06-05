@@ -18,6 +18,7 @@ type TodayListProps = {
   today: MobileTodayItem[];
   captures: MobileCaptureSummary;
   showWorkspaceNames?: boolean;
+  onItemPress?: (item: MobileTodayInteractionItem) => void;
   onItemLongPress?: (item: MobileTodayInteractionItem) => void;
 };
 
@@ -132,7 +133,7 @@ function buildTodaySubtitle(item: MobileTodayItem, showWorkspaceNames: boolean) 
   if (item.type !== 'project_action' && item.type !== 'event' && item.startsAt) {
     const timeLabel = formatTimeFromDate(item.startsAt, item.timeLabel ?? item.dueLabel);
     if (timeLabel) parts.push(timeLabel);
-  } else if (item.dueLabel && !item.timeLabel) {
+  } else if (item.type !== 'project_action' && item.dueLabel && !item.timeLabel) {
     const shouldAddDueLabel =
       item.meta !== item.dueLabel ||
       !item.meta;
@@ -156,6 +157,7 @@ export function TodayList({
   today,
   captures,
   showWorkspaceNames = true,
+  onItemPress,
   onItemLongPress,
 }: TodayListProps) {
   const theme = useLedgerTheme();
@@ -177,8 +179,9 @@ export function TodayList({
                   `${formatUpcomingLabel(item)}${formatTimeFromDate(item.startsAt ?? null, item.timeLabel) ? ` · ${formatTimeFromDate(item.startsAt ?? null, item.timeLabel)}` : ''}`,
                 ]
                   .filter(Boolean)
-                  .join(' · ')
+                .join(' · ')
               }
+              onPress={() => onItemPress?.(item)}
               onLongPress={() => onItemLongPress?.(item)}
             />
           ))
@@ -194,6 +197,7 @@ export function TodayList({
               key={item.id}
               title={item.title}
               subtitle={buildTodaySubtitle(item, showWorkspaceNames)}
+              onPress={() => onItemPress?.(item)}
               onLongPress={() => onItemLongPress?.(item)}
             />
           ))
@@ -209,11 +213,12 @@ export function TodayList({
               <TodayItem
                 key={item.id}
                 title={item.title}
-              subtitle={
-                showWorkspaceNames && item.workspaceName
-                  ? [item.workspaceName, formatDateTimeLabel(item.createdAt) ?? null, item.source].filter(Boolean).join(' · ')
-                  : [formatDateTimeLabel(item.createdAt), item.source].filter(Boolean).join(' · ') || item.source
-              }
+                subtitle={
+                  showWorkspaceNames && item.workspaceName
+                    ? [item.workspaceName, formatDateTimeLabel(item.createdAt) ?? null, item.source].filter(Boolean).join(' · ')
+                    : [formatDateTimeLabel(item.createdAt), item.source].filter(Boolean).join(' · ') || item.source
+                }
+                onPress={() => onItemPress?.(item)}
                 onLongPress={() => onItemLongPress?.(item)}
               />
             ))}

@@ -1,12 +1,14 @@
 import { useEffect } from 'react';
 import { useRouter } from 'expo-router';
 
-import { AppText } from '@/components/AppText';
+import { CaptureHeader } from '@/components/CaptureHeader';
 import { Screen } from '@/components/Screen';
 import { ProjectActionForm } from '@/features/capture/ProjectActionForm';
 import { bootstrapWorkspaceState } from '@/store/workspaceStore';
+import { useLedgerTheme } from '@/theme';
 
 export default function ProjectActionCaptureScreen() {
+  const theme = useLedgerTheme();
   const router = useRouter();
 
   useEffect(() => {
@@ -14,8 +16,8 @@ export default function ProjectActionCaptureScreen() {
   }, []);
 
   return (
-    <Screen scroll>
-      <AppText variant="screenTitle">Project action</AppText>
+    <Screen contentStyle={{ paddingTop: theme.spacing.lg }}>
+      <CaptureHeader title="Project action" />
       <ProjectActionForm onSave={() => router.replace('/(tabs)/capture')} />
     </Screen>
   );

@@ -10,9 +10,18 @@ type RowProps = {
   subtitle?: string;
   right?: ReactNode;
   onPress?: () => void;
+  chevron?: boolean;
+  titleVariant?: 'body' | 'bodyStrong';
 };
 
-export function Row({ title, subtitle, right, onPress }: RowProps) {
+export function Row({
+  title,
+  subtitle,
+  right,
+  onPress,
+  chevron = false,
+  titleVariant = 'bodyStrong',
+}: RowProps) {
   const theme = useLedgerTheme();
 
   if (onPress) {
@@ -23,15 +32,18 @@ export function Row({ title, subtitle, right, onPress }: RowProps) {
           styles.row,
           {
             borderBottomColor: theme.colors.borderSubtle,
-            backgroundColor: pressed ? theme.colors.selectedSurface : 'transparent',
+            opacity: pressed ? 0.72 : 1,
           },
         ]}>
         <View style={[styles.content, { paddingVertical: theme.spacing.md, gap: theme.spacing.lg }]}>
           <View style={[styles.textBlock, { gap: theme.spacing.xs }]}>
-            <AppText variant="bodyStrong">{title}</AppText>
+            <AppText variant={titleVariant}>{title}</AppText>
             {subtitle ? <AppText variant="meta">{subtitle}</AppText> : null}
           </View>
-          {right ? <View style={styles.right}>{right}</View> : null}
+          <View style={styles.right}>
+            {right ? <View>{right}</View> : null}
+            {chevron ? <AppText variant="meta" style={{ color: theme.colors.textMuted }}>›</AppText> : null}
+          </View>
         </View>
       </Pressable>
     );
@@ -41,7 +53,7 @@ export function Row({ title, subtitle, right, onPress }: RowProps) {
     <View style={[styles.row, { borderBottomColor: theme.colors.borderSubtle }]}>
       <View style={[styles.content, { paddingVertical: theme.spacing.md, gap: theme.spacing.lg }]}>
         <View style={[styles.textBlock, { gap: theme.spacing.xs }]}>
-          <AppText variant="bodyStrong">{title}</AppText>
+          <AppText variant={titleVariant}>{title}</AppText>
           {subtitle ? <AppText variant="meta">{subtitle}</AppText> : null}
         </View>
         {right ? <View style={styles.right}>{right}</View> : null}

@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, View } from 'react-native';
 import { useRouter } from 'expo-router';
 
-import { AppText } from '@/components/AppText';
 import { MobilePageHeader, MOBILE_PAGE_HEADER_SCROLL_SPACE } from '@/components/MobilePageHeader';
 import { WorkspaceSelectorSheet } from '@/components/WorkspaceSelectorSheet';
 import { Screen } from '@/components/Screen';
@@ -59,9 +58,6 @@ export default function CaptureScreen() {
           })}
           scrollEventThrottle={16}
           showsVerticalScrollIndicator={false}>
-          <AppText variant="body" style={{ marginBottom: theme.spacing['2xl'] }}>
-            Add something to Ledger.
-          </AppText>
           <CaptureOptionList options={listCaptureOptions()} onSelect={(href) => router.push(href)} />
         </Animated.ScrollView>
       </View>

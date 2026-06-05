@@ -1,4 +1,5 @@
 import { useRouter } from 'expo-router';
+import * as WebBrowser from 'expo-web-browser';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Animated, Pressable, ScrollView, Switch, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -17,9 +18,18 @@ import { AppText } from '@/components/AppText';
 import { Section } from '@/components/Section';
 import { SettingsRow } from '@/components/SettingsRow';
 import { WorkspaceSelectorSheet } from '@/components/WorkspaceSelectorSheet';
+import {
+  MOBILE_PAGE_HEADER_SCROLL_SPACE,
+} from '@/components/MobilePageHeader';
 import { SettingsEditSheet, type SettingsEditSheetMode } from '@/features/settings/SettingsEditSheet';
 import { SettingsChoiceSheet } from '@/features/settings/SettingsChoiceSheet';
 import { SiriShortcutsSheet } from '@/features/settings/SiriShortcutsSheet';
+import {
+  bootstrapAppPreferencesState,
+  setHapticsEnabled,
+  setReduceMotionEnabled,
+  useAppPreferencesState,
+} from '@/store/appPreferencesStore';
 import { useAuthState } from '@/store/sessionStore';
 import {
   bootstrapWorkspaceState,
@@ -39,7 +49,6 @@ const mockProfile = {
 
 const HEADER_COLLAPSE_DISTANCE = 64;
 const HEADER_TRANSLATE_DISTANCE = 36;
-const HEADER_SCROLL_SPACE = 150;
 
 export default function SettingsScreen() {
   const router = useRouter();
@@ -47,13 +56,12 @@ export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const auth = useAuthState();
   const workspaceState = useWorkspaceState();
+  const appPreferences = useAppPreferencesState();
   const scrollY = useRef(new Animated.Value(0)).current;
   const [notificationPrefs, setNotificationPrefs] = useState(defaultMobileNotificationPreferences);
   const [notificationPrefsLoading, setNotificationPrefsLoading] = useState(true);
   const [capturePrefs, setCapturePrefs] = useState(defaultMobileCapturePreferences);
   const [capturePrefsLoading, setCapturePrefsLoading] = useState(true);
-  const [hapticsEnabled, setHapticsEnabled] = useState(true);
-  const [reduceMotionEnabled, setReduceMotionEnabled] = useState(false);
   const [sheetMode, setSheetMode] = useState<SettingsEditSheetMode | null>(null);
   const [workspaceSheetTarget, setWorkspaceSheetTarget] = useState<'default_capture' | 'today_scope' | 'default_siri' | null>(null);
   const [captureSheetTarget, setCaptureSheetTarget] = useState<'shared_items' | 'default_type' | null>(null);
@@ -102,6 +110,10 @@ export default function SettingsScreen() {
   }, []);
 
   useEffect(() => {
+    void bootstrapAppPreferencesState(auth.user?.id ?? null);
+  }, [auth.user?.id]);
+
+  useEffect(() => {
     let cancelled = false;
 
     const loadNotificationPreferences = async () => {
@@ -139,6 +151,16 @@ export default function SettingsScreen() {
       router.replace('/auth/welcome');
     } catch {
       Alert.alert('Unable to sign out', 'Please try again.');
+    }
+  };
+
+  const openLegalLink = async (path: 'docs' | 'privacy' | 'terms' | 'whats-new') => {
+    try {
+      await WebBrowser.openBrowserAsync(`https://ledgerworkspace.com/${path}`, {
+        presentationStyle: WebBrowser.WebBrowserPresentationStyle.FORM_SHEET,
+      });
+    } catch {
+      Alert.alert('Could not open link', 'Please try again.');
     }
   };
 
@@ -240,9 +262,10 @@ export default function SettingsScreen() {
         contentContainerStyle={[
           styles.scrollContent,
           {
-            paddingTop: HEADER_SCROLL_SPACE + insets.top * 0.15,
+            paddingTop: MOBILE_PAGE_HEADER_SCROLL_SPACE,
             paddingHorizontal: theme.spacing.screenX,
             paddingBottom: theme.spacing['3xl'] + 96,
+            flexGrow: 1,
           },
         ]}
         keyboardShouldPersistTaps="handled"
@@ -446,8 +469,9 @@ export default function SettingsScreen() {
               title="Haptics"
               right={
                 <Switch
-                  value={hapticsEnabled}
+                  value={appPreferences.hapticsEnabled}
                   onValueChange={setHapticsEnabled}
+                  disabled={appPreferences.isLoading}
                   trackColor={switchTrackColor}
                   thumbColor={theme.colors.surface}
                 />
@@ -457,8 +481,9 @@ export default function SettingsScreen() {
               title="Reduce motion"
               right={
                 <Switch
-                  value={reduceMotionEnabled}
+                  value={appPreferences.reduceMotionEnabled}
                   onValueChange={setReduceMotionEnabled}
+                  disabled={appPreferences.isLoading}
                   trackColor={switchTrackColor}
                   thumbColor={theme.colors.surface}
                 />
@@ -467,17 +492,17 @@ export default function SettingsScreen() {
           </Section>
 
           <Section title="About">
-            <SettingsRow title="Help" chevron onPress={() => Alert.alert('Coming soon', 'Help will live here later.')} />
-            <SettingsRow title="Privacy Policy" chevron onPress={() => Alert.alert('Coming soon', 'Privacy policy will open later.')} />
-            <SettingsRow title="Terms" chevron onPress={() => Alert.alert('Coming soon', 'Terms will open later.')} />
-            <SettingsRow title="Version" value={mockProfile.version} />
+            <SettingsRow title="Help" chevron onPress={() => void openLegalLink('docs')} />
+            <SettingsRow title="Privacy Policy" chevron onPress={() => void openLegalLink('privacy')} />
+            <SettingsRow title="Terms" chevron onPress={() => void openLegalLink('terms')} />
+            <SettingsRow title="Version" value={mockProfile.version} chevron onPress={() => void openLegalLink('whats-new')} />
           </Section>
 
           <Section>
             <SettingsRow title="Sign out" destructive onPress={handleSignOut} />
           </Section>
-        </View>
-      </Animated.ScrollView>
+          </View>
+        </Animated.ScrollView>
 
       <SettingsEditSheet
         visible={sheetMode !== null}

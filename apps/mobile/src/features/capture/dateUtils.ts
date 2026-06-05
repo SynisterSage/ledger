@@ -102,3 +102,27 @@ export function parseMobileDateInput(value: string, fallback: Date) {
   parsed.setHours(fallback.getHours(), fallback.getMinutes(), 0, 0);
   return parsed;
 }
+
+function capitalize(value: string) {
+  return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
+export function formatCaptureDateLabel(value: string, fallback = new Date()) {
+  const normalized = value.trim();
+  if (!normalized) return 'Optional';
+
+  const parsed = parseMobileDateInput(normalized, fallback);
+  const relative = formatRelativeDayLabel(parsed);
+  return capitalize(relative);
+}
+
+export function formatCaptureTimeLabel(value: string, fallback = new Date()) {
+  const normalized = value.trim();
+  if (!normalized) return 'Optional';
+
+  const parsed = parseMobileDateTimeInput(normalized, fallback);
+  return new Intl.DateTimeFormat('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(parsed);
+}
