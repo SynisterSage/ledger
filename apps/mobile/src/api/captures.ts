@@ -26,6 +26,8 @@ export type CreateMobileTaskInput = {
   tags?: string[];
   show_in_today?: boolean;
   is_today_focus?: boolean;
+  source?: string;
+  sourcePlatform?: string | null;
 };
 
 export type CreateMobileReminderInput = {
@@ -37,6 +39,8 @@ export type CreateMobileReminderInput = {
   linked_id?: string | null;
   project_id?: string | null;
   note_id?: string | null;
+  source?: string;
+  sourcePlatform?: string | null;
 };
 
 export type CreateMobileEventInput = {
@@ -51,6 +55,8 @@ export type CreateMobileEventInput = {
   all_day?: boolean;
   status?: string;
   recurrence_rule?: string | null;
+  source?: string;
+  sourcePlatform?: string | null;
 };
 
 export type CreateMobileNoteInput = {
@@ -59,6 +65,7 @@ export type CreateMobileNoteInput = {
   content_html?: string | null;
   date?: string | null;
   source?: string;
+  sourcePlatform?: string | null;
   section_id?: string | null;
   parent_id?: string | null;
 };
@@ -92,6 +99,8 @@ export async function createMobileTask(workspaceId: string, payload: CreateMobil
       tags: payload.tags ?? [],
       show_in_today: Boolean(payload.show_in_today ?? false),
       is_today_focus: Boolean(payload.is_today_focus ?? false),
+      source: payload.source ?? 'workspace',
+      source_platform: payload.sourcePlatform ?? null,
     }),
   });
 }
@@ -111,6 +120,8 @@ export async function createMobileReminder(workspaceId: string, payload: CreateM
       linked_id: payload.linked_id ?? null,
       project_id: payload.project_id ?? null,
       note_id: payload.note_id ?? null,
+      source: payload.source ?? 'workspace',
+      source_platform: payload.sourcePlatform ?? null,
     }),
   });
 }
@@ -133,6 +144,8 @@ export async function createMobileEvent(workspaceId: string, payload: CreateMobi
       all_day: Boolean(payload.all_day ?? false),
       status: payload.status ?? 'planned',
       recurrence_rule: payload.recurrence_rule ?? null,
+      source: payload.source ?? 'workspace',
+      source_platform: payload.sourcePlatform ?? null,
     }),
   });
 }
@@ -149,9 +162,42 @@ export async function createMobileNote(workspaceId: string, payload: CreateMobil
       content_html: payload.content_html ?? null,
       date: payload.date ?? null,
       source: payload.source ?? 'mobile',
+      source_platform: payload.sourcePlatform ?? null,
       section_id: payload.section_id ?? null,
       parent_id: payload.parent_id ?? null,
     }),
+  });
+}
+
+export async function createMobileSiriTask(workspaceId: string, payload: CreateMobileTaskInput) {
+  return createMobileTask(workspaceId, {
+    ...payload,
+    source: payload.source ?? 'siri',
+    sourcePlatform: payload.sourcePlatform ?? 'ios',
+  });
+}
+
+export async function createMobileSiriReminder(workspaceId: string, payload: CreateMobileReminderInput) {
+  return createMobileReminder(workspaceId, {
+    ...payload,
+    source: payload.source ?? 'siri',
+    sourcePlatform: payload.sourcePlatform ?? 'ios',
+  });
+}
+
+export async function createMobileSiriEvent(workspaceId: string, payload: CreateMobileEventInput) {
+  return createMobileEvent(workspaceId, {
+    ...payload,
+    source: payload.source ?? 'siri',
+    sourcePlatform: payload.sourcePlatform ?? 'ios',
+  });
+}
+
+export async function createMobileSiriNote(workspaceId: string, payload: CreateMobileNoteInput) {
+  return createMobileNote(workspaceId, {
+    ...payload,
+    source: payload.source ?? 'siri',
+    sourcePlatform: payload.sourcePlatform ?? 'ios',
   });
 }
 

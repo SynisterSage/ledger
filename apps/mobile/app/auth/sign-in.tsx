@@ -1,6 +1,7 @@
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
-import { Alert, Pressable, View } from 'react-native';
+import { Alert, Keyboard, Pressable, TouchableWithoutFeedback, View } from 'react-native';
+import { Eye, EyeOff } from 'lucide-react-native';
 
 import { AuthHeader } from '@/components/AuthHeader';
 import { AppButton } from '@/components/AppButton';
@@ -15,6 +16,7 @@ export default function SignInScreen() {
   const theme = useLedgerTheme();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -44,42 +46,58 @@ export default function SignInScreen() {
 
   return (
     <Screen contentStyle={{ paddingTop: 0 }}>
-      <View style={[styles.container, { paddingVertical: theme.spacing.lg }]}>
-        <AuthHeader title="Welcome Back" />
+      <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
+        <View style={[styles.container, { paddingVertical: theme.spacing.lg }]}>
+          <AuthHeader title="Welcome Back" />
 
-        <View style={styles.form}>
-          <AppTextInput
-            label="Email"
-            placeholder="you@example.com"
-            keyboardType="email-address"
-            autoCapitalize="none"
-            value={email}
-            onChangeText={setEmail}
-          />
-          <AppTextInput
-            label="Password"
-            placeholder="••••••••"
-            secureTextEntry
-            value={password}
-            onChangeText={setPassword}
-          />
-          {error ? <AppText variant="caption">{error}</AppText> : null}
-        </View>
+          <View style={styles.form}>
+            <AppTextInput
+              label="Email"
+              placeholder="you@example.com"
+              keyboardType="email-address"
+              autoCapitalize="none"
+              value={email}
+              onChangeText={setEmail}
+            />
+            <AppTextInput
+              label="Password"
+              placeholder="••••••••"
+              secureTextEntry={!showPassword}
+              value={password}
+              onChangeText={setPassword}
+              rightAccessory={
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}
+                  onPress={() => setShowPassword((value) => !value)}
+                  hitSlop={8}
+                  style={{ paddingHorizontal: 4, paddingVertical: 2 }}>
+                  {showPassword ? (
+                    <EyeOff size={18} color={theme.colors.textMuted} />
+                  ) : (
+                    <Eye size={18} color={theme.colors.textMuted} />
+                  )}
+                </Pressable>
+              }
+            />
+            {error ? <AppText variant="caption">{error}</AppText> : null}
+          </View>
 
-        <View style={styles.actions}>
-          <AppButton title="Sign In" variant="primary" size="lg" onPress={handleSignIn} disabled={isSubmitting} />
-          <View style={styles.footerRow}>
-            <AppText variant="body" style={{ color: theme.colors.textMuted }}>
-              New to Ledger?{' '}
-            </AppText>
-            <Pressable onPress={() => router.push('/auth/sign-up')}>
-              <AppText variant="body" style={{ color: theme.colors.accent }}>
-                Create account
+          <View style={styles.actions}>
+            <AppButton title="Sign In" variant="primary" size="lg" onPress={handleSignIn} disabled={isSubmitting} />
+            <View style={styles.footerRow}>
+              <AppText variant="body" style={{ color: theme.colors.textMuted }}>
+                New to Ledger?{' '}
               </AppText>
-            </Pressable>
+              <Pressable onPress={() => router.push('/auth/sign-up')}>
+                <AppText variant="body" style={{ color: theme.colors.accent }}>
+                  Create account
+                </AppText>
+              </Pressable>
+            </View>
           </View>
         </View>
-      </View>
+      </TouchableWithoutFeedback>
     </Screen>
   );
 }

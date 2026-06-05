@@ -24,7 +24,9 @@ import {
   bootstrapWorkspaceState,
   getWorkspaceLabel,
   setDefaultCaptureWorkspace,
+  setDefaultSiriWorkspace,
   setRememberLastWorkspace,
+  setSiriAskEveryTime,
   setTodayScopeWorkspace,
   useWorkspaceState,
 } from '@/store/workspaceStore';
@@ -52,7 +54,7 @@ export default function SettingsScreen() {
   const [hapticsEnabled, setHapticsEnabled] = useState(true);
   const [reduceMotionEnabled, setReduceMotionEnabled] = useState(false);
   const [sheetMode, setSheetMode] = useState<SettingsEditSheetMode | null>(null);
-  const [workspaceSheetTarget, setWorkspaceSheetTarget] = useState<'default_capture' | 'today_scope' | null>(null);
+  const [workspaceSheetTarget, setWorkspaceSheetTarget] = useState<'default_capture' | 'today_scope' | 'default_siri' | null>(null);
   const [captureSheetTarget, setCaptureSheetTarget] = useState<'shared_items' | 'default_type' | null>(null);
 
   const switchTrackColor = useMemo(
@@ -72,6 +74,10 @@ export default function SettingsScreen() {
   const defaultCaptureWorkspaceLabel = useMemo(
     () => getWorkspaceLabel(workspaceState.defaultCaptureWorkspaceId, workspaceState.options),
     [workspaceState.defaultCaptureWorkspaceId, workspaceState.options],
+  );
+  const defaultSiriWorkspaceLabel = useMemo(
+    () => getWorkspaceLabel(workspaceState.defaultSiriWorkspaceId, workspaceState.options),
+    [workspaceState.defaultSiriWorkspaceId, workspaceState.options],
   );
   const todayScopeWorkspaceLabel = useMemo(
     () => getWorkspaceLabel(workspaceState.todayScopeWorkspaceId, workspaceState.options),
@@ -136,7 +142,7 @@ export default function SettingsScreen() {
 
   const openDisplayNameSheet = () => setSheetMode('display_name');
   const openPasswordSheet = () => setSheetMode('password');
-  const openWorkspaceSheet = (target: 'default_capture' | 'today_scope') => {
+  const openWorkspaceSheet = (target: 'default_capture' | 'today_scope' | 'default_siri') => {
     if (workspaceState.isLoading) return;
     setWorkspaceSheetTarget(target);
   };
@@ -400,8 +406,51 @@ export default function SettingsScreen() {
               chevron
               onPress={() => setCaptureSheetTarget('default_type')}
             />
-            <SettingsRow title="Siri Shortcuts" value="Coming soon" />
-            <SettingsRow title="Share Sheet" value="Coming soon" />
+          </Section>
+
+          <Section title="Siri Shortcuts">
+            <SettingsRow
+              title="Default Siri workspace"
+              value={workspaceState.isLoading ? 'Loading...' : defaultSiriWorkspaceLabel}
+              chevron
+              onPress={() => {
+                if (workspaceState.isLoading) return;
+                setWorkspaceSheetTarget('default_siri');
+              }}
+            />
+            <SettingsRow
+              title="Ask every time"
+              subtitle="Choose a workspace for each Siri capture."
+              right={
+                <Switch
+                  value={workspaceState.siriAskEveryTime}
+                  onValueChange={setSiriAskEveryTime}
+                  disabled={workspaceState.isLoading}
+                  trackColor={switchTrackColor}
+                  thumbColor={theme.colors.surface}
+                />
+              }
+            />
+            <SettingsRow
+              title="Add Reminder"
+              subtitle='“Hey Siri, add a Ledger reminder.”'
+              onPress={() => Alert.alert('Coming soon', 'Siri Shortcuts will be available in the native iOS build.')}
+            />
+            <SettingsRow
+              title="Add Task"
+              subtitle='“Hey Siri, add a Ledger task.”'
+              onPress={() => Alert.alert('Coming soon', 'Siri Shortcuts will be available in the native iOS build.')}
+            />
+            <SettingsRow
+              title="Create Event"
+              subtitle='“Hey Siri, create a Ledger event.”'
+              onPress={() => Alert.alert('Coming soon', 'Siri Shortcuts will be available in the native iOS build.')}
+            />
+            <SettingsRow
+              title="Save Note"
+              subtitle='“Hey Siri, save a Ledger note.”'
+              onPress={() => Alert.alert('Coming soon', 'Siri Shortcuts will be available in the native iOS build.')}
+            />
           </Section>
 
           <Section title="App">
@@ -456,16 +505,20 @@ export default function SettingsScreen() {
         selectedWorkspaceId={
           workspaceSheetTarget === 'default_capture'
             ? workspaceState.defaultCaptureWorkspaceId
+            : workspaceSheetTarget === 'default_siri'
+              ? workspaceState.defaultSiriWorkspaceId
             : workspaceState.todayScopeWorkspaceId
         }
         workspaces={
-          workspaceSheetTarget === 'default_capture'
+          workspaceSheetTarget === 'default_capture' || workspaceSheetTarget === 'default_siri'
             ? captureWorkspaceOptions
             : workspaceState.options
         }
         onSelect={(workspaceId) => {
           if (workspaceSheetTarget === 'default_capture') {
             setDefaultCaptureWorkspace(workspaceId);
+          } else if (workspaceSheetTarget === 'default_siri') {
+            setDefaultSiriWorkspace(workspaceId);
           } else if (workspaceSheetTarget === 'today_scope') {
             setTodayScopeWorkspace(workspaceId);
           }

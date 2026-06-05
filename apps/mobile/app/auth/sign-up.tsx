@@ -1,6 +1,7 @@
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
-import { Alert, Pressable, View } from 'react-native';
+import { Alert, Keyboard, Pressable, TouchableWithoutFeedback, View } from 'react-native';
+import { Eye, EyeOff } from 'lucide-react-native';
 
 import { AuthHeader } from '@/components/AuthHeader';
 import { AppButton } from '@/components/AppButton';
@@ -16,6 +17,7 @@ export default function SignUpScreen() {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -46,49 +48,65 @@ export default function SignUpScreen() {
 
   return (
     <Screen contentStyle={{ paddingTop: 0 }}>
-      <View style={[styles.container, { paddingVertical: theme.spacing.lg }]}>
-        <AuthHeader title="Create Your Account" />
+      <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
+        <View style={[styles.container, { paddingVertical: theme.spacing.lg }]}>
+          <AuthHeader title="Create Your Account" />
 
-        <View style={styles.form}>
-          <AppTextInput
-            label="Name"
-            placeholder="John Doe"
-            autoCapitalize="words"
-            value={name}
-            onChangeText={setName}
-          />
-          <AppTextInput
-            label="Email"
-            placeholder="you@example.com"
-            keyboardType="email-address"
-            autoCapitalize="none"
-            value={email}
-            onChangeText={setEmail}
-          />
-          <AppTextInput
-            label="Password"
-            placeholder="••••••••"
-            secureTextEntry
-            value={password}
-            onChangeText={setPassword}
-          />
-          {error ? <AppText variant="caption">{error}</AppText> : null}
-        </View>
+          <View style={styles.form}>
+            <AppTextInput
+              label="Name"
+              placeholder="John Doe"
+              autoCapitalize="words"
+              value={name}
+              onChangeText={setName}
+            />
+            <AppTextInput
+              label="Email"
+              placeholder="you@example.com"
+              keyboardType="email-address"
+              autoCapitalize="none"
+              value={email}
+              onChangeText={setEmail}
+            />
+            <AppTextInput
+              label="Password"
+              placeholder="••••••••"
+              secureTextEntry={!showPassword}
+              value={password}
+              onChangeText={setPassword}
+              rightAccessory={
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}
+                  onPress={() => setShowPassword((value) => !value)}
+                  hitSlop={8}
+                  style={{ paddingHorizontal: 4, paddingVertical: 2 }}>
+                  {showPassword ? (
+                    <EyeOff size={18} color={theme.colors.textMuted} />
+                  ) : (
+                    <Eye size={18} color={theme.colors.textMuted} />
+                  )}
+                </Pressable>
+              }
+            />
+            {error ? <AppText variant="caption">{error}</AppText> : null}
+          </View>
 
-        <View style={styles.actions}>
-          <AppButton title="Create Account" variant="primary" size="lg" onPress={handleSignUp} disabled={isSubmitting} />
-          <View style={styles.footerRow}>
-            <AppText variant="body" style={{ color: theme.colors.textMuted }}>
-              Already have an account?{' '}
-            </AppText>
-            <Pressable onPress={() => router.push('/auth/sign-in')}>
-              <AppText variant="body" style={{ color: theme.colors.accent }}>
-                Sign in
+          <View style={styles.actions}>
+            <AppButton title="Create Account" variant="primary" size="lg" onPress={handleSignUp} disabled={isSubmitting} />
+            <View style={styles.footerRow}>
+              <AppText variant="body" style={{ color: theme.colors.textMuted }}>
+                Already have an account?{' '}
               </AppText>
-            </Pressable>
+              <Pressable onPress={() => router.push('/auth/sign-in')}>
+                <AppText variant="body" style={{ color: theme.colors.accent }}>
+                  Sign in
+                </AppText>
+              </Pressable>
+            </View>
           </View>
         </View>
-      </View>
+      </TouchableWithoutFeedback>
     </Screen>
   );
 }

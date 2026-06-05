@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
-import { Mail, Lock, Loader2, X } from 'lucide-react';
+import { Mail, Lock, Loader2, X, Eye, EyeOff } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 
 interface LoginProps {
@@ -15,12 +15,17 @@ const dragRegionStyle = { WebkitAppRegion: 'drag' } as CSSProperties & {
 const noDragRegionStyle = { WebkitAppRegion: 'no-drag' } as CSSProperties & {
   WebkitAppRegion: 'no-drag';
 };
+const inputClassName =
+  'h-11 w-full rounded-2xl border border-black/10 bg-transparent px-3.5 text-sm text-gray-900 transition placeholder:text-gray-400 focus:border-black/15 focus:bg-white/70 focus:outline-none focus:ring-4 focus:ring-gray-100';
+const iconInputClassName =
+  'h-11 w-full rounded-2xl border border-black/10 bg-transparent pl-9 pr-3.5 text-sm text-gray-900 transition placeholder:text-gray-400 focus:border-black/15 focus:bg-white/70 focus:outline-none focus:ring-4 focus:ring-gray-100';
 
 export const LoginForm: React.FC<LoginProps> = ({ onSuccess, notice }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isSignUp, setIsSignUp] = useState(false);
   const [fullName, setFullName] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isIntroReady, setIsIntroReady] = useState(false);
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(() => {
@@ -273,7 +278,7 @@ export const LoginForm: React.FC<LoginProps> = ({ onSuccess, notice }) => {
                       value={fullName}
                       onChange={(e) => setFullName(e.target.value)}
                       placeholder="Lex Ferguson"
-                      className="h-11 w-full rounded-2xl border border-black/10 bg-white/82 px-3.5 text-sm text-gray-900 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)] transition placeholder:text-gray-400 focus:border-gray-300 focus:bg-white focus:outline-none focus:ring-4 focus:ring-gray-100"
+                      className={inputClassName}
                       disabled={isLoading}
                     />
                   </div>
@@ -294,7 +299,7 @@ export const LoginForm: React.FC<LoginProps> = ({ onSuccess, notice }) => {
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     placeholder="you@example.com"
-                    className="h-11 w-full rounded-2xl border border-black/10 bg-white/82 pl-9 pr-3.5 text-sm text-gray-900 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)] transition placeholder:text-gray-400 focus:border-gray-300 focus:bg-white focus:outline-none focus:ring-4 focus:ring-gray-100"
+                    className={iconInputClassName}
                     disabled={isLoading}
                     required
                   />
@@ -309,14 +314,22 @@ export const LoginForm: React.FC<LoginProps> = ({ onSuccess, notice }) => {
                     className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400"
                   />
                   <input
-                    type="password"
+                    type={showPassword ? 'text' : 'password'}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="Enter your password"
-                    className="h-11 w-full rounded-2xl border border-black/10 bg-white/82 pl-9 pr-3.5 text-sm text-gray-900 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)] transition placeholder:text-gray-400 focus:border-gray-300 focus:bg-white focus:outline-none focus:ring-4 focus:ring-gray-100"
+                    className={iconInputClassName}
                     disabled={isLoading}
                     required
                   />
+                  <button
+                    type="button"
+                    aria-label={showPassword ? 'Hide password' : 'Show password'}
+                    onClick={() => setShowPassword((value) => !value)}
+                    className="absolute right-3.5 top-1/2 inline-flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-full text-gray-400 transition hover:bg-black/5 hover:text-gray-700"
+                  >
+                    {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
+                  </button>
                 </div>
               </div>
 

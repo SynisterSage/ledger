@@ -8,10 +8,13 @@ import type { MobileWorkspaceScopeOption } from '@/types/ledger';
 const WORKSPACE_STORAGE_KEY = 'ledger-mobile-selected-workspace';
 const TODAY_SCOPE_STORAGE_KEY = 'ledger-mobile-today-scope-workspace';
 const DEFAULT_CAPTURE_STORAGE_KEY = 'ledger-mobile-default-capture-workspace';
+const DEFAULT_SIRI_STORAGE_KEY = 'ledger-mobile-default-siri-workspace';
 const REMEMBER_LAST_WORKSPACE_STORAGE_KEY = 'ledger-mobile-remember-last-workspace';
 const MOBILE_SELECTED_WORKSPACE_PREF = 'mobile_selected_workspace_id';
 const MOBILE_TODAY_SCOPE_PREF = 'mobile_today_scope_workspace_id';
 const MOBILE_DEFAULT_CAPTURE_PREF = 'mobile_default_capture_workspace_id';
+const MOBILE_DEFAULT_SIRI_PREF = 'mobile_default_siri_workspace_id';
+const MOBILE_SIRI_ASK_EVERY_TIME_PREF = 'mobile_siri_ask_every_time';
 const MOBILE_REMEMBER_LAST_PREF = 'mobile_remember_last_workspace';
 
 export type WorkspaceState = {
@@ -22,6 +25,8 @@ export type WorkspaceState = {
   selectedWorkspaceId: string;
   todayScopeWorkspaceId: string;
   defaultCaptureWorkspaceId: string;
+  defaultSiriWorkspaceId: string;
+  siriAskEveryTime: boolean;
   rememberLastWorkspace: boolean;
   error: string | null;
 };
@@ -34,6 +39,8 @@ const initialState: WorkspaceState = {
   selectedWorkspaceId: 'all',
   todayScopeWorkspaceId: 'all',
   defaultCaptureWorkspaceId: 'all',
+  defaultSiriWorkspaceId: 'all',
+  siriAskEveryTime: false,
   rememberLastWorkspace: true,
   error: null,
 };
@@ -125,6 +132,27 @@ export function setDefaultCaptureWorkspace(workspaceId: string) {
   });
 }
 
+export function setDefaultSiriWorkspace(workspaceId: string) {
+  void SecureStore.setItemAsync(DEFAULT_SIRI_STORAGE_KEY, workspaceId).catch(() => {
+    // Ignore storage failures; preference should still update in-memory.
+  });
+  void syncWorkspacePreferencesToServer({
+    preferences: { [MOBILE_DEFAULT_SIRI_PREF]: workspaceId },
+  });
+  setWorkspaceState({
+    defaultSiriWorkspaceId: workspaceId,
+  });
+}
+
+export function setSiriAskEveryTime(siriAskEveryTime: boolean) {
+  void syncWorkspacePreferencesToServer({
+    preferences: { [MOBILE_SIRI_ASK_EVERY_TIME_PREF]: siriAskEveryTime },
+  });
+  setWorkspaceState({
+    siriAskEveryTime,
+  });
+}
+
 export function setRememberLastWorkspace(rememberLastWorkspace: boolean) {
   void SecureStore.setItemAsync(
     REMEMBER_LAST_WORKSPACE_STORAGE_KEY,
@@ -176,6 +204,29 @@ export function resolveCaptureWorkspaceId(state = getWorkspaceState()) {
   return firstWorkspaceId ?? 'all';
 }
 
+export function resolveSiriCaptureWorkspaceId(state = getWorkspaceState()) {
+  if (state.siriAskEveryTime) {
+    return null;
+  }
+
+  const validWorkspaceIds = new Set(state.options.map((option) => option.id));
+  const candidates = [
+    state.defaultSiriWorkspaceId,
+    state.defaultCaptureWorkspaceId,
+    state.selectedWorkspaceId,
+    state.todayScopeWorkspaceId,
+  ];
+
+  for (const candidate of candidates) {
+    if (candidate && candidate !== 'all' && validWorkspaceIds.has(candidate)) {
+      return candidate;
+    }
+  }
+
+  const firstWorkspaceId = state.options.find((option) => option.id !== 'all')?.id;
+  return firstWorkspaceId ?? null;
+}
+
 export async function bootstrapWorkspaceState() {
   if (hydrationPromise) {
     await hydrationPromise;
@@ -190,11 +241,18 @@ export async function bootstrapWorkspaceState() {
     setWorkspaceState({ isLoading: true, error: null });
 
     try {
-      const [savedWorkspaceId, savedTodayScopeWorkspaceId, savedDefaultCaptureWorkspaceId, savedRememberLastWorkspace] =
+      const [
+        savedWorkspaceId,
+        savedTodayScopeWorkspaceId,
+        savedDefaultCaptureWorkspaceId,
+        savedDefaultSiriWorkspaceId,
+        savedRememberLastWorkspace,
+      ] =
         await Promise.all([
           SecureStore.getItemAsync(WORKSPACE_STORAGE_KEY).catch(() => null),
           SecureStore.getItemAsync(TODAY_SCOPE_STORAGE_KEY).catch(() => null),
           SecureStore.getItemAsync(DEFAULT_CAPTURE_STORAGE_KEY).catch(() => null),
+          SecureStore.getItemAsync(DEFAULT_SIRI_STORAGE_KEY).catch(() => null),
           SecureStore.getItemAsync(REMEMBER_LAST_WORKSPACE_STORAGE_KEY).catch(() => null),
         ]);
 
@@ -207,11 +265,20 @@ export async function bootstrapWorkspaceState() {
       const serverSelectedWorkspaceId = readPreferenceString(serverPreferences, MOBILE_SELECTED_WORKSPACE_PREF);
       const serverTodayScopeWorkspaceId = readPreferenceString(serverPreferences, MOBILE_TODAY_SCOPE_PREF);
       const serverDefaultCaptureWorkspaceId = readPreferenceString(serverPreferences, MOBILE_DEFAULT_CAPTURE_PREF);
+      const serverDefaultSiriWorkspaceId = readPreferenceString(serverPreferences, MOBILE_DEFAULT_SIRI_PREF);
+      const serverSiriAskEveryTime = readPreferenceBoolean(
+        serverPreferences,
+        MOBILE_SIRI_ASK_EVERY_TIME_PREF,
+        false,
+      );
       const serverRememberLastWorkspace = readPreferenceBoolean(serverPreferences, MOBILE_REMEMBER_LAST_PREF, true);
       const savedWorkspaceIsValid = savedWorkspaceId ? validWorkspaceIds.has(savedWorkspaceId) : false;
       const savedTodayScopeIsValid = savedTodayScopeWorkspaceId ? validWorkspaceIds.has(savedTodayScopeWorkspaceId) : false;
       const savedDefaultCaptureIsValid = savedDefaultCaptureWorkspaceId
         ? validWorkspaceIds.has(savedDefaultCaptureWorkspaceId)
+        : false;
+      const savedDefaultSiriIsValid = savedDefaultSiriWorkspaceId
+        ? validWorkspaceIds.has(savedDefaultSiriWorkspaceId)
         : false;
       const serverSelectedWorkspaceIsValid = serverSelectedWorkspaceId
         ? validWorkspaceIds.has(serverSelectedWorkspaceId)
@@ -239,6 +306,14 @@ export async function bootstrapWorkspaceState() {
               : response.defaultWorkspaceId && validWorkspaceIds.has(response.defaultWorkspaceId)
                 ? response.defaultWorkspaceId
                 : firstWorkspaceId;
+      const nextDefaultSiriWorkspaceId =
+        serverDefaultSiriWorkspaceId && validWorkspaceIds.has(serverDefaultSiriWorkspaceId)
+          ? String(serverDefaultSiriWorkspaceId)
+          : savedDefaultSiriIsValid
+            ? String(savedDefaultSiriWorkspaceId)
+            : response.defaultWorkspaceId && validWorkspaceIds.has(response.defaultWorkspaceId)
+              ? response.defaultWorkspaceId
+              : firstWorkspaceId;
 
       setWorkspaceState({
         isLoading: false,
@@ -257,12 +332,15 @@ export async function bootstrapWorkspaceState() {
           : response.defaultWorkspaceId && validWorkspaceIds.has(response.defaultWorkspaceId)
             ? response.defaultWorkspaceId
             : firstWorkspaceId,
+        defaultSiriWorkspaceId: nextDefaultSiriWorkspaceId,
+        siriAskEveryTime: serverSiriAskEveryTime,
         rememberLastWorkspace,
       });
     } catch {
       const savedWorkspaceId = await SecureStore.getItemAsync(WORKSPACE_STORAGE_KEY).catch(() => null);
       const savedTodayScopeWorkspaceId = await SecureStore.getItemAsync(TODAY_SCOPE_STORAGE_KEY).catch(() => null);
       const savedDefaultCaptureWorkspaceId = await SecureStore.getItemAsync(DEFAULT_CAPTURE_STORAGE_KEY).catch(() => null);
+      const savedDefaultSiriWorkspaceId = await SecureStore.getItemAsync(DEFAULT_SIRI_STORAGE_KEY).catch(() => null);
       const savedRememberLastWorkspace = await SecureStore.getItemAsync(REMEMBER_LAST_WORKSPACE_STORAGE_KEY).catch(() => null);
       setWorkspaceState({
         isLoading: false,
@@ -282,6 +360,12 @@ export async function bootstrapWorkspaceState() {
           mockWorkspaceScopeOptions.some((option) => option.id === savedDefaultCaptureWorkspaceId)
             ? savedDefaultCaptureWorkspaceId
             : mockWorkspaceScopeOptions.find((option) => option.id !== 'all')?.id ?? 'all',
+        defaultSiriWorkspaceId:
+          savedDefaultSiriWorkspaceId &&
+          mockWorkspaceScopeOptions.some((option) => option.id === savedDefaultSiriWorkspaceId)
+            ? savedDefaultSiriWorkspaceId
+            : mockWorkspaceScopeOptions.find((option) => option.id !== 'all')?.id ?? 'all',
+        siriAskEveryTime: false,
         rememberLastWorkspace: savedRememberLastWorkspace === null ? true : savedRememberLastWorkspace === 'true',
       });
     }

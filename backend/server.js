@@ -312,11 +312,11 @@ const projectStatusAliases = {
 const projectSelectColumns =
   'id, name, description, status, completeness, color, start_date, end_date, created_by, created_at, updated_at';
 const taskSelectColumns =
-  'id, workspace_id, project_id, title, description, notes, due_date, due_time, status, priority, assigned_to, tags, completed_at, created_at, updated_at';
+  'id, workspace_id, project_id, title, description, notes, due_date, due_time, status, priority, assigned_to, tags, completed_at, source, source_platform, created_at, updated_at';
 const reminderSelectColumns =
-  'id, workspace_id, user_id, title, body, remind_at, status, linked_type, linked_id, completed_at, dismissed_at, snoozed_until, created_at, updated_at, calendar_id, project_id, note_id, notes, color, is_done, created_by, series_id, series_type, recurrence_rule';
+  'id, workspace_id, user_id, title, body, remind_at, status, linked_type, linked_id, completed_at, dismissed_at, snoozed_until, source, source_platform, created_at, updated_at, calendar_id, project_id, note_id, notes, color, is_done, created_by, series_id, series_type, recurrence_rule';
 const reminderDashboardSelectColumns =
-  'id, workspace_id, user_id, title, body, remind_at, status, linked_type, linked_id, completed_at, dismissed_at, snoozed_until, created_at, updated_at, calendar_id, project_id, note_id, notes, color, is_done, created_by, series_id, series_type, recurrence_rule';
+  'id, workspace_id, user_id, title, body, remind_at, status, linked_type, linked_id, completed_at, dismissed_at, snoozed_until, source, source_platform, created_at, updated_at, calendar_id, project_id, note_id, notes, color, is_done, created_by, series_id, series_type, recurrence_rule';
 const reminderLinkedTypes = ['task', 'event', 'note', 'project', 'inbox', 'none'];
 const reminderStatusValues = ['active', 'completed', 'dismissed', 'overdue'];
 const reminderLinkedLabels = {
@@ -337,6 +337,16 @@ const normalizeProjectSemanticStatus = (status) => {
   if (value.includes('progress') || value.includes('doing') || value.includes('in_'))
     return 'in_progress';
   return 'not_started';
+};
+
+const normalizeCaptureSource = (value, fallback = 'workspace') => {
+  const text = normalizeNullableText(value);
+  return text ? text.toLowerCase() : fallback;
+};
+
+const normalizeCaptureSourcePlatform = (value) => {
+  const text = normalizeNullableText(value);
+  return text ? text.toLowerCase() : null;
 };
 
 const normalizeProjectNameKey = (value) =>
@@ -505,7 +515,7 @@ const mapNoteResponse = (row) => {
 };
 
 const noteSelectColumns =
-  'id, workspace_id, user_id, updated_by, title, content, content_html, date, mood, source, mode, mind_map_structure, parent_id, section_id, sort_order, depth, created_at, updated_at';
+  'id, workspace_id, user_id, updated_by, title, content, content_html, date, mood, source, source_platform, mode, mind_map_structure, parent_id, section_id, sort_order, depth, created_at, updated_at';
 
 const NOTE_VERSION_LIMIT = 25;
 const NOTE_AUTOSAVE_CHECKPOINT_INTERVAL_MS = 10 * 60 * 1000;
@@ -861,6 +871,10 @@ const userPreferencesDefaults = {
     projectActionsEnabled: true,
     overdueItemsEnabled: true,
   },
+  mobileSiriPreferences: {
+    defaultWorkspaceId: null,
+    askEveryTime: false,
+  },
   mobileNotificationOnboardingCompleted: false,
 };
 
@@ -895,7 +909,21 @@ const normalizeUserPreferences = (value) => {
     overdueItemsEnabled: Boolean(
       mobileNotificationsRaw.overdueItemsEnabled ??
         mobileNotificationsRaw.overdue_items_enabled ??
-        userPreferencesDefaults.mobileNotificationPreferences.overdueItemsEnabled
+      userPreferencesDefaults.mobileNotificationPreferences.overdueItemsEnabled
+    ),
+  };
+  const mobileSiriPreferencesRaw =
+    merged.mobileSiriPreferences && typeof merged.mobileSiriPreferences === 'object'
+      ? merged.mobileSiriPreferences
+      : {};
+  const mobileSiriPreferences = {
+    defaultWorkspaceId:
+      typeof mobileSiriPreferencesRaw.defaultWorkspaceId === 'string' &&
+      mobileSiriPreferencesRaw.defaultWorkspaceId.trim()
+        ? mobileSiriPreferencesRaw.defaultWorkspaceId.trim()
+        : null,
+    askEveryTime: Boolean(
+      mobileSiriPreferencesRaw.askEveryTime ?? mobileSiriPreferencesRaw.ask_every_time ?? false
     ),
   };
 
@@ -1043,6 +1071,7 @@ const normalizeUserPreferences = (value) => {
     showTrayIcon: Boolean(merged.showTrayIcon),
     runInBackground: Boolean(merged.runInBackground),
     mobileNotificationPreferences,
+    mobileSiriPreferences,
     mobileNotificationOnboardingCompleted: Boolean(merged.mobileNotificationOnboardingCompleted),
   };
 };
@@ -5021,13 +5050,14 @@ app.post('/api/notifications/:id/action', authMiddleware, rateLimit('write'), as
     if (existing.source_type === 'reminder') {
       const prefsRow = await getOrCreateNotificationPreferences(req.authUser.id);
       const prefs = normalizeNotificationPreferences(mapNotificationPreferencesRow(prefsRow));
-      const snoozeUntil = parseReminderTimestamp(
-        req.body?.snooze_until ??
-          (action === 'snooze'
-            ? new Date(Date.now() + prefs.defaultSnoozeMinutes * 60 * 1000).toISOString()
-            : null),
-        'snooze_until'
-      );
+      const snoozeUntil =
+        action === 'snooze'
+          ? parseReminderTimestamp(
+              req.body?.snooze_until ??
+                new Date(Date.now() + prefs.defaultSnoozeMinutes * 60 * 1000).toISOString(),
+              'snooze_until'
+            )
+          : null;
 
       const { data, error, table } = await withReminderTable((table) =>
         supabase
@@ -6793,6 +6823,8 @@ app.post(
       const dueTime = normalizeNullableText(req.body?.due_time);
       const showInToday = Boolean(req.body?.show_in_today ?? false);
       const isTodayFocus = Boolean(req.body?.is_today_focus ?? false);
+      const source = normalizeCaptureSource(req.body?.source);
+      const sourcePlatform = normalizeCaptureSourcePlatform(req.body?.source_platform);
 
       const insertAttempts = [
         {
@@ -6825,6 +6857,8 @@ app.post(
           status: req.body?.status ? String(req.body.status) : 'todo',
           priority: req.body?.priority ? String(req.body.priority) : 'medium',
           tags,
+          source,
+          source_platform: sourcePlatform,
         };
 
         if (attempt.includeShowInToday) {
@@ -7190,7 +7224,7 @@ app.get('/api/events/upcoming', authMiddleware, rateLimit('read'), async (req, r
     const { data, error } = await supabase
       .from('events')
       .select(
-        'id, workspace_id, title, start_at, end_at, all_day, calendar_id, color, status, visibility, recurrence_rule, series_id, series_type'
+        'id, workspace_id, title, start_at, end_at, all_day, calendar_id, color, status, visibility, recurrence_rule, series_id, series_type, source, source_platform'
       )
       .in('workspace_id', workspaceIds)
       .gte('start_at', now.toISOString())
@@ -7288,6 +7322,8 @@ app.post(
       const recurrenceRuleRaw = normalizeNullableText(req.body?.recurrence_rule);
       const recurrenceRule = recurrenceRuleRaw ? recurrenceRuleRaw.toLowerCase() : null;
       const specificDates = normalizeDateKeyList(req.body?.specific_dates);
+      const source = normalizeCaptureSource(req.body?.source);
+      const sourcePlatform = normalizeCaptureSourcePlatform(req.body?.source_platform);
       const isSpecificDates = recurrenceRule === SPECIFIC_DATES_SERIES_TYPE || specificDates.length > 0;
       if (isSpecificDates && specificDates.length === 0) {
         return res.status(400).json({ error: 'specific_dates is required for specific date events' });
@@ -7311,6 +7347,8 @@ app.post(
         note_id: noteId || null,
         series_id: seriesId,
         series_type: isSpecificDates ? SPECIFIC_DATES_SERIES_TYPE : null,
+        source,
+        source_platform: sourcePlatform,
       };
 
       if (isSpecificDates) {
@@ -7332,7 +7370,7 @@ app.post(
           .from('events')
           .insert(specificDatePayloads)
           .select(
-            'id, title, start_at, end_at, all_day, calendar_id, color, status, visibility, recurrence_rule, notes, project_id, note_id, series_id, series_type'
+            'id, title, start_at, end_at, all_day, calendar_id, color, status, visibility, recurrence_rule, notes, project_id, note_id, series_id, series_type, source, source_platform'
           );
 
         if (error) throw error;
@@ -7352,7 +7390,7 @@ app.post(
           end_at: endAt,
         })
         .select(
-          'id, title, start_at, end_at, all_day, calendar_id, color, status, visibility, recurrence_rule, notes, project_id, note_id, series_id, series_type'
+          'id, title, start_at, end_at, all_day, calendar_id, color, status, visibility, recurrence_rule, notes, project_id, note_id, series_id, series_type, source, source_platform'
         )
         .single();
 
@@ -7381,7 +7419,11 @@ app.patch('/api/events/:id', authMiddleware, rateLimit('write'), async (req, res
 
     const existingEnd = existingEvent?.end_at ? new Date(existingEvent.end_at) : null;
     const isPastEvent = existingEnd ? existingEnd.getTime() < Date.now() : false;
-    if (isPastEvent) {
+    const requestedKeys = Object.keys(req.body ?? {}).filter((key) => req.body?.[key] !== undefined);
+    const isStatusOnlyUpdate = requestedKeys.length === 1 && requestedKeys[0] === 'status';
+    const requestedStatus = String(req.body?.status ?? '').toLowerCase();
+    const isPastStatusUpdate = isPastEvent && isStatusOnlyUpdate && requestedStatus === 'done';
+    if (isPastEvent && !isPastStatusUpdate) {
       return res.status(409).json({ error: 'Past events cannot be edited' });
     }
 
@@ -7917,6 +7959,8 @@ app.post(
         completed_at: null,
         dismissed_at: null,
         snoozed_until: null,
+        source,
+        source_platform: sourcePlatform,
         ...legacyFields,
       };
 
@@ -8297,6 +8341,7 @@ app.post(
       const date = String(req.body?.date ?? new Date().toISOString().slice(0, 10)).trim();
       const mood = req.body?.mood ? String(req.body.mood).trim() : null;
       const source = req.body?.source ? String(req.body.source).trim() : 'workspace';
+      const sourcePlatform = normalizeCaptureSourcePlatform(req.body?.source_platform);
       const mode = ['text', 'mind_map'].includes(req.body?.mode) ? req.body.mode : 'text';
       const mindMapStructure =
         mode === 'mind_map' && req.body?.mind_map_structure ? req.body.mind_map_structure : null;
@@ -8371,6 +8416,7 @@ app.post(
           date,
           mood,
           source,
+          source_platform: sourcePlatform,
           mode,
           mind_map_structure: mindMapStructure,
           parent_id,
@@ -8531,6 +8577,7 @@ app.post(
       const date = String(req.body?.date ?? new Date().toISOString().slice(0, 10)).trim();
       const mood = req.body?.mood ? String(req.body.mood).trim() : null;
       const source = req.body?.source ? String(req.body.source).trim() : 'workspace';
+      const sourcePlatform = normalizeCaptureSourcePlatform(req.body?.source_platform);
       const mode = ['text', 'mind_map'].includes(req.body?.mode) ? req.body.mode : 'text';
       const mindMapStructure =
         mode === 'mind_map' && req.body?.mind_map_structure ? req.body.mind_map_structure : null;
@@ -8562,6 +8609,7 @@ app.post(
           date,
           mood,
           source,
+          source_platform: sourcePlatform,
           mode,
           mind_map_structure: mindMapStructure,
           parent_id: parentRow.id,

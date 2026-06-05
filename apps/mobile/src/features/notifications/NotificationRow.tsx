@@ -1,4 +1,4 @@
-import { View } from 'react-native';
+import { Pressable, View } from 'react-native';
 
 import { AppText } from '@/components/AppText';
 import { Row } from '@/components/Row';
@@ -9,6 +9,8 @@ import type { MobileNotificationCenterItem } from '@/types/ledger';
 type NotificationRowProps = {
   item: MobileNotificationCenterItem;
   showWorkspaceName?: boolean;
+  onAction?: (action: 'open' | 'dismiss' | 'complete' | 'snooze', item: MobileNotificationCenterItem) => void;
+  disabled?: boolean;
 };
 
 function buildNotificationSubtitle(item: MobileNotificationCenterItem, showWorkspaceName: boolean) {
@@ -48,7 +50,7 @@ function formatNotificationDateTime(dateLike: string) {
   }).format(date);
 }
 
-export function NotificationRow({ item, showWorkspaceName = true }: NotificationRowProps) {
+export function NotificationRow({ item, showWorkspaceName = true, onAction, disabled = false }: NotificationRowProps) {
   const theme = useLedgerTheme();
 
   return (
@@ -58,9 +60,26 @@ export function NotificationRow({ item, showWorkspaceName = true }: Notification
         subtitle={buildNotificationSubtitle(item, showWorkspaceName)}
         right={showWorkspaceName && item.workspaceName ? <WorkspaceLabel name={item.workspaceName} /> : null}
       />
-      <AppText variant="caption" style={{ marginTop: theme.spacing.xs }}>
-        {item.actions.join('  •  ')}
-      </AppText>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing.sm, marginTop: theme.spacing.xs }}>
+        {item.actions.map((action) => (
+          <Pressable
+            key={action}
+            accessibilityRole="button"
+            disabled={disabled}
+            onPress={() => onAction?.(action as 'open' | 'dismiss' | 'complete' | 'snooze', item)}
+            style={({ pressed }) => [
+              {
+                opacity: disabled ? 0.4 : pressed ? 0.72 : 1,
+                paddingVertical: 4,
+                paddingHorizontal: 0,
+              },
+            ]}>
+            <AppText variant="caption" style={{ color: theme.colors.textSecondary }}>
+              {action.charAt(0).toUpperCase() + action.slice(1)}
+            </AppText>
+          </Pressable>
+        ))}
+      </View>
     </View>
   );
 }

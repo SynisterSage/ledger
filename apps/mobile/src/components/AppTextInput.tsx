@@ -1,4 +1,5 @@
 import { forwardRef, useState } from 'react';
+import type { ReactNode } from 'react';
 import { StyleSheet, TextInput, View, type TextInputProps } from 'react-native';
 
 import { AppText } from './AppText';
@@ -7,10 +8,11 @@ import { useLedgerTheme } from '@/theme';
 
 type AppTextInputProps = TextInputProps & {
   label?: string;
+  rightAccessory?: ReactNode;
 };
 
 export const AppTextInput = forwardRef<TextInput, AppTextInputProps>(function AppTextInput(
-  { label, style, multiline, ...props },
+  { label, rightAccessory, style, multiline, ...props },
   ref
 ) {
   const theme = useLedgerTheme();
@@ -23,34 +25,38 @@ export const AppTextInput = forwardRef<TextInput, AppTextInputProps>(function Ap
           {label}
         </AppText>
       ) : null}
-      <TextInput
-        ref={ref}
-        {...props}
-        multiline={multiline}
-        onFocus={(event) => {
-          setIsFocused(true);
-          props.onFocus?.(event);
-        }}
-        onBlur={(event) => {
-          setIsFocused(false);
-          props.onBlur?.(event);
-        }}
-        placeholderTextColor={theme.colors.placeholder}
-        style={[
-          styles.input,
-          {
-            color: theme.colors.textPrimary,
-          borderColor: theme.colors.borderSubtle,
-            backgroundColor: 'transparent',
-            borderBottomColor: isFocused ? theme.colors.textPrimary : theme.colors.borderSubtle,
-            minHeight: multiline ? 92 : 44,
-            paddingHorizontal: 0,
-            paddingVertical: multiline ? theme.spacing.sm : theme.spacing.xs,
-          },
-          multiline && styles.multiline,
-          style,
-        ]}
-      />
+      <View style={styles.inputRow}>
+        <TextInput
+          ref={ref}
+          {...props}
+          multiline={multiline}
+          onFocus={(event) => {
+            setIsFocused(true);
+            props.onFocus?.(event);
+          }}
+          onBlur={(event) => {
+            setIsFocused(false);
+            props.onBlur?.(event);
+          }}
+          placeholderTextColor={theme.colors.placeholder}
+          style={[
+            styles.input,
+            {
+              color: theme.colors.textPrimary,
+              borderColor: theme.colors.borderSubtle,
+              backgroundColor: 'transparent',
+              borderBottomColor: isFocused ? theme.colors.textPrimary : theme.colors.borderSubtle,
+              minHeight: multiline ? 92 : 44,
+              paddingHorizontal: 0,
+              paddingVertical: multiline ? theme.spacing.sm : theme.spacing.xs,
+            },
+            rightAccessory ? styles.inputWithAccessory : null,
+            multiline && styles.multiline,
+            style,
+          ]}
+        />
+        {rightAccessory ? <View style={styles.accessory}>{rightAccessory}</View> : null}
+      </View>
     </View>
   );
 });
@@ -62,11 +68,27 @@ const styles = StyleSheet.create({
   label: {
     marginBottom: 8,
   },
+  inputRow: {
+    position: 'relative',
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
   input: {
+    flex: 1,
     borderBottomWidth: 1,
     fontSize: 16,
     lineHeight: 22,
     backgroundColor: 'transparent',
+  },
+  inputWithAccessory: {
+    paddingRight: 36,
+  },
+  accessory: {
+    position: 'absolute',
+    right: 0,
+    top: 0,
+    bottom: 0,
+    justifyContent: 'center',
   },
   multiline: {
     textAlignVertical: 'top',

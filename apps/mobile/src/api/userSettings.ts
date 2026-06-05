@@ -24,6 +24,11 @@ export type MobileCapturePreferences = {
   defaultCaptureType: CaptureType;
 };
 
+export type MobileSiriPreferences = {
+  defaultWorkspaceId: string | null;
+  askEveryTime: boolean;
+};
+
 export const defaultMobileNotificationPreferences: MobileNotificationPreferences = {
   pushNotifications: false,
   remindersEnabled: true,
@@ -35,6 +40,11 @@ export const defaultMobileNotificationPreferences: MobileNotificationPreferences
 export const defaultMobileCapturePreferences: MobileCapturePreferences = {
   sharedItemsDestination: 'inbox',
   defaultCaptureType: 'reminder',
+};
+
+export const defaultMobileSiriPreferences: MobileSiriPreferences = {
+  defaultWorkspaceId: null,
+  askEveryTime: false,
 };
 
 type MobileUserSettingsPatch = {
@@ -51,6 +61,16 @@ export async function updateMobileUserSettings(payload: MobileUserSettingsPatch)
   return mobileRequest<MobileUserSettings>('/api/user/settings', {
     method: 'PATCH',
     body: JSON.stringify(payload),
+  });
+}
+
+export async function getMobileOnboardingStatus() {
+  return mobileRequest<{ onboarding_completed: boolean }>('/api/user/onboarding');
+}
+
+export async function completeMobileOnboarding() {
+  return mobileRequest<{ onboarding_completed: boolean }>('/api/user/onboarding', {
+    method: 'PATCH',
   });
 }
 
@@ -105,4 +125,23 @@ export function readMobileCapturePreferences(settings: MobileUserSettings | null
     sharedItemsDestination,
     defaultCaptureType,
   } satisfies MobileCapturePreferences;
+}
+
+export function readMobileSiriPreferences(settings: MobileUserSettings | null | undefined) {
+  const preferences = settings?.preferences;
+  const mobilePreferences =
+    preferences && typeof preferences === 'object' && 'mobileSiriPreferences' in preferences
+      ? (preferences as { mobileSiriPreferences?: Record<string, unknown> }).mobileSiriPreferences
+      : null;
+
+  return {
+    defaultWorkspaceId:
+      typeof mobilePreferences?.defaultWorkspaceId === 'string' && mobilePreferences.defaultWorkspaceId.trim()
+        ? mobilePreferences.defaultWorkspaceId.trim()
+        : defaultMobileSiriPreferences.defaultWorkspaceId,
+    askEveryTime:
+      typeof mobilePreferences?.askEveryTime === 'boolean'
+        ? mobilePreferences.askEveryTime
+        : defaultMobileSiriPreferences.askEveryTime,
+  } satisfies MobileSiriPreferences;
 }

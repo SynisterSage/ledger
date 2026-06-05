@@ -10,6 +10,7 @@ import { AppText } from '@/components/AppText';
 import { AuthHeader } from '@/components/AuthHeader';
 import { Screen } from '@/components/Screen';
 import { useLedgerTheme } from '@/theme';
+import { useAuthState } from '@/store/sessionStore';
 import {
   setNotificationOnboardingChoice,
   useNotificationOnboardingState,
@@ -18,6 +19,7 @@ import {
 export default function NotificationsOnboardingScreen() {
   const router = useRouter();
   const theme = useLedgerTheme();
+  const authSession = useAuthState();
   const authState = useNotificationOnboardingState();
   const [isEnablingNotifications, setIsEnablingNotifications] = useState(false);
   const [isSkipping, setIsSkipping] = useState(false);
@@ -37,7 +39,7 @@ export default function NotificationsOnboardingScreen() {
   };
 
   const finishChoice = async (choice: 'enabled' | 'denied' | 'skipped', message?: string | null) => {
-    await setNotificationOnboardingChoice(authState.userId, choice);
+    await setNotificationOnboardingChoice(authSession.user?.id ?? authState.userId, choice);
     if (message) {
       setStatusMessage(message);
       routeTimerRef.current = setTimeout(() => {

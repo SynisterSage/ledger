@@ -48,6 +48,7 @@ export type MobileTodayItem = {
   sourceType: 'task' | 'reminder' | 'project_action' | 'calendar_event';
   sourceId: string;
   startsAt?: string | null;
+  endsAt?: string | null;
   timeLabel?: string | null;
   dateLabel?: string | null;
   urgency?: string | null;

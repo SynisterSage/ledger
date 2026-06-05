@@ -13,3 +13,16 @@ export async function getMobileNotifications(workspaceId?: string) {
     query ? `/api/notifications?${query}` : '/api/notifications',
   );
 }
+
+export async function performMobileNotificationAction(
+  notificationId: string,
+  action: 'open' | 'dismiss' | 'complete' | 'snooze',
+) {
+  return mobileRequest<{ ok: boolean; notification?: unknown; source?: unknown }>(
+    `/api/notifications/${notificationId}/action`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ action }),
+    },
+  );
+}

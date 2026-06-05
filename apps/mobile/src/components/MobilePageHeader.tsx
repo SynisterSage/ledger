@@ -9,6 +9,7 @@ import { Skeleton } from './Skeleton';
 import { useLedgerTheme } from '@/theme';
 
 export const MOBILE_PAGE_HEADER_SCROLL_SPACE = 156;
+export const MOBILE_PULL_TO_REFRESH_OFFSET = MOBILE_PAGE_HEADER_SCROLL_SPACE - 20;
 const HEADER_COLLAPSE_DISTANCE = 64;
 const HEADER_TRANSLATE_DISTANCE = 36;
 const HEADER_TOP_SPACING = -16;

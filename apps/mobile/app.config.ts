@@ -3,19 +3,23 @@ import type { ExpoConfig } from 'expo/config';
 const supabaseUrl = process.env.VITE_SUPABASE_URL?.trim() ?? '';
 const supabaseAnonKey = process.env.VITE_SUPABASE_ANON_KEY?.trim() ?? '';
 const apiUrl = process.env.VITE_API_URL?.trim() ?? '';
+const iosBundleIdentifier = process.env.EXPO_PUBLIC_IOS_BUNDLE_IDENTIFIER?.trim() ?? 'com.ledger.mobile';
+const androidPackage = process.env.EXPO_PUBLIC_ANDROID_PACKAGE?.trim() ?? 'com.ledger.mobile';
 
 const config: ExpoConfig = {
-  name: 'mobile',
-  slug: 'mobile',
+  name: 'Ledger',
+  slug: 'ledger',
   version: '1.0.0',
   orientation: 'portrait',
   icon: './assets/images/icon.png',
-  scheme: 'mobile',
+  scheme: 'ledger',
   userInterfaceStyle: 'automatic',
   ios: {
+    bundleIdentifier: iosBundleIdentifier,
     supportsTablet: true,
   },
   android: {
+    package: androidPackage,
     adaptiveIcon: {
       backgroundColor: '#E6F4FE',
       foregroundImage: './assets/images/android-icon-foreground.png',
@@ -35,7 +39,7 @@ const config: ExpoConfig = {
     [
       'expo-splash-screen',
       {
-        image: './assets/images/logo-white.svg',
+        image: './assets/images/splash-icon.png',
         resizeMode: 'contain',
         backgroundColor: '#FF5F40',
       },

@@ -1,7 +1,11 @@
 import { useSyncExternalStore } from 'react';
 import * as SecureStore from 'expo-secure-store';
 import * as Notifications from 'expo-notifications';
-import { getMobileUserSettings, updateMobileUserSettings } from '@/api/userSettings';
+import {
+  completeMobileOnboarding,
+  getMobileUserSettings,
+  updateMobileUserSettings,
+} from '@/api/userSettings';
 
 export type NotificationPermissionChoice = 'enabled' | 'denied' | 'skipped' | null;
 
@@ -105,11 +109,20 @@ export async function bootstrapNotificationOnboardingState(userId: string | null
     if (!completed) {
       try {
         const settings = await getMobileUserSettings();
+        const backendOnboardingCompleted = Boolean(settings?.onboarding_completed);
         const backendCompleted = Boolean(
           (settings?.preferences as { mobileNotificationOnboardingCompleted?: unknown } | null)
             ?.mobileNotificationOnboardingCompleted,
         );
-        completed = backendCompleted;
+        completed = backendOnboardingCompleted || backendCompleted;
+
+        if (completed && !backendOnboardingCompleted) {
+          try {
+            await completeMobileOnboarding();
+          } catch {
+            // Ignore persistence failures; the mobile preference or SecureStore fallback still applies.
+          }
+        }
       } catch {
         // Ignore backend fallback errors and continue with local state.
       }
@@ -120,6 +133,11 @@ export async function bootstrapNotificationOnboardingState(userId: string | null
         const permission = await Notifications.getPermissionsAsync();
         if (permission.status !== 'undetermined') {
           completed = true;
+          try {
+            await completeMobileOnboarding();
+          } catch {
+            // Ignore persistence failures; local state is still enough to bypass onboarding.
+          }
           try {
             await updateMobileUserSettings({
               preferences: {
@@ -205,6 +223,12 @@ export async function setNotificationOnboardingChoice(
     });
   } catch {
     // Non-fatal. SecureStore remains the local fallback.
+  }
+
+  try {
+    await completeMobileOnboarding();
+  } catch {
+    // Non-fatal. The local SecureStore entry still marks onboarding complete.
   }
 }
 

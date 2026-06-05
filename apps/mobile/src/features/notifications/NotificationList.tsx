@@ -11,9 +11,11 @@ type NotificationListProps = {
   active: MobileNotificationCenterItem[];
   earlier: MobileNotificationCenterItem[];
   showWorkspaceNames?: boolean;
+  onAction?: (action: 'open' | 'dismiss' | 'complete' | 'snooze', item: MobileNotificationCenterItem) => void;
+  busyItemId?: string | null;
 };
 
-export function NotificationList({ active, earlier, showWorkspaceNames = true }: NotificationListProps) {
+export function NotificationList({ active, earlier, showWorkspaceNames = true, onAction, busyItemId }: NotificationListProps) {
   const theme = useLedgerTheme();
 
   const renderRows = (items: MobileNotificationCenterItem[]) => (
@@ -23,6 +25,8 @@ export function NotificationList({ active, earlier, showWorkspaceNames = true }:
           key={item.id}
           item={item}
           showWorkspaceName={showWorkspaceNames}
+          onAction={onAction}
+          disabled={busyItemId === item.id}
         />
       ))}
     </View>

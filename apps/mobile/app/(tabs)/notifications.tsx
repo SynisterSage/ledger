@@ -1,17 +1,22 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Animated, View } from 'react-native';
+import { Animated, RefreshControl, View } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 
 import { AppButton } from '@/components/AppButton';
 import { AppText } from '@/components/AppText';
-import { MobilePageHeader, MOBILE_PAGE_HEADER_SCROLL_SPACE } from '@/components/MobilePageHeader';
+import {
+  MobilePageHeader,
+  MOBILE_PAGE_HEADER_SCROLL_SPACE,
+  MOBILE_PULL_TO_REFRESH_OFFSET,
+} from '@/components/MobilePageHeader';
 import { WorkspaceSelectorSheet } from '@/components/WorkspaceSelectorSheet';
 import { Screen } from '@/components/Screen';
 import { NotificationList } from '@/features/notifications/NotificationList';
-import { getMobileNotifications } from '@/api/notifications';
+import { NotificationSkeleton } from '@/features/notifications/NotificationSkeleton';
+import { getMobileNotifications, performMobileNotificationAction } from '@/api/notifications';
 import { useLedgerTheme } from '@/theme';
 import { bootstrapWorkspaceState, getWorkspaceLabel, selectWorkspace, useWorkspaceState } from '@/store/workspaceStore';
-import type { MobileNotificationCenterResponse } from '@/types/ledger';
+import type { MobileNotificationCenterItem, MobileNotificationCenterResponse } from '@/types/ledger';
 
 const EMPTY_NOTIFICATIONS: MobileNotificationCenterResponse = {
   active: [],
@@ -31,8 +36,10 @@ export default function NotificationsScreen() {
   const [notifications, setNotifications] = useState<MobileNotificationCenterResponse>(EMPTY_NOTIFICATIONS);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [refreshNonce, setRefreshNonce] = useState(0);
   const [workspacePickerOpen, setWorkspacePickerOpen] = useState(false);
+  const [actionBusyId, setActionBusyId] = useState<string | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const hasLoadedOnceRef = useRef(false);
 
   const selectedScopeLabel = useMemo(() => {
     return getWorkspaceLabel(workspaceState.selectedWorkspaceId, workspaceState.options);
@@ -42,46 +49,99 @@ export default function NotificationsScreen() {
     void bootstrapWorkspaceState();
   }, []);
 
-  const refreshNotifications = useCallback(() => {
-    setRefreshNonce((value) => value + 1);
-  }, []);
+  const loadNotifications = useCallback(
+    async (options: { silent?: boolean } = {}) => {
+      const silent = Boolean(options.silent);
+      const isInitialLoad = !hasLoadedOnceRef.current;
 
-  useFocusEffect(
-    useCallback(() => {
-      refreshNotifications();
-    }, [refreshNotifications]),
-  );
-
-  useEffect(() => {
-    let cancelled = false;
-
-    const loadNotifications = async () => {
-      setIsLoading(true);
-      setError(null);
+      if (!silent && isInitialLoad) {
+        setIsLoading(true);
+      }
+      if (!silent) {
+        setError(null);
+      }
 
       try {
         const response = await getMobileNotifications(workspaceState.selectedWorkspaceId);
-        if (cancelled) return;
         setNotifications(response);
+        hasLoadedOnceRef.current = true;
       } catch (err) {
-        if (cancelled) return;
-        setError(err instanceof Error ? err.message : 'Could not load Notifications.');
+        if (!silent) {
+          setError(err instanceof Error ? err.message : 'Could not load Notifications.');
+        }
       } finally {
-        if (!cancelled) setIsLoading(false);
+        if (!silent && isInitialLoad) {
+          setIsLoading(false);
+        }
       }
-    };
+    },
+    [workspaceState.selectedWorkspaceId],
+  );
 
+  const refreshNotifications = useCallback(async () => {
+    setIsRefreshing(true);
+    try {
+      await loadNotifications({ silent: false });
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, [loadNotifications]);
+
+  useEffect(() => {
     void loadNotifications();
+  }, [loadNotifications, workspaceState.selectedWorkspaceId]);
 
-    return () => {
-      cancelled = true;
-    };
-  }, [refreshNonce, workspaceState.selectedWorkspaceId]);
+  useFocusEffect(
+    useCallback(() => {
+      void loadNotifications({ silent: true });
+    }, [loadNotifications]),
+  );
 
   const openWorkspaceSwitcher = () => {
     if (workspaceState.options.length <= 1) return;
     setWorkspacePickerOpen(true);
   };
+
+  const handleNotificationAction = useCallback(
+    async (
+      action: 'open' | 'dismiss' | 'complete' | 'snooze',
+      item: import('@/types/ledger').MobileNotificationCenterItem,
+    ) => {
+      setActionBusyId(item.id);
+      const shouldOptimisticallyRemove = action !== 'open';
+      const previousNotifications = notifications;
+      if (shouldOptimisticallyRemove) {
+        setNotifications((current) => {
+          const removeItem = (items: MobileNotificationCenterItem[]) =>
+            items.filter((candidate) => candidate.id !== item.id);
+
+          const active = removeItem(current.active);
+          const earlier = removeItem(current.earlier);
+          return {
+            active,
+            earlier,
+            counts: {
+              active: active.length,
+              earlier: earlier.length,
+              total: active.length + earlier.length,
+            },
+          };
+        });
+      }
+
+      try {
+        await performMobileNotificationAction(item.id, action);
+      } catch (err) {
+        if (shouldOptimisticallyRemove) {
+          setNotifications(previousNotifications);
+        }
+        setError(err instanceof Error ? err.message : 'Could not update notification.');
+      } finally {
+        setActionBusyId(null);
+      }
+    },
+    [notifications],
+  );
 
   const hasContent = notifications.active.length > 0 || notifications.earlier.length > 0;
 
@@ -114,6 +174,16 @@ export default function NotificationsScreen() {
             paddingTop: MOBILE_PAGE_HEADER_SCROLL_SPACE,
             paddingBottom: theme.spacing['3xl'] + 132,
           }}
+          refreshControl={
+            <RefreshControl
+              refreshing={isRefreshing}
+              onRefresh={() => void refreshNotifications()}
+              progressViewOffset={MOBILE_PULL_TO_REFRESH_OFFSET}
+              tintColor={theme.colors.accent}
+              colors={[theme.colors.accent]}
+              progressBackgroundColor={theme.colors.surfaceMuted}
+            />
+          }
           keyboardShouldPersistTaps="handled"
           onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], {
             useNativeDriver: true,
@@ -122,10 +192,7 @@ export default function NotificationsScreen() {
           showsVerticalScrollIndicator={false}>
           <View style={{ gap: theme.spacing['2xl'] }}>
             {isLoading ? (
-              <View style={{ gap: theme.spacing.md }}>
-                <AppText variant="body">Loading notifications…</AppText>
-                <AppText variant="meta">Checking what needs attention.</AppText>
-              </View>
+              <NotificationSkeleton />
             ) : error ? (
               <View style={{ gap: theme.spacing.md }}>
                 <AppText variant="body">{error || 'Could not load Notifications.'}</AppText>
@@ -133,7 +200,7 @@ export default function NotificationsScreen() {
                   title="Retry"
                   variant="secondary"
                   fullWidth={false}
-                  onPress={() => setRefreshNonce((value) => value + 1)}
+                  onPress={() => void loadNotifications({ silent: false })}
                 />
               </View>
             ) : hasContent ? (
@@ -147,6 +214,8 @@ export default function NotificationsScreen() {
                   active={notifications.active}
                   earlier={notifications.earlier}
                   showWorkspaceNames={workspaceState.selectedWorkspaceId === 'all'}
+                  onAction={handleNotificationAction}
+                  busyItemId={actionBusyId}
                 />
               </View>
             ) : (
