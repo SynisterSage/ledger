@@ -876,6 +876,7 @@ const userPreferencesDefaults = {
     askEveryTime: false,
   },
   mobileNotificationOnboardingCompleted: false,
+  mobileNotificationOnboardingChoice: null,
 };
 
 const normalizeUserPreferences = (value) => {
@@ -926,6 +927,11 @@ const normalizeUserPreferences = (value) => {
       mobileSiriPreferencesRaw.askEveryTime ?? mobileSiriPreferencesRaw.ask_every_time ?? false
     ),
   };
+  const mobileNotificationOnboardingChoice = ['enabled', 'denied', 'skipped'].includes(
+    String(merged.mobileNotificationOnboardingChoice)
+  )
+    ? String(merged.mobileNotificationOnboardingChoice)
+    : userPreferencesDefaults.mobileNotificationOnboardingChoice;
 
   const defaultEventMinutes = [30, 45, 60].includes(Number(merged.defaultEventMinutes))
     ? Number(merged.defaultEventMinutes)
@@ -1073,6 +1079,7 @@ const normalizeUserPreferences = (value) => {
     mobileNotificationPreferences,
     mobileSiriPreferences,
     mobileNotificationOnboardingCompleted: Boolean(merged.mobileNotificationOnboardingCompleted),
+    mobileNotificationOnboardingChoice,
   };
 };
 
@@ -1931,6 +1938,15 @@ const getNotificationCenterItems = async (userId, workspaceId = null) => {
     const access = await requireWorkspaceAccess(userId, normalizedWorkspaceId, 'member');
     rows = rows.filter((row) => String(row.workspace_id ?? '') === access.workspace.id);
   }
+
+  rows = rows.filter((row) => {
+    const actionTaken = String(row.action_taken ?? '').trim().toLowerCase();
+    if (row.dismissed_at) return false;
+    if (actionTaken === 'dismiss' || actionTaken === 'snooze' || actionTaken === 'complete') {
+      return false;
+    }
+    return true;
+  });
 
   const maps = await buildNotificationCenterSourceMaps(rows);
   const items = rows.map((row) => mapNotificationCenterRow(row, maps));

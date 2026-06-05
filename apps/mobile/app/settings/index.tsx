@@ -19,6 +19,7 @@ import { SettingsRow } from '@/components/SettingsRow';
 import { WorkspaceSelectorSheet } from '@/components/WorkspaceSelectorSheet';
 import { SettingsEditSheet, type SettingsEditSheetMode } from '@/features/settings/SettingsEditSheet';
 import { SettingsChoiceSheet } from '@/features/settings/SettingsChoiceSheet';
+import { SiriShortcutsSheet } from '@/features/settings/SiriShortcutsSheet';
 import { useAuthState } from '@/store/sessionStore';
 import {
   bootstrapWorkspaceState,
@@ -56,6 +57,7 @@ export default function SettingsScreen() {
   const [sheetMode, setSheetMode] = useState<SettingsEditSheetMode | null>(null);
   const [workspaceSheetTarget, setWorkspaceSheetTarget] = useState<'default_capture' | 'today_scope' | 'default_siri' | null>(null);
   const [captureSheetTarget, setCaptureSheetTarget] = useState<'shared_items' | 'default_type' | null>(null);
+  const [siriShortcutsVisible, setSiriShortcutsVisible] = useState(false);
 
   const switchTrackColor = useMemo(
     () => ({
@@ -432,24 +434,10 @@ export default function SettingsScreen() {
               }
             />
             <SettingsRow
-              title="Add Reminder"
-              subtitle='“Hey Siri, add a Ledger reminder.”'
-              onPress={() => Alert.alert('Coming soon', 'Siri Shortcuts will be available in the native iOS build.')}
-            />
-            <SettingsRow
-              title="Add Task"
-              subtitle='“Hey Siri, add a Ledger task.”'
-              onPress={() => Alert.alert('Coming soon', 'Siri Shortcuts will be available in the native iOS build.')}
-            />
-            <SettingsRow
-              title="Create Event"
-              subtitle='“Hey Siri, create a Ledger event.”'
-              onPress={() => Alert.alert('Coming soon', 'Siri Shortcuts will be available in the native iOS build.')}
-            />
-            <SettingsRow
-              title="Save Note"
-              subtitle='“Hey Siri, save a Ledger note.”'
-              onPress={() => Alert.alert('Coming soon', 'Siri Shortcuts will be available in the native iOS build.')}
+              title="Siri Shortcuts"
+              subtitle="Preview the phrases Ledger can use with Siri."
+              chevron
+              onPress={() => setSiriShortcutsVisible(true)}
             />
           </Section>
 
@@ -543,6 +531,11 @@ export default function SettingsScreen() {
           })
         }
         onClose={() => setCaptureSheetTarget(null)}
+      />
+
+      <SiriShortcutsSheet
+        visible={siriShortcutsVisible}
+        onClose={() => setSiriShortcutsVisible(false)}
       />
 
       <SettingsChoiceSheet

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { AppButton } from '@/components/AppButton';
 import { AppText } from '@/components/AppText';
 import { AppTextInput } from '@/components/AppTextInput';
@@ -14,9 +14,12 @@ import {
 
 type NoteFormProps = {
   onSave?: () => void;
+  initialTitle?: string;
+  initialBody?: string;
+  autoSubmit?: boolean;
 };
 
-export function NoteForm({ onSave }: NoteFormProps) {
+export function NoteForm({ onSave, initialTitle, initialBody, autoSubmit = false }: NoteFormProps) {
   const theme = useLedgerTheme();
   const workspaceState = useWorkspaceState();
   const workspaceId = useMemo(() => resolveCaptureWorkspaceId(workspaceState), [workspaceState]);
@@ -24,10 +27,11 @@ export function NoteForm({ onSave }: NoteFormProps) {
     () => getWorkspaceLabel(workspaceId, workspaceState.options),
     [workspaceId, workspaceState.options],
   );
-  const [title, setTitle] = useState('Capture note');
-  const [body, setBody] = useState('Write a plain text note');
+  const [title, setTitle] = useState(initialTitle ?? 'Capture note');
+  const [body, setBody] = useState(initialBody ?? 'Write a plain text note');
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const autoSubmittedRef = useRef(false);
   const canSave = Boolean(title.trim()) && workspaceId !== 'all';
 
   const handleSave = async () => {
@@ -52,6 +56,19 @@ export function NoteForm({ onSave }: NoteFormProps) {
       setIsSaving(false);
     }
   };
+
+  useEffect(() => {
+    if (!autoSubmit || autoSubmittedRef.current || isSaving) {
+      return;
+    }
+
+    if (!title.trim() || workspaceId === 'all') {
+      return;
+    }
+
+    autoSubmittedRef.current = true;
+    void handleSave();
+  }, [autoSubmit, handleSave, isSaving, title, workspaceId]);
 
   return (
     <Section>

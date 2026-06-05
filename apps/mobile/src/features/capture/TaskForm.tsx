@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Switch } from 'react-native';
 import { SymbolView } from 'expo-symbols';
 
@@ -20,9 +20,25 @@ import {
 
 type TaskFormProps = {
   onSave?: () => void;
+  initialTitle?: string;
+  initialDateInput?: string;
+  initialTimeInput?: string;
+  initialNotes?: string;
+  initialShowInToday?: boolean;
+  initialIsFocus?: boolean;
+  autoSubmit?: boolean;
 };
 
-export function TaskForm({ onSave }: TaskFormProps) {
+export function TaskForm({
+  onSave,
+  initialTitle,
+  initialDateInput,
+  initialTimeInput,
+  initialNotes,
+  initialShowInToday,
+  initialIsFocus,
+  autoSubmit = false,
+}: TaskFormProps) {
   const theme = useLedgerTheme();
   const workspaceState = useWorkspaceState();
   const workspaceId = useMemo(() => resolveCaptureWorkspaceId(workspaceState), [workspaceState]);
@@ -31,16 +47,17 @@ export function TaskForm({ onSave }: TaskFormProps) {
     [workspaceId, workspaceState.options],
   );
   const { projects, isLoading: projectsLoading } = useCaptureProjects(workspaceId);
-  const [title, setTitle] = useState('Export homepage video');
-  const [dateInput, setDateInput] = useState('');
-  const [timeInput, setTimeInput] = useState('');
-  const [notes, setNotes] = useState('');
+  const [title, setTitle] = useState(initialTitle ?? 'Export homepage video');
+  const [dateInput, setDateInput] = useState(initialDateInput ?? '');
+  const [timeInput, setTimeInput] = useState(initialTimeInput ?? '');
+  const [notes, setNotes] = useState(initialNotes ?? '');
   const [projectId, setProjectId] = useState<string | null>(null);
   const [projectPickerOpen, setProjectPickerOpen] = useState(false);
-  const [showInToday, setShowInToday] = useState(true);
-  const [isFocus, setIsFocus] = useState(false);
+  const [showInToday, setShowInToday] = useState(initialShowInToday ?? true);
+  const [isFocus, setIsFocus] = useState(initialIsFocus ?? false);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const autoSubmittedRef = useRef(false);
 
   const selectedProjectLabel = useMemo(() => {
     if (!projectId) return 'No project';
@@ -77,6 +94,19 @@ export function TaskForm({ onSave }: TaskFormProps) {
       setIsSaving(false);
     }
   };
+
+  useEffect(() => {
+    if (!autoSubmit || autoSubmittedRef.current || isSaving) {
+      return;
+    }
+
+    if (!title.trim() || workspaceId === 'all') {
+      return;
+    }
+
+    autoSubmittedRef.current = true;
+    void handleSave();
+  }, [autoSubmit, handleSave, isSaving, title, workspaceId]);
 
   return (
     <Section>

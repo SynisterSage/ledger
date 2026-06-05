@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { SymbolView } from 'expo-symbols';
 
 import { AppButton } from '@/components/AppButton';
@@ -19,9 +19,25 @@ import {
 
 type EventFormProps = {
   onSave?: () => void;
+  initialTitle?: string;
+  initialDateInput?: string;
+  initialStartTimeInput?: string;
+  initialEndTimeInput?: string;
+  initialLocation?: string;
+  initialNotes?: string;
+  autoSubmit?: boolean;
 };
 
-export function EventForm({ onSave }: EventFormProps) {
+export function EventForm({
+  onSave,
+  initialTitle,
+  initialDateInput,
+  initialStartTimeInput,
+  initialEndTimeInput,
+  initialLocation,
+  initialNotes,
+  autoSubmit = false,
+}: EventFormProps) {
   const theme = useLedgerTheme();
   const workspaceState = useWorkspaceState();
   const workspaceId = useMemo(() => resolveCaptureWorkspaceId(workspaceState), [workspaceState]);
@@ -30,16 +46,17 @@ export function EventForm({ onSave }: EventFormProps) {
     [workspaceId, workspaceState.options],
   );
   const { projects, isLoading: projectsLoading } = useCaptureProjects(workspaceId);
-  const [title, setTitle] = useState('Remote internship');
-  const [dateInput, setDateInput] = useState('tomorrow');
-  const [startTimeInput, setStartTimeInput] = useState('11:00 AM');
-  const [endTimeInput, setEndTimeInput] = useState('12:00 PM');
-  const [location, setLocation] = useState('');
-  const [notes, setNotes] = useState('');
+  const [title, setTitle] = useState(initialTitle ?? 'Remote internship');
+  const [dateInput, setDateInput] = useState(initialDateInput ?? 'tomorrow');
+  const [startTimeInput, setStartTimeInput] = useState(initialStartTimeInput ?? '11:00 AM');
+  const [endTimeInput, setEndTimeInput] = useState(initialEndTimeInput ?? '12:00 PM');
+  const [location, setLocation] = useState(initialLocation ?? '');
+  const [notes, setNotes] = useState(initialNotes ?? '');
   const [projectId, setProjectId] = useState<string | null>(null);
   const [projectPickerOpen, setProjectPickerOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const autoSubmittedRef = useRef(false);
 
   const selectedProjectLabel = useMemo(() => {
     if (!projectId) return 'No project';
@@ -91,6 +108,19 @@ export function EventForm({ onSave }: EventFormProps) {
       setIsSaving(false);
     }
   };
+
+  useEffect(() => {
+    if (!autoSubmit || autoSubmittedRef.current || isSaving) {
+      return;
+    }
+
+    if (!title.trim() || workspaceId === 'all') {
+      return;
+    }
+
+    autoSubmittedRef.current = true;
+    void handleSave();
+  }, [autoSubmit, handleSave, isSaving, title, workspaceId]);
 
   return (
     <Section>

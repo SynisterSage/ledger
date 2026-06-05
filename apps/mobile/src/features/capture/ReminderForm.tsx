@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { SymbolView } from 'expo-symbols';
 
 import { AppButton } from '@/components/AppButton';
@@ -19,9 +19,21 @@ import { Section } from '@/components/Section';
 
 type ReminderFormProps = {
   onSave?: () => void;
+  initialTitle?: string;
+  initialDateInput?: string;
+  initialTimeInput?: string;
+  initialNotes?: string;
+  autoSubmit?: boolean;
 };
 
-export function ReminderForm({ onSave }: ReminderFormProps) {
+export function ReminderForm({
+  onSave,
+  initialTitle,
+  initialDateInput,
+  initialTimeInput,
+  initialNotes,
+  autoSubmit = false,
+}: ReminderFormProps) {
   const theme = useLedgerTheme();
   const workspaceState = useWorkspaceState();
   const workspaceId = useMemo(() => resolveCaptureWorkspaceId(workspaceState), [workspaceState]);
@@ -30,14 +42,15 @@ export function ReminderForm({ onSave }: ReminderFormProps) {
     [workspaceId, workspaceState.options],
   );
   const { projects, isLoading: projectsLoading } = useCaptureProjects(workspaceId);
-  const [title, setTitle] = useState('Submit Alfa hours');
-  const [dateInput, setDateInput] = useState('tomorrow');
-  const [timeInput, setTimeInput] = useState('2:00 PM');
-  const [notes, setNotes] = useState('');
+  const [title, setTitle] = useState(initialTitle ?? 'Submit Alfa hours');
+  const [dateInput, setDateInput] = useState(initialDateInput ?? 'tomorrow');
+  const [timeInput, setTimeInput] = useState(initialTimeInput ?? '2:00 PM');
+  const [notes, setNotes] = useState(initialNotes ?? '');
   const [projectId, setProjectId] = useState<string | null>(null);
   const [projectPickerOpen, setProjectPickerOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const autoSubmittedRef = useRef(false);
 
   const selectedProjectLabel = useMemo(() => {
     if (!projectId) return 'No project';
@@ -79,6 +92,19 @@ export function ReminderForm({ onSave }: ReminderFormProps) {
       setIsSaving(false);
     }
   };
+
+  useEffect(() => {
+    if (!autoSubmit || autoSubmittedRef.current || isSaving) {
+      return;
+    }
+
+    if (!title.trim() || workspaceId === 'all') {
+      return;
+    }
+
+    autoSubmittedRef.current = true;
+    void handleSave();
+  }, [autoSubmit, handleSave, isSaving, title, workspaceId]);
 
   return (
     <Section>

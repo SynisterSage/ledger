@@ -36,7 +36,15 @@ export function SettingsChoiceSheet({
   const theme = useLedgerTheme();
 
   return (
-    <AppBottomSheet visible={visible} onClose={onClose} title={title} snapPoints={['42%', '62%']} initialSnapPointIndex={1}>
+    <AppBottomSheet
+      visible={visible}
+      onClose={onClose}
+      title={title}
+      snapPoints={['42%', '62%']}
+      initialSnapPointIndex={1}
+      dragCloseThreshold={72}
+      dragCloseVelocityThreshold={0.65}
+      dragCloseSnapMargin={12}>
       {subtitle ? (
         <AppText variant="meta" style={{ marginBottom: theme.spacing.xs }}>
           {subtitle}

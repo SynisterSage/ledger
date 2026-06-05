@@ -133,18 +133,7 @@ export function WorkspaceSelectorSheet({
         },
         onPanResponderRelease: (_: GestureResponderEvent, gestureState: PanResponderGestureState) => {
           if (gestureState.dy > SHEET_DRAG_CLOSE_THRESHOLD || gestureState.vy > 0.75) {
-            Animated.timing(backdropProgress, {
-              toValue: 0,
-              duration: 120,
-              useNativeDriver: true,
-            }).start();
-            Animated.spring(dragY, {
-              toValue: SHEET_MAX_HEIGHT,
-              useNativeDriver: true,
-              bounciness: 0,
-            }).start(() => {
-              closeSheet();
-            });
+            closeSheet();
             return;
           }
 

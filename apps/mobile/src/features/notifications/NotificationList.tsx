@@ -17,6 +17,7 @@ type NotificationListProps = {
 
 export function NotificationList({ active, earlier, showWorkspaceNames = true, onAction, busyItemId }: NotificationListProps) {
   const theme = useLedgerTheme();
+  const activeTitle = active.length > 0 ? `Active (${active.length})` : 'Active';
 
   const renderRows = (items: MobileNotificationCenterItem[]) => (
     <View style={{ gap: theme.spacing.lg }}>
@@ -34,7 +35,7 @@ export function NotificationList({ active, earlier, showWorkspaceNames = true, o
 
   return (
     <View style={{ gap: theme.spacing['3xl'] }}>
-      <Section title="Active">
+      <Section title={activeTitle}>
         {active.length ? renderRows(active) : <AppText variant="meta">Nothing active.</AppText>}
       </Section>
 

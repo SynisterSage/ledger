@@ -205,11 +205,6 @@ export default function NotificationsScreen() {
               </View>
             ) : hasContent ? (
               <View style={{ gap: theme.spacing.xl }}>
-                <AppText variant="body">{
-                  notifications.counts.active > 0
-                    ? `${notifications.counts.active} active`
-                    : 'Nothing active'
-                }</AppText>
                 <NotificationList
                   active={notifications.active}
                   earlier={notifications.earlier}

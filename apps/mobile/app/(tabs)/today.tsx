@@ -341,7 +341,6 @@ export default function TodayScreen() {
                 today={today.today}
                 captures={today.captures}
                 showWorkspaceNames={workspaceState.selectedWorkspaceId === 'all'}
-                onItemPress={(item) => openItemSheet(item, 'detail')}
                 onItemLongPress={async (item) => {
                   try {
                     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);

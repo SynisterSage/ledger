@@ -105,6 +105,7 @@ export async function bootstrapNotificationOnboardingState(userId: string | null
 
     const choice = parsed?.choice ?? null;
     let completed = Boolean(parsed?.isComplete ?? choice);
+    let resolvedChoice = choice ?? null;
 
     if (!completed) {
       try {
@@ -114,7 +115,14 @@ export async function bootstrapNotificationOnboardingState(userId: string | null
           (settings?.preferences as { mobileNotificationOnboardingCompleted?: unknown } | null)
             ?.mobileNotificationOnboardingCompleted,
         );
-        completed = backendOnboardingCompleted || backendCompleted;
+        const backendChoice = (settings?.preferences as { mobileNotificationOnboardingChoice?: unknown } | null)
+          ?.mobileNotificationOnboardingChoice;
+        const normalizedBackendChoice =
+          backendChoice === 'enabled' || backendChoice === 'denied' || backendChoice === 'skipped'
+            ? backendChoice
+            : null;
+        resolvedChoice = choice ?? normalizedBackendChoice;
+        completed = backendOnboardingCompleted || backendCompleted || Boolean(resolvedChoice);
 
         if (completed && !backendOnboardingCompleted) {
           try {
@@ -157,7 +165,7 @@ export async function bootstrapNotificationOnboardingState(userId: string | null
       isLoading: false,
       isHydrated: true,
       isComplete: completed,
-      choice,
+      choice: resolvedChoice ?? null,
       error: null,
       userId,
     });
