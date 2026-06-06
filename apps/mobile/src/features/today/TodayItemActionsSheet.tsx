@@ -27,6 +27,10 @@ function getItemTypeLabel(item: TodayActionSheetItem) {
     return 'Capture';
   }
 
+  if (item.type === 'note') {
+    return 'Note';
+  }
+
   if (item.type === 'project_action') {
     return 'Project action';
   }
@@ -43,6 +47,11 @@ function getItemMeta(item: TodayActionSheetItem) {
   if ('source' in item) {
     const captureParts = [item.workspaceName, item.createdAt ? formatDateTimeLabel(item.createdAt) : item.dateLabel ?? null, item.source].filter(Boolean);
     return captureParts.length ? captureParts.join(' · ') : item.source;
+  }
+
+  if (item.type === 'note') {
+    const noteParts = [item.workspaceName, item.updatedAt ? formatDateTimeLabel(item.updatedAt) : null, 'Note'].filter(Boolean);
+    return noteParts.join(' · ');
   }
 
   const dateMeta = 'startsAt' in item ? formatDateTimeLabel(item.startsAt) : 'dateLabel' in item ? item.dateLabel : null;
@@ -85,9 +94,14 @@ function getActionsForItem(item: TodayActionSheetItem): SheetAction[] {
         { id: 'edit', label: 'Edit' },
         { id: 'delete', label: 'Delete', danger: true },
       ];
+    case 'note':
+      return [
+        { id: 'add_follow_up', label: 'Add follow-up', primary: true },
+        { id: 'edit', label: 'Edit' },
+        { id: 'delete', label: 'Delete', danger: true },
+      ];
     case 'event':
       return [
-        { id: 'open', label: 'Open', primary: true },
         { id: 'add_note', label: 'Add note' },
         { id: 'create_follow_up', label: 'Create follow-up' },
         { id: 'reschedule', label: 'Reschedule' },

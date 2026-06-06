@@ -69,6 +69,19 @@ export type MobileCaptureSummary = {
   items: MobileCaptureItem[];
 };
 
+export type MobileTodayNoteItem = {
+  id: string;
+  type: 'note';
+  title: string;
+  workspaceId: string;
+  workspaceName: string | null;
+  sourceType: 'note';
+  sourceId: string;
+  body: string | null;
+  updatedAt: string | null;
+  createdAt: string | null;
+};
+
 export type MobileProjectOption = {
   id: string;
   name: string;
@@ -80,7 +93,7 @@ export type MobileProjectOption = {
   endDate?: string | null;
 };
 
-export type MobileTodayInteractionItem = MobileUpcomingItem | MobileTodayItem | MobileCaptureItem;
+export type MobileTodayInteractionItem = MobileUpcomingItem | MobileTodayItem | MobileCaptureItem | MobileTodayNoteItem;
 
 export type MobileTodayResponse = {
   date: string;
@@ -88,6 +101,7 @@ export type MobileTodayResponse = {
   upcoming: MobileUpcomingItem[];
   today: MobileTodayItem[];
   captures: MobileCaptureSummary;
+  notes: MobileTodayNoteItem[];
 };
 
 export type MobileWorkspaceScopeOption = {

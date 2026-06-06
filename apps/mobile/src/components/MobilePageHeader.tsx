@@ -65,6 +65,7 @@ export function MobilePageHeader({
           styles.wrapper,
           {
             paddingTop: insets.top + HEADER_TOP_SPACING,
+            backgroundColor: theme.colors.background,
           },
           headerStyle,
         ]}>
@@ -85,7 +86,7 @@ export function MobilePageHeader({
                   },
                 ]}>
                 <SymbolView
-                  name={{ ios: 'gearshape.fill', android: 'settings', web: 'settings' }}
+                  name={{ ios: 'gearshape', android: 'settings', web: 'settings' }}
                   size={20}
                   weight="regular"
                   tintColor={theme.colors.accent}

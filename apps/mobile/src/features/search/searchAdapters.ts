@@ -84,7 +84,6 @@ export function getSearchResultActions(result: MobileSearchResult): AppDetailShe
   switch (result.type) {
     case 'note':
       return [
-        { id: 'open', label: 'Open', variant: 'primary' },
         { id: 'add_follow_up', label: 'Add follow-up' },
         { id: 'edit', label: 'Edit' },
         { id: 'delete', label: 'Delete', variant: 'danger' },
@@ -107,7 +106,6 @@ export function getSearchResultActions(result: MobileSearchResult): AppDetailShe
       ];
     case 'event':
       return [
-        { id: 'open', label: 'Open', variant: 'primary' },
         { id: 'add_note', label: 'Add note' },
         { id: 'create_follow_up', label: 'Create follow-up' },
         { id: 'reschedule', label: 'Reschedule' },

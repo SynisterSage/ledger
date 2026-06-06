@@ -8,6 +8,7 @@ import { AppText } from '@/components/AppText';
 import { AppTextInput } from '@/components/AppTextInput';
 import { Row } from '@/components/Row';
 import { Section } from '@/components/Section';
+import { WorkspaceSelectorSheet } from '@/components/WorkspaceSelectorSheet';
 import { createMobileTask } from '@/api/captures';
 import { CaptureDateTimePickerSheet } from '@/features/capture/CaptureDateTimePickerSheet';
 import { useCaptureProjects } from '@/features/capture/useCaptureProjects';
@@ -18,6 +19,7 @@ import { formatCaptureDateLabel, formatCaptureTimeLabel, parseMobileDateInput, p
 import {
   getWorkspaceLabel,
   resolveCaptureWorkspaceId,
+  setDefaultCaptureWorkspace,
   useWorkspaceState,
 } from '@/store/workspaceStore';
 
@@ -45,17 +47,19 @@ export function TaskForm({
   const theme = useLedgerTheme();
   const workspaceState = useWorkspaceState();
   const workspaceId = useMemo(() => resolveCaptureWorkspaceId(workspaceState), [workspaceState]);
+  const [captureWorkspaceId, setCaptureWorkspaceId] = useState(workspaceId);
   const workspaceLabel = useMemo(
-    () => getWorkspaceLabel(workspaceId, workspaceState.options),
-    [workspaceId, workspaceState.options],
+    () => getWorkspaceLabel(captureWorkspaceId, workspaceState.options),
+    [captureWorkspaceId, workspaceState.options],
   );
-  const { projects, isLoading: projectsLoading } = useCaptureProjects(workspaceId);
+  const { projects, isLoading: projectsLoading } = useCaptureProjects(captureWorkspaceId);
   const [title, setTitle] = useState(initialTitle ?? '');
   const [dateInput, setDateInput] = useState(initialDateInput ?? '');
   const [timeInput, setTimeInput] = useState(initialTimeInput ?? '');
   const [notes, setNotes] = useState(initialNotes ?? '');
   const [projectId, setProjectId] = useState<string | null>(null);
   const [projectPickerOpen, setProjectPickerOpen] = useState(false);
+  const [workspacePickerOpen, setWorkspacePickerOpen] = useState(false);
   const [datePickerOpen, setDatePickerOpen] = useState(false);
   const [timePickerOpen, setTimePickerOpen] = useState(false);
   const [showInToday, setShowInToday] = useState(initialShowInToday ?? true);
@@ -66,11 +70,15 @@ export function TaskForm({
   const parsedDate = useMemo(() => parseMobileDateInput(dateInput, new Date()), [dateInput]);
   const parsedTime = useMemo(() => parseMobileDateTimeInput(timeInput, parsedDate), [parsedDate, timeInput]);
 
+  useEffect(() => {
+    setCaptureWorkspaceId(workspaceId);
+  }, [workspaceId]);
+
   const selectedProjectLabel = useMemo(() => {
     if (!projectId) return 'No project';
     return projects.find((project) => project.id === projectId)?.name ?? 'No project';
   }, [projectId, projects]);
-  const canSave = Boolean(title.trim()) && workspaceId !== 'all';
+  const canSave = Boolean(title.trim()) && captureWorkspaceId !== 'all';
 
   const handleSave = async () => {
     if (!title.trim()) {
@@ -85,7 +93,7 @@ export function TaskForm({
     setError(null);
 
     try {
-      await createMobileTask(workspaceId, {
+      await createMobileTask(captureWorkspaceId, {
         title: title.trim(),
         due_date: dueDate,
         due_time: dueTime,
@@ -107,13 +115,13 @@ export function TaskForm({
       return;
     }
 
-    if (!title.trim() || workspaceId === 'all') {
+    if (!title.trim() || captureWorkspaceId === 'all') {
       return;
     }
 
     autoSubmittedRef.current = true;
     void handleSave();
-  }, [autoSubmit, handleSave, isSaving, title, workspaceId]);
+  }, [autoSubmit, captureWorkspaceId, handleSave, isSaving, title]);
 
   return (
     <CaptureFormShell
@@ -125,34 +133,48 @@ export function TaskForm({
           onPress={handleSave}
         />
       }>
-      <Section childrenGap={theme.spacing.md}>
-        <AppTextInput label="Title" placeholder="Add title" value={title} onChangeText={setTitle} />
+      <Section childrenGap={theme.spacing.sm}>
+        <AppTextInput label="Title" labelVariant="body" placeholder="Add title" value={title} onChangeText={setTitle} />
         <Row
           title="Due date"
           subtitle={formatCaptureDateLabel(dateInput)}
           onPress={() => setDatePickerOpen(true)}
           chevron
+          titleVariant="body"
         />
         <Row
           title="Due time"
           subtitle={formatCaptureTimeLabel(timeInput)}
           onPress={() => setTimePickerOpen(true)}
           chevron
+          titleVariant="body"
         />
-        <AppTextInput label="Notes" placeholder="Add details or context" multiline value={notes} onChangeText={setNotes} />
+        <AppTextInput
+          label="Notes"
+          labelVariant="body"
+          placeholder="Add details or context"
+          multiline
+          value={notes}
+          onChangeText={setNotes}
+        />
         <Row
           title="Workspace"
           subtitle={workspaceState.isLoading ? 'Loading workspaces…' : workspaceLabel}
+          onPress={() => setWorkspacePickerOpen(true)}
+          right={<SymbolView name="chevron.down" size={14} weight="regular" tintColor={theme.colors.textSecondary} />}
+          titleVariant="body"
         />
         <Row
           title="Project"
           subtitle={selectedProjectLabel}
           onPress={() => setProjectPickerOpen(true)}
           right={<SymbolView name="chevron.down" size={14} weight="regular" tintColor={theme.colors.textSecondary} />}
+          titleVariant="body"
         />
         <Row
           title="Show in Today"
           subtitle={showInToday ? 'On' : 'Off'}
+          titleVariant="body"
           right={
             <Switch
               value={showInToday}
@@ -165,6 +187,7 @@ export function TaskForm({
         <Row
           title="Focus item"
           subtitle={isFocus ? 'On' : 'Off'}
+          titleVariant="body"
           right={
             <Switch
               value={isFocus}
@@ -187,6 +210,16 @@ export function TaskForm({
         onSelect={setProjectId}
         onClose={() => setProjectPickerOpen(false)}
         loading={projectsLoading}
+      />
+      <WorkspaceSelectorSheet
+        visible={workspacePickerOpen}
+        selectedWorkspaceId={captureWorkspaceId}
+        workspaces={workspaceState.options}
+        onSelect={(nextWorkspaceId) => {
+          setCaptureWorkspaceId(nextWorkspaceId);
+          setDefaultCaptureWorkspace(nextWorkspaceId);
+        }}
+        onClose={() => setWorkspacePickerOpen(false)}
       />
       <CaptureDateTimePickerSheet
         visible={datePickerOpen}

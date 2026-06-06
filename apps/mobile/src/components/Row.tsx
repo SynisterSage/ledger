@@ -11,7 +11,7 @@ type RowProps = {
   right?: ReactNode;
   onPress?: () => void;
   chevron?: boolean;
-  titleVariant?: 'body' | 'bodyStrong';
+  titleVariant?: 'body' | 'bodyStrong' | 'sectionTitle';
 };
 
 export function Row({

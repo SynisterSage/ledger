@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   Animated,
   Modal,
@@ -36,7 +36,7 @@ type AppDetailSheetProps = {
   title: string;
   subtitle?: string;
   meta?: AppDetailSheetMetaRow[];
-  body?: string;
+  body?: ReactNode;
   actions?: AppDetailSheetAction[];
   onAction?: (actionId: string) => void;
   onClose: () => void;
@@ -142,6 +142,17 @@ export function AppDetailSheet({
 
   const safeActions = actions.filter((action) => action.variant !== 'danger');
   const dangerActions = actions.filter((action) => action.variant === 'danger');
+  const bodyContent = useMemo(() => {
+    if (!body) {
+      return null;
+    }
+
+    if (typeof body !== 'string') {
+      return body;
+    }
+
+    return <ExpandableBody text={body} />;
+  }, [body]);
 
   const panResponder = useRef(
     PanResponder.create({
@@ -269,11 +280,7 @@ export function AppDetailSheet({
                 </View>
               ) : null}
 
-              {body ? (
-                <AppText variant="body" style={{ color: theme.colors.textSecondary }}>
-                  {body}
-                </AppText>
-              ) : null}
+              {bodyContent ? <View style={styles.bodyWrap}>{bodyContent}</View> : null}
 
               {safeActions.length ? (
                 <View style={styles.actionsGroup}>
@@ -336,6 +343,35 @@ export function AppDetailSheet({
   );
 }
 
+function ExpandableBody({ text }: { text: string }) {
+  const theme = useLedgerTheme();
+  const [expanded, setExpanded] = useState(false);
+  const trimmed = text.trim();
+  const shouldCollapse = trimmed.length > 260;
+
+  return (
+    <View style={{ gap: theme.spacing.xs }}>
+      <AppText
+        variant="body"
+        numberOfLines={expanded || !shouldCollapse ? undefined : 5}
+        style={{ color: theme.colors.textSecondary, lineHeight: 22 }}>
+        {trimmed}
+      </AppText>
+      {shouldCollapse ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={expanded ? 'Show less' : 'Read more'}
+          onPress={() => setExpanded((value) => !value)}
+          style={({ pressed }) => [{ opacity: pressed ? 0.72 : 1 }]}>
+          <AppText variant="button" style={{ color: theme.colors.accent }}>
+            {expanded ? 'Show less' : 'Read more'}
+          </AppText>
+        </Pressable>
+      ) : null}
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   portal: {
     flex: 1,
@@ -390,6 +426,9 @@ const styles = StyleSheet.create({
   },
   content: {
     gap: 12,
+  },
+  bodyWrap: {
+    gap: 8,
   },
   metaGroup: {
     borderTopWidth: StyleSheet.hairlineWidth,

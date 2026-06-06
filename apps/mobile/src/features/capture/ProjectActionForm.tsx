@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Switch } from 'react-native';
 import { SymbolView } from 'expo-symbols';
 
@@ -8,6 +8,7 @@ import { AppText } from '@/components/AppText';
 import { AppTextInput } from '@/components/AppTextInput';
 import { Row } from '@/components/Row';
 import { Section } from '@/components/Section';
+import { WorkspaceSelectorSheet } from '@/components/WorkspaceSelectorSheet';
 import { createMobileProjectAction } from '@/api/captures';
 import { CaptureDateTimePickerSheet } from '@/features/capture/CaptureDateTimePickerSheet';
 import { useCaptureProjects } from '@/features/capture/useCaptureProjects';
@@ -18,6 +19,7 @@ import { formatCaptureDateLabel, formatCaptureTimeLabel, parseMobileDateInput, p
 import {
   getWorkspaceLabel,
   resolveCaptureWorkspaceId,
+  setDefaultCaptureWorkspace,
   useWorkspaceState,
 } from '@/store/workspaceStore';
 
@@ -29,17 +31,19 @@ export function ProjectActionForm({ onSave }: ProjectActionFormProps) {
   const theme = useLedgerTheme();
   const workspaceState = useWorkspaceState();
   const workspaceId = useMemo(() => resolveCaptureWorkspaceId(workspaceState), [workspaceState]);
+  const [captureWorkspaceId, setCaptureWorkspaceId] = useState(workspaceId);
   const workspaceLabel = useMemo(
-    () => getWorkspaceLabel(workspaceId, workspaceState.options),
-    [workspaceId, workspaceState.options],
+    () => getWorkspaceLabel(captureWorkspaceId, workspaceState.options),
+    [captureWorkspaceId, workspaceState.options],
   );
-  const { projects, isLoading: projectsLoading } = useCaptureProjects(workspaceId);
+  const { projects, isLoading: projectsLoading } = useCaptureProjects(captureWorkspaceId);
   const [title, setTitle] = useState('');
   const [dateInput, setDateInput] = useState('tomorrow');
   const [timeInput, setTimeInput] = useState('');
   const [notes, setNotes] = useState('');
   const [projectId, setProjectId] = useState<string | null>(null);
   const [projectPickerOpen, setProjectPickerOpen] = useState(false);
+  const [workspacePickerOpen, setWorkspacePickerOpen] = useState(false);
   const [datePickerOpen, setDatePickerOpen] = useState(false);
   const [timePickerOpen, setTimePickerOpen] = useState(false);
   const [showInToday, setShowInToday] = useState(true);
@@ -48,11 +52,15 @@ export function ProjectActionForm({ onSave }: ProjectActionFormProps) {
   const parsedDate = useMemo(() => parseMobileDateInput(dateInput, new Date()), [dateInput]);
   const parsedTime = useMemo(() => parseMobileDateTimeInput(timeInput, parsedDate), [parsedDate, timeInput]);
 
+  useEffect(() => {
+    setCaptureWorkspaceId(workspaceId);
+  }, [workspaceId]);
+
   const selectedProjectLabel = useMemo(() => {
     if (!projectId) return 'No project';
     return projects.find((project) => project.id === projectId)?.name ?? 'No project';
   }, [projectId, projects]);
-  const canSave = Boolean(title.trim()) && workspaceId !== 'all';
+  const canSave = Boolean(title.trim()) && captureWorkspaceId !== 'all';
 
   const handleSave = async () => {
     if (!title.trim()) {
@@ -67,7 +75,7 @@ export function ProjectActionForm({ onSave }: ProjectActionFormProps) {
     setError(null);
 
     try {
-      await createMobileProjectAction(workspaceId, {
+      await createMobileProjectAction(captureWorkspaceId, {
         title: title.trim(),
         due_date: dueDate,
         due_time: dueTime,
@@ -77,10 +85,10 @@ export function ProjectActionForm({ onSave }: ProjectActionFormProps) {
       });
       onSave?.();
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : 'Could not save action.');
-    } finally {
-      setIsSaving(false);
-    }
+        setError(saveError instanceof Error ? saveError.message : 'Could not save action.');
+      } finally {
+        setIsSaving(false);
+      }
   };
 
   return (
@@ -93,22 +101,25 @@ export function ProjectActionForm({ onSave }: ProjectActionFormProps) {
           onPress={handleSave}
         />
       }>
-      <Section childrenGap={theme.spacing.md}>
-        <AppTextInput label="Action" placeholder="Add title" value={title} onChangeText={setTitle} />
+      <Section childrenGap={theme.spacing.sm}>
+        <AppTextInput label="Action" labelVariant="body" placeholder="Add title" value={title} onChangeText={setTitle} />
         <Row
           title="Due date"
           subtitle={formatCaptureDateLabel(dateInput)}
           onPress={() => setDatePickerOpen(true)}
           chevron
+          titleVariant="body"
         />
         <Row
           title="Due time"
           subtitle={formatCaptureTimeLabel(timeInput)}
           onPress={() => setTimePickerOpen(true)}
           chevron
+          titleVariant="body"
         />
         <AppTextInput
           label="Notes"
+          labelVariant="body"
           placeholder="Add details or context"
           multiline
           value={notes}
@@ -117,16 +128,21 @@ export function ProjectActionForm({ onSave }: ProjectActionFormProps) {
         <Row
           title="Workspace"
           subtitle={workspaceState.isLoading ? 'Loading workspaces…' : workspaceLabel}
+          onPress={() => setWorkspacePickerOpen(true)}
+          right={<SymbolView name="chevron.down" size={14} weight="regular" tintColor={theme.colors.textSecondary} />}
+          titleVariant="body"
         />
         <Row
           title="Project"
           subtitle={selectedProjectLabel}
           onPress={() => setProjectPickerOpen(true)}
           right={<SymbolView name="chevron.down" size={14} weight="regular" tintColor={theme.colors.textSecondary} />}
+          titleVariant="body"
         />
         <Row
           title="Show in Today"
           subtitle={showInToday ? 'On' : 'Off'}
+          titleVariant="body"
           right={
             <Switch
               value={showInToday}
@@ -149,6 +165,16 @@ export function ProjectActionForm({ onSave }: ProjectActionFormProps) {
         onSelect={setProjectId}
         onClose={() => setProjectPickerOpen(false)}
         loading={projectsLoading}
+      />
+      <WorkspaceSelectorSheet
+        visible={workspacePickerOpen}
+        selectedWorkspaceId={captureWorkspaceId}
+        workspaces={workspaceState.options}
+        onSelect={(nextWorkspaceId) => {
+          setCaptureWorkspaceId(nextWorkspaceId);
+          setDefaultCaptureWorkspace(nextWorkspaceId);
+        }}
+        onClose={() => setWorkspacePickerOpen(false)}
       />
       <CaptureDateTimePickerSheet
         visible={datePickerOpen}

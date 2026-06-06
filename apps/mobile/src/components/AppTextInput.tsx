@@ -8,11 +8,12 @@ import { useLedgerTheme } from '@/theme';
 
 type AppTextInputProps = TextInputProps & {
   label?: string;
+  labelVariant?: 'sectionTitle' | 'bodyStrong' | 'body' | 'meta' | 'caption';
   rightAccessory?: ReactNode;
 };
 
 export const AppTextInput = forwardRef<TextInput, AppTextInputProps>(function AppTextInput(
-  { label, rightAccessory, style, multiline, ...props },
+  { label, labelVariant = 'body', rightAccessory, style, multiline, ...props },
   ref
 ) {
   const theme = useLedgerTheme();
@@ -21,7 +22,7 @@ export const AppTextInput = forwardRef<TextInput, AppTextInputProps>(function Ap
   return (
     <View style={styles.container}>
       {label ? (
-        <AppText variant="body" style={styles.label}>
+        <AppText variant={labelVariant} style={styles.label}>
           {label}
         </AppText>
       ) : null}
@@ -66,7 +67,7 @@ const styles = StyleSheet.create({
     alignSelf: 'stretch',
   },
   label: {
-    marginBottom: 6,
+    marginBottom: 4,
   },
   inputRow: {
     position: 'relative',

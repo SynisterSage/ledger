@@ -8,6 +8,7 @@ import type {
   MobileCaptureSummary,
   MobileTodayInteractionItem,
   MobileTodayItem,
+  MobileTodayNoteItem,
   MobileUpcomingItem,
 } from '@/types/ledger';
 
@@ -17,6 +18,7 @@ type TodayListProps = {
   upcoming: MobileUpcomingItem[];
   today: MobileTodayItem[];
   captures: MobileCaptureSummary;
+  notes?: MobileTodayNoteItem[];
   showWorkspaceNames?: boolean;
   onItemPress?: (item: MobileTodayInteractionItem) => void;
   onItemLongPress?: (item: MobileTodayInteractionItem) => void;
@@ -152,10 +154,28 @@ function buildTodaySubtitle(item: MobileTodayItem, showWorkspaceNames: boolean) 
   return uniqueParts.length ? uniqueParts.join(' · ') : null;
 }
 
+function buildNoteSubtitle(item: MobileTodayNoteItem, showWorkspaceNames: boolean) {
+  const parts: string[] = [];
+
+  if (showWorkspaceNames && item.workspaceName) {
+    parts.push(item.workspaceName);
+  }
+
+  parts.push('Note');
+
+  const updatedLabel = formatDateTimeLabel(item.updatedAt ?? item.createdAt);
+  if (updatedLabel) {
+    parts.push(updatedLabel);
+  }
+
+  return parts.join(' · ');
+}
+
 export function TodayList({
   upcoming,
   today,
   captures,
+  notes = [],
   showWorkspaceNames = true,
   onItemPress,
   onItemLongPress,
@@ -164,6 +184,7 @@ export function TodayList({
   const hasUpcoming = upcoming.length > 0;
   const hasToday = today.length > 0;
   const hasCaptures = captures.count > 0;
+  const hasNotes = notes.length > 0;
 
   return (
     <View style={{ gap: theme.spacing['3xl'] }}>
@@ -225,6 +246,24 @@ export function TodayList({
           </View>
         ) : (
           <AppText variant="meta">No captures waiting.</AppText>
+        )}
+      </Section>
+
+      <Section title="Notes">
+        {hasNotes ? (
+          <View style={{ gap: theme.spacing.xs }}>
+            {notes.map((item) => (
+              <TodayItem
+                key={item.id}
+                title={item.title}
+                subtitle={buildNoteSubtitle(item, showWorkspaceNames)}
+                onPress={() => onItemPress?.(item)}
+                onLongPress={() => onItemLongPress?.(item)}
+              />
+            ))}
+          </View>
+        ) : (
+          <AppText variant="meta">No notes yet.</AppText>
         )}
       </Section>
     </View>

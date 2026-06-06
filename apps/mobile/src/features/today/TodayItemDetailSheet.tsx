@@ -33,6 +33,10 @@ function getItemTypeLabel(item: TodayDetailSheetItem) {
     return 'Capture';
   }
 
+  if (item.type === 'note') {
+    return 'Note';
+  }
+
   if (item.type === 'project_action') {
     return 'Project action';
   }
@@ -49,6 +53,11 @@ function getItemSubtitle(item: TodayDetailSheetItem) {
 
   if (item.type === 'focus') {
     return [item.workspaceName, 'Focus', item.urgency ?? 'Low'].filter(Boolean).join(' · ');
+  }
+
+  if (item.type === 'note') {
+    const parts = [item.workspaceName, 'Note', item.updatedAt ? formatDateTimeLabel(item.updatedAt) : null].filter(Boolean);
+    return parts.join(' · ');
   }
 
   const metaParts: string[] = [];
@@ -85,6 +94,14 @@ function getItemMeta(item: TodayDetailSheetItem): AppDetailSheetMetaRow[] {
       { label: 'Workspace', value: item.workspaceName ?? 'Unknown workspace' },
       { label: 'Type', value: 'Focus' },
       { label: 'Urgency', value: item.urgency ?? 'Low' },
+    ];
+  }
+
+  if (item.type === 'note') {
+    return [
+      { label: 'Workspace', value: item.workspaceName ?? 'Unknown workspace' },
+      { label: 'Type', value: 'Note' },
+      { label: 'Updated', value: formatDateTimeLabel(item.updatedAt) ?? 'Unknown' },
     ];
   }
 
@@ -134,6 +151,10 @@ function getItemBody(item: TodayDetailSheetItem, mode: TodayDetailSheetMode) {
     return item.meta || null;
   }
 
+  if (item.type === 'note') {
+    return item.body || null;
+  }
+
   return null;
 }
 
@@ -164,10 +185,20 @@ function getActionsForItem(item: TodayDetailSheetItem, mode: TodayDetailSheetMod
             { id: 'move_tomorrow', label: 'Move to tomorrow' },
             { id: 'remove_today', label: 'Remove from Today' },
           ];
+    case 'note':
+      return mode === 'actions'
+        ? [
+            { id: 'add_follow_up', label: 'Add follow-up', variant: 'primary' },
+            { id: 'edit', label: 'Edit' },
+            { id: 'delete', label: 'Delete', variant: 'danger' },
+          ]
+        : [
+            { id: 'add_follow_up', label: 'Add follow-up', variant: 'primary' },
+            { id: 'edit', label: 'Edit' },
+          ];
     case 'event':
       return mode === 'actions'
         ? [
-            { id: 'open', label: 'Open', variant: 'primary' },
             { id: 'add_note', label: 'Add note' },
             { id: 'create_follow_up', label: 'Create follow-up' },
             { id: 'reschedule', label: 'Reschedule' },
@@ -175,7 +206,6 @@ function getActionsForItem(item: TodayDetailSheetItem, mode: TodayDetailSheetMod
             { id: 'delete', label: 'Delete', variant: 'danger' },
           ]
         : [
-            { id: 'open', label: 'Open', variant: 'primary' },
             { id: 'add_note', label: 'Add note' },
             { id: 'create_follow_up', label: 'Create follow-up' },
             { id: 'reschedule', label: 'Reschedule' },

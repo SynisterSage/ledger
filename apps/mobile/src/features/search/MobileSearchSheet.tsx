@@ -1,8 +1,22 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, StyleSheet, TextInput, View, useWindowDimensions } from 'react-native';
+import {
+  Animated,
+  BackHandler,
+  Easing,
+  Modal,
+  PanResponder,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  TextInput,
+  View,
+  useWindowDimensions,
+  type GestureResponderEvent,
+  type PanResponderGestureState,
+} from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SymbolView } from 'expo-symbols';
 
-import { AppBottomSheet } from '@/components/AppBottomSheet';
 import { AppButton } from '@/components/AppButton';
 import { AppDetailSheet } from '@/components/AppDetailSheet';
 import { AppText } from '@/components/AppText';
@@ -10,6 +24,7 @@ import { useLedgerTheme } from '@/theme';
 import { useWorkspaceState, getWorkspaceLabel } from '@/store/workspaceStore';
 import type { MobileSearchResult } from '@/types/ledger';
 import { searchMobileLedger } from '@/api/search';
+import { getMobileNote } from '@/api/notes';
 
 import { SearchResultRow } from './SearchResultRow';
 import {
@@ -19,6 +34,10 @@ import {
   getSearchResultSubtitle,
 } from './searchAdapters';
 import { useSearchSheet } from './SearchSheetContext';
+
+const CLOSE_DURATION = 180;
+const BACKDROP_CLOSE_DURATION = 120;
+const SHEET_DRAG_CLOSE_THRESHOLD = 72;
 
 function SearchHeaderInput({
   value,
@@ -60,6 +79,214 @@ function SearchHeaderInput({
   );
 }
 
+function SearchSheetShell({
+  visible,
+  title,
+  onClose,
+  headerAccessory,
+  children,
+}: {
+  visible: boolean;
+  title: React.ReactNode;
+  onClose: () => void;
+  headerAccessory?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  const theme = useLedgerTheme();
+  const insets = useSafeAreaInsets();
+  const { height: windowHeight } = useWindowDimensions();
+  const [mounted, setMounted] = useState(visible);
+  const progress = useRef(new Animated.Value(visible ? 1 : 0)).current;
+  const backdropProgress = useRef(new Animated.Value(visible ? 1 : 0)).current;
+  const dragY = useRef(new Animated.Value(0)).current;
+  const closingRef = useRef(false);
+  const closeFallbackTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const sheetMaxHeight = Math.min(windowHeight * 0.92, windowHeight - insets.top - 12);
+  const sheetTranslateY = Animated.add(
+    progress.interpolate({
+      inputRange: [0, 1],
+      outputRange: [sheetMaxHeight, 0],
+    }),
+    dragY,
+  );
+
+  useEffect(() => {
+    if (visible) {
+      setMounted(true);
+      closingRef.current = false;
+      if (closeFallbackTimer.current) {
+        clearTimeout(closeFallbackTimer.current);
+        closeFallbackTimer.current = null;
+      }
+      dragY.setValue(0);
+      progress.setValue(1);
+      backdropProgress.setValue(1);
+      return;
+    }
+
+    Animated.timing(progress, {
+      toValue: 0,
+      duration: CLOSE_DURATION,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start(({ finished }) => {
+      if (finished) {
+        setMounted(false);
+      }
+    });
+    Animated.timing(backdropProgress, {
+      toValue: 0,
+      duration: BACKDROP_CLOSE_DURATION,
+      easing: Easing.out(Easing.quad),
+      useNativeDriver: true,
+    }).start();
+  }, [backdropProgress, dragY, progress, visible]);
+
+  useEffect(() => {
+    if (!visible) {
+      return;
+    }
+
+    const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+      onClose();
+      return true;
+    });
+
+    return () => subscription.remove();
+  }, [onClose, visible]);
+
+  const closeSheet = () => {
+    if (!mounted || closingRef.current) return;
+
+    closingRef.current = true;
+    if (closeFallbackTimer.current) {
+      clearTimeout(closeFallbackTimer.current);
+    }
+    Animated.parallel([
+      Animated.timing(backdropProgress, {
+        toValue: 0,
+        duration: BACKDROP_CLOSE_DURATION,
+        useNativeDriver: true,
+      }),
+      Animated.timing(progress, {
+        toValue: 0,
+        duration: CLOSE_DURATION,
+        useNativeDriver: true,
+      }),
+      Animated.timing(dragY, {
+        toValue: 0,
+        duration: CLOSE_DURATION,
+        useNativeDriver: true,
+      }),
+    ]).start(() => {
+      if (closeFallbackTimer.current) {
+        clearTimeout(closeFallbackTimer.current);
+        closeFallbackTimer.current = null;
+      }
+      closingRef.current = false;
+      onClose();
+    });
+
+    closeFallbackTimer.current = setTimeout(() => {
+      closeFallbackTimer.current = null;
+      closingRef.current = false;
+      onClose();
+    }, CLOSE_DURATION + 80);
+  };
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: (_: GestureResponderEvent, gestureState: PanResponderGestureState) =>
+        Math.abs(gestureState.dy) > 2,
+      onPanResponderGrant: () => {
+        dragY.setValue(0);
+      },
+      onPanResponderMove: (_: GestureResponderEvent, gestureState: PanResponderGestureState) => {
+        dragY.setValue(Math.max(0, gestureState.dy));
+      },
+      onPanResponderRelease: (_: GestureResponderEvent, gestureState: PanResponderGestureState) => {
+        if (gestureState.dy > SHEET_DRAG_CLOSE_THRESHOLD || gestureState.vy > 0.75) {
+          closeSheet();
+          return;
+        }
+
+        Animated.spring(dragY, {
+          toValue: 0,
+          useNativeDriver: true,
+          bounciness: 0,
+          speed: 18,
+        }).start();
+      },
+    }),
+  ).current;
+
+  if (!mounted) {
+    return null;
+  }
+
+  const backdropOpacity = backdropProgress.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, 0.16],
+  });
+
+  return (
+    <Modal visible transparent animationType="none" statusBarTranslucent onRequestClose={closeSheet}>
+      <View style={styles.portal}>
+        <Pressable accessibilityRole="button" onPress={closeSheet} style={styles.backdropPressable}>
+          <Animated.View
+            style={[
+              styles.backdrop,
+              {
+                backgroundColor: theme.colors.textPrimary,
+                opacity: backdropOpacity,
+              },
+            ]}
+          />
+        </Pressable>
+
+        <Animated.View
+          style={[
+            styles.sheet,
+            {
+              backgroundColor: theme.colors.background,
+              borderColor: theme.colors.borderSubtle,
+              height: sheetMaxHeight,
+              transform: [{ translateY: sheetTranslateY }],
+            },
+          ]}>
+          <View
+            {...panResponder.panHandlers}
+            style={styles.handleHitArea}
+            accessibilityRole="adjustable"
+            accessibilityLabel="Dismiss search">
+            <View style={[styles.handle, { backgroundColor: theme.colors.borderSubtle }]} />
+          </View>
+
+          <View style={styles.header}>
+            <View style={styles.headerText}>{title}</View>
+            {headerAccessory ? <View>{headerAccessory}</View> : null}
+          </View>
+
+          <ScrollView
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={[
+              styles.content,
+              {
+                paddingHorizontal: theme.spacing.lg,
+                paddingBottom: insets.bottom + theme.spacing.lg,
+              },
+            ]}>
+            {children}
+          </ScrollView>
+        </Animated.View>
+      </View>
+    </Modal>
+  );
+}
+
 function SearchDetailSheet({
   result,
   visible,
@@ -70,6 +297,43 @@ function SearchDetailSheet({
   onClose: () => void;
 }) {
   if (!result) return null;
+  const [noteBody, setNoteBody] = useState<string | null>(null);
+  const [isLoadingNote, setIsLoadingNote] = useState(false);
+
+  useEffect(() => {
+    if (!visible || result.type !== 'note') {
+      setNoteBody(null);
+      setIsLoadingNote(false);
+      return;
+    }
+
+    let cancelled = false;
+    setIsLoadingNote(true);
+    setNoteBody(null);
+
+    void getMobileNote(result.id)
+      .then((note) => {
+        if (cancelled) return;
+        setNoteBody(htmlToPlainText(note.content_html ?? note.content ?? '') || null);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setNoteBody(null);
+      })
+      .finally(() => {
+        if (cancelled) return;
+        setIsLoadingNote(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [result, visible]);
+
+  const body =
+    result.type === 'note'
+      ? noteBody ?? (isLoadingNote ? undefined : getSearchResultBody(result) ?? undefined)
+      : getSearchResultBody(result) ?? undefined;
 
   return (
     <AppDetailSheet
@@ -77,7 +341,7 @@ function SearchDetailSheet({
       title={result.title}
       subtitle={getSearchResultSubtitle(result)}
       meta={getSearchResultMetaRows(result)}
-      body={getSearchResultBody(result) ?? undefined}
+      body={body}
       actions={getSearchResultActions(result)}
       onClose={onClose}
       onAction={() => {
@@ -85,6 +349,22 @@ function SearchDetailSheet({
       }}
     />
   );
+}
+
+function htmlToPlainText(value: string) {
+  return String(value ?? '')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/p>\s*<p[^>]*>/gi, '\n\n')
+    .replace(/<\/?p[^>]*>/gi, '\n')
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/\s+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .replace(/[ \t]{2,}/g, ' ')
+    .trim();
 }
 
 export function MobileSearchResultDetailSheet() {
@@ -101,7 +381,6 @@ export function MobileSearchResultDetailSheet() {
 
 export function MobileSearchSheet() {
   const theme = useLedgerTheme();
-  const { height: windowHeight } = useWindowDimensions();
   const workspaceState = useWorkspaceState();
   const { isSearchOpen, closeSearch, openSearchResult } = useSearchSheet();
   const [query, setQuery] = useState('');
@@ -109,6 +388,7 @@ export function MobileSearchSheet() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const searchRequestId = useRef(0);
+  const clearStateTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const workspaceLabel = useMemo(
     () => getWorkspaceLabel(workspaceState.selectedWorkspaceId, workspaceState.options),
@@ -118,12 +398,23 @@ export function MobileSearchSheet() {
   const scopeLabel = workspaceState.selectedWorkspaceId === 'all' ? 'All Workspaces' : workspaceLabel;
 
   useEffect(() => {
+    if (clearStateTimer.current) {
+      clearTimeout(clearStateTimer.current);
+      clearStateTimer.current = null;
+    }
+
     if (!isSearchOpen) {
       setQuery('');
       setResults([]);
       setError(null);
       setIsLoading(false);
     }
+    return () => {
+      if (clearStateTimer.current) {
+        clearTimeout(clearStateTimer.current);
+        clearStateTimer.current = null;
+      }
+    };
   }, [isSearchOpen]);
 
   useEffect(() => {
@@ -168,7 +459,7 @@ export function MobileSearchSheet() {
 
   return (
     <>
-      <AppBottomSheet
+      <SearchSheetShell
         visible={isSearchOpen}
         onClose={closeSearch}
         title={<SearchHeaderInput value={query} onChangeText={setQuery} onClear={() => setQuery('')} />}
@@ -182,11 +473,7 @@ export function MobileSearchSheet() {
             containerStyle={styles.closeButton}
           />
         }
-        snapPoints={['100%']}
-        initialSnapPointIndex={0}
-        maxHeight={Math.max(0, windowHeight - 70)}
-        cornerRadius={36}
-        contentStyle={{ paddingTop: theme.spacing.md }}>
+        >
         <View style={{ gap: theme.spacing.sm }}>
           <AppText variant="meta" style={{ color: theme.colors.textMuted }}>
             {scopeLabel}
@@ -236,12 +523,28 @@ export function MobileSearchSheet() {
             </View>
           )}
         </View>
-      </AppBottomSheet>
+      </SearchSheetShell>
     </>
   );
 }
 
 const styles = StyleSheet.create({
+  portal: {
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
+  backdrop: {
+    ...StyleSheet.absoluteFill,
+  },
+  backdropPressable: {
+    ...StyleSheet.absoluteFill,
+  },
+  sheet: {
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    overflow: 'hidden',
+  },
   searchField: {
     minHeight: 44,
     borderWidth: StyleSheet.hairlineWidth,
@@ -259,6 +562,31 @@ const styles = StyleSheet.create({
   },
   closeButton: {
     minWidth: 0,
+  },
+  handleHitArea: {
+    alignItems: 'center',
+    paddingTop: 16,
+    paddingBottom: 16,
+    minHeight: 56,
+  },
+  handle: {
+    width: 42,
+    height: 4,
+    borderRadius: 999,
+  },
+  header: {
+    paddingHorizontal: 20,
+    paddingBottom: 12,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  headerText: {
+    flex: 1,
+  },
+  content: {
+    gap: 12,
   },
   stateWrap: {
     minHeight: 160,

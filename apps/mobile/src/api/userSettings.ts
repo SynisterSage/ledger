@@ -78,9 +78,10 @@ export async function getMobileOnboardingStatus() {
   return mobileRequest<{ onboarding_completed: boolean }>('/api/user/onboarding');
 }
 
-export async function completeMobileOnboarding() {
+export async function completeMobileOnboarding(choice?: 'enabled' | 'denied' | 'skipped') {
   return mobileRequest<{ onboarding_completed: boolean }>('/api/user/onboarding', {
     method: 'PATCH',
+    body: JSON.stringify(choice ? { choice } : {}),
   });
 }
 

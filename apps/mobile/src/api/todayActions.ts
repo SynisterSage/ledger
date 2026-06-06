@@ -214,6 +214,36 @@ export async function performMobileTodayAction({
     }
   }
 
+  if (item.type === 'note') {
+    switch (actionId) {
+      case 'add_follow_up':
+        await mobileRequest('/api/tasks', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            title: `Follow up: ${item.title}`,
+            description: item.body ? `Follow up from note: ${item.title}` : `Follow up from note: ${item.title}`,
+            notes: item.body ?? null,
+            status: 'todo',
+            priority: 'medium',
+            show_in_today: true,
+            is_today_focus: false,
+          }),
+        });
+        return { ok: true, refresh: true };
+      case 'delete':
+        await mobileRequest(`/api/notes/${item.sourceId}`, {
+          method: 'DELETE',
+          headers,
+        });
+        return { ok: true, refresh: true };
+      case 'edit':
+        return { ok: true, refresh: false };
+      default:
+        return { ok: true, refresh: false };
+    }
+  }
+
   if (item.type === 'event') {
     switch (actionId) {
       case 'dismiss_today':

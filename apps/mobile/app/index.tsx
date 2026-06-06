@@ -14,6 +14,8 @@ export default function Index() {
     (notificationOnboarding.userId === auth.user?.id &&
       notificationOnboarding.isHydrated &&
       !notificationOnboarding.isLoading);
+  const notificationOnboardingComplete =
+    notificationOnboarding.isComplete || notificationOnboarding.choice !== null;
 
   if (!boot.isBootReady || auth.isLoading || notificationOnboarding.isLoading || !notificationStateReady) {
     return null;
@@ -23,7 +25,7 @@ export default function Index() {
     return <Redirect href="/auth/welcome" />;
   }
 
-  if (!notificationOnboarding.isComplete) {
+  if (!notificationOnboardingComplete) {
     return <Redirect href="/onboarding/notifications" />;
   }
 

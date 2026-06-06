@@ -37,6 +37,11 @@ export function TodaySkeleton() {
           <SkeletonRow />
         </View>
       </Section>
+
+      <Section title="Notes">
+        <SkeletonRow />
+        <SkeletonRow />
+      </Section>
     </View>
   );
 }

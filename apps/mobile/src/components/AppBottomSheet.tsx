@@ -38,6 +38,10 @@ type AppBottomSheetProps = {
   dragCloseSnapMargin?: number;
   maxHeight?: number;
   cornerRadius?: number;
+  openDuration?: number;
+  closeDuration?: number;
+  backdropOpenDuration?: number;
+  backdropCloseDuration?: number;
 };
 
 const DEFAULT_SNAP_POINTS: AppBottomSheetSnapPoint[] = ['35%', '55%', '85%'];
@@ -76,6 +80,10 @@ export function AppBottomSheet({
   dragCloseSnapMargin = DEFAULT_DRAG_CLOSE_SNAP_MARGIN,
   maxHeight,
   cornerRadius = 28,
+  openDuration: openDurationProp,
+  closeDuration: closeDurationProp,
+  backdropOpenDuration: backdropOpenDurationProp,
+  backdropCloseDuration: backdropCloseDurationProp,
 }: AppBottomSheetProps) {
   const theme = useLedgerTheme();
   const appPreferences = useAppPreferencesState();
@@ -102,10 +110,10 @@ export function AppBottomSheet({
   const maxTranslateY = sheetMaxHeight - resolvedSnapPoints[0];
   const closedTranslateY = sheetMaxHeight + insets.bottom + 24;
   const reduceMotionEnabled = appPreferences.reduceMotionEnabled;
-  const openDuration = reduceMotionEnabled ? 1 : OPEN_DURATION;
-  const closeDuration = reduceMotionEnabled ? 1 : CLOSE_DURATION;
-  const backdropOpenDuration = reduceMotionEnabled ? 1 : BACKDROP_OPEN_DURATION;
-  const backdropCloseDuration = reduceMotionEnabled ? 1 : BACKDROP_CLOSE_DURATION;
+  const openDuration = reduceMotionEnabled ? 1 : (openDurationProp ?? OPEN_DURATION);
+  const closeDuration = reduceMotionEnabled ? 1 : (closeDurationProp ?? CLOSE_DURATION);
+  const backdropOpenDuration = reduceMotionEnabled ? 1 : (backdropOpenDurationProp ?? BACKDROP_OPEN_DURATION);
+  const backdropCloseDuration = reduceMotionEnabled ? 1 : (backdropCloseDurationProp ?? BACKDROP_CLOSE_DURATION);
 
   const clampTranslate = (value: number) => Math.min(closedTranslateY, Math.max(minTranslateY, value));
 

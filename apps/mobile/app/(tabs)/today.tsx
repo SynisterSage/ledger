@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, RefreshControl, View } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
-import * as Haptics from 'expo-haptics';
 
 import { AppButton } from '@/components/AppButton';
 import { AppText } from '@/components/AppText';
@@ -17,10 +16,10 @@ import { TodayList } from '@/features/today/TodayList';
 import { TodayItemDetailSheet, type TodayDetailSheetMode } from '@/features/today/TodayItemDetailSheet';
 import { TodayItemActionsSheet } from '@/features/today/TodayItemActionsSheet';
 import { TodaySkeleton } from '@/features/today/TodaySkeleton';
+import { triggerLightHaptic } from '@/lib/haptics';
 import { getMobileToday } from '@/api/today';
 import { performMobileTodayAction } from '@/api/todayActions';
 import { useLedgerTheme } from '@/theme';
-import { useAppPreferencesState } from '@/store/appPreferencesStore';
 import type {
   MobileTodayInteractionItem,
   MobileTodayItem,
@@ -39,6 +38,7 @@ const EMPTY_TODAY: MobileTodayResponse = {
   upcoming: [],
   today: [],
   captures: { count: 0, items: [] },
+  notes: [],
 };
 
 export default function TodayScreen() {
@@ -50,7 +50,6 @@ export default function TodayScreen() {
   const actionInFlightRef = useRef(false);
   const actionErrorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const workspaceState = useWorkspaceState();
-  const appPreferences = useAppPreferencesState();
   const [today, setToday] = useState<MobileTodayResponse>(EMPTY_TODAY);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -151,7 +150,7 @@ export default function TodayScreen() {
   };
 
   const hasContent =
-    today.upcoming.length > 0 || today.today.length > 0 || today.captures.count > 0;
+    today.upcoming.length > 0 || today.today.length > 0 || today.captures.count > 0 || today.notes.length > 0;
 
   const closeItemSheet = () => {
     setSelectedItem(null);
@@ -168,10 +167,19 @@ export default function TodayScreen() {
           count: Math.max(0, current.captures.count - ('source' in item ? 1 : 0)),
           items: current.captures.items.filter((entry) => entry.id !== item.id),
         },
+        notes: current.notes.filter((entry) => entry.id !== item.id),
       });
 
       if ('source' in item) {
         if (actionId === 'add_note' || actionId === 'open' || actionId === 'create_follow_up') {
+          return current;
+        }
+
+        return removeFromFeed();
+      }
+
+      if (item.type === 'note') {
+        if (actionId === 'add_follow_up' || actionId === 'edit' || actionId === 'open') {
           return current;
         }
 
@@ -342,24 +350,19 @@ export default function TodayScreen() {
               </View>
             ) : hasContent ? (
               <TodayList
-                  upcoming={today.upcoming}
-                  today={today.today}
-                  captures={today.captures}
-                  showWorkspaceNames={workspaceState.selectedWorkspaceId === 'all'}
-                  onItemPress={(item) => {
-                    openItemSheet(item, 'detail');
-                  }}
-                  onItemLongPress={async (item) => {
-                    if (appPreferences.hapticsEnabled) {
-                      try {
-                        await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                      } catch {
-                        // Ignore haptic failures on unsupported devices.
-                      }
-                    }
-                    openItemSheet(item, 'actions');
-                  }}
-                />
+                upcoming={today.upcoming}
+                today={today.today}
+                captures={today.captures}
+                notes={today.notes ?? []}
+                showWorkspaceNames={workspaceState.selectedWorkspaceId === 'all'}
+                onItemPress={(item) => {
+                  openItemSheet(item, 'detail');
+                }}
+                onItemLongPress={async (item) => {
+                  await triggerLightHaptic();
+                  openItemSheet(item, 'actions');
+                }}
+              />
             ) : (
               <EmptyState
                 iconName="tray"

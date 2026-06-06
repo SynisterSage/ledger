@@ -214,7 +214,7 @@ export function ProjectPickerSheet({
                     },
                   ]}>
                   <View style={styles.rowText}>
-                    <AppText variant="bodyStrong">No project</AppText>
+                    <AppText variant="body">No project</AppText>
                     <AppText variant="meta">Keep this capture unlinked</AppText>
                   </View>
                 </Pressable>
@@ -231,7 +231,7 @@ export function ProjectPickerSheet({
                         },
                       ]}>
                       <View style={styles.rowText}>
-                        <AppText variant="bodyStrong">{project.name}</AppText>
+                        <AppText variant="body">{project.name}</AppText>
                         <AppText variant="meta">{project.description ?? project.status ?? undefined}</AppText>
                       </View>
                     </Pressable>

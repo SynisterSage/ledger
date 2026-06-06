@@ -2594,6 +2594,7 @@ const loadMobileTodayData = async ({ userId, scope, dateKey }) => {
         count: 0,
         items: [],
       },
+      notes: [],
     };
   }
 
@@ -2631,7 +2632,7 @@ const loadMobileTodayData = async ({ userId, scope, dateKey }) => {
     return result;
   })();
 
-  const [workspaceResult, taskResult, explicitTaskResult, upcomingTaskResult, reminderResult, eventResult, projectResult, captureCountResult, captureItemsResult] =
+  const [workspaceResult, taskResult, explicitTaskResult, upcomingTaskResult, reminderResult, eventResult, projectResult, noteResult, captureCountResult, captureItemsResult] =
     await Promise.all([
       supabase.from('workspaces').select('id, name, color').in('id', workspaceIds),
       supabase
@@ -2675,6 +2676,12 @@ const loadMobileTodayData = async ({ userId, scope, dateKey }) => {
         .not('end_date', 'is', null)
         .limit(500),
       supabase
+        .from('notes')
+        .select('id, workspace_id, title, content, content_html, updated_at, created_at')
+        .in('workspace_id', workspaceIds)
+        .order('updated_at', { ascending: false })
+        .limit(10),
+      supabase
         .from('inbox_items')
         .select('id', { count: 'exact', head: true })
         .in('workspace_id', workspaceIds)
@@ -2698,6 +2705,7 @@ const loadMobileTodayData = async ({ userId, scope, dateKey }) => {
     reminderResult.error,
     eventResult.error,
     projectResult.error,
+    noteResult.error,
     captureCountResult.error,
     captureItemsResult.error,
   ].filter(Boolean);
@@ -2710,6 +2718,7 @@ const loadMobileTodayData = async ({ userId, scope, dateKey }) => {
   const reminderRows = Array.isArray(reminderResult.data) ? reminderResult.data : [];
   const eventRows = Array.isArray(eventResult.data) ? eventResult.data : [];
   const projectRows = Array.isArray(projectResult.data) ? projectResult.data : [];
+  const noteRows = Array.isArray(noteResult.data) ? noteResult.data : [];
   const combinedTaskRows = [...taskRows, ...explicitTaskRows, ...upcomingTaskRows];
   const uniqueTaskRows = [];
   const seenTaskIds = new Set();
@@ -3166,6 +3175,23 @@ const loadMobileTodayData = async ({ userId, scope, dateKey }) => {
     createdAt: item.created_at ?? null,
     dateLabel: item.created_at ? formatNotificationDateTime(item.created_at) : null,
   }));
+  const notes = noteRows
+    .filter((row) => Boolean(row?.id) && Boolean(row?.workspace_id))
+    .map((row) => {
+      const body = htmlToPlainText(row.content_html || row.content || '');
+      return {
+        id: `note:${row.id}`,
+        type: 'note',
+        title: row.title ?? 'Untitled note',
+        workspaceId: row.workspace_id,
+        workspaceName: workspaceById.get(row.workspace_id)?.name ?? null,
+        sourceType: 'note',
+        sourceId: row.id,
+        body: body || null,
+        updatedAt: row.updated_at ?? row.created_at ?? null,
+        createdAt: row.created_at ?? null,
+      };
+    });
 
   return {
     date: selectedDateKey,
@@ -3179,6 +3205,7 @@ const loadMobileTodayData = async ({ userId, scope, dateKey }) => {
       count: captureCount,
       items: captures,
     },
+    notes,
   };
 };
 
@@ -4778,9 +4805,37 @@ app.get('/api/user/onboarding', authMiddleware, rateLimit('read'), async (req, r
 app.patch('/api/user/onboarding', authMiddleware, rateLimit('write'), async (req, res) => {
   try {
     const nowIso = new Date().toISOString();
+    const choice = ['enabled', 'denied', 'skipped'].includes(String(req.body?.choice))
+      ? String(req.body.choice)
+      : null;
+    const preferencesUpdate =
+      choice !== null
+        ? {
+            mobileNotificationOnboardingCompleted: true,
+            mobileNotificationOnboardingChoice: choice,
+          }
+        : null;
+    const existingPreferencesResult = preferencesUpdate
+      ? await supabase.from('users').select('preferences').eq('id', req.authUser.id).maybeSingle()
+      : { data: null, error: null };
+
+    if (existingPreferencesResult.error) throw existingPreferencesResult.error;
+    const existingPreferences = normalizeUserPreferences(safeJson(existingPreferencesResult.data?.preferences, {}));
+
     let { data, error } = await supabase
       .from('users')
-      .update({ onboarding_completed: true, onboarding_completed_at: nowIso })
+      .update({
+        onboarding_completed: true,
+        onboarding_completed_at: nowIso,
+        ...(preferencesUpdate
+          ? {
+              preferences: normalizeUserPreferences({
+                ...existingPreferences,
+                ...preferencesUpdate,
+              }),
+            }
+          : {}),
+      })
       .eq('id', req.authUser.id)
       .select('onboarding_completed')
       .maybeSingle();
@@ -4798,6 +4853,11 @@ app.patch('/api/user/onboarding', authMiddleware, rateLimit('write'), async (req
           full_name: normalizeNullableText(req.authUser.user_metadata?.full_name),
           onboarding_completed: true,
           onboarding_completed_at: nowIso,
+          ...(preferencesUpdate
+            ? {
+                preferences: normalizeUserPreferences(preferencesUpdate),
+              }
+            : {}),
         })
         .select('onboarding_completed')
         .single();

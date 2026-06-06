@@ -4,7 +4,7 @@ import * as Notifications from 'expo-notifications';
 import {
   completeMobileOnboarding,
   getMobileUserSettings,
-  updateMobileUserSettings,
+  getMobileOnboardingStatus,
 } from '@/api/userSettings';
 
 export type NotificationPermissionChoice = 'enabled' | 'denied' | 'skipped' | null;
@@ -28,7 +28,6 @@ const initialState: NotificationOnboardingState = {
 };
 
 const STORAGE_PREFIX = 'ledger-mobile-notification-onboarding';
-
 let state = initialState;
 const listeners = new Set<() => void>();
 let bootstrapToken = 0;
@@ -39,6 +38,24 @@ function emit() {
 
 function getStorageKey(userId: string) {
   return `${STORAGE_PREFIX}:${userId}`;
+}
+
+async function persistLocalCompletion(
+  userId: string,
+  payload: { choice?: NotificationPermissionChoice; isComplete?: boolean },
+) {
+  try {
+    await SecureStore.setItemAsync(
+      getStorageKey(userId),
+      JSON.stringify({
+        choice: payload.choice ?? null,
+        isComplete: Boolean(payload.isComplete ?? true),
+        updatedAt: new Date().toISOString(),
+      }),
+    );
+  } catch {
+    // Non-fatal. The backend remains the source of truth.
+  }
 }
 
 function setState(next: Partial<NotificationOnboardingState>) {
@@ -109,6 +126,22 @@ export async function bootstrapNotificationOnboardingState(userId: string | null
 
     if (!completed) {
       try {
+        const onboardingStatus = await getMobileOnboardingStatus();
+        if (token !== bootstrapToken) {
+          return;
+        }
+
+        if (Boolean(onboardingStatus?.onboarding_completed)) {
+          completed = true;
+          await persistLocalCompletion(userId, { choice: resolvedChoice ?? undefined, isComplete: true });
+        }
+      } catch {
+        // Continue with the remaining fallbacks.
+      }
+    }
+
+    if (!completed) {
+      try {
         const settings = await getMobileUserSettings();
         const backendOnboardingCompleted = Boolean(settings?.onboarding_completed);
         const backendCompleted = Boolean(
@@ -126,7 +159,7 @@ export async function bootstrapNotificationOnboardingState(userId: string | null
 
         if (completed && !backendOnboardingCompleted) {
           try {
-            await completeMobileOnboarding();
+            await completeMobileOnboarding(resolvedChoice ?? undefined);
           } catch {
             // Ignore persistence failures; the mobile preference or SecureStore fallback still applies.
           }
@@ -142,16 +175,12 @@ export async function bootstrapNotificationOnboardingState(userId: string | null
         if (permission.status !== 'undetermined') {
           completed = true;
           try {
-            await completeMobileOnboarding();
+            await completeMobileOnboarding(resolvedChoice ?? undefined);
           } catch {
             // Ignore persistence failures; local state is still enough to bypass onboarding.
           }
           try {
-            await updateMobileUserSettings({
-              preferences: {
-                mobileNotificationOnboardingCompleted: true,
-              },
-            });
+            await persistLocalCompletion(userId, { choice: resolvedChoice ?? undefined, isComplete: true });
           } catch {
             // Ignore persistence failures; local state is still enough to bypass onboarding.
           }
@@ -223,18 +252,7 @@ export async function setNotificationOnboardingChoice(
   }
 
   try {
-    await updateMobileUserSettings({
-      preferences: {
-        mobileNotificationOnboardingCompleted: true,
-        mobileNotificationOnboardingChoice: choice,
-      },
-    });
-  } catch {
-    // Non-fatal. SecureStore remains the local fallback.
-  }
-
-  try {
-    await completeMobileOnboarding();
+    await completeMobileOnboarding(choice);
   } catch {
     // Non-fatal. The local SecureStore entry still marks onboarding complete.
   }

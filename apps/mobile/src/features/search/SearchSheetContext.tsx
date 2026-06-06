@@ -1,4 +1,13 @@
-import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
 import type { MobileSearchResult } from '@/types/ledger';
 
 type SearchSheetContextValue = {
@@ -12,6 +21,8 @@ type SearchSheetContextValue = {
 
 const SearchSheetContext = createContext<SearchSheetContextValue | null>(null);
 
+const SEARCH_TRAY_CLOSE_DELAY = 220;
+
 type SearchSheetProviderProps = {
   children: ReactNode;
 };
@@ -19,11 +30,41 @@ type SearchSheetProviderProps = {
 export function SearchSheetProvider({ children }: SearchSheetProviderProps) {
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [activeSearchResult, setActiveSearchResult] = useState<MobileSearchResult | null>(null);
+  const resultTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const openSearch = useCallback(() => setIsSearchOpen(true), []);
   const closeSearch = useCallback(() => setIsSearchOpen(false), []);
-  const openSearchResult = useCallback((result: MobileSearchResult) => setActiveSearchResult(result), []);
-  const closeSearchResult = useCallback(() => setActiveSearchResult(null), []);
+  const openSearchResult = useCallback((result: MobileSearchResult) => {
+    if (resultTimerRef.current) {
+      clearTimeout(resultTimerRef.current);
+      resultTimerRef.current = null;
+    }
+
+    setActiveSearchResult(null);
+    setIsSearchOpen(false);
+
+    resultTimerRef.current = setTimeout(() => {
+      setActiveSearchResult(result);
+      resultTimerRef.current = null;
+    }, SEARCH_TRAY_CLOSE_DELAY);
+  }, []);
+  const closeSearchResult = useCallback(() => {
+    if (resultTimerRef.current) {
+      clearTimeout(resultTimerRef.current);
+      resultTimerRef.current = null;
+    }
+
+    setActiveSearchResult(null);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (resultTimerRef.current) {
+        clearTimeout(resultTimerRef.current);
+        resultTimerRef.current = null;
+      }
+    };
+  }, []);
 
   const value = useMemo(
     () => ({
