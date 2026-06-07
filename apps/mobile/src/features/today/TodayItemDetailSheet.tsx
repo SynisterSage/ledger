@@ -1,7 +1,7 @@
 import { AppDetailSheet, type AppDetailSheetAction, type AppDetailSheetMetaRow } from '@/components/AppDetailSheet';
 import type { MobileTodayInteractionItem } from '@/types/ledger';
 
-export type TodayDetailSheetMode = 'detail' | 'actions';
+export type TodayDetailSheetMode = 'detail' | 'actions' | 'edit';
 
 export type TodayDetailSheetItem = MobileTodayInteractionItem;
 

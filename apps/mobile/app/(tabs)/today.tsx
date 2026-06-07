@@ -15,7 +15,9 @@ import { WorkspaceSelectorSheet } from '@/components/WorkspaceSelectorSheet';
 import { TodayList } from '@/features/today/TodayList';
 import { TodayItemDetailSheet, type TodayDetailSheetMode } from '@/features/today/TodayItemDetailSheet';
 import { TodayItemActionsSheet } from '@/features/today/TodayItemActionsSheet';
+import { TodayItemEditSheet } from '@/features/today/TodayItemEditSheet';
 import { TodaySkeleton } from '@/features/today/TodaySkeleton';
+import { useFollowUpSheet } from '@/features/followup/FollowUpSheetContext';
 import { triggerLightHaptic } from '@/lib/haptics';
 import { getMobileToday } from '@/api/today';
 import { performMobileTodayAction } from '@/api/todayActions';
@@ -50,6 +52,7 @@ export default function TodayScreen() {
   const actionInFlightRef = useRef(false);
   const actionErrorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const workspaceState = useWorkspaceState();
+  const { openFollowUpSheet } = useFollowUpSheet();
   const [today, setToday] = useState<MobileTodayResponse>(EMPTY_TODAY);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -154,6 +157,7 @@ export default function TodayScreen() {
 
   const closeItemSheet = () => {
     setSelectedItem(null);
+    setSheetMode('detail');
   };
 
   const applyOptimisticTodayAction = useCallback(
@@ -249,6 +253,32 @@ export default function TodayScreen() {
 
   const handleTodayItemAction = useCallback(
     async (actionId: string, item: MobileTodayInteractionItem) => {
+      if (actionId === 'edit') {
+        setSheetMode('edit');
+        return;
+      }
+
+      if (actionId === 'add_follow_up' || actionId === 'create_follow_up') {
+        const sourceLabel =
+          'source' in item ? 'From capture' : item.type === 'note' ? 'From note' : 'From event';
+        const followUpNotes =
+          'body' in item && item.body
+            ? `Follow-up from ${sourceLabel.toLowerCase().replace('from ', '')}: ${item.title}\n\n${item.body}`
+            : `Follow-up from ${sourceLabel.toLowerCase().replace('from ', '')}: ${item.title}`;
+
+        closeItemSheet();
+        openFollowUpSheet({
+          title: `Follow up: ${item.title}`,
+          notes: followUpNotes,
+          workspaceId: item.workspaceId,
+          sourceLabel,
+          onSaved: () => {
+            void loadToday({ silent: true });
+          },
+        });
+        return;
+      }
+
       if (actionInFlightRef.current) {
         return;
       }
@@ -277,7 +307,7 @@ export default function TodayScreen() {
         actionInFlightRef.current = false;
       }
     },
-    [applyOptimisticTodayAction, loadToday, showActionError],
+    [applyOptimisticTodayAction, loadToday, openFollowUpSheet, showActionError],
   );
 
   const openItemSheet = (item: MobileTodayInteractionItem, mode: TodayDetailSheetMode) => {
@@ -358,11 +388,11 @@ export default function TodayScreen() {
                 onItemPress={(item) => {
                   openItemSheet(item, 'detail');
                 }}
-                onItemLongPress={async (item) => {
-                  await triggerLightHaptic();
-                  openItemSheet(item, 'actions');
-                }}
-              />
+            onItemLongPress={async (item) => {
+                    await triggerLightHaptic();
+                    openItemSheet(item, 'actions');
+                  }}
+                />
             ) : (
               <EmptyState
                 iconName="tray"
@@ -382,12 +412,24 @@ export default function TodayScreen() {
             onAction={handleTodayItemAction}
           />
         ) : (
-          <TodayItemActionsSheet
-            visible={Boolean(selectedItem)}
-            item={selectedItem}
-            onClose={closeItemSheet}
-            onAction={handleTodayItemAction}
-          />
+          <>
+            {sheetMode === 'actions' ? (
+              <TodayItemActionsSheet
+                visible={Boolean(selectedItem)}
+                item={selectedItem}
+                onClose={closeItemSheet}
+                onAction={handleTodayItemAction}
+              />
+            ) : null}
+            {sheetMode === 'edit' ? (
+              <TodayItemEditSheet
+                visible={Boolean(selectedItem)}
+                item={selectedItem}
+                onClose={closeItemSheet}
+                onSaved={() => void loadToday({ silent: true })}
+              />
+            ) : null}
+          </>
         )}
       </View>
     </Screen>

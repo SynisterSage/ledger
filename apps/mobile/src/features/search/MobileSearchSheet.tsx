@@ -25,6 +25,7 @@ import { useWorkspaceState, getWorkspaceLabel } from '@/store/workspaceStore';
 import type { MobileSearchResult } from '@/types/ledger';
 import { searchMobileLedger } from '@/api/search';
 import { getMobileNote } from '@/api/notes';
+import { useFollowUpSheet } from '@/features/followup/FollowUpSheetContext';
 
 import { SearchResultRow } from './SearchResultRow';
 import {
@@ -291,10 +292,12 @@ function SearchDetailSheet({
   result,
   visible,
   onClose,
+  onAction,
 }: {
   result: MobileSearchResult | null;
   visible: boolean;
   onClose: () => void;
+  onAction?: (actionId: string, result: MobileSearchResult, body?: string | null) => void;
 }) {
   if (!result) return null;
   const [noteBody, setNoteBody] = useState<string | null>(null);
@@ -344,8 +347,8 @@ function SearchDetailSheet({
       body={body}
       actions={getSearchResultActions(result)}
       onClose={onClose}
-      onAction={() => {
-        onClose();
+      onAction={(actionId) => {
+        onAction?.(actionId, result, body ?? null);
       }}
     />
   );
@@ -369,12 +372,70 @@ function htmlToPlainText(value: string) {
 
 export function MobileSearchResultDetailSheet() {
   const { activeSearchResult, closeSearchResult } = useSearchSheet();
+  const { openFollowUpSheet } = useFollowUpSheet();
+  const followUpTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (followUpTimerRef.current) {
+        clearTimeout(followUpTimerRef.current);
+        followUpTimerRef.current = null;
+      }
+    };
+  }, []);
+
+  const openFollowUpFromSearch = (
+    result: MobileSearchResult,
+    body: string | null,
+    sourceLabel: string,
+  ) => {
+    if (followUpTimerRef.current) {
+      clearTimeout(followUpTimerRef.current);
+      followUpTimerRef.current = null;
+    }
+
+    closeSearchResult();
+
+    followUpTimerRef.current = setTimeout(() => {
+      openFollowUpSheet({
+        title: `Follow up: ${result.title}`,
+        notes: body?.trim() || result.snippet?.trim() || result.preview?.trim() || null,
+        workspaceId: result.workspace_id,
+        projectId: result.project_id ?? null,
+        sourceLabel,
+        onSaved: () => {
+          closeSearchResult();
+        },
+      });
+      followUpTimerRef.current = null;
+    }, 220);
+  };
+
+  const handleSearchAction = (actionId: string, result: MobileSearchResult, body?: string | null) => {
+    if (result.type === 'note' && actionId === 'add_follow_up') {
+      openFollowUpFromSearch(result, body ?? null, 'From note');
+      return;
+    }
+
+    if (result.type === 'event' && actionId === 'create_follow_up') {
+      openFollowUpFromSearch(result, body ?? null, 'From event');
+      return;
+    }
+
+    if (result.type === 'project' && actionId === 'add_action') {
+      openFollowUpFromSearch(result, body ?? null, 'From project');
+      return;
+    }
+
+    closeSearchResult();
+  };
 
   return (
     <SearchDetailSheet
       result={activeSearchResult}
       visible={Boolean(activeSearchResult)}
       onClose={closeSearchResult}
+      onAction={handleSearchAction}
     />
   );
 }

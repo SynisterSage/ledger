@@ -8162,6 +8162,8 @@ app.post(
       const recurrenceRuleRaw = normalizeNullableText(req.body?.recurrence_rule);
       const recurrenceRule = recurrenceRuleRaw ? recurrenceRuleRaw.toLowerCase() : null;
       const specificDates = normalizeDateKeyList(req.body?.specific_dates);
+      const source = normalizeCaptureSource(req.body?.source);
+      const sourcePlatform = normalizeCaptureSourcePlatform(req.body?.source_platform);
 
       if (linkedId && !isUuidLike(linkedId)) {
         return res.status(400).json({ error: 'Invalid linked_id' });

@@ -9,6 +9,7 @@ type ModuleWindowKind =
   | 'notifications'
   | 'settings'
   | 'inbox'
+  | 'quick-follow-up'
   | 'quick-task'
   | 'quick-note'
   | 'quick-event';

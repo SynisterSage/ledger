@@ -1,4 +1,4 @@
-import { Check, FileText, Calendar } from 'lucide-react';
+import { ArrowRight, Check, FileText, Calendar } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useApi } from '../../hooks/useApi';
 import { useAuthContext } from '../../context/AuthContext';
@@ -58,7 +58,7 @@ export const QuickCaptureWindow = ({
   kind,
   context,
 }: {
-  kind: 'quick-task' | 'quick-note' | 'quick-event';
+  kind: 'quick-follow-up' | 'quick-task' | 'quick-note' | 'quick-event';
   context?: string;
 }) => {
   const { user } = useAuthContext();
@@ -97,6 +97,8 @@ export const QuickCaptureWindow = ({
   useEffect(() => {
     const timer = window.setTimeout(() => {
       if (kind === 'quick-task') {
+        taskInputRef.current?.focus();
+      } else if (kind === 'quick-follow-up') {
         taskInputRef.current?.focus();
       } else if (kind === 'quick-note') {
         noteInputRef.current?.focus();
@@ -411,7 +413,7 @@ export const QuickCaptureWindow = ({
     }
   };
 
-  if (kind === 'quick-task') {
+  if (kind === 'quick-task' || kind === 'quick-follow-up') {
     return (
       <div className={shellClassName}>
         <CloseGuardModal
@@ -428,8 +430,8 @@ export const QuickCaptureWindow = ({
           }}
         />
         <ModuleWindowHeader
-          title="Quick Task"
-          icon={<Check size={16} />}
+          title={kind === 'quick-follow-up' ? 'Quick Follow-Up' : 'Quick Task'}
+          icon={kind === 'quick-follow-up' ? <ArrowRight size={16} /> : <Check size={16} />}
           onClose={closeWindow}
           onMinimize={minimizeWindow}
           onToggleFullscreen={toggleFullscreen}

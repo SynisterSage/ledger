@@ -4504,7 +4504,7 @@ export const CalendarWindow = () => {
                       <button
                         type="button"
                         onClick={() =>
-                          window.desktopWindow?.toggleModule('quick-task' as any, {
+                          window.desktopWindow?.toggleModule('quick-follow-up' as any, {
                             focusContext: `ledger-followup|${baseEventId(
                               selectedEventPreview.id
                             )}|${encodeURIComponent(selectedEventPreview.title)}|${

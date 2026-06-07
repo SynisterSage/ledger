@@ -30,6 +30,13 @@ export type CreateMobileTaskInput = {
   sourcePlatform?: string | null;
 };
 
+export type UpdateMobileTaskInput = Partial<
+  Pick<
+    CreateMobileTaskInput,
+    'title' | 'due_date' | 'due_time' | 'description' | 'notes' | 'project_id' | 'status' | 'priority' | 'tags' | 'show_in_today' | 'is_today_focus'
+  >
+>;
+
 export type CreateMobileReminderInput = {
   title: string;
   remind_at: string;
@@ -41,6 +48,13 @@ export type CreateMobileReminderInput = {
   note_id?: string | null;
   source?: string;
   sourcePlatform?: string | null;
+};
+
+export type UpdateMobileReminderInput = Partial<
+  Pick<CreateMobileReminderInput, 'title' | 'body' | 'calendar_id' | 'linked_type' | 'linked_id' | 'project_id' | 'note_id'>
+> & {
+  remind_at?: string;
+  status?: string;
 };
 
 export type CreateMobileEventInput = {
@@ -59,6 +73,13 @@ export type CreateMobileEventInput = {
   sourcePlatform?: string | null;
 };
 
+export type UpdateMobileEventInput = Partial<
+  Pick<
+    CreateMobileEventInput,
+    'title' | 'start_at' | 'end_at' | 'notes' | 'location' | 'calendar_id' | 'project_id' | 'note_id' | 'all_day' | 'status' | 'recurrence_rule'
+  >
+>;
+
 export type CreateMobileNoteInput = {
   title: string;
   content?: string | null;
@@ -69,6 +90,10 @@ export type CreateMobileNoteInput = {
   section_id?: string | null;
   parent_id?: string | null;
 };
+
+export type UpdateMobileNoteInput = Partial<
+  Pick<CreateMobileNoteInput, 'title' | 'content' | 'content_html' | 'date' | 'section_id' | 'parent_id'>
+>;
 
 export type MobileProjectListResponse = MobileProjectOption[];
 
@@ -105,6 +130,16 @@ export async function createMobileTask(workspaceId: string, payload: CreateMobil
   });
 }
 
+export async function updateMobileTask(workspaceId: string, taskId: string, payload: UpdateMobileTaskInput) {
+  return mobileRequest(`/api/tasks/${encodeURIComponent(taskId)}`, {
+    method: 'PATCH',
+    headers: {
+      'x-workspace-id': workspaceId,
+    },
+    body: JSON.stringify(payload),
+  });
+}
+
 export async function createMobileReminder(workspaceId: string, payload: CreateMobileReminderInput) {
   return mobileRequest('/api/reminders', {
     method: 'POST',
@@ -123,6 +158,16 @@ export async function createMobileReminder(workspaceId: string, payload: CreateM
       source: payload.source ?? 'workspace',
       source_platform: payload.sourcePlatform ?? null,
     }),
+  });
+}
+
+export async function updateMobileReminder(workspaceId: string, reminderId: string, payload: UpdateMobileReminderInput) {
+  return mobileRequest(`/api/reminders/${encodeURIComponent(reminderId)}`, {
+    method: 'PATCH',
+    headers: {
+      'x-workspace-id': workspaceId,
+    },
+    body: JSON.stringify(payload),
   });
 }
 
@@ -150,6 +195,16 @@ export async function createMobileEvent(workspaceId: string, payload: CreateMobi
   });
 }
 
+export async function updateMobileEvent(workspaceId: string, eventId: string, payload: UpdateMobileEventInput) {
+  return mobileRequest(`/api/events/${encodeURIComponent(eventId)}`, {
+    method: 'PATCH',
+    headers: {
+      'x-workspace-id': workspaceId,
+    },
+    body: JSON.stringify(payload),
+  });
+}
+
 export async function createMobileNote(workspaceId: string, payload: CreateMobileNoteInput) {
   return mobileRequest('/api/notes', {
     method: 'POST',
@@ -166,6 +221,16 @@ export async function createMobileNote(workspaceId: string, payload: CreateMobil
       section_id: payload.section_id ?? null,
       parent_id: payload.parent_id ?? null,
     }),
+  });
+}
+
+export async function updateMobileNote(workspaceId: string, noteId: string, payload: UpdateMobileNoteInput) {
+  return mobileRequest(`/api/notes/${encodeURIComponent(noteId)}`, {
+    method: 'PATCH',
+    headers: {
+      'x-workspace-id': workspaceId,
+    },
+    body: JSON.stringify(payload),
   });
 }
 

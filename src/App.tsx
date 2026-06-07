@@ -60,6 +60,7 @@ type ModuleKind =
   | 'notifications'
   | 'settings'
   | 'inbox'
+  | 'quick-follow-up'
   | 'quick-task'
   | 'quick-note'
   | 'quick-event'
@@ -3205,6 +3206,7 @@ function AppShell() {
     }
 
     if (
+      moduleKind === 'quick-follow-up' ||
       moduleKind === 'quick-task' ||
       moduleKind === 'quick-note' ||
       moduleKind === 'quick-event'
