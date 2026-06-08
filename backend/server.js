@@ -3645,27 +3645,27 @@ const withWorkspaceContext = async (req, res, next) => {
   }
 };
 
-const getCalendarId = async (workspaceId, userId) => {
+const getPersonalCalendar = async (workspaceId, userId) => {
   const existingPersonal = await supabase
     .from('calendars')
-    .select('id')
+    .select('id, color')
     .eq('workspace_id', workspaceId)
     .eq('is_personal', true)
     .maybeSingle();
 
   if (existingPersonal.data?.id) {
-    return existingPersonal.data.id;
+    return existingPersonal.data;
   }
 
   const existingNamedPersonal = await supabase
     .from('calendars')
-    .select('id')
+    .select('id, color')
     .eq('workspace_id', workspaceId)
     .eq('name', 'Personal')
     .maybeSingle();
 
   if (existingNamedPersonal.data?.id) {
-    return existingNamedPersonal.data.id;
+    return existingNamedPersonal.data;
   }
 
   const created = await supabase
@@ -3684,23 +3684,31 @@ const getCalendarId = async (workspaceId, userId) => {
     .single();
 
   if (!created.error && created.data?.id) {
-    return created.data.id;
+    return {
+      id: created.data.id,
+      color: '#3B82F6',
+    };
   }
 
   if (created.error?.code === '23505') {
     const conflicted = await supabase
       .from('calendars')
-      .select('id')
+      .select('id, color')
       .eq('workspace_id', workspaceId)
       .eq('name', 'Personal')
       .maybeSingle();
 
     if (conflicted.data?.id) {
-      return conflicted.data.id;
+      return conflicted.data;
     }
   }
 
   throw created.error ?? new Error('Unable to resolve personal calendar');
+};
+
+const getCalendarId = async (workspaceId, userId) => {
+  const calendar = await getPersonalCalendar(workspaceId, userId);
+  return calendar?.id ?? null;
 };
 
 const ensureWorkspaceResource = async (table, id, workspaceId) => {
@@ -4693,15 +4701,30 @@ app.post('/api/inbox/:id/convert', authMiddleware, rateLimit('write'), async (re
       if (!reminderAt) {
         return res.status(400).json({ error: 'remind_at is required' });
       }
-      const calendarId = req.body?.calendar_id || (await getCalendarId(workspaceId, req.authUser.id));
+      const requestedCalendarId = normalizeNullableText(req.body?.calendar_id);
+      let calendarId = null;
+      let calendarColor = null;
+      if (requestedCalendarId) {
+        const calendar = await getCalendarById(requestedCalendarId);
+        if (!calendar) {
+          return res.status(404).json({ error: 'Calendar not found' });
+        }
+        calendarId = calendar.id;
+        calendarColor = calendar.color ?? null;
+      } else {
+        const personalCalendar = await getPersonalCalendar(workspaceId, req.authUser.id);
+        calendarId = personalCalendar.id;
+        calendarColor = personalCalendar.color ?? null;
+      }
       const reminderPayload = {
         workspace_id: workspaceId,
         calendar_id: calendarId,
+        user_id: req.authUser.id,
         created_by: req.authUser.id,
         updated_by: req.authUser.id,
         title: rawTitle,
         remind_at: reminderAt,
-        color: req.body?.color || null,
+        color: req.body?.color || calendarColor || '#F59E0B',
         is_done: false,
         notes: inboxNotes || null,
         project_id: req.body?.project_id || null,
@@ -4764,6 +4787,11 @@ app.post('/api/inbox/:id/convert', authMiddleware, rateLimit('write'), async (re
       }
       const endAt = String(req.body?.end_at ?? '').trim() || null;
       const calendarId = req.body?.calendar_id || (await getCalendarId(workspaceId, req.authUser.id));
+      const calendarColorInput = normalizeNullableText(req.body?.color);
+      const calendarColorResult = calendarColorInput
+        ? { data: { color: calendarColorInput }, error: null }
+        : await supabase.from('calendars').select('color').eq('id', calendarId).maybeSingle();
+      const calendarColor = calendarColorResult.data?.color || '#93C5FD';
       const { data, error } = await supabase
         .from('events')
         .insert({
@@ -4774,7 +4802,7 @@ app.post('/api/inbox/:id/convert', authMiddleware, rateLimit('write'), async (re
           title: rawTitle,
           start_at: startAt,
           end_at: endAt,
-          color: req.body?.color || null,
+          color: calendarColor,
           status: req.body?.status || 'planned',
           recurrence_rule: req.body?.recurrence_rule || null,
           notes: inboxNotes || null,
@@ -7402,6 +7430,7 @@ app.post(
 
       const requestedCalendarId = normalizeNullableText(req.body?.calendar_id);
       let calendarId = null;
+      let calendarColor = null;
       if (requestedCalendarId) {
         if (!isUuidLike(requestedCalendarId)) {
           return res.status(400).json({ error: 'Invalid calendar_id' });
@@ -7413,8 +7442,11 @@ app.post(
         await requireWorkspaceAccess(req.authUser.id, calendar.workspace_id, 'member');
         workspaceId = calendar.workspace_id;
         calendarId = calendar.id;
+        calendarColor = calendar.color ?? null;
       } else {
-        calendarId = await getCalendarId(workspaceId, req.authUser.id);
+        const personalCalendar = await getPersonalCalendar(workspaceId, req.authUser.id);
+        calendarId = personalCalendar.id;
+        calendarColor = personalCalendar.color ?? null;
       }
 
       const projectId = normalizeNullableText(req.body?.project_id);
@@ -7462,7 +7494,7 @@ app.post(
         created_by: req.authUser.id,
         updated_by: req.authUser.id,
         title,
-        color: req.body?.color || null,
+        color: req.body?.color || calendarColor || '#93C5FD',
         status: req.body?.status || 'planned',
         visibility: normalizeEventVisibility(req.body?.visibility),
         recurrence_rule: isSpecificDates ? null : recurrenceRule,
@@ -8174,6 +8206,7 @@ app.post(
       const remindAt = parseReminderTimestamp(req.body?.remind_at, 'remind_at');
       const requestedCalendarId = normalizeNullableText(req.body?.calendar_id);
       let calendarId = null;
+      let calendarColor = null;
       if (requestedCalendarId) {
         if (!isUuidLike(requestedCalendarId)) {
           return res.status(400).json({ error: 'Invalid calendar_id' });
@@ -8185,8 +8218,11 @@ app.post(
         await requireWorkspaceAccess(req.authUser.id, calendar.workspace_id, 'member');
         workspaceId = calendar.workspace_id;
         calendarId = calendar.id;
+        calendarColor = calendar.color ?? null;
       } else {
-        calendarId = await getCalendarId(workspaceId, req.authUser.id);
+        const personalCalendar = await getPersonalCalendar(workspaceId, req.authUser.id);
+        calendarId = personalCalendar.id;
+        calendarColor = personalCalendar.color ?? null;
       }
 
       const linkedType = normalizeReminderLinkedType(req.body?.linked_type);
@@ -8232,6 +8268,7 @@ app.post(
         remind_at: remindAt,
         status,
         calendar_id: calendarId,
+        color: req.body?.color || calendarColor || '#F59E0B',
         linked_type: linkedType,
         linked_id: linkedId,
         completed_at: null,
