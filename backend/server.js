@@ -3711,6 +3711,24 @@ const getCalendarId = async (workspaceId, userId) => {
   return calendar?.id ?? null;
 };
 
+const normalizeEventEndAt = (startAt, endAt) => {
+  const startDate = startAt ? new Date(startAt) : null;
+  if (!startDate || Number.isNaN(startDate.getTime())) {
+    return endAt;
+  }
+
+  const requestedEnd = endAt ? new Date(endAt) : null;
+  if (!requestedEnd || Number.isNaN(requestedEnd.getTime())) {
+    return new Date(startDate.getTime() + 60 * 60 * 1000).toISOString();
+  }
+
+  if (requestedEnd.getTime() <= startDate.getTime()) {
+    return new Date(startDate.getTime() + 60 * 60 * 1000).toISOString();
+  }
+
+  return requestedEnd.toISOString();
+};
+
 const ensureWorkspaceResource = async (table, id, workspaceId) => {
   const result = await supabase
     .from(table)
@@ -4785,13 +4803,14 @@ app.post('/api/inbox/:id/convert', authMiddleware, rateLimit('write'), async (re
       if (!startAt) {
         return res.status(400).json({ error: 'start_at is required' });
       }
-      const endAt = String(req.body?.end_at ?? '').trim() || null;
+      const endAt = normalizeEventEndAt(startAt, String(req.body?.end_at ?? '').trim() || null);
       const calendarId = req.body?.calendar_id || (await getCalendarId(workspaceId, req.authUser.id));
       const calendarColorInput = normalizeNullableText(req.body?.color);
       const calendarColorResult = calendarColorInput
         ? { data: { color: calendarColorInput }, error: null }
         : await supabase.from('calendars').select('color').eq('id', calendarId).maybeSingle();
       const calendarColor = calendarColorResult.data?.color || '#93C5FD';
+      const normalizedEndAt = normalizeEventEndAt(startAt, endAt);
       const { data, error } = await supabase
         .from('events')
         .insert({
@@ -4801,7 +4820,7 @@ app.post('/api/inbox/:id/convert', authMiddleware, rateLimit('write'), async (re
           updated_by: req.authUser.id,
           title: rawTitle,
           start_at: startAt,
-          end_at: endAt,
+          end_at: normalizedEndAt,
           color: calendarColor,
           status: req.body?.status || 'planned',
           recurrence_rule: req.body?.recurrence_rule || null,

@@ -44,6 +44,8 @@ export function CaptureDateTimePickerSheet({
   const appPreferences = useAppPreferencesState();
   const reduceMotionEnabled = appPreferences.reduceMotionEnabled;
   const [mounted, setMounted] = useState(visible);
+  const [draftValue, setDraftValue] = useState(value);
+  const draftValueRef = useRef(value);
   const progress = useRef(new Animated.Value(visible ? 1 : 0)).current;
   const backdropProgress = useRef(new Animated.Value(visible ? 1 : 0)).current;
   const dragY = useRef(new Animated.Value(0)).current;
@@ -54,6 +56,8 @@ export function CaptureDateTimePickerSheet({
       setMounted(true);
       closingRef.current = false;
       dragY.setValue(0);
+      setDraftValue(value);
+      draftValueRef.current = value;
       Animated.timing(progress, {
         toValue: 1,
         duration: reduceMotionEnabled ? 1 : 220,
@@ -87,6 +91,7 @@ export function CaptureDateTimePickerSheet({
     if (!mounted || closingRef.current) return;
 
     closingRef.current = true;
+    onSelect(draftValueRef.current);
     Animated.parallel([
       Animated.timing(backdropProgress, {
         toValue: 0,
@@ -111,6 +116,8 @@ export function CaptureDateTimePickerSheet({
 
   const handleChange = (_event: DateTimePickerEvent, nextValue?: Date) => {
     if (!nextValue || Number.isNaN(nextValue.getTime())) return;
+    draftValueRef.current = nextValue;
+    setDraftValue(nextValue);
     onSelect(nextValue);
   };
 
@@ -205,7 +212,7 @@ export function CaptureDateTimePickerSheet({
 
           <View style={[styles.content, style]}>
             <DateTimePicker
-              value={value}
+              value={draftValue}
               mode={mode}
               display="spinner"
               onChange={handleChange}

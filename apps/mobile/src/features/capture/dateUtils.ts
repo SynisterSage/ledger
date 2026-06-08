@@ -68,6 +68,13 @@ function parseDatePart(value: string, fallback: Date) {
     return base;
   }
 
+  const parsedTimeOnly = parseClockTime(normalized);
+  if (parsedTimeOnly) {
+    const next = new Date(fallback);
+    next.setHours(parsedTimeOnly.hours, parsedTimeOnly.minutes, 0, 0);
+    return next;
+  }
+
   const isoLike = normalized.match(/^(\d{4}-\d{2}-\d{2})(?:[ t](\d{1,2}:\d{2}(?:\s*[ap]m)?))?$/);
   if (isoLike) {
     const [year, month, day] = isoLike[1].split('-').map(Number);

@@ -443,19 +443,7 @@ export default function SettingsScreen() {
                 setWorkspaceSheetTarget('default_siri');
               }}
             />
-            <SettingsRow
-              title="Ask every time"
-              subtitle="Choose a workspace for each Siri capture."
-              right={
-                <Switch
-                  value={workspaceState.siriAskEveryTime}
-                  onValueChange={setSiriAskEveryTime}
-                  disabled={workspaceState.isLoading}
-                  trackColor={switchTrackColor}
-                  thumbColor={theme.colors.surface}
-                />
-              }
-            />
+            
             <SettingsRow
               title="Siri Shortcuts"
               subtitle="Preview the phrases Ledger can use with Siri."
