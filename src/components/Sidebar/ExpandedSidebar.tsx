@@ -2656,7 +2656,7 @@ export const ExpandedSidebar = ({
               </div>
 
               <div className="flex items-center justify-between px-0.5">
-                <p className="mt-2 text-[12px] text-[var(--ledger-text-muted)]">Press Enter or + to add</p>
+                <p className="mt-2 text-[12px] text-[var(--ledger-text-muted)]">Press Enter or + to add</p> 
                 <p
                   className={`text-[10px] text-[var(--ledger-success)] transition-opacity duration-200 ${
                     taskCaptureSaved ? 'opacity-100' : 'opacity-0'
