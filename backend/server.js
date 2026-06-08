@@ -3646,15 +3646,26 @@ const withWorkspaceContext = async (req, res, next) => {
 };
 
 const getCalendarId = async (workspaceId, userId) => {
-  const existing = await supabase
+  const existingPersonal = await supabase
     .from('calendars')
     .select('id')
     .eq('workspace_id', workspaceId)
     .eq('is_personal', true)
     .maybeSingle();
 
-  if (existing.data?.id) {
-    return existing.data.id;
+  if (existingPersonal.data?.id) {
+    return existingPersonal.data.id;
+  }
+
+  const existingNamedPersonal = await supabase
+    .from('calendars')
+    .select('id')
+    .eq('workspace_id', workspaceId)
+    .eq('name', 'Personal')
+    .maybeSingle();
+
+  if (existingNamedPersonal.data?.id) {
+    return existingNamedPersonal.data.id;
   }
 
   const created = await supabase
@@ -3672,9 +3683,24 @@ const getCalendarId = async (workspaceId, userId) => {
     .select('id')
     .single();
 
-  if (created.error) throw created.error;
+  if (!created.error && created.data?.id) {
+    return created.data.id;
+  }
 
-  return created.data?.id ?? null;
+  if (created.error?.code === '23505') {
+    const conflicted = await supabase
+      .from('calendars')
+      .select('id')
+      .eq('workspace_id', workspaceId)
+      .eq('name', 'Personal')
+      .maybeSingle();
+
+    if (conflicted.data?.id) {
+      return conflicted.data.id;
+    }
+  }
+
+  throw created.error ?? new Error('Unable to resolve personal calendar');
 };
 
 const ensureWorkspaceResource = async (table, id, workspaceId) => {
