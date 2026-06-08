@@ -1,6 +1,6 @@
-const skeletonSurface = '#FFF8F2';
-const skeletonFill = '#FFF3E7';
-const skeletonBorder = '#E2D4C4';
+const skeletonSurface = 'var(--ledger-surface-muted, #FAF5F0)';
+const skeletonFill = 'var(--ledger-background-muted, #FFF4EA)';
+const skeletonBorder = 'var(--ledger-border-subtle, #E8DDD4)';
 
 export const SkeletonLoader = () => {
   return (

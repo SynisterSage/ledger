@@ -7,7 +7,7 @@
 
 html,
 body {
-  color: rgb(17 24 39);
+  color: var(--ledger-text-primary, rgb(17 24 39));
   background-color: transparent;
 }
 
@@ -34,7 +34,7 @@ body {
    to the modal backdrop color so transparent window edges don't reveal a mismatched
    background or border. This helps avoid corner artifacts in rounded Electron windows. */
 body.has-modal-open {
-  background-color: rgba(17, 24, 39, 0.45) !important;
+  background-color: var(--ledger-backdrop, rgba(17, 24, 39, 0.45)) !important;
 }
 
 body.has-modal-open #root > * {
@@ -74,14 +74,14 @@ body.has-modal-open #root > * {
   background:
     linear-gradient(
       135deg,
-      rgba(255, 251, 247, var(--sidebar-glass-white-alpha, 0.93)),
+      rgba(255, 249, 244, var(--sidebar-glass-white-alpha, 0.93)),
       rgba(255, 244, 234, var(--sidebar-glass-cream-alpha, 0.88))
     );
-  border: 1px solid rgba(232, 221, 212, 0.92);
+  border: 1px solid var(--ledger-border-subtle, rgba(232, 221, 212, 0.92));
   outline: 1px solid rgba(216, 198, 182, 0.12);
   box-shadow:
     0 30px 90px rgba(17, 23, 42, 0.22),
-    inset 0 1px 0 rgba(255, 251, 247, 0.92),
+    inset 0 1px 0 rgba(255, 249, 244, 0.92),
     inset 0 -1px 0 rgba(17, 24, 39, 0.05);
   -webkit-backdrop-filter: blur(36px) saturate(0.9);
   backdrop-filter: blur(36px) saturate(0.9);
@@ -96,8 +96,8 @@ body.has-modal-open #root > * {
   border-radius: inherit;
   pointer-events: none;
   background:
-    radial-gradient(circle at 18% 8%, rgba(255, 251, 247, 0.7), transparent 30%),
-    linear-gradient(135deg, rgba(255, 251, 247, 0.34), transparent 42%);
+    radial-gradient(circle at 18% 8%, rgba(255, 249, 244, 0.7), transparent 30%),
+    linear-gradient(135deg, rgba(255, 249, 244, 0.34), transparent 42%);
   opacity: 0.75;
 }
 
@@ -114,13 +114,13 @@ body.has-modal-open #root > * {
   background:
     linear-gradient(
       135deg,
-      rgba(255, 251, 247, var(--sidebar-glass-icon-alpha, 0.76)),
+      rgba(255, 249, 244, var(--sidebar-glass-icon-alpha, 0.76)),
       rgba(255, 244, 234, calc(var(--sidebar-glass-icon-alpha, 0.76) - 0.04))
     );
   border: 1px solid rgba(232, 221, 212, 0.7);
   box-shadow:
     0 14px 38px rgba(17, 24, 39, 0.14),
-    inset 0 1px 0 rgba(255, 251, 247, 0.82);
+    inset 0 1px 0 rgba(255, 249, 244, 0.82);
   -webkit-backdrop-filter: blur(24px) saturate(0.9);
   backdrop-filter: blur(24px) saturate(0.9);
 }
@@ -141,14 +141,14 @@ body.has-modal-open #root > * {
   background:
     linear-gradient(
       135deg,
-      rgba(255, 251, 247, 0.97),
+      rgba(255, 249, 244, 0.97),
       rgba(255, 244, 234, 0.93)
     );
   border-color: rgba(232, 221, 212, 0.94);
   outline-color: rgba(216, 198, 182, 0.18);
   box-shadow:
     0 26px 76px rgba(17, 23, 42, 0.16),
-    inset 0 1px 0 rgba(255, 251, 247, 0.92);
+    inset 0 1px 0 rgba(255, 249, 244, 0.92);
   -webkit-backdrop-filter: blur(30px) saturate(0.94);
   backdrop-filter: blur(30px) saturate(0.94);
 }
@@ -160,11 +160,11 @@ body.has-modal-open #root > * {
   z-index: 0;
   border-radius: inherit;
   pointer-events: none;
-  background: rgba(255, 251, 247, 0.96);
+  background: rgba(255, 249, 244, 0.96);
   border-color: rgba(232, 221, 212, 0.9);
   box-shadow:
     0 20px 58px rgba(17, 24, 39, 0.16),
-    inset 0 1px 0 rgba(255, 251, 247, 0.92);
+    inset 0 1px 0 rgba(255, 249, 244, 0.92);
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
 }
@@ -178,23 +178,23 @@ body.has-modal-open #root > * {
     background:
       linear-gradient(
         135deg,
-        rgba(255, 251, 247, 0.97),
+        rgba(255, 249, 244, 0.97),
         rgba(255, 244, 234, 0.93)
       );
     border-color: rgba(232, 221, 212, 0.94);
     box-shadow:
       0 26px 76px rgba(17, 24, 39, 0.16),
-      inset 0 1px 0 rgba(255, 251, 247, 0.92);
+      inset 0 1px 0 rgba(255, 249, 244, 0.92);
   }
 }
 
 @media (prefers-reduced-transparency: reduce) {
   .sidebar-glass::after {
-    background: rgba(255, 251, 247, 0.97);
+    background: rgba(255, 249, 244, 0.97);
     border-color: rgba(232, 221, 212, 0.94);
     box-shadow:
       0 20px 58px rgba(17, 24, 39, 0.16),
-      inset 0 1px 0 rgba(255, 251, 247, 0.92);
+      inset 0 1px 0 rgba(255, 249, 244, 0.92);
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
   }
@@ -237,10 +237,10 @@ button:focus {
   outline: none;
   background: linear-gradient(
     to right,
-    var(--ledger-range-fill, #FF5F40) 0%,
-    var(--ledger-range-fill, #FF5F40) var(--ledger-range-progress, 50%),
-    #E8DDD4 var(--ledger-range-progress, 50%),
-    #E8DDD4 100%
+    var(--ledger-range-fill, var(--ledger-accent, #FF5F40)) 0%,
+    var(--ledger-range-fill, var(--ledger-accent, #FF5F40)) var(--ledger-range-progress, 50%),
+    var(--ledger-border-subtle, #E8DDD4) var(--ledger-range-progress, 50%),
+    var(--ledger-border-subtle, #E8DDD4) 100%
   );
 }
 
@@ -256,8 +256,8 @@ button:focus {
   width: 14px;
   height: 14px;
   border-radius: 9999px;
-  border: 2px solid #FFF8F2;
-  background: var(--ledger-range-fill, #FF5F40);
+  border: 2px solid var(--ledger-surface-muted, #FFF8F2);
+  background: var(--ledger-range-fill, var(--ledger-accent, #FF5F40));
   box-shadow: 0 1px 2px rgba(15, 23, 42, 0.14);
   margin-top: -4px;
 }
@@ -269,7 +269,7 @@ button:focus {
 }
 
 .ledger-range::-moz-range-progress {
-  background: var(--ledger-range-fill, #FF5F40);
+  background: var(--ledger-range-fill, var(--ledger-accent, #FF5F40));
   height: 6px;
   border-radius: 9999px;
 }
@@ -278,8 +278,8 @@ button:focus {
   width: 14px;
   height: 14px;
   border-radius: 9999px;
-  border: 2px solid #FFF8F2;
-  background: var(--ledger-range-fill, #FF5F40);
+  border: 2px solid var(--ledger-surface-muted, #FFF8F2);
+  background: var(--ledger-range-fill, var(--ledger-accent, #FF5F40));
   box-shadow: 0 1px 2px rgba(15, 23, 42, 0.14);
 }
 

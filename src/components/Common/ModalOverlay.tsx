@@ -91,7 +91,7 @@ export const ModalOverlay = ({
     >
       <div
         className="absolute inset-0"
-        style={{ backgroundColor: 'rgba(17,24,39,0.45)' }}
+        style={{ backgroundColor: 'var(--ledger-backdrop, rgba(17,24,39,0.45))' }}
         onClick={handleBackdropClick}
       />
       <div

@@ -5,6 +5,11 @@ import { AuthProvider } from './context/AuthContext';
 import { WorkspaceProvider } from './context/WorkspaceContext';
 import { SidebarProvider } from './context/SidebarContext';
 import './index.css';
+import { applyDesktopCssVars } from './theme/desktopTokens';
+
+if (typeof document !== 'undefined') {
+  applyDesktopCssVars(document.documentElement);
+}
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>

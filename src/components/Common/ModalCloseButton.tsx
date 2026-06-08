@@ -20,7 +20,7 @@ export const ModalCloseButton = ({
       aria-label={ariaLabel}
       title={ariaLabel}
       disabled={disabled}
-      className={`inline-flex h-8 w-8 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-500 shadow-[0_1px_2px_rgba(15,23,42,0.04)] transition hover:border-[#FF5F40]/35 hover:bg-[#FFF7F3] hover:text-[#FF5F40] focus:outline-none focus:ring-2 focus:ring-[#FF5F40]/20 disabled:cursor-not-allowed disabled:border-gray-200 disabled:bg-gray-50 disabled:text-gray-300 disabled:hover:border-gray-200 disabled:hover:bg-gray-50 disabled:hover:text-gray-300 ${className}`}
+      className={`inline-flex h-8 w-8 items-center justify-center rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] text-[var(--ledger-text-secondary)] shadow-[0_1px_2px_rgba(15,23,42,0.04)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] focus:outline-none focus:ring-2 focus:ring-[color:var(--ledger-accent)]/20 disabled:cursor-not-allowed disabled:border-[color:var(--ledger-border-subtle)] disabled:bg-[var(--ledger-surface-muted)] disabled:text-[var(--ledger-text-muted)] disabled:hover:border-[color:var(--ledger-border-subtle)] disabled:hover:bg-[var(--ledger-surface-muted)] disabled:hover:text-[var(--ledger-text-muted)] ${className}`}
     >
       <X size={16} />
     </button>

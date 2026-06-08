@@ -7,6 +7,7 @@ import {
   ChevronDown,
   ChevronUp,
   ClipboardCheck,
+  Clock3,
   Bell,
   Folder,
   LogOut,
@@ -27,6 +28,7 @@ import { useSearch } from '../../context/SearchContext';
 import { useApi } from '../../hooks/useApi';
 import { useWorkspaceRealtimeRefresh } from '../../hooks/useWorkspaceRealtimeRefresh';
 import { SkeletonList } from '../Common/Skeleton';
+import { sidebarTheme } from './sidebarTheme';
 
 type FocusItem = {
   id: string;
@@ -92,6 +94,27 @@ const normalizeProjectNameKey = (value: unknown) =>
     .trim()
     .toLowerCase();
 type ProjectSemanticStatus = 'not_started' | 'in_progress' | 'paused' | 'completed';
+
+const EVENT_TIME_OPTIONS = Array.from({ length: 48 }, (_, index) => {
+  const totalMinutes = index * 30;
+  const hours24 = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  const period = hours24 >= 12 ? 'PM' : 'AM';
+  const hours12 = hours24 % 12 || 12;
+  const value = `${String(hours24).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+  const label = `${hours12}:${String(minutes).padStart(2, '0')} ${period}`;
+  return { value, label };
+});
+
+const formatEventTimeLabel = (value: string) => {
+  const match = /^(\d{2}):(\d{2})$/.exec(value.trim());
+  if (!match) return value || 'Select time';
+  const hours24 = Number(match[1]);
+  const minutes = Number(match[2]);
+  const period = hours24 >= 12 ? 'PM' : 'AM';
+  const hours12 = hours24 % 12 || 12;
+  return `${hours12}:${String(minutes).padStart(2, '0')} ${period}`;
+};
 
 const htmlToPlainText = (value: string) =>
   String(value ?? '')
@@ -231,9 +254,9 @@ const monthOptions = [
 
 const getProgressStateColor = (value: number) => {
   const percent = Math.max(0, Math.min(100, value));
-  if (percent < 35) return '#FF5F40';
-  if (percent < 70) return '#F59E0B';
-  return '#22C55E';
+  if (percent < 35) return 'var(--ledger-accent)';
+  if (percent < 70) return 'var(--ledger-warning)';
+  return 'var(--ledger-success)';
 };
 
 export const ExpandedSidebar = ({
@@ -324,6 +347,12 @@ export const ExpandedSidebar = ({
   const [eventDate, setEventDate] = useState(todayKey());
   const [eventStartTime, setEventStartTime] = useState('09:00');
   const [eventEndTime, setEventEndTime] = useState('10:00');
+  const [eventStartPickerOpen, setEventStartPickerOpen] = useState(false);
+  const [eventEndPickerOpen, setEventEndPickerOpen] = useState(false);
+  const [eventStartPickerStyle, setEventStartPickerStyle] = useState<React.CSSProperties | null>(
+    null
+  );
+  const [eventEndPickerStyle, setEventEndPickerStyle] = useState<React.CSSProperties | null>(null);
   const todayBucketRef = useRef(todayKey());
   const [projects, setProjects] = useState<
     Array<{
@@ -441,6 +470,10 @@ export const ExpandedSidebar = ({
     };
   }, [api, user]);
   const eventCaptureRef = useRef<HTMLInputElement | null>(null);
+  const eventStartButtonRef = useRef<HTMLButtonElement | null>(null);
+  const eventEndButtonRef = useRef<HTMLButtonElement | null>(null);
+  const eventStartPickerRef = useRef<HTMLDivElement | null>(null);
+  const eventEndPickerRef = useRef<HTMLDivElement | null>(null);
   const todayHelpButtonRef = useRef<HTMLButtonElement | null>(null);
   const todayHelpPopoverRef = useRef<HTMLDivElement | null>(null);
   const todayDockButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -535,7 +568,7 @@ export const ExpandedSidebar = ({
       <div
         ref={dropdownRef}
         style={portalStyle ?? undefined}
-        className="rounded-2xl border border-gray-200 bg-white shadow-[0_12px_40px_rgba(15,23,42,0.12)] ring-0 outline-none max-h-56 overflow-y-auto overscroll-contain pr-0 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
+        className={`${sidebarTheme.popover} max-h-56 overflow-y-auto overscroll-contain pr-0 ring-0 outline-none [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden`}
       >
         {Array.isArray(workspaces) && workspaces.length > 0 ? (
           workspaces.map((ws) => (
@@ -549,10 +582,10 @@ export const ExpandedSidebar = ({
                   // ignore
                 }
               }}
-              className="flex w-full items-center gap-3 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+              className={sidebarTheme.menuItem}
             >
               {ws.id === activeWorkspaceId ? (
-                <Check size={14} className="text-gray-600" />
+                <Check size={14} className="text-[var(--ledger-text-secondary)]" />
               ) : (
                 <span className="w-4" />
               )}
@@ -560,7 +593,7 @@ export const ExpandedSidebar = ({
             </button>
           ))
         ) : (
-          <div className="px-3 py-2 text-sm text-gray-500">
+          <div className="px-3 py-2 text-sm text-[var(--ledger-text-muted)]">
             {storedWorkspaceId ? 'Loading workspaces...' : 'No workspaces'}
           </div>
         )}
@@ -580,14 +613,14 @@ export const ExpandedSidebar = ({
           }}
           className={
             compact
-              ? 'inline-flex h-9 max-w-45 items-center gap-1.5 rounded-full border border-gray-200 bg-white px-3 text-left shadow-sm transition hover:border-gray-300 hover:bg-gray-50'
-              : 'flex w-full items-center justify-between gap-2 truncate text-left text-[11px] font-medium text-gray-600'
+              ? 'inline-flex h-9 max-w-45 items-center gap-1.5 rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] px-3 text-left shadow-sm transition hover:border-[color:var(--ledger-border-strong)] hover:bg-[var(--ledger-surface-muted)]'
+              : 'flex w-full items-center justify-between gap-2 truncate text-left text-[11px] font-medium text-[var(--ledger-text-secondary)]'
           }
         >
-          <span className={compact ? 'truncate text-[12px] font-medium text-gray-700' : 'truncate'}>
+          <span className={compact ? 'truncate text-[12px] font-medium text-[var(--ledger-text-secondary)]' : 'truncate'}>
             {resolvedActiveWorkspaceLabel}
           </span>
-          <ChevronDown size={compact ? 13 : 14} className="shrink-0 text-gray-500" />
+          <ChevronDown size={compact ? 13 : 14} className="shrink-0 text-[var(--ledger-text-muted)]" />
         </button>
 
         {open && typeof document !== 'undefined'
@@ -605,10 +638,10 @@ export const ExpandedSidebar = ({
   };
 
   const projectStatusStyles: Record<ProjectSemanticStatus, string> = {
-    not_started: 'text-blue-700 bg-blue-50',
-    in_progress: 'text-[#C84E2B] bg-[#FFF0EB]',
-    paused: 'text-gray-700 bg-gray-100',
-    completed: 'text-green-700 bg-green-50',
+    not_started: 'text-[var(--ledger-accent)]',
+    in_progress: 'text-[var(--ledger-accent-hover)]',
+    paused: 'text-[var(--ledger-text-secondary)]',
+    completed: 'text-[var(--ledger-success)]',
   };
 
   const projectStatusCandidates: Record<ProjectSemanticStatus, string[]> = {
@@ -1792,12 +1825,12 @@ export const ExpandedSidebar = ({
             : personalCalendar;
 
       if (!selectedCalendar) {
-        const createdCalendar = await api.createCalendar('Personal', '#3B82F6', true);
+        const createdCalendar = await api.createCalendar('Personal', 'var(--ledger-accent)', true);
         if (createdCalendar && typeof createdCalendar === 'object') {
           const created = createdCalendar as { id: string; color?: string };
           selectedCalendar = {
             id: created.id,
-            color: created.color ?? '#3B82F6',
+            color: created.color ?? 'var(--ledger-accent)',
           };
         } else {
           calendars = await api.getCalendars({ scope: calendarScope });
@@ -1959,6 +1992,133 @@ export const ExpandedSidebar = ({
   const currentYear = new Date().getFullYear();
   const eventYearOptions = Array.from({ length: 6 }).map((_, index) => currentYear - 1 + index);
 
+  const closeEventTimePickers = useCallback(() => {
+    setEventStartPickerOpen(false);
+    setEventEndPickerOpen(false);
+  }, []);
+
+  useEffect(() => {
+    if (!eventStartPickerOpen || !eventStartButtonRef.current) {
+      setEventStartPickerStyle(null);
+      return;
+    }
+
+    const rect = eventStartButtonRef.current.getBoundingClientRect();
+    const menuHeight = 240;
+    const openAbove = rect.bottom + menuHeight + 8 > window.innerHeight;
+    const top = openAbove ? Math.max(8, rect.top - menuHeight - 8) : rect.bottom + 8;
+    const left = Math.max(8, Math.min(rect.left, window.innerWidth - 208));
+    setEventStartPickerStyle({
+      position: 'fixed',
+      left: `${left}px`,
+      top: `${top}px`,
+      width: `${Math.max(160, rect.width)}px`,
+      zIndex: 9999,
+    });
+  }, [eventStartPickerOpen]);
+
+  useEffect(() => {
+    if (!eventEndPickerOpen || !eventEndButtonRef.current) {
+      setEventEndPickerStyle(null);
+      return;
+    }
+
+    const rect = eventEndButtonRef.current.getBoundingClientRect();
+    const menuHeight = 240;
+    const openAbove = rect.bottom + menuHeight + 8 > window.innerHeight;
+    const top = openAbove ? Math.max(8, rect.top - menuHeight - 8) : rect.bottom + 8;
+    const left = Math.max(8, Math.min(rect.left, window.innerWidth - 208));
+    setEventEndPickerStyle({
+      position: 'fixed',
+      left: `${left}px`,
+      top: `${top}px`,
+      width: `${Math.max(160, rect.width)}px`,
+      zIndex: 9999,
+    });
+  }, [eventEndPickerOpen]);
+
+  useEffect(() => {
+    if (!eventStartPickerOpen && !eventEndPickerOpen) return;
+
+    const handleDismiss = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (eventStartButtonRef.current?.contains(target)) return;
+      if (eventEndButtonRef.current?.contains(target)) return;
+      if (eventStartPickerRef.current?.contains(target)) return;
+      if (eventEndPickerRef.current?.contains(target)) return;
+      closeEventTimePickers();
+    };
+
+    const handleScroll = (event: Event) => {
+      const target = event.target;
+      if (target instanceof Node) {
+        if (eventStartButtonRef.current?.contains(target)) return;
+        if (eventEndButtonRef.current?.contains(target)) return;
+        if (eventStartPickerRef.current?.contains(target)) return;
+        if (eventEndPickerRef.current?.contains(target)) return;
+      }
+      closeEventTimePickers();
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') closeEventTimePickers();
+    };
+
+    window.addEventListener('mousedown', handleDismiss);
+    window.addEventListener('scroll', handleScroll, true);
+    window.addEventListener('resize', closeEventTimePickers);
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      window.removeEventListener('mousedown', handleDismiss);
+      window.removeEventListener('scroll', handleScroll, true);
+      window.removeEventListener('resize', closeEventTimePickers);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [closeEventTimePickers, eventEndPickerOpen, eventStartPickerOpen]);
+
+  const renderTimePicker = (
+    open: boolean,
+    setOpen: (value: boolean) => void,
+    value: string,
+    menuRef: React.RefObject<HTMLDivElement>,
+    menuStyle: React.CSSProperties | null,
+    onChange: (next: string) => void
+  ) =>
+    open && typeof document !== 'undefined'
+      ? createPortal(
+          <div
+            ref={menuRef}
+            style={menuStyle ?? undefined}
+            className={`${sidebarTheme.popover} max-h-60 overflow-auto p-1 shadow-[0_16px_40px_rgba(15,23,42,0.14)]`}
+          >
+            {EVENT_TIME_OPTIONS.map((option) => {
+              const selected = option.value === value;
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  onMouseDown={(event) => event.stopPropagation()}
+                  onClick={() => {
+                    onChange(option.value);
+                    setOpen(false);
+                  }}
+                  className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm transition ${
+                    selected
+                      ? 'bg-[var(--ledger-surface-hover)] text-[var(--ledger-text-primary)]'
+                      : 'text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]'
+                  }`}
+                >
+                  <span>{option.label}</span>
+                  {selected ? <Check size={14} className="text-[var(--ledger-accent)]" /> : <span className="w-4" />}
+                </button>
+              );
+            })}
+          </div>,
+          document.body
+        )
+      : null;
+
   const deleteProject = async (projectId: string) => {
     try {
       await api.deleteProject(projectId);
@@ -2026,7 +2186,7 @@ export const ExpandedSidebar = ({
 
     return (
       <div className="flex h-full w-full flex-col items-center gap-1.25 p-1.25">
-        <div className="flex h-15 w-full items-center gap-2 rounded-3xl border border-white/40 bg-white/78 px-2.5 shadow-[0_10px_30px_rgba(15,23,42,0.08)] backdrop-blur-sm">
+        <div className={`flex h-15 w-full items-center gap-2 px-2.5 backdrop-blur-sm ${sidebarTheme.surface}`}>
           <div className="flex shrink-0 items-center gap-1.5">
             <button
               type="button"
@@ -2035,7 +2195,7 @@ export const ExpandedSidebar = ({
                 collapseToRail();
               }}
               onMouseDown={(e) => e.stopPropagation()}
-              className="flex h-8 w-8 items-center justify-center rounded-xl transition hover:bg-white/60"
+              className="flex h-8 w-8 items-center justify-center rounded-xl transition hover:bg-[var(--ledger-surface-muted)]"
               title="Collapse sidebar"
             >
               <img src="./logo-color.svg" alt="Ledger" className="h-7 w-7 opacity-100" />
@@ -2046,13 +2206,13 @@ export const ExpandedSidebar = ({
           <button
             type="button"
             onClick={openSearch}
-            className="flex h-8 w-[320px] min-w-65 max-w-85 items-center justify-between gap-2 rounded-2xl border border-gray-200 bg-white px-3 text-left shadow-sm transition hover:border-gray-300 hover:bg-gray-50"
+            className="flex h-8 w-[320px] min-w-65 max-w-85 items-center justify-between gap-2 rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] px-3 text-left shadow-sm transition hover:border-[color:var(--ledger-border-strong)] hover:bg-[var(--ledger-surface-muted)]"
           >
-            <span className="flex min-w-0 items-center gap-2 text-[11px] text-gray-500">
-              <Search size={14} className="shrink-0 text-gray-400" />
+            <span className="flex min-w-0 items-center gap-2 text-[11px] text-[var(--ledger-text-muted)]">
+              <Search size={14} className="shrink-0 text-[var(--ledger-text-muted)]" />
               <span className="truncate">Search...</span>
             </span>
-            <span className="shrink-0 rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.16em] text-gray-500">
+            <span className="shrink-0 rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.16em] text-[var(--ledger-text-muted)]">
               ⌘K
             </span>
           </button>
@@ -2069,18 +2229,18 @@ export const ExpandedSidebar = ({
               <button
                 key={item.label}
                 onClick={item.action}
-                className="relative inline-flex h-9 w-9 items-center justify-center rounded-xl border border-transparent text-gray-700 transition hover:border-gray-200 hover:bg-white/70 hover:text-gray-900"
+                className="relative inline-flex h-9 w-9 items-center justify-center rounded-xl border border-transparent text-[var(--ledger-text-secondary)] transition hover:border-[color:var(--ledger-border-subtle)] hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]"
                 title={item.label}
                 aria-label={item.label}
               >
                 <item.icon size={14} />
                 {item.label === 'Inbox' && inboxCount > 0 && (
-                  <span className="absolute -right-1 -top-1 inline-flex min-w-4 items-center justify-center rounded-full bg-[#FF5F40] px-1 py-0.5 text-[9px] font-semibold leading-none text-white">
+                  <span className="absolute -right-1 -top-1 inline-flex min-w-4 items-center justify-center rounded-full bg-[var(--ledger-accent)] px-1 py-0.5 text-[9px] font-semibold leading-none text-white">
                     {inboxCount > 9 ? '9+' : inboxCount}
                   </span>
                 )}
                 {item.label === 'Notifications' && notificationCount > 0 && (
-                  <span className="absolute -right-1 -top-1 inline-flex min-w-4 items-center justify-center rounded-full bg-[#FF5F40] px-1 py-0.5 text-[9px] font-semibold leading-none text-white">
+                  <span className="absolute -right-1 -top-1 inline-flex min-w-4 items-center justify-center rounded-full bg-[var(--ledger-accent)] px-1 py-0.5 text-[9px] font-semibold leading-none text-white">
                     {notificationCount > 9 ? '9+' : notificationCount}
                   </span>
                 )}
@@ -2091,7 +2251,7 @@ export const ExpandedSidebar = ({
           <div className="ml-auto flex items-center gap-0.5 shrink-0">
             <button
               onClick={() => window.desktopWindow?.toggleModule('settings')}
-              className="inline-flex h-9 w-9 items-center justify-center rounded-xl transition hover:bg-white/60 text-gray-700"
+              className="inline-flex h-9 w-9 items-center justify-center rounded-xl transition hover:bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)]"
               title="Settings"
               aria-label="Open settings"
             >
@@ -2102,7 +2262,7 @@ export const ExpandedSidebar = ({
                 onCollapseRequest?.();
                 collapseToRail();
               }}
-              className="inline-flex h-9 w-9 items-center justify-center rounded-xl transition hover:bg-white/60 text-gray-700"
+              className="inline-flex h-9 w-9 items-center justify-center rounded-xl transition hover:bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)]"
               title="Collapse"
               aria-label="Collapse sidebar"
             >
@@ -2110,7 +2270,7 @@ export const ExpandedSidebar = ({
             </button>
             <button
               onClick={signOut}
-              className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-[#E2D4C4] bg-[#FFF6EE] text-gray-700 transition hover:bg-[#FFF1E3]"
+              className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-[color:var(--ledger-border-strong)] bg-[var(--ledger-surface-selected)] text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-background-muted)]"
               title="Sign out"
               aria-label="Sign out"
             >
@@ -2119,32 +2279,32 @@ export const ExpandedSidebar = ({
           </div>
         </div>
 
-        <div className="flex w-full flex-1 min-h-0 items-center gap-2 rounded-[20px] border border-gray-200/70 bg-white px-3 shadow-[0_4px_12px_rgba(15,23,42,0.04)]">
+        <div className={`flex w-full flex-1 min-h-0 items-center gap-2 px-3 ${sidebarTheme.surface}`}>
           <button
             ref={todayDockButtonRef}
             type="button"
             onClick={() => {
               setTodayDockPopoverOpen((current) => !current);
             }}
-            className="inline-flex shrink-0 items-center gap-2 rounded-full px-2 py-1.5 text-[13px] transition hover:bg-gray-50"
+            className="inline-flex shrink-0 items-center gap-2 rounded-full px-2 py-1.5 text-[13px] transition hover:bg-[var(--ledger-surface-muted)]"
           >
-            <span className="text-xs font-medium text-gray-500">
+            <span className="text-xs font-medium text-[var(--ledger-text-muted)]">
               Today
             </span>
-            <span className="font-semibold text-gray-900">{horizontalTodaySummary}</span>
+            <span className="font-semibold text-[var(--ledger-text-primary)]">{horizontalTodaySummary}</span>
           </button>
 
-          <span className="text-gray-300">•</span>
+          <span className="text-[var(--ledger-text-muted)]/40">•</span>
 
           <button
             type="button"
             onClick={() => window.desktopWindow?.openCheckin()}
-            className="inline-flex shrink-0 items-center gap-2 rounded-full px-2 py-1.5 text-[13px] transition hover:bg-gray-50"
+            className="inline-flex shrink-0 items-center gap-2 rounded-full px-2 py-1.5 text-[13px] transition hover:bg-[var(--ledger-surface-muted)]"
           >
-            <span className="text-xs font-medium text-gray-500">
+            <span className="text-xs font-medium text-[var(--ledger-text-muted)]">
               Check-in
             </span>
-            <span className="font-medium text-gray-900">
+            <span className="font-medium text-[var(--ledger-text-primary)]">
               {checkin.finished.trim()
                 ? 'Saved'
                 : checkin.blocked.trim()
@@ -2153,37 +2313,37 @@ export const ExpandedSidebar = ({
             </span>
           </button>
 
-          <span className="text-gray-300">•</span>
+          <span className="text-[var(--ledger-text-muted)]/40">•</span>
 
           <button
             type="button"
             onClick={() => window.desktopWindow?.openModule('calendar')}
-            className="inline-flex shrink-0 items-center gap-2 rounded-full px-2 py-1.5 text-[13px] transition hover:bg-gray-50"
+            className="inline-flex shrink-0 items-center gap-2 rounded-full px-2 py-1.5 text-[13px] transition hover:bg-[var(--ledger-surface-muted)]"
           >
-            <span className="text-xs font-medium text-gray-500">
+            <span className="text-xs font-medium text-[var(--ledger-text-muted)]">
               Upcoming
             </span>
-            <span className="font-medium text-gray-900">{upcomingItems.length}</span>
+            <span className="font-medium text-[var(--ledger-text-primary)]">{upcomingItems.length}</span>
           </button>
 
-          <span className="text-gray-300">•</span>
+          <span className="text-[var(--ledger-text-muted)]/40">•</span>
 
           <button
             type="button"
             onClick={() => window.desktopWindow?.toggleModule('projects')}
-            className="inline-flex shrink-0 items-center gap-2 rounded-full px-2 py-1.5 text-[13px] transition hover:bg-gray-50"
+            className="inline-flex shrink-0 items-center gap-2 rounded-full px-2 py-1.5 text-[13px] transition hover:bg-[var(--ledger-surface-muted)]"
           >
-            <span className="text-xs font-medium text-gray-500">
+            <span className="text-xs font-medium text-[var(--ledger-text-muted)]">
               Projects
             </span>
-            <span className="font-medium text-gray-900">{activeProjectCount} active</span>
+            <span className="font-medium text-[var(--ledger-text-primary)]">{activeProjectCount} active</span>
           </button>
 
           <div className="ml-auto">
             <button
               type="button"
               onClick={() => window.desktopWindow?.toggleModule('dashboard')}
-              className="inline-flex items-center rounded-full border border-[#FF5F40] bg-[#FF5F40] px-3.5 py-1.5 text-[13px] font-semibold text-white transition hover:bg-[#f25538]"
+              className="inline-flex items-center rounded-full border border-[color:var(--ledger-accent)] bg-[var(--ledger-accent)] px-3.5 py-1.5 text-[13px] font-semibold text-white transition hover:bg-[var(--ledger-accent-hover)]"
             >
               Open Dashboard
             </button>
@@ -2196,19 +2356,19 @@ export const ExpandedSidebar = ({
                 ref={todayDockPopoverRef}
                 style={todayDockPopoverStyle ?? undefined}
                 onMouseDown={(e) => e.stopPropagation()}
-                className="rounded-2xl border border-gray-200 bg-white p-3 shadow-[0_18px_40px_rgba(15,23,42,0.16)]"
+                className={`${sidebarTheme.popover} p-3`}
               >
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-xs font-medium text-gray-500">
+                    <p className="text-xs font-medium text-[var(--ledger-text-muted)]">
                       Today
                     </p>
-                    <p className="mt-1 text-sm text-gray-600">{horizontalTodaySummary}</p>
+                    <p className="mt-1 text-sm text-[var(--ledger-text-secondary)]">{horizontalTodaySummary}</p>
                   </div>
                   <button
                     type="button"
                     onClick={() => setTodayDockPopoverOpen(false)}
-                    className="rounded-lg px-2 py-1 text-xs text-gray-500 hover:bg-gray-50"
+                    className="rounded-lg px-2 py-1 text-xs text-[var(--ledger-text-muted)] hover:bg-[var(--ledger-surface-muted)]"
                   >
                     Close
                   </button>
@@ -2220,24 +2380,24 @@ export const ExpandedSidebar = ({
                         key={item.id}
                         type="button"
                         onClick={() => void toggleCompleteTodayItem(item.id)}
-                        className="flex w-full items-start gap-2 rounded-xl px-2 py-2 text-left transition hover:bg-gray-50"
+                        className="flex w-full items-start gap-2 rounded-xl px-2 py-2 text-left transition hover:bg-[var(--ledger-surface-muted)]"
                       >
-                        <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-gray-300" />
+                        <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-[var(--ledger-border-subtle)]" />
                         <span className="min-w-0">
-                          <span className="block truncate text-sm text-gray-900">{item.title}</span>
-                          <span className="block truncate text-[11px] text-gray-500">
+                          <span className="block truncate text-sm text-[var(--ledger-text-primary)]">{item.title}</span>
+                          <span className="block truncate text-[11px] text-[var(--ledger-text-muted)]">
                             {formatTodayTaskWorkspace(item) || item.workspace_name || 'Workspace'}
                           </span>
                         </span>
                       </button>
                     ))
                   ) : (
-                    <p className="px-2 py-3 text-sm text-gray-500">Nothing needs your attention yet.</p>
+                    <p className="px-2 py-3 text-sm text-[var(--ledger-text-muted)]">Nothing needs your attention yet.</p>
                   )}
 
                   {completedToday.length > 0 && (
                     <div className="pt-2">
-                      <p className="px-2 text-xs font-medium text-gray-400">
+                      <p className="px-2 text-xs font-medium text-[var(--ledger-text-muted)]">
                         Completed today
                       </p>
                       {sortTodayTasks(completedToday).slice(0, 4).map((item) => (
@@ -2245,12 +2405,12 @@ export const ExpandedSidebar = ({
                           key={item.id}
                           className="mt-1 flex items-start gap-2 rounded-xl px-2 py-2 text-left"
                         >
-                          <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-green-500" />
+                          <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-[var(--ledger-success)]" />
                           <span className="min-w-0">
-                            <span className="block truncate text-sm text-gray-500 line-through">
+                            <span className="block truncate text-sm text-[var(--ledger-text-secondary)] line-through">
                               {item.title}
                             </span>
-                            <span className="block truncate text-[11px] text-gray-400">
+                            <span className="block truncate text-[11px] text-[var(--ledger-text-muted)]">
                               {formatTodayTaskWorkspace(item) || item.workspace_name || 'Workspace'}
                             </span>
                           </span>
@@ -2274,11 +2434,11 @@ export const ExpandedSidebar = ({
   return (
     <div
       className={`flex h-full min-h-0 w-full bg-transparent ${
-        isHorizontal ? 'flex-col border-b border-gray-200 py-5' : 'flex-col py-5'
+        isHorizontal ? 'flex-col border-b border-[color:var(--ledger-border-subtle)] py-5' : 'flex-col py-5'
       }`}
     >
       <div
-        className="relative z-10 px-5 pb-2 border-b border-white/20 bg-transparent"
+        className="relative z-10 px-5 pb-2 bg-transparent"
         onMouseDown={(e) => {
           if (!onDragHandleMouseDown) return;
           if (
@@ -2292,7 +2452,7 @@ export const ExpandedSidebar = ({
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-3 bg-transparent text-left">
             <img src="./logo-color.svg" alt="Ledger" className="h-8 w-8" />
-            <h1 className={`text-2xl tracking-tight text-gray-950 ${isWindowsPlatform ? 'font-normal' : 'font-light'}`}>
+            <h1 className={`text-2xl tracking-tight text-[var(--ledger-text-primary)] ${isWindowsPlatform ? 'font-normal' : 'font-light'}`}>
               Ledger
             </h1>
           </div>
@@ -2303,32 +2463,32 @@ export const ExpandedSidebar = ({
               onCollapseRequest?.();
               collapseToRail();
             }}
-            className="p-1 hover:bg-white/30 rounded-lg transition"
+            className="p-1 hover:bg-[var(--ledger-surface-muted)] rounded-lg transition"
             title="Collapse sidebar"
           >
-            <ChevronLeft size={20} className="text-gray-700" />
+            <ChevronLeft size={20} className="text-[var(--ledger-text-secondary)]" />
           </button>
         </div>
 
-        <div className="bg-white rounded-lg p-3 border border-gray-200 flex items-start justify-between opacity-100">
+        <div className={`p-3 flex items-start justify-between opacity-100 ${sidebarTheme.surfaceSoft}`}>
           <div>
-            <p className="text-sm font-semibold text-gray-900 opacity-100">{firstName}</p>
+            <p className="text-sm font-semibold text-[var(--ledger-text-primary)] opacity-100">{firstName}</p>
             <div className="mt-0.5">
               <WorkspaceSwitcher />
             </div>
-            <p className="text-xs text-gray-700 truncate">{user?.email}</p>
+            <p className="text-xs text-[var(--ledger-text-secondary)] truncate">{user?.email}</p>
           </div>
           <div className="flex shrink-0 items-center gap-1">
             <button
               onClick={() => window.desktopWindow?.toggleModule('inbox')}
               onMouseDown={(e) => e.stopPropagation()}
-              className="relative inline-flex h-7 w-7 items-center justify-center text-gray-600 transition hover:text-gray-900"
+              className="relative inline-flex h-7 w-7 items-center justify-center text-[var(--ledger-text-secondary)] transition hover:text-[var(--ledger-text-primary)]"
               title="Inbox"
               aria-label="Open inbox"
             >
               <Inbox size={14} />
               {inboxCount > 0 && (
-                <span className="absolute -right-1 -top-1 inline-flex min-w-4 items-center justify-center rounded-full bg-[#FF5F40] px-1 py-0.5 text-[9px] font-semibold leading-none text-white">
+                <span className="absolute -right-1 -top-1 inline-flex min-w-4 items-center justify-center rounded-full bg-[var(--ledger-accent)] px-1 py-0.5 text-[9px] font-semibold leading-none text-white">
                   {inboxCount > 99 ? '99+' : inboxCount}
                 </span>
               )}
@@ -2336,13 +2496,13 @@ export const ExpandedSidebar = ({
             <button
               onClick={() => window.desktopWindow?.openModule('notifications')}
               onMouseDown={(e) => e.stopPropagation()}
-              className="relative inline-flex h-7 w-7 items-center justify-center text-gray-600 transition hover:text-gray-900"
+              className="relative inline-flex h-7 w-7 items-center justify-center text-[var(--ledger-text-secondary)] transition hover:text-[var(--ledger-text-primary)]"
               title="Notifications"
               aria-label="Open notifications center"
             >
               <Bell size={14} />
               {notificationCount > 0 && (
-                <span className="absolute -right-1 -top-1 inline-flex min-w-4 items-center justify-center rounded-full bg-[#FF5F40] px-1 py-0.5 text-[9px] font-semibold leading-none text-white">
+                <span className="absolute -right-1 -top-1 inline-flex min-w-4 items-center justify-center rounded-full bg-[var(--ledger-accent)] px-1 py-0.5 text-[9px] font-semibold leading-none text-white">
                   {notificationCount > 99 ? '99+' : notificationCount}
                 </span>
               )}
@@ -2350,7 +2510,7 @@ export const ExpandedSidebar = ({
             <button
               onClick={() => window.desktopWindow?.toggleModule('settings')}
               onMouseDown={(e) => e.stopPropagation()}
-              className="inline-flex h-7 w-7 items-center justify-center text-gray-600 transition hover:text-gray-900 shrink-0"
+              className="inline-flex h-7 w-7 items-center justify-center text-[var(--ledger-text-secondary)] transition hover:text-[var(--ledger-text-primary)] shrink-0"
               title="Settings"
               aria-label="Open settings"
             >
@@ -2360,17 +2520,17 @@ export const ExpandedSidebar = ({
         </div>
       </div>
 
-      <div className="px-5 pt-2 pb-2">
+      <div className="px-5 pt-2 pb-4 border-b border-[color:var(--ledger-border-subtle)]">
         <button
           type="button"
           onClick={openSearch}
-          className="mb-3 flex h-10 w-full items-center justify-between gap-3 rounded-2xl border border-gray-200 bg-white px-3 text-left shadow-sm transition hover:border-gray-300 hover:bg-gray-50"
+          className="mb-3 flex h-10 w-full items-center justify-between gap-3 rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 text-left transition hover:border-[color:var(--ledger-border-strong)] hover:bg-[var(--ledger-surface-hover)]"
         >
-          <span className="flex min-w-0 items-center gap-2 text-[13px] text-gray-500">
-            <Search size={14} className="shrink-0 text-gray-400" />
+          <span className="flex min-w-0 items-center gap-2 text-[13px] text-[var(--ledger-text-muted)]">
+            <Search size={14} className="shrink-0 text-[var(--ledger-text-muted)]" />
             <span className="truncate">Search everything...</span>
           </span>
-          <span className="shrink-0 rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.16em] text-gray-500">
+          <span className="shrink-0 rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.16em] text-[var(--ledger-text-muted)]">
             ⌘K
           </span>
         </button>
@@ -2378,28 +2538,28 @@ export const ExpandedSidebar = ({
         <div className="grid grid-cols-2 gap-2">
           <button
             onClick={() => window.desktopWindow?.toggleModule('dashboard')}
-            className="h-10 rounded-lg border border-gray-200 bg-white text-xs font-medium text-gray-700 hover:bg-gray-50 transition flex items-center justify-center gap-1.5"
+            className="h-10 rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-xs font-medium text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] transition flex items-center justify-center gap-1.5"
           >
             <BarChart3 size={13} />
             Dashboard
           </button>
           <button
             onClick={() => window.desktopWindow?.toggleModule('projects')}
-            className="h-10 rounded-lg border border-gray-200 bg-white text-xs font-medium text-gray-700 hover:bg-gray-50 transition flex items-center justify-center gap-1.5"
+            className="h-10 rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-xs font-medium text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] transition flex items-center justify-center gap-1.5"
           >
             <Folder size={13} />
             Projects
           </button>
           <button
             onClick={() => window.desktopWindow?.toggleModule('notes')}
-            className="h-10 rounded-lg border border-gray-200 bg-white text-xs font-medium text-gray-700 hover:bg-gray-50 transition flex items-center justify-center gap-1.5"
+            className="h-10 rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-xs font-medium text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] transition flex items-center justify-center gap-1.5"
           >
             <StickyNote size={13} />
             Notes
           </button>
           <button
             onClick={() => window.desktopWindow?.openModule('calendar')}
-            className="h-10 rounded-lg border border-gray-200 bg-white text-xs font-medium text-gray-700 hover:bg-gray-50 transition flex items-center justify-center gap-1.5"
+            className="h-10 rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-xs font-medium text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] transition flex items-center justify-center gap-1.5"
           >
             <CalendarDays size={13} />
             Calendar
@@ -2407,9 +2567,9 @@ export const ExpandedSidebar = ({
         </div>
       </div>
 
-      <div className="flex-1 min-h-0 overflow-y-auto px-5 py-4 space-y-3">
+      <div className="flex-1 min-h-0 overflow-y-auto px-5 py-4 space-y-4">
         {/* Today unified feed (workspace-aware) */}
-        <section className="rounded-lg border border-gray-200 bg-white p-3 space-y-3">
+        <section className={`space-y-3 p-3 ${sidebarTheme.surfaceSoft}`}>
           <div
             role="button"
             tabIndex={0}
@@ -2423,7 +2583,7 @@ export const ExpandedSidebar = ({
           >
             <div className="min-w-0 flex-1 space-y-0.5">
               <div className="flex items-center gap-2">
-                <p className="text-sm font-semibold tracking-tight text-gray-900">Today</p>
+                <p className="text-sm font-semibold tracking-tight text-[var(--ledger-text-primary)]">Today</p>
                 <button
                   ref={todayHelpButtonRef}
                   type="button"
@@ -2445,25 +2605,25 @@ export const ExpandedSidebar = ({
                   }}
                   onFocus={() => setTodayHelpOpen(true)}
                   onBlur={() => setTodayHelpOpen(false)}
-                  className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-gray-200 text-[10px] font-semibold text-gray-500 transition hover:border-gray-300 hover:bg-gray-50 hover:text-gray-700"
+                  className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-[color:var(--ledger-border-subtle)] text-[10px] font-semibold text-[var(--ledger-text-muted)] transition hover:border-[color:var(--ledger-border-strong)] hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-secondary)]"
                   aria-label="What is Today?"
                   title="What is Today?"
                 >
                   ?
                 </button>
               </div>
-              <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-gray-500">
+              <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-[var(--ledger-text-muted)]">
                 <span className="shrink-0">
                   {todayTotalCount > 0 ? `${completedToday.length}/${todayTotalCount} complete` : 'Nothing yet'}
                 </span>
               </div>
               {!todayCollapsed && (
-                <p className="text-[11px] text-gray-500">Operational queue for today.</p>
+                <p className="text-[11px] text-[var(--ledger-text-muted)]">Operational queue for today.</p>
               )}
             </div>
             <ChevronDown
               size={14}
-              className={`mt-0.5 shrink-0 text-gray-400 transition-transform ${
+              className={`mt-0.5 shrink-0 text-[var(--ledger-text-muted)] transition-transform ${
                 todayCollapsed ? 'rotate-180' : ''
               }`}
             />
@@ -2471,7 +2631,7 @@ export const ExpandedSidebar = ({
 
           {!todayCollapsed && (
             <>
-              <div className="flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-2.5 py-2">
+              <div className="flex items-center gap-2 rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2.5 py-1.5">
                 <input
                   value={todayQuickDraft}
                   onChange={(e) => setTodayQuickDraft(e.target.value)}
@@ -2482,23 +2642,23 @@ export const ExpandedSidebar = ({
                     }
                   }}
                   placeholder="Add task for today..."
-                  className="flex-1 bg-transparent px-0.5 text-[12px] text-gray-900 placeholder:text-gray-400 focus:outline-none"
+                  className="flex-1 bg-transparent px-0.5 py-0.5 text-[11px] leading-5 text-[var(--ledger-text-primary)] placeholder:text-[var(--ledger-placeholder)] focus:outline-none"
                   disabled={todayQuickSaving || isLoadingToday}
                 />
                 <button
                   onClick={() => void saveTodayQuickTask()}
-                  className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-700 transition hover:bg-gray-50 disabled:opacity-60"
+                  className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-muted)] disabled:opacity-60"
                   title="Add to Today"
                   disabled={todayQuickSaving || isLoadingToday || !todayQuickDraft.trim()}
                 >
-                  <Plus size={12} />
+                  <Plus size={11} />
                 </button>
               </div>
 
               <div className="flex items-center justify-between px-0.5">
-                <p className="text-[10px] text-gray-500">Press Enter or + to add</p>
+                <p className="mt-2 text-[12px] text-[var(--ledger-text-muted)]">Press Enter or + to add</p>
                 <p
-                  className={`text-[10px] text-green-700 transition-opacity duration-200 ${
+                  className={`text-[10px] text-[var(--ledger-success)] transition-opacity duration-200 ${
                     taskCaptureSaved ? 'opacity-100' : 'opacity-0'
                   }`}
                 >
@@ -2525,7 +2685,7 @@ export const ExpandedSidebar = ({
                               y: e.clientY,
                             });
                           }}
-                          className="flex items-start gap-1.5 rounded-lg px-1 py-1 transition hover:bg-gray-50"
+                          className="flex items-start gap-1.5 rounded-lg px-1 py-1 transition hover:bg-[var(--ledger-surface-muted)]"
                         >
                           <button
                             type="button"
@@ -2533,19 +2693,19 @@ export const ExpandedSidebar = ({
                             className="mt-px flex h-5 w-5 shrink-0 items-center justify-center"
                             title="Mark complete"
                           >
-                            <div className="flex h-4.5 w-4.5 items-center justify-center rounded-full border border-gray-300 text-gray-600">
+                            <div className="flex h-4.5 w-4.5 items-center justify-center rounded-full border border-[color:var(--ledger-border-strong)] text-[var(--ledger-text-secondary)]">
                               <span className="sr-only">Mark complete</span>
                             </div>
                           </button>
                           <div className="min-w-0 flex-1">
-                            <div className="truncate text-[11px] leading-4 text-gray-900">
+                            <div className="truncate text-[11px] leading-4 text-[var(--ledger-text-primary)]">
                               {item.title}
                             </div>
-                            <div className="flex min-w-0 items-center gap-1.5 truncate text-[9px] text-gray-500">
+                            <div className="flex min-w-0 items-center gap-1.5 truncate text-[9px] text-[var(--ledger-text-muted)]">
                               <span
                                 className="h-1.5 w-1.5 shrink-0 rounded-full"
                                 style={{
-                                  backgroundColor: item.workspace_color || '#CBD5E1',
+                                  backgroundColor: item.workspace_color || 'var(--ledger-border-subtle)',
                                 }}
                               />
                               <span className="truncate">
@@ -2563,14 +2723,14 @@ export const ExpandedSidebar = ({
                       <button
                         type="button"
                         onClick={() => setCompletedTodayExpanded((prev) => !prev)}
-                        className="flex w-full items-center justify-between rounded-lg px-1.5 py-1 text-left hover:bg-gray-50 transition"
+                        className="flex w-full items-center justify-between rounded-lg px-1.5 py-1 text-left hover:bg-[var(--ledger-surface-muted)] transition"
                       >
-                        <span className="text-[11px] font-medium text-gray-500">
+                        <span className="text-[11px] font-medium text-[var(--ledger-text-muted)]">
                           Completed · {completedToday.length}
                         </span>
                         <ChevronDown
                           size={14}
-                          className={`text-gray-400 transition-transform ${
+                          className={`text-[var(--ledger-text-muted)] transition-transform ${
                             completedTodayExpanded ? 'rotate-180' : ''
                           }`}
                         />
@@ -2590,7 +2750,7 @@ export const ExpandedSidebar = ({
                                   y: e.clientY,
                                 });
                               }}
-                                className="flex items-start gap-1.5 rounded-lg px-1 py-1 transition hover:bg-gray-50"
+                                className="flex items-start gap-1.5 rounded-lg px-1 py-1 transition hover:bg-[var(--ledger-surface-muted)]"
                             >
                               <button
                                 type="button"
@@ -2598,19 +2758,19 @@ export const ExpandedSidebar = ({
                                 className="mt-px flex h-5 w-5 shrink-0 items-center justify-center"
                                 title="Mark incomplete"
                               >
-                                <div className="flex h-4.5 w-4.5 items-center justify-center rounded-full border border-green-600 bg-green-50 text-green-600">
+                                <div className="flex h-4.5 w-4.5 items-center justify-center rounded-full border border-[color:rgba(18,183,106,0.16)] bg-[color:rgba(18,183,106,0.08)] text-[var(--ledger-success)]">
                                   <Check size={12} />
                                 </div>
                               </button>
                               <div className="min-w-0 flex-1">
-                                  <div className="truncate text-[11px] leading-4 text-gray-600 line-through">
+                                  <div className="truncate text-[11px] leading-4 text-[var(--ledger-text-secondary)] line-through">
                                   {item.title}
                                 </div>
-                                  <div className="flex min-w-0 items-center gap-1.5 truncate text-[9px] text-gray-500">
+                                  <div className="flex min-w-0 items-center gap-1.5 truncate text-[9px] text-[var(--ledger-text-muted)]">
                                   <span
                                     className="h-1.5 w-1.5 shrink-0 rounded-full"
                                     style={{
-                                      backgroundColor: item.workspace_color || '#CBD5E1',
+                                      backgroundColor: item.workspace_color || 'var(--ledger-border-subtle)',
                                     }}
                                   />
                                   <span className="truncate">
@@ -2650,25 +2810,25 @@ export const ExpandedSidebar = ({
                     todayHelpCloseTimerRef.current = null;
                   }, 120);
                 }}
-                className="rounded-lg border border-gray-200 bg-white px-2.5 py-2 shadow-[0_10px_20px_rgba(15,23,42,0.12)]"
+                className={`${sidebarTheme.popover} px-2.5 py-2`}
               >
-                <p className="text-[11px] leading-4 text-gray-600">{TODAY_HELP_TEXT}</p>
+                <p className="text-[11px] leading-4 text-[var(--ledger-text-secondary)]">{TODAY_HELP_TEXT}</p>
               </div>,
               document.body
             )
           : null}
 
         <section>
-          <h2 className="mb-2 text-xs font-medium text-gray-500">
+          <h2 className="mb-2 text-xs font-medium text-[var(--ledger-text-muted)]">
             Quick Capture
           </h2>
           <div className="grid grid-cols-3 gap-2">
             <button
               onClick={() => setQuickCaptureMode((prev) => (prev === 'task' ? 'none' : 'task'))}
-              className={`px-2.5 py-2 text-xs font-medium rounded-lg transition flex items-center justify-center gap-1.5 ${
+              className={`px-2.5 py-2 text-xs font-medium rounded-2xl border shadow-sm transition flex items-center justify-center gap-1.5 ${
                 quickCaptureMode === 'task'
-                  ? 'text-gray-900 bg-white border border-gray-300'
-                  : 'text-gray-700 bg-white hover:bg-gray-50'
+                  ? 'text-[var(--ledger-text-primary)] bg-[var(--ledger-surface-muted)] border-[color:var(--ledger-border-strong)]'
+                  : 'text-[var(--ledger-text-secondary)] bg-[var(--ledger-surface-muted)] border-[color:var(--ledger-border-subtle)] hover:bg-[var(--ledger-surface-hover)] hover:border-[color:var(--ledger-border-strong)]'
               }`}
             >
               <Plus size={13} />
@@ -2676,10 +2836,10 @@ export const ExpandedSidebar = ({
             </button>
             <button
               onClick={() => setQuickCaptureMode((prev) => (prev === 'note' ? 'none' : 'note'))}
-              className={`px-2.5 py-2 text-xs font-medium rounded-lg transition flex items-center justify-center gap-1.5 ${
+              className={`px-2.5 py-2 text-xs font-medium rounded-2xl border shadow-sm transition flex items-center justify-center gap-1.5 ${
                 quickCaptureMode === 'note'
-                  ? 'text-gray-900 bg-white border border-gray-300'
-                  : 'text-gray-700 bg-white hover:bg-gray-50'
+                  ? 'text-[var(--ledger-text-primary)] bg-[var(--ledger-surface-muted)] border-[color:var(--ledger-border-strong)]'
+                  : 'text-[var(--ledger-text-secondary)] bg-[var(--ledger-surface-muted)] border-[color:var(--ledger-border-subtle)] hover:bg-[var(--ledger-surface-hover)] hover:border-[color:var(--ledger-border-strong)]'
               }`}
             >
               <StickyNote size={13} />
@@ -2687,10 +2847,10 @@ export const ExpandedSidebar = ({
             </button>
             <button
               onClick={() => setQuickCaptureMode((prev) => (prev === 'event' ? 'none' : 'event'))}
-              className={`px-2.5 py-2 text-xs font-medium rounded-lg transition flex items-center justify-center gap-1.5 ${
+              className={`px-2.5 py-2 text-xs font-medium rounded-2xl border shadow-sm transition flex items-center justify-center gap-1.5 ${
                 quickCaptureMode === 'event'
-                  ? 'text-gray-900 bg-white border border-gray-300'
-                  : 'text-gray-700 bg-white hover:bg-gray-50'
+                  ? 'text-[var(--ledger-text-primary)] bg-[var(--ledger-surface-muted)] border-[color:var(--ledger-border-strong)]'
+                  : 'text-[var(--ledger-text-secondary)] bg-[var(--ledger-surface-muted)] border-[color:var(--ledger-border-subtle)] hover:bg-[var(--ledger-surface-hover)] hover:border-[color:var(--ledger-border-strong)]'
               }`}
             >
               <CalendarDays size={13} />
@@ -2703,7 +2863,7 @@ export const ExpandedSidebar = ({
               quickCaptureMode === 'task' ? 'max-h-56 opacity-100 mt-2.5' : 'max-h-0 opacity-0 mt-0'
             }`}
           >
-            <div className="rounded-lg border border-gray-200 bg-white p-2.5">
+            <div className={`p-2.5 ${sidebarTheme.surfaceSoft}`}>
               <input
                 ref={taskCaptureRef}
                 value={taskDraft}
@@ -2718,7 +2878,7 @@ export const ExpandedSidebar = ({
                   }
                 }}
                 placeholder="Add a task..."
-                className="w-full h-8 px-2 text-xs border border-gray-200 rounded-md focus:outline-none focus:border-gray-300 bg-gray-50 text-gray-900 placeholder-gray-500"
+                className={`w-full h-8 px-2 text-xs rounded-md ${sidebarTheme.fieldMuted}`}
               />
               <div className="mt-2 grid grid-cols-2 gap-2">
                 <select
@@ -2726,7 +2886,7 @@ export const ExpandedSidebar = ({
                   onChange={(e) =>
                     setTaskPriority(e.target.value as 'none' | 'high' | 'medium' | 'low')
                   }
-                  className="h-8 px-2 text-xs border border-gray-200 rounded-md focus:outline-none focus:border-gray-300 bg-gray-50 text-gray-900"
+                  className={`h-8 px-2 text-xs rounded-md ${sidebarTheme.fieldMuted}`}
                 >
                   <option value="none">No priority</option>
                   <option value="high">High priority</option>
@@ -2737,17 +2897,17 @@ export const ExpandedSidebar = ({
                   value={taskTag}
                   onChange={(e) => setTaskTag(e.target.value)}
                   placeholder="Tag (optional)"
-                  className="h-8 px-2 text-xs border border-gray-200 rounded-md focus:outline-none focus:border-gray-300 bg-gray-50 text-gray-900 placeholder-gray-500"
+                  className={`h-8 px-2 text-xs rounded-md ${sidebarTheme.fieldMuted}`}
                 />
               </div>
               <div className="mt-2 flex items-center justify-between">
-                <div className="text-xs font-medium text-gray-500">
+                <div className="text-xs font-medium text-[var(--ledger-text-muted)]">
                   <p>Press Enter to save quickly</p>
                 </div>
                 <button
                   onClick={() => void saveQuickTask()}
                   disabled={!taskDraft.trim()}
-                  className="px-2 py-1 text-[11px] font-medium text-white bg-[#FF5F40] hover:bg-[#ea5336] rounded-md disabled:opacity-60"
+                  className={`px-2 py-1 text-[11px] font-medium rounded-md disabled:opacity-60 ${sidebarTheme.buttonPrimary}`}
                 >
                   Add Task
                 </button>
@@ -2760,7 +2920,7 @@ export const ExpandedSidebar = ({
               quickCaptureMode === 'note' ? 'max-h-48 opacity-100 mt-2.5' : 'max-h-0 opacity-0 mt-0'
             }`}
           >
-            <div className="rounded-lg border border-gray-200 bg-white p-2.5 translate-y-0">
+            <div className={`p-2.5 translate-y-0 ${sidebarTheme.surfaceSoft}`}>
               <textarea
                 ref={noteCaptureRef}
                 value={noteDraft}
@@ -2775,24 +2935,24 @@ export const ExpandedSidebar = ({
                   }
                 }}
                 placeholder="Write a quick note... (Cmd/Ctrl+Enter to save)"
-                className="w-full h-24 resize-none text-xs leading-5 text-gray-800 placeholder:text-gray-400 bg-transparent focus:outline-none"
+                className="w-full h-24 resize-none text-xs leading-5 text-[var(--ledger-text-primary)] placeholder:text-[var(--ledger-placeholder)] bg-transparent focus:outline-none"
               />
               <div className="mt-2 flex items-center justify-between">
-                <span className="text-xs font-medium text-gray-500">Esc to close</span>
+                <span className="text-xs font-medium text-[var(--ledger-text-muted)]">Esc to close</span>
                 <div className="flex items-center gap-1.5">
                   <button
                     onClick={() => {
                       setNoteDraft('');
                       setQuickCaptureMode('none');
                     }}
-                    className="px-2 py-1 text-[11px] font-medium text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-md"
+                    className={`px-2 py-1 text-[11px] font-medium rounded-md ${sidebarTheme.buttonSecondary}`}
                   >
                     Clear
                   </button>
                   <button
                     onClick={saveQuickNote}
                     disabled={!noteDraft.trim()}
-                    className="px-2 py-1 text-[11px] font-medium text-white bg-gray-900 hover:bg-gray-800 rounded-md disabled:opacity-60"
+                    className={`px-2 py-1 text-[11px] font-medium rounded-md disabled:opacity-60 ${sidebarTheme.buttonPrimary}`}
                   >
                     Save
                   </button>
@@ -2804,11 +2964,11 @@ export const ExpandedSidebar = ({
           <div
             className={`overflow-hidden transition-all duration-200 ease-out ${
               quickCaptureMode === 'event'
-                ? 'max-h-80 opacity-100 mt-2.5'
-                : 'max-h-0 opacity-0 mt-0'
+                ? 'max-h-80 opacity-100 mt-2.5 overflow-visible'
+                : 'max-h-0 opacity-0 mt-0 overflow-hidden'
             }`}
           >
-            <div className="rounded-lg border border-gray-200 bg-white p-2.5 space-y-2">
+            <div className={`relative z-20 space-y-2 p-2.5 ${sidebarTheme.surfaceSoft}`}>
               <input
                 ref={eventCaptureRef}
                 value={eventDraft}
@@ -2820,7 +2980,7 @@ export const ExpandedSidebar = ({
                   }
                 }}
                 placeholder="Event title"
-                className="w-full h-8 px-2 text-xs border border-gray-200 rounded-md focus:outline-none focus:border-gray-300 bg-gray-50 text-gray-900 placeholder-gray-500"
+                className={`w-full h-8 px-2 text-xs rounded-md ${sidebarTheme.fieldMuted}`}
               />
               <div className="space-y-1.5">
                 <div className="grid grid-cols-3 gap-2">
@@ -2834,7 +2994,7 @@ export const ExpandedSidebar = ({
                       );
                       setEventDate(toDateKey(eventDateParts.year, nextMonth, nextDay));
                     }}
-                    className="h-8 px-2 text-xs border border-gray-200 rounded-md focus:outline-none focus:border-gray-300 bg-gray-50 text-gray-900"
+                    className={`h-8 px-2 text-xs rounded-md ${sidebarTheme.fieldMuted}`}
                   >
                     {monthOptions.map((month) => (
                       <option key={month.value} value={month.value}>
@@ -2848,7 +3008,7 @@ export const ExpandedSidebar = ({
                       const nextDay = Number(e.target.value);
                       setEventDate(toDateKey(eventDateParts.year, eventDateParts.month, nextDay));
                     }}
-                    className="h-8 px-2 text-xs border border-gray-200 rounded-md focus:outline-none focus:border-gray-300 bg-gray-50 text-gray-900"
+                    className={`h-8 px-2 text-xs rounded-md ${sidebarTheme.fieldMuted}`}
                   >
                     {Array.from({ length: daysInSelectedMonth }).map((_, index) => {
                       const day = index + 1;
@@ -2869,7 +3029,7 @@ export const ExpandedSidebar = ({
                       );
                       setEventDate(toDateKey(nextYear, eventDateParts.month, nextDay));
                     }}
-                    className="h-8 px-2 text-xs border border-gray-200 rounded-md focus:outline-none focus:border-gray-300 bg-gray-50 text-gray-900"
+                    className={`h-8 px-2 text-xs rounded-md ${sidebarTheme.fieldMuted}`}
                   >
                     {eventYearOptions.map((year) => (
                       <option key={year} value={year}>
@@ -2881,24 +3041,34 @@ export const ExpandedSidebar = ({
               </div>
               <div className="grid grid-cols-2 gap-2">
                 <div className="flex flex-col gap-1">
-                  <label className="text-xs font-medium text-gray-500">Start</label>
-                  <input
-                    type="time"
-                    value={eventStartTime}
-                    onChange={(e) => setEventStartTime(e.target.value)}
-                    step={60}
-                    className="h-7 px-2 text-xs border border-gray-200 rounded-md focus:outline-none focus:border-gray-300 bg-gray-50 text-gray-900"
-                  />
+                  <label className="text-xs font-medium text-[var(--ledger-text-muted)]">Start</label>
+                  <button
+                    ref={eventStartButtonRef}
+                    type="button"
+                    onClick={() => {
+                      setEventEndPickerOpen(false);
+                      setEventStartPickerOpen((current) => !current);
+                    }}
+                    className={`flex h-7 items-center justify-between gap-2 rounded-2xl px-2 text-xs ${sidebarTheme.fieldMuted}`}
+                  >
+                    <span className="tabular-nums">{formatEventTimeLabel(eventStartTime)}</span>
+                    <Clock3 size={12} className="text-[var(--ledger-text-muted)]" />
+                  </button>
                 </div>
                 <div className="flex flex-col gap-1">
-                  <label className="text-xs font-medium text-gray-500">End</label>
-                  <input
-                    type="time"
-                    value={eventEndTime}
-                    onChange={(e) => setEventEndTime(e.target.value)}
-                    step={60}
-                    className="h-7 px-2 text-xs border border-gray-200 rounded-md focus:outline-none focus:border-gray-300 bg-gray-50 text-gray-900"
-                  />
+                  <label className="text-xs font-medium text-[var(--ledger-text-muted)]">End</label>
+                  <button
+                    ref={eventEndButtonRef}
+                    type="button"
+                    onClick={() => {
+                      setEventStartPickerOpen(false);
+                      setEventEndPickerOpen((current) => !current);
+                    }}
+                    className={`flex h-7 items-center justify-between gap-2 rounded-2xl px-2 text-xs ${sidebarTheme.fieldMuted}`}
+                  >
+                    <span className="tabular-nums">{formatEventTimeLabel(eventEndTime)}</span>
+                    <Clock3 size={12} className="text-[var(--ledger-text-muted)]" />
+                  </button>
                 </div>
               </div>
               <div className="flex items-center gap-1.5">
@@ -2910,14 +3080,14 @@ export const ExpandedSidebar = ({
                     setEventEndTime('10:00');
                     setQuickCaptureMode('none');
                   }}
-                  className="flex-1 h-7 px-2 text-[11px] font-medium text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-md"
+                  className={`flex-1 h-7 px-2 text-[11px] font-medium rounded-md ${sidebarTheme.buttonSecondary}`}
                 >
                   Clear
                 </button>
                 <button
                   onClick={() => void saveQuickEvent()}
                   disabled={!eventDraft.trim()}
-                  className="flex-1 h-7 px-2 text-[11px] font-medium text-white bg-gray-900 hover:bg-gray-800 rounded-md disabled:opacity-60"
+                  className={`flex-1 h-7 px-2 text-[11px] font-medium rounded-md disabled:opacity-60 ${sidebarTheme.buttonPrimary}`}
                 >
                   Save
                 </button>
@@ -2925,12 +3095,29 @@ export const ExpandedSidebar = ({
             </div>
           </div>
 
+          {renderTimePicker(
+            eventStartPickerOpen,
+            setEventStartPickerOpen,
+            eventStartTime,
+            eventStartPickerRef,
+            eventStartPickerStyle,
+            setEventStartTime
+          )}
+          {renderTimePicker(
+            eventEndPickerOpen,
+            setEventEndPickerOpen,
+            eventEndTime,
+            eventEndPickerRef,
+            eventEndPickerStyle,
+            setEventEndTime
+          )}
+
           {quickNotes.length > 0 && (
             <div className="mt-2 space-y-1.5 max-h-40 overflow-auto pr-0.5">
               {quickNotes.slice(0, 6).map((note) => (
                 <div
                   key={note.id}
-                  className="w-full rounded-md border border-gray-200 bg-white hover:bg-gray-50 px-2 py-1.5"
+                  className={`w-full rounded-md border px-2 py-1.5 ${sidebarTheme.surface}`}
                 >
                   <div className="flex items-start justify-between gap-2">
                     <button
@@ -2940,8 +3127,8 @@ export const ExpandedSidebar = ({
                       }}
                       className="min-w-0 text-left flex-1"
                     >
-                      <p className="text-[11px] font-medium text-gray-900 truncate">{note.title}</p>
-                      <p className="text-[10px] text-gray-500 mt-0.5">
+                      <p className="text-[11px] font-medium text-[var(--ledger-text-primary)] truncate">{note.title}</p>
+                      <p className="text-[10px] text-[var(--ledger-text-muted)] mt-0.5">
                         {new Date(note.createdAt).toLocaleString([], {
                           month: 'short',
                           day: 'numeric',
@@ -2961,7 +3148,7 @@ export const ExpandedSidebar = ({
                         }
                         setQuickNotes((prev) => prev.filter((item) => item.id !== note.id));
                       }}
-                      className="mt-0.5 p-1 rounded text-gray-400 hover:text-red-600 hover:bg-red-50 transition"
+                      className="mt-0.5 p-1 rounded text-[var(--ledger-text-muted)] hover:text-[var(--ledger-danger)] hover:bg-[color:rgba(217,45,32,0.08)] transition"
                       title="Delete note"
                       aria-label="Delete note"
                     >
@@ -2976,30 +3163,30 @@ export const ExpandedSidebar = ({
 
         <section
           ref={checkinSectionRef}
-          className="bg-white border border-gray-200 rounded-xl p-3.5"
+          className={`rounded-xl p-3.5 ${sidebarTheme.surfaceSoft}`}
         >
           <button
             onClick={() => setIsCheckinExpanded((prev) => !prev)}
             className="w-full flex items-center justify-between"
           >
             <div className="flex items-center gap-1.5">
-              <ClipboardCheck size={14} className="text-gray-700" />
-              <p className="text-xs font-semibold text-gray-900">Daily Check-in</p>
+              <ClipboardCheck size={14} className="text-[var(--ledger-text-secondary)]" />
+              <p className="text-xs font-semibold text-[var(--ledger-text-primary)]">Daily Check-in</p>
             </div>
             <div className="flex items-center gap-2">
               {checkinSaved && (
-                <span className="text-[10px] text-green-700 font-medium">Saved</span>
+                <span className="text-[10px] text-[var(--ledger-success)] font-medium">Saved</span>
               )}
               {isCheckinExpanded ? (
-                <ChevronUp size={14} className="text-gray-500" />
+                <ChevronUp size={14} className="text-[var(--ledger-text-muted)]" />
               ) : (
-                <ChevronDown size={14} className="text-gray-500" />
+                <ChevronDown size={14} className="text-[var(--ledger-text-muted)]" />
               )}
             </div>
           </button>
 
           {!isCheckinExpanded && (
-            <p className="mt-2 text-[11px] text-gray-500">
+            <p className="mt-2 text-[11px] text-[var(--ledger-text-muted)]">
               {checkinSaved
                 ? 'Saved for today. Click to edit.'
                 : 'Click to add your daily check-in.'}
@@ -3010,7 +3197,7 @@ export const ExpandedSidebar = ({
             <>
               <div className="mt-2.5 space-y-2">
                 <div>
-                  <label className="block text-[10px] font-semibold uppercase tracking-wide text-gray-500 mb-1">
+                  <label className="block text-[10px] font-medium text-[var(--ledger-text-muted)] mb-1">
                     Finished
                   </label>
                   <input
@@ -3020,12 +3207,12 @@ export const ExpandedSidebar = ({
                       setCheckinSaved(false);
                     }}
                     placeholder="What did you finish?"
-                    className="w-full h-8 px-2.5 text-xs border border-gray-200 rounded-md focus:outline-none focus:border-gray-300 bg-gray-50 text-gray-900 placeholder-gray-500"
+                    className={`w-full h-8 px-2.5 text-xs rounded-2xl ${sidebarTheme.fieldMuted}`}
                     disabled={isLoadingDaily}
                   />
                 </div>
                 <div>
-                  <label className="block text-[10px] font-semibold uppercase tracking-wide text-gray-500 mb-1">
+                  <label className="block text-[10px] font-medium text-[var(--ledger-text-muted)] mb-1">
                     Blocked
                   </label>
                   <input
@@ -3035,13 +3222,13 @@ export const ExpandedSidebar = ({
                       setCheckinSaved(false);
                     }}
                     placeholder="What didn't you finish"
-                    className="w-full h-8 px-2.5 text-xs border border-gray-200 rounded-md focus:outline-none focus:border-gray-300 bg-gray-50 text-gray-900 placeholder-gray-500"
+                    className={`w-full h-8 px-2.5 text-xs rounded-2xl ${sidebarTheme.fieldMuted}`}
                     disabled={isLoadingDaily}
                   />
                 </div>
                 <div>
-                  <label className="block text-[10px] font-semibold uppercase tracking-wide text-gray-500 mb-1">
-                    First Task Tomorrow
+                  <label className="block text-[10px] font-medium text-[var(--ledger-text-muted)] mb-1">
+                    First task tomorrow
                   </label>
                   <input
                     value={checkin.firstTaskTomorrow}
@@ -3050,7 +3237,7 @@ export const ExpandedSidebar = ({
                       setCheckinSaved(false);
                     }}
                     placeholder="What's first tomorrow?"
-                    className="w-full h-8 px-2.5 text-xs border border-gray-200 rounded-md focus:outline-none focus:border-gray-300 bg-gray-50 text-gray-900 placeholder-gray-500"
+                    className={`w-full h-8 px-2.5 text-xs rounded-2xl ${sidebarTheme.fieldMuted}`}
                     disabled={isLoadingDaily}
                   />
                 </div>
@@ -3059,7 +3246,7 @@ export const ExpandedSidebar = ({
               <div className="mt-3 grid grid-cols-2 gap-2">
                 <button
                   onClick={() => void clearCheckin()}
-                  className="h-8 text-xs font-semibold text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-md transition disabled:opacity-60"
+                  className={`h-8 text-xs font-semibold rounded-2xl transition disabled:opacity-60 ${sidebarTheme.buttonSecondary}`}
                   disabled={
                     isLoadingDaily ||
                     (!checkinSaved &&
@@ -3072,7 +3259,7 @@ export const ExpandedSidebar = ({
                 </button>
                 <button
                   onClick={() => void saveCheckin()}
-                  className="h-8 text-xs font-semibold text-white bg-gray-900 hover:bg-gray-800 rounded-md transition disabled:opacity-60"
+                  className={`h-8 text-xs font-semibold rounded-2xl transition disabled:opacity-60 ${sidebarTheme.buttonPrimary}`}
                   disabled={isLoadingDaily}
                 >
                   Save Check-in
@@ -3084,19 +3271,19 @@ export const ExpandedSidebar = ({
 
         <section>
           <div className="flex items-center justify-between mb-2">
-            <h2 className="text-xs font-semibold text-gray-600 uppercase tracking-wider">
+            <h2 className="text-xs font-semibold text-[var(--ledger-text-muted)]">
               Project Tracker
             </h2>
             <button
               onClick={() => setIsCreatingProject(!isCreatingProject)}
-              className="text-xs font-medium text-[#FF5F40] hover:text-[#ea5336] px-2 py-1 rounded hover:bg-gray-50"
+              className="text-xs font-medium text-[var(--ledger-accent)] px-2 py-1 rounded"
             >
               {isCreatingProject ? 'Cancel' : '+ New'}
             </button>
           </div>
 
           {isCreatingProject && (
-            <div className="bg-white rounded-lg border border-gray-200 p-3 mb-2 space-y-2 overflow-hidden">
+            <div className={`mb-2 space-y-2 overflow-hidden p-3 ${sidebarTheme.surfaceSoft}`}>
               <input
                 value={newProjectName}
                 onChange={(e) => setNewProjectName(e.target.value)}
@@ -3107,13 +3294,13 @@ export const ExpandedSidebar = ({
                   }
                 }}
                 placeholder="Project name"
-                className="w-full h-8 px-2 text-xs border border-gray-300 rounded-md focus:outline-none focus:border-gray-500 bg-gray-50 text-gray-900 placeholder-gray-500"
+                className={`w-full h-8 px-2 text-xs rounded-md ${sidebarTheme.fieldMuted}`}
                 autoFocus
               />
               <button
                 onClick={() => void createProject()}
                 disabled={!newProjectName.trim()}
-                className="w-full h-7 rounded-md bg-[#FF5F40] text-white text-xs font-medium hover:bg-[#ea5336] disabled:opacity-60"
+                className={`w-full h-7 rounded-md text-white text-xs font-medium disabled:opacity-60 ${sidebarTheme.buttonPrimary}`}
               >
                 Create Project
               </button>
@@ -3124,7 +3311,7 @@ export const ExpandedSidebar = ({
             {isLoadingProjects ? (
               <SkeletonList count={2} />
             ) : projects.length === 0 ? (
-              <p className="text-xs text-gray-500">No active projects</p>
+              <p className="text-xs text-[var(--ledger-text-muted)]">No active projects</p>
             ) : (
               projects.map((project) => {
                 const isExpanded = expandedProjectId === project.id;
@@ -3133,12 +3320,12 @@ export const ExpandedSidebar = ({
                 const statusColor = projectStatusStyles[statusKey];
                 const displayCompleteness = Math.max(0, Math.min(100, Number(project.completeness) || 0));
                 const progressColor = getProgressStateColor(displayCompleteness);
-                const projectAccent = project.color || '#007AFF';
+                const projectAccent = project.color || 'var(--ledger-accent)';
 
                 return (
                   <div
                     key={project.id}
-                    className="bg-white rounded-lg border border-gray-200 overflow-hidden"
+                    className={`overflow-hidden ${sidebarTheme.surfaceSoft}`}
                     onContextMenu={(e) => {
                       e.preventDefault();
                       setContextMenu({
@@ -3151,15 +3338,15 @@ export const ExpandedSidebar = ({
                   >
                     <button
                       onClick={() => setExpandedProjectId(isExpanded ? null : project.id)}
-                      className="w-full text-left p-3 flex items-start justify-between bg-white transition hover:bg-gray-50"
+                      className="w-full text-left p-3 flex items-start justify-between bg-[var(--ledger-surface-muted)] transition hover:bg-[var(--ledger-surface-hover)]"
                     >
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
                           <span
-                            className="h-2 w-2 shrink-0 rounded-full border border-black/5"
+                            className="h-2 w-2 shrink-0 rounded-full border border-[color:rgba(17,24,39,0.05)]"
                             style={{ backgroundColor: projectAccent }}
                           />
-                          <p className="text-xs font-semibold text-gray-900 truncate">
+                          <p className="text-xs font-semibold text-[var(--ledger-text-primary)] truncate">
                             {project.name}
                           </p>
                         </div>
@@ -3181,8 +3368,8 @@ export const ExpandedSidebar = ({
                             e.currentTarget.setPointerCapture(e.pointerId);
                           }}
                           onClick={(e) => e.stopPropagation()}
-                          className={`mt-2 h-2 rounded-full bg-gray-200 overflow-hidden transition touch-none ${
-                            'cursor-pointer hover:bg-gray-300'
+                          className={`mt-2 h-2.5 rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] overflow-hidden transition touch-none ${
+                            'cursor-pointer hover:border-[color:var(--ledger-border-strong)]'
                           }`}
                         >
                           <div
@@ -3196,28 +3383,26 @@ export const ExpandedSidebar = ({
                           />
                         </div>
                         <div className="mt-2 flex items-center justify-between gap-2">
-                          <p className="text-[10px] text-gray-600">
+                          <p className="text-[10px] text-[var(--ledger-text-secondary)]">
                             {displayCompleteness}% complete
                           </p>
-                          <span
-                            className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${statusColor}`}
-                          >
+                          <span className={`text-[10px] font-medium ${statusColor}`}>
                             {statusLabel}
                           </span>
                         </div>
                       </div>
                       <ChevronDown
                         size={14}
-                        className={`text-gray-400 transition-transform shrink-0 ml-2 ${
+                        className={`text-[var(--ledger-text-muted)] transition-transform shrink-0 ml-2 ${
                           isExpanded ? 'rotate-180' : ''
                         }`}
                       />
                     </button>
 
                     {isExpanded && (
-                      <div className="border-t border-gray-200 bg-white p-3 space-y-2">
+                      <div className="border-t border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] p-3 space-y-2">
                         <div>
-                          <label className="text-[10px] font-semibold uppercase text-gray-600">
+                          <label className="text-[10px] font-semibold uppercase text-[var(--ledger-text-muted)]">
                             Project Status
                           </label>
                           <div className="mt-1.5 flex gap-1 flex-wrap">
@@ -3228,11 +3413,11 @@ export const ExpandedSidebar = ({
                                 key={status}
                                 onClick={() => updateProjectStatus(project.id, status)}
                                 disabled={projectUpdating === project.id}
-                                className={`text-[10px] font-medium px-2 py-1 rounded transition ${
+                                className={`text-[10px] font-medium border transition ${
                                   normalizeProjectStatus(String(project.status)) ===
                                   normalizeProjectStatus(status)
-                                    ? 'bg-[#FF5F40] text-white'
-                                    : 'bg-gray-50 border border-gray-200 text-gray-700 hover:bg-gray-100 hover:border-gray-300'
+                                    ? 'px-2.5 py-1.5 rounded-2xl bg-[var(--ledger-accent)] text-white border-[color:var(--ledger-border-subtle)]'
+                                    : 'px-2.5 py-1.5 rounded-2xl bg-[var(--ledger-surface-muted)] border-[color:var(--ledger-border-subtle)] text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:border-[color:var(--ledger-border-strong)]'
                                 }`}
                               >
                                 {projectStatusLabels[normalizeProjectStatus(status)]}
@@ -3250,14 +3435,14 @@ export const ExpandedSidebar = ({
         </section>
 
         <section>
-          <h2 className="text-xs font-semibold text-gray-600 uppercase tracking-wider mb-2">
+          <h2 className="text-xs font-semibold text-[var(--ledger-text-muted)] mb-2">
             Upcoming
           </h2>
           <div className="space-y-2">
             {isLoadingUpcoming ? (
               <SkeletonList count={2} />
             ) : upcomingItems.length === 0 ? (
-              <p className="text-xs text-gray-500">No upcoming events</p>
+              <p className="text-xs text-[var(--ledger-text-muted)]">No upcoming events</p>
             ) : (
               upcomingItems.map((item) => {
                 const isExpanded = expandedUpcomingId === item.id;
@@ -3269,39 +3454,39 @@ export const ExpandedSidebar = ({
                       e.preventDefault();
                       setContextMenu({ type: 'upcoming', id: item.id, x: e.clientX, y: e.clientY });
                     }}
-                    className="w-full rounded-xl border border-gray-200 bg-white p-3 text-left transition hover:bg-gray-50"
+                    className={`w-full p-3 text-left transition ${sidebarTheme.surfaceSoft} hover:bg-[var(--ledger-surface-hover)]`}
                   >
                     <div className="flex items-start gap-2">
                       <div className="shrink-0 mt-0.5">
                         {item.type === 'event' ? (
-                          <CalendarDays size={14} className="text-[#FF5F40]" />
+                          <CalendarDays size={14} className="text-[var(--ledger-accent)]" />
                         ) : (
-                          <CheckCircle2 size={14} className="text-green-600" />
+                          <CheckCircle2 size={14} className="text-[var(--ledger-success)]" />
                         )}
                       </div>
                       <div className="flex-1 min-w-0">
                         <p
-                          className={`text-[13px] font-semibold leading-5 text-gray-900 ${
+                          className={`text-[13px] font-semibold leading-5 text-[var(--ledger-text-primary)] ${
                             isExpanded ? '' : 'truncate'
                           }`}
                         >
                           {item.title}
                         </p>
-                        <p className="mt-1 text-[11px] text-gray-600">
+                        <p className="mt-1 text-[11px] text-[var(--ledger-text-secondary)]">
                           {item.dueDate}
                           {item.time && ` · ${item.time}`}
                         </p>
                         {calendarScope === 'all_accessible_workspaces' && item.workspace_name && (
-                          <p className="mt-0.5 text-[11px] text-gray-500">
+                          <p className="mt-0.5 text-[11px] text-[var(--ledger-text-muted)]">
                             Workspace · {item.workspace_name}
                           </p>
                         )}
                       </div>
                       <div className="shrink-0 mt-0.5">
                         {isExpanded ? (
-                          <ChevronUp size={12} className="text-gray-400" />
+                          <ChevronUp size={12} className="text-[var(--ledger-text-muted)]" />
                         ) : (
-                          <ChevronDown size={12} className="text-gray-400" />
+                          <ChevronDown size={12} className="text-[var(--ledger-text-muted)]" />
                         )}
                       </div>
                     </div>
@@ -3312,13 +3497,13 @@ export const ExpandedSidebar = ({
           </div>
         </section>
 
-        {saveError && <p className="text-[11px] text-red-600">{saveError}</p>}
+        {saveError && <p className="text-[11px] text-[var(--ledger-danger)]">{saveError}</p>}
       </div>
 
       {contextMenu &&
         createPortal(
           <div
-            className="fixed z-50 bg-white border border-gray-200 rounded-lg shadow-lg py-1 min-w-max"
+            className={`${sidebarTheme.menu} min-w-max`}
             style={{
               left: `${Math.max(
                 8,
@@ -3340,7 +3525,7 @@ export const ExpandedSidebar = ({
                       setExpandedProjectId(null);
                       setContextMenu(null);
                     }}
-                    className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition flex items-center gap-2"
+                    className={sidebarTheme.menuItem}
                   >
                     <ChevronUp size={14} />
                     Collapse
@@ -3354,7 +3539,7 @@ export const ExpandedSidebar = ({
                         setContextMenu(null);
                       }
                     }}
-                    className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition flex items-center gap-2"
+                    className={sidebarTheme.menuItem}
                   >
                     <ChevronDown size={14} />
                     Expand
@@ -3371,7 +3556,7 @@ export const ExpandedSidebar = ({
                     }
                     setContextMenu(null);
                   }}
-                  className="w-full text-left px-4 py-2 text-sm text-[#FF5F40] hover:bg-gray-50 transition flex items-center gap-2"
+                  className={sidebarTheme.menuItemAccent}
                 >
                   <Folder size={14} />
                   Navigate to project
@@ -3380,7 +3565,7 @@ export const ExpandedSidebar = ({
                   onClick={() => {
                     void deleteProject(contextMenu.id);
                   }}
-                  className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition flex items-center gap-2"
+                  className={sidebarTheme.menuItemDanger}
                 >
                   <Trash2 size={14} />
                   Delete
@@ -3396,7 +3581,7 @@ export const ExpandedSidebar = ({
                       setExpandedUpcomingId(null);
                       setContextMenu(null);
                     }}
-                    className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition flex items-center gap-2"
+                    className={sidebarTheme.menuItem}
                   >
                     <ChevronUp size={14} />
                     Collapse
@@ -3407,7 +3592,7 @@ export const ExpandedSidebar = ({
                       setExpandedUpcomingId(contextMenu.id);
                       setContextMenu(null);
                     }}
-                    className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition flex items-center gap-2"
+                    className={sidebarTheme.menuItem}
                   >
                     <ChevronDown size={14} />
                     Expand
@@ -3421,7 +3606,7 @@ export const ExpandedSidebar = ({
                       setContextMenu(null);
                     }
                   }}
-                  className="w-full text-left px-4 py-2 text-sm text-[#FF5F40] hover:bg-gray-50 transition flex items-center gap-2"
+                  className={sidebarTheme.menuItemAccent}
                 >
                   <CalendarDays size={14} />
                   Open in Calendar
@@ -3443,7 +3628,7 @@ export const ExpandedSidebar = ({
                       }
                     })();
                   }}
-                  className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition flex items-center gap-2"
+                  className={sidebarTheme.menuItemDanger}
                 >
                   <Trash2 size={14} />
                   Delete Event
@@ -3457,7 +3642,7 @@ export const ExpandedSidebar = ({
                   onClick={() => {
                     void deleteTodayItem(contextMenu.id);
                   }}
-                  className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition flex items-center gap-2"
+                  className={sidebarTheme.menuItemDanger}
                 >
                   <Trash2 size={14} />
                   Delete {contextMenu.kind === 'reminder' ? 'reminder' : 'task'}
@@ -3471,7 +3656,7 @@ export const ExpandedSidebar = ({
                   onClick={() => {
                     void resetCompletedTodayItem(contextMenu.id);
                   }}
-                  className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition flex items-center gap-2"
+                  className={sidebarTheme.menuItem}
                 >
                   <RotateCcw size={14} />
                   Reset to active
@@ -3482,17 +3667,17 @@ export const ExpandedSidebar = ({
           document.body
         )}
 
-      <div className="px-5 space-y-3 border-t border-white/20 pt-4">
+      <div className="px-5 space-y-2.5 border-t border-[color:var(--ledger-border-subtle)] pt-4">
         <button
           onClick={() => window.desktopWindow?.toggleModule('dashboard')}
-          className="w-full px-3 py-2 text-sm font-medium text-white bg-[#FF5F40] hover:bg-[#ea5336] rounded-lg transition flex items-center justify-center gap-2"
+          className={`w-full px-3 py-2 text-sm font-medium rounded-lg transition flex items-center justify-center gap-2 text-white ${sidebarTheme.buttonPrimary}`}
         >
           <BarChart3 size={16} />
           Open Dashboard
         </button>
         <button
           onClick={signOut}
-          className="w-full px-3 py-2 text-sm font-medium text-gray-700 bg-[#FFF6EE] border border-[#E2D4C4] hover:bg-[#FFF1E3] rounded-lg transition flex items-center justify-center gap-2"
+          className={`w-full px-3 py-2 text-sm font-medium rounded-lg transition flex items-center justify-center gap-2 ${sidebarTheme.surfaceSoft}`}
         >
           <LogOut size={15} />
           Sign Out

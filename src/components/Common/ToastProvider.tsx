@@ -92,25 +92,24 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   return (
     <ToastContext.Provider value={value}>
       {children}
-      {/* Toast container - top center */}
-      <div className="pointer-events-none fixed inset-x-0 top-6 flex items-start justify-center z-50">
+      <div className="pointer-events-none fixed inset-x-0 top-6 z-50 flex items-start justify-center">
         <div className="flex w-full flex-col items-center gap-2 px-4">
           {toasts.map((t) => (
             <div
               key={t.id}
-              className={`pointer-events-auto transform transition-all duration-200 ease-out flex w-[320px] max-w-[calc(100vw-2rem)] flex-col gap-2 rounded-lg border px-4 py-3 shadow-lg ${
+              className={`pointer-events-auto flex w-[320px] max-w-[calc(100vw-2rem)] transform flex-col gap-2 rounded-2xl border px-4 py-3 shadow-[0_12px_32px_rgba(17,24,39,0.12)] transition-all duration-200 ease-out ${
                 t.variant === 'success'
-                  ? 'bg-white border-gray-200 text-gray-900'
+                  ? 'border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] text-[var(--ledger-text-primary)]'
                   : t.variant === 'error'
-                  ? 'bg-red-50 border-red-200 text-red-700'
-                  : 'bg-white border-gray-200 text-gray-900'
+                  ? 'border-[#FECACA] bg-[#FEF3F2] text-[#B42318]'
+                  : 'border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] text-[var(--ledger-text-primary)]'
               }`}
             >
               <div className="flex items-start gap-3">
                 {t.icon === 'alert' && (
                   <span
                     aria-hidden="true"
-                    className="mt-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-[#FF5F40] text-[11px] font-semibold leading-none text-white"
+                    className="mt-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-[var(--ledger-accent)] text-[11px] font-semibold leading-none text-white"
                   >
                     !
                   </span>
@@ -123,13 +122,22 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                   />
                 )}
                 {t.variant === 'success' && (
-                  <svg className="mt-0.5 h-4 w-4 shrink-0 text-green-600" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                  <svg
+                    className="mt-0.5 h-4 w-4 shrink-0 text-[#12B76A]"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                  >
                     <path d="M20 6L9 17l-5-5" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                   </svg>
                 )}
                 <div className="min-w-0 flex-1">
-                  <div className="text-sm font-medium leading-5 text-gray-900">{t.message}</div>
-                  {t.detail ? <div className="mt-0.5 text-sm leading-5 text-gray-500">{t.detail}</div> : null}
+                  <div className="text-sm font-medium leading-5">{t.message}</div>
+                  {t.detail ? (
+                    <div className="mt-0.5 text-sm leading-5 text-[var(--ledger-text-secondary)]">
+                      {t.detail}
+                    </div>
+                  ) : null}
                 </div>
               </div>
               {t.actions?.length ? (
@@ -142,10 +150,10 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                         void action.onClick();
                         dismiss(t.id);
                       }}
-                      className={`rounded-md border px-2.5 py-1 text-xs font-medium transition-colors ${
+                      className={`rounded-full border px-2.5 py-1 text-xs font-medium transition-colors ${
                         action.variant === 'destructive'
-                          ? 'border-red-200 bg-white text-red-600 hover:bg-red-50'
-                          : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
+                          ? 'border-[#FECACA] bg-white text-[#B42318] hover:bg-[#FEF3F2]'
+                          : 'border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-muted)]'
                       }`}
                     >
                       {action.label}

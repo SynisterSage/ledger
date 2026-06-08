@@ -335,34 +335,34 @@ function AuthStatusScreen({
 }) {
   return (
     <div
-      className={`relative min-h-screen overflow-hidden bg-transparent p-3 text-gray-900 transition-all duration-150 ease-out ${
+      className={`relative min-h-screen overflow-hidden bg-transparent p-2.5 text-gray-900 transition-all duration-150 ease-out ${
         isExiting ? 'opacity-0 scale-[0.985] translate-y-1' : 'opacity-100 scale-100 translate-y-0'
       }`}
       style={dragRegionStyle}
     >
-      <div className="absolute inset-3 rounded-3xl border border-white/60 bg-[#fff9f4] shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]" />
+      <div className="absolute inset-2.5 rounded-[28px] border border-white/60 bg-[#fff9f4] shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]" />
       <button
         type="button"
         onClick={() => {
           void window.desktopWindow?.quitApp();
         }}
         aria-label="Close"
-        className="absolute right-6 top-7 z-20 inline-flex h-8 w-8 items-center justify-center rounded-full border border-black/5 bg-[#FFFDFB]/60 text-gray-500 transition hover:bg-[#FFFDFB]/90 hover:text-gray-900"
+        className="absolute right-5 top-5 z-20 inline-flex h-7 w-7 items-center justify-center rounded-full border border-black/5 bg-[#FFFDFB]/60 text-gray-500 transition hover:bg-[#FFFDFB]/90 hover:text-gray-900"
         style={noDragRegionStyle}
       >
-        <X size={16} />
+        <X size={14} />
       </button>
       <div
-        className="relative z-10 flex min-h-[calc(100vh-1.5rem)] items-center justify-center px-8"
+        className="relative z-10 flex min-h-[calc(100vh-1rem)] items-center justify-center px-6"
         style={noDragRegionStyle}
       >
-        <div className="flex w-full max-w-136 flex-col items-center text-center">
-          <img src="./logo-color.svg" alt="Ledger" className="mb-5 h-12 w-12" />
-          <h2 className="text-[26px] font-semibold leading-tight text-gray-950">{title}</h2>
-          <p className="mt-2 whitespace-nowrap text-sm leading-6 text-gray-500">{subtitle}</p>
-          <div className="mt-6 flex items-center gap-2 text-gray-500">
-            <Loader2 size={15} className="animate-spin" />
-            <span className="text-xs font-medium">Loading</span>
+        <div className="flex w-full max-w-112 flex-col items-center text-center">
+          <img src="./logo-color.svg" alt="Ledger" className="mb-4 h-10 w-10" />
+          <h2 className="text-[24px] font-semibold leading-tight text-gray-950">{title}</h2>
+          <p className="mt-2 max-w-[24rem] text-sm leading-6 text-gray-500">{subtitle}</p>
+          <div className="mt-5 flex items-center gap-2 text-gray-500">
+            <Loader2 size={14} className="animate-spin" />
+            <span className="text-[11px] font-medium">Loading</span>
           </div>
         </div>
       </div>

@@ -3,6 +3,7 @@ import { useSidebar } from '../../context/SidebarContext';
 import { MinimizedSidebar } from './MinimizedSidebar';
 import { ExpandedSidebar } from './ExpandedSidebar';
 import { CollapsedSidebar } from './CollapsedSidebar';
+import { sidebarTheme } from './sidebarTheme';
 
 export const SidebarContainer = () => {
   const {
@@ -188,7 +189,7 @@ export const SidebarContainer = () => {
         : `sidebar-glass sidebar-glass--solid ${platformClass}`
       : isCollapsedIconMode
       ? 'sidebar-glass-icon'
-      : 'border border-[rgba(255,255,255,0.55)] shadow-[0_10px_28px_rgba(15,23,42,0.16)] outline outline-[rgba(15,23,42,0.08)]';
+      : sidebarTheme.shellFallback;
 
   const scheduleAutoHideHide = () => {
     if (!autoHide) return;

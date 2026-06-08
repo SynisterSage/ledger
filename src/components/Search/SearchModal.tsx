@@ -218,15 +218,15 @@ export const SearchModal = () => {
     : 'fixed inset-0 z-[220] flex items-start justify-center bg-transparent px-4 pt-16';
 
   const panelClassName = isFullscreen
-    ? 'flex h-full w-full flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl'
-    : 'flex h-[400px] w-full max-w-[500px] flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl';
+    ? 'flex h-full w-full flex-col overflow-hidden rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] shadow-[0_24px_70px_rgba(17,24,39,0.12)]'
+    : 'flex h-[400px] w-full max-w-[500px] flex-col overflow-hidden rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] shadow-[0_24px_70px_rgba(17,24,39,0.12)]';
 
   return createPortal(
     <div className={shellClassName} onMouseDown={closeSearch}>
       <div className={panelClassName} onMouseDown={(event) => event.stopPropagation()}>
-        <div className="flex items-center justify-between gap-3 border-b border-gray-100 px-4 py-3">
-          <div className="flex min-w-0 flex-1 items-center gap-2 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2">
-            <Search size={16} className="text-gray-400 shrink-0" />
+        <div className="flex items-center justify-between gap-3 border-b border-[color:var(--ledger-border-subtle)] px-4 py-3">
+          <div className="flex min-w-0 flex-1 items-center gap-2 rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 py-2">
+            <Search size={16} className="shrink-0 text-[var(--ledger-text-muted)]" />
             <input
               ref={inputRef}
               value={query}
@@ -238,37 +238,37 @@ export const SearchModal = () => {
                 }
               }}
               placeholder="Search everything..."
-              className="w-full bg-transparent text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none"
+              className="w-full bg-transparent text-sm text-[var(--ledger-text-primary)] placeholder:text-[var(--ledger-placeholder)] focus:outline-none"
             />
           </div>
           <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={() => setIsFullscreen((current) => !current)}
-              className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-gray-200 text-gray-600 transition hover:bg-gray-50"
+              className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
               title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
             >
-              {isFullscreen ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
+              {isFullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
             </button>
             <ModalCloseButton onClick={closeSearch} ariaLabel="Close search" />
           </div>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-auto px-2 py-2">
+        <div className="min-h-0 flex-1 overflow-auto px-3 py-3">
           {!trimmedQuery ? (
-            <div className="flex h-full items-center justify-center px-4 text-sm text-gray-500">
+            <div className="flex h-full items-center justify-center px-4 text-sm text-[var(--ledger-text-muted)]">
               Start typing to search...
             </div>
           ) : trimmedQuery.length < 2 ? (
-            <div className="flex h-full items-center justify-center px-4 text-sm text-gray-500">
+            <div className="flex h-full items-center justify-center px-4 text-sm text-[var(--ledger-text-muted)]">
               Type at least 2 characters to search.
             </div>
           ) : isLoading ? (
-            <div className="flex h-full items-center justify-center px-4 text-sm text-gray-500">
+            <div className="flex h-full items-center justify-center px-4 text-sm text-[var(--ledger-text-muted)]">
               Searching…
             </div>
           ) : results.length === 0 ? (
-            <div className="flex h-full items-center justify-center px-4 text-sm text-gray-500">
+            <div className="flex h-full items-center justify-center px-4 text-sm text-[var(--ledger-text-muted)]">
               No results for “{trimmedQuery}”
             </div>
           ) : (
@@ -286,22 +286,24 @@ export const SearchModal = () => {
                     type="button"
                     onMouseEnter={() => setSelectedIndex(index)}
                     onClick={() => jumpToResult(result)}
-                    className={`flex w-full items-start gap-3 rounded-xl border px-3 py-3 text-left transition ${
+                    className={`flex w-full items-start gap-3 rounded-2xl border px-3 py-2.5 text-left transition ${
                       selected
-                        ? 'border-[#FF5F40] bg-[#FFF0EB]'
-                        : 'border-transparent hover:border-gray-200 hover:bg-gray-50'
+                        ? 'border-[color:var(--ledger-border-strong)] bg-[var(--ledger-surface-hover)]'
+                        : 'border-transparent hover:border-[color:var(--ledger-border-subtle)] hover:bg-[var(--ledger-surface-hover)]'
                     }`}
                   >
                     <span
-                      className={`mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${
-                        selected ? 'bg-white text-[#FF5F40]' : 'bg-gray-100 text-gray-600'
+                      className={`mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border ${
+                        selected
+                          ? 'border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] text-[var(--ledger-accent)]'
+                          : 'border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)]'
                       }`}
                     >
                       <Icon size={16} />
                     </span>
                     <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-semibold text-gray-900">{result.title}</p>
-                      <p className="mt-0.5 line-clamp-2 text-xs leading-5 text-gray-500">
+                      <p className="truncate text-sm font-semibold text-[var(--ledger-text-primary)]">{result.title}</p>
+                      <p className="mt-0.5 line-clamp-2 text-xs leading-5 text-[var(--ledger-text-secondary)]">
                         {truncatePreview(result.preview) || 'No preview available'}
                       </p>
                     </div>
@@ -312,7 +314,7 @@ export const SearchModal = () => {
           )}
         </div>
 
-        <div className="flex items-center gap-2 border-t border-gray-100 px-4 py-3 text-[11px] text-gray-500">
+        <div className="flex items-center gap-2 border-t border-[color:var(--ledger-border-subtle)] px-4 py-3 text-[11px] text-[var(--ledger-text-muted)]">
           <span className="min-w-0 flex-1 truncate">
             ↑↓ to navigate • Enter to jump • ESC to close
           </span>

@@ -45,19 +45,19 @@ export const CloseGuardModal = ({
     <ModalOverlay
       isOpen={isOpen}
       onClose={onCancel}
-      classNameContainer="w-full max-w-md overflow-hidden rounded-2xl border border-gray-200 bg-white p-5 shadow-xl"
+      classNameContainer="w-full max-w-md overflow-hidden rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] p-5 shadow-[0_24px_70px_rgba(17,24,39,0.12)]"
     >
       <div className="flex items-start justify-between gap-4">
-        <h3 className="text-base font-semibold text-gray-900">{resolvedTitle}</h3>
+        <h3 className="text-base font-semibold text-[var(--ledger-text-primary)]">{resolvedTitle}</h3>
         <ModalCloseButton onClick={onCancel} ariaLabel="Close dialog" />
       </div>
-      <p className="mt-2 text-sm text-gray-600">{resolvedMessage}</p>
+      <p className="mt-2 text-sm text-[var(--ledger-text-secondary)]">{resolvedMessage}</p>
 
       <div className="mt-5 flex items-center justify-end gap-2">
         <button
           type="button"
           onClick={onCancel}
-          className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+          className="rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] px-3 py-2 text-sm font-medium text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-muted)]"
         >
           Keep open
         </button>
@@ -65,7 +65,7 @@ export const CloseGuardModal = ({
           <button
             type="button"
             onClick={onCloseWithoutSaving}
-            className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+            className="rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] px-3 py-2 text-sm font-medium text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-muted)]"
           >
             Close without saving
           </button>
@@ -74,7 +74,7 @@ export const CloseGuardModal = ({
           <button
             type="button"
             onClick={onRetrySaveAndClose}
-            className="rounded-lg bg-[#FF5F40] px-3 py-2 text-sm font-medium text-white hover:bg-[#E54E30]"
+            className="rounded-full bg-[var(--ledger-accent)] px-3 py-2 text-sm font-medium text-white hover:bg-[var(--ledger-accent-hover)]"
           >
             Retry save & close
           </button>

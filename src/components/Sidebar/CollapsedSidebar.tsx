@@ -3,6 +3,7 @@ import { useSidebar } from '../../context/SidebarContext';
 import { Search, BarChart3, CalendarDays, Folder, StickyNote, Inbox, ChevronUp, ChevronDown, LogOut } from 'lucide-react';
 import { useSearch } from '../../context/SearchContext';
 import { useAuthContext } from '../../context/AuthContext';
+import { sidebarTheme } from './sidebarTheme';
 
 export const CollapsedSidebar = ({
   onDragHandleMouseDown,
@@ -19,8 +20,7 @@ export const CollapsedSidebar = ({
     restoreSidebarView();
   };
 
-  const iconButtonClass =
-    'inline-flex h-9 w-9 items-center justify-center rounded-xl transition-colors duration-150 hover:bg-white/45 active:scale-95';
+  const iconButtonClass = `${sidebarTheme.railIcon} ${sidebarTheme.railIconNeutral}`;
 
   return (
     <div

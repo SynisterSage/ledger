@@ -1,0 +1,141 @@
+export const desktopTokens = {
+  colors: {
+    background: '#FFF9F4',
+    backgroundMuted: '#FFF4EA',
+    surface: '#FFFFFF',
+    surfaceCard: '#FFFBF7',
+    surfaceMuted: '#FAF5F0',
+    surfaceSelected: '#FFF0EA',
+    surfaceHover: '#FFF1E3',
+    textPrimary: '#111827',
+    textSecondary: '#4B5563',
+    textMuted: '#6B7280',
+    borderSubtle: '#E8DDD4',
+    borderStrong: '#D8C6B6',
+    accent: '#FF5F40',
+    accentHover: '#EA5336',
+    accentSoft: '#FDBA74',
+    danger: '#D92D20',
+    success: '#12B76A',
+    warning: '#DC6803',
+    inputBackground: '#FFFDFB',
+    placeholder: '#9CA3AF',
+    tabBar: '#FFF8F1',
+    tabBarBorder: '#E9DDCF',
+    backdrop: 'rgba(17, 24, 39, 0.45)',
+    shadow: 'rgba(17, 24, 39, 0.08)',
+  },
+  spacing: {
+    xs: 4,
+    sm: 8,
+    md: 12,
+    lg: 16,
+    xl: 20,
+    '2xl': 24,
+    '3xl': 32,
+    screenX: 20,
+    screenY: 24,
+  },
+  typography: {
+    screenTitle: {
+      fontSize: 30,
+      lineHeight: 36,
+      fontWeight: 700,
+    },
+    title: {
+      fontSize: 24,
+      lineHeight: 30,
+      fontWeight: 700,
+    },
+    sectionTitle: {
+      fontSize: 16,
+      lineHeight: 22,
+      fontWeight: 600,
+    },
+    body: {
+      fontSize: 16,
+      lineHeight: 24,
+      fontWeight: 400,
+    },
+    bodyStrong: {
+      fontSize: 16,
+      lineHeight: 24,
+      fontWeight: 600,
+    },
+    meta: {
+      fontSize: 13,
+      lineHeight: 18,
+      fontWeight: 400,
+    },
+    caption: {
+      fontSize: 12,
+      lineHeight: 16,
+      fontWeight: 400,
+    },
+    button: {
+      fontSize: 15,
+      lineHeight: 20,
+      fontWeight: 600,
+    },
+    label: {
+      fontSize: 12,
+      lineHeight: 16,
+      fontWeight: 600,
+    },
+  },
+  radius: {
+    control: 12,
+    surface: 16,
+    sheet: 24,
+    pill: 999,
+    window: 24,
+  },
+  shadows: {
+    card: '0 1px 2px rgba(15, 23, 42, 0.03)',
+    surface: '0 12px 40px rgba(15, 23, 42, 0.08)',
+    modal: '0 24px 70px rgba(17, 24, 39, 0.12)',
+    popover: '0 12px 32px rgba(17, 24, 39, 0.12)',
+  },
+} as const;
+
+export type DesktopTokens = typeof desktopTokens;
+
+export const desktopCssVars: Record<string, string> = {
+  '--ledger-background': desktopTokens.colors.background,
+  '--ledger-background-muted': desktopTokens.colors.backgroundMuted,
+  '--ledger-surface': desktopTokens.colors.surface,
+  '--ledger-surface-card': desktopTokens.colors.surfaceCard,
+  '--ledger-surface-muted': desktopTokens.colors.surfaceMuted,
+  '--ledger-surface-selected': desktopTokens.colors.surfaceSelected,
+  '--ledger-surface-hover': desktopTokens.colors.surfaceHover,
+  '--ledger-text-primary': desktopTokens.colors.textPrimary,
+  '--ledger-text-secondary': desktopTokens.colors.textSecondary,
+  '--ledger-text-muted': desktopTokens.colors.textMuted,
+  '--ledger-border-subtle': desktopTokens.colors.borderSubtle,
+  '--ledger-border-strong': desktopTokens.colors.borderStrong,
+  '--ledger-accent': desktopTokens.colors.accent,
+  '--ledger-accent-hover': desktopTokens.colors.accentHover,
+  '--ledger-accent-soft': desktopTokens.colors.accentSoft,
+  '--ledger-danger': desktopTokens.colors.danger,
+  '--ledger-success': desktopTokens.colors.success,
+  '--ledger-warning': desktopTokens.colors.warning,
+  '--ledger-input-background': desktopTokens.colors.inputBackground,
+  '--ledger-placeholder': desktopTokens.colors.placeholder,
+  '--ledger-tab-bar': desktopTokens.colors.tabBar,
+  '--ledger-tab-bar-border': desktopTokens.colors.tabBarBorder,
+  '--ledger-backdrop': desktopTokens.colors.backdrop,
+  '--ledger-shadow': desktopTokens.colors.shadow,
+  '--ledger-control-radius': `${desktopTokens.radius.control}px`,
+  '--ledger-surface-radius': `${desktopTokens.radius.surface}px`,
+  '--ledger-sheet-radius': `${desktopTokens.radius.sheet}px`,
+  '--ledger-pill-radius': `${desktopTokens.radius.pill}px`,
+  '--ledger-window-radius': `${desktopTokens.radius.window}px`,
+  '--ledger-screen-x': `${desktopTokens.spacing.screenX}px`,
+  '--ledger-screen-y': `${desktopTokens.spacing.screenY}px`,
+} as const;
+
+export const applyDesktopCssVars = (target: HTMLElement) => {
+  Object.entries(desktopCssVars).forEach(([name, value]) => {
+    target.style.setProperty(name, value);
+  });
+};

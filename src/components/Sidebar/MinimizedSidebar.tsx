@@ -13,6 +13,7 @@ import type React from 'react';
 import { useAuthContext } from '../../context/AuthContext';
 import { useSidebar } from '../../context/SidebarContext';
 import { useSearch } from '../../context/SearchContext';
+import { sidebarTheme } from './sidebarTheme';
 
 export const MinimizedSidebar = ({
   onDragHandleMouseDown,
@@ -25,12 +26,9 @@ export const MinimizedSidebar = ({
   const isHorizontal = position === 'top' || position === 'bottom';
   const isTopDock = position === 'top';
   const ExpandChevron = isHorizontal ? (isTopDock ? ChevronDown : ChevronUp) : ChevronRight;
-  const iconBase =
-    'w-10 h-10 rounded-xl transition-colors duration-150 flex items-center justify-center active:scale-95';
-  const neutralIcon = `${iconBase} bg-transparent hover:bg-white/45 text-gray-700`;
-  const accentIcon = neutralIcon;
-  const actionIcon = `${iconBase} bg-transparent hover:bg-white/45 text-gray-700`;
-  const dangerIcon = `${iconBase} bg-transparent hover:bg-red-50 text-red-600`;
+  const iconBase = sidebarTheme.railIcon;
+  const neutralIcon = `${iconBase} ${sidebarTheme.railIconNeutral}`;
+  const actionIcon = `${iconBase} ${sidebarTheme.railIconNeutral}`;
 
   return (
     <div
@@ -41,7 +39,7 @@ export const MinimizedSidebar = ({
         onDragHandleMouseDown(e);
       }}
       style={{ cursor: onDragHandleMouseDown ? 'grab' : 'auto' }}
-      className={`border-gray-200 flex ${
+      className={`flex ${sidebarTheme.shellRail} ${
         isHorizontal
           ? 'h-full w-full flex-row items-center justify-between px-4 bg-transparent'
           : 'h-full w-full flex-col items-center justify-between bg-transparent px-0 py-4'
@@ -76,7 +74,7 @@ export const MinimizedSidebar = ({
               }, 220);
             }}
             onMouseDown={(e) => e.stopPropagation()}
-            className={accentIcon}
+            className={neutralIcon}
           >
             <Search size={18} />
           </button>
@@ -94,7 +92,7 @@ export const MinimizedSidebar = ({
             aria-label="Open calendar"
             onClick={() => window.desktopWindow?.openModule('calendar')}
             onMouseDown={(e) => e.stopPropagation()}
-            className={accentIcon}
+            className={neutralIcon}
           >
             <CalendarDays size={18} />
           </button>
@@ -102,7 +100,7 @@ export const MinimizedSidebar = ({
             aria-label="Open projects"
             onClick={() => window.desktopWindow?.toggleModule('projects')}
             onMouseDown={(e) => e.stopPropagation()}
-            className={accentIcon}
+            className={neutralIcon}
           >
             <Folder size={18} />
           </button>
@@ -110,7 +108,7 @@ export const MinimizedSidebar = ({
             aria-label="Open notes"
             onClick={() => window.desktopWindow?.toggleModule('notes')}
             onMouseDown={(e) => e.stopPropagation()}
-            className={accentIcon}
+            className={neutralIcon}
           >
             <StickyNote size={18} />
           </button>
@@ -126,7 +124,7 @@ export const MinimizedSidebar = ({
             <ExpandChevron size={20} />
           </button>
 
-          <button onClick={signOut} onMouseDown={(e) => e.stopPropagation()} className={dangerIcon}>
+          <button onClick={signOut} onMouseDown={(e) => e.stopPropagation()} className={neutralIcon}>
             <LogOut size={18} />
           </button>
         </div>
