@@ -38,8 +38,16 @@ export default function NotificationsOnboardingScreen() {
     router.replace('/(tabs)/today');
   };
 
+  const userId = authSession.user?.id ?? authState.userId;
+  const canPersist = Boolean(userId);
+
   const finishChoice = async (choice: 'enabled' | 'denied' | 'skipped', message?: string | null) => {
-    await setNotificationOnboardingChoice(authSession.user?.id ?? authState.userId, choice);
+    if (!userId) {
+      setStatusMessage('Please wait for your account to finish loading.');
+      return;
+    }
+
+    await setNotificationOnboardingChoice(userId, choice);
     if (message) {
       setStatusMessage(message);
       routeTimerRef.current = setTimeout(() => {
@@ -120,14 +128,14 @@ export default function NotificationsOnboardingScreen() {
             <AppButton
               title={isEnablingNotifications ? 'Enabling...' : 'Enable notifications'}
               onPress={handleEnableNotifications}
-              disabled={isEnablingNotifications || isSkipping}
+              disabled={isEnablingNotifications || isSkipping || !canPersist}
               size="lg"
             />
             <AppButton
               title="Not now"
               variant="secondary"
               onPress={handleSkip}
-              disabled={isEnablingNotifications || isSkipping}
+              disabled={isEnablingNotifications || isSkipping || !canPersist}
               size="lg"
             />
           </View>

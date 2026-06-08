@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated,
   Keyboard,
@@ -11,59 +11,44 @@ import {
   type GestureResponderEvent,
   type PanResponderGestureState,
 } from 'react-native';
-import { SymbolView } from 'expo-symbols';
 
 import { CaptureFormShell } from '@/components/CaptureFormShell';
 import { AppButton } from '@/components/AppButton';
 import { AppText } from '@/components/AppText';
 import { AppTextInput } from '@/components/AppTextInput';
-import { Row } from '@/components/Row';
-import { ProjectPickerSheet } from '@/features/capture/ProjectPickerSheet';
-import { useCaptureProjects } from '@/features/capture/useCaptureProjects';
-import { createMobileTask } from '@/api/captures';
+import { Section } from '@/components/Section';
+import { createMobileNote } from '@/api/captures';
 import { useLedgerTheme } from '@/theme';
-import { resolveCaptureWorkspaceId, useWorkspaceState } from '@/store/workspaceStore';
-import { useAppPreferencesState } from '@/store/appPreferencesStore';
+import {
+  resolveCaptureWorkspaceId,
+  useWorkspaceState,
+} from '@/store/workspaceStore';
 
-import type { FollowUpSheetDraft } from './FollowUpSheetContext';
+import type { QuickNoteSheetDraft } from './QuickNoteSheetContext';
 
-type FollowUpSheetProps = {
+type QuickNoteSheetProps = {
   visible: boolean;
-  draft: FollowUpSheetDraft | null;
+  draft: QuickNoteSheetDraft | null;
   onClose: () => void;
 };
 
 const SHEET_DRAG_CLOSE_THRESHOLD = 48;
 const SHEET_BOTTOM_BUFFER = 24;
-const OPEN_DURATION = 220;
-const CLOSE_DURATION = 180;
-const BACKDROP_OPEN_DURATION = 220;
-const BACKDROP_CLOSE_DURATION = 120;
 
-function deriveNotesPayload(draft: FollowUpSheetDraft | null, notes: string) {
-  const trimmedNotes = notes.trim();
+function deriveNoteTitle(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return '';
 
-  if (draft?.sourceType === 'calendar_event' && draft.sourceId) {
-    const sourceTitle = draft.sourceTitle?.trim() || draft.title.replace(/^Follow up:\s*/i, '').trim() || draft.title.trim();
-    const prefix = `Follow-up from calendar: ${sourceTitle}`;
-    return trimmedNotes ? `${prefix}\n\n${trimmedNotes}` : prefix;
+  const firstLine = trimmed.split(/\r?\n/, 1)[0]?.trim() || trimmed;
+  if (firstLine.length <= 80) {
+    return firstLine;
   }
 
-  return trimmedNotes || null;
+  return `${firstLine.slice(0, 77).trimEnd()}...`;
 }
 
-function deriveDescription(draft: FollowUpSheetDraft | null) {
-  if (draft?.sourceType === 'calendar_event' && draft.sourceId) {
-    return `calendar_followup:${draft.sourceId}`;
-  }
-
-  return 'follow_up';
-}
-
-export function FollowUpSheet({ visible, draft, onClose }: FollowUpSheetProps) {
+export function QuickNoteSheet({ visible, draft, onClose }: QuickNoteSheetProps) {
   const theme = useLedgerTheme();
-  const appPreferences = useAppPreferencesState();
-  const reduceMotionEnabled = appPreferences.reduceMotionEnabled;
   const workspaceState = useWorkspaceState();
   const defaultWorkspaceId = useMemo(() => resolveCaptureWorkspaceId(workspaceState), [workspaceState]);
   const { height: windowHeight } = useWindowDimensions();
@@ -74,33 +59,28 @@ export function FollowUpSheet({ visible, draft, onClose }: FollowUpSheetProps) {
   const dragY = useRef(new Animated.Value(0)).current;
   const closingRef = useRef(false);
 
-  const [title, setTitle] = useState(draft?.title ?? '');
-  const [notes, setNotes] = useState(draft?.notes ?? '');
+  const [noteText, setNoteText] = useState('');
   const [workspaceId, setWorkspaceId] = useState(draft?.workspaceId ?? defaultWorkspaceId);
-  const [projectId, setProjectId] = useState<string | null>(draft?.projectId ?? null);
-  const [projectPickerOpen, setProjectPickerOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const { projects, isLoading: projectsLoading } = useCaptureProjects(workspaceId);
+  const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
 
   useEffect(() => {
     if (visible) {
       setMounted(true);
       closingRef.current = false;
       dragY.setValue(0);
-      setTitle(draft?.title ?? '');
-      setNotes(draft?.notes ?? '');
+      setNoteText('');
       setWorkspaceId(draft?.workspaceId ?? defaultWorkspaceId);
-      setProjectId(draft?.projectId ?? null);
       setError(null);
       Animated.timing(progress, {
         toValue: 1,
-        duration: reduceMotionEnabled ? 1 : OPEN_DURATION,
+        duration: 220,
         useNativeDriver: true,
       }).start();
       Animated.timing(backdropProgress, {
         toValue: 1,
-        duration: reduceMotionEnabled ? 1 : BACKDROP_OPEN_DURATION,
+        duration: 220,
         useNativeDriver: true,
       }).start();
       return;
@@ -108,7 +88,7 @@ export function FollowUpSheet({ visible, draft, onClose }: FollowUpSheetProps) {
 
     Animated.timing(progress, {
       toValue: 0,
-      duration: reduceMotionEnabled ? 1 : CLOSE_DURATION,
+      duration: 180,
       useNativeDriver: true,
     }).start(({ finished }) => {
       if (finished) {
@@ -117,72 +97,52 @@ export function FollowUpSheet({ visible, draft, onClose }: FollowUpSheetProps) {
     });
     Animated.timing(backdropProgress, {
       toValue: 0,
-      duration: reduceMotionEnabled ? 1 : BACKDROP_CLOSE_DURATION,
+      duration: 120,
       useNativeDriver: true,
     }).start();
-  }, [backdropProgress, defaultWorkspaceId, draft, dragY, progress, reduceMotionEnabled, visible]);
+  }, [backdropProgress, defaultWorkspaceId, dragY, draft, progress, visible]);
 
-  const closeSheet = useCallback(() => {
+  useEffect(() => {
+    const showSub = Keyboard.addListener('keyboardDidShow', () => {
+      setIsKeyboardVisible(true);
+    });
+    const hideSub = Keyboard.addListener('keyboardDidHide', () => {
+      setIsKeyboardVisible(false);
+    });
+
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
+
+  const closeSheet = () => {
     if (!mounted || closingRef.current) return;
 
     closingRef.current = true;
     Animated.parallel([
       Animated.timing(backdropProgress, {
         toValue: 0,
-        duration: reduceMotionEnabled ? 1 : BACKDROP_CLOSE_DURATION,
+        duration: 120,
         useNativeDriver: true,
       }),
       Animated.timing(progress, {
         toValue: 0,
-        duration: reduceMotionEnabled ? 1 : CLOSE_DURATION,
+        duration: 180,
         useNativeDriver: true,
       }),
       Animated.timing(dragY, {
         toValue: 0,
-        duration: reduceMotionEnabled ? 1 : CLOSE_DURATION,
+        duration: 180,
         useNativeDriver: true,
       }),
     ]).start(() => {
       closingRef.current = false;
       onClose();
     });
-  }, [backdropProgress, dragY, mounted, onClose, progress, reduceMotionEnabled]);
-
-  const handleSave = async () => {
-    if (!title.trim() || workspaceId === 'all') {
-      setError('Choose a workspace and enter a title.');
-      return;
-    }
-
-    setIsSaving(true);
-    setError(null);
-
-    try {
-      await createMobileTask(workspaceId, {
-        title: title.trim(),
-        notes: deriveNotesPayload(draft, notes),
-        description: deriveDescription(draft),
-        project_id: projectId,
-        due_date: null,
-        due_time: null,
-        status: 'todo',
-        priority: 'medium',
-        show_in_today: true,
-        is_today_focus: false,
-        source: 'follow_up',
-        sourcePlatform: 'ios',
-      });
-      draft?.onSaved?.();
-      closeSheet();
-    } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : 'Could not save follow-up.');
-    } finally {
-      setIsSaving(false);
-    }
   };
 
-  const canSave = Boolean(title.trim()) && workspaceId !== 'all';
-  const sheetHeight = Math.min(windowHeight * 0.72, 660);
+  const sheetHeight = Math.min(windowHeight * 0.68, 640);
   const sheetTranslateY = Animated.add(
     progress.interpolate({
       inputRange: [0, 1],
@@ -212,12 +172,46 @@ export function FollowUpSheet({ visible, draft, onClose }: FollowUpSheetProps) {
             toValue: 0,
             useNativeDriver: true,
             bounciness: 0,
-            speed: reduceMotionEnabled ? 24 : 16,
+            speed: 16,
           }).start();
         },
       }),
-    [closeSheet, dragY, reduceMotionEnabled],
+    [dragY],
   );
+
+  const canSave = Boolean(noteText.trim()) && workspaceId !== 'all';
+
+  const handleSave = async () => {
+    const noteContent = noteText.trim();
+    if (!noteContent || workspaceId === 'all') {
+      setError('Type a note and choose a workspace.');
+      return;
+    }
+
+    const title = deriveNoteTitle(noteContent);
+    if (!title) {
+      setError('Type a note.');
+      return;
+    }
+
+    setIsSaving(true);
+    setError(null);
+
+    try {
+      await createMobileNote(workspaceId, {
+        title,
+        content: noteContent,
+        source: 'mobile',
+        sourcePlatform: 'ios',
+      });
+      draft?.onSaved?.();
+      closeSheet();
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : 'Could not save note.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   if (!mounted) {
     return null;
@@ -228,14 +222,19 @@ export function FollowUpSheet({ visible, draft, onClose }: FollowUpSheetProps) {
     outputRange: [0, 0.14],
   });
 
-  const selectedProjectName = projectId
-    ? projects.find((project) => project.id === projectId)?.name ?? 'No project'
-    : 'No project';
-
   return (
     <Modal visible transparent animationType="none" statusBarTranslucent onRequestClose={closeSheet}>
       <View style={styles.portal} pointerEvents="box-none">
-        <Pressable accessibilityRole="button" onPress={closeSheet} style={styles.backdropPressable}>
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => {
+            if (isKeyboardVisible) {
+              Keyboard.dismiss();
+              return;
+            }
+            closeSheet();
+          }}
+          style={styles.backdropPressable}>
           <Animated.View
             style={[
               styles.backdrop,
@@ -261,14 +260,14 @@ export function FollowUpSheet({ visible, draft, onClose }: FollowUpSheetProps) {
             {...panResponder.panHandlers}
             style={styles.handleHitArea}
             accessibilityRole="adjustable"
-            accessibilityLabel="Dismiss follow-up sheet">
+            accessibilityLabel="Dismiss note sheet">
             <View style={[styles.handle, { backgroundColor: theme.colors.borderSubtle }]} />
           </View>
 
           <View style={styles.header}>
             <View style={{ gap: theme.spacing.xs }}>
               <AppText variant="body" style={styles.headerTitle}>
-                Add follow-up
+                Add note
               </AppText>
               {draft?.sourceLabel ? (
                 <AppText variant="meta" style={{ color: theme.colors.textSecondary }}>
@@ -280,63 +279,28 @@ export function FollowUpSheet({ visible, draft, onClose }: FollowUpSheetProps) {
 
           <CaptureFormShell
             footer={
-              <AppButton
-                title={isSaving ? 'Saving…' : 'Save follow-up'}
-                size="lg"
-                disabled={!canSave || isSaving}
-                onPress={handleSave}
-              />
+              <AppButton title={isSaving ? 'Saving…' : 'Save note'} size="lg" disabled={!canSave || isSaving} onPress={handleSave} />
             }
             footerBottomPadding={theme.spacing.md}
-            contentStyle={{
-              paddingTop: 0,
-              paddingBottom: theme.spacing.sm,
-              paddingHorizontal: theme.spacing.lg,
-            }}>
-            <View style={{ gap: theme.spacing.lg }}>
+            contentStyle={{ paddingTop: 0, paddingBottom: theme.spacing.sm, paddingHorizontal: theme.spacing.lg }}>
+            <Section childrenGap={theme.spacing.sm}>
               <AppTextInput
-                label="Title"
+                label="Note"
                 labelVariant="body"
-                placeholder="What needs to happen next?"
-                value={title}
-                onChangeText={setTitle}
-              />
-
-              <AppTextInput
-                label="Notes"
-                labelVariant="body"
-                placeholder="Add context or details"
-                value={notes}
-                onChangeText={setNotes}
+                placeholder="Type a note"
                 multiline
+                value={noteText}
+                onChangeText={setNoteText}
               />
-
-              <Row
-                title="Project"
-                subtitle={selectedProjectName}
-                onPress={() => setProjectPickerOpen(true)}
-                right={<SymbolView name="chevron.down" size={14} weight="regular" tintColor={theme.colors.textSecondary} />}
-                titleVariant="body"
-              />
-
               {error ? (
                 <AppText variant="meta" style={{ color: theme.colors.danger }}>
                   {error}
                 </AppText>
               ) : null}
-            </View>
+            </Section>
           </CaptureFormShell>
         </Animated.View>
       </View>
-
-      <ProjectPickerSheet
-        visible={projectPickerOpen}
-        projects={projects}
-        selectedProjectId={projectId}
-        onSelect={setProjectId}
-        onClose={() => setProjectPickerOpen(false)}
-        loading={projectsLoading}
-      />
     </Modal>
   );
 }
@@ -355,7 +319,7 @@ const styles = StyleSheet.create({
   sheet: {
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
-    borderTopWidth: StyleSheet.hairlineWidth,
+    borderWidth: StyleSheet.hairlineWidth,
     overflow: 'hidden',
   },
   handleHitArea: {
@@ -372,6 +336,10 @@ const styles = StyleSheet.create({
   header: {
     paddingHorizontal: 16,
     paddingBottom: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
   },
   headerTitle: {
     fontSize: 20,

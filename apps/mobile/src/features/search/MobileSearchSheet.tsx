@@ -26,6 +26,7 @@ import type { MobileSearchResult } from '@/types/ledger';
 import { searchMobileLedger } from '@/api/search';
 import { getMobileNote } from '@/api/notes';
 import { useFollowUpSheet } from '@/features/followup/FollowUpSheetContext';
+import { useQuickNoteSheet } from '@/features/quicknote/QuickNoteSheetContext';
 
 import { SearchResultRow } from './SearchResultRow';
 import {
@@ -299,12 +300,12 @@ function SearchDetailSheet({
   onClose: () => void;
   onAction?: (actionId: string, result: MobileSearchResult, body?: string | null) => void;
 }) {
-  if (!result) return null;
   const [noteBody, setNoteBody] = useState<string | null>(null);
   const [isLoadingNote, setIsLoadingNote] = useState(false);
+  const activeResult = result;
 
   useEffect(() => {
-    if (!visible || result.type !== 'note') {
+    if (!activeResult || !visible || activeResult.type !== 'note') {
       setNoteBody(null);
       setIsLoadingNote(false);
       return;
@@ -314,7 +315,7 @@ function SearchDetailSheet({
     setIsLoadingNote(true);
     setNoteBody(null);
 
-    void getMobileNote(result.id)
+    void getMobileNote(activeResult.id)
       .then((note) => {
         if (cancelled) return;
         setNoteBody(htmlToPlainText(note.content_html ?? note.content ?? '') || null);
@@ -331,24 +332,27 @@ function SearchDetailSheet({
     return () => {
       cancelled = true;
     };
-  }, [result, visible]);
+  }, [activeResult, visible]);
+
+  if (!activeResult) return null;
+  const currentResult = activeResult;
 
   const body =
-    result.type === 'note'
-      ? noteBody ?? (isLoadingNote ? undefined : getSearchResultBody(result) ?? undefined)
-      : getSearchResultBody(result) ?? undefined;
+    currentResult.type === 'note'
+      ? noteBody ?? (isLoadingNote ? undefined : getSearchResultBody(currentResult) ?? undefined)
+      : getSearchResultBody(currentResult) ?? undefined;
 
   return (
     <AppDetailSheet
       visible={visible}
-      title={result.title}
-      subtitle={getSearchResultSubtitle(result)}
-      meta={getSearchResultMetaRows(result)}
+      title={currentResult.title}
+      subtitle={getSearchResultSubtitle(currentResult)}
+      meta={getSearchResultMetaRows(currentResult)}
       body={body}
-      actions={getSearchResultActions(result)}
+      actions={getSearchResultActions(currentResult)}
       onClose={onClose}
       onAction={(actionId) => {
-        onAction?.(actionId, result, body ?? null);
+        onAction?.(actionId, currentResult, body ?? null);
       }}
     />
   );
@@ -373,13 +377,19 @@ function htmlToPlainText(value: string) {
 export function MobileSearchResultDetailSheet() {
   const { activeSearchResult, closeSearchResult } = useSearchSheet();
   const { openFollowUpSheet } = useFollowUpSheet();
+  const { openQuickNoteSheet } = useQuickNoteSheet();
   const followUpTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const noteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     return () => {
       if (followUpTimerRef.current) {
         clearTimeout(followUpTimerRef.current);
         followUpTimerRef.current = null;
+      }
+      if (noteTimerRef.current) {
+        clearTimeout(noteTimerRef.current);
+        noteTimerRef.current = null;
       }
     };
   }, []);
@@ -397,17 +407,52 @@ export function MobileSearchResultDetailSheet() {
     closeSearchResult();
 
     followUpTimerRef.current = setTimeout(() => {
+      const sourceType =
+        result.type === 'event'
+          ? 'calendar_event'
+          : result.type === 'note'
+            ? 'note'
+            : result.type === 'task'
+              ? 'task'
+              : result.type === 'project'
+                ? 'project'
+                : result.type === 'reminder'
+                  ? 'reminder'
+                  : null;
       openFollowUpSheet({
         title: `Follow up: ${result.title}`,
         notes: body?.trim() || result.snippet?.trim() || result.preview?.trim() || null,
         workspaceId: result.workspace_id,
         projectId: result.project_id ?? null,
         sourceLabel,
+        sourceTitle: result.title,
+        sourceType,
+        sourceId: result.source_id ?? result.id,
         onSaved: () => {
           closeSearchResult();
         },
       });
       followUpTimerRef.current = null;
+    }, 220);
+  };
+
+  const openNoteFromSearch = (result: MobileSearchResult, sourceLabel: string) => {
+    if (noteTimerRef.current) {
+      clearTimeout(noteTimerRef.current);
+      noteTimerRef.current = null;
+    }
+
+    closeSearchResult();
+
+    noteTimerRef.current = setTimeout(() => {
+      openQuickNoteSheet({
+        sourceLabel,
+        workspaceId: result.workspace_id,
+        onSaved: () => {
+          closeSearchResult();
+        },
+      });
+      noteTimerRef.current = null;
     }, 220);
   };
 
@@ -422,8 +467,18 @@ export function MobileSearchResultDetailSheet() {
       return;
     }
 
+    if (actionId === 'add_note' && result.type === 'event') {
+      openNoteFromSearch(result, `From event · ${result.title}`);
+      return;
+    }
+
     if (result.type === 'project' && actionId === 'add_action') {
       openFollowUpFromSearch(result, body ?? null, 'From project');
+      return;
+    }
+
+    if (actionId === 'add_note' && result.type === 'project') {
+      openNoteFromSearch(result, `From project · ${result.title}`);
       return;
     }
 

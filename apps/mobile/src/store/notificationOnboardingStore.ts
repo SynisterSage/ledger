@@ -1,9 +1,7 @@
 import { useSyncExternalStore } from 'react';
 import * as SecureStore from 'expo-secure-store';
-import * as Notifications from 'expo-notifications';
 import {
   completeMobileOnboarding,
-  getMobileUserSettings,
   getMobileOnboardingStatus,
 } from '@/api/userSettings';
 
@@ -131,62 +129,16 @@ export async function bootstrapNotificationOnboardingState(userId: string | null
           return;
         }
 
-        if (Boolean(onboardingStatus?.onboarding_completed)) {
-          completed = true;
-          await persistLocalCompletion(userId, { choice: resolvedChoice ?? undefined, isComplete: true });
-        }
-      } catch {
-        // Continue with the remaining fallbacks.
-      }
-    }
-
-    if (!completed) {
-      try {
-        const settings = await getMobileUserSettings();
-        const backendOnboardingCompleted = Boolean(settings?.onboarding_completed);
-        const backendCompleted = Boolean(
-          (settings?.preferences as { mobileNotificationOnboardingCompleted?: unknown } | null)
-            ?.mobileNotificationOnboardingCompleted,
-        );
-        const backendChoice = (settings?.preferences as { mobileNotificationOnboardingChoice?: unknown } | null)
-          ?.mobileNotificationOnboardingChoice;
-        const normalizedBackendChoice =
-          backendChoice === 'enabled' || backendChoice === 'denied' || backendChoice === 'skipped'
-            ? backendChoice
-            : null;
-        resolvedChoice = choice ?? normalizedBackendChoice;
-        completed = backendOnboardingCompleted || backendCompleted || Boolean(resolvedChoice);
-
-        if (completed && !backendOnboardingCompleted) {
-          try {
-            await completeMobileOnboarding(resolvedChoice ?? undefined);
-          } catch {
-            // Ignore persistence failures; the mobile preference or SecureStore fallback still applies.
-          }
-        }
-      } catch {
-        // Ignore backend fallback errors and continue with local state.
-      }
-    }
-
-    if (!completed) {
-      try {
-        const permission = await Notifications.getPermissionsAsync();
-        if (permission.status !== 'undetermined') {
-          completed = true;
-          try {
-            await completeMobileOnboarding(resolvedChoice ?? undefined);
-          } catch {
-            // Ignore persistence failures; local state is still enough to bypass onboarding.
-          }
+        completed = Boolean(onboardingStatus?.onboarding_completed);
+        if (completed) {
           try {
             await persistLocalCompletion(userId, { choice: resolvedChoice ?? undefined, isComplete: true });
           } catch {
-            // Ignore persistence failures; local state is still enough to bypass onboarding.
+            // Ignore local cache failures. The server already says the step is complete.
           }
         }
       } catch {
-        // Ignore permission lookup failures and continue with local state.
+        // Fall back to local cache only. No extra auto-completion heuristics.
       }
     }
 

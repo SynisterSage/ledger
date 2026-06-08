@@ -18,6 +18,7 @@ import { TodayItemActionsSheet } from '@/features/today/TodayItemActionsSheet';
 import { TodayItemEditSheet } from '@/features/today/TodayItemEditSheet';
 import { TodaySkeleton } from '@/features/today/TodaySkeleton';
 import { useFollowUpSheet } from '@/features/followup/FollowUpSheetContext';
+import { useQuickNoteSheet } from '@/features/quicknote/QuickNoteSheetContext';
 import { triggerLightHaptic } from '@/lib/haptics';
 import { getMobileToday } from '@/api/today';
 import { performMobileTodayAction } from '@/api/todayActions';
@@ -53,6 +54,7 @@ export default function TodayScreen() {
   const actionErrorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const workspaceState = useWorkspaceState();
   const { openFollowUpSheet } = useFollowUpSheet();
+  const { openQuickNoteSheet } = useQuickNoteSheet();
   const [today, setToday] = useState<MobileTodayResponse>(EMPTY_TODAY);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -258,6 +260,11 @@ export default function TodayScreen() {
         return;
       }
 
+      if (actionId === 'reschedule' && !('source' in item) && item.type === 'event') {
+        setSheetMode('reschedule');
+        return;
+      }
+
       if (actionId === 'add_follow_up' || actionId === 'create_follow_up') {
         const sourceLabel =
           'source' in item ? 'From capture' : item.type === 'note' ? 'From note' : 'From event';
@@ -265,13 +272,40 @@ export default function TodayScreen() {
           'body' in item && item.body
             ? `Follow-up from ${sourceLabel.toLowerCase().replace('from ', '')}: ${item.title}\n\n${item.body}`
             : `Follow-up from ${sourceLabel.toLowerCase().replace('from ', '')}: ${item.title}`;
+        const sourceType =
+          'source' in item
+            ? null
+            : item.type === 'event'
+              ? 'calendar_event'
+              : item.type === 'note'
+                ? 'note'
+                : item.type === 'task'
+                  ? 'task'
+                  : item.type === 'project_action'
+                    ? 'project'
+                    : null;
 
         closeItemSheet();
         openFollowUpSheet({
           title: `Follow up: ${item.title}`,
           notes: followUpNotes,
           workspaceId: item.workspaceId,
+          sourceTitle: item.title,
+          sourceType,
+          sourceId: 'source' in item ? null : item.sourceId,
           sourceLabel,
+          onSaved: () => {
+            void loadToday({ silent: true });
+          },
+        });
+        return;
+      }
+
+      if (actionId === 'add_note' && 'type' in item && item.type === 'event') {
+        closeItemSheet();
+        openQuickNoteSheet({
+          sourceLabel: `From event · ${item.title}`,
+          workspaceId: item.workspaceId,
           onSaved: () => {
             void loadToday({ silent: true });
           },
@@ -307,7 +341,7 @@ export default function TodayScreen() {
         actionInFlightRef.current = false;
       }
     },
-    [applyOptimisticTodayAction, loadToday, openFollowUpSheet, showActionError],
+    [applyOptimisticTodayAction, loadToday, openFollowUpSheet, openQuickNoteSheet, showActionError],
   );
 
   const openItemSheet = (item: MobileTodayInteractionItem, mode: TodayDetailSheetMode) => {
@@ -421,10 +455,11 @@ export default function TodayScreen() {
                 onAction={handleTodayItemAction}
               />
             ) : null}
-            {sheetMode === 'edit' ? (
+            {sheetMode === 'edit' || sheetMode === 'reschedule' ? (
               <TodayItemEditSheet
                 visible={Boolean(selectedItem)}
                 item={selectedItem}
+                mode={sheetMode}
                 onClose={closeItemSheet}
                 onSaved={() => void loadToday({ silent: true })}
               />

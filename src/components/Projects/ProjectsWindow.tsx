@@ -22,6 +22,7 @@ import {
 } from '../../config/modulePaneSizes';
 import { useApi } from '../../hooks/useApi';
 import { useWorkspaceContext } from '../../context/WorkspaceContext';
+import { useWorkspaceRealtimeRefresh } from '../../hooks/useWorkspaceRealtimeRefresh';
 import {
   ModuleHeaderActionButton,
   ModuleHeaderStatus,
@@ -298,7 +299,19 @@ export const ProjectsWindow = () => {
   const [isLoadingLinkableNotes, setIsLoadingLinkableNotes] = useState(false);
   const [linkNotesSearch, setLinkNotesSearch] = useState('');
   const [showCloseGuardModal, setShowCloseGuardModal] = useState(false);
+  const [workspaceRefreshToken, setWorkspaceRefreshToken] = useState(0);
   const areSidePanelsCollapsed = isLeftPaneCollapsed && isRightPaneCollapsed;
+
+  const handleWorkspaceRefresh = useCallback(() => {
+    setWorkspaceRefreshToken((current) => current + 1);
+  }, []);
+
+  useWorkspaceRealtimeRefresh({
+    workspaceId: activeWorkspaceId,
+    tables: ['projects', 'tasks', 'notes', 'project_note_links'],
+    enabled: Boolean(user && activeWorkspaceId),
+    onChange: handleWorkspaceRefresh,
+  });
 
   useEffect(() => {
     const onHideSidePanelsShortcut = (event: KeyboardEvent) => {
@@ -938,7 +951,7 @@ export const ProjectsWindow = () => {
 
   useEffect(() => {
     void loadProjects();
-  }, [loadProjects]);
+  }, [loadProjects, workspaceRefreshToken]);
 
   useEffect(() => {
     setLeftPaneWidth((current) =>
@@ -951,7 +964,7 @@ export const ProjectsWindow = () => {
 
   useEffect(() => {
     void loadTasks();
-  }, [loadTasks]);
+  }, [loadTasks, workspaceRefreshToken]);
 
   useEffect(() => {
     if (!user) {
@@ -1050,7 +1063,7 @@ export const ProjectsWindow = () => {
       return;
     }
     void loadLinkedNotes(selectedProjectId);
-  }, [loadLinkedNotes, selectedProjectId]);
+  }, [loadLinkedNotes, selectedProjectId, workspaceRefreshToken]);
 
   useEffect(() => {
     let mounted = true;

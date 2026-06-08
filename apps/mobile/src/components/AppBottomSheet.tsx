@@ -3,6 +3,7 @@ import {
   Animated,
   BackHandler,
   Easing,
+  Keyboard,
   Modal,
   PanResponder,
   Pressable,
@@ -42,6 +43,7 @@ type AppBottomSheetProps = {
   closeDuration?: number;
   backdropOpenDuration?: number;
   backdropCloseDuration?: number;
+  dismissKeyboardOnBackdropPress?: boolean;
 };
 
 const DEFAULT_SNAP_POINTS: AppBottomSheetSnapPoint[] = ['35%', '55%', '85%'];
@@ -84,12 +86,14 @@ export function AppBottomSheet({
   closeDuration: closeDurationProp,
   backdropOpenDuration: backdropOpenDurationProp,
   backdropCloseDuration: backdropCloseDurationProp,
+  dismissKeyboardOnBackdropPress = false,
 }: AppBottomSheetProps) {
   const theme = useLedgerTheme();
   const appPreferences = useAppPreferencesState();
   const { height: windowHeight } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const [mounted, setMounted] = useState(visible);
+  const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
   const translateY = useRef(new Animated.Value(windowHeight)).current;
   const backdropOpacity = useRef(new Animated.Value(0)).current;
   const dragStartTranslate = useRef(0);
@@ -176,6 +180,25 @@ export function AppBottomSheet({
   ]);
 
   useEffect(() => {
+    if (!visible || !dismissKeyboardOnBackdropPress) {
+      return;
+    }
+
+    const showSub = Keyboard.addListener('keyboardDidShow', () => {
+      setIsKeyboardVisible(true);
+    });
+    const hideSub = Keyboard.addListener('keyboardDidHide', () => {
+      setIsKeyboardVisible(false);
+    });
+
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+      setIsKeyboardVisible(false);
+    };
+  }, [dismissKeyboardOnBackdropPress, visible]);
+
+  useEffect(() => {
     if (!visible) {
       return;
     }
@@ -194,8 +217,29 @@ export function AppBottomSheet({
     }
 
     closingRef.current = true;
-    currentTranslate.current = closedTranslateY;
-    onClose();
+    const targetTranslate = closedTranslateY;
+    currentTranslate.current = targetTranslate;
+
+    Animated.parallel([
+      Animated.timing(translateY, {
+        toValue: targetTranslate,
+        duration: closeDuration,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }),
+      Animated.timing(backdropOpacity, {
+        toValue: 0,
+        duration: backdropCloseDuration,
+        easing: Easing.out(Easing.quad),
+        useNativeDriver: true,
+      }),
+    ]).start(({ finished }) => {
+      closingRef.current = false;
+      if (finished) {
+        setMounted(false);
+        onClose();
+      }
+    });
   };
 
   const snapToNearestPoint = (currentValue: number) => {
@@ -268,11 +312,21 @@ export function AppBottomSheet({
     inputRange: [0, 1],
     outputRange: [0, 0.18],
   });
+  const handleBackdropPress = () => {
+    if (dismissKeyboardOnBackdropPress) {
+      if (isKeyboardVisible) {
+        Keyboard.dismiss();
+        return;
+      }
+    }
+
+    closeSheet();
+  };
 
   return (
     <Modal visible transparent animationType="none" statusBarTranslucent onRequestClose={closeSheet}>
       <View style={styles.portal}>
-        <Pressable accessibilityRole="button" onPress={closeSheet} style={styles.backdropPressable}>
+        <Pressable accessibilityRole="button" onPress={handleBackdropPress} style={styles.backdropPressable}>
           <Animated.View
             style={[
               styles.backdrop,

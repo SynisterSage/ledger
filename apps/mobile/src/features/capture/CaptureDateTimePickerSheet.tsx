@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated,
   Modal,
@@ -83,7 +83,7 @@ export function CaptureDateTimePickerSheet({
     }).start();
   }, [backdropProgress, dragY, progress, reduceMotionEnabled, visible]);
 
-  const closeSheet = () => {
+  const closeSheet = useCallback(() => {
     if (!mounted || closingRef.current) return;
 
     closingRef.current = true;
@@ -107,7 +107,7 @@ export function CaptureDateTimePickerSheet({
       closingRef.current = false;
       onClose();
     });
-  };
+  }, [backdropProgress, dragY, mounted, onClose, progress, reduceMotionEnabled]);
 
   const handleChange = (_event: DateTimePickerEvent, nextValue?: Date) => {
     if (!nextValue || Number.isNaN(nextValue.getTime())) return;

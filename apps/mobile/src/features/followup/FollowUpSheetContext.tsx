@@ -8,6 +8,9 @@ export type FollowUpSheetDraft = {
   workspaceId?: string | null;
   projectId?: string | null;
   sourceLabel?: string | null;
+  sourceTitle?: string | null;
+  sourceType?: 'calendar_event' | 'note' | 'task' | 'project' | 'reminder' | null;
+  sourceId?: string | null;
   onSaved?: () => void;
 };
 

@@ -16,7 +16,7 @@ import {
   EyeOff,
   Inbox,
 } from 'lucide-react';
-import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ModalOverlay } from '../Common/ModalOverlay';
 import * as rruleModule from 'rrule';
 import { useAuthContext } from '../../context/AuthContext';
@@ -27,6 +27,7 @@ import {
 } from '../../config/modulePaneSizes';
 import { useWorkspaceContext } from '../../context/WorkspaceContext';
 import { useApi } from '../../hooks/useApi';
+import { useWorkspaceRealtimeRefresh } from '../../hooks/useWorkspaceRealtimeRefresh';
 import {
   ModuleHeaderSegmentedButton,
   ModuleHeaderSegmentedGroup,
@@ -852,6 +853,7 @@ export const CalendarWindow = () => {
     calendarScope: 'current_workspace',
     calendarColor: 'ledger-orange',
   });
+  const [calendarRefreshToken, setCalendarRefreshToken] = useState(0);
   const [leftPaneWidth, setLeftPaneWidth] = useState(() =>
     getPaneWidthForViewport(viewportWidth, modulePaneSizing.calendar.left)
   );
@@ -864,6 +866,17 @@ export const CalendarWindow = () => {
   const [isRightPaneCollapsed, setIsRightPaneCollapsed] = useState(true);
   const [overflowDayKey, setOverflowDayKey] = useState<string | null>(null);
   const areSidePanelsCollapsed = isLeftPaneCollapsed && isRightPaneCollapsed;
+
+  const handleCalendarWorkspaceRefresh = useCallback(() => {
+    setCalendarRefreshToken((current) => current + 1);
+  }, []);
+
+  useWorkspaceRealtimeRefresh({
+    workspaceId: activeWorkspaceId,
+    tables: ['events', 'reminders', 'notes', 'tasks', 'projects'],
+    enabled: Boolean(user && activeWorkspaceId),
+    onChange: handleCalendarWorkspaceRefresh,
+  });
 
   useEffect(() => {
     const onHideSidePanelsShortcut = (event: KeyboardEvent) => {
@@ -1944,6 +1957,7 @@ export const CalendarWindow = () => {
     viewConfig.end.getTime(),
     api,
     calendarPreferences.calendarScope,
+    calendarRefreshToken,
   ]);
 
   useEffect(() => {

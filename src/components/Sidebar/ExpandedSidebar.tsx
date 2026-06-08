@@ -18,13 +18,14 @@ import {
   Search,
   Inbox,
 } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useAuthContext } from '../../context/AuthContext';
 import { useWorkspaceContext } from '../../context/WorkspaceContext';
 import { useSidebar } from '../../context/SidebarContext';
 import { useSearch } from '../../context/SearchContext';
 import { useApi } from '../../hooks/useApi';
+import { useWorkspaceRealtimeRefresh } from '../../hooks/useWorkspaceRealtimeRefresh';
 import { SkeletonList } from '../Common/Skeleton';
 
 type FocusItem = {
@@ -362,6 +363,7 @@ export const ExpandedSidebar = ({
   const [todayItems, setTodayItems] = useState<TodayTask[]>([]);
   const [isLoadingToday, setIsLoadingToday] = useState(true);
   const [completedToday, setCompletedToday] = useState<CompletedTodayTask[]>([]);
+  const [sidebarRefreshToken, setSidebarRefreshToken] = useState(0);
   const autoExpireTodayTaskIdsRef = useRef<Set<string>>(new Set());
   const TODAY_COLLAPSE_STORAGE_KEY = 'ledger:sidebar:today-collapsed:v1';
   const TODAY_HELP_TEXT = 'Your working list for today: what to do now, and what got done.';
@@ -386,7 +388,7 @@ export const ExpandedSidebar = ({
   const [todayDockPopoverStyle, setTodayDockPopoverStyle] = useState<React.CSSProperties | null>(
     null
   );
-  
+
   const [expandedUpcomingId, setExpandedUpcomingId] = useState<string | null>(null);
   const [draggingProjectId, setDraggingProjectId] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<{
@@ -398,6 +400,17 @@ export const ExpandedSidebar = ({
   } | null>(null);
   const taskCaptureRef = useRef<HTMLInputElement | null>(null);
   const noteCaptureRef = useRef<HTMLTextAreaElement | null>(null);
+
+  const handleSidebarWorkspaceRefresh = useCallback(() => {
+    setSidebarRefreshToken((current) => current + 1);
+  }, []);
+
+  useWorkspaceRealtimeRefresh({
+    workspaceId: activeWorkspaceId,
+    tables: ['notes', 'projects', 'tasks', 'events', 'reminders'],
+    enabled: Boolean(user && activeWorkspaceId),
+    onChange: handleSidebarWorkspaceRefresh,
+  });
 
   useEffect(() => {
     if (!user) return;
@@ -690,7 +703,7 @@ export const ExpandedSidebar = ({
     return () => {
       cancelled = true;
     };
-  }, [user?.id, activeWorkspaceId]);
+  }, [user?.id, activeWorkspaceId, sidebarRefreshToken]);
 
   useEffect(() => {
     let cancelled = false;
@@ -753,7 +766,7 @@ export const ExpandedSidebar = ({
       cancelled = true;
       window.clearInterval(refreshTimer);
     };
-  }, [user?.id, activeWorkspaceId]);
+  }, [user?.id, activeWorkspaceId, sidebarRefreshToken]);
 
   useEffect(() => {
     if (!user || !activeWorkspaceId) {
@@ -866,7 +879,7 @@ export const ExpandedSidebar = ({
     return () => {
       cancelled = true;
     };
-  }, [user?.id, activeWorkspaceId]);
+  }, [user?.id, activeWorkspaceId, sidebarRefreshToken]);
 
   useEffect(() => {
     if (!user) {
@@ -925,7 +938,7 @@ export const ExpandedSidebar = ({
       cancelled = true;
       window.clearInterval(refreshTimer);
     };
-  }, [user?.id, activeWorkspaceId]);
+  }, [user?.id, activeWorkspaceId, sidebarRefreshToken]);
 
   useEffect(() => {
     if (!user || !activeWorkspaceId) {

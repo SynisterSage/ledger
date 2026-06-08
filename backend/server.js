@@ -3662,13 +3662,17 @@ const getCalendarId = async (workspaceId, userId) => {
     .insert({
       workspace_id: workspaceId,
       owner_id: userId,
+      created_by: userId,
       name: 'Personal',
       color: '#3B82F6',
       is_personal: true,
       is_default: true,
+      is_visible: true,
     })
     .select('id')
     .single();
+
+  if (created.error) throw created.error;
 
   return created.data?.id ?? null;
 };
@@ -8155,6 +8159,8 @@ app.post(
         await requireWorkspaceAccess(req.authUser.id, calendar.workspace_id, 'member');
         workspaceId = calendar.workspace_id;
         calendarId = calendar.id;
+      } else {
+        calendarId = await getCalendarId(workspaceId, req.authUser.id);
       }
 
       const linkedType = normalizeReminderLinkedType(req.body?.linked_type);

@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
-import { View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 
 import { AppBottomSheet } from '@/components/AppBottomSheet';
 import { AppButton } from '@/components/AppButton';
 import { AppText } from '@/components/AppText';
 import { AppTextInput } from '@/components/AppTextInput';
+import { CaptureDateTimePickerSheet } from '@/features/capture/CaptureDateTimePickerSheet';
 import {
   updateMobileEvent,
   updateMobileNote,
@@ -18,6 +19,7 @@ import type { MobileTodayInteractionItem } from '@/types/ledger';
 type TodayItemEditSheetProps = {
   visible: boolean;
   item: MobileTodayInteractionItem | null;
+  mode?: 'edit' | 'reschedule';
   onClose: () => void;
   onSaved: () => void;
 };
@@ -61,14 +63,25 @@ function getItemContext(item: MobileTodayInteractionItem) {
   return parts.filter(Boolean).join(' · ');
 }
 
-export function TodayItemEditSheet({ visible, item, onClose, onSaved }: TodayItemEditSheetProps) {
+export function TodayItemEditSheet({ visible, item, mode = 'edit', onClose, onSaved }: TodayItemEditSheetProps) {
   const theme = useLedgerTheme();
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState<LoadedEditData>({ title: '', notes: '' });
+  const [rescheduleDate, setRescheduleDate] = useState<Date | null>(null);
+  const [reschedulePickerOpen, setReschedulePickerOpen] = useState(false);
   const editableItem = useMemo(() => (item && !('source' in item) ? item : null), [item]);
-  const sheetTitle = useMemo(() => (editableItem ? `Edit ${getEditTitle(editableItem).toLowerCase()}` : 'Edit'), [editableItem]);
+  const isRescheduleMode = Boolean(editableItem && editableItem.type === 'event' && mode === 'reschedule');
+  const sheetTitle = useMemo(
+    () =>
+      editableItem
+        ? isRescheduleMode
+          ? `Reschedule ${getEditTitle(editableItem).toLowerCase()}`
+          : `Edit ${getEditTitle(editableItem).toLowerCase()}`
+        : 'Edit',
+    [editableItem, isRescheduleMode],
+  );
   const context = useMemo(() => (editableItem ? getItemContext(editableItem) : ''), [editableItem]);
 
   useEffect(() => {
@@ -83,11 +96,12 @@ export function TodayItemEditSheet({ visible, item, onClose, onSaved }: TodayIte
       title: editableItem.title ?? '',
       notes: 'body' in editableItem && editableItem.body ? editableItem.body : '',
     });
+    setRescheduleDate(editableItem.type === 'event' && editableItem.startsAt ? new Date(editableItem.startsAt) : null);
 
     const load = async () => {
       try {
-        if (editableItem.type === 'note') {
-          const note = await getMobileNote(editableItem.sourceId);
+      if (editableItem.type === 'note') {
+        const note = await getMobileNote(editableItem.sourceId);
           if (cancelled) return;
           setDraft({
             title: note.title ?? editableItem.title ?? '',
@@ -141,9 +155,44 @@ export function TodayItemEditSheet({ visible, item, onClose, onSaved }: TodayIte
           content: draft.notes.trim() || null,
         });
       } else if (editableItem.type === 'event') {
+        const originalStart = editableItem.startsAt ? new Date(editableItem.startsAt) : null;
+        const nextStart = isRescheduleMode && rescheduleDate
+          ? (() => {
+              const next = new Date(rescheduleDate);
+              if (originalStart && !Number.isNaN(originalStart.getTime())) {
+                next.setHours(
+                  originalStart.getHours(),
+                  originalStart.getMinutes(),
+                  originalStart.getSeconds(),
+                  originalStart.getMilliseconds(),
+                );
+              }
+              return next;
+            })()
+          : originalStart;
+        const nextEnd = editableItem.endsAt ? new Date(editableItem.endsAt) : null;
+        const nextStartIso = nextStart && !Number.isNaN(nextStart.getTime()) ? nextStart.toISOString() : null;
+        const nextEndIso =
+          isRescheduleMode && nextStart && !Number.isNaN(nextStart.getTime())
+            ? (() => {
+                const originalDurationMs =
+                  originalStart && nextEnd && !Number.isNaN(nextEnd.getTime())
+                    ? nextEnd.getTime() - originalStart.getTime()
+                    : 60 * 60 * 1000;
+                return new Date(nextStart.getTime() + Math.max(originalDurationMs, 60 * 60 * 1000)).toISOString();
+              })()
+            : null;
+
         await updateMobileEvent(editableItem.workspaceId, editableItem.sourceId, {
           title,
-          notes: draft.notes.trim() || null,
+          ...(isRescheduleMode
+            ? {
+                start_at: nextStartIso ?? undefined,
+                end_at: nextEndIso ?? undefined,
+              }
+            : {
+                notes: draft.notes.trim() || null,
+              }),
         });
       } else if (editableItem.type === 'reminder') {
         await updateMobileReminder(editableItem.workspaceId, editableItem.sourceId, {
@@ -168,12 +217,28 @@ export function TodayItemEditSheet({ visible, item, onClose, onSaved }: TodayIte
 
   const notesLabel = editableItem.type === 'note' ? 'Body' : 'Notes';
   const notesPlaceholder = editableItem.type === 'note' ? 'Add details or context' : 'Add notes';
+  const rescheduleValue =
+    editableItem.type === 'event' && editableItem.startsAt ? new Date(editableItem.startsAt) : new Date();
+  const rescheduleLabel = rescheduleDate
+    ? new Intl.DateTimeFormat('en-US', { weekday: 'short', month: 'short', day: 'numeric' }).format(rescheduleDate)
+    : editableItem.type === 'event' && editableItem.startsAt
+      ? new Intl.DateTimeFormat('en-US', { weekday: 'short', month: 'short', day: 'numeric' }).format(rescheduleValue)
+      : 'Choose a day';
 
   return (
     <AppBottomSheet
       visible={visible}
       onClose={onClose}
-      title={sheetTitle}
+      title={
+        isRescheduleMode ? (
+          <AppText variant="body" style={styles.sheetTitle}>
+            {sheetTitle}
+          </AppText>
+        ) : (
+          sheetTitle
+        )
+      }
+      dismissKeyboardOnBackdropPress={isRescheduleMode}
       snapPoints={['72%', '88%']}
       initialSnapPointIndex={1}>
       <View style={{ gap: theme.spacing.lg }}>
@@ -197,14 +262,41 @@ export function TodayItemEditSheet({ visible, item, onClose, onSaved }: TodayIte
           onChangeText={(value) => setDraft((current) => ({ ...current, title: value }))}
         />
 
-        <AppTextInput
-          label={notesLabel}
-          labelVariant="body"
-          placeholder={notesPlaceholder}
-          multiline
-          value={draft.notes}
-          onChangeText={(value) => setDraft((current) => ({ ...current, notes: value }))}
-        />
+        {isRescheduleMode ? (
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => setReschedulePickerOpen(true)}
+            style={({ pressed }) => [
+              styles.rescheduleRow,
+              {
+                borderBottomColor: theme.colors.borderSubtle,
+                opacity: pressed ? 0.72 : 1,
+              },
+            ]}>
+            <View style={{ flex: 1, gap: theme.spacing.xs }}>
+              <AppText variant="body" style={styles.rescheduleTitle}>
+                Reschedule
+              </AppText>
+              <AppText variant="meta" style={{ color: theme.colors.textSecondary }}>
+                {rescheduleLabel}
+              </AppText>
+            </View>
+            <AppText variant="meta" style={{ color: theme.colors.textMuted }}>
+              ›
+            </AppText>
+          </Pressable>
+        ) : null}
+
+        {!isRescheduleMode ? (
+          <AppTextInput
+            label={notesLabel}
+            labelVariant="body"
+            placeholder={notesPlaceholder}
+            multiline
+            value={draft.notes}
+            onChangeText={(value) => setDraft((current) => ({ ...current, notes: value }))}
+          />
+        ) : null}
 
         {error ? (
           <AppText variant="meta" style={{ color: theme.colors.danger }}>
@@ -222,6 +314,38 @@ export function TodayItemEditSheet({ visible, item, onClose, onSaved }: TodayIte
           <AppButton title="Cancel" variant="secondary" size="lg" onPress={onClose} />
         </View>
       </View>
+
+      {isRescheduleMode ? (
+        <CaptureDateTimePickerSheet
+          visible={reschedulePickerOpen}
+          title="Reschedule"
+          mode="date"
+          value={rescheduleDate ?? rescheduleValue}
+          onSelect={(nextValue) => {
+            setRescheduleDate(nextValue);
+            setReschedulePickerOpen(false);
+          }}
+          onClose={() => setReschedulePickerOpen(false)}
+        />
+      ) : null}
     </AppBottomSheet>
   );
 }
+
+const styles = StyleSheet.create({
+  sheetTitle: {
+    fontSize: 20,
+    lineHeight: 24,
+    fontWeight: '400',
+  },
+  rescheduleRow: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 14,
+  },
+  rescheduleTitle: {
+    fontWeight: '400',
+  },
+});

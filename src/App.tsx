@@ -17,11 +17,12 @@ import {
 } from 'lucide-react';
 import { ToastProvider } from './components/Common/ToastProvider';
 import { NotificationMonitor } from './components/Common/NotificationMonitor';
-import { type CSSProperties, useEffect, useRef, useState } from 'react';
+import { type CSSProperties, useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useAuthContext } from './context/AuthContext';
 import { useWorkspaceContext } from './context/WorkspaceContext';
 import { useWorkspaceInit } from './hooks/useWorkspaceInit';
+import { useWorkspaceRealtimeRefresh } from './hooks/useWorkspaceRealtimeRefresh';
 import { useApi } from './hooks/useApi';
 import { useSidebar } from './context/SidebarContext';
 import { MainLayout } from './components/Common/MainLayout';
@@ -793,6 +794,7 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
       eventTitle?: string | null;
     }>
   >([]);
+  const [dashboardRefreshToken, setDashboardRefreshToken] = useState(0);
   const [inboxCount, setInboxCount] = useState(0);
   const [notificationCount, setNotificationCount] = useState(0);
   const [focusedTaskId, setFocusedTaskId] = useState<string | null>(initialFocusTaskId ?? null);
@@ -827,6 +829,16 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
   >(null);
   const hasLoadedDashboardRef = useRef(false);
   const dashboardDayRef = useRef(todayKey());
+  const handleDashboardWorkspaceRefresh = useCallback(() => {
+    setDashboardRefreshToken((current) => current + 1);
+  }, []);
+
+  useWorkspaceRealtimeRefresh({
+    workspaceId: activeWorkspaceId,
+    tables: ['notes', 'projects', 'tasks', 'events', 'reminders'],
+    enabled: Boolean(user && activeWorkspaceId),
+    onChange: handleDashboardWorkspaceRefresh,
+  });
 
   useEffect(() => {
     const handleSidebarStateChanged = (
@@ -1126,9 +1138,16 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
               ? marker.slice('calendar_followup:'.length).trim()
               : '';
             const noteText = String(task.notes ?? '');
-            const eventTitle = noteText.startsWith('Follow-up from calendar: ')
-              ? noteText.slice('Follow-up from calendar: '.length).trim()
+            const noteTitle = noteText.startsWith('Follow-up from calendar: ')
+              ? noteText
+                  .slice('Follow-up from calendar: '.length)
+                  .split(/\r?\n/, 1)[0]
+                  .trim()
               : '';
+            const fallbackTitle = String(task.title ?? '')
+              .replace(/^Follow\s*-?\s*up:\s*/i, '')
+              .trim();
+            const eventTitle = noteTitle || fallbackTitle;
             return {
               ...task,
               eventId: eventId || null,
@@ -1187,7 +1206,7 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [activeWorkspaceId, api, calendarScope, user]);
+  }, [activeWorkspaceId, api, calendarScope, dashboardRefreshToken, user]);
 
   useEffect(() => {
     if (!user || !activeWorkspaceId) {
