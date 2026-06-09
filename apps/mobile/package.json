@@ -37,7 +37,10 @@
     "start": "expo start",
     "android": "expo run:android",
     "ios": "expo run:ios",
-    "web": "expo start --web"
+    "web": "expo start --web",
+    "build:ios": "npx eas-cli build -p ios --profile production",
+    "build:ios:internal": "npx eas-cli build -p ios --profile preview",
+    "submit:ios": "npx eas-cli submit -p ios --profile production"
   },
   "private": true
 }

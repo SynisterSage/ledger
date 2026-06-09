@@ -1,5 +1,6 @@
 import {
   CalendarDays,
+  Check,
   ChevronLeft,
   ChevronRight,
   ChevronDown,
@@ -208,7 +209,12 @@ type ListContextMenuState = {
 type CalendarViewMode = 'day' | 'week' | 'month';
 
 const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-const hours = Array.from({ length: 12 }, (_, i) => `${i + 8}:00`);
+const CALENDAR_DAY_START_HOUR = 8;
+const CALENDAR_DAY_END_HOUR = 21;
+const hours = Array.from(
+  { length: CALENDAR_DAY_END_HOUR - CALENDAR_DAY_START_HOUR + 1 },
+  (_, i) => `${i + CALENDAR_DAY_START_HOUR}:00`
+);
 const NOTIFICATION_VISIBLE_MS = 4000;
 const NOTIFICATION_FADE_MS = 350;
 const SIDEBAR_MIN_WIDTH = modulePaneSizing.calendar.left.min;
@@ -1462,7 +1468,21 @@ export const CalendarWindow = () => {
     : null;
   const selectedTimelineHour = selectedTimelineDate?.getHours() ?? null;
   const selectedTimelineInVisibleHours =
-    selectedTimelineHour !== null && selectedTimelineHour >= 8 && selectedTimelineHour < 20;
+    selectedTimelineHour !== null &&
+    selectedTimelineHour >= CALENDAR_DAY_START_HOUR &&
+    selectedTimelineHour <= CALENDAR_DAY_END_HOUR;
+  const use24HourTime = calendarPreferences.timeFormat === '24h';
+  const formatCalendarTime = (date: Date) =>
+    date.toLocaleTimeString([], {
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: !use24HourTime,
+    });
+  const formatCalendarHourLabel = (hour: number) => {
+    const date = new Date();
+    date.setHours(hour, 0, 0, 0);
+    return formatCalendarTime(date);
+  };
   const hoursToRender = useMemo(() => {
     const hourSet = new Set<number>(hours.map((h) => Number.parseInt(h.split(':')[0], 10)));
 
@@ -1472,7 +1492,11 @@ export const CalendarWindow = () => {
     for (const evt of visibleEvents) {
       const key = formatDateKey(new Date(evt.start_at));
       if (!dateKeys.has(key)) continue;
-      hourSet.add(new Date(evt.start_at).getHours());
+      const startHour = new Date(evt.start_at).getHours();
+      const endHour = new Date(evt.end_at).getHours();
+      for (let hour = startHour; hour <= Math.min(CALENDAR_DAY_END_HOUR, endHour); hour += 1) {
+        hourSet.add(hour);
+      }
     }
 
     for (const rem of reminders) {
@@ -1523,9 +1547,9 @@ export const CalendarWindow = () => {
     if (isAllDayEvent(event)) return 'All day';
     const start = new Date(event.start_at);
     const end = new Date(event.end_at);
-    const startLabel = start.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    const startLabel = formatCalendarTime(start);
     if (getEventDurationMinutes(event) > 60) {
-      const endLabel = end.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+      const endLabel = formatCalendarTime(end);
       return `${startLabel} – ${endLabel}`;
     }
     return startLabel;
@@ -1539,12 +1563,9 @@ export const CalendarWindow = () => {
         day: 'numeric',
       });
       if (isAllDayEvent(event)) return base;
-      const startLabel = start.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+      const startLabel = formatCalendarTime(start);
       if (getEventDurationMinutes(event) > 60) {
-        const endLabel = new Date(event.end_at).toLocaleTimeString([], {
-          hour: 'numeric',
-          minute: '2-digit',
-        });
+        const endLabel = formatCalendarTime(new Date(event.end_at));
         return `${base}, ${startLabel} – ${endLabel}`;
       }
       return `${base}, ${startLabel}`;
@@ -1557,8 +1578,8 @@ export const CalendarWindow = () => {
     if (isAllDayEvent(event)) return 'All day';
     const start = new Date(event.start_at);
     const end = new Date(event.end_at);
-    const startLabel = start.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-    const endLabel = end.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    const startLabel = formatCalendarTime(start);
+    const endLabel = formatCalendarTime(end);
     return `${startLabel} – ${endLabel}`;
   };
   const getDurationDisplay = (minutes: number) => {
@@ -2267,6 +2288,7 @@ export const CalendarWindow = () => {
         title: event.title,
         kind: 'event' as const,
         timeLabel: formatEventTimeLabel(event),
+        isPast: isPastEvent(event),
       };
     }
 
@@ -2279,7 +2301,8 @@ export const CalendarWindow = () => {
       hour: remindAt.getHours(),
       title: reminder.title,
       kind: 'reminder' as const,
-      timeLabel: remindAt.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
+      timeLabel: formatCalendarTime(remindAt),
+      isPast: isPastReminder(reminder),
     };
   };
 
@@ -3289,7 +3312,7 @@ export const CalendarWindow = () => {
               >
                 <ChevronLeft size={14} />
               </ModuleHeaderSegmentedButton>
-              <ModuleHeaderSegmentedButton title="Today" onClick={() => jumpToToday()}>
+              <ModuleHeaderSegmentedButton pill title="Today" onClick={() => jumpToToday()}>
                 Today
               </ModuleHeaderSegmentedButton>
               <ModuleHeaderSegmentedButton
@@ -3839,11 +3862,11 @@ export const CalendarWindow = () => {
                       gridTemplateColumns: `72px repeat(${viewConfig.dates.length}, minmax(0, 1fr))`,
                     }}
                   >
-                  <div className="sticky top-0 z-10 h-12 bg-[#FFF8F2] border-b border-[#E2D4C4]" />
+                  <div className="sticky top-0 z-50 h-12 bg-[#FFF8F2] border-b border-[#E2D4C4]" />
                   {viewConfig.dates.map((dayDate) => (
                     <div
                       key={dayDate.toISOString()}
-                      className="sticky top-0 z-10 h-12 bg-[#FFF8F2] border-b border-l border-[#E2D4C4] flex flex-col items-center justify-center"
+                      className="sticky top-0 z-50 h-12 bg-[#FFF8F2] border-b border-l border-[#E2D4C4] flex flex-col items-center justify-center"
                     >
                       <span className="text-xs font-semibold text-gray-600">
                         {dayDate.toLocaleDateString([], { weekday: 'short' })}
@@ -3965,7 +3988,7 @@ export const CalendarWindow = () => {
                               className="border-b border-[#E8DDD4] pr-3 text-[11px] text-gray-400 flex items-start justify-end pt-1.5"
                               style={{ minHeight: `${rowHeight}px` }}
                             >
-                              {hour}
+                              {formatCalendarHourLabel(hourInt)}
                             </div>
                             {viewConfig.dates.map((dayDate) => {
                               const key = formatDateKey(dayDate);
@@ -4103,10 +4126,7 @@ export const CalendarWindow = () => {
                                         : `${reminder.color ?? '#F59E0B'}55`,
                                       color: isPastReminder(reminder) ? '#6B7280' : '#1F2937',
                                     }}
-                                    title={`${new Date(reminder.remind_at).toLocaleTimeString([], {
-                                      hour: 'numeric',
-                                      minute: '2-digit',
-                                    })} • ${reminder.title}`}
+                                    title={`${formatCalendarTime(new Date(reminder.remind_at))} • ${reminder.title}`}
                                   >
                                     <span
                                       className="mr-1 inline-block h-1.5 w-1.5 shrink-0 rounded-full align-middle"
@@ -4302,9 +4322,23 @@ export const CalendarWindow = () => {
                                 <p className="text-[14px] font-semibold leading-5 text-gray-900 flex-1">
                                   {selectedEventPreview.title}
                                 </p>
-                                {selectedEventPreview.status === 'done' && (
-                                  <span className="text-green-600 text-[14px] leading-none shrink-0 font-semibold">✓</span>
-                                )}
+                                <div className="flex shrink-0 items-center gap-1">
+                                  {selectedEventPreview.status === 'done' && (
+                                    <span className="text-green-600 text-[14px] leading-none font-semibold">
+                                      ✓
+                                    </span>
+                                  )}
+                                  {canEditEvent(selectedEventPreview) && (
+                                    <button
+                                      onClick={() => openEventEditor(selectedEventPreview)}
+                                      className="inline-flex h-7 w-7 items-center justify-center rounded-full text-gray-500 transition hover:bg-[#FFF1E3] hover:text-[#FF5F40]"
+                                      aria-label="Edit event"
+                                      title="Edit event"
+                                    >
+                                      <PencilLine size={14} />
+                                    </button>
+                                  )}
+                                </div>
                               </div>
                               <p className="mt-1 text-[13px] text-gray-600">
                                 {formatEventDateTimeLabel(selectedEventPreview)}
@@ -4374,16 +4408,6 @@ export const CalendarWindow = () => {
                                 </div>
                               </div>
                             </div>
-                          </div>
-                          <div className="mt-1">
-                            {canEditEvent(selectedEventPreview) && (
-                              <button
-                                onClick={() => openEventEditor(selectedEventPreview)}
-                                className="w-full text-left text-[13px] font-medium text-gray-700 hover:text-[#FF5F40]"
-                              >
-                                Edit event
-                              </button>
-                            )}
                           </div>
                         </div>
                       );
@@ -5561,10 +5585,7 @@ export const CalendarWindow = () => {
                     >
                       <span className="font-medium">{reminder.title}</span>
                       <span className="ml-2 text-gray-600">
-                        {new Date(reminder.remind_at).toLocaleTimeString([], {
-                          hour: 'numeric',
-                          minute: '2-digit',
-                        })}
+                        {formatCalendarTime(new Date(reminder.remind_at))}
                       </span>
                     </button>
                   ))}
@@ -5794,6 +5815,7 @@ export const CalendarWindow = () => {
           const menuTarget = getListContextMenuSlot();
           const menuTitle = menuTarget?.title ?? (listContextMenu.kind === 'event' ? 'Event' : 'Reminder');
           const menuTime = menuTarget?.timeLabel ?? null;
+          const showPastCheck = Boolean(menuTarget?.isPast);
 
           return (
         <div
@@ -5811,9 +5833,16 @@ export const CalendarWindow = () => {
               {listContextMenu.kind === 'event' ? 'Event' : 'Reminder'}
             </p>
             <div className="mt-1 min-w-0">
-              <p className="truncate text-[14px] font-semibold leading-5 text-gray-900">
-                {menuTitle}
-              </p>
+              <div className="flex items-center gap-1.5">
+                {showPastCheck && (
+                  <span className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[var(--ledger-success)]">
+                    <Check size={12} strokeWidth={2.5} />
+                  </span>
+                )}
+                <p className="truncate text-[14px] font-semibold leading-5 text-gray-900">
+                  {menuTitle}
+                </p>
+              </div>
               {menuTime ? (
                 <p className="mt-0.5 text-[11px] leading-4 text-gray-500">{menuTime}</p>
               ) : null}

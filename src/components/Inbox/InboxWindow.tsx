@@ -16,6 +16,7 @@ import { useToast } from '../Common/ToastProvider';
 import { ModalCloseButton } from '../Common/ModalCloseButton';
 import { ModalOverlay } from '../Common/ModalOverlay';
 import { createPortal } from 'react-dom';
+import { sidebarTheme } from '../Sidebar/sidebarTheme';
 
 type InboxStatus = 'unprocessed' | 'converted' | 'archived';
 type SourceFilter = 'all' | 'slack' | 'browser';
@@ -70,6 +71,29 @@ const statusLabels: Array<{ value: InboxStatus; label: string }> = [
   { value: 'converted', label: 'Converted' },
   { value: 'archived', label: 'Archived' },
 ];
+
+const inboxTheme = {
+  shell:
+    'flex h-screen flex-col overflow-hidden rounded-3xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] text-[var(--ledger-text-primary)] shadow-none',
+  contentShell: 'bg-[var(--ledger-background)]',
+  iconButton:
+    'inline-flex h-8 w-8 items-center justify-center rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]',
+  row:
+    'group border-b border-[color:var(--ledger-border-subtle)] px-1 py-4 transition',
+  panel:
+    'overflow-hidden rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] shadow-[0_12px_32px_rgba(17,24,39,0.12)]',
+  sectionHeading: 'text-sm font-semibold text-[var(--ledger-text-primary)]',
+  mutedText: 'text-[var(--ledger-text-muted)]',
+  bodyText: 'text-[var(--ledger-text-secondary)]',
+  headerButton:
+    'inline-flex h-8 w-8 items-center justify-center rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]',
+  field:
+    'h-10 w-full rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] px-3 text-sm text-[var(--ledger-text-primary)] outline-none transition focus:border-[color:var(--ledger-border-strong)]',
+  fieldSoft:
+    'h-10 w-full rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 text-sm text-[var(--ledger-text-primary)] outline-none transition focus:border-[color:var(--ledger-border-strong)]',
+  footer:
+    'flex shrink-0 items-center justify-between gap-3 border-t border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-5 py-4',
+};
 
 const formatDateTime = (value?: string | null) => {
   if (!value) return '';
@@ -567,27 +591,27 @@ export default function InboxWindow() {
           setContextMenu({ x: event.clientX, y: event.clientY, item });
           setSelectedItemId(item.id);
         }}
-        className="group border-b border-[#E8DDD4] px-1 py-4 transition hover:bg-[#FFF4EA]"
+        className={inboxTheme.row}
       >
         <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-1.5 text-xs text-gray-500">
+          <div className={`flex flex-wrap items-center gap-1.5 text-xs ${inboxTheme.mutedText}`}>
             <span className="font-medium">{sourceLabel}</span>
             {sourceContext && (
               <>
-                <span className="text-gray-300">·</span>
+                <span className="text-[var(--ledger-border-subtle)]">·</span>
                 <span>{sourceContext}</span>
               </>
             )}
             {item.status !== 'unprocessed' && (
               <>
-                <span className="text-gray-300">·</span>
-                <span className="text-gray-400">{item.status}</span>
+                <span className="text-[var(--ledger-border-subtle)]">·</span>
+                <span className="text-[var(--ledger-text-muted)]">{item.status}</span>
               </>
             )}
           </div>
           <h3 className="mt-1 truncate text-sm font-semibold text-gray-950">{title}</h3>
-          {preview && <p className="mt-1 line-clamp-2 text-xs leading-5 text-gray-600">{preview}</p>}
-          <p className="mt-2 text-xs text-gray-500">
+          {preview && <p className={`mt-1 line-clamp-2 text-xs leading-5 ${inboxTheme.bodyText}`}>{preview}</p>}
+          <p className={`mt-2 text-xs ${inboxTheme.mutedText}`}>
             {item.author_name || 'Unknown sender'} · {formatDateTime(item.created_at)}
           </p>
         </div>
@@ -602,7 +626,7 @@ export default function InboxWindow() {
                 openConversion(item, value);
               }}
               disabled={item.status !== 'unprocessed'}
-              className="text-xs font-medium text-gray-600 transition hover:text-[#FF5F40] disabled:cursor-not-allowed disabled:text-gray-300"
+              className="text-xs font-medium text-[var(--ledger-text-secondary)] transition hover:text-[var(--ledger-accent)] disabled:cursor-not-allowed disabled:text-[var(--ledger-text-muted)]"
             >
               {label}
             </button>
@@ -614,7 +638,7 @@ export default function InboxWindow() {
               void archiveItem(item.id);
             }}
             disabled={activeItemId === item.id || item.status === 'archived'}
-            className="text-xs font-medium text-gray-500 transition hover:text-gray-900 disabled:cursor-not-allowed disabled:text-gray-300"
+            className="text-xs font-medium text-[var(--ledger-text-muted)] transition hover:text-[var(--ledger-text-primary)] disabled:cursor-not-allowed disabled:text-[var(--ledger-text-muted)]"
           >
             {activeItemId === item.id ? <Loader2 size={12} className="animate-spin" /> : 'Archive'}
           </button>
@@ -631,11 +655,11 @@ export default function InboxWindow() {
         onMouseDown={(event) => event.stopPropagation()}
         onContextMenu={(event) => event.preventDefault()}
       >
-        <div className="min-w-40 overflow-hidden rounded-xl border border-[#E8DDD4] bg-[#FFFBF7] shadow-xl">
+        <div className={sidebarTheme.menu}>
           <button
             type="button"
             onClick={() => void deleteItem(contextMenu.item)}
-            className="flex w-full items-center px-3 py-2 text-left text-sm text-red-600 transition hover:bg-red-50"
+            className={sidebarTheme.menuItemDanger}
           >
             Delete capture
           </button>
@@ -665,12 +689,12 @@ export default function InboxWindow() {
   }, [contextMenu]);
 
   return (
-    <div className="flex h-screen flex-col overflow-hidden rounded-3xl border border-[#E8DDD4] bg-[#FFF8F1] text-gray-950 shadow-none">
+    <div className={inboxTheme.shell}>
       <ModuleWindowHeader
         eyebrow="Ledger"
         title="Inbox"
         subtitle={headerSubtitle}
-        icon={<InboxIcon size={20} className="text-[#FF5F40]" />}
+        icon={<InboxIcon size={20} className="text-[var(--ledger-accent)]" />}
         onClose={() => window.desktopWindow?.closeModule('inbox')}
         onMinimize={() => window.desktopWindow?.minimizeModule('inbox')}
         onToggleFullscreen={() => window.desktopWindow?.toggleModuleFullscreen('inbox')}
@@ -687,7 +711,7 @@ export default function InboxWindow() {
           <button
             type="button"
             onClick={() => void loadInbox(true)}
-            className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-[#E8DDD4] bg-[#FFFBF7] text-gray-600 transition hover:bg-[#FFF4EA] hover:text-gray-900"
+            className={inboxTheme.headerButton}
             title="Refresh inbox"
             aria-label="Refresh inbox"
           >
@@ -696,11 +720,11 @@ export default function InboxWindow() {
         }
       />
 
-      <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_300px] overflow-hidden bg-[#FFF8F1]">
+      <div className={`grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_300px] overflow-hidden ${inboxTheme.contentShell}`}>
         <section className="min-h-0 overflow-hidden px-7 py-6">
-          <div className="border-b border-[#E8DDD4] pb-4">
-            <p className="text-sm font-semibold text-gray-900">Queue</p>
-            <p className="mt-1 text-sm text-gray-600">
+          <div className="border-b border-[color:var(--ledger-border-subtle)] pb-4">
+            <p className={inboxTheme.sectionHeading}>Queue</p>
+            <p className={`mt-1 text-sm ${inboxTheme.bodyText}`}>
               Turn saved messages into tasks, notes, reminders, or events.
             </p>
           </div>
@@ -709,17 +733,17 @@ export default function InboxWindow() {
             {isLoading ? (
               <div className="flex h-full items-center justify-center">
                 <div className="text-center">
-                  <Loader2 size={20} className="mx-auto mb-2 animate-spin text-gray-400" />
-                  <p className="text-sm text-gray-500">Loading captures...</p>
+                  <Loader2 size={20} className="mx-auto mb-2 animate-spin text-[var(--ledger-text-muted)]" />
+                  <p className={`text-sm ${inboxTheme.mutedText}`}>Loading captures...</p>
                 </div>
               </div>
             ) : error ? (
               <div className="flex h-full items-center justify-center">
                 <div className="text-center">
-                  <p className="text-sm text-gray-600">{error}</p>
+                  <p className={`text-sm ${inboxTheme.bodyText}`}>{error}</p>
                   <button
                     onClick={() => void loadInbox()}
-                    className="mt-2 text-xs font-medium text-[#FF5F40] transition hover:text-[#e65338]"
+                    className="mt-2 text-xs font-medium text-[var(--ledger-accent)] transition hover:text-[var(--ledger-accent-hover)]"
                   >
                     Retry
                   </button>
@@ -728,7 +752,7 @@ export default function InboxWindow() {
             ) : visibleItems.length === 0 ? (
               <div className="flex h-full items-center justify-center">
                 <div className="max-w-xs text-center">
-                  <p className="text-sm font-semibold text-gray-800">
+                  <p className="text-sm font-semibold text-[var(--ledger-text-primary)]">
                     {activeStatus === 'unprocessed'
                       ? activeSource === 'slack'
                         ? 'No Slack captures waiting.'
@@ -737,7 +761,7 @@ export default function InboxWindow() {
                         : 'Inbox is clear.'
                       : `No ${activeStatus} captures.`}
                   </p>
-                  <p className="mt-1 text-xs leading-5 text-gray-500">
+                  <p className={`mt-1 text-xs leading-5 ${inboxTheme.mutedText}`}>
                     Saved messages and captures will appear here when they need review.
                   </p>
                 </div>
@@ -748,10 +772,10 @@ export default function InboxWindow() {
           </div>
         </section>
 
-        <aside className="min-h-0 overflow-y-auto border-l border-[#E8DDD4] px-6 py-6">
+        <aside className="min-h-0 overflow-y-auto border-l border-[color:var(--ledger-border-subtle)] px-6 py-6">
           <div className="space-y-7">
             <section>
-              <p className="text-sm font-semibold text-gray-900">Sources</p>
+              <p className={inboxTheme.sectionHeading}>Sources</p>
               <div className="mt-2 space-y-1">
                 <FilterButton
                   label="All"
@@ -775,7 +799,7 @@ export default function InboxWindow() {
             </section>
 
             <section>
-              <p className="text-sm font-semibold text-gray-900">Status</p>
+              <p className={inboxTheme.sectionHeading}>Status</p>
               <div className="mt-2 space-y-1">
                 {statusLabels.map((status) => (
                   <FilterButton
@@ -789,31 +813,31 @@ export default function InboxWindow() {
               </div>
             </section>
 
-            <section className="border-t border-[#E8DDD4] pt-5">
-              <p className="text-sm font-semibold text-gray-900">Selected</p>
+            <section className="border-t border-[color:var(--ledger-border-subtle)] pt-5">
+              <p className={inboxTheme.sectionHeading}>Selected</p>
               {selectedCapture ? (
                 <div className="mt-3 space-y-3">
                   <div>
-                    <p className="line-clamp-2 text-sm font-semibold text-gray-950">
+                    <p className="line-clamp-2 text-sm font-semibold text-[var(--ledger-text-primary)]">
                       {getDisplayTitle(selectedCapture)}
                     </p>
-                    <p className="mt-1 text-xs text-gray-500">
+                    <p className={`mt-1 text-xs ${inboxTheme.mutedText}`}>
                       {[getSourceLabel(selectedCapture), getSourceContext(selectedCapture), selectedCapture.author_name]
                         .filter(Boolean)
                         .join(' · ')}
                     </p>
-                    <p className="mt-1 text-xs text-gray-500">{formatTimeOnly(selectedCapture.created_at)}</p>
+                    <p className={`mt-1 text-xs ${inboxTheme.mutedText}`}>{formatTimeOnly(selectedCapture.created_at)}</p>
                   </div>
                   {selectedCapture.status === 'unprocessed' && (
                     <div>
-                      <p className="mb-2 text-xs font-medium text-gray-500">Save as</p>
+                      <p className={`mb-2 text-xs font-medium ${inboxTheme.mutedText}`}>Save as</p>
                       <div className="flex flex-wrap gap-x-2 gap-y-1">
                         {conversionTypes.map(({ value, label }) => (
                           <button
                             key={value}
                             type="button"
                             onClick={() => openConversion(selectedCapture, value)}
-                            className="text-xs font-medium text-gray-600 transition hover:text-[#FF5F40]"
+                            className="text-xs font-medium text-[var(--ledger-text-secondary)] transition hover:text-[var(--ledger-accent)]"
                           >
                             {label}
                           </button>
@@ -823,7 +847,7 @@ export default function InboxWindow() {
                   )}
                 </div>
               ) : (
-                <p className="mt-2 text-sm leading-5 text-gray-500">Select a capture to inspect it.</p>
+                <p className={`mt-2 text-sm leading-5 ${inboxTheme.mutedText}`}>Select a capture to inspect it.</p>
               )}
             </section>
           </div>
@@ -835,17 +859,17 @@ export default function InboxWindow() {
       <ModalOverlay
         isOpen={!!selectedItem}
         onClose={closeConversion}
-        classNameContainer="flex max-h-[88vh] w-full max-w-2xl overflow-hidden rounded-2xl border border-[#E8DDD4] bg-[#FFFBF7] shadow-xl"
+        classNameContainer={`flex max-h-[88vh] w-full max-w-2xl overflow-hidden ${sidebarTheme.surface}`}
       >
         {selectedItem && (
                 <div className="flex min-h-0 w-full flex-col" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
-                  <div className="flex items-start justify-between gap-4 border-b border-[#E8DDD4] bg-[#FFFBF7] px-6 py-5" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+                  <div className="flex items-start justify-between gap-4 border-b border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-6 py-5" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
                     <div className="min-w-0">
-                      <p className="text-sm font-semibold text-gray-900">Convert capture</p>
-                      <h2 className="mt-2 truncate text-lg font-semibold text-gray-950">
+                      <p className="text-sm font-semibold text-[var(--ledger-text-primary)]">Convert capture</p>
+                      <h2 className="mt-2 truncate text-lg font-semibold text-[var(--ledger-text-primary)]">
                         {getDisplayTitle(selectedItem)}
                       </h2>
-                      <p className="mt-1 text-sm text-gray-600">
+                      <p className={`mt-1 text-sm ${inboxTheme.bodyText}`}>
                         {[getSourceLabel(selectedItem), getSourceContext(selectedItem), selectedItem.author_name]
                           .filter(Boolean)
                           .join(' · ')}
@@ -859,18 +883,18 @@ export default function InboxWindow() {
                   </div>
 
                   <div className="min-h-0 flex-1 overflow-y-auto p-5">
-                <div className="border-b border-[#E8DDD4] pb-4">
-                  <p className="text-sm font-medium text-gray-900">{getDisplayTitle(selectedItem)}</p>
+                <div className="border-b border-[color:var(--ledger-border-subtle)] pb-4">
+                  <p className="text-sm font-medium text-[var(--ledger-text-primary)]">{getDisplayTitle(selectedItem)}</p>
                   {getSlackLinkLabels(selectedItem.body || selectedItem.title).length > 0 && (
-                    <p className="mt-1 text-xs text-gray-500">
+                    <p className={`mt-1 text-xs ${inboxTheme.mutedText}`}>
                       {getSlackLinkLabels(selectedItem.body || selectedItem.title).join(' · ')}
                     </p>
                   )}
                 </div>
   
                 <div className="mt-5">
-                  <p className="mb-2 text-sm font-semibold text-gray-900">Save as</p>
-                  <div className="grid grid-cols-4 gap-1 rounded-full border border-[#E8DDD4] bg-[#FFF4EA] p-1">
+                  <p className="mb-2 text-sm font-semibold text-[var(--ledger-text-primary)]">Save as</p>
+                  <div className="grid grid-cols-4 gap-1 rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] p-1">
                     {conversionTypes.map(({ value, label, icon: Icon }) => (
                       <button
                         key={value}
@@ -878,8 +902,8 @@ export default function InboxWindow() {
                         onClick={() => setConversionType(value)}
                         className={`inline-flex h-8 items-center justify-center gap-1.5 rounded-full px-2 text-xs font-semibold transition ${
                           conversionType === value
-                            ? 'bg-gray-950 text-white'
-                            : 'text-gray-600 hover:bg-[#FFF4EA] hover:text-gray-950'
+                            ? 'bg-[var(--ledger-accent)] text-white'
+                            : 'text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]'
                         }`}
                       >
                         <Icon size={13} />
@@ -891,41 +915,41 @@ export default function InboxWindow() {
   
                 <div className="mt-5 grid gap-4">
                   <label className="block space-y-1">
-                    <span className="text-xs font-medium text-gray-500">Title</span>
+                    <span className={`text-xs font-medium ${inboxTheme.mutedText}`}>Title</span>
                     <input
                       value={draftTitle}
                       onChange={(event) => setDraftTitle(event.target.value)}
-                      className="h-10 w-full rounded-xl border border-[#E8DDD4] bg-[#FFFBF7] px-3 text-sm text-gray-900 outline-none transition focus:border-gray-400"
+                      className={inboxTheme.field}
                     />
                   </label>
   
                   <label className="block space-y-1">
-                    <span className="text-xs font-medium text-gray-500">
+                    <span className={`text-xs font-medium ${inboxTheme.mutedText}`}>
                       {conversionType === 'note' ? 'Content' : 'Notes'}
                     </span>
                     <textarea
                       value={draftBody}
                       onChange={(event) => setDraftBody(event.target.value)}
                       rows={conversionType === 'note' ? 5 : 4}
-                      className="w-full resize-y rounded-xl border border-[#E8DDD4] bg-[#FFFBF7] px-3 py-2.5 text-sm leading-6 text-gray-900 outline-none transition focus:border-gray-400"
+                      className="w-full resize-y rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] px-3 py-2.5 text-sm leading-6 text-[var(--ledger-text-primary)] outline-none transition focus:border-[color:var(--ledger-border-strong)]"
                     />
                   </label>
   
                   <div className="grid grid-cols-2 gap-3">
                     <label className="block space-y-1">
-                      <span className="text-xs font-medium text-gray-500">Workspace</span>
+                      <span className={`text-xs font-medium ${inboxTheme.mutedText}`}>Workspace</span>
                       <input
                         value={activeWorkspace?.name ?? 'Current workspace'}
                         readOnly
-                        className="h-10 w-full rounded-xl border border-[#E8DDD4] bg-[#FFF4EA] px-3 text-sm text-gray-600 outline-none"
+                        className="h-10 w-full rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 text-sm text-[var(--ledger-text-secondary)] outline-none"
                       />
                     </label>
                     <label className="block space-y-1">
-                      <span className="text-xs font-medium text-gray-500">Project</span>
+                      <span className={`text-xs font-medium ${inboxTheme.mutedText}`}>Project</span>
                       <select
                         value={selectedProjectId}
                         onChange={(event) => setSelectedProjectId(event.target.value)}
-                        className="h-10 w-full rounded-xl border border-[#E8DDD4] bg-[#FFFBF7] px-3 text-sm text-gray-900 outline-none transition focus:border-gray-400"
+                        className={inboxTheme.field}
                       >
                         <option value="">No project</option>
                         {projects.map((project) => (
@@ -938,12 +962,12 @@ export default function InboxWindow() {
                   </div>
   
                   {conversionType === 'task' && (
-                    <label className="inline-flex items-center gap-2 text-sm font-medium text-gray-700">
+                    <label className="inline-flex items-center gap-2 text-sm font-medium text-[var(--ledger-text-secondary)]">
                       <input
                         type="checkbox"
                         checked={showInToday}
                         onChange={(event) => setShowInToday(event.target.checked)}
-                        className="h-4 w-4 rounded border-gray-300 text-[#FF5F40] focus:ring-[#FF5F40]"
+                        className="h-4 w-4 rounded border-[color:var(--ledger-border-subtle)] text-[var(--ledger-accent)] focus:ring-[var(--ledger-accent)]"
                       />
                       Mark as Today
                     </label>
@@ -952,21 +976,21 @@ export default function InboxWindow() {
                   {conversionType === 'reminder' && (
                     <div className="grid grid-cols-2 gap-3">
                       <label className="block space-y-1">
-                        <span className="text-xs font-medium text-gray-500">Remind on</span>
+                        <span className={`text-xs font-medium ${inboxTheme.mutedText}`}>Remind on</span>
                         <input
                           type="date"
                           value={reminderDate}
                           onChange={(event) => setReminderDate(event.target.value)}
-                          className="h-10 w-full rounded-xl border border-[#E8DDD4] bg-[#FFFBF7] px-3 text-sm text-gray-900 outline-none transition focus:border-gray-400"
+                          className={inboxTheme.field}
                         />
                       </label>
                       <label className="block space-y-1">
-                        <span className="text-xs font-medium text-gray-500">Time</span>
+                        <span className={`text-xs font-medium ${inboxTheme.mutedText}`}>Time</span>
                         <input
                           type="time"
                           value={reminderTime}
                           onChange={(event) => setReminderTime(event.target.value)}
-                          className="h-10 w-full rounded-xl border border-[#E8DDD4] bg-[#FFFBF7] px-3 text-sm text-gray-900 outline-none transition focus:border-gray-400"
+                          className={inboxTheme.field}
                         />
                       </label>
                     </div>
@@ -975,11 +999,11 @@ export default function InboxWindow() {
                   {(conversionType === 'reminder' || conversionType === 'event') && (
                     <div className="grid grid-cols-2 gap-3">
                       <label className="block space-y-1">
-                        <span className="text-xs font-medium text-gray-500">Calendar</span>
+                        <span className={`text-xs font-medium ${inboxTheme.mutedText}`}>Calendar</span>
                         <select
                           value={selectedCalendarId}
                           onChange={(event) => setSelectedCalendarId(event.target.value)}
-                          className="h-10 w-full rounded-xl border border-[#E8DDD4] bg-[#FFFBF7] px-3 text-sm text-gray-900 outline-none transition focus:border-gray-400"
+                          className={inboxTheme.field}
                         >
                           <option value="">Default calendar</option>
                           {calendars.map((calendar) => (
@@ -990,11 +1014,11 @@ export default function InboxWindow() {
                         </select>
                       </label>
                       <label className="block space-y-1">
-                        <span className="text-xs font-medium text-gray-500">Linked note</span>
+                        <span className={`text-xs font-medium ${inboxTheme.mutedText}`}>Linked note</span>
                         <select
                           value={selectedNoteId}
                           onChange={(event) => setSelectedNoteId(event.target.value)}
-                          className="h-10 w-full rounded-xl border border-[#E8DDD4] bg-[#FFFBF7] px-3 text-sm text-gray-900 outline-none transition focus:border-gray-400"
+                          className={inboxTheme.field}
                         >
                           <option value="">No note</option>
                           {notes.map((note) => (
@@ -1010,32 +1034,32 @@ export default function InboxWindow() {
                   {conversionType === 'event' && (
                     <div className="grid grid-cols-3 gap-3">
                       <label className="block space-y-1">
-                        <span className="text-xs font-medium text-gray-500">Date</span>
+                        <span className={`text-xs font-medium ${inboxTheme.mutedText}`}>Date</span>
                         <input
                           type="date"
                           value={eventDate}
                           onChange={(event) => setEventDate(event.target.value)}
-                          className="h-10 w-full rounded-xl border border-[#E8DDD4] bg-[#FFFBF7] px-3 text-sm text-gray-900 outline-none transition focus:border-gray-400"
+                          className={inboxTheme.field}
                         />
                       </label>
                       <label className="block space-y-1">
-                        <span className="text-xs font-medium text-gray-500">Start</span>
+                        <span className={`text-xs font-medium ${inboxTheme.mutedText}`}>Start</span>
                         <input
                           type="time"
                           value={eventTime}
                           onChange={(event) => setEventTime(event.target.value)}
-                          className="h-10 w-full rounded-xl border border-gray-200 bg-[#FFFDFB] px-3 text-sm text-gray-900 outline-none transition focus:border-gray-400"
+                          className={inboxTheme.field}
                         />
                       </label>
                       <label className="block space-y-1">
-                        <span className="text-xs font-medium text-gray-500">Minutes</span>
+                        <span className={`text-xs font-medium ${inboxTheme.mutedText}`}>Minutes</span>
                         <input
                           type="number"
                           min="15"
                           step="15"
                           value={eventDuration}
                           onChange={(event) => setEventDuration(event.target.value)}
-                          className="h-10 w-full rounded-xl border border-gray-200 bg-[#FFFDFB] px-3 text-sm text-gray-900 outline-none transition focus:border-gray-400"
+                          className={inboxTheme.field}
                         />
                       </label>
                     </div>
@@ -1043,8 +1067,8 @@ export default function InboxWindow() {
                 </div>
                   </div>
 
-                  <div className="flex shrink-0 items-center justify-between gap-3 border-t border-[#E8DDD4] bg-[#FFF4EA] px-5 py-4">
-                    <p className="text-xs text-gray-500">
+                  <div className={inboxTheme.footer}>
+                    <p className={`text-xs ${inboxTheme.mutedText}`}>
                       {conversionType === 'reminder'
                         ? 'Date and time are required for reminders.'
                         : conversionType === 'event'
@@ -1055,7 +1079,7 @@ export default function InboxWindow() {
                       <button
                         type="button"
                         onClick={closeConversion}
-                        className="rounded-full border border-[#E8DDD4] bg-[#FFFBF7] px-4 py-2 text-sm font-medium text-gray-700 transition hover:bg-[#FFF4EA]"
+                        className="rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] px-4 py-2 text-sm font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
                       >
                         Cancel
                       </button>
@@ -1063,7 +1087,7 @@ export default function InboxWindow() {
                         type="button"
                         onClick={() => void submitConversion()}
                         disabled={isConverting}
-                        className="rounded-full bg-[#FF5F40] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#ea5336] disabled:opacity-60"
+                        className="rounded-full bg-[var(--ledger-accent)] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[var(--ledger-accent-hover)] disabled:opacity-60"
                       >
                         {isConverting ? 'Creating...' : `Create ${conversionType}`}
                       </button>
@@ -1091,14 +1115,18 @@ function FilterButton({
     <button
       type="button"
       onClick={onClick}
-      className={`flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-sm transition ${
-        active ? 'bg-[#FFF0EA] text-gray-950' : 'text-gray-600 hover:bg-[#FFF4EA] hover:text-gray-950'
+      className={`flex w-full items-center justify-between rounded-2xl border px-2.5 py-2 text-sm transition ${
+        active
+          ? 'border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-hover)] text-[var(--ledger-text-primary)]'
+          : 'border-transparent text-[var(--ledger-text-secondary)] hover:border-[color:var(--ledger-border-subtle)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]'
       }`}
     >
       <span className="font-medium">{label}</span>
       <span
         className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
-          active ? 'bg-[#FFFBF7] text-gray-700' : 'bg-[#FFF4EA] text-gray-500'
+          active
+            ? 'bg-[var(--ledger-surface)] text-[var(--ledger-text-secondary)]'
+            : 'bg-[var(--ledger-surface-hover)] text-[var(--ledger-text-muted)]'
         }`}
       >
         {count}

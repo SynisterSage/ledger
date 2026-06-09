@@ -10,6 +10,7 @@ import {
 import { createPortal } from 'react-dom';
 import { ChevronDown, Loader2, Maximize2, Minus, RefreshCw, X } from 'lucide-react';
 import { useWorkspaceContext } from '../../context/WorkspaceContext';
+import { sidebarTheme } from '../Sidebar/sidebarTheme';
 
 type ModuleWindowHeaderProps = {
   eyebrow?: string;
@@ -55,6 +56,7 @@ type ModuleHeaderSegmentedButtonProps = {
   ariaLabel?: string;
   active?: boolean;
   iconOnly?: boolean;
+  pill?: boolean;
 };
 
 type ModuleHeaderStatusProps = {
@@ -140,11 +142,11 @@ const WorkspaceSwitcher = () => {
         disabled
         title="No workspaces available"
         aria-label="No workspaces available"
-        className="inline-flex h-7 min-w-28 max-w-60 items-center gap-1.5 text-left text-xs font-medium text-gray-400 opacity-70"
+        className={`inline-flex h-7 min-w-28 max-w-60 items-center gap-1.5 text-left text-xs font-medium opacity-70 ${sidebarTheme.textMuted}`}
         style={noDragRegionStyle}
       >
         <span className="min-w-0 flex-1 truncate">Workspace</span>
-        <ChevronDown size={13} className="shrink-0 text-gray-500" />
+        <ChevronDown size={13} className={`shrink-0 ${sidebarTheme.textMuted}`} />
       </button>
     );
   }
@@ -161,12 +163,12 @@ const WorkspaceSwitcher = () => {
         onMouseDown={(event) => event.stopPropagation()}
         title={resolvedLabel}
         aria-label={`Switch workspace. Current workspace: ${resolvedLabel}`}
-        className={`inline-flex h-7 min-w-28 max-w-60 items-center gap-1.5 text-left text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-300/80 ${
-          isOpen ? 'text-gray-900' : 'text-gray-700 hover:text-gray-900'
+        className={`inline-flex h-7 min-w-28 max-w-60 items-center gap-1.5 text-left text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-accent)]/20 ${
+          isOpen ? sidebarTheme.textPrimary : `${sidebarTheme.textSecondary} hover:${sidebarTheme.textPrimary}`
         }`}
       >
         <span className="min-w-0 flex-1 truncate">{resolvedLabel}</span>
-        <ChevronDown size={13} className="shrink-0 text-gray-500" />
+        <ChevronDown size={13} className={`shrink-0 ${sidebarTheme.textMuted}`} />
       </button>
 
       {isOpen && typeof document !== 'undefined'
@@ -183,7 +185,7 @@ const WorkspaceSwitcher = () => {
               <div
                 ref={menuRef}
                 style={menuStyle ?? undefined}
-                className="max-h-60 overflow-y-auto rounded-2xl border border-[#E8DDD4] bg-[#FFFBF7] shadow-[0_16px_48px_rgba(15,23,42,0.14)] ring-0 outline-none"
+                className={`${sidebarTheme.menu} max-h-60 overflow-y-auto shadow-[0_16px_48px_rgba(15,23,42,0.14)] ring-0 outline-none`}
                 onMouseDown={(event) => event.stopPropagation()}
                 onClick={(event) => event.stopPropagation()}
                 onMouseMove={(event) => event.stopPropagation()}
@@ -209,17 +211,17 @@ const WorkspaceSwitcher = () => {
                             setIsOpen(false);
                           }
                         }}
-                        className={`group flex min-h-10 w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF5F40]/20 ${
+                        className={`group flex min-h-10 w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-accent)]/20 ${
                           isActive
-                            ? 'bg-gray-50 text-gray-950'
-                            : 'text-gray-700 hover:bg-gray-50 hover:text-gray-950'
+                            ? sidebarTheme.hoverSurface + ' ' + sidebarTheme.textPrimary
+                            : `${sidebarTheme.textSecondary} hover:${sidebarTheme.hoverSurface} hover:${sidebarTheme.textPrimary}`
                         }`}
                         style={noDragRegionStyle}
                         aria-current={isActive ? 'true' : undefined}
                       >
                         <span
                           className={`h-2 w-2 shrink-0 rounded-full ${
-                            isActive ? 'bg-[#FF5F40]' : 'bg-gray-300'
+                            isActive ? 'bg-[var(--ledger-accent)]' : 'bg-[var(--ledger-border-strong)]'
                           }`}
                         />
                         <span className="min-w-0 flex-1 truncate">{workspace.name}</span>
@@ -243,16 +245,16 @@ type AppRegionStyle = CSSProperties & {
 const dragRegionStyle: AppRegionStyle = { WebkitAppRegion: 'drag' };
 const noDragRegionStyle: AppRegionStyle = { WebkitAppRegion: 'no-drag' };
 const actionButtonClassName =
-  'inline-flex h-9 items-center justify-center gap-1.5 rounded-full border border-[#E8DDD4] bg-[#FFFBF7] px-3.5 text-xs font-medium text-gray-700 transition hover:bg-[#FFF4EA] hover:text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-300/80';
+  `inline-flex h-9 items-center justify-center gap-1.5 rounded-full border ${sidebarTheme.subtleBorder} ${sidebarTheme.mutedSurface} px-3.5 text-xs font-medium ${sidebarTheme.textSecondary} transition hover:${sidebarTheme.hoverSurface} hover:${sidebarTheme.textPrimary} focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-accent)]/20`;
 
 const iconButtonClassName =
-  'inline-flex h-9 w-9 items-center justify-center rounded-full border border-[#E8DDD4] bg-[#FFFBF7] text-gray-700 transition hover:bg-[#FFF4EA] hover:text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-300/80';
+  `inline-flex h-9 w-9 items-center justify-center rounded-full border ${sidebarTheme.subtleBorder} ${sidebarTheme.mutedSurface} ${sidebarTheme.textSecondary} transition hover:${sidebarTheme.hoverSurface} hover:${sidebarTheme.textPrimary} focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-accent)]/20`;
 
 const segmentedGroupClassName =
-  'inline-flex h-9 items-center rounded-full border border-[#E8DDD4] bg-[#FFF4EA] p-0.5';
+  `inline-flex h-9 items-center rounded-full border ${sidebarTheme.subtleBorder} ${sidebarTheme.hoverSurface} p-0.5`;
 
 const segmentedButtonBaseClassName =
-  'inline-flex h-8 items-center justify-center rounded-full px-3 text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-300/80';
+  'inline-flex h-8 items-center justify-center rounded-full px-3 text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-accent)]/20';
 
 export const ModuleHeaderActionButton = ({
   children,
@@ -272,12 +274,14 @@ export const ModuleHeaderActionButton = ({
       title={title}
       aria-label={ariaLabel ?? title}
       className={`${resolvedClassName} ${
-        disabled ? 'cursor-not-allowed border-gray-200 bg-gray-50 text-gray-400 hover:bg-gray-50 hover:text-gray-400' : ''
+        disabled
+          ? `cursor-not-allowed ${sidebarTheme.subtleBorder} ${sidebarTheme.mutedSurface} ${sidebarTheme.textMuted} hover:${sidebarTheme.mutedSurface} hover:${sidebarTheme.textMuted}`
+          : ''
       }`}
     >
       {children}
       {!iconOnly && active && (
-        <span className="ml-1 inline-flex h-1.5 w-1.5 rounded-full bg-[#FF5F40]" />
+        <span className="ml-1 inline-flex h-1.5 w-1.5 rounded-full bg-[var(--ledger-accent)]" />
       )}
     </button>
   );
@@ -294,6 +298,7 @@ export const ModuleHeaderSegmentedButton = ({
   ariaLabel,
   active = false,
   iconOnly = false,
+  pill = false,
 }: ModuleHeaderSegmentedButtonProps) => {
   return (
     <button
@@ -302,8 +307,12 @@ export const ModuleHeaderSegmentedButton = ({
       title={title}
       aria-label={ariaLabel ?? title}
       className={`${segmentedButtonBaseClassName} ${
-        active ? 'bg-[#FFFBF7] text-gray-900 shadow-[0_1px_2px_rgba(15,23,42,0.08)]' : 'text-gray-600 hover:bg-[#FFFBF7] hover:text-gray-900'
-      } ${iconOnly ? 'w-8 px-0' : ''}`}
+        active
+          ? `${sidebarTheme.surface} ${sidebarTheme.textPrimary} shadow-[0_1px_2px_rgba(15,23,42,0.08)]`
+          : `${sidebarTheme.textSecondary} hover:${sidebarTheme.hoverSurface} hover:${sidebarTheme.textPrimary}`
+      } ${iconOnly ? 'w-8 px-0' : ''} ${
+        pill ? 'rounded-full border border-[#E2D4C4] bg-[#FFF8F2] px-4 shadow-[0_1px_2px_rgba(15,23,42,0.06)]' : ''
+      }`}
     >
       {children}
     </button>
@@ -320,12 +329,12 @@ export const ModuleHeaderStatus = ({
   const isButton = typeof onClick === 'function';
   const toneClassName =
     state === 'error'
-      ? 'text-red-700 border-red-200 bg-red-50'
+      ? 'text-[var(--ledger-danger)] border-[color:rgba(217,45,32,0.18)] bg-[color:rgba(217,45,32,0.08)]'
       : state === 'syncing'
-        ? 'text-[#FF5F40] border-orange-200 bg-orange-50'
+        ? 'text-[var(--ledger-accent)] border-[color:rgba(255,95,64,0.18)] bg-[color:rgba(255,95,64,0.08)]'
         : state === 'offline'
-          ? 'text-gray-600 border-[#E8DDD4] bg-[#FFF7EF]'
-          : 'text-[#FF5F40] border-orange-200 bg-[#FFFBF7]';
+          ? `${sidebarTheme.textSecondary} ${sidebarTheme.subtleBorder} ${sidebarTheme.mutedSurface}`
+          : 'text-[var(--ledger-accent)] border-[color:rgba(255,95,64,0.18)] bg-[var(--ledger-surface-card)]';
 
   const icon =
     state === 'syncing' ? (
@@ -341,7 +350,7 @@ export const ModuleHeaderStatus = ({
         onClick={onClick}
         title={title ?? label}
         aria-label={ariaLabel ?? label}
-        className={`inline-flex h-9 items-center justify-center rounded-full border px-3 transition hover:bg-orange-50 ${toneClassName}`}
+        className={`inline-flex h-9 items-center justify-center rounded-full border px-3 transition hover:bg-[var(--ledger-surface-hover)] ${toneClassName}`}
       >
         {icon}
       </button>
@@ -373,12 +382,12 @@ export const ModuleHeaderCounterAction = ({
       onClick={onClick}
       title={title}
       aria-label={ariaLabel}
-      className="relative inline-flex h-8 items-center gap-1.5 rounded-full border border-[#E8DDD4] bg-[#FFFBF7] px-3 text-xs font-medium text-gray-700 transition hover:bg-[#FFF4EA]"
+      className={`relative inline-flex h-8 items-center gap-1.5 rounded-full border ${sidebarTheme.subtleBorder} ${sidebarTheme.mutedSurface} px-3 text-xs font-medium ${sidebarTheme.textSecondary} transition hover:${sidebarTheme.hoverSurface} hover:${sidebarTheme.textPrimary}`}
     >
       {icon}
       <span>{label}</span>
       {count > 0 && (
-        <span className="absolute -right-1 -top-1 inline-flex min-w-4 items-center justify-center rounded-full bg-[#FF5F40] px-1 py-0.5 text-[9px] font-semibold leading-none text-white">
+        <span className="absolute -right-1 -top-1 inline-flex min-w-4 items-center justify-center rounded-full bg-[var(--ledger-accent)] px-1 py-0.5 text-[9px] font-semibold leading-none text-white">
           {count > 9 ? '9+' : count}
         </span>
       )}
@@ -399,11 +408,11 @@ export const ModuleHeaderStripAction = ({
       onClick={onClick}
       title={title}
       aria-label={ariaLabel}
-      className="relative inline-flex h-6 w-6 items-center justify-center rounded-full border border-[#D8C6B6] bg-[#FFFBF7] text-gray-700 shadow-[0_1px_2px_rgba(15,23,42,0.06)] transition hover:border-[#CBB6A3] hover:bg-[#FFF4EA] hover:text-gray-950"
+      className={`relative inline-flex h-6 w-6 items-center justify-center rounded-full border ${sidebarTheme.subtleBorder} ${sidebarTheme.mutedSurface} ${sidebarTheme.textSecondary} shadow-[0_1px_2px_rgba(15,23,42,0.06)] transition hover:${sidebarTheme.hoverSurface} hover:${sidebarTheme.textPrimary}`}
     >
       {icon}
       {typeof count === 'number' && count > 0 && (
-        <span className="absolute -right-1 -top-1 inline-flex min-w-4 items-center justify-center rounded-full bg-[#FF5F40] px-1 py-0.5 text-[9px] font-semibold leading-none text-white">
+        <span className="absolute -right-1 -top-1 inline-flex min-w-4 items-center justify-center rounded-full bg-[var(--ledger-accent)] px-1 py-0.5 text-[9px] font-semibold leading-none text-white">
           {count > 9 ? '9+' : count}
         </span>
       )}
@@ -434,7 +443,7 @@ export const ModuleWindowHeader = ({
   actions,
 }: ModuleWindowHeaderProps) => {
   const controlClassName =
-    'flex h-5 w-5 items-center justify-center rounded-full border border-[#D2C0AD] bg-[#FFF8F2] text-gray-700 shadow-[0_1px_2px_rgba(15,23,42,0.05)] transition hover:border-[#C4B09B] hover:bg-[#FFF1E3] hover:text-gray-950';
+    `flex h-5 w-5 items-center justify-center rounded-full border ${sidebarTheme.subtleBorder} ${sidebarTheme.mutedSurface} ${sidebarTheme.textSecondary} shadow-[0_1px_2px_rgba(15,23,42,0.05)] transition hover:${sidebarTheme.hoverSurface} hover:${sidebarTheme.textPrimary}`;
 
   const topRightActions = globalActions ?? stripActions;
   const rightActions = primaryActions ?? actions;
@@ -454,9 +463,9 @@ export const ModuleWindowHeader = ({
   };
 
   return (
-    <div className="w-full border-b border-[#E2D4C4] bg-[#FFF6EE]" style={dragRegionStyle}>
+    <div className={`w-full border-b ${sidebarTheme.subtleBorder} ${sidebarTheme.mutedSurface}`} style={dragRegionStyle}>
       <div
-        className="flex h-8 w-full items-center justify-between border-b border-[#E2D4C4] bg-[#FFF1E3] px-4 cursor-default"
+        className={`flex h-8 w-full cursor-default items-center justify-between border-b ${sidebarTheme.subtleBorder} ${sidebarTheme.hoverSurface} px-4`}
         style={dragRegionStyle}
         onDoubleClick={handleTitleBarDoubleClick}
       >
@@ -505,20 +514,20 @@ export const ModuleWindowHeader = ({
 
       <div className="flex min-h-12 w-full items-center justify-between gap-4 px-6 py-3">
         <div className="flex min-w-0 items-center gap-3" style={dragRegionStyle}>
-          <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-[#E2D4C4] bg-[#FFF8F2] shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
+          <div className={`flex h-10 w-10 items-center justify-center rounded-2xl border ${sidebarTheme.subtleBorder} ${sidebarTheme.mutedSurface} shadow-[0_1px_2px_rgba(15,23,42,0.04)]`}>
             {icon}
           </div>
 
           <div className="min-w-0 space-y-0.5">
             {eyebrow && (
-              <p className="text-[11px] font-medium leading-none text-gray-500">
+              <p className={`text-[11px] font-medium leading-none ${sidebarTheme.textMuted}`}>
                 {eyebrow}
               </p>
             )}
-            <h1 className="truncate text-[22px] font-semibold leading-[1.15] tracking-tight text-gray-900">
+            <h1 className={`truncate text-[22px] font-semibold leading-[1.15] tracking-tight ${sidebarTheme.textPrimary}`}>
               {title}
             </h1>
-            {subtitle && <p className="truncate text-[13px] leading-tight text-gray-500">{subtitle}</p>}
+            {subtitle && <p className={`truncate text-[13px] leading-tight ${sidebarTheme.textMuted}`}>{subtitle}</p>}
           </div>
         </div>
 

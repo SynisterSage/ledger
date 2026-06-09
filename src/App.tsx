@@ -335,32 +335,31 @@ function AuthStatusScreen({
 }) {
   return (
     <div
-      className={`relative min-h-screen overflow-hidden bg-transparent p-2.5 text-gray-900 transition-all duration-150 ease-out ${
+      className={`relative flex min-h-screen items-center justify-center overflow-hidden bg-transparent p-2 text-gray-900 transition-all duration-150 ease-out ${
         isExiting ? 'opacity-0 scale-[0.985] translate-y-1' : 'opacity-100 scale-100 translate-y-0'
       }`}
       style={dragRegionStyle}
     >
-      <div className="absolute inset-2.5 rounded-[28px] border border-white/60 bg-[#fff9f4] shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]" />
-      <button
-        type="button"
-        onClick={() => {
-          void window.desktopWindow?.quitApp();
-        }}
-        aria-label="Close"
-        className="absolute right-5 top-5 z-20 inline-flex h-7 w-7 items-center justify-center rounded-full border border-black/5 bg-[#FFFDFB]/60 text-gray-500 transition hover:bg-[#FFFDFB]/90 hover:text-gray-900"
-        style={noDragRegionStyle}
-      >
-        <X size={14} />
-      </button>
       <div
-        className="relative z-10 flex min-h-[calc(100vh-1rem)] items-center justify-center px-6"
+        className="relative z-10 flex h-[min(420px,calc(100vw-1rem),calc(100vh-1rem))] w-[min(420px,calc(100vw-1rem),calc(100vh-1rem))] items-center justify-center rounded-[28px] border border-white/60 bg-[#fff9f4] px-6 py-6 shadow-[0_18px_50px_rgba(15,23,42,0.08),inset_0_1px_0_rgba(255,255,255,0.85)]"
         style={noDragRegionStyle}
       >
-        <div className="flex w-full max-w-112 flex-col items-center text-center">
-          <img src="./logo-color.svg" alt="Ledger" className="mb-4 h-10 w-10" />
-          <h2 className="text-[24px] font-semibold leading-tight text-gray-950">{title}</h2>
-          <p className="mt-2 max-w-[24rem] text-sm leading-6 text-gray-500">{subtitle}</p>
-          <div className="mt-5 flex items-center gap-2 text-gray-500">
+        <button
+          type="button"
+          onClick={() => {
+            void window.desktopWindow?.quitApp();
+          }}
+          aria-label="Close"
+          className="absolute right-4 top-4 inline-flex h-7 w-7 items-center justify-center rounded-full border border-black/5 bg-[#FFFDFB]/60 text-gray-500 transition hover:bg-[#FFFDFB]/90 hover:text-gray-900"
+          style={noDragRegionStyle}
+        >
+          <X size={14} />
+        </button>
+        <div className="flex w-full flex-col items-center text-center">
+          <img src="./logo-color.svg" alt="Ledger" className="mb-3 h-9 w-9" />
+          <h2 className="text-[22px] font-semibold leading-tight text-gray-950">{title}</h2>
+          <p className="mt-1.5 max-w-[18rem] text-sm leading-5 text-gray-500">{subtitle}</p>
+          <div className="mt-4 flex items-center gap-2 text-gray-500">
             <Loader2 size={14} className="animate-spin" />
             <span className="text-[11px] font-medium">Loading</span>
           </div>
