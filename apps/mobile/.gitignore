@@ -37,5 +37,16 @@ yarn-error.*
 *.tsbuildinfo
 
 # generated native folders
-/ios
 /android
+
+# Keep the iOS native project checked in for Xcode Cloud/TestFlight.
+!/ios/
+!/ios/**
+/ios/build/
+/ios/Pods/
+/ios/**/*.xcuserstate
+/ios/**/*.mode1v3
+/ios/**/*.mode2v3
+/ios/**/*.perspectivev3
+/ios/**/*.pbxuser
+/ios/**/*.xccheckout

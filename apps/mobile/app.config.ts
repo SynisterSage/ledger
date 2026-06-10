@@ -5,12 +5,13 @@ const supabaseAnonKey = process.env.VITE_SUPABASE_ANON_KEY?.trim() ?? '';
 const apiUrl = process.env.VITE_API_URL?.trim() ?? '';
 const iosBundleIdentifier = process.env.EXPO_PUBLIC_IOS_BUNDLE_IDENTIFIER?.trim() ?? 'com.ledger.mobile';
 const androidPackage = process.env.EXPO_PUBLIC_ANDROID_PACKAGE?.trim() ?? 'com.ledger.mobile';
+const easProjectId = process.env.EXPO_PUBLIC_EAS_PROJECT_ID?.trim() ?? '70a7a03c-f160-48df-ae4d-aeda640bf4b1';
 
 const config: ExpoConfig = {
   name: 'Ledger',
   slug: 'ledger',
+  owner: 'synastrr',
   version: '1.0.0',
-  orientation: 'portrait',
   icon: './assets/images/icon.png',
   scheme: 'ledger',
   userInterfaceStyle: 'automatic',
@@ -56,6 +57,9 @@ const config: ExpoConfig = {
     ledgerApiUrl: apiUrl,
     ledgerSupabaseUrl: supabaseUrl,
     ledgerSupabaseAnonKey: supabaseAnonKey,
+    eas: {
+      projectId: easProjectId,
+    },
   },
 };
 
