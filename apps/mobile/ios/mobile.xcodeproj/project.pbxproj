@@ -8,23 +8,24 @@
 
 /* Begin PBXBuildFile section */
 		13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB51A68108700A75B9A /* Images.xcassets */; };
-		34149FF3A0FEB3D4A185DD45 /* libPods-mobile.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 600BF0EFA036690CEE447716 /* libPods-mobile.a */; };
 		3E461D99554A48A4959DE609 /* SplashScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */; };
+		46C618C85ED8D755A57BF4CB /* ExpoModulesProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = F50F879AF2EF84B8EDED8A42 /* ExpoModulesProvider.swift */; };
 		A7B41F2E7C8A4A72B3E9F001 /* LedgerAppIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7B41F2E7C8A4A72B3E9F000 /* LedgerAppIntents.swift */; };
 		BB2F792D24A3F905000567C9 /* Expo.plist in Resources */ = {isa = PBXBuildFile; fileRef = BB2F792C24A3F905000567C9 /* Expo.plist */; };
-		C57B40953204A860D1BEC5CC /* ExpoModulesProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4375A1F110B1CCFD8E8F4FB5 /* ExpoModulesProvider.swift */; };
+		E295ED9449ED308C5EE31FD9 /* libPods-Ledger.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 763A9EDFA7700DF54C32D050 /* libPods-Ledger.a */; };
 		F11748422D0307B40044C1D9 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = F11748412D0307B40044C1D9 /* AppDelegate.swift */; };
 		F84972115F97B6514EBF8B4D /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = E63C296AA63FFD7E47BD263B /* PrivacyInfo.xcprivacy */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		134B7A8FAA631B51795723C2 /* Pods-Ledger.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Ledger.debug.xcconfig"; path = "Target Support Files/Pods-Ledger/Pods-Ledger.debug.xcconfig"; sourceTree = "<group>"; };
 		13B07F961A680F5B00A75B9A /* Ledger.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Ledger.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		13B07FB51A68108700A75B9A /* Images.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; name = Images.xcassets; path = mobile/Images.xcassets; sourceTree = "<group>"; };
 		13B07FB61A68108700A75B9A /* Info.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = Info.plist; path = mobile/Info.plist; sourceTree = "<group>"; };
 		1672821B5ABBCD2293A21D8B /* Pods-mobile.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-mobile.debug.xcconfig"; path = "Target Support Files/Pods-mobile/Pods-mobile.debug.xcconfig"; sourceTree = "<group>"; };
-		4375A1F110B1CCFD8E8F4FB5 /* ExpoModulesProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ExpoModulesProvider.swift; path = "Pods/Target Support Files/Pods-mobile/ExpoModulesProvider.swift"; sourceTree = "<group>"; };
 		5138B8A88EA2C0FE4D570D1F /* Pods-mobile.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-mobile.release.xcconfig"; path = "Target Support Files/Pods-mobile/Pods-mobile.release.xcconfig"; sourceTree = "<group>"; };
-		600BF0EFA036690CEE447716 /* libPods-mobile.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-mobile.a"; sourceTree = BUILT_PRODUCTS_DIR; };
+		763A9EDFA7700DF54C32D050 /* libPods-Ledger.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-Ledger.a"; sourceTree = BUILT_PRODUCTS_DIR; };
+		9EDC7294FD0BF67CA8B29224 /* Pods-Ledger.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Ledger.release.xcconfig"; path = "Target Support Files/Pods-Ledger/Pods-Ledger.release.xcconfig"; sourceTree = "<group>"; };
 		A7B41F2E7C8A4A72B3E9F000 /* LedgerAppIntents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = LedgerAppIntents.swift; path = mobile/Siri/LedgerAppIntents.swift; sourceTree = "<group>"; };
 		AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.storyboard; name = SplashScreen.storyboard; path = mobile/SplashScreen.storyboard; sourceTree = "<group>"; };
 		BB2F792C24A3F905000567C9 /* Expo.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; path = Expo.plist; sourceTree = "<group>"; };
@@ -32,6 +33,7 @@
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
 		F11748412D0307B40044C1D9 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AppDelegate.swift; path = mobile/AppDelegate.swift; sourceTree = "<group>"; };
 		F11748442D0722820044C1D9 /* mobile-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = "mobile-Bridging-Header.h"; path = "mobile/mobile-Bridging-Header.h"; sourceTree = "<group>"; };
+		F50F879AF2EF84B8EDED8A42 /* ExpoModulesProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ExpoModulesProvider.swift; path = "Pods/Target Support Files/Pods-Ledger/ExpoModulesProvider.swift"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -39,7 +41,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				34149FF3A0FEB3D4A185DD45 /* libPods-mobile.a in Frameworks */,
+				E295ED9449ED308C5EE31FD9 /* libPods-Ledger.a in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -65,7 +67,7 @@
 			isa = PBXGroup;
 			children = (
 				ED297162215061F000B7C4FE /* JavaScriptCore.framework */,
-				600BF0EFA036690CEE447716 /* libPods-mobile.a */,
+				763A9EDFA7700DF54C32D050 /* libPods-Ledger.a */,
 			);
 			name = Frameworks;
 			sourceTree = "<group>";
@@ -73,7 +75,7 @@
 		7408AA863DE4F51718D6FC7F /* ExpoModulesProviders */ = {
 			isa = PBXGroup;
 			children = (
-				DFFACE829D2FBC821134024D /* mobile */,
+				F4DBD883BE21BBBD8E5436C0 /* Ledger */,
 			);
 			name = ExpoModulesProviders;
 			sourceTree = "<group>";
@@ -122,16 +124,18 @@
 			children = (
 				1672821B5ABBCD2293A21D8B /* Pods-mobile.debug.xcconfig */,
 				5138B8A88EA2C0FE4D570D1F /* Pods-mobile.release.xcconfig */,
+				134B7A8FAA631B51795723C2 /* Pods-Ledger.debug.xcconfig */,
+				9EDC7294FD0BF67CA8B29224 /* Pods-Ledger.release.xcconfig */,
 			);
 			path = Pods;
 			sourceTree = "<group>";
 		};
-		DFFACE829D2FBC821134024D /* mobile */ = {
+		F4DBD883BE21BBBD8E5436C0 /* Ledger */ = {
 			isa = PBXGroup;
 			children = (
-				4375A1F110B1CCFD8E8F4FB5 /* ExpoModulesProvider.swift */,
+				F50F879AF2EF84B8EDED8A42 /* ExpoModulesProvider.swift */,
 			);
-			name = mobile;
+			name = Ledger;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -237,7 +241,7 @@
 			outputFileListPaths = (
 			);
 			outputPaths = (
-				"$(DERIVED_FILE_DIR)/Pods-mobile-checkManifestLockResult.txt",
+				"$(DERIVED_FILE_DIR)/Pods-Ledger-checkManifestLockResult.txt",
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
@@ -256,17 +260,17 @@
 				"$(SRCROOT)/.xcode.env",
 				"$(SRCROOT)/.xcode.env.local",
 				"$(SRCROOT)/mobile/mobile.entitlements",
-				"$(SRCROOT)/Pods/Target Support Files/Pods-mobile/expo-configure-project.sh",
+				"$(SRCROOT)/Pods/Target Support Files/Pods-Ledger/expo-configure-project.sh",
 			);
 			name = "[Expo] Configure project";
 			outputFileListPaths = (
 			);
 			outputPaths = (
-				"$(SRCROOT)/Pods/Target Support Files/Pods-mobile/ExpoModulesProvider.swift",
+				"$(SRCROOT)/Pods/Target Support Files/Pods-Ledger/ExpoModulesProvider.swift",
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "# This script configures Expo modules and generates the modules provider file.\nbash -l -c \"./Pods/Target\\ Support\\ Files/Pods-mobile/expo-configure-project.sh\"\n";
+			shellScript = "# This script configures Expo modules and generates the modules provider file.\nbash -l -c \"./Pods/Target\\ Support\\ Files/Pods-Ledger/expo-configure-project.sh\"\n";
 		};
 		7043E0C3525AD4CA12E7D09E /* [CP] Embed Pods Frameworks */ = {
 			isa = PBXShellScriptBuildPhase;
@@ -274,7 +278,7 @@
 			files = (
 			);
 			inputPaths = (
-				"${PODS_ROOT}/Target Support Files/Pods-mobile/Pods-mobile-frameworks.sh",
+				"${PODS_ROOT}/Target Support Files/Pods-Ledger/Pods-Ledger-frameworks.sh",
 				"${PODS_XCFRAMEWORKS_BUILD_DIR}/ExpoFileSystem/ExpoFileSystem.framework/ExpoFileSystem",
 				"${PODS_XCFRAMEWORKS_BUILD_DIR}/ExpoFont/ExpoFont.framework/ExpoFont",
 				"${PODS_XCFRAMEWORKS_BUILD_DIR}/ExpoModulesCore/ExpoModulesCore.framework/ExpoModulesCore",
@@ -297,7 +301,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-mobile/Pods-mobile-frameworks.sh\"\n";
+			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-Ledger/Pods-Ledger-frameworks.sh\"\n";
 			showEnvVarsInLog = 0;
 		};
 		800E24972A6A228C8D4807E9 /* [CP] Copy Pods Resources */ = {
@@ -306,7 +310,7 @@
 			files = (
 			);
 			inputPaths = (
-				"${PODS_ROOT}/Target Support Files/Pods-mobile/Pods-mobile-resources.sh",
+				"${PODS_ROOT}/Target Support Files/Pods-Ledger/Pods-Ledger-resources.sh",
 				"${PODS_CONFIGURATION_BUILD_DIR}/EXApplication/ExpoApplication_privacy.bundle",
 				"${PODS_CONFIGURATION_BUILD_DIR}/EXConstants/EXConstants.bundle",
 				"${PODS_CONFIGURATION_BUILD_DIR}/EXConstants/ExpoConstants_privacy.bundle",
@@ -329,7 +333,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-mobile/Pods-mobile-resources.sh\"\n";
+			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-Ledger/Pods-Ledger-resources.sh\"\n";
 			showEnvVarsInLog = 0;
 		};
 /* End PBXShellScriptBuildPhase section */
@@ -341,7 +345,7 @@
 			files = (
 				F11748422D0307B40044C1D9 /* AppDelegate.swift in Sources */,
 				A7B41F2E7C8A4A72B3E9F001 /* LedgerAppIntents.swift in Sources */,
-				C57B40953204A860D1BEC5CC /* ExpoModulesProvider.swift in Sources */,
+				46C618C85ED8D755A57BF4CB /* ExpoModulesProvider.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -350,7 +354,7 @@
 /* Begin XCBuildConfiguration section */
 		13B07F941A680F5B00A75B9A /* Debug */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = 1672821B5ABBCD2293A21D8B /* Pods-mobile.debug.xcconfig */;
+			baseConfigurationReference = 134B7A8FAA631B51795723C2 /* Pods-Ledger.debug.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
@@ -396,7 +400,7 @@
 		};
 		13B07F951A680F5B00A75B9A /* Release */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = 5138B8A88EA2C0FE4D570D1F /* Pods-mobile.release.xcconfig */;
+			baseConfigurationReference = 9EDC7294FD0BF67CA8B29224 /* Pods-Ledger.release.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
