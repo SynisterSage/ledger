@@ -6,6 +6,7 @@ import { Screen } from '@/components/Screen';
 import { EventForm } from '@/features/capture/EventForm';
 import { bootstrapWorkspaceState } from '@/store/workspaceStore';
 import { useLedgerTheme } from '@/theme';
+import { formatDateToLocalIsoDate } from '@/utils/captureDates';
 
 export default function EventCaptureScreen() {
   const theme = useLedgerTheme();
@@ -29,7 +30,7 @@ export default function EventCaptureScreen() {
   const parsedEndsAt = endsAt ? new Date(endsAt) : null;
   const formattedDate =
     parsedStartsAt && !Number.isNaN(parsedStartsAt.getTime())
-      ? parsedStartsAt.toISOString().slice(0, 10)
+      ? formatDateToLocalIsoDate(parsedStartsAt)
       : undefined;
   const formattedStartTime =
     parsedStartsAt && !Number.isNaN(parsedStartsAt.getTime())

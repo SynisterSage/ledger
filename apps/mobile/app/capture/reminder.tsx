@@ -6,6 +6,7 @@ import { Screen } from '@/components/Screen';
 import { ReminderForm } from '@/features/capture/ReminderForm';
 import { bootstrapWorkspaceState } from '@/store/workspaceStore';
 import { useLedgerTheme } from '@/theme';
+import { formatDateToLocalIsoDate } from '@/utils/captureDates';
 
 export default function ReminderCaptureScreen() {
   const theme = useLedgerTheme();
@@ -24,7 +25,7 @@ export default function ReminderCaptureScreen() {
   const parsedDueAt = dueAt ? new Date(dueAt) : null;
   const formattedDate =
     parsedDueAt && !Number.isNaN(parsedDueAt.getTime())
-      ? parsedDueAt.toISOString().slice(0, 10)
+      ? formatDateToLocalIsoDate(parsedDueAt)
       : undefined;
   const formattedTime =
     parsedDueAt && !Number.isNaN(parsedDueAt.getTime())

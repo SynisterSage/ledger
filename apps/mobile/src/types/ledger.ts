@@ -129,19 +129,44 @@ export type CaptureOption = {
   href: CaptureRoute;
 };
 
-export type NotificationItem = {
-  id: string;
-  title: string;
-  workspace: Workspace;
-  meta: string;
-  actions: string[];
-};
+export type MobileNotificationType =
+  | 'reminder_due'
+  | 'event_starting'
+  | 'task_due'
+  | 'overdue_item'
+  | 'project_deadline'
+  | 'inbox_capture'
+  | 'invite.accepted';
+
+export type MobileNotificationStatus = 'active' | 'earlier';
+
+export type MobileNotificationAction =
+  | 'open'
+  | 'complete'
+  | 'snooze'
+  | 'mark_done'
+  | 'snooze_10'
+  | 'snooze_1_hour'
+  | 'move_tomorrow'
+  | 'dismiss'
+  | 'archive'
+  | 'convert_task'
+  | 'convert_reminder'
+  | 'convert_note'
+  | 'convert_event'
+  | 'add_note'
+  | 'create_follow_up'
+  | 'reschedule'
+  | 'open_project'
+  | 'edit'
+  | 'delete'
+  | 'add_to_focus';
 
 export type MobileNotificationCenterItem = {
   id: string;
   sourceType: 'reminder' | 'event' | 'task' | 'project' | 'inbox' | 'workspace_invite';
   sourceId: string;
-  notificationType: string | null;
+  notificationType: MobileNotificationType | null;
   title: string;
   body: string | null;
   context: string | null;
@@ -149,13 +174,13 @@ export type MobileNotificationCenterItem = {
   workspaceName: string | null;
   workspaceColor: string | null;
   moduleKind: string | null;
-  actions: string[];
+  actions: MobileNotificationAction[];
   scheduledFor: string | null;
   deliveredInAppAt: string | null;
   deliveredDesktopAt: string | null;
   dismissedAt: string | null;
   actionTaken: string | null;
-  status: 'active' | 'earlier';
+  status: MobileNotificationStatus;
 };
 
 export type MobileNotificationCenterResponse = {

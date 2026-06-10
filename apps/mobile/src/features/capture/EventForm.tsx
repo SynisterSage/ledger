@@ -13,7 +13,7 @@ import { CaptureDateTimePickerSheet } from '@/features/capture/CaptureDateTimePi
 import { useCaptureProjects } from '@/features/capture/useCaptureProjects';
 import { ProjectPickerSheet } from '@/features/capture/ProjectPickerSheet';
 import { useLedgerTheme } from '@/theme';
-import { buildLocalIsoDateTime } from '@/utils/captureDates';
+import { buildLocalIsoDateTime, formatDateToLocalIsoDate } from '@/utils/captureDates';
 import { formatCaptureDateLabel, formatCaptureTimeLabel, parseMobileDateInput, parseMobileDateTimeInput } from '@/features/capture/dateUtils';
 import {
   getWorkspaceLabel,
@@ -224,7 +224,7 @@ export function EventForm({
         title="Select date"
         mode="date"
         value={parsedDate}
-        onSelect={(next) => setDateInput(next.toISOString().slice(0, 10))}
+        onSelect={(next) => setDateInput(formatDateToLocalIsoDate(next))}
         onClose={() => setDatePickerOpen(false)}
       />
       <CaptureDateTimePickerSheet

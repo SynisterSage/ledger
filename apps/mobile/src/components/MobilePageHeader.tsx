@@ -4,6 +4,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SymbolView } from 'expo-symbols';
 
 import { AppText } from './AppText';
+import { HeaderInsetFade } from './HeaderInsetFade';
 import { Skeleton } from './Skeleton';
 
 import { useAppPreferencesState } from '@/store/appPreferencesStore';
@@ -69,6 +70,7 @@ export function MobilePageHeader({
           },
           headerStyle,
         ]}>
+      <HeaderInsetFade backgroundColor={theme.colors.background} height={Math.max(insets.top + 72, 112)} />
       <View style={styles.content}>
         <View style={styles.titleRow}>
           <View style={styles.titleCluster}>

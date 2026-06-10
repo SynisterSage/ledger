@@ -1,4 +1,5 @@
 import { useRouter } from 'expo-router';
+import * as Notifications from 'expo-notifications';
 import * as WebBrowser from 'expo-web-browser';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Animated, Pressable, ScrollView, Switch, View } from 'react-native';
@@ -6,6 +7,10 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SymbolView } from 'expo-symbols';
 
 import { signOut, updateDisplayName, updatePassword } from '@/api/auth';
+import {
+  registerCurrentMobilePushToken,
+  revokeCurrentMobilePushToken,
+} from '@/api/pushNotifications';
 import {
   defaultMobileCapturePreferences,
   defaultMobileNotificationPreferences,
@@ -42,6 +47,7 @@ import {
   useWorkspaceState,
 } from '@/store/workspaceStore';
 import { useLedgerTheme } from '@/theme';
+import { HeaderInsetFade } from '@/components/HeaderInsetFade';
 
 const mockProfile = {
   version: '1.0.0',
@@ -190,6 +196,79 @@ export default function SettingsScreen() {
     }
   };
 
+  const handlePushNotificationsChange = async (value: boolean) => {
+    if (notificationPrefsLoading) {
+      return;
+    }
+
+    const previousPreferences = notificationPrefs;
+    const nextPreferences = {
+      ...notificationPrefs,
+      pushNotifications: value,
+    };
+
+    setNotificationPrefs(nextPreferences);
+
+    try {
+      if (value) {
+        const existing = await Notifications.getPermissionsAsync();
+        const permission =
+          existing.status === 'granted' ? existing : await Notifications.requestPermissionsAsync();
+
+        if (permission.status !== 'granted') {
+          setNotificationPrefs(previousPreferences);
+          Alert.alert(
+            'Notifications are off',
+            'You can enable them later in Settings.',
+          );
+          return;
+        }
+      }
+
+      await updateMobileUserSettings({
+        preferences: {
+          mobileNotificationPreferences: nextPreferences,
+        },
+      });
+
+      if (value) {
+        await registerCurrentMobilePushToken();
+      } else {
+        await revokeCurrentMobilePushToken();
+      }
+    } catch {
+      try {
+        await updateMobileUserSettings({
+          preferences: {
+            mobileNotificationPreferences: previousPreferences,
+          },
+        });
+      } catch {
+        // Ignore rollback failures; we'll restore local UI state either way.
+      }
+
+      if (!value) {
+        try {
+          await registerCurrentMobilePushToken();
+        } catch {
+          // Ignore best-effort restore failure.
+        }
+      } else {
+        try {
+          await revokeCurrentMobilePushToken();
+        } catch {
+          // Ignore best-effort cleanup failure.
+        }
+      }
+
+      setNotificationPrefs(previousPreferences);
+      Alert.alert(
+        'Could not save notifications',
+        'You can change this later in Settings.',
+      );
+    }
+  };
+
   const patchCapturePreferences = async (nextPreferences: typeof defaultMobileCapturePreferences) => {
     const previousPreferences = capturePrefs;
     setCapturePrefs(nextPreferences);
@@ -229,6 +308,7 @@ export default function SettingsScreen() {
             transform: [{ translateY: headerTranslateY }],
           },
         ]}>
+        <HeaderInsetFade backgroundColor={theme.colors.background} height={Math.max(insets.top + 72, 112)} />
         <View style={styles.headerRow}>
           <Pressable
             accessibilityRole="button"
@@ -330,12 +410,7 @@ export default function SettingsScreen() {
               right={
                 <Switch
                   value={notificationPrefs.pushNotifications}
-                  onValueChange={(value) =>
-                    void patchNotificationPreferences({
-                      ...notificationPrefs,
-                      pushNotifications: value,
-                    })
-                  }
+                  onValueChange={(value) => void handlePushNotificationsChange(value)}
                   disabled={notificationPrefsLoading}
                   trackColor={switchTrackColor}
                   thumbColor={theme.colors.surface}

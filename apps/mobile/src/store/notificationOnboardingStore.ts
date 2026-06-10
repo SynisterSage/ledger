@@ -1,7 +1,8 @@
 import { useSyncExternalStore } from 'react';
-import * as SecureStore from 'expo-secure-store';
+
 import {
   getMobileUserSettings,
+  readMobileNotificationOnboardingState,
   updateMobileUserSettings,
 } from '@/api/userSettings';
 
@@ -25,36 +26,12 @@ const initialState: NotificationOnboardingState = {
   error: null,
 };
 
-const STORAGE_PREFIX = 'ledger-mobile-notification-onboarding';
-const GLOBAL_STORAGE_KEY = `${STORAGE_PREFIX}:completed`;
 let state = initialState;
 const listeners = new Set<() => void>();
 let bootstrapToken = 0;
 
 function emit() {
   for (const listener of listeners) listener();
-}
-
-function getStorageKey(userId: string) {
-  return `${STORAGE_PREFIX}:${userId}`;
-}
-
-async function persistLocalCompletion(
-  userId: string,
-  payload: { choice?: NotificationPermissionChoice; isComplete?: boolean },
-) {
-  const nextValue = JSON.stringify({
-    choice: payload.choice ?? null,
-    isComplete: Boolean(payload.isComplete ?? true),
-    updatedAt: new Date().toISOString(),
-  });
-
-  try {
-    await SecureStore.setItemAsync(getStorageKey(userId), nextValue);
-    await SecureStore.setItemAsync(GLOBAL_STORAGE_KEY, nextValue);
-  } catch {
-    // Non-fatal. The backend remains the source of truth.
-  }
 }
 
 function setState(next: Partial<NotificationOnboardingState>) {
@@ -87,82 +64,41 @@ export async function bootstrapNotificationOnboardingState(userId: string | null
   if (!userId) {
     setState({
       ...initialState,
-      isLoading: false,
       isHydrated: true,
+      isLoading: false,
       userId: null,
     });
     return;
   }
 
-  if (state.isHydrated && state.userId === userId && !state.isLoading) {
+  if (state.userId === userId && state.isHydrated && !state.isLoading) {
     return;
   }
 
   setState({
     isLoading: true,
+    isHydrated: false,
     error: null,
     userId,
   });
 
   try {
-    const [globalRawValue, rawValue] = await Promise.all([
-      SecureStore.getItemAsync(GLOBAL_STORAGE_KEY),
-      SecureStore.getItemAsync(getStorageKey(userId)),
-    ]);
+    const settings = await getMobileUserSettings();
     if (token !== bootstrapToken) {
       return;
     }
 
-    let parsed: { choice?: NotificationPermissionChoice; isComplete?: boolean } | null = null;
-    if (globalRawValue) {
-      try {
-        parsed = JSON.parse(globalRawValue) as { choice?: NotificationPermissionChoice; isComplete?: boolean };
-      } catch {
-        parsed = null;
-      }
-    }
-
-    if (!parsed && rawValue) {
-      try {
-        parsed = JSON.parse(rawValue) as { choice?: NotificationPermissionChoice; isComplete?: boolean };
-      } catch {
-        parsed = null;
-      }
-    }
-
-    const choice = parsed?.choice ?? null;
-    let completed = Boolean(parsed?.isComplete ?? choice);
-    let resolvedChoice = choice ?? null;
-
-    if (!completed) {
-      try {
-        const settings = await getMobileUserSettings();
-        if (token !== bootstrapToken) {
-          return;
-        }
-
-        completed = Boolean(settings?.onboarding_completed);
-        if (completed) {
-          try {
-            await persistLocalCompletion(userId, { choice: resolvedChoice ?? undefined, isComplete: true });
-          } catch {
-            // Ignore local cache failures. The server already says the step is complete.
-          }
-        }
-      } catch {
-        // Fall back to local cache only. No extra auto-completion heuristics.
-      }
-    }
+    const onboarding = readMobileNotificationOnboardingState(settings);
 
     setState({
       isLoading: false,
       isHydrated: true,
-      isComplete: completed,
-      choice: resolvedChoice ?? null,
+      isComplete: onboarding.isComplete,
+      choice: onboarding.choice,
       error: null,
       userId,
     });
-  } catch {
+  } catch (error) {
     if (token !== bootstrapToken) {
       return;
     }
@@ -172,7 +108,7 @@ export async function bootstrapNotificationOnboardingState(userId: string | null
       isHydrated: true,
       isComplete: false,
       choice: null,
-      error: null,
+      error: error instanceof Error ? error.message : 'Unable to load notification onboarding.',
       userId,
     });
   }
@@ -183,50 +119,48 @@ export async function setNotificationOnboardingChoice(
   choice: Exclude<NotificationPermissionChoice, null>,
 ) {
   if (!userId) {
-    setState({
-      isHydrated: true,
-      isLoading: false,
-      isComplete: true,
-      choice,
-      error: null,
-      userId: null,
-    });
-    return;
+    throw new Error('Missing user account.');
   }
 
-  const payload = {
-    choice,
-    isComplete: true,
-    updatedAt: new Date().toISOString(),
-  };
-
   setState({
-    isHydrated: true,
-    isLoading: false,
-    isComplete: true,
-    choice,
+    isLoading: true,
     error: null,
     userId,
   });
 
   try {
-    const serialized = JSON.stringify(payload);
-    await SecureStore.setItemAsync(getStorageKey(userId), serialized);
-    await SecureStore.setItemAsync(GLOBAL_STORAGE_KEY, serialized);
-  } catch {
-    // Non-fatal. The user can still continue and the app will keep the in-memory choice.
-  }
-
-  try {
-    await updateMobileUserSettings({
+    const settings = await updateMobileUserSettings({
       onboarding_completed: true,
       preferences: {
-        mobileNotificationOnboardingCompleted: true,
         mobileNotificationOnboardingChoice: choice,
       },
     });
-  } catch {
-    // Non-fatal. The local SecureStore entry still marks onboarding complete.
+
+    const onboarding = readMobileNotificationOnboardingState(settings);
+    if (!onboarding.isComplete) {
+      throw new Error('The server did not persist notification onboarding completion.');
+    }
+
+    setState({
+      isLoading: false,
+      isHydrated: true,
+      isComplete: true,
+      choice: onboarding.choice ?? choice,
+      error: null,
+      userId,
+    });
+
+    return onboarding;
+  } catch (error) {
+    setState({
+      isLoading: false,
+      isHydrated: true,
+      isComplete: false,
+      choice: null,
+      error: error instanceof Error ? error.message : 'Unable to save notification onboarding.',
+      userId,
+    });
+    throw error;
   }
 }
 

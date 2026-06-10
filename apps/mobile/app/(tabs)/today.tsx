@@ -23,6 +23,7 @@ import { triggerLightHaptic } from '@/lib/haptics';
 import { getMobileToday } from '@/api/today';
 import { performMobileTodayAction } from '@/api/todayActions';
 import { useLedgerTheme } from '@/theme';
+import { formatDateToLocalIsoDate } from '@/utils/captureDates';
 import type {
   MobileTodayInteractionItem,
   MobileTodayItem,
@@ -36,7 +37,7 @@ import {
 } from '@/store/workspaceStore';
 
 const EMPTY_TODAY: MobileTodayResponse = {
-  date: new Date().toISOString().slice(0, 10),
+  date: formatDateToLocalIsoDate(new Date()),
   scope: { workspaceId: 'all', label: 'All Workspaces' },
   upcoming: [],
   today: [],

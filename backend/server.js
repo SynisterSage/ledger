@@ -1128,6 +1128,9 @@ const notificationPreferencesDefaults = {
 const notificationPreferencesSelectColumns =
   'id, user_id, desktop_enabled, in_app_enabled, reminders_enabled, events_enabled, tasks_enabled, project_deadlines_enabled, inbox_captures_enabled, overdue_enabled, paused, default_event_lead_minutes, default_task_timing, default_project_deadline_lead_days, default_snooze_minutes, keep_overdue_visible, notify_while_fullscreen, quiet_hours_enabled, quiet_hours_start, quiet_hours_end, created_at, updated_at';
 
+const mobilePushTokenSelectColumns =
+  'id, user_id, platform, push_token, enabled, last_registered_at, revoked_at, created_at, updated_at';
+
 const normalizeNotificationClockTime = (value) => {
   const text = normalizeNullableText(value);
   if (!text) return null;
@@ -1235,6 +1238,50 @@ const notificationPreferencesInsertPayload = (userId, value) => {
     quiet_hours_enabled: prefs.quietHoursEnabled,
     quiet_hours_start: prefs.quietHoursStart,
     quiet_hours_end: prefs.quietHoursEnd,
+  };
+};
+
+const normalizeMobilePushPlatform = (value) => {
+  const normalized = String(value ?? 'ios').trim().toLowerCase();
+  return ['ios', 'android'].includes(normalized) ? normalized : 'ios';
+};
+
+const normalizeMobilePushToken = (value) => {
+  const normalized = normalizeNullableText(value);
+  return normalized ? normalized : null;
+};
+
+const mapMobilePushTokenRow = (row) => ({
+  id: row?.id ?? null,
+  userId: row?.user_id ?? null,
+  platform: normalizeMobilePushPlatform(row?.platform),
+  pushToken: row?.push_token ?? null,
+  enabled: Boolean(row?.enabled),
+  lastRegisteredAt: row?.last_registered_at ?? null,
+  revokedAt: row?.revoked_at ?? null,
+  created_at: row?.created_at ?? null,
+  updated_at: row?.updated_at ?? null,
+});
+
+const mobilePushTokenInsertPayload = (userId, value = {}) => {
+  const pushToken = normalizeMobilePushToken(value.pushToken ?? value.push_token);
+  if (!pushToken) {
+    const error = new Error('Missing push token');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const platform = normalizeMobilePushPlatform(value.platform);
+  const nowIso = new Date().toISOString();
+
+  return {
+    user_id: userId,
+    platform,
+    push_token: pushToken,
+    enabled: value.enabled !== false,
+    last_registered_at: nowIso,
+    revoked_at: null,
+    updated_at: nowIso,
   };
 };
 
@@ -1393,6 +1440,7 @@ const mapNotificationEventRow = (row, extras = {}) => ({
   scheduledFor: row.scheduled_for,
   deliveredInAppAt: row.delivered_in_app_at ?? null,
   deliveredDesktopAt: row.delivered_desktop_at ?? null,
+  deliveredMobileAt: row.delivered_mobile_at ?? null,
   dismissedAt: row.dismissed_at ?? null,
   actionTaken: row.action_taken ?? null,
   metadata: safeJson(row.metadata, {}) ?? {},
@@ -1403,6 +1451,86 @@ const mapNotificationEventRow = (row, extras = {}) => ({
   moduleKind: extras.moduleKind ?? null,
   focusPayload: extras.focusPayload ?? null,
   actions: extras.actions ?? [],
+});
+
+const getMobilePushTokensForUser = async (userId, platform = 'ios') => {
+  const { data, error } = await supabase
+    .from('mobile_push_tokens')
+    .select(mobilePushTokenSelectColumns)
+    .eq('user_id', userId)
+    .eq('platform', normalizeMobilePushPlatform(platform))
+    .eq('enabled', true)
+    .is('revoked_at', null);
+
+  if (error) throw error;
+  return Array.isArray(data) ? data : [];
+};
+
+const sendExpoPushMessages = async (messages) => {
+  const payload = Array.isArray(messages) ? messages.filter(Boolean) : [];
+  if (!payload.length) return null;
+
+  const chunks = [];
+  for (let index = 0; index < payload.length; index += 100) {
+    chunks.push(payload.slice(index, index + 100));
+  }
+
+  const results = [];
+  for (const chunk of chunks) {
+    const response = await fetch('https://exp.host/--/api/v2/push/send', {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Accept-Encoding': 'gzip, deflate',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(chunk),
+    });
+
+    const text = await response.text();
+    if (!response.ok) {
+      throw new Error(text || `Expo push request failed with status ${response.status}`);
+    }
+
+    if (!text) {
+      results.push(null);
+      continue;
+    }
+
+    try {
+      results.push(JSON.parse(text));
+    } catch {
+      results.push(text);
+    }
+  }
+
+  return results;
+};
+
+const buildMobilePushMessage = ({ row, candidate, workspace }) => ({
+  to: null,
+  sound: 'default',
+  title: candidate?.title ?? 'Ledger',
+  body:
+    [
+      normalizeNullableText(workspace?.name),
+      normalizeNullableText(candidate?.context),
+      normalizeNullableText(candidate?.body),
+    ]
+      .filter(Boolean)
+      .join(' · ') || 'You have something waiting in Ledger.',
+  data: {
+    notificationId: row.id,
+    workspaceId: row.workspace_id ?? null,
+    workspaceName: workspace?.name ?? null,
+    sourceType: row.source_type,
+    sourceId: row.source_id,
+    notificationType: row.notification_type,
+    scheduledFor: row.scheduled_for,
+    moduleKind: candidate?.moduleKind ?? null,
+    focusPayload: candidate?.focusPayload ?? null,
+    context: candidate?.context ?? null,
+  },
 });
 
 const getNotificationSourcePayload = async (userId, candidates) => {
@@ -1489,6 +1617,11 @@ const buildDueNotificationCandidates = async (userId, prefs) => {
         },
         title: reminderTitle,
         body: reminderBodyParts.join(' · ') || null,
+        context: row.calendar_id
+          ? 'Calendar reminder'
+          : row.project_id
+          ? 'Project reminder'
+          : 'Reminder',
         moduleKind: 'calendar',
         focusPayload: row.calendar_id
           ? { kind: 'calendar', focusContext: `focus-reminder:${row.id}` }
@@ -1539,6 +1672,7 @@ const buildDueNotificationCandidates = async (userId, prefs) => {
         },
         title: eventTitle,
         body: startsLabel ? `Starts ${startsLabel}` : null,
+        context: row.calendar_id ? 'Calendar event' : 'Event',
         moduleKind: 'calendar',
         focusPayload: { kind: 'calendar', focusContext: `focus-event:${row.id}` },
         actions: ['open', 'dismiss'],
@@ -1599,6 +1733,7 @@ const buildDueNotificationCandidates = async (userId, prefs) => {
         },
         title: taskTitle,
         body: dueLabel ? `Due ${dueLabel}` : null,
+        context: row.project_id ? 'Project task' : 'Task',
         moduleKind: 'dashboard',
         focusPayload: { kind: 'dashboard', focusTaskId: row.id },
         actions: ['open', 'complete', 'dismiss'],
@@ -1645,6 +1780,7 @@ const buildDueNotificationCandidates = async (userId, prefs) => {
         },
         title: projectName || 'Project deadline',
         body: dueLabel ? `Project deadline · Due ${dueLabel}` : 'Project deadline',
+        context: 'Project deadline',
         moduleKind: 'projects',
         focusPayload: { kind: 'projects', focusProjectId: row.id },
         actions: ['open', 'dismiss'],
@@ -1682,6 +1818,7 @@ const buildDueNotificationCandidates = async (userId, prefs) => {
         },
         title: row.title ?? 'Inbox capture',
         body: row.body ?? row.source_url ?? null,
+        context: row.source ? `Capture from ${String(row.source)}` : 'Inbox capture',
         moduleKind: 'inbox',
         focusPayload: { kind: 'inbox' },
         actions: ['open', 'dismiss'],
@@ -1717,6 +1854,7 @@ const buildDueNotificationCandidates = async (userId, prefs) => {
       metadata: safeJson(row.metadata, {}) ?? {},
       title: normalizeNullableText(row.metadata?.title) ?? 'Invite accepted',
       body: normalizeNullableText(row.metadata?.body) ?? 'Someone joined your workspace.',
+      context: 'Workspace invite',
       moduleKind: 'dashboard',
       focusPayload: normalizeNullableText(row.metadata?.focusPayload) ? safeJson(row.metadata.focusPayload, null) : null,
       actions: Array.isArray(row.metadata?.actions) ? row.metadata.actions : [],
@@ -2013,12 +2151,81 @@ const processNotificationEventsForUser = async (userId) => {
       onConflict: 'user_id,source_type,source_id,notification_type,scheduled_for',
     })
     .select(
-      'id, user_id, workspace_id, source_type, source_id, notification_type, scheduled_for, delivered_in_app_at, delivered_desktop_at, dismissed_at, action_taken, metadata'
+      'id, user_id, workspace_id, source_type, source_id, notification_type, scheduled_for, delivered_in_app_at, delivered_desktop_at, delivered_mobile_at, dismissed_at, action_taken, metadata'
     );
 
   if (insertError) throw insertError;
+  const eventRows = Array.isArray(insertedRows) ? insertedRows : [];
+  if (!eventRows.length) return [];
 
-  return Array.isArray(insertedRows) ? insertedRows : [];
+  const eventIds = eventRows.map((row) => row.id).filter(Boolean);
+  const workspaceIds = Array.from(new Set(eventRows.map((row) => row.workspace_id).filter(Boolean)));
+
+  const [workspaceResult, tokenRows] = await Promise.all([
+    workspaceIds.length
+      ? supabase.from('workspaces').select('id, name, color').in('id', workspaceIds)
+      : Promise.resolve({ data: [], error: null }),
+    getMobilePushTokensForUser(userId, 'ios'),
+  ]);
+
+  if (workspaceResult.error) throw workspaceResult.error;
+
+  const workspaceById = new Map(
+    (workspaceResult.data ?? []).map((workspace) => [workspace.id, workspace])
+  );
+  const candidateByEventKey = new Map(
+    candidates.map((candidate) => [
+      [
+        candidate.source_type,
+        candidate.source_id,
+        candidate.notification_type,
+        candidate.scheduled_for,
+      ].join('|'),
+      candidate,
+    ])
+  );
+
+  const mobileTokens = Array.isArray(tokenRows)
+    ? tokenRows
+        .map((row) => normalizeMobilePushToken(row?.push_token))
+        .filter(Boolean)
+    : [];
+
+  if (!mobileTokens.length) {
+    return eventRows;
+  }
+
+  const pushMessages = eventRows
+    .filter((row) => !row.delivered_mobile_at && !row.dismissed_at)
+    .flatMap((row) => {
+      const candidate = candidateByEventKey.get(
+        [row.source_type, row.source_id, row.notification_type, row.scheduled_for].join('|')
+      );
+      const workspace = workspaceById.get(row.workspace_id ?? '') ?? null;
+      return mobileTokens.map((token) => ({
+        ...buildMobilePushMessage({ row, candidate, workspace }),
+        to: token,
+      }));
+    });
+
+  if (!pushMessages.length) {
+    return eventRows;
+  }
+
+  try {
+    await sendExpoPushMessages(pushMessages);
+    const nowIso = new Date().toISOString();
+    await supabase
+      .from('notification_events')
+      .update({ delivered_mobile_at: nowIso, updated_at: nowIso })
+      .in('id', eventIds)
+      .is('delivered_mobile_at', null)
+      .is('dismissed_at', null);
+  } catch (error) {
+    console.error('[notifications] Mobile push delivery failed:', error?.message ?? error);
+  }
+
+  return eventRows;
 };
 
 const runNotificationScheduler = async () => {
@@ -2845,11 +3052,25 @@ const loadMobileTodayData = async ({ userId, scope, dateKey }) => {
     }
 
     if (explicitTaskIds.has(String(task.id))) {
+      const dueDateKey = String(task.due_date ?? '').trim();
+      const dueAt = toTaskDueAt(task);
+      const isDueOnSelectedDate = dueDateKey === selectedDateKey;
+      const explicitDueLabel = isDueOnSelectedDate
+        ? 'Today'
+        : dueAt
+          ? formatNotificationDateTime(dueAt) ?? formatNotificationDate(dueAt)
+          : dueDateKey
+            ? formatNotificationDate(`${dueDateKey}T00:00:00`)
+            : 'Today';
       const explicitItem = buildTaskPayload(task, {
         type: task.project_id ? 'project_action' : 'task',
         sourceType: task.project_id ? 'project_action' : 'task',
-        meta: task.project_id ? 'Project action' : 'Due today',
-        dueLabel: 'Today',
+        meta: task.project_id
+          ? 'Project action'
+          : isDueOnSelectedDate
+            ? 'Due today'
+            : 'Due later',
+        dueLabel: explicitDueLabel,
       });
       addTodayItem(explicitItem, taskKey);
       continue;
@@ -5099,6 +5320,62 @@ app.patch(
     }
   }
 );
+
+app.post('/api/mobile/push-tokens', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const pushToken = normalizeMobilePushToken(
+      req.body?.pushToken ?? req.body?.expoPushToken ?? req.body?.token
+    );
+    if (!pushToken) {
+      return res.status(400).json({ error: 'Missing push token' });
+    }
+
+    const payload = mobilePushTokenInsertPayload(req.authUser.id, {
+      pushToken,
+      platform: req.body?.platform,
+    });
+
+    const { data, error } = await supabase
+      .from('mobile_push_tokens')
+      .upsert(payload, { onConflict: 'push_token' })
+      .select(mobilePushTokenSelectColumns)
+      .single();
+
+    if (error) throw error;
+    res.json(mapMobilePushTokenRow(data));
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
+app.delete('/api/mobile/push-tokens', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const pushToken = normalizeMobilePushToken(
+      req.body?.pushToken ?? req.body?.expoPushToken ?? req.body?.token
+    );
+    const nowIso = new Date().toISOString();
+    let query = supabase
+      .from('mobile_push_tokens')
+      .update({
+        enabled: false,
+        revoked_at: nowIso,
+        updated_at: nowIso,
+      })
+      .eq('user_id', req.authUser.id)
+      .is('revoked_at', null);
+
+    if (pushToken) {
+      query = query.eq('push_token', pushToken);
+    }
+
+    const { data, error } = await query.select(mobilePushTokenSelectColumns);
+
+    if (error) throw error;
+    res.json({ ok: true, revoked: Array.isArray(data) ? data.length : data ? 1 : 0 });
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
 
 app.post('/api/notifications/check', authMiddleware, rateLimit('read'), async (req, res) => {
   try {

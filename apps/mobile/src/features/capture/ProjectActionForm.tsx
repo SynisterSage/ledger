@@ -16,6 +16,7 @@ import { ProjectPickerSheet } from '@/features/capture/ProjectPickerSheet';
 import { useLedgerTheme } from '@/theme';
 import { parseDateInputToIsoDate, parseTimeInputTo24Hour } from '@/utils/captureDates';
 import { formatCaptureDateLabel, formatCaptureTimeLabel, parseMobileDateInput, parseMobileDateTimeInput } from '@/features/capture/dateUtils';
+import { formatDateToLocalIsoDate } from '@/utils/captureDates';
 import {
   getWorkspaceLabel,
   resolveCaptureWorkspaceId,
@@ -181,7 +182,7 @@ export function ProjectActionForm({ onSave }: ProjectActionFormProps) {
         title="Select due date"
         mode="date"
         value={parsedDate}
-        onSelect={(next) => setDateInput(next.toISOString().slice(0, 10))}
+        onSelect={(next) => setDateInput(formatDateToLocalIsoDate(next))}
         onClose={() => setDatePickerOpen(false)}
       />
       <CaptureDateTimePickerSheet

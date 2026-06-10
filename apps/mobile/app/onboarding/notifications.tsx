@@ -9,6 +9,7 @@ import { AppButton } from '@/components/AppButton';
 import { AppText } from '@/components/AppText';
 import { AuthHeader } from '@/components/AuthHeader';
 import { Screen } from '@/components/Screen';
+import { registerCurrentMobilePushToken } from '@/api/pushNotifications';
 import { useLedgerTheme } from '@/theme';
 import { useAuthState } from '@/store/sessionStore';
 import {
@@ -20,11 +21,13 @@ export default function NotificationsOnboardingScreen() {
   const router = useRouter();
   const theme = useLedgerTheme();
   const authSession = useAuthState();
-  const authState = useNotificationOnboardingState();
-  const [isEnablingNotifications, setIsEnablingNotifications] = useState(false);
-  const [isSkipping, setIsSkipping] = useState(false);
+  const onboardingState = useNotificationOnboardingState();
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const routeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const userId = authSession.user?.id ?? onboardingState.userId;
+  const canPersist = Boolean(userId);
 
   useEffect(() => {
     return () => {
@@ -38,33 +41,37 @@ export default function NotificationsOnboardingScreen() {
     router.replace('/(tabs)/today');
   };
 
-  const userId = authSession.user?.id ?? authState.userId;
-  const canPersist = Boolean(userId);
-
   const finishChoice = async (choice: 'enabled' | 'denied' | 'skipped', message?: string | null) => {
     if (!userId) {
       setStatusMessage('Please wait for your account to finish loading.');
       return;
     }
 
-    await setNotificationOnboardingChoice(userId, choice);
-    if (message) {
-      setStatusMessage(message);
-      routeTimerRef.current = setTimeout(() => {
-        goToToday();
-      }, 650);
-      return;
-    }
+    try {
+      await setNotificationOnboardingChoice(userId, choice);
+      if (message) {
+        setStatusMessage(message);
+        if (routeTimerRef.current) {
+          clearTimeout(routeTimerRef.current);
+        }
+        routeTimerRef.current = setTimeout(() => {
+          goToToday();
+        }, 650);
+        return;
+      }
 
-    goToToday();
+      goToToday();
+    } catch {
+      setStatusMessage('Could not save your choice. Please try again.');
+    }
   };
 
   const handleEnableNotifications = async () => {
-    if (isEnablingNotifications || isSkipping) {
+    if (isSubmitting) {
       return;
     }
 
-    setIsEnablingNotifications(true);
+    setIsSubmitting(true);
     setStatusMessage(null);
 
     try {
@@ -73,6 +80,11 @@ export default function NotificationsOnboardingScreen() {
         existing.status === 'granted' ? existing : await Notifications.requestPermissionsAsync();
 
       if (permission.status === 'granted') {
+        try {
+          await registerCurrentMobilePushToken();
+        } catch (registerError) {
+          console.warn('Failed to register mobile push token:', registerError);
+        }
         await finishChoice('enabled');
         return;
       }
@@ -87,21 +99,21 @@ export default function NotificationsOnboardingScreen() {
         'Couldn’t update notifications. You can change this later in Settings.',
       );
     } finally {
-      setIsEnablingNotifications(false);
+      setIsSubmitting(false);
     }
   };
 
   const handleSkip = async () => {
-    if (isEnablingNotifications || isSkipping) {
+    if (isSubmitting) {
       return;
     }
 
     setStatusMessage(null);
-    setIsSkipping(true);
+    setIsSubmitting(true);
     try {
       await finishChoice('skipped');
     } finally {
-      setIsSkipping(false);
+      setIsSubmitting(false);
     }
   };
 
@@ -126,16 +138,16 @@ export default function NotificationsOnboardingScreen() {
 
           <View style={styles.actions}>
             <AppButton
-              title={isEnablingNotifications ? 'Enabling...' : 'Enable notifications'}
+              title={isSubmitting ? 'Saving...' : 'Enable notifications'}
               onPress={handleEnableNotifications}
-              disabled={isEnablingNotifications || isSkipping || !canPersist}
+              disabled={isSubmitting || !canPersist}
               size="lg"
             />
             <AppButton
               title="Not now"
               variant="secondary"
               onPress={handleSkip}
-              disabled={isEnablingNotifications || isSkipping || !canPersist}
+              disabled={isSubmitting || !canPersist}
               size="lg"
             />
           </View>

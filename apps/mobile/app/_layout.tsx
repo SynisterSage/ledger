@@ -1,17 +1,28 @@
+import * as Notifications from 'expo-notifications';
 import * as SplashScreen from 'expo-splash-screen';
 import { Stack } from 'expo-router';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import 'react-native-reanimated';
-import { Animated, Easing, StyleSheet, View } from 'react-native';
+import { View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { initializeAuth } from '@/api/auth';
-import { AppLoadingScreen } from '@/components/AppLoadingScreen';
+import { registerCurrentMobilePushToken, revokeCurrentMobilePushToken } from '@/api/pushNotifications';
+import { getMobileUserSettings, readMobileNotificationPreferences } from '@/api/userSettings';
 import { bootstrapAppPreferencesState, resetAppPreferencesState } from '@/store/appPreferencesStore';
 import { useAuthState } from '@/store/sessionStore';
 import { resetBootState, setBootState, useBootState } from '@/store/bootStore';
 import { bootstrapNotificationOnboardingState, useNotificationOnboardingState } from '@/store/notificationOnboardingStore';
 import { useLedgerTheme } from '@/theme';
+
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldPlaySound: true,
+    shouldSetBadge: true,
+    shouldShowBanner: true,
+    shouldShowList: true,
+  }),
+});
 
 void SplashScreen.preventAutoHideAsync();
 SplashScreen.setOptions({ duration: 0, fade: false });
@@ -23,9 +34,8 @@ export default function RootLayout() {
   const auth = useAuthState();
   const notificationOnboarding = useNotificationOnboardingState();
   const boot = useBootState();
-  const overlayOpacity = useRef(new Animated.Value(1)).current;
-  const [showOverlay, setShowOverlay] = useState(true);
-  const [overlayReady, setOverlayReady] = useState(false);
+  const [mobilePushHydrated, setMobilePushHydrated] = useState(false);
+  const [mobilePushEnabled, setMobilePushEnabled] = useState<boolean | null>(null);
 
   useEffect(() => {
     resetBootState();
@@ -67,6 +77,40 @@ export default function RootLayout() {
   }, [auth.user?.id]);
 
   useEffect(() => {
+    let cancelled = false;
+
+    const loadPushPreference = async () => {
+      setMobilePushHydrated(false);
+
+      if (!auth.user?.id) {
+        setMobilePushEnabled(false);
+        setMobilePushHydrated(true);
+        return;
+      }
+
+      try {
+        const settings = await getMobileUserSettings();
+        if (cancelled) return;
+        setMobilePushEnabled(readMobileNotificationPreferences(settings).pushNotifications);
+      } catch {
+        if (!cancelled) {
+          setMobilePushEnabled(null);
+        }
+      } finally {
+        if (!cancelled) {
+          setMobilePushHydrated(true);
+        }
+      }
+    };
+
+    void loadPushPreference();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [auth.user?.id]);
+
+  useEffect(() => {
     const notificationStateReady =
       !auth.session ||
       (notificationOnboarding.userId === auth.user?.id &&
@@ -99,33 +143,44 @@ export default function RootLayout() {
   ]);
 
   useEffect(() => {
-    if (!boot.isBootReady || !showOverlay || !overlayReady) {
+    if (!boot.isBootReady) {
       return;
     }
 
-    let hideFrame1 = 0;
-    let hideFrame2 = 0;
-    hideFrame1 = requestAnimationFrame(() => {
-      hideFrame2 = requestAnimationFrame(() => {
-        void SplashScreen.hideAsync();
-      });
-    });
+    void SplashScreen.hideAsync();
+  }, [boot.isBootReady]);
 
-    Animated.timing(overlayOpacity, {
-      toValue: 0,
-      duration: 420,
-      easing: Easing.out(Easing.cubic),
-      useNativeDriver: true,
-    }).start(({ finished }) => {
-      if (finished) {
-        setShowOverlay(false);
+  useEffect(() => {
+    if (
+      !boot.isBootReady ||
+      auth.isLoading ||
+      !auth.user?.id ||
+      !mobilePushHydrated ||
+      mobilePushEnabled === null
+    ) {
+      return;
+    }
+
+    let cancelled = false;
+
+    void (async () => {
+      try {
+        if (mobilePushEnabled) {
+          await registerCurrentMobilePushToken();
+        } else {
+          await revokeCurrentMobilePushToken();
+        }
+      } catch (error) {
+        if (!cancelled) {
+          console.warn('Failed to sync mobile push token:', error);
+        }
       }
-    });
+    })();
+
     return () => {
-      cancelAnimationFrame(hideFrame1);
-      cancelAnimationFrame(hideFrame2);
+      cancelled = true;
     };
-  }, [boot.isBootReady, overlayOpacity, overlayReady, showOverlay]);
+  }, [auth.isLoading, auth.user?.id, boot.isBootReady, mobilePushEnabled, mobilePushHydrated]);
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.colors.background }}>
@@ -136,19 +191,6 @@ export default function RootLayout() {
             contentStyle: { backgroundColor: theme.colors.background },
           }}
         />
-        {showOverlay ? (
-          <Animated.View
-            pointerEvents="none"
-            onLayout={() => setOverlayReady(true)}
-            style={[
-              StyleSheet.absoluteFill,
-              {
-                opacity: overlayOpacity,
-              },
-            ]}>
-            <AppLoadingScreen />
-          </Animated.View>
-        ) : null}
       </SafeAreaProvider>
     </View>
   );

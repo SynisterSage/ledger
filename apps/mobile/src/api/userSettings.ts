@@ -29,6 +29,13 @@ export type MobileSiriPreferences = {
   askEveryTime: boolean;
 };
 
+export type MobileNotificationOnboardingChoice = 'enabled' | 'denied' | 'skipped';
+
+export type MobileNotificationOnboardingState = {
+  isComplete: boolean;
+  choice: MobileNotificationOnboardingChoice | null;
+};
+
 export type MobileAppPreferences = {
   hapticsEnabled: boolean;
   reduceMotionEnabled: boolean;
@@ -75,15 +82,27 @@ export async function updateMobileUserSettings(payload: MobileUserSettingsPatch)
   });
 }
 
-export async function getMobileOnboardingStatus() {
-  return mobileRequest<{ onboarding_completed: boolean }>('/api/user/onboarding');
-}
+export function readMobileNotificationOnboardingState(
+  settings: MobileUserSettings | null | undefined,
+): MobileNotificationOnboardingState {
+  const preferences = settings?.preferences;
+  const mobilePreferences =
+    preferences && typeof preferences === 'object' && 'mobileNotificationOnboardingChoice' in preferences
+      ? (preferences as {
+          mobileNotificationOnboardingChoice?: unknown;
+        })
+      : null;
 
-export async function completeMobileOnboarding(choice?: 'enabled' | 'denied' | 'skipped') {
-  return mobileRequest<{ onboarding_completed: boolean }>('/api/user/onboarding', {
-    method: 'PATCH',
-    body: JSON.stringify(choice ? { choice } : {}),
-  });
+  const choice = ['enabled', 'denied', 'skipped'].includes(
+    String(mobilePreferences?.mobileNotificationOnboardingChoice),
+  )
+    ? (String(mobilePreferences?.mobileNotificationOnboardingChoice) as MobileNotificationOnboardingChoice)
+    : null;
+
+  return {
+    isComplete: Boolean(settings?.onboarding_completed),
+    choice: Boolean(settings?.onboarding_completed) ? choice : null,
+  };
 }
 
 export function readMobileNotificationPreferences(settings: MobileUserSettings | null | undefined) {

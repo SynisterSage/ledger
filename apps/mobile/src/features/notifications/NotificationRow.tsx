@@ -1,85 +1,97 @@
-import { Pressable, View } from 'react-native';
+import { memo, useRef } from 'react';
+import { Pressable, StyleSheet, View } from 'react-native';
 
 import { AppText } from '@/components/AppText';
-import { Row } from '@/components/Row';
-import { WorkspaceLabel } from '@/components/WorkspaceLabel';
 import { useLedgerTheme } from '@/theme';
 import type { MobileNotificationCenterItem } from '@/types/ledger';
+
+import { getNotificationSubtitle } from './notificationAdapters';
 
 type NotificationRowProps = {
   item: MobileNotificationCenterItem;
   showWorkspaceName?: boolean;
-  onAction?: (action: 'open' | 'dismiss' | 'complete' | 'snooze', item: MobileNotificationCenterItem) => void;
+  onPress?: (item: MobileNotificationCenterItem) => void;
+  onLongPress?: (item: MobileNotificationCenterItem) => void;
   disabled?: boolean;
 };
 
-function buildNotificationSubtitle(item: MobileNotificationCenterItem, showWorkspaceName: boolean) {
-  const parts: string[] = [];
-
-  if (showWorkspaceName && item.workspaceName) {
-    parts.push(item.workspaceName);
-  }
-
-  if (item.context) {
-    parts.push(item.context);
-  }
-
-  if (item.body) {
-    parts.push(item.body);
-  }
-
-  if (item.scheduledFor) {
-    const scheduledLabel = formatNotificationDateTime(item.scheduledFor);
-    if (scheduledLabel) {
-      parts.push(scheduledLabel);
-    }
-  }
-
-  return parts.length ? parts.join(' · ') : item.title;
-}
-
-function formatNotificationDateTime(dateLike: string) {
-  const date = new Date(dateLike);
-  if (Number.isNaN(date.getTime())) return null;
-
-  return new Intl.DateTimeFormat('en-US', {
-    month: 'short',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  }).format(date);
-}
-
-export function NotificationRow({ item, showWorkspaceName = true, onAction, disabled = false }: NotificationRowProps) {
+function NotificationRowBase({
+  item,
+  showWorkspaceName = true,
+  onPress,
+  onLongPress,
+  disabled = false,
+}: NotificationRowProps) {
   const theme = useLedgerTheme();
+  const longPressTriggered = useRef(false);
+  const isActive = item.status === 'active';
 
   return (
-    <View>
-      <Row
-        title={item.title}
-        subtitle={buildNotificationSubtitle(item, showWorkspaceName)}
-        right={showWorkspaceName && item.workspaceName ? <WorkspaceLabel name={item.workspaceName} /> : null}
-      />
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing.sm, marginTop: theme.spacing.xs }}>
-        {item.actions.map((action) => (
-          <Pressable
-            key={action}
-            accessibilityRole="button"
-            disabled={disabled}
-            onPress={() => onAction?.(action as 'open' | 'dismiss' | 'complete' | 'snooze', item)}
-            style={({ pressed }) => [
-              {
-                opacity: disabled ? 0.4 : pressed ? 0.72 : 1,
-                paddingVertical: 4,
-                paddingHorizontal: 0,
-              },
-            ]}>
-            <AppText variant="caption" style={{ color: theme.colors.textSecondary }}>
-              {action.charAt(0).toUpperCase() + action.slice(1)}
-            </AppText>
-          </Pressable>
-        ))}
+    <Pressable
+      accessibilityRole="button"
+      accessibilityHint="Opens notification details. Long press for actions."
+      disabled={disabled}
+      onLongPress={() => {
+        longPressTriggered.current = true;
+        onLongPress?.(item);
+      }}
+      onPress={() => {
+        if (longPressTriggered.current) {
+          return;
+        }
+        onPress?.(item);
+      }}
+      onPressOut={() => {
+        setTimeout(() => {
+          longPressTriggered.current = false;
+        }, 0);
+      }}
+      style={({ pressed }) => [
+        styles.row,
+        {
+          borderBottomColor: theme.colors.borderSubtle,
+          paddingVertical: theme.spacing.md,
+          opacity: disabled ? 0.4 : pressed ? 0.72 : 1,
+        },
+      ]}>
+      <View style={{ flex: 1, gap: theme.spacing.xs }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing.sm }}>
+          {isActive ? <View style={[styles.dot, { backgroundColor: theme.colors.accent }]} /> : null}
+          <AppText
+            variant="body"
+            style={{
+              color: isActive ? theme.colors.textPrimary : theme.colors.textSecondary,
+              fontWeight: isActive ? '500' : '400',
+            }}>
+            {item.title}
+          </AppText>
+        </View>
+        <AppText
+          variant="meta"
+          style={{
+            color: isActive ? theme.colors.textMuted : theme.colors.textMuted,
+          }}>
+          {getNotificationSubtitle(item, showWorkspaceName)}
+        </AppText>
+        {item.body ? (
+          <AppText variant="meta" style={{ color: theme.colors.textMuted }} numberOfLines={2}>
+            {item.body}
+          </AppText>
+        ) : null}
       </View>
-    </View>
+    </Pressable>
   );
 }
+
+export const NotificationRow = memo(NotificationRowBase);
+
+const styles = StyleSheet.create({
+  row: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  dot: {
+    width: 6,
+    height: 6,
+    borderRadius: 999,
+  },
+});

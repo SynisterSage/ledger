@@ -66,7 +66,11 @@ function getItemSubtitle(item: TodayDetailSheetItem) {
     metaParts.push(item.workspaceName);
   }
 
-  if (item.type !== 'project_action' && 'dueLabel' in item && item.dueLabel) {
+  if (item.type === 'project_action' && item.dueLabel && item.dueLabel !== 'Today' && item.dateLabel) {
+    metaParts.push(item.dateLabel);
+  } else if (item.type !== 'project_action' && 'dueLabel' in item && item.dueLabel) {
+    metaParts.push(item.dueLabel);
+  } else if (item.type === 'project_action' && item.dueLabel) {
     metaParts.push(item.dueLabel);
   }
 

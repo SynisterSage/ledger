@@ -777,6 +777,7 @@ export const CalendarWindow = () => {
   const [eventEditorEvent, setEventEditorEvent] = useState<EventRow | null>(null);
   const [selectedReminder, setSelectedReminder] = useState<ReminderRow | null>(null);
   const [pendingFocusEventId, setPendingFocusEventId] = useState<string | null>(null);
+  const [pendingFocusReminderId, setPendingFocusReminderId] = useState<string | null>(null);
   const [eventNotesDrafts, setEventNotesDrafts] = useState<Record<string, string>>({});
   const [followUpTasksByEvent, setFollowUpTasksByEvent] = useState<Record<string, TaskRow[]>>({});
   const [isLinkProjectModalOpen, setIsLinkProjectModalOpen] = useState(false);
@@ -1043,6 +1044,22 @@ export const CalendarWindow = () => {
     setPendingFocusEventId(null);
   };
 
+  const focusReminderById = (reminderIdRaw: string) => {
+    const reminderId = baseReminderId(reminderIdRaw);
+    const target = reminders.find((reminder) => baseReminderId(reminder.id) === reminderId) ?? null;
+    if (!target) {
+      setPendingFocusReminderId(reminderId);
+      return;
+    }
+    setSelectedReminder(target);
+    setSelectedEvent(null);
+    setViewMode('day');
+    const reminderDate = new Date(target.remind_at);
+    reminderDate.setHours(0, 0, 0, 0);
+    setViewAnchor(reminderDate);
+    setPendingFocusReminderId(null);
+  };
+
   const getEventStatusMeta = (status?: EventRow['status']) => {
     switch (status) {
       case 'done':
@@ -1111,6 +1128,13 @@ export const CalendarWindow = () => {
         if (eventId) {
           focusEventById(eventId);
         }
+        return;
+      }
+      if (focusContext.startsWith('focus-reminder:')) {
+        const reminderId = focusContext.slice('focus-reminder:'.length).trim();
+        if (reminderId) {
+          focusReminderById(reminderId);
+        }
       }
     };
 
@@ -1131,12 +1155,17 @@ export const CalendarWindow = () => {
     return () => {
       window.ipcRenderer?.off('module:focus-context', focusContextListener);
     };
-  }, [initialFocusContext, events]);
+  }, [initialFocusContext, events, reminders]);
 
   useEffect(() => {
     if (!pendingFocusEventId) return;
     focusEventById(pendingFocusEventId);
   }, [events, pendingFocusEventId]);
+
+  useEffect(() => {
+    if (!pendingFocusReminderId) return;
+    focusReminderById(pendingFocusReminderId);
+  }, [reminders, pendingFocusReminderId]);
 
   useEffect(() => {
     setLeftPaneWidth((current) =>

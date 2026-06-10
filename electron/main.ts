@@ -1119,14 +1119,17 @@ const isGenericNotificationTitle = (title: string | null | undefined, sourceType
 const getNotificationDisplayTitle = (item: NotificationSchedulerItem) => {
   const title = item.title?.trim();
   const context = item.context?.trim();
+  const body = item.body?.trim();
 
   if (item.sourceType === 'reminder') {
     if (title && !isGenericNotificationTitle(title, item.sourceType)) return title;
+    if (body && !isGenericNotificationTitle(body, item.sourceType)) return body;
     return context ? `Reminder: ${context}` : getNotificationFallbackTitle(item);
   }
 
   if (item.sourceType === 'event') {
     if (title && !isGenericNotificationTitle(title, item.sourceType)) return title;
+    if (body && !isGenericNotificationTitle(body, item.sourceType)) return body;
     return context ? `Event: ${context}` : getNotificationFallbackTitle(item);
   }
 
@@ -1142,7 +1145,7 @@ const getNotificationDisplayBody = (item: NotificationSchedulerItem) => {
   const context = item.context?.trim() || '';
 
   if (item.sourceType === 'reminder' || item.sourceType === 'event') {
-    return [body, context].filter(Boolean).join(' · ') || null;
+    return body || context || null;
   }
 
   return body || context || null;
@@ -1157,7 +1160,7 @@ const deliverDesktopNotification = (item: NotificationSchedulerItem) => {
     const notification = new Notification({
       title: getNotificationDisplayTitle(item),
       subtitle,
-      body: [body, item.workspaceName?.trim()].filter(Boolean).join(' · '),
+      body: body || item.workspaceName?.trim() || undefined,
       icon: iconPath,
       silent: true,
     });

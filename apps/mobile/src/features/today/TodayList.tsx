@@ -114,6 +114,8 @@ function buildTodaySubtitle(item: MobileTodayItem, showWorkspaceNames: boolean) 
     parts.push('Project');
     if (item.status === 'overdue') {
       parts.push('Overdue');
+    } else if (item.dueLabel && item.dueLabel !== 'Today' && item.dateLabel) {
+      parts.push(item.dateLabel);
     } else if (item.startsAt) {
       const timeLabel = formatTimeFromDate(item.startsAt, item.timeLabel ?? item.dueLabel);
       if (timeLabel) parts.push(timeLabel);
