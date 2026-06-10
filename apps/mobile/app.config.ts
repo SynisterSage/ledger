@@ -14,7 +14,7 @@ const config: ExpoConfig = {
   version: '1.0.0',
   icon: './assets/images/icon.png',
   scheme: 'ledger',
-  userInterfaceStyle: 'automatic',
+  userInterfaceStyle: 'light',
   ios: {
     bundleIdentifier: iosBundleIdentifier,
     supportsTablet: true,
@@ -46,7 +46,7 @@ const config: ExpoConfig = {
       {
         image: './assets/images/splash-icon.png',
         resizeMode: 'contain',
-        backgroundColor: '#FF5F40',
+        backgroundColor: '#FFF9F4',
       },
     ],
   ],

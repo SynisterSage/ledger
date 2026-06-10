@@ -1,8 +1,8 @@
 import { useSyncExternalStore } from 'react';
 import * as SecureStore from 'expo-secure-store';
 import {
-  completeMobileOnboarding,
-  getMobileOnboardingStatus,
+  getMobileUserSettings,
+  updateMobileUserSettings,
 } from '@/api/userSettings';
 
 export type NotificationPermissionChoice = 'enabled' | 'denied' | 'skipped' | null;
@@ -26,6 +26,7 @@ const initialState: NotificationOnboardingState = {
 };
 
 const STORAGE_PREFIX = 'ledger-mobile-notification-onboarding';
+const GLOBAL_STORAGE_KEY = `${STORAGE_PREFIX}:completed`;
 let state = initialState;
 const listeners = new Set<() => void>();
 let bootstrapToken = 0;
@@ -42,15 +43,15 @@ async function persistLocalCompletion(
   userId: string,
   payload: { choice?: NotificationPermissionChoice; isComplete?: boolean },
 ) {
+  const nextValue = JSON.stringify({
+    choice: payload.choice ?? null,
+    isComplete: Boolean(payload.isComplete ?? true),
+    updatedAt: new Date().toISOString(),
+  });
+
   try {
-    await SecureStore.setItemAsync(
-      getStorageKey(userId),
-      JSON.stringify({
-        choice: payload.choice ?? null,
-        isComplete: Boolean(payload.isComplete ?? true),
-        updatedAt: new Date().toISOString(),
-      }),
-    );
+    await SecureStore.setItemAsync(getStorageKey(userId), nextValue);
+    await SecureStore.setItemAsync(GLOBAL_STORAGE_KEY, nextValue);
   } catch {
     // Non-fatal. The backend remains the source of truth.
   }
@@ -104,13 +105,24 @@ export async function bootstrapNotificationOnboardingState(userId: string | null
   });
 
   try {
-    const rawValue = await SecureStore.getItemAsync(getStorageKey(userId));
+    const [globalRawValue, rawValue] = await Promise.all([
+      SecureStore.getItemAsync(GLOBAL_STORAGE_KEY),
+      SecureStore.getItemAsync(getStorageKey(userId)),
+    ]);
     if (token !== bootstrapToken) {
       return;
     }
 
     let parsed: { choice?: NotificationPermissionChoice; isComplete?: boolean } | null = null;
-    if (rawValue) {
+    if (globalRawValue) {
+      try {
+        parsed = JSON.parse(globalRawValue) as { choice?: NotificationPermissionChoice; isComplete?: boolean };
+      } catch {
+        parsed = null;
+      }
+    }
+
+    if (!parsed && rawValue) {
       try {
         parsed = JSON.parse(rawValue) as { choice?: NotificationPermissionChoice; isComplete?: boolean };
       } catch {
@@ -124,12 +136,12 @@ export async function bootstrapNotificationOnboardingState(userId: string | null
 
     if (!completed) {
       try {
-        const onboardingStatus = await getMobileOnboardingStatus();
+        const settings = await getMobileUserSettings();
         if (token !== bootstrapToken) {
           return;
         }
 
-        completed = Boolean(onboardingStatus?.onboarding_completed);
+        completed = Boolean(settings?.onboarding_completed);
         if (completed) {
           try {
             await persistLocalCompletion(userId, { choice: resolvedChoice ?? undefined, isComplete: true });
@@ -198,13 +210,21 @@ export async function setNotificationOnboardingChoice(
   });
 
   try {
-    await SecureStore.setItemAsync(getStorageKey(userId), JSON.stringify(payload));
+    const serialized = JSON.stringify(payload);
+    await SecureStore.setItemAsync(getStorageKey(userId), serialized);
+    await SecureStore.setItemAsync(GLOBAL_STORAGE_KEY, serialized);
   } catch {
     // Non-fatal. The user can still continue and the app will keep the in-memory choice.
   }
 
   try {
-    await completeMobileOnboarding(choice);
+    await updateMobileUserSettings({
+      onboarding_completed: true,
+      preferences: {
+        mobileNotificationOnboardingCompleted: true,
+        mobileNotificationOnboardingChoice: choice,
+      },
+    });
   } catch {
     // Non-fatal. The local SecureStore entry still marks onboarding complete.
   }

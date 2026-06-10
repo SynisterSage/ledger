@@ -4982,6 +4982,7 @@ app.patch('/api/user/settings', authMiddleware, rateLimit('write'), async (req, 
     const fullNameInput = req.body?.full_name;
     const preferencesInput = req.body?.preferences;
     const activeWorkspaceIdInput = req.body?.active_workspace_id;
+    const onboardingCompletedInput = req.body?.onboarding_completed;
 
     const updatePayload = {};
 
@@ -5024,6 +5025,13 @@ app.patch('/api/user/settings', authMiddleware, rateLimit('write'), async (req, 
         ...existingPreferences,
         ...incomingPreferences,
       });
+    }
+
+    if (onboardingCompletedInput !== undefined) {
+      updatePayload.onboarding_completed = Boolean(onboardingCompletedInput);
+      if (Boolean(onboardingCompletedInput)) {
+        updatePayload.onboarding_completed_at = new Date().toISOString();
+      }
     }
 
     if (Object.keys(updatePayload).length === 0) {

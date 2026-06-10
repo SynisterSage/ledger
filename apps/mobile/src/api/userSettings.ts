@@ -60,6 +60,7 @@ export const defaultMobileAppPreferences: MobileAppPreferences = {
 type MobileUserSettingsPatch = {
   full_name?: string | null;
   active_workspace_id?: string | null;
+  onboarding_completed?: boolean;
   preferences?: Record<string, unknown>;
 };
 

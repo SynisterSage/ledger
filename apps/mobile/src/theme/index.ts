@@ -1,10 +1,8 @@
-import { useColorScheme } from 'react-native';
-
 import { ledgerTokens } from './tokens';
 
 export function useLedgerTheme() {
-  const scheme = useColorScheme() === 'dark' ? 'dark' : 'light';
-  const colors = ledgerTokens.colors[scheme];
+  const scheme = 'light' as const;
+  const colors = ledgerTokens.colors.light;
 
   return {
     scheme,

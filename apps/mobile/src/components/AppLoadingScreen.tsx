@@ -1,6 +1,6 @@
-import { StyleSheet, View } from 'react-native';
+import { Image, StyleSheet, View } from 'react-native';
 
-import LogoMark from '../../assets/images/logo-white.svg';
+import SplashIcon from '../../assets/images/splash-icon.png';
 
 import { useLedgerTheme } from '@/theme';
 
@@ -12,10 +12,10 @@ export function AppLoadingScreen() {
       style={[
         styles.container,
         {
-          backgroundColor: theme.colors.accent,
+          backgroundColor: theme.colors.background,
         },
       ]}>
-      <LogoMark width={48} height={48} />
+      <Image source={SplashIcon} style={styles.icon} resizeMode="contain" />
     </View>
   );
 }
@@ -25,5 +25,9 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  icon: {
+    width: 128,
+    height: 128,
   },
 });
