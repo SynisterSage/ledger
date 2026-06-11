@@ -706,6 +706,7 @@ let floatingDockDragActive = false;
 let floatingDockTrackingTimer: NodeJS.Timeout | null = null;
 let floatingDockNativeTracker: ChildProcessWithoutNullStreams | null = null;
 let floatingDockNativeBuffer = '';
+let windowsNativeDockRequeryAt = 0;
 let floatingDragStart:
   | {
       cursor: Electron.Point;
@@ -1745,6 +1746,129 @@ function getWindowsDockTrackerType() {
   return 'none';
 }
 
+async function queryWindowsDockTargetBounds(targetId: string) {
+  if (process.platform !== 'win32') return null;
+  if (!/^\d+$/.test(targetId)) return null;
+
+  const script = `
+$ErrorActionPreference = 'Stop'
+Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+public static class Win32 {
+  [DllImport("user32.dll")]
+  public static extern bool IsWindow(IntPtr hWnd);
+  [DllImport("user32.dll")]
+  public static extern bool IsIconic(IntPtr hWnd);
+  [DllImport("user32.dll")]
+  public static extern bool GetWindowRect(IntPtr hWnd, out RECT rect);
+  [DllImport("dwmapi.dll")]
+  public static extern int DwmGetWindowAttribute(IntPtr hwnd, int dwAttribute, out RECT pvAttribute, int cbAttribute);
+  [DllImport("user32.dll")]
+  public static extern IntPtr MonitorFromWindow(IntPtr hwnd, uint dwFlags);
+  [DllImport("user32.dll")]
+  public static extern bool GetMonitorInfo(IntPtr hMonitor, ref MONITORINFO lpmi);
+  [StructLayout(LayoutKind.Sequential)]
+  public struct RECT {
+    public int Left;
+    public int Top;
+    public int Right;
+    public int Bottom;
+  }
+  [StructLayout(LayoutKind.Sequential)]
+  public struct MONITORINFO {
+    public int cbSize;
+    public RECT rcMonitor;
+    public RECT rcWork;
+    public uint dwFlags;
+  }
+  public static bool TryGetWindowBounds(IntPtr hwnd, out RECT rect) {
+    const int DWMWA_EXTENDED_FRAME_BOUNDS = 9;
+    if (DwmGetWindowAttribute(hwnd, DWMWA_EXTENDED_FRAME_BOUNDS, out rect, System.Runtime.InteropServices.Marshal.SizeOf(typeof(RECT))) == 0) {
+      return true;
+    }
+    return GetWindowRect(hwnd, out rect);
+  }
+  public static bool IsFullscreenLike(IntPtr hwnd, RECT rect) {
+    try {
+      IntPtr monitor = MonitorFromWindow(hwnd, 2);
+      if (monitor == IntPtr.Zero) return false;
+      MONITORINFO info = new MONITORINFO();
+      info.cbSize = Marshal.SizeOf(typeof(MONITORINFO));
+      if (!GetMonitorInfo(monitor, ref info)) return false;
+      const int tolerance = 8;
+      return
+        Math.Abs(rect.Left - info.rcMonitor.Left) <= tolerance &&
+        Math.Abs(rect.Top - info.rcMonitor.Top) <= tolerance &&
+        Math.Abs((rect.Right - rect.Left) - (info.rcMonitor.Right - info.rcMonitor.Left)) <= tolerance * 2 &&
+        Math.Abs((rect.Bottom - rect.Top) - (info.rcMonitor.Bottom - info.rcMonitor.Top)) <= tolerance * 2;
+    } catch {
+      return false;
+    }
+  }
+}
+"@
+$hwnd = [IntPtr]${targetId}
+if (-not [Win32]::IsWindow($hwnd)) { return }
+if ([Win32]::IsIconic($hwnd)) {
+  Write-Output "state|minimized"
+  return
+}
+$rect = [Win32+RECT]::new()
+if (-not [Win32]::TryGetWindowBounds($hwnd, [ref]$rect)) { return }
+if ([Win32]::IsFullscreenLike($hwnd, $rect)) {
+  Write-Output "state|fullscreen"
+  return
+}
+Write-Output "bounds|$($rect.Left)|$($rect.Top)|$([Math]::Max(1, $rect.Right - $rect.Left))|$([Math]::Max(1, $rect.Bottom - $rect.Top))"
+`;
+
+  try {
+    const { stdout } = await execFileAsync(
+      'powershell.exe',
+      ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script],
+      { windowsHide: true, timeout: 1200 }
+    );
+
+    const output = String(stdout).trim();
+    if (!output) return null;
+
+    const [kind, a, b, c, d] = output.split('|');
+    if (kind === 'state') {
+      const state = String(a ?? '').toLowerCase();
+      if (state === 'minimized' || state === 'fullscreen') {
+        return { kind: 'state' as const, state };
+      }
+      return null;
+    }
+    if (kind !== 'bounds') return null;
+
+    const parsed = [a, b, c, d].map((value) => Number(value));
+    const bounds = {
+      x: parsed[0],
+      y: parsed[1],
+      width: parsed[2],
+      height: parsed[3],
+    };
+    if (
+      ![bounds.x, bounds.y, bounds.width, bounds.height].every(Number.isFinite) ||
+      bounds.width <= 0 ||
+      bounds.height <= 0
+    ) {
+      return null;
+    }
+
+    return { kind: 'bounds' as const, bounds };
+  } catch (error) {
+    writeWindowsDockTrace('windows-target-requery-error', {
+      trackerType: 'windows-native-target-requery',
+      targetId,
+      error: String(error),
+    });
+    return null;
+  }
+}
+
 function writeWindowsDockTrace(event: string, details: Record<string, unknown> = {}) {
   if (process.platform !== 'win32' || !dockDebugEnabled) return;
   try {
@@ -1920,6 +2044,7 @@ function clearCurrentFloatingDockTarget(
   currentFloatingDockMisses = 0;
   currentFloatingDockDisplayId = null;
   floatingDockHoldUntil = 0;
+  windowsNativeDockRequeryAt = 0;
   sendFloatingDockChanged(false, attachmentStatus);
 }
 
@@ -2763,6 +2888,73 @@ async function refreshFloatingDockTarget() {
     floatingDockNativeTracker &&
     currentFloatingDockTarget.platform === 'win32'
   ) {
+    // Let the Windows native tracker stay authoritative, but re-query the target
+    // HWND periodically so a stalled event hook does not strand the dock on the
+    // primary display when the app moves across monitors.
+    if (Date.now() - windowsNativeDockRequeryAt >= 500) {
+      windowsNativeDockRequeryAt = Date.now();
+      const targetHandleBounds = await queryWindowsDockTargetBounds(currentFloatingDockTarget.id);
+      if (targetHandleBounds?.kind === 'state') {
+        if (targetHandleBounds.state === 'minimized') {
+          writeWindowsDockTrace('refresh-windows-native-requery', {
+            trackerType: 'windows-native-target-requery',
+            targetId: currentFloatingDockTarget.id,
+            targetWindowHandle: currentFloatingDockTarget.id,
+            normalizedTargetBounds: currentFloatingDockBounds
+              ? rectForDockTrace(currentFloatingDockBounds)
+              : null,
+            normalizedTargetBoundsCoordinateSystem: 'electron-dip',
+            movementSkipped: true,
+            skipReason: 'target_minimized',
+            detachOrSuspendGuardTriggered: 'suspended_minimized',
+          });
+          suspendCurrentFloatingDockTarget('suspended_minimized');
+        } else {
+          writeWindowsDockTrace('refresh-windows-native-requery', {
+            trackerType: 'windows-native-target-requery',
+            targetId: currentFloatingDockTarget.id,
+            targetWindowHandle: currentFloatingDockTarget.id,
+            normalizedTargetBounds: currentFloatingDockBounds
+              ? rectForDockTrace(currentFloatingDockBounds)
+              : null,
+            normalizedTargetBoundsCoordinateSystem: 'electron-dip',
+            movementSkipped: true,
+            skipReason: 'target_fullscreen_like',
+            detachOrSuspendGuardTriggered: 'suspended_fullscreen',
+          });
+          clearCurrentFloatingDockTarget('suspended_fullscreen');
+        }
+        return;
+      }
+
+      if (targetHandleBounds?.kind === 'bounds') {
+        const normalizedBounds = nativeRectToDipRect(targetHandleBounds.bounds);
+        writeWindowsDockTrace('refresh-windows-native-requery', {
+          trackerType: 'windows-native-target-requery',
+          targetId: currentFloatingDockTarget.id,
+          targetWindowHandle: currentFloatingDockTarget.id,
+          rawTargetBounds: rectForDockTrace(targetHandleBounds.bounds),
+          rawTargetBoundsCoordinateSystem: 'windows-native-physical-pixels',
+          normalizedTargetBounds: rectForDockTrace(normalizedBounds),
+          normalizedTargetBoundsCoordinateSystem: 'electron-dip',
+          targetCenterPoint: rectCenterForDockTrace(normalizedBounds),
+          currentLedgerBounds: rectForDockTrace(sidebarWin.getBounds()),
+          reason: 'windows_native_tracker_periodic_requery',
+        });
+        applyFloatingDockTargetBounds(normalizedBounds, currentFloatingDockTarget.side, {
+          trackerType: 'windows-native-target-requery',
+          targetId: currentFloatingDockTarget.id,
+          targetWindowHandle: currentFloatingDockTarget.id,
+          rawTargetBounds: targetHandleBounds.bounds,
+          rawTargetBoundsCoordinateSystem: 'windows-native-physical-pixels',
+          normalizedTargetBounds: normalizedBounds,
+          normalizedTargetBoundsCoordinateSystem: 'electron-dip',
+          reason: 'windows_native_tracker_periodic_requery',
+        });
+        return;
+      }
+    }
+
     // Let the Windows native tracker drive authoritative target bounds,
     // including multi-display moves.
     if (currentFloatingDockBounds) {
