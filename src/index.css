@@ -22,13 +22,6 @@ body {
   --modal-backdrop-radius: var(--window-radius);
 }
 
-/* Full-window module shells need explicit clipping on Windows transparent
-   BrowserWindows, otherwise the native/theme-colored backing surface can peek
-   through behind rounded corners. */
-html > body > #root > div[class*="rounded-3xl"] {
-  clip-path: inset(0 round var(--ledger-window-radius, 24px));
-}
-
 /* When a modal is open, hide the app shell border/shadow and match body background
    to the modal backdrop color so transparent window edges don't reveal a mismatched
    background or border. This helps avoid corner artifacts in rounded Electron windows. */

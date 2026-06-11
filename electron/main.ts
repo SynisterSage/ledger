@@ -19,6 +19,7 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import fs from 'node:fs';
 import { defaultSidebarPreferences, type SidebarPosition } from '../src/config/sidebarPreferences';
+import { desktopTokens } from '../src/theme/desktopTokens';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const execFileAsync = promisify(execFile);
@@ -4394,8 +4395,9 @@ function openModuleWindow(
   const moduleWin = new BrowserWindow({
     ...initialBounds,
     show: false,
-    transparent: true,
-    backgroundColor: '#00000000',
+    transparent: process.platform !== 'win32',
+    backgroundColor:
+      process.platform === 'win32' ? desktopTokens.colors.background : '#00000000',
     ...getModuleWindowChromeOptions(),
     // Ensure module popouts can enter/exit fullscreen reliably on Windows and macOS
     fullscreenable: true,
@@ -4419,12 +4421,11 @@ function openModuleWindow(
     moduleWin.setVibrancy(null);
   }
 
-  // Note: setBackgroundMaterial('auto') on Windows causes expensive compositing
-  // during resize that delays border-radius repaints. Disabled to improve resize
-  // responsiveness. CSS-based styling is sufficient for module windows.
+  // Windows native shadows are rectangular behind transparent/rounded shells.
+  // Keep them off there; macOS uses the native panel shadow correctly.
   if (typeof (moduleWin as any).setHasShadow === 'function') {
     try {
-      (moduleWin as any).setHasShadow(false);
+      (moduleWin as any).setHasShadow(process.platform !== 'win32');
     } catch {}
   }
 
