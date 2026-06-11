@@ -31,6 +31,7 @@ export default function ReminderCaptureScreen() {
     parsedDueAt && !Number.isNaN(parsedDueAt.getTime())
       ? new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit' }).format(parsedDueAt)
       : undefined;
+  const saveDestination = source === 'siri' ? '/(tabs)/today' : '/(tabs)/capture';
 
   useEffect(() => {
     void bootstrapWorkspaceState();
@@ -45,7 +46,7 @@ export default function ReminderCaptureScreen() {
         initialTimeInput={formattedTime}
         initialNotes={note}
         autoSubmit={source === 'siri'}
-        onSave={() => router.replace('/(tabs)/capture')}
+        onSave={() => router.replace(saveDestination)}
       />
     </Screen>
   );

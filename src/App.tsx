@@ -71,14 +71,67 @@ const windowParams = new URLSearchParams(window.location.search);
 const isModuleWindow = windowParams.get('window') === 'module';
 const moduleKind = (windowParams.get('module') as ModuleKind) ?? null;
 const moduleFocusContext = windowParams.get('focusContext')?.trim() ?? '';
-const moduleFocusTaskId = windowParams.get('focusTaskId')?.trim() ?? '';
 const dragRegionStyle = { WebkitAppRegion: 'drag' } as CSSProperties & { WebkitAppRegion: 'drag' };
 const noDragRegionStyle = { WebkitAppRegion: 'no-drag' } as CSSProperties & {
   WebkitAppRegion: 'no-drag';
 };
-const dashboardSkeletonSurface = '#FFF8F2';
-const dashboardSkeletonFill = '#FFF3E7';
-const dashboardSkeletonBorder = '#E2D4C4';
+const dashboardSkeletonSurface = 'var(--ledger-surface-muted)';
+const dashboardSkeletonFill = 'var(--ledger-surface-hover)';
+const dashboardSkeletonBorder = 'var(--ledger-border-subtle)';
+
+const dashboardTheme = {
+  shell:
+    'flex h-screen flex-col overflow-hidden rounded-3xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] shadow-none',
+  content: 'bg-[var(--ledger-background)]',
+  page: 'mx-auto max-w-6xl space-y-10',
+  hero: 'max-w-3xl space-y-8',
+  title: 'text-[34px] font-normal leading-tight tracking-tight text-[var(--ledger-text-primary)]',
+  subtitle: 'text-lg font-light text-[var(--ledger-text-muted)]',
+  sectionLabel: 'text-xs font-medium text-[var(--ledger-text-muted)]',
+  sectionAction:
+    'inline-flex items-center whitespace-nowrap text-xs font-medium text-[var(--ledger-text-secondary)] transition hover:text-[var(--ledger-text-primary)]',
+  queueLabel: 'text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--ledger-text-muted)]',
+  queuePrimary:
+    'rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-4 py-4',
+  queuePrimaryTitle: 'text-sm font-medium text-[var(--ledger-text-primary)]',
+  queuePrimaryStatus: 'text-xs font-medium text-[var(--ledger-text-secondary)]',
+  queuePrimaryBody: 'text-xs leading-5 text-[var(--ledger-text-muted)]',
+  queueSecondaryLine: 'text-xs leading-5 text-[var(--ledger-text-muted)]',
+  queueCta:
+    'inline-flex items-center justify-center rounded-2xl bg-[var(--ledger-accent)] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[var(--ledger-accent-hover)]',
+  queueLink: 'text-xs font-medium text-[var(--ledger-text-secondary)] transition hover:text-[var(--ledger-text-primary)]',
+  sectionRow:
+    'group flex w-full items-start justify-between gap-3 rounded-2xl border-b border-[color:var(--ledger-border-subtle)] px-3 py-3 text-left transition hover:bg-[var(--ledger-surface-hover)]',
+  sectionRowCompact:
+    'group flex w-full items-start gap-3 rounded-2xl border-b border-[color:var(--ledger-border-subtle)] px-3 py-3 text-left transition hover:bg-[var(--ledger-surface-hover)]',
+  sectionRowDense:
+    'group flex w-full items-start gap-3 rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3 py-3 text-left transition hover:bg-[var(--ledger-surface-hover)]',
+  rowTitle: 'text-[13px] font-medium leading-5 text-[var(--ledger-text-primary)]',
+  rowMeta: 'text-[11px] leading-4 text-[var(--ledger-text-muted)]',
+  rowMetaStrong: 'text-[11px] font-medium leading-4 text-[var(--ledger-text-secondary)]',
+  summaryPill:
+    'inline-flex min-h-9 items-center gap-2 rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3 py-1.5 text-[11px] text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]',
+  summaryValue: 'font-semibold text-[var(--ledger-text-primary)]',
+  summaryValueAccent: 'font-semibold text-[var(--ledger-accent)]',
+  panel: 'space-y-6',
+  rightPanel:
+    'space-y-6 border-t border-[color:var(--ledger-border-subtle)] pt-8 lg:sticky lg:top-0 lg:self-start lg:border-l lg:border-t-0 lg:pl-12 lg:pt-0',
+  subtleRule: 'h-px w-12 bg-[var(--ledger-border-subtle)]',
+  emptyText: 'text-sm font-light italic text-[var(--ledger-text-muted)]',
+  emptyBody: 'text-sm font-light text-[var(--ledger-text-muted)]',
+  mutedBody: 'text-xs text-[var(--ledger-text-muted)]',
+  body: 'text-sm text-[var(--ledger-text-secondary)]',
+  chip:
+    'whitespace-nowrap rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3 py-1.5 text-xs font-medium text-[var(--ledger-text-secondary)] transition hover:border-[color:var(--ledger-border-strong)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]',
+  chipSelected:
+    'whitespace-nowrap rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-hover)] px-3 py-1.5 text-xs font-medium text-[var(--ledger-text-primary)]',
+  actionLink:
+    'text-[11px] font-medium text-[var(--ledger-accent)] transition hover:text-[var(--ledger-accent-hover)]',
+  actionLinkMuted:
+    'text-[11px] font-medium text-[var(--ledger-text-secondary)] transition hover:text-[var(--ledger-text-primary)]',
+  hoverRow:
+    'transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]',
+};
 const OPEN_LEDGER_URL = (
   import.meta.env.VITE_LEDGER_OPEN_URL?.trim() || window.location.origin
 ).replace(/\/$/, '');
@@ -396,7 +449,7 @@ function InviteSuccessScreen({
           <button
             type="button"
             onClick={onOpenLedger}
-            className="mt-6 inline-flex h-11 w-full items-center justify-center gap-2 rounded-2xl bg-[#FF5F40] px-4 text-sm font-semibold text-white shadow-[0_6px_14px_rgba(255,95,64,0.08)] transition-colors hover:bg-[#ea5336]"
+            className="mt-6 inline-flex h-11 w-full items-center justify-center gap-2 rounded-2xl bg-[var(--ledger-accent)] px-4 text-sm font-semibold text-white shadow-[var(--ledger-shadow-accent)] transition-colors hover:bg-[var(--ledger-accent-hover)]"
           >
             Open Ledger
             <ArrowRight size={16} />
@@ -537,7 +590,7 @@ function OnboardingFlow({
                   <button
                     type="button"
                     onClick={() => onStepChange('workspace')}
-                    className="inline-flex h-11 items-center justify-center rounded-full bg-[#FF5F40] px-6 text-sm font-semibold text-white shadow-[0_10px_24px_rgba(255,95,64,0.18)] transition hover:bg-[#ea5336]"
+                    className="inline-flex h-11 items-center justify-center rounded-full bg-[var(--ledger-accent)] px-6 text-sm font-semibold text-white shadow-[var(--ledger-shadow-accent)] transition hover:bg-[var(--ledger-accent-hover)]"
                   >
                     Get started
                   </button>
@@ -603,7 +656,7 @@ function OnboardingFlow({
                 onClick={() => {
                   void onWorkspaceSubmit();
                 }}
-                className="mt-7 inline-flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-[#FF5F40] px-5 text-sm font-semibold text-white shadow-[0_10px_24px_rgba(255,95,64,0.16)] transition hover:bg-[#ea5336] disabled:opacity-60"
+                className="mt-7 inline-flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-[var(--ledger-accent)] px-5 text-sm font-semibold text-white shadow-[var(--ledger-shadow-accent)] transition hover:bg-[var(--ledger-accent-hover)] disabled:opacity-60"
               >
                 {isSaving ? <Loader2 size={17} className="animate-spin" /> : null}
                 {isSaving ? (mode === 'create' ? 'Creating...' : 'Joining...') : mode === 'create' ? 'Continue' : 'Join workspace'}
@@ -642,7 +695,7 @@ function OnboardingFlow({
                     >
                       <span className="relative h-9 w-11 rounded-lg border border-gray-200 bg-[#FFFDFB]">
                         <span
-                          className={`absolute rounded-sm bg-[#FF5F40] ${
+                          className={`absolute rounded-sm bg-[var(--ledger-accent)] ${
                             option.value === 'right'
                               ? 'right-1 top-1 h-7 w-2'
                               : option.value === 'left'
@@ -680,7 +733,7 @@ function OnboardingFlow({
                   onClick={() => {
                     void onOpenLedger(selectedPosition);
                   }}
-                  className="inline-flex h-12 flex-1 items-center justify-center gap-2 rounded-2xl bg-[#FF5F40] px-5 text-sm font-semibold text-white shadow-[0_10px_24px_rgba(255,95,64,0.16)] transition hover:bg-[#ea5336] disabled:opacity-60"
+                  className="inline-flex h-12 flex-1 items-center justify-center gap-2 rounded-2xl bg-[var(--ledger-accent)] px-5 text-sm font-semibold text-white shadow-[var(--ledger-shadow-accent)] transition hover:bg-[var(--ledger-accent-hover)] disabled:opacity-60"
                 >
                   {isSaving ? <Loader2 size={17} className="animate-spin" /> : null}
                   {isSaving ? 'Opening...' : 'Open Ledger'}
@@ -692,7 +745,7 @@ function OnboardingFlow({
                     onPositionChange('right');
                     void onOpenLedger('right');
                   }}
-                  className="inline-flex h-12 items-center justify-center rounded-2xl px-4 text-sm font-medium text-gray-500 transition hover:text-gray-900 disabled:opacity-60"
+                  className="inline-flex h-12 items-center justify-center rounded-2xl px-4 text-sm font-medium text-[var(--ledger-text-secondary)] transition hover:text-[var(--ledger-text-primary)] disabled:opacity-60"
                 >
                   Decide later
                 </button>
@@ -713,13 +766,16 @@ const htmlToPlainText = (value: string) =>
     .trim();
 
 // Dashboard content component
-function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string }) {
+function DashboardContent() {
   const { user } = useAuthContext();
   const { activeWorkspace, activeWorkspaceId } = useWorkspaceContext();
   const api = useApi();
   const { setState } = useSidebar();
   const todayTasksRef = useRef<HTMLElement | null>(null);
-  const followUpsRef = useRef<HTMLElement | null>(null);
+  const nextActionsRef = useRef<HTMLElement | null>(null);
+  const recentNotesRef = useRef<HTMLElement | null>(null);
+  const upcomingRef = useRef<HTMLDivElement | null>(null);
+  const projectsRef = useRef<HTMLDivElement | null>(null);
 
   const [isLoadingDashboard, setIsLoadingDashboard] = useState(true);
   const [dashboardError, setDashboardError] = useState<string | null>(null);
@@ -796,7 +852,6 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
   const [dashboardRefreshToken, setDashboardRefreshToken] = useState(0);
   const [inboxCount, setInboxCount] = useState(0);
   const [notificationCount, setNotificationCount] = useState(0);
-  const [focusedTaskId, setFocusedTaskId] = useState<string | null>(initialFocusTaskId ?? null);
   const [focusDraftTitle, setFocusDraftTitle] = useState('');
   const [isSavingFocusTask, setIsSavingFocusTask] = useState(false);
   const [showCloseGuardModal, setShowCloseGuardModal] = useState(false);
@@ -1282,29 +1337,6 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
   }, []);
 
   useEffect(() => {
-    if (!initialFocusTaskId) return;
-    setFocusedTaskId(initialFocusTaskId);
-  }, [initialFocusTaskId]);
-
-  useEffect(() => {
-    const onFocusTask = (
-      _event: unknown,
-      payload: { kind?: string; focusTaskId?: string | null }
-    ) => {
-      if (payload?.kind !== 'dashboard' || !payload.focusTaskId) return;
-      setFocusedTaskId(payload.focusTaskId);
-      window.setTimeout(() => {
-        followUpsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      }, 30);
-    };
-
-    window.ipcRenderer?.on('module:focus-task', onFocusTask);
-    return () => {
-      window.ipcRenderer?.off('module:focus-task', onFocusTask);
-    };
-  }, []);
-
-  useEffect(() => {
     if (!dashboardContextMenu) return;
     const close = () => setDashboardContextMenu(null);
     const onKeyDown = (event: KeyboardEvent) => {
@@ -1370,11 +1402,32 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
   });
 
   const summaryItems = [
-    { label: 'focus', value: focusTasksForDisplay.length, accent: true },
-    { label: 'tasks', value: activeTodayTasks.length },
-    { label: 'notifications', value: notificationCount },
-    { label: 'upcoming', value: upcoming.length },
-    { label: recentNotes.length === 1 ? 'note' : 'notes', value: recentNotes.length },
+    {
+      label: 'Focus',
+      value: focusTasksForDisplay.length,
+      accent: true,
+      onClick: () => todayTasksRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }),
+    },
+    {
+      label: 'Tasks',
+      value: activeTodayTasks.length,
+      onClick: () => nextActionsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }),
+    },
+    {
+      label: 'Notifications',
+      value: notificationCount,
+      onClick: () => window.desktopWindow?.openModule('notifications'),
+    },
+    {
+      label: 'Upcoming',
+      value: upcoming.length,
+      onClick: () => upcomingRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }),
+    },
+    {
+      label: recentNotes.length === 1 ? 'Note' : 'Notes',
+      value: recentNotes.length,
+      onClick: () => recentNotesRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }),
+    },
   ];
   const refreshTodayTasks = async () => {
     const data = await api.getToday();
@@ -1916,10 +1969,7 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
   };
 
   return (
-    <div
-      className="flex h-screen flex-col overflow-hidden rounded-3xl border border-[#E8DDD4] bg-[#FFF8F1] shadow-none"
-      style={{ scrollbarGutter: 'stable' }}
-    >
+    <div className={dashboardTheme.shell} style={{ scrollbarGutter: 'stable' }}>
       <CloseGuardModal
         isOpen={showCloseGuardModal}
         isSaving={isSavingFocusTask}
@@ -2018,37 +2068,32 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
         onClose={attemptCloseDashboard}
       />
 
-      <div
-        className="flex-1 min-h-0 overflow-auto bg-[#FFF8F1] px-6 py-8"
-        style={{ scrollbarGutter: 'stable' }}
-      >
-        <div className="mx-auto max-w-6xl space-y-10">
-          <header className="max-w-3xl space-y-8">
+      <div className={`flex-1 min-h-0 overflow-auto ${dashboardTheme.content} px-6 py-8`} style={{ scrollbarGutter: 'stable' }}>
+        <div className={dashboardTheme.page}>
+          <header className={dashboardTheme.hero}>
             <div className="space-y-1.5">
-              <h2 className="text-[34px] font-normal leading-tight tracking-tight text-[#111827]">
-                Good to see you, {firstName}
-              </h2>
-              <p className="text-lg font-light text-[#64748B]">
-                What needs your attention today?
-              </p>
+              <h2 className={dashboardTheme.title}>Good to see you, {firstName}</h2>
+              <p className={dashboardTheme.subtitle}>What needs your attention today?</p>
             </div>
 
-            <div className="flex flex-col gap-6 border-b border-[#E8DDD4] pb-8 sm:flex-row sm:items-end sm:justify-between">
+            <div className="flex flex-col gap-5 border-b border-[color:var(--ledger-border-subtle)] pb-6 sm:flex-row sm:items-end sm:justify-between">
               <div className="space-y-2">
-                <p className="text-xs font-medium text-[#64748B]">
-                  {todayLabel}
-                </p>
+                <p className={dashboardTheme.sectionLabel}>{todayLabel}</p>
                 {!isLoadingDashboard && (
-                  <div className="flex flex-wrap items-center gap-4 text-[11px] text-[#64748B]">
+                  <div className="flex flex-wrap items-center gap-2">
                     {summaryItems.map((item) => (
-                      <span key={item.label} className="flex items-center gap-1.5">
-                        <span
-                          className={item.accent ? 'font-semibold text-[#FF5F40]' : 'font-medium'}
-                        >
+                      <button
+                        key={item.label}
+                        type="button"
+                        onClick={() => item.onClick?.()}
+                        className={dashboardTheme.summaryPill}
+                        title={`Open ${item.label.toLowerCase()}`}
+                      >
+                        <span className={item.accent ? dashboardTheme.summaryValueAccent : dashboardTheme.summaryValue}>
                           {item.value}
                         </span>
-                        {item.label}
-                      </span>
+                        <span>{item.label}</span>
+                      </button>
                     ))}
                   </div>
                 )}
@@ -2057,24 +2102,22 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
           </header>
 
           {dashboardError && (
-            <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            <div className="rounded-2xl border border-[color:rgba(217,45,32,0.18)] bg-[color:rgba(217,45,32,0.08)] px-4 py-3 text-sm text-[var(--ledger-danger)]">
               {dashboardError}
             </div>
           )}
 
-          <div className="grid gap-12 lg:grid-cols-[minmax(0,1fr)_320px]">
-            <main className="space-y-14">
-              <section ref={todayTasksRef} className="space-y-6">
-                <div className="flex flex-col gap-4 sm:flex-row sm:items-baseline sm:justify-between sm:gap-6">
-                  <p className="text-xs font-medium text-[#64748B]">
-                    Focus
-                  </p>
+          <div className="grid gap-10 lg:grid-cols-[minmax(0,1fr)_320px]">
+            <main className="space-y-12">
+              <section ref={todayTasksRef} className={dashboardTheme.panel}>
+                <div className="flex items-baseline justify-between gap-4">
+                  <p className={dashboardTheme.sectionLabel}>Focus</p>
                   <div className="flex gap-4">
                     <button
                       type="button"
                       onClick={() => setIsFocusPickerOpen(true)}
                       disabled={focusTasks.length >= 3 || activeTodayTasks.length === 0}
-                      className="text-[11px] font-medium text-[#FF5F40] transition hover:underline disabled:cursor-not-allowed disabled:opacity-50"
+                      className={dashboardTheme.actionLink}
                     >
                       + Add from Today
                     </button>
@@ -2082,7 +2125,7 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
                       type="button"
                       onClick={() => setIsNewFocusModalOpen(true)}
                       disabled={focusTasks.length >= 3}
-                      className="text-[11px] font-medium text-[#FF5F40] transition hover:underline disabled:cursor-not-allowed disabled:opacity-50"
+                      className={dashboardTheme.actionLink}
                     >
                       + New focus
                     </button>
@@ -2090,16 +2133,16 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
                 </div>
 
                 {isLoadingDashboard ? (
-                  <div className="space-y-3 border-y border-[#E8DDD4] py-10">
+                  <div className="space-y-3 border-y border-[color:var(--ledger-border-subtle)] py-8">
                     {Array.from({ length: 3 }).map((_, i) => (
                       <DashboardSkeletonTaskItem key={i} />
                     ))}
                   </div>
                 ) : (
                   <>
-                    <div className="border-y border-[#E8DDD4] py-10">
+                    <div className="border-y border-[color:var(--ledger-border-subtle)] py-8">
                       {focusTasksForDisplay.length === 0 ? (
-                        <p className="text-sm font-light italic text-[#64748B]">No focus set yet.</p>
+                        <p className={dashboardTheme.emptyText}>No focus set yet. Choose what matters most today.</p>
                       ) : (
                         <div className="space-y-4">
                           {focusTasksForDisplay.map((task, index) => {
@@ -2113,14 +2156,12 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
 
                               return (
                                 <div key={task.id} className="group flex items-start gap-3">
-                                  <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-[#ffd9d0] bg-[#FFF7F4] text-[#FF5F40]">
+                                  <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-[color:rgba(18,183,106,0.18)] bg-[color:rgba(18,183,106,0.08)] text-[var(--ledger-success)]">
                                     <Bell size={12} />
                                   </div>
                                   <div className="min-w-0 flex-1">
-                                    <p className="text-[13px] font-medium leading-5 text-[#111827]">
-                                      {task.title}
-                                    </p>
-                                    <p className="mt-0.5 text-[11px] leading-4 text-[#64748B]">
+                                    <p className={dashboardTheme.rowTitle}>{task.title}</p>
+                                    <p className={dashboardTheme.rowMeta}>
                                       Reminder{task.calendar_name ? ` · ${task.calendar_name}` : ''}
                                       {task.project_name ? ` · ${task.project_name}` : ''}
                                       {reminderTime ? ` · ${reminderTime}` : ''}
@@ -2130,7 +2171,7 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
                                     <button
                                       type="button"
                                       onClick={() => openModule('calendar')}
-                                      className="text-[#64748B] transition hover:text-[#111827]"
+                                      className={dashboardTheme.actionLinkMuted}
                                       title="Open calendar"
                                     >
                                       <CalendarDays size={14} />
@@ -2143,14 +2184,12 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
                             const expiryLabel = formatExpiryCounter(task);
                             return (
                               <div key={task.id} className="group flex items-start gap-3">
-                                <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-[#E8DDD4] bg-[#FFFBF7] text-[11px] font-medium text-[#64748B]">
+                                <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] text-[11px] font-medium text-[var(--ledger-text-muted)]">
                                   {index + 1}
                                 </div>
                                 <div className="min-w-0 flex-1">
-                                  <p className="text-[13px] font-medium leading-5 text-[#111827]">
-                                    {task.title}
-                                  </p>
-                                  <p className="mt-0.5 text-[11px] leading-4 text-[#64748B]">
+                                  <p className={dashboardTheme.rowTitle}>{task.title}</p>
+                                  <p className={dashboardTheme.rowMeta}>
                                     {task.project_name || task.workspace_name || 'Workspace task'}
                                     {expiryLabel ? ` · ${expiryLabel}` : ''}
                                   </p>
@@ -2160,7 +2199,7 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
                                     type="button"
                                     onClick={() => void toggleFocusDone(task.id)}
                                     disabled={focusActionId === task.id}
-                                    className="text-[#64748B] transition hover:text-[#111827] disabled:opacity-50"
+                                    className={dashboardTheme.actionLinkMuted}
                                     title="Mark complete"
                                   >
                                     <CheckCircle2 size={14} />
@@ -2169,7 +2208,7 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
                                     type="button"
                                     onClick={() => void removeTaskFromFocus(task.id)}
                                     disabled={focusActionId === task.id}
-                                    className="text-[#64748B] transition hover:text-[#111827] disabled:opacity-50"
+                                    className={dashboardTheme.actionLinkMuted}
                                     title="Remove from focus"
                                   >
                                     <Trash2 size={14} />
@@ -2189,12 +2228,10 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
                           onClick={() => setCompletedFocusExpanded((current) => !current)}
                           className="flex w-full items-center justify-between rounded-2xl px-0 py-1 text-left"
                         >
-                          <span className="text-xs font-medium text-[#64748B]">
-                            Completed · {completedFocusTasks.length}
-                          </span>
+                          <span className={dashboardTheme.sectionLabel}>Completed · {completedFocusTasks.length}</span>
                           <ChevronDown
                             size={14}
-                            className={`text-[#94A3B8] transition-transform ${
+                            className={`text-[var(--ledger-text-muted)] transition-transform ${
                               completedFocusExpanded ? 'rotate-180' : 'rotate-0'
                             }`}
                           />
@@ -2207,16 +2244,16 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
                               return (
                                 <div
                                   key={task.id}
-                                  className="flex items-start gap-3 rounded-2xl border border-[#E8DDD4] bg-[#FFFBF7] px-3 py-2"
+                                  className="flex items-start gap-3 rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3 py-2"
                                 >
-                                  <div className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-[#E8DDD4] bg-[#FFFBF7] text-[11px] text-[#64748B]">
+                                  <div className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] text-[11px] text-[var(--ledger-text-muted)]">
                                     ✓
                                   </div>
                                   <div className="min-w-0 flex-1">
-                                    <p className="text-[13px] font-medium leading-5 text-[#64748B] line-through decoration-gray-300">
+                                    <p className="text-[13px] font-medium leading-5 text-[var(--ledger-text-muted)] line-through decoration-[color:var(--ledger-border-strong)]">
                                       {task.title}
                                     </p>
-                                    <p className="mt-0.5 text-[11px] leading-4 text-[#94A3B8]">
+                                    <p className="mt-0.5 text-[11px] leading-4 text-[var(--ledger-text-muted)]">
                                       {task.project_name || task.workspace_name || 'Workspace task'}
                                       {expiryLabel ? ` · ${expiryLabel}` : ''}
                                     </p>
@@ -2232,26 +2269,130 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
                 )}
               </section>
 
-              <div className="grid gap-12 lg:grid-cols-2">
-                <section
-                  className="space-y-6"
-                  onContextMenu={(event) => openContextMenu(event, { type: 'checkin' })}
-                >
-                  <div className="flex items-center justify-between gap-4">
-                    <p className="text-xs font-medium text-[#64748B]">
-                      Review
-                    </p>
-                    <button
-                      onClick={() => {
-                        void window.desktopWindow?.openCheckin();
-                        setState('expanded');
-                      }}
-                      className="shrink-0 whitespace-nowrap rounded-full border border-[#E8DDD4] bg-[#FFFBF7] px-3 py-1.5 text-xs font-medium text-gray-700 transition hover:border-[#D8C6B6] hover:bg-[#FFF4EA]"
-                    >
-                      Open check-in
-                    </button>
+              <section ref={nextActionsRef} className="space-y-5">
+                <div className="flex items-center justify-between gap-4">
+                  <p className={dashboardTheme.sectionLabel}>Next Actions</p>
+                  <button
+                    type="button"
+                    onClick={() => nextActionsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+                    className={dashboardTheme.sectionAction}
+                  >
+                    Open tasks
+                  </button>
+                </div>
+                {isLoadingDashboard ? (
+                  <div className="space-y-2 border-y border-[color:var(--ledger-border-subtle)] py-6">
+                    {Array.from({ length: 2 }).map((_, i) => (
+                      <DashboardSkeletonTaskItem key={i} />
+                    ))}
                   </div>
-                <div className="space-y-8">
+                ) : activeTodayTasks.length === 0 ? (
+                  <p className={dashboardTheme.emptyBody}>No actions for today.</p>
+                ) : (
+                  <div className="space-y-1">
+                    {activeTodayTasks.map((task) => {
+                      const expiryLabel = formatExpiryCounter(task);
+                      return (
+                        <button
+                          key={task.id}
+                          type="button"
+                          onContextMenu={(event) =>
+                            openContextMenu(event, { type: 'followup', taskId: task.id })
+                          }
+                          onClick={() => void toggleFocusDone(task.id)}
+                          className={dashboardTheme.sectionRow}
+                        >
+                          <div className="min-w-0 flex-1">
+                            <p className={dashboardTheme.rowTitle}>{task.title}</p>
+                            <p className={dashboardTheme.rowMeta}>
+                              {task.project_name || task.workspace_name || 'Workspace task'}
+                              {expiryLabel ? ` · ${expiryLabel}` : ''}
+                            </p>
+                          </div>
+                          <span className={dashboardTheme.rowMetaStrong}>
+                            {task.kind === 'reminder' ? 'Reminder' : task.status === 'completed' ? 'Done' : 'Task'}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </section>
+
+              <section ref={recentNotesRef} className="space-y-5">
+                <div className="flex items-center justify-between">
+                  <p className={dashboardTheme.sectionLabel}>Recent Notes</p>
+                  <button
+                    onClick={() => openModule('notes')}
+                    className={dashboardTheme.sectionAction}
+                  >
+                    Open notes
+                  </button>
+                </div>
+                {isLoadingDashboard ? (
+                  <div className="space-y-2">
+                    {Array.from({ length: 2 }).map((_, i) => (
+                      <DashboardSkeletonNoteCard key={i} />
+                    ))}
+                  </div>
+                ) : recentNotes.length === 0 ? (
+                  <p className={dashboardTheme.emptyText}>No recent notes.</p>
+                ) : (
+                  <div className="space-y-1">
+                    {recentNotes.map((note) => (
+                      <button
+                        key={note.id}
+                        ref={expandedNoteIds.has(note.id) ? undefined : undefined}
+                        onContextMenu={(event) =>
+                          openContextMenu(event, { type: 'note', noteId: note.id })
+                        }
+                        onClick={() => openModule('notes', { kind: 'notes', focusNoteId: note.id })}
+                        className={dashboardTheme.sectionRow}
+                      >
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-baseline justify-between gap-4">
+                            <span className="truncate text-sm font-medium text-[var(--ledger-text-primary)]">
+                              {note.title}
+                            </span>
+                            <span className="shrink-0 text-[10px] uppercase tracking-[0.14em] text-[var(--ledger-text-muted)]">
+                              {new Date(note.updated_at).toLocaleDateString([], {
+                                month: 'short',
+                                day: 'numeric',
+                              })}
+                            </span>
+                          </div>
+                          <p className="line-clamp-1 text-xs font-light text-[var(--ledger-text-muted)]">
+                            {htmlToPlainText(note.content) || 'No content yet'}
+                          </p>
+                          {expandedNoteIds.has(note.id) && (
+                            <p className="whitespace-pre-wrap wrap-break-word text-sm text-[var(--ledger-text-secondary)]">
+                              {htmlToPlainText(note.content) || 'No content yet'}
+                            </p>
+                          )}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </section>
+
+              <section
+                className="space-y-5"
+                onContextMenu={(event) => openContextMenu(event, { type: 'checkin' })}
+              >
+                <div className="flex items-center justify-between gap-4">
+                  <p className={dashboardTheme.sectionLabel}>Review</p>
+                  <button
+                    onClick={() => {
+                      void window.desktopWindow?.openCheckin();
+                      setState('expanded');
+                    }}
+                    className={dashboardTheme.sectionAction}
+                  >
+                    Open check-in
+                  </button>
+                </div>
+                <div className="space-y-8 border-t border-[color:var(--ledger-border-subtle)] pt-6">
                   {[
                     { label: 'Finished', value: daily.finished || 'Nothing yet' },
                     { label: 'Blocked', value: daily.blocked || 'No blockers' },
@@ -2261,335 +2402,148 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
                     },
                   ].map((item) => (
                     <div key={item.label} className="space-y-2">
-                      <p className="text-[11px] font-semibold text-[#64748B]">{item.label}</p>
-                      <p className="text-sm font-light leading-6 text-[#64748B]">{item.value}</p>
+                      <p className={dashboardTheme.sectionLabel}>{item.label}</p>
+                      <p className={dashboardTheme.body}>{item.value}</p>
                     </div>
                   ))}
                 </div>
               </section>
-
-              <section className="space-y-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-xs font-medium text-[#64748B]">
-                      Recent Notes
-                    </p>
-                  </div>
-                  <button
-                    onClick={() => openModule('notes')}
-                    className="shrink-0 whitespace-nowrap rounded-full border border-[#E8DDD4] bg-[#FFFBF7] px-3 py-1.5 text-xs font-medium text-gray-700 transition hover:border-[#D8C6B6] hover:bg-[#FFF4EA]"
-                  >
-                    Open notes
-                  </button>
-                </div>
-
-                <div className="space-y-1">
-                  {isLoadingDashboard ? (
-                    Array.from({ length: 2 }).map((_, i) => (
-                      <DashboardSkeletonNoteCard key={i} />
-                    ))
-                  ) : recentNotes.length === 0 ? (
-                    <p className="text-sm font-light italic text-[#64748B]">No notes yet.</p>
-                  ) : (
-                    recentNotes.map((note) => (
-                      <button
-                        key={note.id}
-                        onContextMenu={(event) =>
-                          openContextMenu(event, { type: 'note', noteId: note.id })
-                        }
-                        onClick={() => openModule('notes', { kind: 'notes', focusNoteId: note.id })}
-                        className="group flex w-full flex-col gap-1.5 border-b border-gray-200 pb-5 pt-3 text-left first:pt-0"
-                      >
-                        <div className="flex items-baseline justify-between gap-4">
-                          <span className="truncate text-sm font-medium text-[#111827] group-hover:text-[#FF5F40]">
-                            {note.title}
-                          </span>
-                          <span className="shrink-0 text-[10px] uppercase tracking-[0.14em] text-[#94A3B8]">
-                            {new Date(note.updated_at).toLocaleDateString([], {
-                              month: 'short',
-                              day: 'numeric',
-                            })}
-                          </span>
-                        </div>
-                        <p className="line-clamp-1 text-xs font-light text-[#94A3B8]">
-                          {htmlToPlainText(note.content) || 'No content yet'}
-                        </p>
-                        {expandedNoteIds.has(note.id) && (
-                          <p className="text-sm text-[#4B5563] whitespace-pre-wrap wrap-break-word">
-                            {htmlToPlainText(note.content) || 'No content yet'}
-                          </p>
-                        )}
-                      </button>
-                    ))
-                  )}
-                </div>
-              </section>
-              </div>
             </main>
 
-            <aside className="border-t border-[#E8DDD4] pt-8 lg:sticky lg:top-0 lg:self-start lg:border-l lg:border-t-0 lg:pl-12 lg:pt-0">
-              <section ref={followUpsRef} className="space-y-7">
-                <div className="space-y-3">
-                  <div className="space-y-3">
-                    <div className="min-w-0 space-y-1">
-                      <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[#64748B]">
-                        Action queue
-                      </p>
-                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-[#64748B]">
-                        <span className="whitespace-nowrap leading-5">
-                          {inboxCount > 0
-                            ? `${inboxCount} inbox capture${inboxCount === 1 ? '' : 's'}`
-                            : 'Inbox clear'}
-                        </span>
-                        <span aria-hidden="true">·</span>
-                        <span className="whitespace-nowrap leading-5">
-                          {notificationCount > 0
-                            ? `${notificationCount} notification${notificationCount === 1 ? '' : 's'}`
-                            : 'No notifications'}
-                        </span>
-                        <span aria-hidden="true">·</span>
-                        <span className="whitespace-nowrap leading-5">
-                          {followUpTasks.length} follow-up{followUpTasks.length === 1 ? '' : 's'}
-                        </span>
-                      </div>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      <button
-                        type="button"
-                        onClick={() => window.desktopWindow?.openModule('notifications')}
-                        className="whitespace-nowrap rounded-full border border-[#E8DDD4] bg-[#FFFBF7] px-3 py-1.5 text-xs font-medium text-gray-700 transition hover:bg-[#FFF4EA]"
-                      >
-                        Open notifications
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => window.desktopWindow?.toggleModule('inbox')}
-                        className="whitespace-nowrap rounded-full border border-[#E8DDD4] bg-[#FFFBF7] px-3 py-1.5 text-xs font-medium text-gray-700 transition hover:border-[#D8C6B6] hover:bg-[#FFF4EA]"
-                      >
-                        Open inbox
-                      </button>
-                    </div>
+            <aside className={dashboardTheme.rightPanel}>
+              <div className={dashboardTheme.subtleRule} />
+
+                <div ref={upcomingRef} className="space-y-5">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className={dashboardTheme.sectionLabel}>Upcoming</p>
+                    <button
+                      type="button"
+                      onClick={() => openModule('calendar')}
+                      className={dashboardTheme.sectionAction}
+                    >
+                      Calendar
+                    </button>
                   </div>
-
-                  <div className="space-y-3 pt-2">
-                    {inboxCount > 0 && (
-                      <button
-                        type="button"
-                        onClick={() => window.desktopWindow?.toggleModule('inbox')}
-                        className="flex w-full items-start justify-between gap-3 rounded-xl border border-[#E8DDD4] bg-[#FFFBF7] px-3 py-3 text-left transition hover:border-[#D8C6B6] hover:bg-[#FFF4EA]"
-                      >
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate text-sm font-medium text-[#4B5563]">
-                            Inbox
-                          </p>
-                          <p className="mt-1 truncate text-xs text-[#94A3B8]">
-                            Slack saves and other captures land here first.
-                          </p>
-                        </div>
-                        <span className="shrink-0 text-[11px] font-medium text-[#94A3B8]">
-                          {inboxCount}
-                        </span>
-                      </button>
-                    )}
-
-                    {followUpTasks.length === 0 ? (
-                      <div className="rounded-xl border border-dashed border-[#E8DDD4] bg-[#FFFBF7] px-3 py-3">
-                        <p className="text-sm font-light text-[#94A3B8]">No follow-ups yet.</p>
-                      </div>
+                  <div className="space-y-2">
+                    {isLoadingDashboard ? (
+                      Array.from({ length: 3 }).map((_, i) => (
+                        <DashboardSkeletonNoteCard key={i} />
+                      ))
+                    ) : upcoming.length === 0 ? (
+                      <p className={dashboardTheme.emptyBody}>No upcoming events today.</p>
                     ) : (
-                      followUpTasks.map((task) => {
-                        const isFocused = focusedTaskId === task.id;
-                        const statusLabel = task.status === 'done' ? 'Done' : 'Todo';
+                      upcoming.map((item) => {
+                        const start = new Date(item.start_at);
+                        const isExpanded = expandedTimelineIds.has(item.id);
+                        const showWorkspace = calendarScope === 'all_accessible_workspaces';
+                        const timeLabel = start.toLocaleTimeString([], {
+                          hour: 'numeric',
+                          minute: '2-digit',
+                        });
+                        const dayLabel =
+                          start.toDateString() === new Date().toDateString()
+                            ? 'Today'
+                            : start.toLocaleDateString([], { month: 'short', day: 'numeric' });
                         return (
-                          <div
-                            key={task.id}
+                          <button
+                            key={item.id}
                             onContextMenu={(event) =>
-                              openContextMenu(event, { type: 'followup', taskId: task.id })
+                              openContextMenu(event, { type: 'timeline', eventId: item.id })
                             }
-                            className={`flex items-start gap-3 rounded-lg px-0 py-3 transition ${
-                              isFocused ? 'bg-[#FFF4EA]' : 'hover:bg-[#FFF4EA]'
-                            }`}
+                            onClick={() => openModule('calendar')}
+                            className={dashboardTheme.sectionRowCompact}
                           >
-                            <button
-                              type="button"
-                              onClick={() =>
-                                void window.desktopWindow?.toggleModule(
-                                  'calendar',
-                                  task.eventId
-                                    ? {
-                                        kind: 'calendar',
-                                        focusContext: `focus-event:${task.eventId}`,
-                                      }
-                                    : {
-                                        kind: 'calendar',
-                                      }
-                                )
-                              }
-                              className="min-w-0 flex-1 text-left"
-                            >
-                              <p className="truncate text-sm font-medium text-[#4B5563]">
-                                {task.title}
-                              </p>
-                              <p className="mt-1 truncate text-xs text-[#94A3B8]">
-                                {task.eventTitle ? `Event: ${task.eventTitle}` : statusLabel}
-                              </p>
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => void markFollowUpDone(task.id)}
-                              className="shrink-0 rounded-full px-2 py-1 text-[11px] font-medium text-[#94A3B8] hover:bg-[#FFF4EA] hover:text-[#4B5563]"
-                            >
-                              {task.status === 'done' ? 'Undo' : 'Done'}
-                            </button>
-                          </div>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-start justify-between gap-3">
+                                <p className={`${isExpanded ? '' : 'truncate'} text-sm font-medium text-[var(--ledger-text-primary)]`}>
+                                  {item.title}
+                                </p>
+                                <p className="shrink-0 text-xs text-[var(--ledger-text-muted)]">{dayLabel}</p>
+                              </div>
+                              <p className="mt-1 text-xs text-[var(--ledger-text-muted)]">{timeLabel}</p>
+                              {showWorkspace && item.workspace_name && (
+                                <p className="mt-0.5 text-[11px] text-[var(--ledger-text-muted)]">
+                                  Workspace · {item.workspace_name}
+                                </p>
+                              )}
+                            </div>
+                          </button>
                         );
                       })
                     )}
                   </div>
+                </div>
 
-                  <div className="h-px w-12 bg-gray-200" />
+                <div className={dashboardTheme.subtleRule} />
 
-                  <div className="space-y-6 pt-2">
-                    <div className="flex items-center justify-between gap-3">
-                      <p className="text-xs font-medium text-[#64748B]">
-                        Upcoming
-                      </p>
-                      <button
-                        type="button"
-                        onClick={() => openModule('calendar')}
-                        className="shrink-0 whitespace-nowrap rounded-full border border-[#E8DDD4] bg-[#FFFBF7] px-3 py-1.5 text-xs font-medium text-gray-700 transition hover:border-[#D8C6B6] hover:bg-[#FFF4EA]"
-                      >
-                        Calendar
-                      </button>
-                    </div>
-                    <div className="mt-3 space-y-2">
-                      {isLoadingDashboard ? (
-                        Array.from({ length: 3 }).map((_, i) => (
-                          <DashboardSkeletonNoteCard key={i} />
-                        ))
-                      ) : upcoming.length === 0 ? (
-                        <p className="text-sm font-light text-[#64748B]">
-                          No upcoming events today.
-                        </p>
-                      ) : (
-                        upcoming.map((item) => {
-                          const start = new Date(item.start_at);
-                          const isExpanded = expandedTimelineIds.has(item.id);
-                          const showWorkspace = calendarScope === 'all_accessible_workspaces';
-                          const timeLabel = start.toLocaleTimeString([], {
-                            hour: 'numeric',
-                            minute: '2-digit',
-                          });
-                          const dayLabel =
-                            start.toDateString() === new Date().toDateString()
-                              ? 'Today'
-                              : start.toLocaleDateString([], { month: 'short', day: 'numeric' });
-                          return (
-                            <button
-                              key={item.id}
-                              onContextMenu={(event) =>
-                                openContextMenu(event, { type: 'timeline', eventId: item.id })
-                              }
-                              onClick={() => openModule('calendar')}
-                              className="w-full rounded-lg px-2 py-3 text-left transition-colors hover:bg-[#FFF4EA] active:bg-[#FFF0EA]"
-                            >
-                              <div className="flex items-start justify-between gap-3">
-                                <p
-                                  className={`${
-                                    isExpanded ? '' : 'truncate'
-                                  } text-sm font-medium text-[#111827]`}
-                                >
-                                  {item.title}
-                                </p>
-                                <p className="shrink-0 text-xs text-[#64748B]">{dayLabel}</p>
-                              </div>
-                              <p className="mt-1 text-xs text-[#64748B]">{timeLabel}</p>
-                              {showWorkspace && item.workspace_name && (
-                                <p className="mt-0.5 text-[11px] text-[#94A3B8]">
-                                  Workspace · {item.workspace_name}
-                                </p>
-                              )}
-                            </button>
-                          );
-                        })
-                      )}
-                    </div>
+                <div ref={projectsRef} className="space-y-5">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className={dashboardTheme.sectionLabel}>Projects</p>
+                    <button
+                      type="button"
+                      onClick={() => openModule('projects')}
+                      className={dashboardTheme.sectionAction}
+                    >
+                      Projects
+                    </button>
                   </div>
-
-                  <div className="h-px w-12 bg-gray-200" />
-
-                  <div className="space-y-6">
-                    <div className="flex items-center justify-between gap-3">
-                      <p className="text-xs font-medium text-[#64748B]">
-                        Projects
-                      </p>
-                      <button
-                        type="button"
-                        onClick={() => openModule('projects')}
-                        className="shrink-0 whitespace-nowrap rounded-full border border-[#E8DDD4] bg-[#FFFBF7] px-3 py-1.5 text-xs font-medium text-gray-700 transition hover:border-[#D8C6B6] hover:bg-[#FFF4EA]"
-                      >
-                        Projects
-                      </button>
-                    </div>
-                    <div className="mt-3 space-y-2">
-                      {isLoadingDashboard ? (
-                        Array.from({ length: 3 }).map((_, i) => (
-                          <DashboardSkeletonProjectCard key={i} />
-                        ))
-                      ) : attentionProjects.length === 0 ? (
-                        <p className="text-sm font-light text-[#64748B]">
-                          No projects need attention.
-                        </p>
-                      ) : (
-                        attentionProjects.map((project) => {
-                          const status = String(project.status).toLowerCase();
-                          const label = status.includes('complete')
-                            ? 'Completed'
-                            : status.includes('progress')
+                  <div className="space-y-2">
+                    {isLoadingDashboard ? (
+                      Array.from({ length: 3 }).map((_, i) => (
+                        <DashboardSkeletonProjectCard key={i} />
+                      ))
+                    ) : attentionProjects.length === 0 ? (
+                      <p className={dashboardTheme.emptyBody}>No projects need attention.</p>
+                    ) : (
+                      attentionProjects.map((project) => {
+                        const status = String(project.status).toLowerCase();
+                        const label = status.includes('complete')
+                          ? 'Completed'
+                          : status.includes('progress')
                             ? 'In progress'
                             : status.includes('pause')
-                            ? 'Paused'
-                            : 'Not started';
-                          const due = (project as { end_date?: string | null }).end_date;
-                          const dueLabel = due
-                            ? `Due ${new Date(due).toLocaleDateString([], {
-                                month: 'short',
-                                day: 'numeric',
-                              })}`
-                            : 'No due date';
+                              ? 'Paused'
+                              : 'Not started';
+                        const due = (project as { end_date?: string | null }).end_date;
+                        const dueLabel = due
+                          ? `Due ${new Date(due).toLocaleDateString([], {
+                              month: 'short',
+                              day: 'numeric',
+                            })}`
+                          : 'No due date';
 
-                          return (
-                            <button
-                              key={project.id}
-                              onContextMenu={(event) =>
-                                openContextMenu(event, { type: 'project', projectId: project.id })
-                              }
-                              onClick={() =>
-                                openModule('projects', {
-                                  kind: 'projects',
-                                  focusProjectId: project.id,
-                                })
-                              }
-                              className="w-full rounded-lg px-2 py-3 text-left transition-colors hover:bg-[#FFF4EA] active:bg-[#FFF0EA]"
-                            >
-                              <p className="truncate text-sm font-medium text-[#111827]">
+                        return (
+                          <button
+                            key={project.id}
+                            onContextMenu={(event) =>
+                              openContextMenu(event, { type: 'project', projectId: project.id })
+                            }
+                            onClick={() =>
+                              openModule('projects', {
+                                kind: 'projects',
+                                focusProjectId: project.id,
+                              })
+                            }
+                            className={dashboardTheme.sectionRowCompact}
+                          >
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate text-sm font-medium text-[var(--ledger-text-primary)]">
                                 {project.name}
                               </p>
-                              <p className="mt-1 flex items-center gap-2 text-xs text-[#64748B]">
-                                <Circle size={8} className="fill-current text-[#FF5F40]" />
+                              <p className="mt-1 flex items-center gap-2 text-xs text-[var(--ledger-text-muted)]">
+                                <Circle size={8} className="fill-current text-[var(--ledger-accent)]" />
                                 <span>{label}</span>
                                 <span>·</span>
                                 <span>{Math.max(0, Math.min(100, project.completeness))}%</span>
                               </p>
-                              <p className="mt-1 text-xs text-[#64748B]">{dueLabel}</p>
-                            </button>
-                          );
-                        })
-                      )}
-                    </div>
+                              <p className="mt-1 text-xs text-[var(--ledger-text-muted)]">{dueLabel}</p>
+                            </div>
+                          </button>
+                        );
+                      })
+                    )}
                   </div>
                 </div>
-              </section>
             </aside>
           </div>
         </div>
@@ -2597,20 +2551,20 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
       <ModalOverlay
         isOpen={isFocusPickerOpen}
         onClose={() => setIsFocusPickerOpen(false)}
-        classNameContainer="w-full max-w-xl rounded-2xl border border-gray-200 bg-[#FFFDFB] shadow-2xl"
+        classNameContainer="w-full max-w-xl rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-[var(--ledger-shadow)]"
       >
-        <div className="border-b border-gray-100 px-5 py-4">
-          <p className="text-xs font-medium text-gray-500">
+        <div className="border-b border-[color:var(--ledger-border-subtle)] px-5 py-4">
+          <p className="text-xs font-medium text-[var(--ledger-text-muted)]">
             Add from Today
           </p>
-          <p className="mt-1 text-sm text-gray-600">
+          <p className="mt-1 text-sm text-[var(--ledger-text-secondary)]">
             Pick up to three priorities from today&apos;s queue.
           </p>
         </div>
         <div className="max-h-[60vh] overflow-auto p-4 space-y-2">
           {activeTodayTasks.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-gray-200 bg-gray-50 p-5">
-              <p className="text-sm font-medium text-gray-800">
+            <div className="rounded-2xl border border-dashed border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] p-5">
+              <p className="text-sm font-medium text-[var(--ledger-text-primary)]">
                 No Today items to choose from.
               </p>
             </div>
@@ -2621,17 +2575,17 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
                 type="button"
                 onClick={() => void addTodayTaskToFocus(task.id)}
                 disabled={focusTasks.length >= 3 || focusActionId === task.id}
-                className="w-full rounded-2xl border border-gray-200 bg-gray-50 px-3 py-2.5 text-left transition hover:bg-[#FFFDFB] disabled:opacity-50"
+                className="w-full rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 py-2.5 text-left transition hover:bg-[var(--ledger-surface-hover)] disabled:opacity-50"
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <p className="truncate text-[13px] font-medium text-gray-950">{task.title}</p>
-                    <p className="mt-0.5 truncate text-[11px] text-gray-500">
+                    <p className="truncate text-[13px] font-medium text-[var(--ledger-text-primary)]">{task.title}</p>
+                    <p className="mt-0.5 truncate text-[11px] text-[var(--ledger-text-muted)]">
                       {task.project_name || task.workspace_name || 'Workspace task'}
                       {formatExpiryCounter(task) ? ` · ${formatExpiryCounter(task)}` : ''}
                     </p>
                   </div>
-                  <span className="shrink-0 rounded-full border border-gray-200 bg-[#FFFDFB] px-2 py-1 text-[11px] font-medium text-gray-600">
+                  <span className="shrink-0 rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-2 py-1 text-[11px] font-medium text-[var(--ledger-text-secondary)]">
                     Add
                   </span>
                 </div>
@@ -2639,11 +2593,11 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
             ))
           )}
         </div>
-        <div className="flex items-center justify-end border-t border-gray-100 px-5 py-3">
+        <div className="flex items-center justify-end border-t border-[color:var(--ledger-border-subtle)] px-5 py-3">
           <button
             type="button"
             onClick={() => setIsFocusPickerOpen(false)}
-            className="rounded-full border border-gray-200 bg-[#FFFDFB] px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+            className="rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3 py-1.5 text-sm font-medium text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
           >
             Close
           </button>
@@ -2655,13 +2609,13 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
           setIsNewFocusModalOpen(false);
           setFocusDraftTitle('');
         }}
-        classNameContainer="w-full max-w-lg rounded-2xl border border-gray-200 bg-[#FFFDFB] shadow-2xl"
+        classNameContainer="w-full max-w-lg rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-[var(--ledger-shadow)]"
       >
-        <div className="border-b border-gray-100 px-5 py-4">
-          <p className="text-xs font-medium text-gray-500">
+        <div className="border-b border-[color:var(--ledger-border-subtle)] px-5 py-4">
+          <p className="text-xs font-medium text-[var(--ledger-text-muted)]">
             New focus
           </p>
-          <p className="mt-1 text-sm text-gray-600">
+          <p className="mt-1 text-sm text-[var(--ledger-text-secondary)]">
             Create a new priority and keep it in Today.
           </p>
         </div>
@@ -2681,20 +2635,20 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
               }
             }}
             placeholder="e.g. Submit posters for critique file"
-            className="w-full rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-900 outline-none focus:border-gray-300"
+            className="w-full rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-input-background)] px-4 py-3 text-sm text-[var(--ledger-text-primary)] outline-none focus:border-[color:var(--ledger-border-strong)]"
           />
-          <p className="text-xs text-gray-500">
+          <p className="text-xs text-[var(--ledger-text-muted)]">
             This creates a Today task and marks it as a focus priority.
           </p>
         </div>
-        <div className="flex items-center justify-end gap-2 border-t border-gray-100 px-5 py-3">
+        <div className="flex items-center justify-end gap-2 border-t border-[color:var(--ledger-border-subtle)] px-5 py-3">
           <button
             type="button"
             onClick={() => {
               setIsNewFocusModalOpen(false);
               setFocusDraftTitle('');
             }}
-            className="rounded-full border border-gray-200 bg-[#FFFDFB] px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+            className="rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3 py-1.5 text-sm font-medium text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
           >
             Cancel
           </button>
@@ -2702,7 +2656,7 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
             type="button"
             onClick={() => void createNewFocusTask()}
             disabled={!focusDraftTitle.trim() || isSavingFocusTask || focusTasks.length >= 3}
-            className="rounded-full bg-gray-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-50"
+            className="rounded-full bg-[var(--ledger-accent)] px-3 py-1.5 text-sm font-medium text-white hover:bg-[var(--ledger-accent-hover)] disabled:opacity-50"
           >
             Add focus
           </button>
@@ -2711,7 +2665,7 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
       {dashboardContextMenu &&
         createPortal(
           <div
-            className="fixed z-140 min-w-46.5 rounded-lg border border-gray-200 bg-[#FFFDFB] py-1 shadow-lg"
+            className="fixed z-140 min-w-46.5 rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] py-1 shadow-[var(--ledger-shadow)]"
             style={{
               left: `${Math.max(8, Math.min(dashboardContextMenu.x, window.innerWidth - 200))}px`,
               top: `${Math.max(8, Math.min(dashboardContextMenu.y, window.innerHeight - 240))}px`,
@@ -2723,21 +2677,21 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
               <>
                 <button
                   onClick={() => openFollowUpEvent(dashboardContextMenu.taskId)}
-                  className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[#FF5F40] hover:bg-[#fff0eb]"
+                  className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-accent)] hover:bg-[var(--ledger-surface-hover)]"
                 >
                   <CalendarDays size={14} />
                   Jump to event
                 </button>
                 <button
                   onClick={() => void markFollowUpDone(dashboardContextMenu.taskId)}
-                  className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
+                  className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]"
                 >
                   <CheckCircle2 size={14} />
                   Mark as done
                 </button>
                 <button
                   onClick={() => void deleteFollowUp(dashboardContextMenu.taskId)}
-                  className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50"
+                  className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-danger)] hover:bg-[color:rgba(217,45,32,0.08)]"
                 >
                   <Trash2 size={14} />
                   Delete follow-up
@@ -2756,14 +2710,14 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
                     });
                     setDashboardContextMenu(null);
                   }}
-                  className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[#FF5F40] hover:bg-[#fff0eb]"
+                  className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-accent)] hover:bg-[var(--ledger-surface-hover)]"
                 >
                   <CalendarDays size={14} />
                   Open in Calendar
                 </button>
                 <button
                   onClick={() => void deleteTimelineEvent(dashboardContextMenu.eventId)}
-                  className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50"
+                  className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-danger)] hover:bg-[color:rgba(217,45,32,0.08)]"
                 >
                   <Trash2 size={14} />
                   Delete Event
@@ -2780,7 +2734,7 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
                     });
                     setDashboardContextMenu(null);
                   }}
-                  className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[#FF5F40] hover:bg-[#fff0eb]"
+                  className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-accent)] hover:bg-[var(--ledger-surface-hover)]"
                 >
                   <Folder size={14} />
                   Navigate to project
@@ -2789,14 +2743,14 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
                   onClick={() =>
                     void updateProjectStatus(dashboardContextMenu.projectId, 'in_progress')
                   }
-                  className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
+                  className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]"
                 >
                   <MoreHorizontal size={14} />
                   Mark in progress
                 </button>
                 <button
                   onClick={() => void updateProjectStatus(dashboardContextMenu.projectId, 'paused')}
-                  className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
+                  className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]"
                 >
                   <MoreHorizontal size={14} />
                   Mark paused
@@ -2805,14 +2759,14 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
                   onClick={() =>
                     void updateProjectStatus(dashboardContextMenu.projectId, 'completed')
                   }
-                  className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
+                  className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]"
                 >
                   <CheckCircle2 size={14} />
                   Mark completed
                 </button>
                 <button
                   onClick={() => void deleteDashboardProject(dashboardContextMenu.projectId)}
-                  className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50"
+                  className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-danger)] hover:bg-[color:rgba(217,45,32,0.08)]"
                 >
                   <Trash2 size={14} />
                   Delete project
@@ -2831,7 +2785,7 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
                       });
                       setDashboardContextMenu(null);
                     }}
-                    className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
+                    className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]"
                   >
                     <ChevronUp size={14} />
                     Collapse
@@ -2842,7 +2796,7 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
                       setExpandedNoteIds((prev) => new Set(prev).add(dashboardContextMenu.noteId));
                       setDashboardContextMenu(null);
                     }}
-                    className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
+                    className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]"
                   >
                     <ChevronDown size={14} />
                     Expand
@@ -2856,14 +2810,14 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
                     });
                     setDashboardContextMenu(null);
                   }}
-                  className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[#FF5F40] hover:bg-[#fff0eb]"
+                  className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-accent)] hover:bg-[var(--ledger-surface-hover)]"
                 >
                   <StickyNote size={14} />
                   Navigate to note
                 </button>
                 <button
                   onClick={() => void deleteDashboardNote(dashboardContextMenu.noteId)}
-                  className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50"
+                  className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-danger)] hover:bg-[color:rgba(217,45,32,0.08)]"
                 >
                   <Trash2 size={14} />
                   Delete note
@@ -2873,7 +2827,7 @@ function DashboardContent({ initialFocusTaskId }: { initialFocusTaskId?: string 
             {dashboardContextMenu.type === 'checkin' && (
               <button
                 onClick={() => void clearCheckin()}
-                className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50"
+                className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-danger)] hover:bg-[color:rgba(217,45,32,0.08)]"
               >
                 <Trash2 size={14} />
                 Clear check-in
@@ -3208,7 +3162,7 @@ function AppShell() {
     }
 
     if (moduleKind === 'dashboard') {
-      return <DashboardContent initialFocusTaskId={moduleFocusTaskId || undefined} />;
+      return <DashboardContent />;
     }
 
     if (moduleKind === 'notifications') {

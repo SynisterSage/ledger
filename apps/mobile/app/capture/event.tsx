@@ -40,6 +40,7 @@ export default function EventCaptureScreen() {
     parsedEndsAt && !Number.isNaN(parsedEndsAt.getTime())
       ? new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit' }).format(parsedEndsAt)
       : undefined;
+  const saveDestination = source === 'siri' ? '/(tabs)/today' : '/(tabs)/capture';
 
   useEffect(() => {
     void bootstrapWorkspaceState();
@@ -56,7 +57,7 @@ export default function EventCaptureScreen() {
         initialLocation={location}
         initialNotes={description}
         autoSubmit={source === 'siri'}
-        onSave={() => router.replace('/(tabs)/capture')}
+        onSave={() => router.replace(saveDestination)}
       />
     </Screen>
   );

@@ -1,7 +1,7 @@
 import * as Notifications from 'expo-notifications';
 import * as SplashScreen from 'expo-splash-screen';
-import { Stack } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { Stack, useRouter } from 'expo-router';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import 'react-native-reanimated';
 import { View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -30,12 +30,15 @@ SplashScreen.setOptions({ duration: 0, fade: false });
 const MIN_SPLASH_MS = 900;
 
 export default function RootLayout() {
+  const router = useRouter();
   const theme = useLedgerTheme();
   const auth = useAuthState();
   const notificationOnboarding = useNotificationOnboardingState();
   const boot = useBootState();
+  const lastNotificationResponse = Notifications.useLastNotificationResponse();
   const [mobilePushHydrated, setMobilePushHydrated] = useState(false);
   const [mobilePushEnabled, setMobilePushEnabled] = useState<boolean | null>(null);
+  const handledNotificationResponseIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     resetBootState();
@@ -149,6 +152,57 @@ export default function RootLayout() {
 
     void SplashScreen.hideAsync();
   }, [boot.isBootReady]);
+
+  const handleNotificationResponse = useCallback(
+    (response: Notifications.NotificationResponse) => {
+      const data = response.notification.request.content.data as Record<string, unknown> | undefined;
+      const notificationId = typeof data?.notificationId === 'string' ? data.notificationId : null;
+      const route = typeof data?.route === 'string' ? data.route : '/(tabs)/notifications';
+      const routeParams = (data?.routeParams && typeof data.routeParams === 'object' ? data.routeParams : null) as
+        | Record<string, unknown>
+        | null;
+
+      if (notificationId && handledNotificationResponseIdRef.current === notificationId) {
+        return;
+      }
+      if (notificationId) {
+        handledNotificationResponseIdRef.current = notificationId;
+      }
+
+      const notificationRouteParams = {
+        notificationId,
+        workspaceId: typeof routeParams?.workspaceId === 'string' ? routeParams.workspaceId : null,
+        sourceType: typeof routeParams?.sourceType === 'string' ? routeParams.sourceType : null,
+        sourceId: typeof routeParams?.sourceId === 'string' ? routeParams.sourceId : null,
+      };
+
+      if (route === '/(tabs)/notifications') {
+        router.replace({
+          pathname: '/(tabs)/notifications',
+          params: notificationRouteParams,
+        });
+        return;
+      }
+
+      router.replace(route as never);
+    },
+    [router],
+  );
+
+  useEffect(() => {
+    if (!boot.isBootReady || !lastNotificationResponse) {
+      return;
+    }
+
+    handleNotificationResponse(lastNotificationResponse);
+  }, [boot.isBootReady, handleNotificationResponse, lastNotificationResponse]);
+
+  useEffect(() => {
+    const subscription = Notifications.addNotificationResponseReceivedListener(handleNotificationResponse);
+    return () => {
+      subscription.remove();
+    };
+  }, [handleNotificationResponse]);
 
   useEffect(() => {
     if (

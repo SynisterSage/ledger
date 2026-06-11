@@ -19,6 +19,7 @@ export default function NoteCaptureScreen() {
   const title = Array.isArray(params.title) ? params.title[0] : params.title;
   const body = Array.isArray(params.body) ? params.body[0] : params.body;
   const source = Array.isArray(params.source) ? params.source[0] : params.source;
+  const saveDestination = source === 'siri' ? '/(tabs)/today' : '/(tabs)/capture';
 
   useEffect(() => {
     void bootstrapWorkspaceState();
@@ -31,7 +32,7 @@ export default function NoteCaptureScreen() {
         initialTitle={title}
         initialBody={body}
         autoSubmit={source === 'siri'}
-        onSave={() => router.replace('/(tabs)/capture')}
+        onSave={() => router.replace(saveDestination)}
       />
     </Screen>
   );

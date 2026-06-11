@@ -90,13 +90,14 @@ export const desktopTokens = {
     pill: 999,
     window: 24,
   },
-  shadows: {
-    card: '0 1px 2px rgba(15, 23, 42, 0.03)',
-    surface: '0 12px 40px rgba(15, 23, 42, 0.08)',
-    modal: '0 24px 70px rgba(17, 24, 39, 0.12)',
-    popover: '0 12px 32px rgba(17, 24, 39, 0.12)',
-  },
-} as const;
+    shadows: {
+      card: '0 1px 2px rgba(15, 23, 42, 0.03)',
+      surface: '0 12px 40px rgba(15, 23, 42, 0.08)',
+      modal: '0 24px 70px rgba(17, 24, 39, 0.12)',
+      popover: '0 12px 32px rgba(17, 24, 39, 0.12)',
+      accent: '0 10px 24px rgba(255, 95, 64, 0.16)',
+    },
+  } as const;
 
 export type DesktopTokens = typeof desktopTokens;
 
@@ -125,6 +126,7 @@ export const desktopCssVars: Record<string, string> = {
   '--ledger-tab-bar-border': desktopTokens.colors.tabBarBorder,
   '--ledger-backdrop': desktopTokens.colors.backdrop,
   '--ledger-shadow': desktopTokens.colors.shadow,
+  '--ledger-shadow-accent': desktopTokens.shadows.accent,
   '--ledger-control-radius': `${desktopTokens.radius.control}px`,
   '--ledger-surface-radius': `${desktopTokens.radius.surface}px`,
   '--ledger-sheet-radius': `${desktopTokens.radius.sheet}px`,

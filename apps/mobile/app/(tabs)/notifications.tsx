@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, RefreshControl, View } from 'react-native';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 
 import { AppButton } from '@/components/AppButton';
 import { AppText } from '@/components/AppText';
@@ -52,6 +52,7 @@ function toLocalTimeValue(date: Date) {
 export default function NotificationsScreen() {
   const router = useRouter();
   const theme = useLedgerTheme();
+  const params = useLocalSearchParams<{ notificationId?: string | string[] }>();
   const scrollY = useRef(new Animated.Value(0)).current;
   const workspaceState = useWorkspaceState();
   const { openFollowUpSheet } = useFollowUpSheet();
@@ -67,6 +68,7 @@ export default function NotificationsScreen() {
   const hasLoadedOnceRef = useRef(false);
   const followUpTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const noteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const openedNotificationIdRef = useRef<string | null>(null);
 
   const selectedScopeLabel = useMemo(() => {
     return getWorkspaceLabel(workspaceState.selectedWorkspaceId, workspaceState.options);
@@ -152,9 +154,37 @@ export default function NotificationsScreen() {
     setSheetMode(mode);
   }, []);
 
+  const notificationTapId = useMemo(() => {
+    const value = params.notificationId;
+    return Array.isArray(value) ? value[0] : value ?? null;
+  }, [params.notificationId]);
+
   useEffect(() => {
     closeNotificationSheet();
   }, [closeNotificationSheet, workspaceState.selectedWorkspaceId]);
+
+  useEffect(() => {
+    if (!notificationTapId) {
+      openedNotificationIdRef.current = null;
+      return;
+    }
+
+    if (openedNotificationIdRef.current === notificationTapId) {
+      return;
+    }
+
+    const foundItem =
+      notifications.active.find((item) => item.id === notificationTapId) ??
+      notifications.earlier.find((item) => item.id === notificationTapId) ??
+      null;
+
+    if (!foundItem) {
+      return;
+    }
+
+    openedNotificationIdRef.current = notificationTapId;
+    openNotificationSheet(foundItem, 'detail');
+  }, [notificationTapId, notifications.active, notifications.earlier, openNotificationSheet]);
 
   const scheduleFollowUpSheet = useCallback(
     (item: MobileNotificationCenterItem) => {

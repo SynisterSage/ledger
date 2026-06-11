@@ -1513,9 +1513,9 @@ const buildMobilePushMessage = ({ row, candidate, workspace }) => ({
   title: candidate?.title ?? 'Ledger',
   body:
     [
-      normalizeNullableText(workspace?.name),
       normalizeNullableText(candidate?.context),
       normalizeNullableText(candidate?.body),
+      normalizeNullableText(workspace?.name),
     ]
       .filter(Boolean)
       .join(' · ') || 'You have something waiting in Ledger.',
@@ -1530,6 +1530,13 @@ const buildMobilePushMessage = ({ row, candidate, workspace }) => ({
     moduleKind: candidate?.moduleKind ?? null,
     focusPayload: candidate?.focusPayload ?? null,
     context: candidate?.context ?? null,
+    route: '/(tabs)/notifications',
+    routeParams: {
+      notificationId: row.id,
+      workspaceId: row.workspace_id ?? null,
+      sourceType: row.source_type,
+      sourceId: row.source_id,
+    },
   },
 });
 
