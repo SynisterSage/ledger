@@ -22,12 +22,11 @@ body {
   --modal-backdrop-radius: var(--window-radius);
 }
 
-/* Module window shells on Windows: use paint containment to optimize
-   border-radius repaints during resize. This isolates the rendering context
-   and helps the browser batch repaints more efficiently during live resize. */
-.platform-windows [class*="rounded-3xl"] {
-  contain: paint;
-  will-change: contents;
+/* Full-window module shells need explicit clipping on Windows transparent
+   BrowserWindows, otherwise the native/theme-colored backing surface can peek
+   through behind rounded corners. */
+html > body > #root > div[class*="rounded-3xl"] {
+  clip-path: inset(0 round var(--ledger-window-radius, 24px));
 }
 
 /* When a modal is open, hide the app shell border/shadow and match body background
@@ -41,19 +40,6 @@ body.has-modal-open #root > * {
   border: none !important;
   box-shadow: none !important;
   outline: none !important;
-}
-
-/* Module window shell optimization for Windows resize responsiveness.
-   Use paint containment to help the browser efficiently batch border-radius
-   repaints during live edge-resize. This works with the removal of
-   setBackgroundMaterial('auto') to reduce compositing overhead. */
-@supports (contain: paint) {
-  /* Target full-screen module window shells with rounded corners and shadows */
-  html > body > #root > div[class*="rounded-3xl"] {
-    contain: paint;
-    /* Hint to browser that dimensions may change frequently during resize */
-    will-change: contents;
-  }
 }
 
 .sidebar-glass {
