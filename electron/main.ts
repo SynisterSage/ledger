@@ -19,6 +19,7 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import fs from 'node:fs';
 import { defaultSidebarPreferences, type SidebarPosition } from '../src/config/sidebarPreferences';
+import { desktopTokens } from '../src/theme/desktopTokens';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const execFileAsync = promisify(execFile);
@@ -3657,7 +3658,18 @@ async function dockFloatingSidebarToTarget() {
   let target: DockTargetResult | null =
     currentFloatingDockTarget && currentFloatingDockBounds
       ? { target: currentFloatingDockTarget, bounds: currentFloatingDockBounds }
-      : await getFloatingDockTargetAtCursor();
+      : null;
+
+  if (!target && process.platform === 'win32') {
+    const sidebarBounds = sidebarWin.getBounds();
+    target =
+      (await getFloatingDockTargetAtEdge(sidebarBounds, 'left', false)) ??
+      (await getFloatingDockTargetAtEdge(sidebarBounds, 'right', false));
+  }
+
+  if (!target) {
+    target = await getFloatingDockTargetAtCursor();
+  }
 
   if (!target) {
     writeWindowsDockTrace('manual-dock-skip', {
@@ -4377,8 +4389,8 @@ function openModuleWindow(
   const moduleWin = new BrowserWindow({
     ...initialBounds,
     show: false,
-    transparent: true,
-    backgroundColor: '#00000000',
+    transparent: process.platform !== 'win32',
+    backgroundColor: desktopTokens.colors.background,
     ...getModuleWindowChromeOptions(),
     // Ensure module popouts can enter/exit fullscreen reliably on Windows and macOS
     fullscreenable: true,
