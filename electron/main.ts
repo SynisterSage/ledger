@@ -4603,7 +4603,7 @@ ipcMain.handle('window:begin-floating-drag', () => {
   return { x: bounds.x, y: bounds.y };
 });
 
-ipcMain.handle('window:finish-floating-drag', () => {
+ipcMain.handle('window:finish-floating-drag', async () => {
   floatingDockDragActive = false;
   floatingDragStart = null;
 
@@ -4611,6 +4611,11 @@ ipcMain.handle('window:finish-floating-drag', () => {
   if (currentSidebarPosition !== 'floating') return sidebarWin.getBounds();
   if (currentSidebarMode === 'auth' || currentSidebarMode === 'fullscreen') {
     return sidebarWin.getBounds();
+  }
+
+  if (process.platform === 'win32' && currentSidebarPreferences.floatingDockEnabled !== false) {
+    const dockedBounds = await dockFloatingSidebarToTarget();
+    if (dockedBounds) return dockedBounds;
   }
 
   if (
