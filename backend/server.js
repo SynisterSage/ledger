@@ -2057,10 +2057,9 @@ const mapNotificationCenterRow = (row, maps) => {
   const actionTaken = String(row.action_taken ?? '').trim().toLowerCase();
   const event = sourceType === 'event' ? maps.eventById.get(sourceId) ?? null : null;
   const eventStartAt = event?.start_at ? new Date(event.start_at) : null;
+  const eventEndAt = event?.end_at ? new Date(event.end_at) : eventStartAt;
   const eventHasStarted =
-    eventStartAt instanceof Date &&
-    !Number.isNaN(eventStartAt.getTime()) &&
-    eventStartAt <= new Date();
+    eventEndAt instanceof Date && !Number.isNaN(eventEndAt.getTime()) && eventEndAt <= new Date();
   const isActive = !row.dismissed_at && actionTaken !== 'complete' && !eventHasStarted;
 
   return {
@@ -3218,8 +3217,11 @@ const loadMobileTodayData = async ({ userId, scope, dateKey }) => {
     const eventDateKey = getLocalDateKey(startAt);
     if (!eventDateKey) continue;
     if (eventDateKey < selectedDateKey) continue;
-    if (eventDateKey === selectedDateKey && isCurrentDate && startAt.getTime() <= now.getTime()) {
-      continue;
+    if (eventDateKey === selectedDateKey && isCurrentDate) {
+      const eventEndAt = new Date(event.end_at ?? event.start_at ?? 0);
+      if (Number.isNaN(eventEndAt.getTime()) || eventEndAt.getTime() <= now.getTime()) {
+        continue;
+      }
     }
 
     const eventKey = `calendar_event:${event.id}`;
@@ -7687,7 +7689,7 @@ app.get('/api/events/upcoming', authMiddleware, rateLimit('read'), async (req, r
     const end = new Date(now);
     end.setDate(end.getDate() + 30);
 
-    const { data, error } = await supabase
+    const { data: futureData, error: futureError } = await supabase
       .from('events')
       .select(
         'id, workspace_id, title, start_at, end_at, all_day, calendar_id, color, status, visibility, recurrence_rule, series_id, series_type, source, source_platform'
@@ -7698,21 +7700,40 @@ app.get('/api/events/upcoming', authMiddleware, rateLimit('read'), async (req, r
       .order('start_at', { ascending: true })
       .limit(20);
 
-    if (error) throw error;
-    const rows = Array.isArray(data) ? data : [];
+    if (futureError) throw futureError;
+
+    const { data: ongoingData, error: ongoingError } = await supabase
+      .from('events')
+      .select(
+        'id, workspace_id, title, start_at, end_at, all_day, calendar_id, color, status, visibility, recurrence_rule, series_id, series_type, source, source_platform'
+      )
+      .in('workspace_id', workspaceIds)
+      .lt('start_at', now.toISOString())
+      .gt('end_at', now.toISOString())
+      .order('end_at', { ascending: true })
+      .limit(20);
+
+    if (ongoingError) throw ongoingError;
+
+    const rowsById = new Map();
+    for (const row of [...(Array.isArray(futureData) ? futureData : []), ...(Array.isArray(ongoingData) ? ongoingData : [])]) {
+      if (!row?.id) continue;
+      if (String(row.status ?? '') === 'done') continue;
+      const endAt = new Date(row.end_at ?? row.start_at ?? 0).getTime();
+      if (!Number.isFinite(endAt) || endAt <= now.getTime()) continue;
+      rowsById.set(String(row.id), row);
+    }
+
+    const rows = Array.from(rowsById.values()).sort(
+      (a, b) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime()
+    );
     const workspaceIdsForRows = Array.from(new Set(rows.map((event) => event.workspace_id).filter(Boolean)));
     const { data: workspaceData, error: workspaceError } = workspaceIdsForRows.length
       ? await supabase.from('workspaces').select('id, name, color').in('id', workspaceIdsForRows)
       : { data: [] };
     if (workspaceError) throw workspaceError;
     const workspaceById = new Map((workspaceData || []).map((workspace) => [workspace.id, workspace]));
-    const filtered = rows.filter((event) => {
-      const isDone = String(event.status ?? '') === 'done';
-      if (isDone) return false;
-
-      const endAt = new Date(event.end_at ?? event.start_at ?? 0).getTime();
-      return Number.isFinite(endAt) && endAt > now.getTime();
-    });
+    const filtered = rows;
 
     res.json(
       filtered.map((event) => ({
