@@ -19,7 +19,6 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import fs from 'node:fs';
 import { defaultSidebarPreferences, type SidebarPosition } from '../src/config/sidebarPreferences';
-import { desktopTokens } from '../src/theme/desktopTokens';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const execFileAsync = promisify(execFile);
@@ -4389,8 +4388,8 @@ function openModuleWindow(
   const moduleWin = new BrowserWindow({
     ...initialBounds,
     show: false,
-    transparent: process.platform !== 'win32',
-    backgroundColor: desktopTokens.colors.background,
+    transparent: true,
+    backgroundColor: '#00000000',
     ...getModuleWindowChromeOptions(),
     // Ensure module popouts can enter/exit fullscreen reliably on Windows and macOS
     fullscreenable: true,
@@ -4417,6 +4416,11 @@ function openModuleWindow(
   // Note: setBackgroundMaterial('auto') on Windows causes expensive compositing
   // during resize that delays border-radius repaints. Disabled to improve resize
   // responsiveness. CSS-based styling is sufficient for module windows.
+  if (typeof (moduleWin as any).setHasShadow === 'function') {
+    try {
+      (moduleWin as any).setHasShadow(false);
+    } catch {}
+  }
 
   lockWindowZoom(moduleWin);
   attachNativeContextMenu(moduleWin);
@@ -4463,7 +4467,7 @@ function openModuleWindow(
     }
     resizeShadowRestoreTimer = setTimeout(() => {
       resizeShadowRestoreTimer = null;
-      setModuleShadow(true);
+      setModuleShadow(false);
     }, 160);
   });
 
