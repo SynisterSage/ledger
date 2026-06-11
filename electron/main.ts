@@ -3166,9 +3166,13 @@ $script:bestScore = [Double]::PositiveInfinity
   $windowProcessId = 0
   [Win32]::GetWindowThreadProcessId($hWnd, [ref]$windowProcessId) | Out-Null
   $isLedgerWindow = $windowProcessId -eq $parentPid
-  if ([Math]::Abs($rect.Left - $sidebarLeft) -le 2 -and [Math]::Abs($rect.Top - $sidebarTop) -le 2 -and [Math]::Abs($width - ${Math.floor(
+  $sidebarCenterX = $sidebarLeft + (${Math.floor(nativeSidebarBounds.width)} / 2)
+  $sidebarCenterY = $sidebarTop + ($sidebarHeight / 2)
+  $rectCenterX = $rect.Left + ($width / 2)
+  $rectCenterY = $rect.Top + ($height / 2)
+  if ([Math]::Abs($rectCenterX - $sidebarCenterX) -le 32 -and [Math]::Abs($rectCenterY - $sidebarCenterY) -le 32 -and [Math]::Abs($width - ${Math.floor(
     nativeSidebarBounds.width
-  )}) -le 2 -and [Math]::Abs($height - $sidebarHeight) -le 2) { return $true }
+  )}) -le 64 -and [Math]::Abs($height - $sidebarHeight) -le 64) { return $true }
   if ($width -lt 80 -or $height -lt 80) { return $true }
 
   $overlapTop = [Math]::Max($sidebarTop, $rect.Top)
@@ -3213,10 +3217,142 @@ if ($script:result) { Write-Output $script:result }
       );
       const output = String(stdout).trim();
       if (!output) {
+        const cursorPoint = screen.getCursorScreenPoint();
+        const nativeCursorPoint = dipPointToNativePoint(cursorPoint);
+        const cursorScript = `
+Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+public class Win32 {
+  [DllImport("user32.dll")]
+  public static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
+  [DllImport("user32.dll")]
+  public static extern bool IsWindowVisible(IntPtr hWnd);
+  [DllImport("user32.dll")]
+  public static extern bool IsIconic(IntPtr hWnd);
+  [DllImport("user32.dll")]
+  public static extern bool GetWindowRect(IntPtr hWnd, out RECT rect);
+  [DllImport("dwmapi.dll")]
+  public static extern int DwmGetWindowAttribute(IntPtr hwnd, int dwAttribute, out RECT pvAttribute, int cbAttribute);
+  [DllImport("user32.dll")]
+  public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out int lpdwProcessId);
+  [DllImport("user32.dll")]
+  public static extern bool SetProcessDpiAwarenessContext(IntPtr dpiContext);
+  public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
+  [StructLayout(LayoutKind.Sequential)]
+  public struct RECT {
+    public int Left;
+    public int Top;
+    public int Right;
+    public int Bottom;
+  }
+  public static bool TryGetWindowBounds(IntPtr hWnd, out RECT rect) {
+    const int DWMWA_EXTENDED_FRAME_BOUNDS = 9;
+    if (DwmGetWindowAttribute(hWnd, DWMWA_EXTENDED_FRAME_BOUNDS, out rect, System.Runtime.InteropServices.Marshal.SizeOf(typeof(RECT))) == 0) {
+      return true;
+    }
+    return GetWindowRect(hWnd, out rect);
+  }
+}
+"@
+try { [Win32]::SetProcessDpiAwarenessContext([IntPtr](-4)) | Out-Null } catch {}
+$sidebarLeft = ${Math.floor(nativeSidebarBounds.x)}
+$sidebarTop = ${Math.floor(nativeSidebarBounds.y)}
+$sidebarWidth = ${Math.floor(nativeSidebarBounds.width)}
+$sidebarHeight = ${Math.floor(nativeSidebarBounds.height)}
+$parentPid = ${process.pid}
+$cursorX = ${Math.floor(nativeCursorPoint.x)}
+$cursorY = ${Math.floor(nativeCursorPoint.y)}
+$script:result = $null
+[Win32]::EnumWindows({
+  param([IntPtr]$hWnd, [IntPtr]$lParam)
+  if (-not [Win32]::IsWindowVisible($hWnd)) { return $true }
+  if ([Win32]::IsIconic($hWnd)) { return $true }
+  $rect = [Win32+RECT]::new()
+  if (-not [Win32]::TryGetWindowBounds($hWnd, [ref]$rect)) { return $true }
+  $width = $rect.Right - $rect.Left
+  $height = $rect.Bottom - $rect.Top
+  if ($width -lt 80 -or $height -lt 80) { return $true }
+  $windowProcessId = 0
+  [Win32]::GetWindowThreadProcessId($hWnd, [ref]$windowProcessId) | Out-Null
+  $isLedgerWindow = $windowProcessId -eq $parentPid
+  $sidebarCenterX = $sidebarLeft + ($sidebarWidth / 2)
+  $sidebarCenterY = $sidebarTop + ($sidebarHeight / 2)
+  $rectCenterX = $rect.Left + ($width / 2)
+  $rectCenterY = $rect.Top + ($height / 2)
+  if ([Math]::Abs($rectCenterX - $sidebarCenterX) -le 32 -and [Math]::Abs($rectCenterY - $sidebarCenterY) -le 32 -and [Math]::Abs($width - $sidebarWidth) -le 64 -and [Math]::Abs($height - $sidebarHeight) -le 64) { return $true }
+  if ($cursorX -ge $rect.Left -and $cursorX -le $rect.Right -and $cursorY -ge $rect.Top -and $cursorY -le $rect.Bottom) {
+    $ledgerFlag = if ($isLedgerWindow) { "1" } else { "0" }
+    $script:result = "$($hWnd.ToInt64())|$($rect.Left)|$($rect.Top)|$width|$height|$ledgerFlag"
+    return $false
+  }
+  return $true
+}, [IntPtr]::Zero) | Out-Null
+
+if ($script:result) { Write-Output $script:result }
+`;
+        const { stdout: cursorStdout } = await execFileAsync(
+          'powershell.exe',
+          ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', cursorScript],
+          {
+            windowsHide: true,
+            timeout: 1200,
+          }
+        );
+        const cursorOutput = String(cursorStdout).trim();
+        if (cursorOutput) {
+          const [id, x, y, width, height, isLedgerWindow] = cursorOutput.split('|');
+          const parsed = [x, y, width, height].map((value) => Number(value));
+          const rawBounds = {
+            x: parsed[0],
+            y: parsed[1],
+            width: parsed[2],
+            height: parsed[3],
+          };
+          if (
+            [rawBounds.x, rawBounds.y, rawBounds.width, rawBounds.height].every(Number.isFinite) &&
+            rawBounds.width > 0 &&
+            rawBounds.height > 0 &&
+            id
+          ) {
+            const bounds = nativeRectToDipRect(rawBounds);
+            const side = getDockSide(sidebarBounds, bounds);
+            const display = getDisplayForBounds(bounds);
+            const rawDisplay = getDisplayMatchingNativeRect(rawBounds);
+            writeWindowsDockTrace('cursor-target-found', {
+              trackerType: 'windows-cursor-under-pointer',
+              targetId: id,
+              targetWindowHandle: id,
+              side,
+              cursorPoint: pointForDockTrace(cursorPoint),
+              nativeCursorPoint: pointForDockTrace(nativeCursorPoint),
+              rawTargetBounds: rectForDockTrace(rawBounds),
+              rawTargetBoundsCoordinateSystem: 'windows-native-physical-pixels',
+              rawTargetMatchedDisplay: displayForDockTrace(rawDisplay),
+              rawTargetMatchedDisplayNativeBounds: rectForDockTrace(getDisplayNativeBounds(rawDisplay)),
+              normalizedTargetBounds: rectForDockTrace(bounds),
+              normalizedTargetBoundsCoordinateSystem: 'electron-dip',
+              targetCenterPoint: rectCenterForDockTrace(bounds),
+              matchedDisplayId: display.id,
+              matchedDisplay: displayForDockTrace(display),
+            });
+            return {
+              target: {
+                platform: 'win32',
+                id,
+                side,
+                isLedgerWindow: isLedgerWindow === '1',
+              },
+              bounds,
+            };
+          }
+        }
         writeWindowsDockTrace('cursor-target-scan', {
           trackerType: 'windows-cursor-scan',
           sidebarBounds: rectForDockTrace(sidebarBounds),
           nativeSidebarBounds: rectForDockTrace(nativeSidebarBounds),
+          cursorPoint: pointForDockTrace(cursorPoint),
+          nativeCursorPoint: pointForDockTrace(nativeCursorPoint),
           snapDistance,
           nativeSnapDistance,
           movementSkipped: true,
@@ -3384,7 +3520,11 @@ $script:result = $null
   [Win32]::GetWindowThreadProcessId($hWnd, [ref]$windowProcessId) | Out-Null
   $isLedgerWindow = $windowProcessId -eq $parentPid
   if ($isLedgerWindow -and -not $allowLedgerWindows) { return $true }
-  if ([Math]::Abs($rect.Left - $sidebarLeft) -le 2 -and [Math]::Abs($rect.Top - $sidebarTop) -le 2 -and [Math]::Abs($width - $sidebarWidth) -le 2 -and [Math]::Abs($height - $sidebarHeight) -le 2) { return $true }
+  $sidebarCenterX = $sidebarLeft + ($sidebarWidth / 2)
+  $sidebarCenterY = $sidebarTop + ($sidebarHeight / 2)
+  $rectCenterX = $rect.Left + ($width / 2)
+  $rectCenterY = $rect.Top + ($height / 2)
+  if ([Math]::Abs($rectCenterX - $sidebarCenterX) -le 32 -and [Math]::Abs($rectCenterY - $sidebarCenterY) -le 32 -and [Math]::Abs($width - $sidebarWidth) -le 64 -and [Math]::Abs($height - $sidebarHeight) -le 64) { return $true }
   if ($cursor.X -ge $rect.Left -and $cursor.X -le $rect.Right -and $cursor.Y -ge $rect.Top -and $cursor.Y -le $rect.Bottom) {
     $ledgerFlag = if ($isLedgerWindow) { "1" } else { "0" }
     $script:result = "$($hWnd.ToInt64())|$($rect.Left)|$($rect.Top)|$width|$height|$ledgerFlag"
