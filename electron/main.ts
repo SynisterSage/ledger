@@ -1382,6 +1382,12 @@ function getModuleWindowChromeOptions() {
   return {
     frame: false,
     autoHideMenuBar: true,
+    ...(process.platform === 'win32'
+      ? {
+          thickFrame: false,
+          hasShadow: false,
+        }
+      : {}),
   };
 }
 
