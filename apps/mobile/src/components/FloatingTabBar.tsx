@@ -6,6 +6,7 @@ import { SymbolView } from 'expo-symbols';
 import { AppText } from './AppText';
 
 import { useSearchSheet } from '@/features/search/SearchSheetContext';
+import { useAppPreferencesState } from '@/store/appPreferencesStore';
 import { useLedgerTheme } from '@/theme';
 
 const BAR_HEIGHT = 52;
@@ -53,11 +54,13 @@ function FadeStack() {
 export function FloatingTabBar({ state, descriptors, navigation }: any) {
   const theme = useLedgerTheme();
   const { openSearch } = useSearchSheet();
+  const appPreferences = useAppPreferencesState();
   const insets = useSafeAreaInsets();
   const [tabLayouts, setTabLayouts] = useState<Record<string, { x: number; width: number }>>({});
   const pillX = useRef(new Animated.Value(0)).current;
   const pillWidth = useRef(new Animated.Value(0)).current;
   const labelProgress = useRef<Record<string, Animated.Value>>({}).current;
+  const reduceMotionEnabled = appPreferences.reduceMotionEnabled;
   const bottomInset = useMemo(() => Math.max(insets.bottom, 8), [insets.bottom]);
   const bottomOffset = bottomInset + BAR_BOTTOM_GAP;
   const dockHeight = bottomOffset + BAR_HEIGHT + FADE_HEIGHT + BLOCK_HEIGHT;
@@ -77,6 +80,12 @@ export function FloatingTabBar({ state, descriptors, navigation }: any) {
       return;
     }
 
+    if (reduceMotionEnabled) {
+      pillX.setValue(activeLayout.x);
+      pillWidth.setValue(activeLayout.width);
+      return;
+    }
+
     Animated.parallel([
       Animated.timing(pillX, {
         toValue: activeLayout.x,
@@ -91,11 +100,16 @@ export function FloatingTabBar({ state, descriptors, navigation }: any) {
         useNativeDriver: false,
       }),
     ]).start();
-  }, [activeLayout, pillWidth, pillX]);
+  }, [activeLayout, pillWidth, pillX, reduceMotionEnabled]);
 
   useEffect(() => {
     state.routes.forEach((route: any) => {
       const progress = getLabelProgress(route.key);
+
+      if (reduceMotionEnabled) {
+        progress.setValue(route.key === activeRouteKey ? 1 : 0);
+        return;
+      }
 
       if (route.key === activeRouteKey) {
         Animated.timing(progress, {
@@ -115,7 +129,7 @@ export function FloatingTabBar({ state, descriptors, navigation }: any) {
         useNativeDriver: false,
       }).start();
     });
-  }, [activeRouteKey, getLabelProgress, state.routes]);
+  }, [activeRouteKey, getLabelProgress, reduceMotionEnabled, state.routes]);
 
   return (
     <View pointerEvents="box-none" style={styles.wrapper}>
@@ -150,8 +164,10 @@ export function FloatingTabBar({ state, descriptors, navigation }: any) {
             style={[
               styles.activePill,
               {
-                width: pillWidth,
-                transform: [{ translateX: pillX }],
+                width: reduceMotionEnabled ? activeLayout?.width ?? 0 : pillWidth,
+                ...(reduceMotionEnabled
+                  ? { left: activeLayout?.x ?? 0 }
+                  : { transform: [{ translateX: pillX }] }),
                 backgroundColor: theme.colors.accent,
                 opacity: activeLayout ? 1 : 0,
               },
@@ -164,10 +180,6 @@ export function FloatingTabBar({ state, descriptors, navigation }: any) {
             const title = routeLabelByName[route.name] ?? String(options.title ?? route.name);
             const isLastTab = index === state.routes.length - 1;
             const labelProgressValue = getLabelProgress(route.key);
-            const labelColor = labelProgressValue.interpolate({
-              inputRange: [0, 1],
-              outputRange: [theme.colors.textPrimary, '#FFFFFF'],
-            });
 
             return (
               <Pressable
@@ -207,16 +219,32 @@ export function FloatingTabBar({ state, descriptors, navigation }: any) {
                     opacity: pressed ? 0.9 : 1,
                   },
                 ]}>
-                <AnimatedText
-                  style={[
-                    theme.typography.button,
-                    {
-                      fontWeight: '600',
-                      color: labelColor,
-                    },
-                  ]}>
-                  {title}
-                </AnimatedText>
+                {reduceMotionEnabled ? (
+                  <Text
+                    style={[
+                      theme.typography.button,
+                      {
+                        fontWeight: '600',
+                        color: isFocused ? '#FFFFFF' : theme.colors.textPrimary,
+                      },
+                    ]}>
+                    {title}
+                  </Text>
+                ) : (
+                  <AnimatedText
+                    style={[
+                      theme.typography.button,
+                      {
+                        fontWeight: '600',
+                        color: labelProgressValue.interpolate({
+                          inputRange: [0, 1],
+                          outputRange: [theme.colors.textPrimary, '#FFFFFF'],
+                        }),
+                      },
+                    ]}>
+                    {title}
+                  </AnimatedText>
+                )}
               </Pressable>
             );
           })}
