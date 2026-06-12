@@ -1572,6 +1572,13 @@ function getFloatingBounds(mode: SidebarWindowMode) {
       ? Math.min(FLOATING_RAIL_HEIGHT, maxHeight)
       : Math.min(FLOATING_EXPANDED_HEIGHT, maxHeight);
 
+  const displayForRect = getDisplayForBounds({
+    x: currentFloatingPosition.x,
+    y: currentFloatingPosition.y,
+    width,
+    height,
+  });
+
   return clampRectToWorkArea(
     {
       x: currentFloatingPosition.x,
@@ -1579,7 +1586,7 @@ function getFloatingBounds(mode: SidebarWindowMode) {
       width,
       height,
     },
-    display.workArea
+    displayForRect.workArea
   );
 }
 
@@ -3244,6 +3251,7 @@ $script:bestScore = [Double]::PositiveInfinity
   $windowProcessId = 0
   [Win32]::GetWindowThreadProcessId($hWnd, [ref]$windowProcessId) | Out-Null
   $isLedgerWindow = $windowProcessId -eq $parentPid
+  if ($isLedgerWindow) { return $true }
   $sidebarCenterX = $sidebarLeft + (${Math.floor(nativeSidebarBounds.width)} / 2)
   $sidebarCenterY = $sidebarTop + ($sidebarHeight / 2)
   $rectCenterX = $rect.Left + ($width / 2)
@@ -3266,15 +3274,16 @@ $script:bestScore = [Double]::PositiveInfinity
   $dockLeftDistance = [Math]::Abs($sidebarRight - $rect.Left)
   $dockRightDistance = [Math]::Abs($sidebarLeft - $rect.Right)
   $side = "left"
-  $edgeDistance = $dockLeftDistance
   if ($dockRightDistance -lt $dockLeftDistance) {
     $side = "right"
-    $edgeDistance = $dockRightDistance
   }
-  if ($edgeDistance -gt $threshold) { return $true }
+  $horizontalGap = 0
+  if ($sidebarRight -lt $rect.Left) { $horizontalGap = $rect.Left - $sidebarRight }
+  elseif ($rect.Right -lt $sidebarLeft) { $horizontalGap = $sidebarLeft - $rect.Right }
+  if ($horizontalGap -gt $threshold) { return $true }
 
   $verticalPenalty = if ($verticalOverlap -gt 0) { 0 } else { $verticalGap }
-  $score = $edgeDistance + ($verticalPenalty * 0.5) - ($verticalOverlap * 0.01)
+  $score = $horizontalGap + ($verticalPenalty * 0.5) - ($verticalOverlap * 0.01)
   if ($score -lt $script:bestScore) {
     $script:bestScore = $score
     $ledgerFlag = if ($isLedgerWindow) { "1" } else { "0" }
@@ -3354,6 +3363,7 @@ $script:result = $null
   $windowProcessId = 0
   [Win32]::GetWindowThreadProcessId($hWnd, [ref]$windowProcessId) | Out-Null
   $isLedgerWindow = $windowProcessId -eq $parentPid
+  if ($isLedgerWindow) { return $true }
   $sidebarCenterX = $sidebarLeft + ($sidebarWidth / 2)
   $sidebarCenterY = $sidebarTop + ($sidebarHeight / 2)
   $rectCenterX = $rect.Left + ($width / 2)

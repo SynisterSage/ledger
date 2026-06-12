@@ -319,7 +319,8 @@ const getSidebarOpacitySliderStyle = (value: number): CSSProperties => {
   const fillPercent = Math.max(0, Math.min(100, ((value - min) / (max - min)) * 100));
 
   return {
-    backgroundImage: `linear-gradient(to right, #FF5F40 0%, #FF5F40 ${fillPercent}%, rgba(229, 231, 235, 0.9) ${fillPercent}%, rgba(229, 231, 235, 0.9) 100%)`,
+    ['--ledger-range-progress' as string]: `${fillPercent}%`,
+    ['--ledger-range-fill' as string]: 'var(--ledger-accent)',
   };
 };
 
@@ -3587,14 +3588,15 @@ export const SettingsWindow = () => {
                           key={option.value}
                           className={settingsTheme.radioRow}
                         >
-                          <input
-                            type="radio"
-                            name="sidebar-default-state"
-                            value={option.value}
-                            checked={defaultState === option.value}
-                            onChange={() => setDefaultState(option.value)}
-                            className={settingsTheme.radioInput}
-                          />
+                            <input
+                              type="radio"
+                              name="sidebar-default-state"
+                              value={option.value}
+                              checked={defaultState === option.value}
+                              onChange={() => setDefaultState(option.value)}
+                              className={settingsTheme.radioInput}
+                              style={{ accentColor: 'var(--ledger-accent)' }}
+                            />
                           <span className="min-w-0">
                             <span className={settingsTheme.label}>
                               {option.label}
@@ -3630,7 +3632,7 @@ export const SettingsWindow = () => {
                             step="0.01"
                             value={opacity}
                             onChange={(event) => setOpacity(Number(event.target.value))}
-                            className="mt-3 h-2 w-full cursor-pointer appearance-none rounded-full bg-transparent"
+                            className="ledger-range mt-3 h-2 w-full cursor-pointer appearance-none rounded-full bg-transparent"
                             style={getSidebarOpacitySliderStyle(opacity)}
                           />
                         </div>

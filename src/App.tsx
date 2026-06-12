@@ -389,35 +389,16 @@ function AuthStatusScreen({
 }) {
   return (
     <div
-      className={`relative flex min-h-screen items-center justify-center overflow-hidden bg-transparent p-2 text-gray-900 transition-all duration-150 ease-out ${
+      className={`relative flex min-h-screen items-center justify-center overflow-hidden bg-[var(--ledger-background)] px-6 py-8 text-gray-900 transition-all duration-150 ease-out ${
         isExiting ? 'opacity-0 scale-[0.985] translate-y-1' : 'opacity-100 scale-100 translate-y-0'
       }`}
       style={dragRegionStyle}
     >
-      <div
-        className="relative z-10 flex h-[min(420px,calc(100vw-1rem),calc(100vh-1rem))] w-[min(420px,calc(100vw-1rem),calc(100vh-1rem))] items-center justify-center rounded-[28px] border border-white/60 bg-[#fff9f4] px-6 py-6 shadow-[0_18px_50px_rgba(15,23,42,0.08),inset_0_1px_0_rgba(255,255,255,0.85)]"
-        style={noDragRegionStyle}
-      >
-        <button
-          type="button"
-          onClick={() => {
-            void window.desktopWindow?.quitApp();
-          }}
-          aria-label="Close"
-          className="absolute right-4 top-4 inline-flex h-7 w-7 items-center justify-center rounded-full border border-black/5 bg-[#FFFDFB]/60 text-gray-500 transition hover:bg-[#FFFDFB]/90 hover:text-gray-900"
-          style={noDragRegionStyle}
-        >
-          <X size={14} />
-        </button>
-        <div className="flex w-full flex-col items-center text-center">
-          <img src="./logo-color.svg" alt="Ledger" className="mb-3 h-9 w-9" />
-          <h2 className="text-[22px] font-semibold leading-tight text-gray-950">{title}</h2>
-          <p className="mt-1.5 max-w-[18rem] text-sm leading-5 text-gray-500">{subtitle}</p>
-          <div className="mt-4 flex items-center gap-2 text-gray-500">
-            <Loader2 size={14} className="animate-spin" />
-            <span className="text-[11px] font-medium">Loading</span>
-          </div>
-        </div>
+      <div className="relative z-10 flex flex-col items-center text-center" style={noDragRegionStyle}>
+        <img src="./logo-color.svg" alt="Ledger" className="h-11 w-11" />
+        <h2 className="mt-4 text-[22px] font-medium leading-tight text-gray-950">{title}</h2>
+        <p className="mt-1.5 max-w-[18rem] text-sm leading-6 text-gray-500">{subtitle}</p>
+        <Loader2 size={14} className="mt-4 animate-spin text-gray-500" />
       </div>
     </div>
   );
@@ -3157,7 +3138,7 @@ function AppShell() {
   if (isModuleWindow) {
     if (isLoading) {
       return (
-        <AuthStatusScreen title="Loading module" subtitle="Bringing your workspace into view." />
+        <AuthStatusScreen title="Opening module" subtitle="Bringing it into view…" />
       );
     }
 
@@ -3630,9 +3611,11 @@ function AppShell() {
   // Only show the global boot loading state for authenticated users.
   // Unauthenticated flows (login) handle their own prelogin splash to avoid a flash of the preparing loader.
   const shouldShowBootLoading = isLoading && Boolean(user);
+  const startupTitle = activeWorkspace?.name ? `Opening ${activeWorkspace.name}` : 'Opening Ledger';
+  const startupSubtitle = 'Preparing your workspace…';
 
   if (shouldShowBootLoading) {
-    return <AuthStatusScreen title="Loading" subtitle="Preparing Ledger." />;
+    return <AuthStatusScreen title={startupTitle} subtitle={startupSubtitle} />;
   }
 
   if (authError) {
@@ -3705,8 +3688,8 @@ function AppShell() {
   if (postAuthStage === 'idle' || postAuthStage === 'loading') {
     return (
       <AuthStatusScreen
-        title="Preparing workspace"
-        subtitle="Loading your sidebar, notes, projects, and calendar."
+        title={startupTitle}
+        subtitle={startupSubtitle}
       />
     );
   }
@@ -3818,8 +3801,8 @@ function AppShell() {
   if (postAuthStage !== 'ready') {
     return (
       <AuthStatusScreen
-        title="Preparing workspace"
-        subtitle="Loading your sidebar, notes, projects, and calendar."
+        title={startupTitle}
+        subtitle={startupSubtitle}
         isExiting={isAuthExiting}
       />
     );
@@ -3828,8 +3811,8 @@ function AppShell() {
   if (!showAuthenticatedShell) {
     return (
       <AuthStatusScreen
-        title="Preparing workspace"
-        subtitle="Loading your sidebar, notes, projects, and calendar."
+        title={startupTitle}
+        subtitle={startupSubtitle}
         isExiting={isAuthExiting}
       />
     );
