@@ -2044,6 +2044,14 @@ function getDockSide(currentBounds: Rect, targetBounds: Rect): DockSide {
   return leftDistance <= rightDistance ? 'left' : 'right';
 }
 
+function getHorizontalGapBetweenRects(a: Rect, b: Rect) {
+  const aRight = a.x + a.width;
+  const bRight = b.x + b.width;
+  if (aRight < b.x) return b.x - aRight;
+  if (bRight < a.x) return a.x - bRight;
+  return 0;
+}
+
 function getDockedBoundsForTarget(targetBounds: Rect, side: DockSide, mode: SidebarWindowMode) {
   const targetDisplay = getDisplayForBounds(targetBounds);
   const { width: workWidth, height: workHeight } = targetDisplay.workArea;
@@ -3776,7 +3784,10 @@ async function dockFloatingSidebarToTarget() {
       : Math.max(8, Math.floor(threshold * 1.5));
   const leftDistance = Math.abs(currentBounds.x - (target.bounds.x - currentBounds.width));
   const rightDistance = Math.abs(currentBounds.x - (target.bounds.x + target.bounds.width));
-  const nearestDistance = Math.min(leftDistance, rightDistance);
+  const nearestDistance =
+    process.platform === 'win32'
+      ? getHorizontalGapBetweenRects(currentBounds, target.bounds)
+      : Math.min(leftDistance, rightDistance);
   if (nearestDistance > snapDistance) {
     writeWindowsDockTrace('manual-dock-skip', {
       trackerType: 'windows-cursor-scan',
