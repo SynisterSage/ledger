@@ -3274,16 +3274,15 @@ $script:bestScore = [Double]::PositiveInfinity
   $dockLeftDistance = [Math]::Abs($sidebarRight - $rect.Left)
   $dockRightDistance = [Math]::Abs($sidebarLeft - $rect.Right)
   $side = "left"
+  $edgeDistance = $dockLeftDistance
   if ($dockRightDistance -lt $dockLeftDistance) {
     $side = "right"
+    $edgeDistance = $dockRightDistance
   }
-  $horizontalGap = 0
-  if ($sidebarRight -lt $rect.Left) { $horizontalGap = $rect.Left - $sidebarRight }
-  elseif ($rect.Right -lt $sidebarLeft) { $horizontalGap = $sidebarLeft - $rect.Right }
-  if ($horizontalGap -gt $threshold) { return $true }
+  if ($edgeDistance -gt $threshold) { return $true }
 
   $verticalPenalty = if ($verticalOverlap -gt 0) { 0 } else { $verticalGap }
-  $score = $horizontalGap + ($verticalPenalty * 0.5) - ($verticalOverlap * 0.01)
+  $score = $edgeDistance + ($verticalPenalty * 0.5) - ($verticalOverlap * 0.01)
   if ($score -lt $script:bestScore) {
     $script:bestScore = $score
     $ledgerFlag = if ($isLedgerWindow) { "1" } else { "0" }
@@ -3794,10 +3793,8 @@ async function dockFloatingSidebarToTarget() {
       : Math.max(8, Math.floor(threshold * 1.5));
   const leftDistance = Math.abs(currentBounds.x - (target.bounds.x - currentBounds.width));
   const rightDistance = Math.abs(currentBounds.x - (target.bounds.x + target.bounds.width));
-  const nearestDistance =
-    process.platform === 'win32'
-      ? getHorizontalGapBetweenRects(currentBounds, target.bounds)
-      : Math.min(leftDistance, rightDistance);
+  const horizontalGap = getHorizontalGapBetweenRects(currentBounds, target.bounds);
+  const nearestDistance = Math.min(leftDistance, rightDistance);
   if (nearestDistance > snapDistance) {
     writeWindowsDockTrace('manual-dock-skip', {
       trackerType: 'windows-cursor-scan',
@@ -3808,6 +3805,7 @@ async function dockFloatingSidebarToTarget() {
       currentLedgerBounds: rectForDockTrace(currentBounds),
       leftDistance,
       rightDistance,
+      horizontalGap,
       nearestDistance,
       snapDistance,
       movementSkipped: true,
