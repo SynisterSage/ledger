@@ -1590,6 +1590,10 @@ function getFloatingBounds(mode: SidebarWindowMode) {
   );
 }
 
+function isPrimaryDisplayBounds(bounds: Electron.Rectangle | Rect) {
+  return getDisplayForBounds(bounds as Rect).id === screen.getPrimaryDisplay().id;
+}
+
 function getCenteredBounds(width: number, height: number) {
   const { x, y, width: workWidth, height: workHeight } = screen.getPrimaryDisplay().workArea;
   const safeWidth = Math.min(width, workWidth - WINDOW_MARGIN * 2);
@@ -3205,9 +3209,10 @@ async function getFloatingDockTargetAtCursor(): Promise<DockTargetResult | null>
     const sidebarBounds = sidebarWin?.getBounds();
     if (!sidebarBounds) return null;
     const threshold = currentSidebarPreferences.floatingDockThreshold;
+    const isPrimaryDisplay = isPrimaryDisplayBounds(sidebarBounds);
     const snapDistance =
       process.platform === 'win32'
-        ? Math.max(8, Math.floor(threshold * 2))
+        ? Math.max(isPrimaryDisplay ? 12 : 8, Math.floor(threshold * (isPrimaryDisplay ? 3 : 2)))
         : Math.max(8, Math.floor(threshold * 1.5));
 
     if (process.platform === 'win32') {
@@ -3537,7 +3542,8 @@ async function getFloatingDockTargetAtEdge(
   allowLedgerWindows = false
 ): Promise<DockTargetResult | null> {
   const centerY = sidebarBounds.y + Math.floor(sidebarBounds.height / 2);
-  const xOffsets = [16, 48, 96, 160];
+  const isPrimaryDisplay = isPrimaryDisplayBounds(sidebarBounds);
+  const xOffsets = isPrimaryDisplay ? [16, 48, 96, 160, 224, 320] : [16, 48, 96, 160];
   const yOffsets = [0, -48, 48];
   const probePoints: Array<{ side: DockSide; x: number; y: number }> = [];
 
@@ -3806,9 +3812,10 @@ async function dockFloatingSidebarToTarget() {
 
   const currentBounds = sidebarWin.getBounds();
   const threshold = currentSidebarPreferences.floatingDockThreshold;
+  const isPrimaryDisplay = isPrimaryDisplayBounds(currentBounds);
   const snapDistance =
     process.platform === 'win32'
-      ? Math.max(8, Math.floor(threshold * 2))
+      ? Math.max(isPrimaryDisplay ? 12 : 8, Math.floor(threshold * (isPrimaryDisplay ? 3 : 2)))
       : Math.max(8, Math.floor(threshold * 1.5));
   const leftDistance = Math.abs(currentBounds.x - (target.bounds.x - currentBounds.width));
   const rightDistance = Math.abs(currentBounds.x - (target.bounds.x + target.bounds.width));
