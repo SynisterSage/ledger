@@ -3,8 +3,7 @@ const accentFocus = 'focus-visible:outline-none focus-visible:ring-2 focus-visib
 export const sidebarTheme = {
   shellFallback:
     'border border-[color:var(--ledger-border-subtle)] shadow-[0_10px_28px_rgba(17,24,39,0.12)] outline outline-[rgba(17,24,39,0.06)]',
-  shellRail:
-    'border border-[color:var(--ledger-border-subtle)] bg-[color:rgba(255,255,255,0.72)]',
+  shellRail: 'bg-transparent',
   surface:
     'rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-[var(--ledger-shadow)]',
   surfaceSoft:
