@@ -50,8 +50,10 @@ app.use(
     credentials: true,
   })
 );
-app.use(express.json({ limit: '256kb', verify: captureRawBody }));
-app.use(express.urlencoded({ extended: false, limit: '256kb', verify: captureRawBody }));
+// Notes can carry pasted images and rich HTML that exceed the old 256kb cap.
+const REQUEST_BODY_LIMIT = '5mb';
+app.use(express.json({ limit: REQUEST_BODY_LIMIT, verify: captureRawBody }));
+app.use(express.urlencoded({ extended: false, limit: REQUEST_BODY_LIMIT, verify: captureRawBody }));
 
 const TIER_LIMITS = {
   free: { projects: 3, events: 100, notes: 100, reminders: 100 },

@@ -1392,6 +1392,69 @@ function getModuleWindowChromeOptions() {
   };
 }
 
+const buildRoundedWindowShape = (width: number, height: number, radius: number): Electron.Rectangle[] => {
+  const safeWidth = Math.max(1, Math.round(width));
+  const safeHeight = Math.max(1, Math.round(height));
+  const safeRadius = Math.max(
+    0,
+    Math.min(Math.round(radius), Math.floor(safeWidth / 2), Math.floor(safeHeight / 2))
+  );
+
+  if (safeRadius <= 0) {
+    return [{ x: 0, y: 0, width: safeWidth, height: safeHeight }];
+  }
+
+  const rects: Electron.Rectangle[] = [];
+  let activeRect: Electron.Rectangle | null = null;
+
+  for (let y = 0; y < safeHeight; y += 1) {
+    let inset = 0;
+
+    if (y < safeRadius) {
+      const dy = safeRadius - y - 0.5;
+      inset = Math.ceil(safeRadius - Math.sqrt(Math.max(0, safeRadius * safeRadius - dy * dy)));
+    } else if (y >= safeHeight - safeRadius) {
+      const dy = y - (safeHeight - safeRadius) + 0.5;
+      inset = Math.ceil(safeRadius - Math.sqrt(Math.max(0, safeRadius * safeRadius - dy * dy)));
+    }
+
+    const rowWidth = safeWidth - inset * 2;
+    if (rowWidth <= 0) continue;
+
+    if (activeRect && activeRect.x === inset && activeRect.width === rowWidth) {
+      activeRect.height += 1;
+    } else {
+      activeRect = { x: inset, y, width: rowWidth, height: 1 };
+      rects.push(activeRect);
+    }
+  }
+
+  return rects.length > 0 ? rects : [{ x: 0, y: 0, width: safeWidth, height: safeHeight }];
+};
+
+const applyWindowsModuleWindowShape = (win: BrowserWindow) => {
+  if (process.platform !== 'win32' || win.isDestroyed()) return;
+
+  const shapedWindow = win as BrowserWindow & {
+    setShape?: (rects: Electron.Rectangle[]) => void;
+  };
+
+  if (typeof shapedWindow.setShape !== 'function') return;
+
+  try {
+    const bounds = win.getBounds();
+    const width = Math.max(1, Math.round(bounds.width));
+    const height = Math.max(1, Math.round(bounds.height));
+    const rects = win.isFullScreen()
+      ? [{ x: 0, y: 0, width, height }]
+      : buildRoundedWindowShape(width, height, desktopTokens.radius.window);
+
+    shapedWindow.setShape(rects);
+  } catch (error) {
+    console.error('[electron] Failed to apply Windows module window shape:', error);
+  }
+};
+
 function getDockedBounds(
   width: number,
   position: SidebarPosition = currentSidebarPosition
@@ -4428,6 +4491,7 @@ function openModuleWindow(
       (moduleWin as any).setHasShadow(process.platform !== 'win32');
     } catch {}
   }
+  applyWindowsModuleWindowShape(moduleWin);
 
   lockWindowZoom(moduleWin);
   attachNativeContextMenu(moduleWin);
@@ -4475,7 +4539,11 @@ function openModuleWindow(
     resizeShadowRestoreTimer = setTimeout(() => {
       resizeShadowRestoreTimer = null;
       setModuleShadow(false);
+      applyWindowsModuleWindowShape(moduleWin);
     }, 160);
+  });
+  moduleWin.on('resized', () => {
+    applyWindowsModuleWindowShape(moduleWin);
   });
 
   moduleWin.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL) => {
@@ -4533,6 +4601,7 @@ function openModuleWindow(
     try {
       // Ensure the window is visible and focused when entering fullscreen
       if (!moduleWin.isDestroyed()) {
+        applyWindowsModuleWindowShape(moduleWin);
         moduleWin.show();
         moduleWin.focus();
       }
@@ -4542,6 +4611,7 @@ function openModuleWindow(
   moduleWin.on('leave-full-screen', () => {
     try {
       if (!moduleWin.isDestroyed()) {
+        applyWindowsModuleWindowShape(moduleWin);
         moduleWin.show();
         moduleWin.focus();
       }
@@ -4572,6 +4642,7 @@ function openModuleWindow(
     ? `&section=${encodeURIComponent(focusSection)}`
     : '';
   moduleWin.webContents.once('did-finish-load', () => {
+    applyWindowsModuleWindowShape(moduleWin);
     moduleWin.show();
     // Delay focus to prevent sidebar from stealing focus back
     setTimeout(() => {
