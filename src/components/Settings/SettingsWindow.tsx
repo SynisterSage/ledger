@@ -307,7 +307,7 @@ const saveCachedPreferences = (prefs: UserPreferences) => {
 
 const selectChevronStyle: CSSProperties = {
   backgroundImage:
-    "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E\")",
+    "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%236B7280' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E\")",
   backgroundRepeat: 'no-repeat',
   backgroundPosition: 'right 0.8rem center',
   backgroundSize: '14px 14px',
@@ -324,18 +324,59 @@ const getSidebarOpacitySliderStyle = (value: number): CSSProperties => {
 };
 
 const compactFieldClassName =
-  'h-9 rounded-xl border border-gray-200 bg-gray-50/80 px-3 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 focus:border-gray-300 focus:bg-[#FFFDFB] focus:ring-4 focus:ring-gray-100 disabled:opacity-60';
+  'h-9 rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3 text-sm text-[var(--ledger-text-primary)] outline-none transition placeholder:text-[var(--ledger-text-muted)] focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60 disabled:opacity-60';
 
 const compactSelectClassName =
-  'h-9 appearance-none rounded-xl border border-gray-200 bg-gray-50/80 px-3 pr-8 text-sm text-gray-900 outline-none transition focus:border-gray-300 focus:bg-[#FFFDFB] focus:ring-4 focus:ring-gray-100 disabled:opacity-60';
+  'h-9 appearance-none rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3 pr-8 text-sm text-[var(--ledger-text-primary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60 disabled:opacity-60';
 
-const preferenceSelectClassName = `${compactSelectClassName} w-full bg-[#FFFDFB]`;
+const preferenceSelectClassName = `${compactSelectClassName} w-full`;
 
 const preferenceRowClassName =
   'grid gap-3 py-5 sm:grid-cols-[minmax(0,1fr)_280px] sm:items-center';
 
 const inlineSwitchClassName =
-  'relative inline-flex h-7 w-12 shrink-0 items-center rounded-full border border-gray-200 bg-gray-200 transition focus:outline-none focus:ring-4 focus:ring-gray-100';
+  'relative inline-flex h-7 w-12 shrink-0 items-center rounded-full border transition focus:outline-none focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60';
+
+const settingsTheme = {
+  shell:
+    'relative h-screen overflow-hidden rounded-3xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] text-[var(--ledger-text-primary)] flex flex-col shadow-[0_24px_80px_rgba(15,23,42,0.08)]',
+  root: 'flex-1 overflow-hidden bg-[var(--ledger-background)]',
+  aside: 'border-r border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] p-4 overflow-auto',
+  sideHeader: 'mb-4 border-b border-[color:var(--ledger-border-subtle)] pb-4',
+  sideLabel: 'text-xs font-medium text-[var(--ledger-text-muted)]',
+  sideTitle: 'mt-1 text-sm font-semibold text-[var(--ledger-text-primary)]',
+  sideMeta: 'text-xs text-[var(--ledger-text-secondary)] truncate',
+  main: 'overflow-auto bg-[var(--ledger-background)] p-6',
+  sectionTitle: 'text-sm font-semibold text-[var(--ledger-text-primary)]',
+  sectionSubtitle: 'text-sm text-[var(--ledger-text-secondary)]',
+  sectionStatus: 'text-xs text-[var(--ledger-text-muted)]',
+  divider: 'border-[color:var(--ledger-border-subtle)]',
+  surfaceCard: 'bg-[var(--ledger-surface-card)]',
+  surfaceMuted: 'bg-[var(--ledger-surface-muted)]',
+  surfaceHover: 'hover:bg-[var(--ledger-surface-hover)]',
+  rowHover: 'transition hover:bg-[var(--ledger-surface-hover)]',
+  controlButton:
+    'h-8 rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3 text-xs font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]',
+  controlButtonNeutral:
+    'h-8 rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3 text-xs font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] disabled:opacity-60',
+  primaryButton:
+    'h-9 rounded-full bg-[var(--ledger-accent)] px-4 text-sm font-medium text-white transition hover:bg-[var(--ledger-accent-hover)] disabled:opacity-60',
+  dangerButton:
+    'h-8 rounded-full border border-[color:rgba(217,45,32,0.18)] bg-[var(--ledger-surface-card)] px-3 text-xs font-medium text-[var(--ledger-danger)] transition hover:bg-[color:rgba(217,45,32,0.08)] disabled:opacity-50',
+  sectionCard:
+    'mt-2 divide-y divide-[color:var(--ledger-border-subtle)] border-y border-[color:var(--ledger-border-subtle)]',
+  radioRow:
+    'flex cursor-pointer items-center gap-3 rounded-2xl border border-transparent px-4 py-3 transition',
+  radioInput:
+    'mt-0.5 h-4 w-4 border-[color:var(--ledger-border-subtle)] text-[var(--ledger-accent)] outline-none focus:outline-none focus:ring-0 focus:ring-offset-0 focus-visible:outline-none focus-visible:ring-0',
+  label: 'text-sm font-medium text-[var(--ledger-text-primary)]',
+  help: 'mt-1 block text-xs leading-5 text-[var(--ledger-text-muted)]',
+  fieldValue: 'text-sm text-[var(--ledger-text-secondary)]',
+  footerButton:
+    'h-9 rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-4 text-sm font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]',
+  headerButton:
+    'h-9 rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3 text-xs font-semibold text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]',
+} as const;
 
 const PreferenceRow = ({
   label,
@@ -349,10 +390,10 @@ const PreferenceRow = ({
   return (
     <div className={preferenceRowClassName}>
       <div className="min-w-0">
-        <h3 className="text-sm font-medium text-gray-900">{label}</h3>
-        <p className="mt-1 text-xs leading-5 text-gray-500">{help}</p>
+        <h3 className={settingsTheme.label}>{label}</h3>
+        <p className={settingsTheme.help}>{help}</p>
       </div>
-      <div className="sm:justify-self-end sm:w-70">{children}</div>
+      <div className="sm:flex sm:w-full sm:justify-end">{children}</div>
     </div>
   );
 };
@@ -374,11 +415,13 @@ const InlineSwitch = ({
       aria-label={label}
       onClick={onToggle}
       className={`${inlineSwitchClassName} ${
-        checked ? 'border-gray-900 bg-gray-900' : 'border-gray-200 bg-gray-200'
+        checked
+          ? 'border-[color:var(--ledger-accent)] bg-[var(--ledger-accent)]'
+          : 'border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-hover)]'
       }`}
     >
       <span
-        className={`inline-block h-5 w-5 rounded-full bg-[#FFFDFB] shadow-sm transition-transform ${
+        className={`inline-block h-5 w-5 rounded-full bg-[var(--ledger-surface-card)] shadow-sm transition-transform ${
           checked ? 'translate-x-6' : 'translate-x-0.5'
         }`}
       />
@@ -1569,10 +1612,17 @@ export const SettingsWindow = () => {
     void window.desktopWindow?.closeModule('settings');
   };
 
+  const isSettingsModalOpen =
+    isExtensionTokenModalOpen ||
+    extensionTokenConfirmAction !== null ||
+    (isWorkspaceManageModalOpen && Boolean(activeWorkspace)) ||
+    (isWorkspaceDeleteModalOpen && Boolean(activeWorkspace)) ||
+    Boolean(inviteModal && selectedInvite);
+
   return (
     <div
-      className="h-screen overflow-hidden rounded-3xl border border-gray-200 bg-[#FFF9F4] text-gray-900 flex flex-col shadow-[0_24px_80px_rgba(15,23,42,0.08)]"
-      style={{ scrollbarGutter: 'stable' }}
+      className={settingsTheme.shell}
+      style={{ scrollbarGutter: isSettingsModalOpen ? 'auto' : 'stable' }}
     >
       <CloseGuardModal
         isOpen={showCloseGuardModal}
@@ -1583,7 +1633,7 @@ export const SettingsWindow = () => {
       <ModuleWindowHeader
         title="Settings"
         subtitle="Defaults, accessible controls"
-        icon={<Settings size={18} className="text-gray-700" />}
+        icon={<Settings size={18} className="text-[var(--ledger-text-secondary)]" />}
         closeLabel="Close settings"
         minimizeLabel="Minimize settings"
         onMinimize={() => {
@@ -1599,23 +1649,23 @@ export const SettingsWindow = () => {
             onClick={() => {
               void signOut();
             }}
-            className="h-9 px-3 rounded-full border border-gray-200 bg-[#FFFDFB] hover:bg-gray-100 text-gray-700 text-xs font-semibold"
+            className={settingsTheme.headerButton}
           >
             Sign out
           </button>
         }
       />
 
-      <div className="flex-1 overflow-hidden bg-[#FFFBF7]">
+      <div className={settingsTheme.root}>
         <div className="h-full grid grid-cols-[260px_1fr]">
           <aside
-            className="border-r border-gray-200 bg-[#FFFBF7] p-4 overflow-auto"
+            className={settingsTheme.aside}
             aria-label="Settings sections"
           >
-            <div className="mb-4 border-b border-gray-200 pb-4">
-              <p className="text-xs font-medium text-gray-500">Account</p>
-              <p className="mt-1 text-sm font-semibold text-gray-900">Hi {firstName}</p>
-              <p className="text-xs text-gray-600 truncate">
+            <div className={settingsTheme.sideHeader}>
+              <p className={settingsTheme.sideLabel}>Account</p>
+              <p className={settingsTheme.sideTitle}>Hi {firstName}</p>
+              <p className={settingsTheme.sideMeta}>
                 {user?.email ?? 'No email available'}
               </p>
             </div>
@@ -1625,21 +1675,24 @@ export const SettingsWindow = () => {
                 <button
                   key={section.id}
                   onClick={() => setActiveSection(section.id)}
-                  className={`w-full rounded-lg px-3 py-2.5 text-left transition outline-none focus-visible:ring-2 focus-visible:ring-gray-300 focus-visible:ring-offset-2 focus-visible:ring-offset-white ${
+                  className={`w-full rounded-2xl border px-3 py-2.5 text-left transition outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-accent)]/20 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--ledger-surface)] ${
                     activeSection === section.id
-                      ? 'bg-gray-100 text-gray-950'
-                      : 'text-gray-900 hover:bg-gray-50'
+                      ? 'border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-hover)] text-[var(--ledger-text-primary)]'
+                      : 'border-transparent text-[var(--ledger-text-secondary)] hover:border-[color:var(--ledger-border-subtle)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]'
                   }`}
                   aria-current={activeSection === section.id ? 'page' : undefined}
                 >
                   <p className="text-sm font-semibold">{section.label}</p>
-                  <p className="mt-0.5 text-xs text-gray-500">{section.description}</p>
+                  <p className="mt-0.5 text-xs text-[var(--ledger-text-muted)]">{section.description}</p>
                 </button>
               ))}
             </nav>
           </aside>
 
-          <main className="overflow-auto bg-[#FFFBF7] p-6" aria-live="polite">
+          <main
+            className={`${settingsTheme.main} ${isSettingsModalOpen ? 'overflow-hidden' : 'overflow-auto'}`}
+            aria-live="polite"
+          >
             <div className="mx-auto max-w-4xl space-y-5">
               {activeSection === 'account' && (
                 <section className="w-full max-w-215" aria-labelledby="settings-account">
@@ -3160,7 +3213,6 @@ export const SettingsWindow = () => {
                           />
                         </PreferenceRow>
                       </div>
-                      <p className="mt-3 text-xs text-gray-500">Quiet hours coming later.</p>
                     </section>
                   </div>
                 </section>
@@ -3366,17 +3418,17 @@ export const SettingsWindow = () => {
                   </p>
 
                   <section className="mt-6 border-t border-gray-200 pt-6" aria-labelledby="sidebar-position">
-                    <h3 id="sidebar-position" className="text-sm font-semibold text-gray-900">
+                    <h3 id="sidebar-position" className={settingsTheme.sectionTitle}>
                       Position
                     </h3>
-                    <p className="mt-1 text-xs leading-5 text-gray-500">Choose where Ledger lives.</p>
-                    <div className="mt-2 divide-y divide-gray-200 border-y border-gray-200">
+                    <p className={settingsTheme.sectionStatus}>Choose where Ledger lives.</p>
+                    <div className={settingsTheme.sectionCard}>
                       {sidebarPositionOptions
                         .filter((option) => option.value !== 'floating')
                         .map((option) => (
                           <label
                             key={option.value}
-                            className="flex cursor-pointer items-start gap-3 px-4 py-3 transition hover:bg-gray-50"
+                            className={settingsTheme.radioRow}
                           >
                             <input
                               type="radio"
@@ -3384,13 +3436,14 @@ export const SettingsWindow = () => {
                               value={option.value}
                               checked={position === option.value}
                               onChange={() => setPosition(option.value)}
-                              className="mt-0.5 h-4 w-4 border-gray-300 text-[#FF5F40] outline-none focus:outline-none focus:ring-0 focus:ring-offset-0 focus-visible:outline-none focus-visible:ring-0"
+                              className={settingsTheme.radioInput}
+                              style={{ accentColor: 'var(--ledger-accent)' }}
                             />
                             <span className="min-w-0">
-                              <span className="block text-sm font-medium text-gray-900">
+                              <span className={settingsTheme.label}>
                                 {option.label}
                               </span>
-                              <span className="mt-1 block text-xs leading-5 text-gray-500">
+                              <span className={settingsTheme.help}>
                                 {option.description}
                               </span>
                             </span>
@@ -3400,15 +3453,15 @@ export const SettingsWindow = () => {
                   </section>
 
                   <section className="border-t border-gray-200 pt-6" aria-labelledby="sidebar-behavior">
-                    <h3 id="sidebar-behavior" className="text-sm font-semibold text-gray-900">
+                    <h3 id="sidebar-behavior" className={settingsTheme.sectionTitle}>
                       Behavior
                     </h3>
-                    <p className="mt-1 text-xs leading-5 text-gray-500">
+                    <p className={settingsTheme.sectionStatus}>
                       Keep Ledger attached, detached, or following the app you dock to.
                     </p>
-                    <div className="mt-2 divide-y divide-gray-200 border-y border-gray-200">
+                    <div className={settingsTheme.sectionCard}>
                       <label
-                        className="flex cursor-pointer items-start gap-3 px-4 py-3 transition hover:bg-gray-50"
+                        className={settingsTheme.radioRow}
                       >
                         <input
                           type="radio"
@@ -3416,21 +3469,22 @@ export const SettingsWindow = () => {
                           value="floating"
                           checked={position === 'floating'}
                           onChange={() => setPosition('floating')}
-                          className="mt-0.5 h-4 w-4 border-gray-300 text-[#FF5F40] outline-none focus:outline-none focus:ring-0 focus:ring-offset-0 focus-visible:outline-none focus-visible:ring-0"
+                          className={settingsTheme.radioInput}
+                          style={{ accentColor: 'var(--ledger-accent)' }}
                         />
                         <span className="min-w-0 flex-1">
-                          <span className="block text-sm font-medium text-gray-900">Floating</span>
-                          <span className="mt-1 block text-xs leading-5 text-gray-500">
+                          <span className={settingsTheme.label}>Floating</span>
+                          <span className={settingsTheme.help}>
                             Detach Ledger as a movable panel.
                           </span>
                         </span>
                       </label>
                       <div className="flex items-start justify-between gap-4 px-4 py-3">
                         <span className="min-w-0">
-                          <span className="block text-sm font-medium text-gray-900">
+                          <span className={settingsTheme.label}>
                             Always on top
                           </span>
-                          <span className="mt-1 block text-xs leading-5 text-gray-500">
+                          <span className={settingsTheme.help}>
                             Keep Ledger above other windows.
                           </span>
                         </span>
@@ -3442,8 +3496,8 @@ export const SettingsWindow = () => {
                       </div>
                       <div className="flex items-start justify-between gap-4 px-4 py-3">
                         <span className="min-w-0">
-                          <span className="block text-sm font-medium text-gray-900">Auto hide</span>
-                          <span className="mt-1 block text-xs leading-5 text-gray-500">
+                          <span className={settingsTheme.label}>Auto hide</span>
+                          <span className={settingsTheme.help}>
                             Collapse when your pointer leaves the panel.
                           </span>
                         </span>
@@ -3455,10 +3509,10 @@ export const SettingsWindow = () => {
                       </div>
                       <div className="flex items-start justify-between gap-4 px-4 py-3">
                         <span className="min-w-0">
-                          <span className="block text-sm font-medium text-gray-900">
+                          <span className={settingsTheme.label}>
                             Dock to app windows
                           </span>
-                          <span className="mt-1 block text-xs leading-5 text-gray-500">
+                          <span className={settingsTheme.help}>
                             Follow the app you attach Ledger to.
                           </span>
                         </span>
@@ -3472,19 +3526,19 @@ export const SettingsWindow = () => {
                   </section>
 
                   <section className="border-t border-gray-200 pt-6" aria-labelledby="sidebar-desktop-utility">
-                    <h3 id="sidebar-desktop-utility" className="text-sm font-semibold text-gray-900">
+                    <h3 id="sidebar-desktop-utility" className={settingsTheme.sectionTitle}>
                       Desktop utility
                     </h3>
-                    <p className="mt-1 text-xs leading-5 text-gray-500">
+                    <p className={settingsTheme.sectionStatus}>
                       Keep Ledger available from the menu bar or system tray.
                     </p>
-                    <div className="mt-2 divide-y divide-gray-200 border-y border-gray-200">
+                    <div className={settingsTheme.sectionCard}>
                       <div className="flex items-start justify-between gap-4 px-4 py-3">
                         <span className="min-w-0">
-                          <span className="block text-sm font-medium text-gray-900">
+                          <span className={settingsTheme.label}>
                             Show tray icon
                           </span>
-                          <span className="mt-1 block text-xs leading-5 text-gray-500">
+                          <span className={settingsTheme.help}>
                             Keep a Ledger icon visible in the menu bar or system tray.
                           </span>
                         </span>
@@ -3501,10 +3555,10 @@ export const SettingsWindow = () => {
                       </div>
                       <div className="flex items-start justify-between gap-4 px-4 py-3">
                         <span className="min-w-0">
-                          <span className="block text-sm font-medium text-gray-900">
+                          <span className={settingsTheme.label}>
                             Run in background
                           </span>
-                          <span className="mt-1 block text-xs leading-5 text-gray-500">
+                          <span className={settingsTheme.help}>
                             Keep Ledger running after closing the window so reminders can still notify you.
                           </span>
                         </span>
@@ -3523,15 +3577,15 @@ export const SettingsWindow = () => {
                   </section>
 
                   <section className="border-t border-gray-200 pt-6" aria-labelledby="sidebar-default-state">
-                    <h3 id="sidebar-default-state" className="text-sm font-semibold text-gray-900">
+                    <h3 id="sidebar-default-state" className={settingsTheme.sectionTitle}>
                       Default state
                     </h3>
-                    <p className="mt-1 text-xs leading-5 text-gray-500">Choose how Ledger opens.</p>
-                    <div className="mt-2 divide-y divide-gray-200 border-y border-gray-200">
+                    <p className={settingsTheme.sectionStatus}>Choose how Ledger opens.</p>
+                    <div className={settingsTheme.sectionCard}>
                       {sidebarDefaultStateOptions.map((option) => (
                         <label
                           key={option.value}
-                          className="flex cursor-pointer items-start gap-3 px-4 py-3 transition hover:bg-gray-50"
+                          className={settingsTheme.radioRow}
                         >
                           <input
                             type="radio"
@@ -3539,13 +3593,13 @@ export const SettingsWindow = () => {
                             value={option.value}
                             checked={defaultState === option.value}
                             onChange={() => setDefaultState(option.value)}
-                            className="mt-0.5 h-4 w-4 border-gray-300 text-[#FF5F40] outline-none focus:outline-none focus:ring-0 focus:ring-offset-0 focus-visible:outline-none focus-visible:ring-0"
+                            className={settingsTheme.radioInput}
                           />
                           <span className="min-w-0">
-                            <span className="block text-sm font-medium text-gray-900">
+                            <span className={settingsTheme.label}>
                               {option.label}
                             </span>
-                            <span className="mt-1 block text-xs leading-5 text-gray-500">
+                            <span className={settingsTheme.help}>
                               {option.description}
                             </span>
                           </span>
@@ -3555,34 +3609,17 @@ export const SettingsWindow = () => {
                   </section>
 
                   <section className="border-t border-gray-200 pt-6" aria-labelledby="sidebar-appearance">
-                    <h3 id="sidebar-appearance" className="text-sm font-semibold text-gray-900">
+                    <h3 id="sidebar-appearance" className={settingsTheme.sectionTitle}>
                       Appearance
                     </h3>
-                    <p className="mt-1 text-xs leading-5 text-gray-500">
+                    <p className={settingsTheme.sectionStatus}>
                       Tune the sidebar look and feel.
                     </p>
-                    <div className="mt-2 divide-y divide-gray-200 border-y border-gray-200">
-                      <PreferenceRow label="Theme" help="Match your system or choose a fixed theme.">
-                        <select
-                          value={preferences.theme}
-                          onChange={(event) =>
-                            setPreferences((current) => ({
-                              ...current,
-                              theme: event.target.value as UserPreferences['theme'],
-                            }))
-                          }
-                          className={preferenceSelectClassName}
-                          style={selectChevronStyle}
-                        >
-                          <option value="system">System</option>
-                          <option value="light">Light</option>
-                          <option value="dark">Dark</option>
-                        </select>
-                      </PreferenceRow>
+                    <div className={settingsTheme.sectionCard}>
                       <PreferenceRow label="Opacity" help={`${Math.round(opacity * 100)}% to 95%.`}>
                         <div className="w-full sm:w-70">
                           <div className="flex items-center justify-between gap-4">
-                            <span className="text-sm font-semibold text-gray-900">
+                            <span className={settingsTheme.label}>
                               {Math.round(opacity * 100)}%
                             </span>
                           </div>
@@ -3604,7 +3641,7 @@ export const SettingsWindow = () => {
                     <button
                       onClick={handleResetSidebarSettings}
                       type="button"
-                      className="h-9 rounded-xl border border-gray-200 bg-[#FFFDFB] px-4 text-sm font-medium text-gray-800 transition hover:bg-gray-50"
+                      className={settingsTheme.footerButton}
                     >
                       Reset to Defaults
                     </button>
@@ -3753,6 +3790,9 @@ export const SettingsWindow = () => {
             <ModalOverlay
               isOpen={isExtensionTokenModalOpen}
               onClose={closeExtensionTokenModal}
+              backdropBorderRadius="inherit"
+              disablePortal
+              manageWindowChrome={false}
               classNameContainer="w-full max-w-115 rounded-2xl border border-gray-200 bg-[#FFFDFB]"
             >
               <div className="flex items-start justify-between gap-4 px-5 pt-5">
@@ -3799,7 +3839,7 @@ export const SettingsWindow = () => {
                 <button
                   type="button"
                   onClick={closeExtensionTokenModal}
-                  className="h-8 rounded-lg bg-gray-900 px-3 text-xs font-medium text-white transition hover:bg-gray-800"
+                  className="h-8 rounded-lg bg-[var(--ledger-accent)] px-3 text-xs font-medium text-white transition hover:bg-[var(--ledger-accent-hover)]"
                 >
                   Done
                 </button>
@@ -3809,6 +3849,9 @@ export const SettingsWindow = () => {
             <ModalOverlay
               isOpen={extensionTokenConfirmAction === 'regenerate'}
               onClose={() => setExtensionTokenConfirmAction(null)}
+              backdropBorderRadius="inherit"
+              disablePortal
+              manageWindowChrome={false}
               classNameContainer="w-full max-w-115 rounded-2xl border border-gray-200 bg-[#FFFDFB]"
             >
               <div className="flex items-start justify-between gap-4 px-5 pt-5">
@@ -3836,7 +3879,7 @@ export const SettingsWindow = () => {
                   type="button"
                   onClick={() => void handleRegenerateExtensionToken()}
                   disabled={isExtensionTokenBusy}
-                  className="h-8 rounded-lg bg-gray-900 px-3 text-xs font-medium text-white transition hover:bg-gray-800 disabled:opacity-50"
+                  className="h-8 rounded-lg bg-[var(--ledger-accent)] px-3 text-xs font-medium text-white transition hover:bg-[var(--ledger-accent-hover)] disabled:opacity-50"
                 >
                   {isExtensionTokenBusy ? 'Regenerating...' : 'Regenerate token'}
                 </button>
@@ -3846,6 +3889,9 @@ export const SettingsWindow = () => {
             <ModalOverlay
               isOpen={extensionTokenConfirmAction === 'revoke'}
               onClose={() => setExtensionTokenConfirmAction(null)}
+              backdropBorderRadius="inherit"
+              disablePortal
+              manageWindowChrome={false}
               classNameContainer="w-full max-w-115 rounded-2xl border border-gray-200 bg-[#FFFDFB]"
             >
               <div className="flex items-start justify-between gap-4 px-5 pt-5">
@@ -3882,6 +3928,9 @@ export const SettingsWindow = () => {
             <ModalOverlay
               isOpen={isWorkspaceManageModalOpen && !!activeWorkspace}
               onClose={closeWorkspaceManageModal}
+              backdropBorderRadius="inherit"
+              disablePortal
+              manageWindowChrome={false}
               classNameContainer="w-full max-w-[720px] rounded-2xl border border-gray-200 bg-[#FFFDFB] shadow-[0_24px_70px_rgba(15,23,42,0.12)]"
             >
               <div className="flex items-start justify-between gap-4 px-5 pt-5">
@@ -3973,6 +4022,9 @@ export const SettingsWindow = () => {
             <ModalOverlay
               isOpen={isWorkspaceDeleteModalOpen && !!activeWorkspace}
               onClose={closeWorkspaceDeleteModal}
+              backdropBorderRadius="inherit"
+              disablePortal
+              manageWindowChrome={false}
               classNameContainer="w-full max-w-[640px] rounded-2xl border border-gray-200 bg-[#FFFDFB] shadow-[0_24px_70px_rgba(15,23,42,0.12)]"
             >
               <div className="flex items-start justify-between gap-4 px-5 pt-5">
@@ -4039,6 +4091,9 @@ export const SettingsWindow = () => {
             <ModalOverlay
               isOpen={!!inviteModal && !!selectedInvite}
               onClose={() => setInviteModal(null)}
+              backdropBorderRadius="inherit"
+              disablePortal
+              manageWindowChrome={false}
               classNameContainer="w-full max-w-[560px] overflow-hidden rounded-2xl border border-gray-200 bg-[#FFFDFB] shadow-[0_24px_70px_rgba(15,23,42,0.12)]"
             >
               <div className="flex min-h-70 flex-col">

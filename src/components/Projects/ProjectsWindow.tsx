@@ -1342,8 +1342,8 @@ export const ProjectsWindow = () => {
 
   return (
     <div
-      className="h-screen overflow-hidden rounded-3xl border border-[#E2D4C4] bg-[#FFF9F4] flex flex-col text-gray-900 shadow-[0_24px_80px_rgba(15,23,42,0.08)]"
-      style={{ scrollbarGutter: 'stable' }}
+      className="relative h-screen overflow-hidden rounded-3xl border border-[#E2D4C4] bg-[#FFF9F4] flex flex-col text-gray-900 shadow-[0_24px_80px_rgba(15,23,42,0.08)]"
+      style={{ scrollbarGutter: isLinkNoteModalOpen ? 'auto' : 'stable' }}
     >
       <CloseGuardModal
         isOpen={showCloseGuardModal}
@@ -1766,7 +1766,7 @@ export const ProjectsWindow = () => {
                     </label>
                     <div className="text-xs text-gray-600">
                       <span className="mb-1 block">Duration</span>
-                      <div className="h-9 w-full rounded-lg border border-[#E2D4C4] bg-[#FFF8F2] px-1.5 text-sm text-gray-800 inline-flex items-center gap-1.5">
+                      <div className="flex h-9 w-full items-center gap-1.5 rounded-lg border border-[#E2D4C4] bg-[#FFF8F2] px-1.5 text-sm text-gray-800">
                         <button
                           type="button"
                           className="h-6 w-6 rounded border border-[#E2D4C4] bg-[#FFF8F2] text-gray-700 hover:bg-[#FFF1E3] disabled:opacity-40"
@@ -1779,21 +1779,23 @@ export const ProjectsWindow = () => {
                         >
                           -
                         </button>
-                        <input
-                          type="number"
-                          min={1}
-                          max={3650}
-                          value={projectDurationDays ?? ''}
-                          onChange={(e) => {
-                            const next = Number(e.target.value);
-                            if (!Number.isFinite(next)) return;
-                            setDurationDays(next);
-                          }}
-                          disabled={!projectDraft.startDate}
-                          placeholder="--"
-                          className="w-14 bg-transparent text-center outline-none disabled:opacity-60"
-                        />
-                        <span className="text-xs text-gray-600">days</span>
+                        <div className="flex flex-1 items-center justify-center gap-1.5">
+                          <input
+                            type="number"
+                            min={1}
+                            max={3650}
+                            value={projectDurationDays ?? ''}
+                            onChange={(e) => {
+                              const next = Number(e.target.value);
+                              if (!Number.isFinite(next)) return;
+                              setDurationDays(next);
+                            }}
+                            disabled={!projectDraft.startDate}
+                            placeholder="--"
+                            className="w-12 bg-transparent text-center leading-none outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none disabled:opacity-60"
+                          />
+                          <span className="self-center text-xs leading-none text-gray-600">days</span>
+                        </div>
                         <button
                           type="button"
                           className="ml-auto h-6 w-6 rounded border border-[#E2D4C4] bg-[#FFF8F2] text-gray-700 hover:bg-[#FFF1E3] disabled:opacity-40"
@@ -2506,14 +2508,15 @@ export const ProjectsWindow = () => {
       <ModalOverlay
         isOpen={isLinkNoteModalOpen}
         onClose={() => setIsLinkNoteModalOpen(false)}
-        classNameContainer="w-full max-w-xl rounded-2xl border border-[#E2D4C4] bg-[#FFFDFB] shadow-xl"
+        backdropBorderRadius="inherit"
+        disablePortal
+        manageWindowChrome={false}
+        classNameContainer="w-full max-w-[420px] overflow-hidden rounded-xl border border-[#E2D4C4] bg-[#FFF8F2] shadow-xl"
       >
         <div className="flex items-start justify-between gap-4 border-b border-[#E8DDD4] px-5 py-4">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500">
-              Link note
-            </p>
-            <p className="mt-1 text-base font-semibold text-gray-900">
+            <p className="text-sm font-semibold text-gray-900">Link note</p>
+            <p className="mt-1 text-sm text-gray-600">
               Attach a workspace note to this project
             </p>
           </div>
@@ -2529,9 +2532,9 @@ export const ProjectsWindow = () => {
             value={linkNotesSearch}
             onChange={(e) => setLinkNotesSearch(e.target.value)}
             placeholder="Search notes"
-            className="w-full rounded-lg border border-[#E2D4C4] bg-[#FFF8F2] px-3 py-2 text-sm text-gray-900 outline-none focus:border-gray-300"
+            className="w-full rounded-md border border-[#E2D4C4] bg-[#FFF8F2] px-3 py-2 text-sm text-gray-900 outline-none focus:border-gray-400"
           />
-          <div className="max-h-80 overflow-auto rounded-lg border border-[#E2D4C4] bg-[#FFFDFB]">
+          <div className="max-h-80 overflow-auto rounded-lg border border-[#E2D4C4] bg-[#FFF8F2]">
             {isLoadingLinkableNotes ? (
               <p className="p-3 text-sm text-gray-500">Loading notes…</p>
             ) : filteredLinkableNotes.length === 0 ? (
@@ -2543,7 +2546,7 @@ export const ProjectsWindow = () => {
                   type="button"
                   disabled={isLinkingNote}
                   onClick={() => void linkNoteToProject(note.id)}
-                  className="w-full border-b border-[#E8DDD4] px-3 py-2 text-left last:border-b-0 hover:bg-[#FFF8F2] disabled:opacity-50"
+                  className="w-full border-b border-[#E8DDD4] px-3 py-2 text-left last:border-b-0 hover:bg-[#FFF1E3] disabled:opacity-50"
                 >
                   <p className="truncate text-sm font-medium text-gray-900">{note.title}</p>
                   <p className="truncate text-xs text-gray-500">
@@ -2558,7 +2561,7 @@ export const ProjectsWindow = () => {
           <button
             type="button"
             onClick={() => setIsLinkNoteModalOpen(false)}
-            className="rounded-lg border border-[#E2D4C4] px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-[#FFF8F2]"
+            className="rounded-lg border border-[#E2D4C4] bg-[#FFF8F2] px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-[#FFF1E3]"
           >
             Cancel
           </button>

@@ -36,7 +36,7 @@ export const SidebarContainer = () => {
   const isFloating = position === 'floating';
   const isHorizontal = position === 'top' || position === 'bottom';
   const isCollapsedIconMode = state === 'minimized' && !isExpanded;
-  const motionDurationMs = prefersReducedMotion ? 0 : 100;
+  const motionDurationMs = prefersReducedMotion ? 0 : 160;
   const motionClass = prefersReducedMotion
     ? ''
     : 'transition-[width,height,opacity,transform,border-radius,clip-path] duration-[100ms] ease-[cubic-bezier(0.22,1,0.36,1)]';
@@ -154,7 +154,7 @@ export const SidebarContainer = () => {
     contentSwapTimerRef.current = window.setTimeout(() => {
       setContentView(targetContentView);
       contentSwapTimerRef.current = null;
-    }, 45);
+    }, 110);
   }, [position, prefersReducedMotion, state, targetContentView]);
 
   if (!isVisible || state === 'fullscreen') return null;
@@ -401,7 +401,7 @@ export const SidebarContainer = () => {
     ['--sidebar-glass-cream-alpha' as string]: Math.min(0.94, Math.max(0.86, opacity + 0.02)),
     ['--sidebar-glass-icon-alpha' as string]: Math.min(0.84, Math.max(0.74, opacity - 0.06)),
     clipPath: `inset(0 round ${shellClipRadius})`,
-    contain: 'paint',
+    contain: 'layout style',
     transitionProperty:
       isDragging && isFloating
         ? 'opacity'

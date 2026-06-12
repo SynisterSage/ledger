@@ -5184,6 +5184,24 @@ app.whenReady().then(() => {
   if (!allWindowsRegistered) {
     console.warn(`[electron] Failed to register all windows shortcut: ${toggleAllWindowsShortcut}`);
   }
+
+  if (process.platform === 'win32') {
+    const closeFocusedWindowShortcut = 'Ctrl+W';
+    const closeFocusedWindowRegistered = globalShortcut.register(
+      closeFocusedWindowShortcut,
+      () => {
+        const focusedWindow = BrowserWindow.getFocusedWindow();
+        if (!focusedWindow || focusedWindow.isDestroyed()) return;
+        focusedWindow.close();
+      }
+    );
+
+    if (!closeFocusedWindowRegistered) {
+      console.warn(
+        `[electron] Failed to register close focused window shortcut: ${closeFocusedWindowShortcut}`
+      );
+    }
+  }
 });
 
 app.on('before-quit', () => {

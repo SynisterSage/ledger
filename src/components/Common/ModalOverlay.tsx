@@ -61,10 +61,7 @@ export const ModalOverlay = ({
     borderRadius: backdropBorderRadius,
     overflow: 'hidden',
     position: disablePortal ? 'absolute' : 'fixed',
-    top: disablePortal ? 'calc(-1px)' : 'calc(-1px)',
-    left: disablePortal ? 'calc(-1px)' : 'calc(-1px)',
-    right: disablePortal ? 'calc(-1px)' : 'calc(-1px)',
-    bottom: disablePortal ? 'calc(-1px)' : 'calc(-1px)',
+    inset: disablePortal ? 'calc(-2px)' : 'calc(-1px)',
     // Ensure overlay sits above shadows and outlines
     boxShadow: 'none',
   };
@@ -86,7 +83,7 @@ export const ModalOverlay = ({
 
   const overlay = (
     <div
-      className={`fixed inset-0 z-[9999] isolate ${classNameBackdrop}`}
+      className={`${disablePortal ? 'absolute' : 'fixed'} inset-0 z-[9999] isolate ${classNameBackdrop}`}
       style={wrapperStyle}
     >
       <div

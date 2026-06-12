@@ -32,6 +32,7 @@ import {
   ModuleWindowHeader,
 } from './components/Common/ModuleWindowHeader';
 import { CloseGuardModal } from './components/Common/CloseGuardModal';
+import { ModalCloseButton } from './components/Common/ModalCloseButton';
 import { ModalOverlay } from './components/Common/ModalOverlay';
 import LoginForm from './components/Common/LoginForm';
 import CalendarWindow from './components/Calendar/CalendarWindow';
@@ -81,7 +82,7 @@ const dashboardSkeletonBorder = 'var(--ledger-border-subtle)';
 
 const dashboardTheme = {
   shell:
-    'flex h-screen flex-col overflow-hidden rounded-3xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] shadow-none',
+    'relative flex h-screen flex-col overflow-hidden rounded-3xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] shadow-none',
   content: 'bg-[var(--ledger-background)]',
   page: 'mx-auto max-w-6xl space-y-10',
   hero: 'max-w-3xl space-y-8',
@@ -126,9 +127,9 @@ const dashboardTheme = {
   chipSelected:
     'whitespace-nowrap rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-hover)] px-3 py-1.5 text-xs font-medium text-[var(--ledger-text-primary)]',
   actionLink:
-    'text-[11px] font-medium text-[var(--ledger-accent)] transition hover:text-[var(--ledger-accent-hover)]',
+    'inline-flex items-center whitespace-nowrap text-xs font-medium text-[var(--ledger-text-secondary)] transition hover:text-[var(--ledger-text-primary)]',
   actionLinkMuted:
-    'text-[11px] font-medium text-[var(--ledger-text-secondary)] transition hover:text-[var(--ledger-text-primary)]',
+    'inline-flex items-center whitespace-nowrap text-xs font-medium text-[var(--ledger-text-muted)] transition',
   hoverRow:
     'transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]',
 };
@@ -1967,9 +1968,10 @@ function DashboardContent() {
     }
     void window.desktopWindow?.closeModule('dashboard');
   };
+  const isDashboardModalOpen = isFocusPickerOpen || isNewFocusModalOpen || showCloseGuardModal;
 
   return (
-    <div className={dashboardTheme.shell} style={{ scrollbarGutter: 'stable' }}>
+    <div className={dashboardTheme.shell} style={{ scrollbarGutter: isDashboardModalOpen ? 'auto' : 'stable' }}>
       <CloseGuardModal
         isOpen={showCloseGuardModal}
         isSaving={isSavingFocusTask}
@@ -2068,7 +2070,10 @@ function DashboardContent() {
         onClose={attemptCloseDashboard}
       />
 
-      <div className={`flex-1 min-h-0 overflow-auto ${dashboardTheme.content} px-6 py-8`} style={{ scrollbarGutter: 'stable' }}>
+      <div
+        className={`flex-1 min-h-0 overflow-auto ${dashboardTheme.content} px-6 py-8`}
+        style={{ scrollbarGutter: isDashboardModalOpen ? 'auto' : 'stable' }}
+      >
         <div className={dashboardTheme.page}>
           <header className={dashboardTheme.hero}>
             <div className="space-y-1.5">
@@ -2113,19 +2118,25 @@ function DashboardContent() {
                 <div className="flex items-baseline justify-between gap-4">
                   <p className={dashboardTheme.sectionLabel}>Focus</p>
                   <div className="flex gap-4">
-                    <button
-                      type="button"
-                      onClick={() => setIsFocusPickerOpen(true)}
-                      disabled={focusTasks.length >= 3 || activeTodayTasks.length === 0}
-                      className={dashboardTheme.actionLink}
-                    >
-                      + Add from Today
-                    </button>
+                    {activeTodayTasks.length > 0 ? (
+                      <button
+                        type="button"
+                        onClick={() => setIsFocusPickerOpen(true)}
+                        disabled={focusTasks.length >= 3}
+                        className={
+                          focusTasks.length >= 3 ? dashboardTheme.actionLinkMuted : dashboardTheme.actionLink
+                        }
+                      >
+                        + Add from Today
+                      </button>
+                    ) : null}
                     <button
                       type="button"
                       onClick={() => setIsNewFocusModalOpen(true)}
                       disabled={focusTasks.length >= 3}
-                      className={dashboardTheme.actionLink}
+                      className={
+                        focusTasks.length >= 3 ? dashboardTheme.actionLinkMuted : dashboardTheme.actionLink
+                      }
                     >
                       + New focus
                     </button>
@@ -2609,15 +2620,25 @@ function DashboardContent() {
           setIsNewFocusModalOpen(false);
           setFocusDraftTitle('');
         }}
-        classNameContainer="w-full max-w-lg rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-[var(--ledger-shadow)]"
+        backdropBorderRadius="inherit"
+        disablePortal
+        manageWindowChrome={false}
+        classNameContainer="w-full max-w-[420px] overflow-hidden rounded-xl border border-[#E2D4C4] bg-[#FFF8F2] shadow-xl"
       >
-        <div className="border-b border-[color:var(--ledger-border-subtle)] px-5 py-4">
-          <p className="text-xs font-medium text-[var(--ledger-text-muted)]">
-            New focus
-          </p>
-          <p className="mt-1 text-sm text-[var(--ledger-text-secondary)]">
-            Create a new priority and keep it in Today.
-          </p>
+        <div className="flex items-start justify-between gap-4 border-b border-[#E8DDD4] px-5 py-4">
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-gray-900">New focus</p>
+            <p className="mt-1 text-sm text-gray-600">
+              Create a new priority and keep it in Today.
+            </p>
+          </div>
+          <ModalCloseButton
+            onClick={() => {
+              setIsNewFocusModalOpen(false);
+              setFocusDraftTitle('');
+            }}
+            ariaLabel="Close new focus modal"
+          />
         </div>
         <div className="space-y-3 p-5">
           <input
@@ -2635,20 +2656,20 @@ function DashboardContent() {
               }
             }}
             placeholder="e.g. Submit posters for critique file"
-            className="w-full rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-input-background)] px-4 py-3 text-sm text-[var(--ledger-text-primary)] outline-none focus:border-[color:var(--ledger-border-strong)]"
+            className="w-full rounded-md border border-[#E2D4C4] bg-[#FFF8F2] px-3 py-2 text-sm text-gray-900 outline-none focus:border-gray-400"
           />
-          <p className="text-xs text-[var(--ledger-text-muted)]">
+          <p className="text-sm text-gray-600">
             This creates a Today task and marks it as a focus priority.
           </p>
         </div>
-        <div className="flex items-center justify-end gap-2 border-t border-[color:var(--ledger-border-subtle)] px-5 py-3">
+        <div className="flex items-center justify-end gap-2 border-t border-[#E8DDD4] px-5 py-4">
           <button
             type="button"
             onClick={() => {
               setIsNewFocusModalOpen(false);
               setFocusDraftTitle('');
             }}
-            className="rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3 py-1.5 text-sm font-medium text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+            className="rounded-lg border border-[#E2D4C4] bg-[#FFF8F2] px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-[#FFF1E3]"
           >
             Cancel
           </button>
@@ -2656,7 +2677,7 @@ function DashboardContent() {
             type="button"
             onClick={() => void createNewFocusTask()}
             disabled={!focusDraftTitle.trim() || isSavingFocusTask || focusTasks.length >= 3}
-            className="rounded-full bg-[var(--ledger-accent)] px-3 py-1.5 text-sm font-medium text-white hover:bg-[var(--ledger-accent-hover)] disabled:opacity-50"
+            className="rounded-lg border border-[#E2D4C4] bg-[#FFF8F2] px-3 py-1.5 text-sm font-medium text-gray-900 hover:bg-[#FFF1E3] disabled:opacity-50"
           >
             Add focus
           </button>
@@ -3586,7 +3607,7 @@ function AppShell() {
       sidebarModeTimerRef.current = window.setTimeout(() => {
         applyMode();
         sidebarModeTimerRef.current = null;
-      }, 60);
+      }, 180);
       return () => {
         if (sidebarModeTimerRef.current !== null) {
           window.clearTimeout(sidebarModeTimerRef.current);
