@@ -1590,10 +1590,6 @@ function getFloatingBounds(mode: SidebarWindowMode) {
   );
 }
 
-function isPrimaryDisplayBounds(bounds: Electron.Rectangle | Rect) {
-  return getDisplayForBounds(bounds as Rect).id === screen.getPrimaryDisplay().id;
-}
-
 function getCenteredBounds(width: number, height: number) {
   const { x, y, width: workWidth, height: workHeight } = screen.getPrimaryDisplay().workArea;
   const safeWidth = Math.min(width, workWidth - WINDOW_MARGIN * 2);
@@ -2065,9 +2061,26 @@ function enterModuleWindowFullscreen(kind: ModuleWindowKind, win: BrowserWindow)
 }
 
 function getDockSide(currentBounds: Rect, targetBounds: Rect): DockSide {
-  const leftDistance = Math.abs(currentBounds.x - (targetBounds.x - currentBounds.width));
-  const rightDistance = Math.abs(currentBounds.x - (targetBounds.x + targetBounds.width));
+  const leftDistance = getDockIntentDistance(currentBounds, targetBounds, 'left');
+  const rightDistance = getDockIntentDistance(currentBounds, targetBounds, 'right');
   return leftDistance <= rightDistance ? 'left' : 'right';
+}
+
+function getDockIntentDistance(currentBounds: Rect, targetBounds: Rect, side: DockSide) {
+  const currentRight = currentBounds.x + currentBounds.width;
+  const targetRight = targetBounds.x + targetBounds.width;
+
+  if (side === 'left') {
+    return Math.min(
+      Math.abs(currentRight - targetBounds.x),
+      Math.abs(currentBounds.x - targetBounds.x)
+    );
+  }
+
+  return Math.min(
+    Math.abs(currentBounds.x - targetRight),
+    Math.abs(currentRight - targetRight)
+  );
 }
 
 function getHorizontalGapBetweenRects(a: Rect, b: Rect) {
@@ -3209,10 +3222,9 @@ async function getFloatingDockTargetAtCursor(): Promise<DockTargetResult | null>
     const sidebarBounds = sidebarWin?.getBounds();
     if (!sidebarBounds) return null;
     const threshold = currentSidebarPreferences.floatingDockThreshold;
-    const isPrimaryDisplay = isPrimaryDisplayBounds(sidebarBounds);
     const snapDistance =
       process.platform === 'win32'
-        ? Math.max(isPrimaryDisplay ? 12 : 8, Math.floor(threshold * (isPrimaryDisplay ? 3 : 2)))
+        ? Math.max(8, Math.floor(threshold * 2))
         : Math.max(8, Math.floor(threshold * 1.5));
 
     if (process.platform === 'win32') {
@@ -3295,8 +3307,14 @@ $script:bestScore = [Double]::PositiveInfinity
   $minimumOverlap = [Math]::Min(96, [Math]::Max(32, [Math]::Floor($sidebarHeight * 0.18)))
   if ($verticalOverlap -lt $minimumOverlap -and $verticalGap -gt $threshold) { return $true }
 
-  $dockLeftDistance = [Math]::Abs($sidebarRight - $rect.Left)
-  $dockRightDistance = [Math]::Abs($sidebarLeft - $rect.Right)
+  $dockLeftDistance = [Math]::Min(
+    [Math]::Abs($sidebarRight - $rect.Left),
+    [Math]::Abs($sidebarLeft - $rect.Left)
+  )
+  $dockRightDistance = [Math]::Min(
+    [Math]::Abs($sidebarLeft - $rect.Right),
+    [Math]::Abs($sidebarRight - $rect.Right)
+  )
   $side = "left"
   $edgeDistance = $dockLeftDistance
   if ($dockRightDistance -lt $dockLeftDistance) {
@@ -3542,8 +3560,7 @@ async function getFloatingDockTargetAtEdge(
   allowLedgerWindows = false
 ): Promise<DockTargetResult | null> {
   const centerY = sidebarBounds.y + Math.floor(sidebarBounds.height / 2);
-  const isPrimaryDisplay = isPrimaryDisplayBounds(sidebarBounds);
-  const xOffsets = isPrimaryDisplay ? [16, 48, 96, 160, 224, 320] : [16, 48, 96, 160];
+  const xOffsets = [16, 48, 96, 160];
   const yOffsets = [0, -48, 48];
   const probePoints: Array<{ side: DockSide; x: number; y: number }> = [];
 
@@ -3812,13 +3829,12 @@ async function dockFloatingSidebarToTarget() {
 
   const currentBounds = sidebarWin.getBounds();
   const threshold = currentSidebarPreferences.floatingDockThreshold;
-  const isPrimaryDisplay = isPrimaryDisplayBounds(currentBounds);
   const snapDistance =
     process.platform === 'win32'
-      ? Math.max(isPrimaryDisplay ? 12 : 8, Math.floor(threshold * (isPrimaryDisplay ? 3 : 2)))
+      ? Math.max(8, Math.floor(threshold * 2))
       : Math.max(8, Math.floor(threshold * 1.5));
-  const leftDistance = Math.abs(currentBounds.x - (target.bounds.x - currentBounds.width));
-  const rightDistance = Math.abs(currentBounds.x - (target.bounds.x + target.bounds.width));
+  const leftDistance = getDockIntentDistance(currentBounds, target.bounds, 'left');
+  const rightDistance = getDockIntentDistance(currentBounds, target.bounds, 'right');
   const horizontalGap = getHorizontalGapBetweenRects(currentBounds, target.bounds);
   const nearestDistance = Math.min(leftDistance, rightDistance);
   if (nearestDistance > snapDistance) {
@@ -3842,7 +3858,10 @@ async function dockFloatingSidebarToTarget() {
     return null;
   }
 
-  const side = getDockSide(currentBounds, target.bounds);
+  const side =
+    target.target.side === 'left' || target.target.side === 'right'
+      ? target.target.side
+      : getDockSide(currentBounds, target.bounds);
   const dockBounds = getDockedBoundsForTarget(target.bounds, side, currentSidebarMode);
   const targetDisplay = getDisplayForBounds(target.bounds);
   const clamped = clampRectToWorkArea(
