@@ -1838,6 +1838,8 @@ public static class Win32 {
   [DllImport("user32.dll")]
   public static extern bool IsIconic(IntPtr hWnd);
   [DllImport("user32.dll")]
+  public static extern bool IsZoomed(IntPtr hWnd);
+  [DllImport("user32.dll")]
   public static extern bool GetWindowRect(IntPtr hWnd, out RECT rect);
   [DllImport("dwmapi.dll")]
   public static extern int DwmGetWindowAttribute(IntPtr hwnd, int dwAttribute, out RECT pvAttribute, int cbAttribute);
@@ -1868,6 +1870,7 @@ public static class Win32 {
   }
   public static bool IsFullscreenLike(IntPtr hwnd, RECT rect) {
     try {
+      if (IsZoomed(hwnd)) return false;
       IntPtr monitor = MonitorFromWindow(hwnd, 2);
       if (monitor == IntPtr.Zero) return false;
       MONITORINFO info = new MONITORINFO();
@@ -1969,13 +1972,25 @@ function isFullscreenLikeBounds(rect: Rect) {
   const display = screen.getDisplayMatching(rect);
   const { x, y, width, height } = display.bounds;
   const tolerance = 8;
-
-  return (
+  const matchesDisplayBounds =
     Math.abs(rect.x - x) <= tolerance &&
     Math.abs(rect.y - y) <= tolerance &&
     Math.abs(rect.width - width) <= tolerance * 2 &&
-    Math.abs(rect.height - height) <= tolerance * 2
-  );
+    Math.abs(rect.height - height) <= tolerance * 2;
+
+  if (!matchesDisplayBounds) return false;
+
+  if (process.platform === 'win32') {
+    const workAreaDiffersFromDisplay =
+      Math.abs(display.workArea.x - display.bounds.x) > tolerance ||
+      Math.abs(display.workArea.y - display.bounds.y) > tolerance ||
+      Math.abs(display.workArea.width - display.bounds.width) > tolerance * 2 ||
+      Math.abs(display.workArea.height - display.bounds.height) > tolerance * 2;
+
+    if (workAreaDiffersFromDisplay) return false;
+  }
+
+  return true;
 }
 
 function isLikelyMinimizingToDock(nextBounds: Rect, previousBounds: Rect | null) {
@@ -2759,6 +2774,9 @@ public static class LedgerDockTracker {
   private static extern bool IsIconic(IntPtr hWnd);
 
   [DllImport("user32.dll")]
+  private static extern bool IsZoomed(IntPtr hWnd);
+
+  [DllImport("user32.dll")]
   private static extern IntPtr MonitorFromWindow(IntPtr hwnd, uint dwFlags);
 
   [DllImport("user32.dll")]
@@ -2856,6 +2874,7 @@ public static class LedgerDockTracker {
 
   private static bool IsFullscreenLike(RECT rect) {
     try {
+      if (IsZoomed(targetHwnd)) return false;
       IntPtr monitor = MonitorFromWindow(targetHwnd, 2);
       if (monitor == IntPtr.Zero) return false;
       MONITORINFO info = new MONITORINFO();
