@@ -4294,6 +4294,86 @@ const revokeActiveExtensionTokensForSettings = async (userId, workspaceId) => {
   if (revokeResult.error) throw revokeResult.error;
 };
 
+const normalizeSessionPlatform = (value) => {
+  const platform = String(value ?? '').trim().toLowerCase();
+  if (platform === 'desktop' || platform === 'ios' || platform === 'android' || platform === 'web' || platform === 'extension') {
+    return platform;
+  }
+  return 'desktop';
+};
+
+const normalizeSessionText = (value, fallback = null) => {
+  const text = String(value ?? '').trim();
+  return text || fallback;
+};
+
+const readSessionMetadataFromRequest = (req) => {
+  const deviceId = normalizeSessionText(req.headers['x-ledger-device-id']);
+  if (!deviceId) return null;
+
+  return {
+    device_id: deviceId,
+    device_name: normalizeSessionText(req.headers['x-ledger-device-name']),
+    platform: normalizeSessionPlatform(req.headers['x-ledger-platform']),
+    app_name: normalizeSessionText(req.headers['x-ledger-app-name']),
+    app_version: normalizeSessionText(req.headers['x-ledger-app-version']),
+    user_agent: normalizeSessionText(req.headers['user-agent']),
+  };
+};
+
+const upsertAccountSessionForUser = async (userId, metadata) => {
+  if (!metadata?.device_id) return null;
+
+  const now = new Date().toISOString();
+  const payload = {
+    user_id: userId,
+    device_id: metadata.device_id,
+    device_name: metadata.device_name,
+    platform: metadata.platform,
+    app_name: metadata.app_name,
+    app_version: metadata.app_version,
+    user_agent: metadata.user_agent,
+    last_seen_at: now,
+    revoked_at: null,
+    updated_at: now,
+  };
+
+  const result = await supabase
+    .from('app_sessions')
+    .upsert(payload, { onConflict: 'user_id,device_id' })
+    .select('id, device_id, device_name, platform, app_name, app_version, last_seen_at, created_at, revoked_at')
+    .single();
+
+  if (result.error) throw result.error;
+  return result.data ?? null;
+};
+
+const loadAccountSessionsForUser = async (userId) => {
+  const result = await supabase
+    .from('app_sessions')
+    .select('id, device_id, device_name, platform, app_name, app_version, last_seen_at, created_at, revoked_at')
+    .eq('user_id', userId)
+    .is('revoked_at', null)
+    .order('last_seen_at', { ascending: false })
+    .order('created_at', { ascending: false });
+
+  if (result.error) throw result.error;
+  return result.data ?? [];
+};
+
+const mapAccountSession = (row, currentDeviceId = null) => ({
+  id: row?.id ?? null,
+  device_id: row?.device_id ?? null,
+  device_name: row?.device_name ?? null,
+  platform: row?.platform ?? 'desktop',
+  app_name: row?.app_name ?? null,
+  app_version: row?.app_version ?? null,
+  last_seen_at: row?.last_seen_at ?? null,
+  created_at: row?.created_at ?? null,
+  revoked_at: row?.revoked_at ?? null,
+  is_current: Boolean(currentDeviceId && row?.device_id && row.device_id === currentDeviceId),
+});
+
 app.get('/api/extension/token/status', authMiddleware, rateLimit('read'), async (req, res) => {
   try {
     const workspaceId = await resolveWorkspaceIdForRequest(req);
@@ -4348,6 +4428,40 @@ app.post('/api/extension/token/revoke', authMiddleware, rateLimit('write'), asyn
     await requireWorkspaceAccess(req.authUser.id, workspaceId, 'member');
     await revokeActiveExtensionTokensForSettings(req.authUser.id, workspaceId);
     res.json({ exists: false, created_at: null, last_used_at: null, revoked_at: new Date().toISOString() });
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
+app.get('/api/account/sessions', authMiddleware, rateLimit('read'), async (req, res) => {
+  try {
+    const metadata = readSessionMetadataFromRequest(req);
+    if (metadata) {
+      await upsertAccountSessionForUser(req.authUser.id, metadata);
+    }
+
+    const sessions = await loadAccountSessionsForUser(req.authUser.id);
+    res.json({
+      currentSessionId: metadata?.device_id ?? null,
+      sessions: sessions.map((row) => mapAccountSession(row, metadata?.device_id ?? null)),
+    });
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
+app.post('/api/account/sessions/heartbeat', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const metadata = readSessionMetadataFromRequest(req);
+    if (!metadata) {
+      return res.status(400).json({ error: 'Session metadata is required' });
+    }
+
+    const session = await upsertAccountSessionForUser(req.authUser.id, metadata);
+    res.json({
+      currentSessionId: metadata.device_id,
+      session: mapAccountSession(session, metadata.device_id),
+    });
   } catch (error) {
     return respondWithError(res, error);
   }
@@ -7694,7 +7808,7 @@ app.get('/api/events/upcoming', authMiddleware, rateLimit('read'), async (req, r
     const { data: futureData, error: futureError } = await supabase
       .from('events')
       .select(
-        'id, workspace_id, title, start_at, end_at, all_day, calendar_id, color, status, visibility, recurrence_rule, series_id, series_type, source, source_platform'
+        'id, workspace_id, title, start_at, end_at, all_day, calendar_id, color, status, visibility, recurrence_rule, series_id, series_type, source, source_platform, project_id, note_id, notes'
       )
       .in('workspace_id', workspaceIds)
       .gte('start_at', now.toISOString())
@@ -7707,7 +7821,7 @@ app.get('/api/events/upcoming', authMiddleware, rateLimit('read'), async (req, r
     const { data: ongoingData, error: ongoingError } = await supabase
       .from('events')
       .select(
-        'id, workspace_id, title, start_at, end_at, all_day, calendar_id, color, status, visibility, recurrence_rule, series_id, series_type, source, source_platform'
+        'id, workspace_id, title, start_at, end_at, all_day, calendar_id, color, status, visibility, recurrence_rule, series_id, series_type, source, source_platform, project_id, note_id, notes'
       )
       .in('workspace_id', workspaceIds)
       .lt('start_at', now.toISOString())
@@ -7730,11 +7844,29 @@ app.get('/api/events/upcoming', authMiddleware, rateLimit('read'), async (req, r
       (a, b) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime()
     );
     const workspaceIdsForRows = Array.from(new Set(rows.map((event) => event.workspace_id).filter(Boolean)));
+    const projectIdsForRows = Array.from(new Set(rows.map((event) => event.project_id).filter(Boolean)));
+    const noteIdsForRows = Array.from(new Set(rows.map((event) => event.note_id).filter(Boolean)));
+    const calendarIdsForRows = Array.from(new Set(rows.map((event) => event.calendar_id).filter(Boolean)));
     const { data: workspaceData, error: workspaceError } = workspaceIdsForRows.length
       ? await supabase.from('workspaces').select('id, name, color').in('id', workspaceIdsForRows)
       : { data: [] };
     if (workspaceError) throw workspaceError;
+    const { data: projectData, error: projectError } = projectIdsForRows.length
+      ? await supabase.from('projects').select('id, name').in('id', projectIdsForRows)
+      : { data: [] };
+    if (projectError) throw projectError;
+    const { data: noteData, error: noteError } = noteIdsForRows.length
+      ? await supabase.from('notes').select('id, title').in('id', noteIdsForRows)
+      : { data: [] };
+    if (noteError) throw noteError;
+    const { data: calendarData, error: calendarError } = calendarIdsForRows.length
+      ? await supabase.from('calendars').select('id, name').in('id', calendarIdsForRows)
+      : { data: [] };
+    if (calendarError) throw calendarError;
     const workspaceById = new Map((workspaceData || []).map((workspace) => [workspace.id, workspace]));
+    const projectById = new Map((projectData || []).map((project) => [project.id, project]));
+    const noteById = new Map((noteData || []).map((note) => [note.id, note]));
+    const calendarById = new Map((calendarData || []).map((calendar) => [calendar.id, calendar]));
     const filtered = rows;
 
     res.json(
@@ -7742,6 +7874,9 @@ app.get('/api/events/upcoming', authMiddleware, rateLimit('read'), async (req, r
         ...event,
         workspace_name: workspaceById.get(event.workspace_id)?.name ?? null,
         workspace_color: workspaceById.get(event.workspace_id)?.color ?? null,
+        project_name: event.project_id ? projectById.get(event.project_id)?.name ?? null : null,
+        note_title: event.note_id ? noteById.get(event.note_id)?.title ?? null : null,
+        calendar_name: event.calendar_id ? calendarById.get(event.calendar_id)?.name ?? null : null,
       }))
     );
   } catch (error) {

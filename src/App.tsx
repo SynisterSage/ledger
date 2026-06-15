@@ -2342,22 +2342,22 @@ function DashboardContent() {
                         className={dashboardTheme.sectionRow}
                       >
                         <div className="min-w-0 flex-1">
-                          <div className="flex items-baseline justify-between gap-4">
+                          <div className="flex items-start justify-between gap-4">
                             <span className="truncate text-sm font-medium text-[var(--ledger-text-primary)]">
                               {note.title}
                             </span>
-                            <span className="shrink-0 text-[10px] uppercase tracking-[0.14em] text-[var(--ledger-text-muted)]">
+                            <span className="shrink-0 text-xs text-[var(--ledger-text-muted)]">
                               {new Date(note.updated_at).toLocaleDateString([], {
                                 month: 'short',
                                 day: 'numeric',
                               })}
                             </span>
                           </div>
-                          <p className="line-clamp-1 text-xs font-light text-[var(--ledger-text-muted)]">
+                          <p className="mt-1 line-clamp-1 text-xs font-light text-[var(--ledger-text-muted)]">
                             {htmlToPlainText(note.content) || 'No content yet'}
                           </p>
                           {expandedNoteIds.has(note.id) && (
-                            <p className="whitespace-pre-wrap wrap-break-word text-sm text-[var(--ledger-text-secondary)]">
+                            <p className="mt-1 whitespace-pre-wrap wrap-break-word text-sm text-[var(--ledger-text-secondary)]">
                               {htmlToPlainText(note.content) || 'No content yet'}
                             </p>
                           )}
@@ -2900,6 +2900,41 @@ function AppShell() {
   // Initialize workspace for authenticated users
   useWorkspaceInit();
   const effectiveUiMode: 'auth' | 'app' = user ? 'app' : uiMode;
+
+  useEffect(() => {
+    if (!user || isLoading) return;
+
+    let cancelled = false;
+    const ping = () => {
+      if (cancelled) return;
+      void api.heartbeatAccountSession().catch(() => {
+        // Best effort only.
+      });
+    };
+
+    ping();
+
+    const heartbeatTimer = window.setInterval(() => {
+      if (document.hidden) return;
+      ping();
+    }, 10 * 60 * 1000);
+
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        ping();
+      }
+    };
+
+    window.addEventListener('focus', ping);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(heartbeatTimer);
+      window.removeEventListener('focus', ping);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [api, isLoading, user?.id]);
 
   useEffect(() => {
     const handleSearchShortcut = (event: KeyboardEvent) => {

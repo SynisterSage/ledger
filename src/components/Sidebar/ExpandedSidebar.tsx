@@ -88,6 +88,26 @@ type CompletedTodayTask = {
   note_id?: string | null;
   note_title?: string | null;
 };
+type UpcomingItem = {
+  id: string;
+  title: string;
+  type: 'event' | 'task';
+  dueDate: string;
+  time?: string;
+  rawDate: string;
+  sortAt: number;
+  start_at?: string | null;
+  end_at?: string | null;
+  notes?: string | null;
+  project_id?: string | null;
+  project_name?: string | null;
+  note_id?: string | null;
+  note_title?: string | null;
+  calendar_id?: string | null;
+  calendar_name?: string | null;
+  workspace_name?: string | null;
+  workspace_color?: string | null;
+};
 
 const normalizeProjectNameKey = (value: unknown) =>
   String(value ?? '')
@@ -196,6 +216,43 @@ const isUpcomingEventActive = (event: {
   if (String(event.status ?? '').toLowerCase() === 'done') return false;
   const endAt = new Date(event.end_at ?? event.start_at ?? 0).getTime();
   return Number.isFinite(endAt) && endAt > Date.now();
+};
+
+const truncateSidebarText = (value: string, maxLength = 140) => {
+  const normalized = String(value ?? '').trim();
+  if (!normalized) return '';
+  if (normalized.length <= maxLength) return normalized;
+  return `${normalized.slice(0, Math.max(0, maxLength - 1)).trimEnd()}…`;
+};
+
+const formatSidebarDateTime = (value?: string | null) => {
+  if (!value) return null;
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed.toLocaleString([], {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+};
+
+const getUpcomingEventDetails = (item: UpcomingItem) => {
+  const details: Array<{ label: string; value: string }> = [];
+
+  const startsAt = formatSidebarDateTime(item.start_at);
+  const endsAt = formatSidebarDateTime(item.end_at);
+  if (startsAt) details.push({ label: 'Starts', value: startsAt });
+  if (endsAt) details.push({ label: 'Ends', value: endsAt });
+  if (item.calendar_name) details.push({ label: 'Calendar', value: item.calendar_name });
+  if (item.project_name) details.push({ label: 'Project', value: item.project_name });
+  if (item.note_title) details.push({ label: 'Linked note', value: item.note_title });
+
+  const notes = truncateSidebarText(htmlToPlainText(item.notes ?? ''), 220);
+  if (notes) details.push({ label: 'Notes', value: notes });
+
+  return details;
 };
 
 const todayKey = () => {
@@ -375,19 +432,7 @@ export const ExpandedSidebar = ({
   const [calendarScope, setCalendarScope] = useState<'current_workspace' | 'all_accessible_workspaces'>(
     'current_workspace'
   );
-  const [upcomingItems, setUpcomingItems] = useState<
-    Array<{
-      id: string;
-      title: string;
-      type: 'event' | 'task';
-      dueDate: string;
-      time?: string;
-      rawDate: string;
-      sortAt: number;
-      workspace_name?: string | null;
-      workspace_color?: string | null;
-    }>
-  >([]);
+  const [upcomingItems, setUpcomingItems] = useState<UpcomingItem[]>([]);
   const [isLoadingUpcoming, setIsLoadingUpcoming] = useState(true);
   const [todayItems, setTodayItems] = useState<TodayTask[]>([]);
   const [isLoadingToday, setIsLoadingToday] = useState(true);
@@ -1118,16 +1163,23 @@ export const ExpandedSidebar = ({
               : 'No date';
           }
 
-                return {
-                  id: e.id,
-                  title: e.title,
-                  status: e.status ?? null,
-                  start_at: e.start_at ?? null,
-                  end_at: e.end_at ?? null,
-                  workspace_name: e.workspace_name ?? null,
-                  workspace_color: e.workspace_color ?? null,
-                  type: 'event' as const,
-                  dueDate: dateDisplay,
+          return {
+            id: e.id,
+            title: e.title,
+            status: e.status ?? null,
+            start_at: e.start_at ?? null,
+            end_at: e.end_at ?? null,
+            notes: e.notes ?? null,
+            project_id: e.project_id ?? null,
+            project_name: e.project_name ?? null,
+            note_id: e.note_id ?? null,
+            note_title: e.note_title ?? null,
+            calendar_id: e.calendar_id ?? null,
+            calendar_name: e.calendar_name ?? null,
+            workspace_name: e.workspace_name ?? null,
+            workspace_color: e.workspace_color ?? null,
+            type: 'event' as const,
+            dueDate: dateDisplay,
                   rawDate: eventDateISO,
                   time: isValidDate
                     ? startDate.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
@@ -1889,6 +1941,17 @@ export const ExpandedSidebar = ({
           ? start.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
           : undefined,
         sortAt: isValidDate ? startAt : Number.MAX_SAFE_INTEGER,
+        start_at: createdEvent.start_at,
+        end_at: null,
+        notes: '',
+        project_id: null,
+        project_name: null,
+        note_id: null,
+        note_title: null,
+        calendar_id: null,
+        calendar_name: null,
+        workspace_name: activeWorkspace?.name?.trim() || null,
+        workspace_color: activeWorkspace?.color ?? null,
       };
       setUpcomingItems((prev) =>
         [...prev.filter((item) => item.id !== newItem.id), newItem]
@@ -3446,51 +3509,79 @@ export const ExpandedSidebar = ({
             ) : (
               upcomingItems.map((item) => {
                 const isExpanded = expandedUpcomingId === item.id;
+                const details = isExpanded ? getUpcomingEventDetails(item) : [];
                 return (
-                  <button
+                  <div
                     key={item.id}
-                    onClick={() => setExpandedUpcomingId(isExpanded ? null : item.id)}
-                    onContextMenu={(e) => {
-                      e.preventDefault();
-                      setContextMenu({ type: 'upcoming', id: item.id, x: e.clientX, y: e.clientY });
-                    }}
-                    className={`w-full p-3 text-left transition ${sidebarTheme.surfaceSoft} hover:bg-[var(--ledger-surface-hover)]`}
+                    className={`overflow-hidden transition ${sidebarTheme.surfaceSoft} hover:bg-[var(--ledger-surface-hover)]`}
                   >
-                    <div className="flex items-start gap-2">
-                      <div className="shrink-0 mt-0.5">
-                        {item.type === 'event' ? (
-                          <CalendarDays size={14} className="text-[var(--ledger-accent)]" />
-                        ) : (
-                          <CheckCircle2 size={14} className="text-[var(--ledger-success)]" />
-                        )}
+                    <button
+                      onClick={() => setExpandedUpcomingId(isExpanded ? null : item.id)}
+                      onContextMenu={(e) => {
+                        e.preventDefault();
+                        setContextMenu({ type: 'upcoming', id: item.id, x: e.clientX, y: e.clientY });
+                      }}
+                      className="w-full p-3 text-left transition"
+                    >
+                      <div className="flex items-start gap-2">
+                        <div className="shrink-0 mt-0.5">
+                          {item.type === 'event' ? (
+                            <CalendarDays size={14} className="text-[var(--ledger-accent)]" />
+                          ) : (
+                            <CheckCircle2 size={14} className="text-[var(--ledger-success)]" />
+                          )}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p
+                            className={`text-[13px] font-semibold leading-5 text-[var(--ledger-text-primary)] ${
+                              isExpanded ? '' : 'truncate'
+                            }`}
+                          >
+                            {item.title}
+                          </p>
+                          <p className="mt-1 text-[11px] text-[var(--ledger-text-secondary)]">
+                            {item.dueDate}
+                            {item.time && ` · ${item.time}`}
+                          </p>
+                          {calendarScope === 'all_accessible_workspaces' && item.workspace_name && (
+                            <p className="mt-0.5 text-[11px] text-[var(--ledger-text-muted)]">
+                              Workspace · {item.workspace_name}
+                            </p>
+                          )}
+                        </div>
+                        <div className="shrink-0 mt-0.5">
+                          {isExpanded ? (
+                            <ChevronUp size={12} className="text-[var(--ledger-text-muted)]" />
+                          ) : (
+                            <ChevronDown size={12} className="text-[var(--ledger-text-muted)]" />
+                          )}
+                        </div>
                       </div>
-                      <div className="flex-1 min-w-0">
-                        <p
-                          className={`text-[13px] font-semibold leading-5 text-[var(--ledger-text-primary)] ${
-                            isExpanded ? '' : 'truncate'
-                          }`}
-                        >
-                          {item.title}
-                        </p>
-                        <p className="mt-1 text-[11px] text-[var(--ledger-text-secondary)]">
-                          {item.dueDate}
-                          {item.time && ` · ${item.time}`}
-                        </p>
-                        {calendarScope === 'all_accessible_workspaces' && item.workspace_name && (
-                          <p className="mt-0.5 text-[11px] text-[var(--ledger-text-muted)]">
-                            Workspace · {item.workspace_name}
+                    </button>
+
+                    {isExpanded && (
+                      <div className="border-t border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 py-2.5">
+                        {details.length ? (
+                          <div className="space-y-2">
+                            {details.map((detail) => (
+                              <div key={`${item.id}-${detail.label}`} className="space-y-0.5">
+                                <p className="text-[11px] font-medium text-[var(--ledger-text-muted)]">
+                                  {detail.label}
+                                </p>
+                                <p className="text-[11px] leading-5 text-[var(--ledger-text-secondary)]">
+                                  {detail.value}
+                                </p>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-[11px] leading-5 text-[var(--ledger-text-muted)]">
+                            No attached project, note, calendar, or event notes yet.
                           </p>
                         )}
                       </div>
-                      <div className="shrink-0 mt-0.5">
-                        {isExpanded ? (
-                          <ChevronUp size={12} className="text-[var(--ledger-text-muted)]" />
-                        ) : (
-                          <ChevronDown size={12} className="text-[var(--ledger-text-muted)]" />
-                        )}
-                      </div>
-                    </div>
-                  </button>
+                    )}
+                  </div>
                 );
               })
             )}

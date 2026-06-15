@@ -19,6 +19,12 @@ import {
   type SidebarDefaultState,
   type SidebarPosition,
 } from '../../config/sidebarPreferences';
+import {
+  formatLedgerSessionPlatformLabel,
+  formatLedgerSessionRelativeTime,
+  getLedgerSessionDeviceName,
+  getLedgerSessionPlatform,
+} from '../../utils/deviceSession';
 import { useWorkspaceContext } from '../../context/WorkspaceContext';
 import { useApi } from '../../hooks/useApi';
 import { buildInviteUrl } from '../../config/invite';
@@ -127,12 +133,33 @@ type ExtensionTokenResponse = {
   status?: ExtensionTokenStatus;
 };
 
+type AccountSessionPlatform = 'desktop' | 'ios' | 'android' | 'web' | 'extension';
+
+type AccountSessionRow = {
+  id: string;
+  device_id: string;
+  device_name: string | null;
+  platform: AccountSessionPlatform;
+  app_name: string | null;
+  app_version: string | null;
+  last_seen_at: string | null;
+  created_at: string | null;
+  revoked_at: string | null;
+  is_current: boolean;
+};
+
+type AccountSessionsResponse = {
+  currentSessionId: string | null;
+  sessions: AccountSessionRow[];
+};
+
 type InviteModalState = {
   id: string;
 } | null;
 
 type SettingsSectionId =
   | 'account'
+  | 'sessions'
   | 'workspace'
   | 'calendar'
   | 'notifications'
@@ -142,6 +169,7 @@ type SettingsSectionId =
   | 'accessibility';
 const sectionOrder: Array<{ id: SettingsSectionId; label: string; description: string }> = [
   { id: 'account', label: 'Account', description: 'Identity and security' },
+  { id: 'sessions', label: 'Sessions', description: 'Signed-in devices and access' },
   { id: 'workspace', label: 'Workspace', description: 'Display and behavior defaults' },
   { id: 'calendar', label: 'Calendar', description: 'Event and reminder defaults' },
   { id: 'notifications', label: 'Notifications', description: 'Alerts and delivery' },
@@ -155,6 +183,7 @@ const isSettingsSection = (value: string | null | undefined): value is SettingsS
   const section = String(value ?? '').trim().toLowerCase();
   return (
     section === 'account' ||
+    section === 'sessions' ||
     section === 'workspace' ||
     section === 'calendar' ||
     section === 'notifications' ||
@@ -523,7 +552,11 @@ export const SettingsWindow = () => {
     'regenerate' | 'revoke' | null
   >(null);
   const [extensionTokenCopyStatus, setExtensionTokenCopyStatus] = useState<string | null>(null);
+  const [accountSessions, setAccountSessions] = useState<AccountSessionRow[]>([]);
+  const [isLoadingAccountSessions, setIsLoadingAccountSessions] = useState(false);
+  const [accountSessionsError, setAccountSessionsError] = useState<string | null>(null);
   const inviteEmailRef = useRef<HTMLInputElement | null>(null);
+  const sessionHeartbeatTimerRef = useRef<number | null>(null);
   const autosaveTimerRef = useRef<number | null>(null);
   const saveStatusTimerRef = useRef<number | null>(null);
   const autosaveTokenRef = useRef(0);
@@ -768,6 +801,20 @@ export const SettingsWindow = () => {
     if (!candidate) return 'there';
     return candidate.split(' ')[0];
   }, [fullName]);
+
+  const currentAccountSession = useMemo(
+    () => accountSessions.find((session) => session.is_current) ?? null,
+    [accountSessions]
+  );
+  const otherAccountSessions = useMemo(
+    () => accountSessions.filter((session) => !session.is_current),
+    [accountSessions]
+  );
+  const currentSessionDeviceLabel =
+    currentAccountSession?.device_name?.trim() || getLedgerSessionDeviceName();
+  const currentSessionPlatformLabel = formatLedgerSessionPlatformLabel(
+    currentAccountSession?.platform ?? getLedgerSessionPlatform()
+  );
 
   const handleResetSidebarSettings = () => {
     setPosition(defaultSidebarPreferences.position);
@@ -1084,6 +1131,63 @@ export const SettingsWindow = () => {
       cancelled = true;
     };
   }, [activeSection, activeWorkspaceId, api]);
+
+  useEffect(() => {
+    if (activeSection !== 'sessions') return;
+
+    let cancelled = false;
+    setIsLoadingAccountSessions(true);
+    setAccountSessionsError(null);
+
+    const refreshSessions = async () => {
+      try {
+        await api.heartbeatAccountSession();
+        const payload = (await api.getAccountSessions()) as AccountSessionsResponse;
+        if (cancelled) return;
+        setAccountSessions(Array.isArray(payload.sessions) ? payload.sessions : []);
+      } catch (err) {
+        if (cancelled) return;
+        setAccountSessionsError(err instanceof Error ? err.message : 'Could not load sessions.');
+      } finally {
+        if (!cancelled) {
+          setIsLoadingAccountSessions(false);
+        }
+      }
+    };
+
+    void refreshSessions();
+
+    if (sessionHeartbeatTimerRef.current !== null) {
+      window.clearInterval(sessionHeartbeatTimerRef.current);
+      sessionHeartbeatTimerRef.current = null;
+    }
+
+    sessionHeartbeatTimerRef.current = window.setInterval(() => {
+      if (document.hidden) return;
+      void api.heartbeatAccountSession().catch(() => {
+        // Best effort only.
+      });
+    }, 10 * 60 * 1000);
+
+    const handleWindowFocus = () => {
+      void api.heartbeatAccountSession().catch(() => {
+        // Best effort only.
+      });
+    };
+
+    window.addEventListener('focus', handleWindowFocus);
+    document.addEventListener('visibilitychange', handleWindowFocus);
+
+    return () => {
+      cancelled = true;
+      window.removeEventListener('focus', handleWindowFocus);
+      document.removeEventListener('visibilitychange', handleWindowFocus);
+      if (sessionHeartbeatTimerRef.current !== null) {
+        window.clearInterval(sessionHeartbeatTimerRef.current);
+        sessionHeartbeatTimerRef.current = null;
+      }
+    };
+  }, [activeSection, api]);
 
   const handleConnectSlack = async () => {
     if (!activeWorkspaceId) {
@@ -1874,6 +1978,131 @@ export const SettingsWindow = () => {
                         </button>
                       </div>
                     </section>
+                  </div>
+                </section>
+              )}
+
+              {activeSection === 'sessions' && (
+                <section className="w-full max-w-215" aria-labelledby="settings-sessions">
+                  <div className="space-y-2">
+                    <h2
+                      id="settings-sessions"
+                      className="text-[28px] font-semibold tracking-tight text-gray-950"
+                    >
+                      Sessions
+                    </h2>
+                    <p className="text-sm text-gray-600">
+                      Manage devices signed in to your Ledger account.
+                    </p>
+                    <p className="text-xs text-gray-500" role="status">
+                      {accountSessionsError ||
+                        (isLoadingAccountSessions
+                          ? 'Loading sessions...'
+                          : 'We only show your devices here. Revocation support comes next.')}
+                    </p>
+                  </div>
+
+                  <div className="mt-8 space-y-10">
+                    <section className="border-t border-gray-200 pt-6" aria-labelledby="settings-current-session">
+                      <div className="flex items-center justify-between gap-4">
+                        <div className="space-y-1">
+                          <h3 id="settings-current-session" className="text-sm font-semibold text-gray-900">
+                            Current device
+                          </h3>
+                          <p className="text-xs text-gray-500">
+                            The device currently signed in to Ledger.
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            void signOut();
+                          }}
+                          className="h-8 rounded-full border border-gray-200 bg-[#FFFDFB] px-3 text-xs font-medium text-red-600 transition hover:bg-red-50"
+                        >
+                          Sign out this device
+                        </button>
+                      </div>
+
+                      <div className="mt-5 divide-y divide-gray-100 border-t border-gray-200">
+                        <div className="grid gap-4 py-5 md:grid-cols-[220px_minmax(0,1fr)]">
+                          <div className="text-sm font-medium text-gray-800">Device</div>
+                          <div className="text-sm text-gray-900">
+                            {currentSessionDeviceLabel}
+                          </div>
+                        </div>
+                        <div className="grid gap-4 py-5 md:grid-cols-[220px_minmax(0,1fr)]">
+                          <div className="text-sm font-medium text-gray-800">App</div>
+                          <div className="text-sm text-gray-900">{currentSessionPlatformLabel}</div>
+                        </div>
+                        <div className="grid gap-4 py-5 md:grid-cols-[220px_minmax(0,1fr)]">
+                          <div className="text-sm font-medium text-gray-800">Status</div>
+                          <div className="text-sm text-gray-900">
+                            {formatLedgerSessionRelativeTime(currentAccountSession?.last_seen_at)}
+                          </div>
+                        </div>
+                      </div>
+                    </section>
+
+                    <section className="border-t border-gray-200 pt-6" aria-labelledby="settings-other-sessions">
+                      <div className="flex items-center justify-between gap-4">
+                        <div className="space-y-1">
+                          <h3 id="settings-other-sessions" className="text-sm font-semibold text-gray-900">
+                            Other devices
+                          </h3>
+                          <p className="text-xs text-gray-500">
+                            Signed-in devices besides this one.
+                          </p>
+                        </div>
+                        <span className="inline-flex rounded-full border border-gray-200 bg-[#FFFDFB] px-2.5 py-1 text-[11px] font-medium text-gray-700">
+                          {otherAccountSessions.length} device{otherAccountSessions.length === 1 ? '' : 's'}
+                        </span>
+                      </div>
+
+                      <div className="mt-5 divide-y divide-gray-100 border-t border-gray-200">
+                        {isLoadingAccountSessions ? (
+                          <div className="py-5 text-sm text-gray-500">Loading sessions...</div>
+                        ) : otherAccountSessions.length === 0 ? (
+                          <div className="py-5 text-sm text-gray-500">
+                            No other devices are currently listed.
+                          </div>
+                        ) : (
+                          otherAccountSessions.map((session) => (
+                            <div
+                              key={session.id}
+                              className="grid gap-4 py-5 md:grid-cols-[220px_minmax(0,1fr)_auto]"
+                            >
+                              <div className="text-sm font-medium text-gray-800">
+                                {session.device_name?.trim() ||
+                                  formatLedgerSessionPlatformLabel(session.platform)}
+                              </div>
+                              <div className="space-y-0.5">
+                                <div className="text-sm text-gray-900">
+                                  {formatLedgerSessionPlatformLabel(session.platform)}
+                                </div>
+                                <div className="text-xs text-gray-500">
+                                  {formatLedgerSessionRelativeTime(session.last_seen_at)}
+                                </div>
+                              </div>
+                              <div className="md:justify-self-end">
+                                <button
+                                  type="button"
+                                  disabled
+                                  className="h-8 rounded-full border border-gray-200 bg-[#FFFDFB] px-3 text-xs font-medium text-gray-400 transition"
+                                >
+                                  Coming soon
+                                </button>
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </section>
+
+                    <div className="rounded-2xl border border-dashed border-gray-200 bg-[#FFFDFB] px-4 py-3 text-xs text-gray-500">
+                      Sign-out for other devices is scaffolded here. It will be wired only when the auth
+                      provider can revoke sessions safely.
+                    </div>
                   </div>
                 </section>
               )}

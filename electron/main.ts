@@ -804,6 +804,8 @@ let notificationSchedulerTimer: NodeJS.Timeout | null = null;
 let notificationSchedulerInFlight = false;
 let notificationSchedulerCooldownUntil = 0;
 let notificationSchedulerLastRunAt = 0;
+let notificationSchedulerQueuedTimer: NodeJS.Timeout | null = null;
+let notificationSchedulerQueuedAt = 0;
 let notificationAccessToken: string | null = null;
 let notificationApiUrl = LEDGER_API_URL;
 let cachedNotificationPreferences: NotificationPreferencesPayload | null = null;
@@ -1215,6 +1217,31 @@ const shouldRefreshNotificationPreferences = () =>
   !cachedNotificationPreferences ||
   Date.now() - cachedNotificationPreferencesAt > NOTIFICATION_PREFS_REFRESH_MS;
 
+const queueNotificationSchedulerRun = (delayMs = 0) => {
+  if (!notificationAccessToken) return;
+
+  const now = Date.now();
+  const cooldownDelay = Math.max(0, notificationSchedulerCooldownUntil - now);
+  const nextDelay = Math.max(delayMs, cooldownDelay);
+  const targetAt = now + nextDelay;
+
+  if (notificationSchedulerQueuedTimer && notificationSchedulerQueuedAt <= targetAt) {
+    return;
+  }
+
+  if (notificationSchedulerQueuedTimer) {
+    clearTimeout(notificationSchedulerQueuedTimer);
+    notificationSchedulerQueuedTimer = null;
+  }
+
+  notificationSchedulerQueuedAt = targetAt;
+  notificationSchedulerQueuedTimer = setTimeout(() => {
+    notificationSchedulerQueuedTimer = null;
+    notificationSchedulerQueuedAt = 0;
+    void runNotificationScheduler();
+  }, nextDelay);
+};
+
 const runNotificationScheduler = async () => {
   if (notificationSchedulerInFlight || !notificationAccessToken) return;
   if (Date.now() < notificationSchedulerCooldownUntil) return;
@@ -1288,9 +1315,14 @@ const runNotificationScheduler = async () => {
     broadcastNotificationSummary(Number(summary?.counts?.active ?? 0));
   } catch (error) {
     if (typeof (error as { status?: number } | null)?.status === 'number' && (error as { status?: number }).status === 429) {
-      notificationSchedulerCooldownUntil = Date.now() + NOTIFICATION_SCHEDULER_BACKOFF_MS;
+      const nextBackoffMs = Math.min(
+        15 * 60_000,
+        Math.max(NOTIFICATION_SCHEDULER_BACKOFF_MS, notificationSchedulerLastRunAt ? Date.now() - notificationSchedulerLastRunAt : 0) *
+          2
+      );
+      notificationSchedulerCooldownUntil = Date.now() + nextBackoffMs;
       console.warn(
-        `[electron] Notification scheduler backed off for ${NOTIFICATION_SCHEDULER_BACKOFF_MS}ms after 429`
+        `[electron] Notification scheduler backed off for ${nextBackoffMs}ms after 429`
       );
       return;
     }
@@ -1321,7 +1353,7 @@ const syncNotificationSession = (payload: {
   }
   notificationAccessToken = nextAccessToken;
   if (sessionChanged || Date.now() - notificationSchedulerLastRunAt > NOTIFICATION_SCHEDULER_INTERVAL_MS) {
-    void runNotificationScheduler();
+    queueNotificationSchedulerRun(0);
   }
 };
 
@@ -4191,7 +4223,7 @@ async function toggleNotificationsPaused() {
     cachedNotificationPreferences = updatedPreferences as NotificationPreferencesPayload;
     cachedNotificationPreferencesAt = Date.now();
     updateTrayState({ notificationsPaused: nextPaused });
-    void runNotificationScheduler();
+    queueNotificationSchedulerRun(0);
   } catch (error) {
     console.warn('[electron] Failed to toggle notification pause state', error);
   }
@@ -4525,6 +4557,7 @@ function openModuleWindow(
     transparent: process.platform !== 'win32',
     backgroundColor:
       process.platform === 'win32' ? desktopTokens.colors.background : '#00000000',
+    roundedCorners: process.platform === 'win32',
     ...getModuleWindowChromeOptions(),
     // Ensure module popouts can enter/exit fullscreen reliably on Windows and macOS
     fullscreenable: true,
@@ -5285,14 +5318,14 @@ app.whenReady().then(() => {
     }
   );
   ipcMain.on('notifications:refresh', () => {
-    void runNotificationScheduler();
+    queueNotificationSchedulerRun(3000);
   });
 
   // Setup Touch Bar for macOS
   setTimeout(() => syncTouchBar(), 500);
 
   notificationSchedulerTimer = setInterval(() => {
-    void runNotificationScheduler();
+    queueNotificationSchedulerRun(0);
   }, NOTIFICATION_SCHEDULER_INTERVAL_MS);
 
   const toggleSidebarShortcut = process.platform === 'darwin' ? 'Cmd+Shift+B' : 'Ctrl+Shift+B';

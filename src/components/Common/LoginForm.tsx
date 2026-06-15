@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { Mail, Lock, Loader2, X, Eye, EyeOff } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
+import { useToast } from './ToastProvider';
 
 interface LoginProps {
   onSuccess?: () => void;
@@ -26,7 +27,6 @@ export const LoginForm: React.FC<LoginProps> = ({ onSuccess, notice }) => {
   const [isSignUp, setIsSignUp] = useState(false);
   const [fullName, setFullName] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [isIntroReady, setIsIntroReady] = useState(false);
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(() => {
     if (typeof window === 'undefined') return false;
@@ -42,6 +42,7 @@ export const LoginForm: React.FC<LoginProps> = ({ onSuccess, notice }) => {
   const preloginSplashVideoRef = useRef<HTMLVideoElement | null>(null);
   const splashDismissTimerRef = useRef<number | null>(null);
   const { signIn, signUp, isLoading } = useAuth();
+  const { show: showToast } = useToast();
 
   const handleCloseWindow = () => {
     void window.desktopWindow?.quitApp();
@@ -122,7 +123,6 @@ export const LoginForm: React.FC<LoginProps> = ({ onSuccess, notice }) => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError(null);
 
     try {
       if (isSignUp) {
@@ -132,7 +132,11 @@ export const LoginForm: React.FC<LoginProps> = ({ onSuccess, notice }) => {
       }
       onSuccess?.();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Authentication failed');
+      showToast(isSignUp ? 'Could not create account' : 'Could not sign in', {
+        detail: err instanceof Error ? err.message : 'Authentication failed',
+        variant: 'error',
+        icon: 'alert',
+      });
     }
   };
 
@@ -218,7 +222,7 @@ export const LoginForm: React.FC<LoginProps> = ({ onSuccess, notice }) => {
           )}
           <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(17,24,39,0.04),rgba(17,24,39,0.34)),linear-gradient(135deg,rgba(255,255,255,0.12),rgba(255,249,244,0.12))]" />
           <div className="absolute bottom-0 left-0 right-0 p-8 text-white">
-            <p className="max-w-65 text-[24px] font-semibold leading-0.5 [text-shadow:0_1px_12px_rgba(17,24,39,0.42)]">
+            <p className="max-w-65 text-[24px] font-medium leading-0.5 [text-shadow:0_1px_12px_rgba(17,24,39,0.42)]">
               Live a little simpler.
             </p>
             <p className="mt-3 max-w-68.75 text-sm leading-3.3 text-white/90 [text-shadow:0_1px_10px_rgba(17,24,39,0.35)]">
@@ -244,9 +248,9 @@ export const LoginForm: React.FC<LoginProps> = ({ onSuccess, notice }) => {
             >
               <div className="mb-5 flex items-center gap-3">
                 <img src="./logo-color.svg" alt="Ledger" className="h-10 w-10" />
-                <h1 className="text-[28px] font-semibold leading-none text-gray-950">Ledger</h1>
+                <h1 className="text-[28px] font-medium leading-none text-gray-950">Ledger</h1>
               </div>
-              <p className="text-[22px] font-semibold leading-tight text-gray-950 transition-all duration-150 ease-out">
+              <p className="text-[22px] font-medium leading-tight text-gray-950 transition-all duration-150 ease-out">
                 {isSignUp ? 'Create your account' : 'Sign in to continue'}
               </p>
             </div>
@@ -333,13 +337,6 @@ export const LoginForm: React.FC<LoginProps> = ({ onSuccess, notice }) => {
                 </div>
               </div>
 
-              {error && (
-                <div className="rounded-2xl border border-red-200/80 bg-red-50/80 px-3 py-2 text-xs leading-5 text-red-700">
-                  <p className="font-medium">Error</p>
-                  <p className="mt-0.5 text-[11px]">{error}</p>
-                </div>
-              )}
-
               <button
                 type="submit"
                 disabled={isLoading}
@@ -354,7 +351,6 @@ export const LoginForm: React.FC<LoginProps> = ({ onSuccess, notice }) => {
                   type="button"
                   onClick={() => {
                     setIsSignUp(!isSignUp);
-                    setError(null);
                   }}
                   className="text-sm font-medium text-gray-500 transition hover:text-gray-950"
                 >

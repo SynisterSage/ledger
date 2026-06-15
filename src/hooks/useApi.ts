@@ -3,6 +3,7 @@ import { useAuthContext } from '../context/AuthContext';
 import { useWorkspaceContext } from '../context/WorkspaceContext';
 import { DEFAULT_API_URL } from '../config/runtime';
 import { getInviteBaseUrl } from '../config/invite';
+import { buildLedgerSessionHeaders } from '../utils/deviceSession';
 import authService from '../services/auth';
 
 const API_URL = import.meta.env.VITE_API_URL?.trim() || DEFAULT_API_URL;
@@ -145,6 +146,19 @@ export const useApi = () => {
         request(`/api/notifications/${notificationId}/action`, {
           method: 'POST',
           body: JSON.stringify({ action, ...(payload ?? {}) }),
+        }),
+
+      // Sessions
+      getAccountSessions: () =>
+        request('/api/account/sessions', {
+          skipWorkspaceHeader: true,
+          headers: buildLedgerSessionHeaders(),
+        }),
+      heartbeatAccountSession: () =>
+        request('/api/account/sessions/heartbeat', {
+          method: 'POST',
+          skipWorkspaceHeader: true,
+          headers: buildLedgerSessionHeaders(),
         }),
 
       // Workspaces
