@@ -68,14 +68,20 @@ function readPreferenceBoolean(preferences: Record<string, unknown>, key: string
   return fallback;
 }
 
+function isLikelyUuid(value: string | null | undefined) {
+  const normalized = typeof value === 'string' ? value.trim() : '';
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(normalized);
+}
+
 async function syncWorkspacePreferencesToServer(payload: {
   activeWorkspaceId?: string | null;
   preferences?: Record<string, unknown>;
 }) {
   try {
+    const activeWorkspaceId = isLikelyUuid(payload.activeWorkspaceId) ? payload.activeWorkspaceId : null;
     await updateMobileUserSettings({
-      ...(payload.activeWorkspaceId !== undefined && payload.activeWorkspaceId !== 'all'
-        ? { active_workspace_id: payload.activeWorkspaceId }
+      ...(activeWorkspaceId
+        ? { active_workspace_id: activeWorkspaceId }
         : {}),
       ...(payload.preferences ? { preferences: payload.preferences } : {}),
     });
@@ -261,6 +267,7 @@ export async function bootstrapWorkspaceState() {
       const availableWorkspaceIds = options.filter((option) => option.id !== 'all').map((option) => option.id);
       const firstWorkspaceId = availableWorkspaceIds[0] ?? 'all';
       const validWorkspaceIds = new Set(options.map((option) => option.id));
+      const hasRealWorkspaceIds = options.some((option) => isLikelyUuid(option.id));
       const serverPreferences = userSettings.preferences ?? {};
       const serverSelectedWorkspaceId = readPreferenceString(serverPreferences, MOBILE_SELECTED_WORKSPACE_PREF);
       const serverTodayScopeWorkspaceId = readPreferenceString(serverPreferences, MOBILE_TODAY_SCOPE_PREF);
@@ -291,6 +298,25 @@ export async function bootstrapWorkspaceState() {
         : false;
       const rememberLastWorkspace =
         savedRememberLastWorkspace === null ? serverRememberLastWorkspace : savedRememberLastWorkspace === 'true';
+
+      if (hasRealWorkspaceIds) {
+        const cleanupTasks: Promise<unknown>[] = [];
+        if (savedWorkspaceId && !isLikelyUuid(savedWorkspaceId)) {
+          cleanupTasks.push(SecureStore.deleteItemAsync(WORKSPACE_STORAGE_KEY));
+        }
+        if (savedTodayScopeWorkspaceId && !isLikelyUuid(savedTodayScopeWorkspaceId)) {
+          cleanupTasks.push(SecureStore.deleteItemAsync(TODAY_SCOPE_STORAGE_KEY));
+        }
+        if (savedDefaultCaptureWorkspaceId && !isLikelyUuid(savedDefaultCaptureWorkspaceId)) {
+          cleanupTasks.push(SecureStore.deleteItemAsync(DEFAULT_CAPTURE_STORAGE_KEY));
+        }
+        if (savedDefaultSiriWorkspaceId && !isLikelyUuid(savedDefaultSiriWorkspaceId)) {
+          cleanupTasks.push(SecureStore.deleteItemAsync(DEFAULT_SIRI_STORAGE_KEY));
+        }
+        if (cleanupTasks.length > 0) {
+          void Promise.allSettled(cleanupTasks);
+        }
+      }
 
       const nextSelectedWorkspaceId =
         state.hasUserSelectedWorkspace || state.selectedWorkspaceId !== 'all'
