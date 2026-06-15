@@ -4436,11 +4436,25 @@ app.post('/api/extension/token/revoke', authMiddleware, rateLimit('write'), asyn
 app.get('/api/account/sessions', authMiddleware, rateLimit('read'), async (req, res) => {
   try {
     const metadata = readSessionMetadataFromRequest(req);
+    let sessions = [];
     if (metadata) {
-      await upsertAccountSessionForUser(req.authUser.id, metadata);
+      try {
+        await upsertAccountSessionForUser(req.authUser.id, metadata);
+      } catch (error) {
+        if (!isMissingRelationError(error, 'app_sessions')) {
+          throw error;
+        }
+      }
     }
 
-    const sessions = await loadAccountSessionsForUser(req.authUser.id);
+    try {
+      sessions = await loadAccountSessionsForUser(req.authUser.id);
+    } catch (error) {
+      if (!isMissingRelationError(error, 'app_sessions')) {
+        throw error;
+      }
+    }
+
     res.json({
       currentSessionId: metadata?.device_id ?? null,
       sessions: sessions.map((row) => mapAccountSession(row, metadata?.device_id ?? null)),
@@ -4457,7 +4471,15 @@ app.post('/api/account/sessions/heartbeat', authMiddleware, rateLimit('write'), 
       return res.status(400).json({ error: 'Session metadata is required' });
     }
 
-    const session = await upsertAccountSessionForUser(req.authUser.id, metadata);
+    let session = null;
+    try {
+      session = await upsertAccountSessionForUser(req.authUser.id, metadata);
+    } catch (error) {
+      if (!isMissingRelationError(error, 'app_sessions')) {
+        throw error;
+      }
+    }
+
     res.json({
       currentSessionId: metadata.device_id,
       session: mapAccountSession(session, metadata.device_id),
