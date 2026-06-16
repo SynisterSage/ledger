@@ -8,6 +8,7 @@ import {
   Folder,
   Inbox,
   MoreHorizontal,
+  MoreVertical,
   Plus,
   Search,
   StickyNote,
@@ -24,6 +25,7 @@ import {
   type DragEvent,
   type MouseEvent,
 } from 'react';
+import { createPortal } from 'react-dom';
 import { useToast } from '../Common/ToastProvider';
 import { useAuthContext } from '../../context/AuthContext';
 import {
@@ -119,6 +121,28 @@ type SectionContextMenuState = {
   sectionId: string;
   sectionName: string;
 };
+
+type NoteSortField = 'created' | 'modified' | 'opened' | 'name';
+type NoteSortDirection = 'asc' | 'desc';
+type NoteSortPreference = {
+  field: NoteSortField;
+  direction: NoteSortDirection;
+};
+type NoteSortPreferences = {
+  root: NoteSortPreference | null;
+  sections: Record<string, NoteSortPreference>;
+};
+
+type SortMenuState = {
+  x: number;
+  y: number;
+  scopeId: string;
+  scopeName: string;
+};
+
+const ROOT_NOTE_SCOPE_ID = '__root__';
+const NOTE_SORT_STORAGE_PREFIX = 'notes-sort-preferences:v1';
+const NOTE_LAST_OPENED_STORAGE_PREFIX = 'notes-last-opened:v1';
 
 const todayKey = () => new Date().toISOString().slice(0, 10);
 
@@ -351,6 +375,98 @@ const toNonNegativeInt = (value: unknown, fallback = 0) => {
   return Math.max(0, Math.floor(parsed));
 };
 
+const loadWorkspaceScopedJson = <T,>(storageKey: string, fallback: T): T => {
+  try {
+    const stored = localStorage.getItem(storageKey);
+    if (!stored) return fallback;
+    return JSON.parse(stored) as T;
+  } catch {
+    return fallback;
+  }
+};
+
+const getNotesSortStorageKey = (workspaceId?: string | null) =>
+  `${NOTE_SORT_STORAGE_PREFIX}:${workspaceId ?? 'default'}`;
+
+const getLastOpenedStorageKey = (workspaceId?: string | null) =>
+  `${NOTE_LAST_OPENED_STORAGE_PREFIX}:${workspaceId ?? 'default'}`;
+
+const normalizeNoteSortPreference = (value: unknown): NoteSortPreference | null => {
+  if (!value || typeof value !== 'object') return null;
+  const candidate = value as Partial<NoteSortPreference>;
+  if (!['created', 'modified', 'opened', 'name'].includes(String(candidate.field))) return null;
+  if (!['asc', 'desc'].includes(String(candidate.direction))) return null;
+  return {
+    field: candidate.field as NoteSortField,
+    direction: candidate.direction as NoteSortDirection,
+  };
+};
+
+const loadNoteSortPreferences = (workspaceId?: string | null): NoteSortPreferences => {
+  const fallback: NoteSortPreferences = { root: null, sections: {} };
+  const stored = loadWorkspaceScopedJson<unknown>(getNotesSortStorageKey(workspaceId), fallback);
+  if (!stored || typeof stored !== 'object') return fallback;
+
+  const candidate = stored as {
+    root?: unknown;
+    sections?: Record<string, unknown>;
+  };
+
+  const sections: Record<string, NoteSortPreference> = {};
+  for (const [scopeId, pref] of Object.entries(candidate.sections ?? {})) {
+    const normalized = normalizeNoteSortPreference(pref);
+    if (normalized) sections[scopeId] = normalized;
+  }
+
+  return {
+    root: normalizeNoteSortPreference(candidate.root),
+    sections,
+  };
+};
+
+const loadLastOpenedAtById = (workspaceId?: string | null) => {
+  const stored = loadWorkspaceScopedJson<Record<string, number>>(
+    getLastOpenedStorageKey(workspaceId),
+    {}
+  );
+  const entries = Object.entries(stored ?? {}).filter(([, value]) => Number.isFinite(Number(value)));
+  return Object.fromEntries(entries.map(([id, value]) => [id, Number(value)]));
+};
+
+const formatNoteSortLabel = (pref: NoteSortPreference | null) => {
+  if (!pref) return 'Folder order';
+
+  const labelMap: Record<NoteSortField, string> = {
+    created: 'Created',
+    modified: 'Last modified',
+    opened: 'Last opened',
+    name: 'Name',
+  };
+
+  const directionLabel =
+    pref.direction === 'asc'
+      ? pref.field === 'name'
+        ? 'A-Z'
+        : 'Oldest first'
+      : pref.field === 'name'
+      ? 'Z-A'
+      : 'Newest first';
+
+  return `${labelMap[pref.field]} · ${directionLabel}`;
+};
+
+const NOTE_SORT_OPTIONS: Array<{ label: string; preference: NoteSortPreference | null }> = [
+  { label: 'Folder order', preference: null },
+  { label: 'Created · newest first', preference: { field: 'created', direction: 'desc' } },
+  { label: 'Created · oldest first', preference: { field: 'created', direction: 'asc' } },
+  { label: 'Last modified · newest first', preference: { field: 'modified', direction: 'desc' } },
+  { label: 'Last modified · oldest first', preference: { field: 'modified', direction: 'asc' } },
+  { label: 'Last opened · newest first', preference: { field: 'opened', direction: 'desc' } },
+  { label: 'Last opened · oldest first', preference: { field: 'opened', direction: 'asc' } },
+  { label: 'Name · A-Z', preference: { field: 'name', direction: 'asc' } },
+  { label: 'Name · Z-A', preference: { field: 'name', direction: 'desc' } },
+];
+
 const removeNoteFromTree = (nodes: NoteTreeNode[], noteId: string): NoteTreeNode[] => {
   return nodes
     .filter((node) => node.id !== noteId)
@@ -494,6 +610,7 @@ export const NotesWindow = () => {
   const [sectionContextMenu, setSectionContextMenu] = useState<SectionContextMenuState | null>(
     null
   );
+  const [sortMenu, setSortMenu] = useState<SortMenuState | null>(null);
   const [renamingNoteId, setRenamingNoteId] = useState<string | null>(null);
   const [renamingSectionId, setRenamingSectionId] = useState<string | null>(null);
   const [renamingSectionDraft, setRenamingSectionDraft] = useState('');
@@ -538,8 +655,15 @@ export const NotesWindow = () => {
   const noteActionsMenuRef = useRef<HTMLDivElement | null>(null);
   const inspectorActionsRef = useRef<HTMLDivElement | null>(null);
   const newMenuRef = useRef<HTMLDivElement | null>(null);
+  const sortMenuRef = useRef<HTMLDivElement | null>(null);
   const renameInputRef = useRef<HTMLInputElement | null>(null);
   const renameSectionInputRef = useRef<HTMLInputElement | null>(null);
+  const [noteSortPreferences, setNoteSortPreferences] = useState<NoteSortPreferences>(() =>
+    loadNoteSortPreferences(activeWorkspaceId)
+  );
+  const [lastOpenedAtById, setLastOpenedAtById] = useState<Record<string, number>>(() =>
+    loadLastOpenedAtById(activeWorkspaceId)
+  );
   const [workspaceTemplates, setWorkspaceTemplates] = useState<Array<{ id: string; name: string }>>(
     []
   );
@@ -596,11 +720,124 @@ export const NotesWindow = () => {
     return () => window.removeEventListener('keydown', onHideSidePanelsShortcut);
   }, [areSidePanelsCollapsed]);
 
+  useEffect(() => {
+    setNoteSortPreferences(loadNoteSortPreferences(activeWorkspaceId));
+    setLastOpenedAtById(loadLastOpenedAtById(activeWorkspaceId));
+  }, [activeWorkspaceId]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        getNotesSortStorageKey(activeWorkspaceId),
+        JSON.stringify(noteSortPreferences)
+      );
+    } catch (error) {
+      console.error('Failed to save notes sort preference:', error);
+    }
+  }, [activeWorkspaceId, noteSortPreferences]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        getLastOpenedStorageKey(activeWorkspaceId),
+        JSON.stringify(lastOpenedAtById)
+      );
+    } catch (error) {
+      console.error('Failed to save notes last opened state:', error);
+    }
+  }, [activeWorkspaceId, lastOpenedAtById]);
+
   const selectedNote = useMemo(
     () => notes.find((note) => note.id === selectedNoteId) ?? null,
     [notes, selectedNoteId]
   );
   const selectedNoteIdSet = useMemo(() => new Set(selectedNoteIds), [selectedNoteIds]);
+
+  const getSortPreferenceForScope = useCallback(
+    (scopeId: string) => {
+      if (scopeId !== ROOT_NOTE_SCOPE_ID && noteSortPreferences.sections[scopeId]) {
+        return noteSortPreferences.sections[scopeId];
+      }
+      return noteSortPreferences.root;
+    },
+    [noteSortPreferences]
+  );
+
+  const setSortPreferenceForScope = useCallback(
+    (scopeId: string, preference: NoteSortPreference | null) => {
+      setSortMenu(null);
+      setSectionContextMenu(null);
+      setNoteSortPreferences((current) => {
+        if (scopeId === ROOT_NOTE_SCOPE_ID) {
+          return { ...current, root: preference };
+        }
+
+        const nextSections = { ...current.sections };
+        if (preference) nextSections[scopeId] = preference;
+        else delete nextSections[scopeId];
+
+        return { ...current, sections: nextSections };
+      });
+    },
+    []
+  );
+
+  const recordNoteOpened = useCallback(
+    (noteId: string) => {
+      const openedAt = Date.now();
+      setLastOpenedAtById((current) => ({
+        ...current,
+        [noteId]: openedAt,
+      }));
+    },
+    []
+  );
+
+  const sortNotesForScope = useCallback(
+    (items: NoteRow[], scopeId: string) => {
+      const preference = getSortPreferenceForScope(scopeId);
+      if (!preference) {
+        return [...items].sort((left, right) => {
+          const orderDiff = toNonNegativeInt(left.sort_order) - toNonNegativeInt(right.sort_order);
+          if (orderDiff !== 0) return orderDiff;
+          const dateDiff = new Date(left.created_at).getTime() - new Date(right.created_at).getTime();
+          if (dateDiff !== 0) return dateDiff;
+          return String(left.title ?? '').localeCompare(String(right.title ?? ''));
+        });
+      }
+
+      const getComparableValue = (note: NoteRow) => {
+        if (preference.field === 'created') return new Date(note.created_at).getTime();
+        if (preference.field === 'modified') return new Date(note.updated_at).getTime();
+        if (preference.field === 'opened') return lastOpenedAtById[note.id] ?? 0;
+        return String(note.title ?? '').trim().toLowerCase();
+      };
+
+      return [...items].sort((left, right) => {
+        const leftValue = getComparableValue(left);
+        const rightValue = getComparableValue(right);
+
+        if (preference.field === 'name') {
+          const nameDiff = String(leftValue).localeCompare(String(rightValue));
+          if (nameDiff !== 0) {
+            return preference.direction === 'asc' ? nameDiff : -nameDiff;
+          }
+        } else {
+          const leftTime = Number(leftValue);
+          const rightTime = Number(rightValue);
+          const timeDiff = leftTime - rightTime;
+          if (timeDiff !== 0) {
+            return preference.direction === 'asc' ? timeDiff : -timeDiff;
+          }
+        }
+
+        const orderDiff = toNonNegativeInt(left.sort_order) - toNonNegativeInt(right.sort_order);
+        if (orderDiff !== 0) return orderDiff;
+        return String(left.title ?? '').localeCompare(String(right.title ?? ''));
+      });
+    },
+    [getSortPreferenceForScope, lastOpenedAtById]
+  );
 
   useEffect(() => {
     selectedNoteIdRef.current = selectedNoteId;
@@ -826,13 +1063,14 @@ export const NotesWindow = () => {
     const term = search.trim().toLowerCase();
     if (!term) return notes;
 
-    return notes.filter((note) => {
+    const filtered = notes.filter((note) => {
       const haystack = [note.title, htmlToPlainText(note.content), note.mood ?? '', note.date]
         .join(' ')
         .toLowerCase();
       return haystack.includes(term);
     });
-  }, [notes, search]);
+    return sortNotesForScope(filtered, ROOT_NOTE_SCOPE_ID);
+  }, [notes, search, sortNotesForScope]);
 
   const sectionDepthById = useMemo(() => {
     const depthById = new Map<string, number>();
@@ -941,29 +1179,38 @@ export const NotesWindow = () => {
     const visited = new Set<string>();
     const visibleSectionIds = new Set(visibleSections.map((section) => section.id));
 
-    const pushNote = (note: NoteRow) => {
+    const pushNote = (note: NoteRow, scopeId: string) => {
       if (visited.has(note.id)) return;
       visited.add(note.id);
       ordered.push(note.id);
 
       if (!expandedNoteIds.has(note.id)) return;
-      const children = notes.filter((child) => child.parent_id === note.id);
-      for (const child of children) pushNote(child);
+      const children = sortNotesForScope(
+        notes.filter((child) => child.parent_id === note.id),
+        scopeId
+      );
+      for (const child of children) pushNote(child, scopeId);
     };
 
     for (const section of orderedSections) {
       if (!visibleSectionIds.has(section.id)) continue;
-      const sectionRoots = notes.filter(
+      const sectionRoots = sortNotesForScope(
+        notes.filter(
         (note) => note.section_id === section.id && !note.parent_id
+        ),
+        section.id
       );
-      for (const root of sectionRoots) pushNote(root);
+      for (const root of sectionRoots) pushNote(root, section.id);
     }
 
-    const unsortedRoots = notes.filter((note) => !note.section_id && !note.parent_id);
-    for (const root of unsortedRoots) pushNote(root);
+    const unsortedRoots = sortNotesForScope(
+      notes.filter((note) => !note.section_id && !note.parent_id),
+      ROOT_NOTE_SCOPE_ID
+    );
+    for (const root of unsortedRoots) pushNote(root, ROOT_NOTE_SCOPE_ID);
 
     return ordered;
-  }, [expandedNoteIds, notes, orderedSections, search, visibleNotes, visibleSections]);
+  }, [expandedNoteIds, notes, orderedSections, search, sortNotesForScope, visibleNotes, visibleSections]);
 
   const applySidebarSelection = useCallback(
     (noteId: string, modifiers?: { shiftKey?: boolean; metaKey?: boolean; ctrlKey?: boolean }) => {
@@ -2092,9 +2339,10 @@ export const NotesWindow = () => {
         selectionAnchorNoteIdRef.current = note.id;
       }
       syncDraftFromNote(note);
+      recordNoteOpened(note.id);
       titleRef.current?.focus();
     },
-    [flushAutosave, isDirty, selectedNoteId, selectedNoteIds.length, syncDraftFromNote]
+    [flushAutosave, isDirty, recordNoteOpened, selectedNoteId, selectedNoteIds.length, syncDraftFromNote]
   );
 
   const openNoteById = useCallback(
@@ -2128,13 +2376,14 @@ export const NotesWindow = () => {
           selectionAnchorNoteIdRef.current = fetched.id;
         }
         syncDraftFromNote(fetched);
+        recordNoteOpened(fetched.id);
       } catch (error) {
         setIsHydratingNote(false);
         setHasHydratedNote(false);
         setError(error instanceof Error ? error.message : 'Could not load note.');
       }
     },
-    [api, flushAutosave, isDirty, notes, openNote, selectedNoteIds.length, syncDraftFromNote]
+    [api, flushAutosave, isDirty, notes, openNote, recordNoteOpened, selectedNoteIds.length, syncDraftFromNote]
   );
 
   const handleSidebarNoteClick = useCallback(
@@ -2939,6 +3188,31 @@ export const NotesWindow = () => {
     };
   }, [showNewMenu]);
 
+  useEffect(() => {
+    if (!sortMenu) return;
+
+    const closeMenu = () => setSortMenu(null);
+    const onPointerDown = (event: globalThis.MouseEvent) => {
+      if (sortMenuRef.current?.contains(event.target as Node)) return;
+      closeMenu();
+    };
+    const onEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') closeMenu();
+    };
+
+    window.addEventListener('mousedown', onPointerDown);
+    window.addEventListener('scroll', closeMenu, true);
+    window.addEventListener('resize', closeMenu);
+    window.addEventListener('keydown', onEscape);
+
+    return () => {
+      window.removeEventListener('mousedown', onPointerDown);
+      window.removeEventListener('scroll', closeMenu, true);
+      window.removeEventListener('resize', closeMenu);
+      window.removeEventListener('keydown', onEscape);
+    };
+  }, [sortMenu]);
+
   const isNotesModalOpen = showCreateNoteModal || showExportModal || showVersionHistoryModal;
 
   return (
@@ -3079,15 +3353,13 @@ export const NotesWindow = () => {
                     <button
                       onClick={() => setShowNewMenu((current) => !current)}
                       disabled={isCreating}
-                      className="h-7 px-2.5 rounded-lg bg-[#FF5F40] text-white text-xs font-semibold hover:bg-[#f4583a] transition inline-flex items-center gap-1.5 disabled:opacity-60"
-                      title="Create new"
+                      className="h-7 w-7 rounded-lg border border-[#E2D4C4] bg-[#FFF6EE] text-[#FF5F40] hover:bg-[#FFF1E3] transition inline-flex items-center justify-center disabled:opacity-60"
+                      title="Notes actions"
                     >
-                      <Plus size={11} />
-                      New
-                      <ChevronDown size={11} />
+                      <MoreVertical size={13} />
                     </button>
                     {showNewMenu && (
-                      <div className="absolute right-0 top-8 z-40 min-w-32 rounded-lg border border-[#E8DDD4] bg-[#FFF6EE] p-1 shadow-lg">
+                      <div className="absolute right-0 top-8 z-40 min-w-48 max-h-[60vh] overflow-y-auto rounded-lg border border-[#E8DDD4] bg-[#FFF6EE] p-1 shadow-lg">
                         <button
                           type="button"
                           onClick={() => {
@@ -3110,6 +3382,41 @@ export const NotesWindow = () => {
                         >
                           New folder
                         </button>
+                        <div className="my-1 h-px bg-[#E8DDD4]" />
+                        <div className="px-2.5 pb-1 pt-0.5">
+                          <p className="text-[11px] font-medium text-gray-500">
+                            Sort notes
+                          </p>
+                          <p className="mt-0.5 text-[11px] text-gray-400">
+                            {formatNoteSortLabel(noteSortPreferences.root)}
+                          </p>
+                        </div>
+                        <div className="mx-2 mb-1 h-px bg-[#E8DDD4]" />
+                        {NOTE_SORT_OPTIONS.map((option) => {
+                          const isActive =
+                            JSON.stringify(option.preference) ===
+                            JSON.stringify(noteSortPreferences.root);
+                          return (
+                            <button
+                              key={option.label}
+                              type="button"
+                              onClick={() => {
+                                setSortPreferenceForScope(ROOT_NOTE_SCOPE_ID, option.preference);
+                                setShowNewMenu(false);
+                              }}
+                              className={`relative w-full rounded-md px-2.5 py-1.5 text-left text-xs font-medium transition ${
+                                isActive
+                                  ? 'bg-[#FFF1E3] text-gray-900'
+                                  : 'text-gray-800 hover:bg-[#FFF1E3]'
+                              }`}
+                            >
+                              {option.label}
+                              {isActive && (
+                                <span className="absolute inset-x-2.5 bottom-0 h-px bg-[#E8DDD4]" />
+                              )}
+                            </button>
+                          );
+                        })}
                       </div>
                     )}
                   </div>
@@ -3224,8 +3531,9 @@ export const NotesWindow = () => {
                     {visibleSections.map((section) => {
                       const sectionColor = getColorClasses(section.color);
                       const isSectionCollapsed = collapsedSectionIds.has(section.id);
-                      const sectionNotes = notes.filter(
-                        (n) => n.section_id === section.id && !n.parent_id
+                      const sectionNotes = sortNotesForScope(
+                        notes.filter((n) => n.section_id === section.id && !n.parent_id),
+                        section.id
                       );
                       const sectionTotalCount = sectionNoteCountById.get(section.id) ?? 0;
                       const sectionDepth = sectionDepthById.get(section.id) ?? 0;
@@ -3378,10 +3686,11 @@ export const NotesWindow = () => {
                                 const preview =
                                   htmlToPlainText(note.content).slice(0, 60) || 'No content';
                                 const isExpanded = expandedNoteIds.has(note.id);
-                                // Count children
-                                const childCount = notes.filter(
-                                  (n) => n.parent_id === note.id
-                                ).length;
+                                const childNotes = sortNotesForScope(
+                                  notes.filter((n) => n.parent_id === note.id),
+                                  section.id
+                                );
+                                const childCount = childNotes.length;
 
                                 return (
                                   <div key={note.id} className="space-y-1">
@@ -3577,9 +3886,12 @@ export const NotesWindow = () => {
                       </div>
                     )}
 
-                    {/* Unsorted section for notes without a section */}
-                    {(() => {
-                      const unsortedNotes = notes.filter((n) => !n.section_id && !n.parent_id);
+                   {/* Unsorted section for notes without a section */}
+                   {(() => {
+                      const unsortedNotes = sortNotesForScope(
+                        notes.filter((n) => !n.section_id && !n.parent_id),
+                        ROOT_NOTE_SCOPE_ID
+                      );
                       if (unsortedNotes.length === 0) return null;
 
                       const isUnsortedCollapsed = collapsedSectionIds.has('__unsorted__');
@@ -3635,9 +3947,11 @@ export const NotesWindow = () => {
                                 const preview =
                                   htmlToPlainText(note.content).slice(0, 60) || 'No content';
                                 const isExpanded = expandedNoteIds.has(note.id);
-                                const childCount = notes.filter(
-                                  (n) => n.parent_id === note.id
-                                ).length;
+                                const childNotes = sortNotesForScope(
+                                  notes.filter((n) => n.parent_id === note.id),
+                                  ROOT_NOTE_SCOPE_ID
+                                );
+                                const childCount = childNotes.length;
 
                                 return (
                                   <div key={note.id} className="space-y-1">
@@ -3737,14 +4051,12 @@ export const NotesWindow = () => {
                                     </div>
                                     {isExpanded && childCount > 0 && (
                                       <div className="space-y-1 pl-3.5">
-                                        {notes
-                                          .filter((n) => n.parent_id === note.id)
-                                          .map((child) => {
-                                            const childActive = selectedNoteIdSet.has(child.id);
-                                            const childPreview =
-                                              htmlToPlainText(child.content).slice(0, 50) ||
-                                              'No content';
-                                            return (
+                                        {childNotes.map((child) => {
+                                          const childActive = selectedNoteIdSet.has(child.id);
+                                          const childPreview =
+                                            htmlToPlainText(child.content).slice(0, 50) ||
+                                            'No content';
+                                          return (
                                               <button
                                                 key={child.id}
                                                 onMouseDown={(event) => {
@@ -3824,8 +4136,8 @@ export const NotesWindow = () => {
                                                   </p>
                                                 </div>
                                               </button>
-                                            );
-                                          })}
+                                          );
+                                        })}
                                       </div>
                                     )}
                                   </div>
@@ -4563,6 +4875,23 @@ export const NotesWindow = () => {
           </div>
           <button
             onClick={() => {
+              const estimatedMenuWidth = 220;
+              setSectionContextMenu(null);
+              setSortMenu({
+                x: Math.max(8, sectionContextMenu.x - estimatedMenuWidth - 12),
+                y: sectionContextMenu.y,
+                scopeId: sectionContextMenu.sectionId,
+                scopeName: sectionContextMenu.sectionName,
+              });
+            }}
+            className="w-full h-9 px-3 rounded-none text-left hover:bg-[#FFF1E3] flex items-center gap-3 text-sm transition"
+          >
+            <MoreHorizontal size={14} className="text-gray-600 shrink-0" />
+            <span className="font-medium">Sort folder</span>
+          </button>
+          <div className="h-px bg-[#E8DDD4] my-1" />
+          <button
+            onClick={() => {
               const target = sections.find(
                 (section) => section.id === sectionContextMenu.sectionId
               );
@@ -4593,6 +4922,53 @@ export const NotesWindow = () => {
           </button>
         </div>
       )}
+
+      {sortMenu &&
+        createPortal(
+          <div
+            ref={sortMenuRef}
+            className="fixed z-210 min-w-52 rounded-lg border border-[#E2D4C4] bg-[#FFFDFB] text-gray-900 shadow-lg p-0 overflow-hidden"
+            style={{
+              left: Math.max(8, Math.min(sortMenu.x, window.innerWidth - 240)),
+              top: Math.max(8, Math.min(sortMenu.y, window.innerHeight - 380)),
+            }}
+            onClick={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <div className="px-3 py-2 border-b border-[#E8DDD4]">
+              <p className="text-xs font-medium text-gray-500">
+                Sort {sortMenu.scopeId === ROOT_NOTE_SCOPE_ID ? 'notes' : sortMenu.scopeName}
+              </p>
+              <p className="mt-0.5 text-[11px] text-gray-400">
+                {formatNoteSortLabel(getSortPreferenceForScope(sortMenu.scopeId))}
+              </p>
+            </div>
+            {NOTE_SORT_OPTIONS.map((option) => {
+              const isActive =
+                JSON.stringify(option.preference) ===
+                JSON.stringify(getSortPreferenceForScope(sortMenu.scopeId));
+              return (
+                <button
+                  key={option.label}
+                  onClick={() => {
+                    setSortPreferenceForScope(sortMenu.scopeId, option.preference);
+                  }}
+                  className={`w-full h-9 px-3 rounded-none text-left flex items-center gap-3 text-sm transition ${
+                    isActive ? 'bg-[#FFF1E3] text-gray-900' : 'hover:bg-[#FFF1E3] text-gray-700'
+                  }`}
+                >
+                  <span
+                    className={`h-2 w-2 rounded-full shrink-0 ${
+                      isActive ? 'bg-[#FF5F40]' : 'bg-gray-300'
+                    }`}
+                  />
+                  <span className="font-medium">{option.label}</span>
+                </button>
+              );
+            })}
+          </div>,
+          document.body
+        )}
 
       {noteContextMenu && (
         (() => {

@@ -31,7 +31,11 @@ export default function ReminderCaptureScreen() {
     parsedDueAt && !Number.isNaN(parsedDueAt.getTime())
       ? new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit' }).format(parsedDueAt)
       : undefined;
-  const saveDestination = source === 'siri' ? '/(tabs)/today' : '/(tabs)/capture';
+  const isSiri = source === 'siri';
+  const saveDestination = isSiri ? '/(tabs)/today' : '/(tabs)/capture';
+  const formKey = isSiri
+    ? ['siri-reminder', title ?? '', dueAt ?? '', note ?? ''].join(':')
+    : 'manual-reminder';
 
   useEffect(() => {
     void bootstrapWorkspaceState();
@@ -41,11 +45,11 @@ export default function ReminderCaptureScreen() {
     <Screen contentStyle={{ paddingTop: theme.spacing.lg }}>
       <CaptureHeader title="Reminder" />
       <ReminderForm
+        key={formKey}
         initialTitle={title}
         initialDateInput={formattedDate}
         initialTimeInput={formattedTime}
         initialNotes={note}
-        autoSubmit={source === 'siri'}
         onSave={() => router.replace(saveDestination)}
       />
     </Screen>

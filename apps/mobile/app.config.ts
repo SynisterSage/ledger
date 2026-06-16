@@ -21,6 +21,7 @@ const config: ExpoConfig = {
     supportsTablet: true,
     infoPlist: {
       NSSiriUsageDescription: 'Allow Ledger to capture tasks, reminders, notes, and events with Siri.',
+      LedgerAPIBaseURL: apiUrl,
     },
   },
   android: {

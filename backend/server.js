@@ -1509,38 +1509,96 @@ const sendExpoPushMessages = async (messages) => {
   return results;
 };
 
-const buildMobilePushMessage = ({ row, candidate, workspace }) => ({
-  to: null,
-  sound: 'default',
-  title: candidate?.title ?? 'Ledger',
-  body:
-    [
-      normalizeNullableText(candidate?.context),
-      normalizeNullableText(candidate?.body),
-      normalizeNullableText(workspace?.name),
-    ]
+const notificationTypeFallbackLabel = (notificationType, sourceType) => {
+  const normalizedType = String(notificationType ?? '').trim();
+  if (normalizedType === 'reminder_due') return 'Reminder';
+  if (normalizedType === 'event_starting') return 'Calendar event';
+  if (normalizedType === 'task_due') return 'Task';
+  if (normalizedType === 'project_deadline') return 'Project deadline';
+  if (normalizedType === 'inbox_capture') return 'Inbox capture';
+  if (normalizedType === 'invite.accepted') return 'Workspace invite';
+  if (normalizedType === 'overdue_item') {
+    if (sourceType === 'project') return 'Project deadline';
+    if (sourceType === 'task') return 'Overdue task';
+    return 'Overdue item';
+  }
+  return 'Ledger';
+};
+
+const buildStoredNotificationMetadata = (candidate) => {
+  const metadata = safeJson(candidate?.metadata, {}) ?? {};
+  return {
+    ...metadata,
+    title: normalizeNullableText(candidate?.title) ?? metadata.title ?? null,
+    body: normalizeNullableText(candidate?.body) ?? metadata.body ?? null,
+    context: normalizeNullableText(candidate?.context) ?? metadata.context ?? null,
+    moduleKind: candidate?.moduleKind ?? metadata.moduleKind ?? null,
+    focusPayload: candidate?.focusPayload ?? metadata.focusPayload ?? null,
+    actions: Array.isArray(candidate?.actions) ? candidate.actions : Array.isArray(metadata.actions) ? metadata.actions : [],
+  };
+};
+
+const normalizePushDetail = (detail, context) => {
+  const normalizedDetail = normalizeNullableText(detail);
+  const normalizedContext = normalizeNullableText(context);
+  if (!normalizedDetail || !normalizedContext) return normalizedDetail;
+  if (normalizedDetail === normalizedContext) return null;
+
+  const duplicatedPrefix = `${normalizedContext} · `;
+  if (normalizedDetail.startsWith(duplicatedPrefix)) {
+    return normalizeNullableText(normalizedDetail.slice(duplicatedPrefix.length));
+  }
+
+  return normalizedDetail;
+};
+
+const buildMobilePushMessage = ({ row, candidate, workspace }) => {
+  const metadata = safeJson(row?.metadata, {}) ?? {};
+  const sourceType = String(row?.source_type ?? '');
+  const title =
+    pickSpecificNotificationTitle(candidate?.title, sourceType) ??
+    pickSpecificNotificationTitle(metadata.title, sourceType) ??
+    notificationTypeFallbackLabel(row?.notification_type, sourceType);
+  const context =
+    normalizeNullableText(candidate?.context) ??
+    normalizeNullableText(metadata.context) ??
+    notificationTypeFallbackLabel(row?.notification_type, sourceType);
+  const detail = normalizePushDetail(candidate?.body ?? metadata.body, context);
+  const body =
+    [context, detail, normalizeNullableText(workspace?.name)]
       .filter(Boolean)
-      .join(' · ') || 'You have something waiting in Ledger.',
-  data: {
-    notificationId: row.id,
-    workspaceId: row.workspace_id ?? null,
-    workspaceName: workspace?.name ?? null,
-    sourceType: row.source_type,
-    sourceId: row.source_id,
-    notificationType: row.notification_type,
-    scheduledFor: row.scheduled_for,
-    moduleKind: candidate?.moduleKind ?? null,
-    focusPayload: candidate?.focusPayload ?? null,
-    context: candidate?.context ?? null,
-    route: '/(tabs)/notifications',
-    routeParams: {
+      .join(' · ') || 'You have something waiting in Ledger.';
+  const moduleKind = candidate?.moduleKind ?? metadata.moduleKind ?? null;
+  const focusPayload = candidate?.focusPayload ?? metadata.focusPayload ?? null;
+
+  return {
+    to: null,
+    sound: 'default',
+    title,
+    body,
+    data: {
       notificationId: row.id,
       workspaceId: row.workspace_id ?? null,
+      workspaceName: workspace?.name ?? null,
       sourceType: row.source_type,
       sourceId: row.source_id,
+      notificationType: row.notification_type,
+      scheduledFor: row.scheduled_for,
+      title,
+      body,
+      moduleKind,
+      focusPayload,
+      context,
+      route: '/(tabs)/notifications',
+      routeParams: {
+        notificationId: row.id,
+        workspaceId: row.workspace_id ?? null,
+        sourceType: row.source_type,
+        sourceId: row.source_id,
+      },
     },
-  },
-});
+  };
+};
 
 const getNotificationSourcePayload = async (userId, candidates) => {
   const workspaceIds = Array.from(new Set(candidates.map((item) => item.workspace_id).filter(Boolean)));
@@ -2149,7 +2207,7 @@ const processNotificationEventsForUser = async (userId) => {
       sourceId: candidate.source_id,
       notificationType: candidate.notification_type,
       scheduledFor: candidate.scheduled_for,
-      metadata: candidate.metadata,
+      metadata: buildStoredNotificationMetadata(candidate),
     })
   );
 
@@ -5523,7 +5581,7 @@ app.post('/api/notifications/check', authMiddleware, rateLimit('read'), async (r
         sourceId: candidate.source_id,
         notificationType: candidate.notification_type,
         scheduledFor: candidate.scheduled_for,
-        metadata: candidate.metadata,
+        metadata: buildStoredNotificationMetadata(candidate),
       })
     );
 

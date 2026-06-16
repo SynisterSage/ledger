@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { View } from 'react-native';
 
 import { AppText } from '@/components/AppText';
@@ -173,6 +174,18 @@ function buildNoteSubtitle(item: MobileTodayNoteItem, showWorkspaceNames: boolea
   return parts.join(' · ');
 }
 
+function isCurrentTimedItem(item: MobileTodayItem | MobileUpcomingItem, nowMs: number) {
+  if (!item.startsAt || !item.endsAt) return false;
+
+  const startMs = new Date(item.startsAt).getTime();
+  const endMs = new Date(item.endsAt).getTime();
+
+  if (Number.isNaN(startMs) || Number.isNaN(endMs)) return false;
+  if (endMs <= startMs) return false;
+
+  return nowMs >= startMs && nowMs < endMs;
+}
+
 export function TodayList({
   upcoming,
   today,
@@ -183,13 +196,36 @@ export function TodayList({
   onItemLongPress,
 }: TodayListProps) {
   const theme = useLedgerTheme();
+  const [nowMs, setNowMs] = useState(() => Date.now());
   const hasUpcoming = upcoming.length > 0;
   const hasToday = today.length > 0;
   const hasCaptures = captures.count > 0;
   const hasNotes = notes.length > 0;
 
+  useEffect(() => {
+    const timer = setInterval(() => setNowMs(Date.now()), 60 * 1000);
+    return () => clearInterval(timer);
+  }, []);
+
   return (
     <View style={{ gap: theme.spacing['3xl'] }}>
+      <Section title="Today">
+        {hasToday ? (
+          today.map((item) => (
+            <TodayItem
+              key={item.id}
+              title={item.title}
+              subtitle={buildTodaySubtitle(item, showWorkspaceNames)}
+              active={isCurrentTimedItem(item, nowMs)}
+              onPress={() => onItemPress?.(item)}
+              onLongPress={() => onItemLongPress?.(item)}
+            />
+          ))
+        ) : (
+          <AppText variant="meta">Nothing due today.</AppText>
+        )}
+      </Section>
+
       <Section title="Upcoming">
         {hasUpcoming ? (
           upcoming.map((item) => (
@@ -204,28 +240,13 @@ export function TodayList({
                   .filter(Boolean)
                 .join(' · ')
               }
+              active={isCurrentTimedItem(item, nowMs)}
               onPress={() => onItemPress?.(item)}
               onLongPress={() => onItemLongPress?.(item)}
             />
           ))
         ) : (
           <AppText variant="meta">Nothing upcoming.</AppText>
-        )}
-      </Section>
-
-      <Section title="Today">
-        {hasToday ? (
-          today.map((item) => (
-            <TodayItem
-              key={item.id}
-              title={item.title}
-              subtitle={buildTodaySubtitle(item, showWorkspaceNames)}
-              onPress={() => onItemPress?.(item)}
-              onLongPress={() => onItemLongPress?.(item)}
-            />
-          ))
-        ) : (
-          <AppText variant="meta">Nothing due today.</AppText>
         )}
       </Section>
 

@@ -19,7 +19,9 @@ export default function NoteCaptureScreen() {
   const title = Array.isArray(params.title) ? params.title[0] : params.title;
   const body = Array.isArray(params.body) ? params.body[0] : params.body;
   const source = Array.isArray(params.source) ? params.source[0] : params.source;
-  const saveDestination = source === 'siri' ? '/(tabs)/today' : '/(tabs)/capture';
+  const isSiri = source === 'siri';
+  const saveDestination = isSiri ? '/(tabs)/today' : '/(tabs)/capture';
+  const formKey = isSiri ? ['siri-note', title ?? '', body ?? ''].join(':') : 'manual-note';
 
   useEffect(() => {
     void bootstrapWorkspaceState();
@@ -29,9 +31,9 @@ export default function NoteCaptureScreen() {
     <Screen contentStyle={{ paddingTop: theme.spacing.lg }}>
       <CaptureHeader title="Note" />
       <NoteForm
+        key={formKey}
         initialTitle={title}
         initialBody={body}
-        autoSubmit={source === 'siri'}
         onSave={() => router.replace(saveDestination)}
       />
     </Screen>

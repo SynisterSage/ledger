@@ -40,7 +40,11 @@ export default function EventCaptureScreen() {
     parsedEndsAt && !Number.isNaN(parsedEndsAt.getTime())
       ? new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit' }).format(parsedEndsAt)
       : undefined;
-  const saveDestination = source === 'siri' ? '/(tabs)/today' : '/(tabs)/capture';
+  const isSiri = source === 'siri';
+  const saveDestination = isSiri ? '/(tabs)/today' : '/(tabs)/capture';
+  const formKey = isSiri
+    ? ['siri-event', title ?? '', startsAt ?? '', endsAt ?? '', location ?? '', description ?? ''].join(':')
+    : 'manual-event';
 
   useEffect(() => {
     void bootstrapWorkspaceState();
@@ -50,13 +54,13 @@ export default function EventCaptureScreen() {
     <Screen contentStyle={{ paddingTop: theme.spacing.lg }}>
       <CaptureHeader title="Event" />
       <EventForm
+        key={formKey}
         initialTitle={title}
         initialDateInput={formattedDate}
         initialStartTimeInput={formattedStartTime}
         initialEndTimeInput={formattedEndTime}
         initialLocation={location}
         initialNotes={description}
-        autoSubmit={source === 'siri'}
         onSave={() => router.replace(saveDestination)}
       />
     </Screen>

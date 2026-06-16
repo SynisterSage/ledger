@@ -9,6 +9,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { initializeAuth } from '@/api/auth';
 import { registerCurrentMobilePushToken, revokeCurrentMobilePushToken } from '@/api/pushNotifications';
 import { getMobileUserSettings, readMobileNotificationPreferences } from '@/api/userSettings';
+import { AppLoadingScreen } from '@/components/AppLoadingScreen';
 import { bootstrapAppPreferencesState, resetAppPreferencesState } from '@/store/appPreferencesStore';
 import { useAuthState } from '@/store/sessionStore';
 import { resetBootState, setBootState, useBootState } from '@/store/bootStore';
@@ -38,10 +39,14 @@ export default function RootLayout() {
   const lastNotificationResponse = Notifications.useLastNotificationResponse();
   const [mobilePushHydrated, setMobilePushHydrated] = useState(false);
   const [mobilePushEnabled, setMobilePushEnabled] = useState<boolean | null>(null);
+  const [showSplashOverlay, setShowSplashOverlay] = useState(true);
   const handledNotificationResponseIdRef = useRef<string | null>(null);
+  const nativeSplashHiddenRef = useRef(false);
 
   useEffect(() => {
     resetBootState();
+    setShowSplashOverlay(true);
+    nativeSplashHiddenRef.current = false;
     setBootState({
       isBooting: true,
       hasHydratedSession: false,
@@ -145,13 +150,18 @@ export default function RootLayout() {
     notificationOnboarding.userId,
   ]);
 
-  useEffect(() => {
-    if (!boot.isBootReady) {
+  const hideNativeSplashAfterOverlayPaint = useCallback(() => {
+    if (nativeSplashHiddenRef.current) {
       return;
     }
 
-    void SplashScreen.hideAsync();
-  }, [boot.isBootReady]);
+    nativeSplashHiddenRef.current = true;
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        void SplashScreen.hideAsync();
+      });
+    });
+  }, []);
 
   const handleNotificationResponse = useCallback(
     (response: Notifications.NotificationResponse) => {
@@ -246,6 +256,13 @@ export default function RootLayout() {
           }}
         />
       </SafeAreaProvider>
+      {showSplashOverlay ? (
+        <AppLoadingScreen
+          exiting={boot.isBootReady}
+          onReady={hideNativeSplashAfterOverlayPaint}
+          onExitComplete={() => setShowSplashOverlay(false)}
+        />
+      ) : null}
     </View>
   );
 }

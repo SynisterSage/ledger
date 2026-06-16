@@ -7,11 +7,12 @@ import { useLedgerTheme } from '@/theme';
 type TodayItemProps = {
   title: string;
   subtitle?: string | null;
+  active?: boolean;
   onPress?: () => void;
   onLongPress?: () => void;
 };
 
-function TodayItemBase({ title, subtitle, onPress, onLongPress }: TodayItemProps) {
+function TodayItemBase({ title, subtitle, active = false, onPress, onLongPress }: TodayItemProps) {
   const theme = useLedgerTheme();
   const longPressTriggered = useRef(false);
 
@@ -43,7 +44,17 @@ function TodayItemBase({ title, subtitle, onPress, onLongPress }: TodayItemProps
         },
       ]}>
       <View style={{ gap: theme.spacing.xs }}>
-        <AppText variant="body">{title}</AppText>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing.sm }}>
+          {active ? <View style={[styles.dot, { backgroundColor: theme.colors.accent }]} /> : null}
+          <AppText
+            variant="body"
+            style={{
+              color: active ? theme.colors.textPrimary : theme.colors.textPrimary,
+              fontWeight: active ? '500' : '400',
+            }}>
+            {title}
+          </AppText>
+        </View>
         {subtitle ? <AppText variant="meta">{subtitle}</AppText> : null}
       </View>
     </Pressable>
@@ -55,5 +66,10 @@ export const TodayItem = memo(TodayItemBase);
 const styles = StyleSheet.create({
   row: {
     borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  dot: {
+    width: 6,
+    height: 6,
+    borderRadius: 999,
   },
 });

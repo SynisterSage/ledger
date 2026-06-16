@@ -1,4 +1,6 @@
 import AppIntents
+import Foundation
+import Security
 import UIKit
 
 enum LedgerSiriCaptureKind: String {
@@ -43,6 +45,224 @@ enum LedgerSiriIntentSupport {
 
   static func boolQueryItem(_ name: String, value: Bool) -> URLQueryItem {
     URLQueryItem(name: name, value: value ? "1" : "0")
+  }
+}
+
+struct LedgerTodaySiriItem: Decodable {
+  let title: String?
+  let timeLabel: String?
+}
+
+struct LedgerTodaySiriCaptures: Decodable {
+  let count: Int?
+}
+
+struct LedgerTodaySiriResponse: Decodable {
+  let upcoming: [LedgerTodaySiriItem]?
+  let today: [LedgerTodaySiriItem]?
+  let captures: LedgerTodaySiriCaptures?
+}
+
+enum LedgerTodaySiriSummaryBuilder {
+  static func build(from response: LedgerTodaySiriResponse) -> String {
+    let upcoming = response.upcoming ?? []
+    let today = response.today ?? []
+    let captureCount = max(0, response.captures?.count ?? 0)
+    let upcomingCount = upcoming.count
+    let todayCount = today.count
+    let totalCount = upcomingCount + todayCount + captureCount
+
+    if totalCount == 0 {
+      return "Nothing needs attention in Ledger today."
+    }
+
+    var parts: [String] = [
+      "You have \(formatCount(upcomingCount, singular: "upcoming item", plural: "upcoming items")), \(formatCount(todayCount, singular: "action", plural: "actions")), and \(formatCount(captureCount, singular: "capture", plural: "captures")) waiting in Ledger."
+    ]
+
+    if let nextUpcoming = upcoming.first, let title = cleaned(nextUpcoming.title) {
+      if let timeLabel = cleaned(nextUpcoming.timeLabel) {
+        parts.append("Your next item is \(title) at \(timeLabel).")
+      } else {
+        parts.append("Your next item is \(title).")
+      }
+    } else if let firstToday = today.first, let title = cleaned(firstToday.title) {
+      parts.append("First up: \(title).")
+    }
+
+    if upcomingCount == 0, todayCount <= 1, captureCount == 0 {
+      parts[0] = todayCount == 1
+        ? "Today looks light in Ledger. You have one action due."
+        : parts[0]
+    } else if todayCount == 0, captureCount == 0, upcomingCount <= 1 {
+      parts[0] = upcomingCount == 1
+        ? "Today looks light in Ledger. You have one upcoming item and no actions due."
+        : parts[0]
+    }
+
+    if totalCount > 3 {
+      let actionTitles = today.compactMap { cleaned($0.title) }.prefix(2)
+      if !actionTitles.isEmpty, upcomingCount > 0 {
+        parts.append("You also have \(actionTitles.joined(separator: " and ")).")
+      }
+      parts.append("Open Ledger to see the full list.")
+    }
+
+    return parts.joined(separator: " ")
+  }
+
+  private static func formatCount(_ count: Int, singular: String, plural: String) -> String {
+    count == 1 ? "one \(singular)" : "\(count) \(plural)"
+  }
+
+  private static func cleaned(_ value: String?) -> String? {
+    let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard let trimmed, !trimmed.isEmpty else { return nil }
+    return trimmed
+  }
+}
+
+enum LedgerTodaySiriAPI {
+  private static let authStorageKey = "ledger-mobile-auth"
+
+  static func loadTodaySummary() async -> String {
+    guard let accessToken = readMobileAccessToken() else {
+      return "Open Ledger to sign in first."
+    }
+
+    guard let baseURL = readAPIBaseURL() else {
+      return "I couldn't reach Ledger right now."
+    }
+
+    var components = URLComponents(url: baseURL.appendingPathComponent("api/mobile/today"), resolvingAgainstBaseURL: false)
+    components?.queryItems = [
+      URLQueryItem(name: "workspace_id", value: "all"),
+      URLQueryItem(name: "date", value: todayDateKey()),
+    ]
+
+    guard let url = components?.url else {
+      return "I couldn't load Today from Ledger."
+    }
+
+    var request = URLRequest(url: url)
+    request.httpMethod = "GET"
+    request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+    request.setValue("application/json", forHTTPHeaderField: "Accept")
+    request.timeoutInterval = 12
+
+    do {
+      let (data, response) = try await URLSession.shared.data(for: request)
+      guard let httpResponse = response as? HTTPURLResponse else {
+        return "I couldn't reach Ledger right now."
+      }
+
+      if httpResponse.statusCode == 401 || httpResponse.statusCode == 403 {
+        return "Open Ledger to sign in first."
+      }
+
+      guard (200...299).contains(httpResponse.statusCode) else {
+        return "I couldn't reach Ledger right now."
+      }
+
+      let today = try JSONDecoder().decode(LedgerTodaySiriResponse.self, from: data)
+      return LedgerTodaySiriSummaryBuilder.build(from: today)
+    } catch {
+      return "I couldn't reach Ledger right now."
+    }
+  }
+
+  private static func readAPIBaseURL() -> URL? {
+    guard
+      let rawValue = Bundle.main.object(forInfoDictionaryKey: "LedgerAPIBaseURL") as? String,
+      !rawValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    else {
+      return nil
+    }
+
+    return URL(string: rawValue.trimmingCharacters(in: .whitespacesAndNewlines))
+  }
+
+  private static func readMobileAccessToken() -> String? {
+    guard let sessionJSON = readSecureStoreValue(forKey: authStorageKey) else {
+      return nil
+    }
+
+    guard
+      let data = sessionJSON.data(using: .utf8),
+      let object = try? JSONSerialization.jsonObject(with: data)
+    else {
+      return nil
+    }
+
+    return findAccessToken(in: object)
+  }
+
+  private static func readSecureStoreValue(forKey key: String) -> String? {
+    let encodedKey = Data(key.utf8)
+    let query: [String: Any] = [
+      kSecClass as String: kSecClassGenericPassword,
+      kSecAttrService as String: "app",
+      kSecAttrGeneric as String: encodedKey,
+      kSecAttrAccount as String: encodedKey,
+      kSecMatchLimit as String: kSecMatchLimitOne,
+      kSecReturnData as String: kCFBooleanTrue as Any,
+    ]
+
+    var item: CFTypeRef?
+    let status = SecItemCopyMatching(query as CFDictionary, &item)
+    guard status == errSecSuccess, let data = item as? Data else {
+      return nil
+    }
+
+    return String(data: data, encoding: .utf8)
+  }
+
+  private static func findAccessToken(in value: Any) -> String? {
+    if let dictionary = value as? [String: Any] {
+      if let token = dictionary["access_token"] as? String, !token.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        return token.trimmingCharacters(in: .whitespacesAndNewlines)
+      }
+
+      for nestedValue in dictionary.values {
+        if let token = findAccessToken(in: nestedValue) {
+          return token
+        }
+      }
+    }
+
+    if let array = value as? [Any] {
+      for nestedValue in array {
+        if let token = findAccessToken(in: nestedValue) {
+          return token
+        }
+      }
+    }
+
+    return nil
+  }
+
+  private static func todayDateKey() -> String {
+    let formatter = DateFormatter()
+    formatter.calendar = Calendar.current
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.timeZone = TimeZone.current
+    formatter.dateFormat = "yyyy-MM-dd"
+    return formatter.string(from: Date())
+  }
+}
+
+struct GetLedgerTodayIntent: AppIntent {
+  static let title: LocalizedStringResource = "What's Today in Ledger?"
+  static let description = IntentDescription("Get a short read-only summary of Today in Ledger.")
+  static let openAppWhenRun = false
+
+  static var parameterSummary: some ParameterSummary {
+    Summary("Check Today in Ledger")
+  }
+
+  func perform() async throws -> some IntentResult {
+    let summary = await LedgerTodaySiriAPI.loadTodaySummary()
+    return .result(dialog: IntentDialog(stringLiteral: summary))
   }
 }
 
@@ -189,6 +409,16 @@ struct SaveLedgerNoteIntent: AppIntent {
 struct LedgerAppShortcutsProvider: AppShortcutsProvider {
   @AppShortcutsBuilder
   static var appShortcuts: [AppShortcut] {
+    AppShortcut(
+      intent: GetLedgerTodayIntent(),
+      phrases: [
+        "What's Today in \(.applicationName)",
+        "Check Today in \(.applicationName)",
+        "What do I have in \(.applicationName) today",
+      ],
+      shortTitle: "Check Today",
+      systemImageName: "sun.max"
+    )
     AppShortcut(
       intent: AddLedgerReminderIntent(),
       phrases: [

@@ -21,11 +21,15 @@ type SiriShortcutsSheetProps = {
 
 const SHEET_OFFSET = 24;
 const SHEET_VERTICAL_PADDING = 16;
-const SHEET_MAX_HEIGHT = 420;
+const SHEET_MAX_HEIGHT = 480;
 const SHEET_DRAG_CLOSE_THRESHOLD = 72;
 const SHEET_BOTTOM_BUFFER = 24;
 
 const shortcuts = [
+  {
+    title: "What's Today",
+    subtitle: '“Hey Siri, what’s Today in Ledger?”',
+  },
   {
     title: 'Add Reminder',
     subtitle: '“Hey Siri, add a Ledger reminder.”',

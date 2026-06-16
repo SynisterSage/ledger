@@ -38,7 +38,11 @@ export default function TaskCaptureScreen() {
     parsedDueAt && !Number.isNaN(parsedDueAt.getTime())
       ? new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit' }).format(parsedDueAt)
       : undefined;
-  const saveDestination = source === 'siri' ? '/(tabs)/today' : '/(tabs)/capture';
+  const isSiri = source === 'siri';
+  const saveDestination = isSiri ? '/(tabs)/today' : '/(tabs)/capture';
+  const formKey = isSiri
+    ? ['siri-task', title ?? '', dueDate ?? '', dueAt ?? '', notes ?? '', addToToday ?? ''].join(':')
+    : 'manual-task';
 
   useEffect(() => {
     void bootstrapWorkspaceState();
@@ -48,12 +52,12 @@ export default function TaskCaptureScreen() {
     <Screen contentStyle={{ paddingTop: theme.spacing.lg }}>
       <CaptureHeader title="Task" />
       <TaskForm
+        key={formKey}
         initialTitle={title}
         initialDateInput={formattedDate}
         initialTimeInput={formattedTime}
         initialNotes={notes}
         initialShowInToday={addToToday === '1'}
-        autoSubmit={source === 'siri'}
         onSave={() => router.replace(saveDestination)}
       />
     </Screen>

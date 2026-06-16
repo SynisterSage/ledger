@@ -20,12 +20,12 @@ export function TodaySkeleton() {
 
   return (
     <View style={{ gap: theme.spacing['3xl'] }}>
-      <Section title="Upcoming">
+      <Section title="Today">
         <SkeletonRow />
         <SkeletonRow />
       </Section>
 
-      <Section title="Today">
+      <Section title="Upcoming">
         <SkeletonRow />
         <SkeletonRow />
       </Section>
