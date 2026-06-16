@@ -379,6 +379,8 @@ export default function TodayScreen() {
             paddingBottom: theme.spacing['3xl'] + 132,
             flexGrow: 1,
           }}
+          contentInsetAdjustmentBehavior="always"
+          automaticallyAdjustsScrollIndicatorInsets
           refreshControl={
             <RefreshControl
               refreshing={isRefreshing}

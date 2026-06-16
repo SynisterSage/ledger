@@ -52,6 +52,8 @@ export default function CaptureScreen() {
             paddingTop: MOBILE_PAGE_HEADER_SCROLL_SPACE,
             paddingBottom: theme.spacing['3xl'] + 132,
           }}
+          contentInsetAdjustmentBehavior="always"
+          automaticallyAdjustsScrollIndicatorInsets
           keyboardShouldPersistTaps="handled"
           onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], {
             useNativeDriver: true,

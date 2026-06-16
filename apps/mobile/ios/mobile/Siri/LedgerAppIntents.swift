@@ -254,7 +254,7 @@ enum LedgerTodaySiriAPI {
 struct GetLedgerTodayIntent: AppIntent {
   static let title: LocalizedStringResource = "What's Today in Ledger?"
   static let description = IntentDescription("Get a short read-only summary of Today in Ledger.")
-  static let openAppWhenRun = false
+  static let openAppWhenRun = true
 
   static var parameterSummary: some ParameterSummary {
     Summary("Check Today in Ledger")
