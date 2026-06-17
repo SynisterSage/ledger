@@ -2338,7 +2338,7 @@ const isMissingColumnError = (error, columnName) => {
 const isMissingRelationError = (error, relationName) => {
   const message = String(error?.message ?? '').toLowerCase();
   return (
-    (error?.code === '42P01' || message.includes('does not exist')) &&
+    (error?.code === '42P01' || error?.code === 'PGRST205' || message.includes('does not exist') || message.includes('could not find the table')) &&
     message.includes(String(relationName).toLowerCase())
   );
 };

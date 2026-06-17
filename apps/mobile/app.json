@@ -8,7 +8,7 @@
     "scheme": "ledger",
     "userInterfaceStyle": "light",
     "ios": {
-      "buildNumber": "3",
+      "buildNumber": "4",
       "supportsTablet": true
     },
     "android": {

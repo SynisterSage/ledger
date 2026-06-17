@@ -1388,6 +1388,21 @@ function lockWindowZoom(win: BrowserWindow) {
   });
 }
 
+function attachWindowsCloseShortcut(win: BrowserWindow) {
+  if (process.platform !== 'win32') return;
+
+  win.webContents.on('before-input-event', (event, input) => {
+    const key = String(input.key ?? '').toLowerCase();
+    const isCtrlW = input.control && key === 'w';
+    if (!isCtrlW) return;
+
+    event.preventDefault();
+    if (!win.isDestroyed()) {
+      win.close();
+    }
+  });
+}
+
 function setWindowButtonVisibility(win: BrowserWindow, visible: boolean) {
   const setter = (
     win as BrowserWindow & {
@@ -3281,6 +3296,8 @@ public class Win32 {
   public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out int lpdwProcessId);
   [DllImport("user32.dll")]
   public static extern bool SetProcessDpiAwarenessContext(IntPtr dpiContext);
+  [DllImport("user32.dll")]
+  public static extern bool GetCursorPos(out POINT lpPoint);
   public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
   [StructLayout(LayoutKind.Sequential)]
   public struct RECT {
@@ -3288,6 +3305,11 @@ public class Win32 {
     public int Top;
     public int Right;
     public int Bottom;
+  }
+  [StructLayout(LayoutKind.Sequential)]
+  public struct POINT {
+    public int X;
+    public int Y;
   }
   public static bool TryGetWindowBounds(IntPtr hWnd, out RECT rect) {
     const int DWMWA_EXTENDED_FRAME_BOUNDS = 9;
@@ -3421,8 +3443,14 @@ $sidebarTop = ${Math.floor(nativeSidebarBounds.y)}
 $sidebarWidth = ${Math.floor(nativeSidebarBounds.width)}
 $sidebarHeight = ${Math.floor(nativeSidebarBounds.height)}
 $parentPid = ${process.pid}
-$cursorX = ${Math.floor(nativeCursorPoint.x)}
-$cursorY = ${Math.floor(nativeCursorPoint.y)}
+$cursorPoint = [Win32+POINT]::new()
+if ([Win32]::GetCursorPos([ref]$cursorPoint)) {
+  $cursorX = $cursorPoint.X
+  $cursorY = $cursorPoint.Y
+} else {
+  $cursorX = ${Math.floor(nativeCursorPoint.x)}
+  $cursorY = ${Math.floor(nativeCursorPoint.y)}
+}
 $script:result = $null
 [Win32]::EnumWindows({
   param([IntPtr]$hWnd, [IntPtr]$lParam)
@@ -3617,6 +3645,26 @@ async function getFloatingDockTargetAtEdge(
   if (process.platform === 'win32') {
     try {
       const nativeSidebarBounds = dipRectToNativeRect(sidebarBounds);
+      const sidebarDisplay = getDisplayForBounds(sidebarBounds);
+      const nativeOffsetScale = Math.max(1, sidebarDisplay.scaleFactor || 1);
+      const nativeCenterY = nativeSidebarBounds.y + Math.floor(nativeSidebarBounds.height / 2);
+      const nativeProbePoints = probePoints.map((probe) => {
+        const nativeXOffset = Math.max(1, Math.round(Math.abs(
+          probe.side === 'left'
+            ? probe.x - (sidebarBounds.x + sidebarBounds.width)
+            : sidebarBounds.x - probe.x
+        ) * nativeOffsetScale));
+        const nativeYOffset = Math.round((probe.y - centerY) * nativeOffsetScale);
+
+        return {
+          ...probe,
+          nativeX:
+            probe.side === 'left'
+              ? nativeSidebarBounds.x + nativeSidebarBounds.width + nativeXOffset
+              : nativeSidebarBounds.x - nativeXOffset,
+          nativeY: nativeCenterY + nativeYOffset,
+        };
+      });
       const script = (probeX: number, probeY: number) => `
 Add-Type @"
 using System;
@@ -3696,8 +3744,8 @@ $script:result = $null
 
 if ($script:result) { Write-Output $script:result }
 `;
-      for (const probe of probePoints) {
-        const nativeProbe = dipPointToNativePoint({ x: probe.x, y: probe.y });
+      for (const probe of nativeProbePoints) {
+        const nativeProbe = { x: probe.nativeX, y: probe.nativeY };
         const { stdout } = await execFileAsync(
           'powershell.exe',
           [
@@ -4342,6 +4390,7 @@ function createSidebarWindow() {
     icon: path.join(process.env.VITE_PUBLIC, 'electron-vite.svg'),
     transparent: true,
     backgroundColor: '#00000000',
+    roundedCorners: process.platform === 'win32',
     resizable: false,
     alwaysOnTop: false,
     ...getWindowChromeOptions(),
@@ -4357,10 +4406,18 @@ function createSidebarWindow() {
   // renderer-side mode synchronization runs.
   setWindowButtonVisibility(sidebarWin, false);
 
+  if (process.platform === 'win32' && typeof (sidebarWin as any).setHasShadow === 'function') {
+    try {
+      (sidebarWin as any).setHasShadow(false);
+    } catch {}
+  }
+
   // Keep sidebar translucency pure RGBA/CSS-only to avoid platform compositor blur artifacts.
 
   lockWindowZoom(sidebarWin);
+  attachWindowsCloseShortcut(sidebarWin);
   attachNativeContextMenu(sidebarWin);
+  applyWindowsModuleWindowShape(sidebarWin);
 
   // Keep the sidebar rendering path purely CSS-based for consistent frosted glass.
 
@@ -4429,10 +4486,11 @@ function createSidebarWindow() {
                 : currentSidebarPreferences.isExpanded
                 ? getDockedBounds(RAIL_SIZE)
                 : getCollapsedBounds(COLLAPSED_SIZE)
-              : currentSidebarPosition === 'top' || currentSidebarPosition === 'bottom'
-              ? getDockedBounds(HORIZONTAL_DOCK_WIDTH)
-              : getDockedBounds(EXPANDED_WIDTH);
+          : currentSidebarPosition === 'top' || currentSidebarPosition === 'bottom'
+          ? getDockedBounds(HORIZONTAL_DOCK_WIDTH)
+          : getDockedBounds(EXPANDED_WIDTH);
           sidebarWin.setBounds(nextBounds);
+          applyWindowsModuleWindowShape(sidebarWin);
           sidebarWin.showInactive();
           console.log('[electron][sidebar] window bounds reset:', nextBounds);
         }
@@ -4443,6 +4501,12 @@ function createSidebarWindow() {
 
     sidebarWin.webContents.on('render-process-gone', (_event, details) => {
       console.error('[electron][sidebar] render-process-gone', details);
+    });
+
+    sidebarWin.on('resize', () => {
+      if (sidebarWin && !sidebarWin.isDestroyed()) {
+        applyWindowsModuleWindowShape(sidebarWin);
+      }
     });
   } catch (err) {
     console.error('[electron] Error while loading sidebar renderer:', err);
@@ -4591,6 +4655,7 @@ function openModuleWindow(
   applyWindowsModuleWindowShape(moduleWin);
 
   lockWindowZoom(moduleWin);
+  attachWindowsCloseShortcut(moduleWin);
   attachNativeContextMenu(moduleWin);
 
   moduleWins.set(kind, moduleWin);
@@ -5353,23 +5418,6 @@ app.whenReady().then(() => {
     console.warn(`[electron] Failed to register all windows shortcut: ${toggleAllWindowsShortcut}`);
   }
 
-  if (process.platform === 'win32') {
-    const closeFocusedWindowShortcut = 'Ctrl+W';
-    const closeFocusedWindowRegistered = globalShortcut.register(
-      closeFocusedWindowShortcut,
-      () => {
-        const focusedWindow = BrowserWindow.getFocusedWindow();
-        if (!focusedWindow || focusedWindow.isDestroyed()) return;
-        focusedWindow.close();
-      }
-    );
-
-    if (!closeFocusedWindowRegistered) {
-      console.warn(
-        `[electron] Failed to register close focused window shortcut: ${closeFocusedWindowShortcut}`
-      );
-    }
-  }
 });
 
 app.on('before-quit', () => {

@@ -389,16 +389,19 @@ function AuthStatusScreen({
 }) {
   return (
     <div
-      className={`relative flex min-h-screen items-center justify-center overflow-hidden bg-[var(--ledger-background)] px-6 py-8 text-gray-900 transition-all duration-150 ease-out ${
+      className={`relative flex min-h-screen items-center justify-center overflow-hidden bg-transparent p-3 text-gray-900 transition-all duration-150 ease-out ${
         isExiting ? 'opacity-0 scale-[0.985] translate-y-1' : 'opacity-100 scale-100 translate-y-0'
       }`}
       style={dragRegionStyle}
     >
-      <div className="relative z-10 flex flex-col items-center text-center" style={noDragRegionStyle}>
-        <img src="./logo-color.svg" alt="Ledger" className="h-11 w-11" />
-        <h2 className="mt-4 text-[22px] font-medium leading-tight text-gray-950">{title}</h2>
-        <p className="mt-1.5 max-w-[18rem] text-sm leading-6 text-gray-500">{subtitle}</p>
-        <Loader2 size={14} className="mt-4 animate-spin text-gray-500" />
+      <div className="absolute inset-3 rounded-3xl border border-white/60 bg-[#FEF9F5] shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]" />
+      <div className="relative z-10 flex min-h-[calc(100vh-1.5rem)] w-full items-center justify-center rounded-3xl px-6 py-8">
+        <div className="flex flex-col items-center text-center" style={noDragRegionStyle}>
+          <img src="./logo-color.svg" alt="Ledger" className="h-11 w-11" />
+          <h2 className="mt-4 text-[22px] font-medium leading-tight text-gray-950">{title}</h2>
+          <p className="mt-1.5 max-w-[18rem] text-sm leading-6 text-gray-500">{subtitle}</p>
+          <Loader2 size={14} className="mt-4 animate-spin text-gray-500" />
+        </div>
       </div>
     </div>
   );

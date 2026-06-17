@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, RefreshControl, View } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppButton } from '@/components/AppButton';
 import { AppText } from '@/components/AppText';
@@ -48,6 +49,7 @@ const EMPTY_TODAY: MobileTodayResponse = {
 export default function TodayScreen() {
   const router = useRouter();
   const theme = useLedgerTheme();
+  const insets = useSafeAreaInsets();
   const scrollY = useRef(new Animated.Value(0)).current;
   const loadTokenRef = useRef(0);
   const hasLoadedRef = useRef(false);
@@ -375,7 +377,7 @@ export default function TodayScreen() {
         <Animated.ScrollView
           style={{ flex: 1 }}
           contentContainerStyle={{
-            paddingTop: MOBILE_PAGE_HEADER_SCROLL_SPACE,
+            paddingTop: MOBILE_PAGE_HEADER_SCROLL_SPACE + insets.top,
             paddingBottom: theme.spacing['3xl'] + 132,
             flexGrow: 1,
           }}

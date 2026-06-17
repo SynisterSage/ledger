@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, View } from 'react-native';
 import { useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { MobilePageHeader, MOBILE_PAGE_HEADER_SCROLL_SPACE } from '@/components/MobilePageHeader';
 import { WorkspaceSelectorSheet } from '@/components/WorkspaceSelectorSheet';
@@ -13,6 +14,7 @@ import { bootstrapWorkspaceState, getWorkspaceLabel, selectWorkspace, useWorkspa
 export default function CaptureScreen() {
   const router = useRouter();
   const theme = useLedgerTheme();
+  const insets = useSafeAreaInsets();
   const scrollY = useRef(new Animated.Value(0)).current;
   const workspaceState = useWorkspaceState();
   const [workspacePickerOpen, setWorkspacePickerOpen] = useState(false);
@@ -49,7 +51,7 @@ export default function CaptureScreen() {
         <Animated.ScrollView
           style={{ flex: 1 }}
           contentContainerStyle={{
-            paddingTop: MOBILE_PAGE_HEADER_SCROLL_SPACE,
+            paddingTop: MOBILE_PAGE_HEADER_SCROLL_SPACE + insets.top,
             paddingBottom: theme.spacing['3xl'] + 132,
           }}
           contentInsetAdjustmentBehavior="always"
