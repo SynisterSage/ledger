@@ -10,6 +10,7 @@ import { AppTextInput } from '@/components/AppTextInput';
 import { Screen } from '@/components/Screen';
 import { signUpWithEmail } from '@/api/auth';
 import { useLedgerTheme } from '@/theme';
+import { validatePasswordRequirements } from '@/utils/passwordPolicy';
 
 export default function SignUpScreen() {
   const router = useRouter();
@@ -27,6 +28,13 @@ export default function SignUpScreen() {
       return;
     }
 
+    const passwordError = validatePasswordRequirements(password);
+    if (passwordError) {
+      setError(passwordError);
+      Alert.alert('Password requirements', passwordError);
+      return;
+    }
+
     setError(null);
     setIsSubmitting(true);
 
@@ -40,7 +48,9 @@ export default function SignUpScreen() {
         router.replace('/auth/sign-in');
       }
     } catch (signUpError) {
-      setError(signUpError instanceof Error ? signUpError.message : 'Unable to create account.');
+      const message =
+        signUpError instanceof Error ? signUpError.message : 'Unable to create account.';
+      setError(message);
     } finally {
       setIsSubmitting(false);
     }

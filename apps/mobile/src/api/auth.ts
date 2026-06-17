@@ -2,6 +2,7 @@ import type { Session } from '@supabase/supabase-js';
 
 import { getSupabaseClient, supabaseConfigError } from './client';
 import { getAuthState, resetAuthState, setAuthState } from '@/store/sessionStore';
+import { validatePasswordRequirements } from '@/utils/passwordPolicy';
 
 let authListenerAttached = false;
 let bootstrapPromise: Promise<void> | null = null;
@@ -73,6 +74,11 @@ export async function signInWithEmail(email: string, password: string) {
 }
 
 export async function signUpWithEmail(email: string, password: string, fullName: string) {
+  const passwordError = validatePasswordRequirements(password);
+  if (passwordError) {
+    throw new Error(passwordError);
+  }
+
   const supabase = getSupabaseClient();
   const { data, error } = await supabase.auth.signUp({
     email,

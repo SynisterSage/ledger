@@ -2896,6 +2896,7 @@ function AppShell() {
     null
   );
   const sidebarModeTimerRef = useRef<number | null>(null);
+  const inviteToastTimerRef = useRef<number | null>(null);
   const [showAuthenticatedShell, setShowAuthenticatedShell] = useState(false);
   const [isAuthWindowReady, setIsAuthWindowReady] = useState(!window.desktopWindow);
   const authNativeWindowPinnedRef = useRef(false);
@@ -3147,14 +3148,40 @@ function AppShell() {
       return;
     }
 
-    toast.show(inviteFlowNotice, {
-      variant: 'success',
-      duration: 4500,
-    });
-    setInviteFlowNotice(null);
-  }, [inviteFlowNotice, toast, user]);
+    if (inviteToastTimerRef.current !== null) {
+      window.clearTimeout(inviteToastTimerRef.current);
+    }
 
-  
+    const shouldExpandForToast = !isVisible || state !== 'expanded';
+    if (shouldExpandForToast) {
+      setIsVisible(true);
+      setIsExpanded(true);
+      setState('expanded');
+    }
+
+    inviteToastTimerRef.current = window.setTimeout(
+      () => {
+        toast.show(inviteFlowNotice, {
+          variant: 'success',
+          duration: 4500,
+        });
+        inviteToastTimerRef.current = null;
+      },
+      shouldExpandForToast ? 260 : 0
+    );
+
+    setInviteFlowNotice(null);
+  }, [inviteFlowNotice, isVisible, setIsExpanded, setIsVisible, setState, state, toast, user]);
+
+  useEffect(() => {
+    return () => {
+      if (inviteToastTimerRef.current !== null) {
+        window.clearTimeout(inviteToastTimerRef.current);
+        inviteToastTimerRef.current = null;
+      }
+    };
+  }, []);
+
 
   useEffect(() => {
     if (isModuleWindow) return;
@@ -3308,6 +3335,13 @@ function AppShell() {
         setInviteWorkspaceName(payload.invitation?.workspace_name ?? 'Workspace');
 
         if (payload.status === 'accepted') {
+          if (!user) {
+            setInviteFlowStatus('idle');
+            window.history.replaceState({}, '', '/');
+            setPendingInviteToken(null);
+            return;
+          }
+
           setInviteFlowStatus('accepted');
           setInviteFlowNotice('This invite has already been accepted. Switching workspaces.');
           return;
@@ -3333,7 +3367,7 @@ function AppShell() {
       cancelled = true;
     };
     // Validate the invite once per token. Re-checking after auth can race the accept call.
-  }, [pendingInviteToken, api]);
+  }, [pendingInviteToken, api, user]);
 
   useEffect(() => {
     if (!pendingInviteToken || !inviteWorkspaceId) return;
@@ -3348,6 +3382,10 @@ function AppShell() {
         await setActiveWorkspace(inviteWorkspaceId);
       } catch {
         // Leave the accepted state visible; the workspace can still be selected manually.
+      } finally {
+        if (cancelled) return;
+        window.history.replaceState({}, '', '/');
+        setPendingInviteToken(null);
       }
     };
 
@@ -3441,7 +3479,12 @@ function AppShell() {
 
     setInviteFlowNotice(null);
     setInviteFlowError(null);
-  }, [user]);
+    if (inviteFlowStatus === 'accepted' || inviteFlowStatus === 'already-member') {
+      setInviteFlowStatus('idle');
+      window.history.replaceState({}, '', '/');
+      setPendingInviteToken(null);
+    }
+  }, [inviteFlowStatus, user]);
 
   useEffect(() => {
     if (postAuthStage !== 'onboarding') {

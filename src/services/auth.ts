@@ -1,5 +1,6 @@
 import { supabase, supabaseConfigError } from './supabase';
 import type { AuthChangeEvent, AuthError, Session, User } from '@supabase/supabase-js';
+import { validatePasswordRequirements } from './passwordPolicy';
 
 export interface AuthResponse {
   data: { user: User | null; session: Session | null } | null;
@@ -11,6 +12,11 @@ export const authService = {
 
   // Sign up with email and password
   async signUp(email: string, password: string, fullName?: string): Promise<AuthResponse> {
+    const passwordError = validatePasswordRequirements(password);
+    if (passwordError) {
+      throw new Error(passwordError);
+    }
+
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
