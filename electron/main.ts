@@ -2118,16 +2118,10 @@ function getDockIntentDistance(currentBounds: Rect, targetBounds: Rect, side: Do
   const targetRight = targetBounds.x + targetBounds.width;
 
   if (side === 'left') {
-    return Math.min(
-      Math.abs(currentRight - targetBounds.x),
-      Math.abs(currentBounds.x - targetBounds.x)
-    );
+    return Math.abs(currentRight - targetBounds.x);
   }
 
-  return Math.min(
-    Math.abs(currentBounds.x - targetRight),
-    Math.abs(currentRight - targetRight)
-  );
+  return Math.abs(currentBounds.x - targetRight);
 }
 
 function getHorizontalGapBetweenRects(a: Rect, b: Rect) {
@@ -3361,14 +3355,8 @@ $script:bestScore = [Double]::PositiveInfinity
   $minimumOverlap = [Math]::Min(96, [Math]::Max(32, [Math]::Floor($sidebarHeight * 0.18)))
   if ($verticalOverlap -lt $minimumOverlap -and $verticalGap -gt $threshold) { return $true }
 
-  $dockLeftDistance = [Math]::Min(
-    [Math]::Abs($sidebarRight - $rect.Left),
-    [Math]::Abs($sidebarLeft - $rect.Left)
-  )
-  $dockRightDistance = [Math]::Min(
-    [Math]::Abs($sidebarLeft - $rect.Right),
-    [Math]::Abs($sidebarRight - $rect.Right)
-  )
+  $dockLeftDistance = [Math]::Abs($sidebarRight - $rect.Left)
+  $dockRightDistance = [Math]::Abs($sidebarLeft - $rect.Right)
   $side = "left"
   $edgeDistance = $dockLeftDistance
   if ($dockRightDistance -lt $dockLeftDistance) {
@@ -3885,13 +3873,17 @@ async function dockFloatingSidebarToTarget() {
       : null;
 
   if (!target && process.platform === 'win32') {
+    target = await getFloatingDockTargetAtCursor();
+  }
+
+  if (!target && process.platform === 'win32') {
     const sidebarBounds = sidebarWin.getBounds();
     target =
       (await getFloatingDockTargetAtEdge(sidebarBounds, 'left', false)) ??
       (await getFloatingDockTargetAtEdge(sidebarBounds, 'right', false));
   }
 
-  if (!target) {
+  if (!target && process.platform !== 'win32') {
     target = await getFloatingDockTargetAtCursor();
   }
 
