@@ -3420,6 +3420,8 @@ public class Win32 {
   public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out int lpdwProcessId);
   [DllImport("user32.dll")]
   public static extern bool SetProcessDpiAwarenessContext(IntPtr dpiContext);
+  [DllImport("user32.dll")]
+  public static extern bool GetCursorPos(out POINT lpPoint);
   public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
   [StructLayout(LayoutKind.Sequential)]
   public struct RECT {
@@ -3427,6 +3429,11 @@ public class Win32 {
     public int Top;
     public int Right;
     public int Bottom;
+  }
+  [StructLayout(LayoutKind.Sequential)]
+  public struct POINT {
+    public int X;
+    public int Y;
   }
   public static bool TryGetWindowBounds(IntPtr hWnd, out RECT rect) {
     const int DWMWA_EXTENDED_FRAME_BOUNDS = 9;
@@ -3665,6 +3672,15 @@ async function getFloatingDockTargetAtEdge(
           nativeY: nativeCenterY + nativeYOffset,
         };
       });
+      const electronConvertedProbePoints = probePoints.map((probe) => {
+        const nativeProbe = dipPointToNativePoint({ x: probe.x, y: probe.y });
+        return {
+          ...probe,
+          nativeX: nativeProbe.x,
+          nativeY: nativeProbe.y,
+        };
+      });
+      const allNativeProbePoints = [...nativeProbePoints, ...electronConvertedProbePoints];
       const script = (probeX: number, probeY: number) => `
 Add-Type @"
 using System;
@@ -3744,7 +3760,7 @@ $script:result = $null
 
 if ($script:result) { Write-Output $script:result }
 `;
-      for (const probe of nativeProbePoints) {
+      for (const probe of allNativeProbePoints) {
         const nativeProbe = { x: probe.nativeX, y: probe.nativeY };
         const { stdout } = await execFileAsync(
           'powershell.exe',
