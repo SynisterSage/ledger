@@ -11,6 +11,7 @@ import {
   Menu,
   Tray,
   nativeImage,
+  nativeTheme,
 } from 'electron';
 import { execFile, spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { createRequire } from 'node:module';
@@ -140,6 +141,9 @@ const registerLedgerProtocol = () => {
     console.warn('[electron] Failed to register ledger:// protocol', error);
   }
 };
+
+const getNativeWindowBackgroundColor = () =>
+  nativeTheme.shouldUseDarkColors ? '#0B1220' : desktopTokens.colors.light.background;
 
 const handleLedgerProtocolUrl = (url: string) => {
   try {
@@ -4627,8 +4631,7 @@ function openModuleWindow(
     ...initialBounds,
     show: false,
     transparent: process.platform !== 'win32',
-    backgroundColor:
-      process.platform === 'win32' ? desktopTokens.colors.background : '#00000000',
+    backgroundColor: process.platform === 'win32' ? getNativeWindowBackgroundColor() : '#00000000',
     roundedCorners: process.platform === 'win32',
     ...getModuleWindowChromeOptions(),
     // Ensure module popouts can enter/exit fullscreen reliably on Windows and macOS

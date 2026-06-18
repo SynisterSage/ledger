@@ -31,6 +31,7 @@ const routeLabelByName: Record<string, string> = {
 
 function FadeStack() {
   const theme = useLedgerTheme();
+  const fadeColor = theme.scheme === 'dark' ? theme.colors.background : theme.colors.tabBar;
 
   return (
     <View pointerEvents="none" style={[styles.fadeWrap, { height: FADE_HEIGHT }]}>
@@ -41,7 +42,7 @@ function FadeStack() {
             key={index}
             style={{
               height: 1,
-              backgroundColor: theme.colors.background,
+              backgroundColor: fadeColor,
               opacity,
             }}
           />
@@ -61,6 +62,7 @@ export function FloatingTabBar({ state, descriptors, navigation }: any) {
   const pillWidth = useRef(new Animated.Value(0)).current;
   const labelProgress = useRef<Record<string, Animated.Value>>({}).current;
   const reduceMotionEnabled = appPreferences.reduceMotionEnabled;
+  const dockFadeColor = theme.scheme === 'dark' ? theme.colors.background : theme.colors.tabBar;
   const bottomInset = useMemo(() => Math.max(insets.bottom, 8), [insets.bottom]);
   const bottomOffset = bottomInset + BAR_BOTTOM_GAP;
   const dockHeight = bottomOffset + BAR_HEIGHT + FADE_HEIGHT + BLOCK_HEIGHT;
@@ -142,8 +144,8 @@ export function FloatingTabBar({ state, descriptors, navigation }: any) {
           },
         ]}>
         <FadeStack />
-        <View style={[styles.dockBlock, { height: BLOCK_HEIGHT, backgroundColor: theme.colors.background }]} />
-        <View style={[styles.dockCover, { backgroundColor: theme.colors.background }]} />
+        <View style={[styles.dockBlock, { height: BLOCK_HEIGHT, backgroundColor: dockFadeColor }]} />
+        <View style={[styles.dockCover, { backgroundColor: dockFadeColor }]} />
       </View>
 
       <View

@@ -389,18 +389,18 @@ function AuthStatusScreen({
 }) {
   return (
     <div
-      className={`relative flex min-h-screen items-center justify-center overflow-hidden bg-transparent p-3 text-gray-900 transition-all duration-150 ease-out ${
+      className={`relative flex min-h-screen items-center justify-center overflow-hidden bg-transparent p-3 text-[var(--ledger-text-primary)] transition-all duration-150 ease-out ${
         isExiting ? 'opacity-0 scale-[0.985] translate-y-1' : 'opacity-100 scale-100 translate-y-0'
       }`}
       style={dragRegionStyle}
     >
-      <div className="absolute inset-3 rounded-3xl border border-white/60 bg-[#FEF9F5] shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]" />
+      <div className="absolute inset-3 rounded-3xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]" />
       <div className="relative z-10 flex min-h-[calc(100vh-1.5rem)] w-full items-center justify-center rounded-3xl px-6 py-8">
         <div className="flex flex-col items-center text-center" style={noDragRegionStyle}>
           <img src="./logo-color.svg" alt="Ledger" className="h-11 w-11" />
-          <h2 className="mt-4 text-[22px] font-medium leading-tight text-gray-950">{title}</h2>
-          <p className="mt-1.5 max-w-[18rem] text-sm leading-6 text-gray-500">{subtitle}</p>
-          <Loader2 size={14} className="mt-4 animate-spin text-gray-500" />
+          <h2 className="mt-4 text-[22px] font-medium leading-tight text-[var(--ledger-text-primary)]">{title}</h2>
+          <p className="mt-1.5 max-w-[18rem] text-sm leading-6 text-[var(--ledger-text-muted)]">{subtitle}</p>
+          <Loader2 size={14} className="mt-4 animate-spin text-[var(--ledger-text-muted)]" />
         </div>
       </div>
     </div>
@@ -416,19 +416,19 @@ function InviteSuccessScreen({
 }) {
   return (
     <div
-      className="relative flex min-h-screen items-center justify-center bg-transparent p-3 text-gray-900"
+      className="relative flex min-h-screen items-center justify-center bg-transparent p-3 text-[var(--ledger-text-primary)]"
       style={dragRegionStyle}
     >
-      <div className="absolute inset-3 rounded-3xl border border-white/60 bg-[#fff9f4] shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]" />
+      <div className="absolute inset-3 rounded-3xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]" />
       <div className="relative z-10 flex min-h-[calc(100vh-1.5rem)] items-center justify-center px-8">
-        <div className="w-full max-w-sm rounded-3xl border border-gray-200 bg-[#FFFDFB] px-6 py-7 text-center shadow-[0_18px_50px_rgba(15,23,42,0.08)]">
-          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-[#fff0eb]">
+        <div className="w-full max-w-sm rounded-3xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-6 py-7 text-center shadow-[0_18px_50px_rgba(17,24,39,0.18)]">
+          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-[color:rgba(255,95,64,0.12)]">
             <CheckCircle2 size={24} className="text-[#FF5F40]" />
           </div>
-          <h2 className="mt-5 text-[28px] font-semibold leading-tight text-gray-950">
+          <h2 className="mt-5 text-[28px] font-semibold leading-tight text-[var(--ledger-text-primary)]">
             Joined {workspaceName}
           </h2>
-          <p className="mt-2 text-sm leading-6 text-gray-500">
+          <p className="mt-2 text-sm leading-6 text-[var(--ledger-text-muted)]">
             You’re now a member of this workspace.
           </p>
           <button
@@ -517,17 +517,17 @@ function OnboardingFlow({
 
   return (
     <div
-      className="relative min-h-screen overflow-hidden bg-transparent p-3 text-[#111827]"
+      className="relative min-h-screen overflow-hidden bg-transparent p-3 text-[var(--ledger-text-primary)]"
       style={dragRegionStyle}
     >
-      <div className="absolute inset-3 rounded-3xl border border-white/70 bg-[#fff9f4] shadow-[inset_0_1px_0_rgba(255,255,255,0.9)]" />
+      <div className="absolute inset-3 rounded-3xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]" />
       <button
         type="button"
         onClick={() => {
           void window.desktopWindow?.quitApp();
         }}
         aria-label="Close"
-        className="absolute right-6 top-7 z-20 inline-flex h-8 w-8 items-center justify-center rounded-full border border-black/5 bg-[#FFFDFB]/70 text-gray-500 transition hover:bg-[#FFFDFB] hover:text-gray-900"
+        className="absolute right-6 top-7 z-20 inline-flex h-8 w-8 items-center justify-center rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
         style={noDragRegionStyle}
       >
         <X size={16} />
@@ -544,9 +544,9 @@ function OnboardingFlow({
         >
           {step === 'welcome' ? (
             <div className="grid items-center gap-10 md:grid-cols-[1.18fr_0.82fr]">
-              <div className="overflow-hidden rounded-[26px] bg-[#FFFDFB]/80 shadow-[0_24px_70px_rgba(17,24,39,0.12)]">
+              <div className="overflow-hidden rounded-[26px] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-[0_24px_70px_rgba(17,24,39,0.2)]">
                 {prefersReducedMotion ? (
-                  <div className="flex aspect-video items-center justify-center bg-[#fff9f4]">
+                  <div className="flex aspect-video items-center justify-center bg-[var(--ledger-background)]">
                     <img src="./logo-color.svg" alt="Ledger" className="h-16 w-16" />
                   </div>
                 ) : (
@@ -564,11 +564,11 @@ function OnboardingFlow({
 
               <div className="text-center md:text-left">
                 <img src="./logo-color.svg" alt="Ledger" className="mx-auto mb-6 h-11 w-11 md:mx-0" />
-                <h1 className="text-[34px] font-semibold leading-tight text-gray-950 sm:text-[40px]">
+                <h1 className="text-[34px] font-semibold leading-tight text-[var(--ledger-text-primary)] sm:text-[40px]">
                   Welcome to Ledger
                 </h1>
-                <p className="mt-3 text-xl text-gray-600">Your day, beside your work.</p>
-                <p className="mt-4 max-w-sm text-sm leading-6 text-gray-500 md:max-w-none">
+                <p className="mt-3 text-xl text-[var(--ledger-text-secondary)]">Your day, beside your work.</p>
+                <p className="mt-4 max-w-sm text-sm leading-6 text-[var(--ledger-text-muted)] md:max-w-none">
                   Capture notes, tasks, events, and follow-ups without leaving your flow.
                 </p>
                 <div className="mt-8 flex flex-col items-center gap-3 sm:flex-row md:items-start">
@@ -582,7 +582,7 @@ function OnboardingFlow({
                   <button
                     type="button"
                     onClick={() => onStepChange('workspace')}
-                    className="inline-flex h-11 items-center justify-center rounded-full px-4 text-sm font-medium text-gray-500 transition hover:text-gray-900"
+                    className="inline-flex h-11 items-center justify-center rounded-full px-4 text-sm font-medium text-[var(--ledger-text-secondary)] transition hover:text-[var(--ledger-text-primary)]"
                   >
                     Skip
                   </button>
@@ -592,13 +592,13 @@ function OnboardingFlow({
           ) : null}
 
           {step === 'workspace' ? (
-            <div className="mx-auto rounded-3xl bg-[#FFFDFB]/72 p-7 shadow-[0_24px_70px_rgba(17,24,39,0.10)] backdrop-blur-xl">
+            <div className="mx-auto rounded-3xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-7 shadow-[0_24px_70px_rgba(17,24,39,0.18)] backdrop-blur-xl">
               <div className="mb-7">
                 <img src="./logo-color.svg" alt="Ledger" className="mb-5 h-10 w-10" />
-                <h1 className="text-[30px] font-semibold leading-tight text-gray-950">
+                <h1 className="text-[30px] font-semibold leading-tight text-[var(--ledger-text-primary)]">
                   {mode === 'create' ? 'Create your workspace' : 'Join a workspace'}
                 </h1>
-                <p className="mt-3 max-w-md text-sm leading-6 text-gray-500">
+                <p className="mt-3 max-w-md text-sm leading-6 text-[var(--ledger-text-muted)]">
                   {mode === 'create'
                     ? 'A workspace keeps your notes, projects, calendar, and daily focus together.'
                     : 'Paste an invite code or link to join an existing Ledger workspace.'}
@@ -606,7 +606,7 @@ function OnboardingFlow({
               </div>
 
               <label className="block">
-                <span className="mb-2 block text-sm font-medium text-gray-700">
+                <span className="mb-2 block text-sm font-medium text-[var(--ledger-text-secondary)]">
                   {mode === 'create' ? 'Workspace name' : 'Invite code or link'}
                 </span>
                 <input
@@ -617,20 +617,20 @@ function OnboardingFlow({
                       : onInviteValueChange(event.target.value)
                   }
                   placeholder={mode === 'create' ? 'My Workspace' : 'https://ledger.app/invite/...'}
-                  className="h-12 w-full rounded-2xl border border-gray-200 bg-[#FFFDFB] px-4 text-[15px] text-gray-950 outline-none transition focus:border-gray-300 focus:ring-4 focus:ring-gray-100"
+                  className="h-12 w-full rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-input-background)] px-4 text-[15px] text-[var(--ledger-text-primary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-accent)]/10"
                 />
               </label>
 
               <button
                 type="button"
                 onClick={() => onModeChange(mode === 'create' ? 'join' : 'create')}
-                className="mt-3 text-sm font-medium text-[#FF5F40] transition hover:text-[#ea5336]"
+                className="mt-3 text-sm font-medium text-[var(--ledger-accent)] transition hover:text-[var(--ledger-accent-hover)]"
               >
                 {mode === 'create' ? 'Have an invite? Join a workspace' : 'Back to create a workspace'}
               </button>
 
               {error ? (
-                <div className="mt-5 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                <div className="mt-5 rounded-2xl border border-[color:rgba(239,68,68,0.2)] bg-[color:rgba(239,68,68,0.08)] px-4 py-3 text-sm text-[color:#FCA5A5]">
                   {error}
                 </div>
               ) : null}
@@ -650,13 +650,13 @@ function OnboardingFlow({
           ) : null}
 
           {step === 'position' ? (
-            <div className="mx-auto rounded-3xl bg-[#FFFDFB]/72 p-7 shadow-[0_24px_70px_rgba(17,24,39,0.10)] backdrop-blur-xl">
+            <div className="mx-auto rounded-3xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-7 shadow-[0_24px_70px_rgba(17,24,39,0.18)] backdrop-blur-xl">
               <div className="mb-7">
                 <img src="./logo-color.svg" alt="Ledger" className="mb-5 h-10 w-10" />
-                <h1 className="text-[30px] font-semibold leading-tight text-gray-950">
+                <h1 className="text-[30px] font-semibold leading-tight text-[var(--ledger-text-primary)]">
                   Where should Ledger live?
                 </h1>
-                <p className="mt-3 max-w-md text-sm leading-6 text-gray-500">
+                <p className="mt-3 max-w-md text-sm leading-6 text-[var(--ledger-text-muted)]">
                   Choose a starting position. You can change this anytime.
                 </p>
               </div>
@@ -674,11 +674,11 @@ function OnboardingFlow({
                         isFloating ? 'col-span-2' : ''
                       } ${
                         isSelected
-                          ? 'border-[#FF5F40]/45 bg-[#fff7f2] text-gray-950 shadow-[0_8px_18px_rgba(255,95,64,0.08)]'
-                          : 'border-gray-200 bg-[#FFFDFB] text-gray-600 hover:border-gray-300 hover:bg-gray-50'
+                          ? 'border-[color:rgba(255,95,64,0.35)] bg-[color:rgba(255,95,64,0.08)] text-[var(--ledger-text-primary)] shadow-[0_8px_18px_rgba(255,95,64,0.08)]'
+                          : 'border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)] hover:border-[color:var(--ledger-border-strong)] hover:bg-[var(--ledger-surface-hover)]'
                       }`}
                     >
-                      <span className="relative h-9 w-11 rounded-lg border border-gray-200 bg-[#FFFDFB]">
+                      <span className="relative h-9 w-11 rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)]">
                         <span
                           className={`absolute rounded-sm bg-[var(--ledger-accent)] ${
                             option.value === 'right'
@@ -694,8 +694,8 @@ function OnboardingFlow({
                         />
                         {option.value === 'floating' ? (
                           <>
-                            <span className="absolute left-2 top-2 h-1 w-1 rounded-full bg-[#FFFDFB]/90" />
-                            <span className="absolute right-2 top-2 h-1 w-1 rounded-full bg-[#FFFDFB]/90" />
+                            <span className="absolute left-2 top-2 h-1 w-1 rounded-full bg-[var(--ledger-surface-card)]/90" />
+                            <span className="absolute right-2 top-2 h-1 w-1 rounded-full bg-[var(--ledger-surface-card)]/90" />
                           </>
                         ) : null}
                       </span>
@@ -706,7 +706,7 @@ function OnboardingFlow({
               </div>
 
               {error ? (
-                <div className="mt-5 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                <div className="mt-5 rounded-2xl border border-[color:rgba(239,68,68,0.2)] bg-[color:rgba(239,68,68,0.08)] px-4 py-3 text-sm text-[color:#FCA5A5]">
                   {error}
                 </div>
               ) : null}
@@ -2607,12 +2607,12 @@ function DashboardContent() {
         backdropBorderRadius="inherit"
         disablePortal
         manageWindowChrome={false}
-        classNameContainer="w-full max-w-[420px] overflow-hidden rounded-xl border border-[#E2D4C4] bg-[#FFF8F2] shadow-xl"
+        classNameContainer="w-full max-w-[420px] overflow-hidden rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-[var(--ledger-shadow)]"
       >
-        <div className="flex items-start justify-between gap-4 border-b border-[#E8DDD4] px-5 py-4">
+        <div className="flex items-start justify-between gap-4 border-b border-[color:var(--ledger-border-subtle)] px-5 py-4">
           <div className="min-w-0">
-            <p className="text-sm font-semibold text-gray-900">New focus</p>
-            <p className="mt-1 text-sm text-gray-600">
+            <p className="text-sm font-semibold text-[var(--ledger-text-primary)]">New focus</p>
+            <p className="mt-1 text-sm text-[var(--ledger-text-secondary)]">
               Create a new priority and keep it in Today.
             </p>
           </div>
@@ -2640,20 +2640,20 @@ function DashboardContent() {
               }
             }}
             placeholder="e.g. Submit posters for critique file"
-            className="w-full rounded-md border border-[#E2D4C4] bg-[#FFF8F2] px-3 py-2 text-sm text-gray-900 outline-none focus:border-gray-400"
+            className="w-full rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 py-2 text-sm text-[var(--ledger-text-primary)] outline-none focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60"
           />
-          <p className="text-sm text-gray-600">
+          <p className="text-sm text-[var(--ledger-text-secondary)]">
             This creates a Today task and marks it as a focus priority.
           </p>
         </div>
-        <div className="flex items-center justify-end gap-2 border-t border-[#E8DDD4] px-5 py-4">
+        <div className="flex items-center justify-end gap-2 border-t border-[color:var(--ledger-border-subtle)] px-5 py-4">
           <button
             type="button"
             onClick={() => {
               setIsNewFocusModalOpen(false);
               setFocusDraftTitle('');
             }}
-            className="rounded-lg border border-[#E2D4C4] bg-[#FFF8F2] px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-[#FFF1E3]"
+            className="rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3 py-1.5 text-sm font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
           >
             Cancel
           </button>
@@ -2661,7 +2661,7 @@ function DashboardContent() {
             type="button"
             onClick={() => void createNewFocusTask()}
             disabled={!focusDraftTitle.trim() || isSavingFocusTask || focusTasks.length >= 3}
-            className="rounded-lg border border-[#E2D4C4] bg-[#FFF8F2] px-3 py-1.5 text-sm font-medium text-gray-900 hover:bg-[#FFF1E3] disabled:opacity-50"
+            className="rounded-lg bg-[var(--ledger-accent)] px-3 py-1.5 text-sm font-medium text-white transition hover:bg-[var(--ledger-accent-hover)] disabled:opacity-50"
           >
             Add focus
           </button>
@@ -3254,8 +3254,8 @@ function AppShell() {
     }
 
     return (
-      <div className="flex h-screen items-center justify-center bg-[#FFFDFB]">
-        <p className="text-sm text-gray-600">Unknown module</p>
+      <div className="flex h-screen items-center justify-center bg-[var(--ledger-background)]">
+        <p className="text-sm text-[var(--ledger-text-muted)]">Unknown module</p>
       </div>
     );
   }
@@ -3902,7 +3902,7 @@ function AppShell() {
   return (
     <>
       {inviteFlowStatus === 'error' && inviteFlowError && (
-        <div className="mx-auto mt-4 w-full max-w-3xl rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+        <div className="mx-auto mt-4 w-full max-w-3xl rounded-xl border border-[color:rgba(239,68,68,0.2)] bg-[color:rgba(239,68,68,0.08)] px-4 py-3 text-sm text-[color:#FCA5A5]">
           {inviteFlowError}
         </div>
       )}

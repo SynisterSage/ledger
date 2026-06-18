@@ -203,6 +203,7 @@ function getActionsForItem(item: TodayDetailSheetItem, mode: TodayDetailSheetMod
     case 'event':
       return mode === 'actions'
         ? [
+            { id: 'complete', label: 'Mark as done', variant: 'primary' },
             { id: 'add_note', label: 'Add note' },
             { id: 'create_follow_up', label: 'Create follow-up' },
             { id: 'reschedule', label: 'Reschedule' },
@@ -210,6 +211,7 @@ function getActionsForItem(item: TodayDetailSheetItem, mode: TodayDetailSheetMod
             { id: 'delete', label: 'Delete', variant: 'danger' },
           ]
         : [
+            { id: 'complete', label: 'Mark as done', variant: 'primary' },
             { id: 'add_note', label: 'Add note' },
             { id: 'create_follow_up', label: 'Create follow-up' },
             { id: 'reschedule', label: 'Reschedule' },

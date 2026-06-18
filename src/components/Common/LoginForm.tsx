@@ -17,9 +17,16 @@ const noDragRegionStyle = { WebkitAppRegion: 'no-drag' } as CSSProperties & {
   WebkitAppRegion: 'no-drag';
 };
 const inputClassName =
-  'h-11 w-full rounded-2xl border border-black/10 bg-transparent px-3.5 text-sm text-gray-900 transition placeholder:text-gray-400 focus:border-black/15 focus:bg-white/70 focus:outline-none focus:ring-4 focus:ring-gray-100';
+  'h-11 w-full rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-input-background)] px-3.5 text-sm text-[var(--ledger-text-primary)] transition placeholder:text-[var(--ledger-placeholder)] focus:border-[color:var(--ledger-border-strong)] focus:outline-none focus:ring-4 focus:ring-[color:var(--ledger-accent)]/10';
 const iconInputClassName =
-  'h-11 w-full rounded-2xl border border-black/10 bg-transparent pl-9 pr-3.5 text-sm text-gray-900 transition placeholder:text-gray-400 focus:border-black/15 focus:bg-white/70 focus:outline-none focus:ring-4 focus:ring-gray-100';
+  'h-11 w-full rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-input-background)] pl-9 pr-3.5 text-sm text-[var(--ledger-text-primary)] transition placeholder:text-[var(--ledger-placeholder)] focus:border-[color:var(--ledger-border-strong)] focus:outline-none focus:ring-4 focus:ring-[color:var(--ledger-accent)]/10';
+const authFrameClassName =
+  'absolute inset-3 rounded-3xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]';
+const authSurfaceClassName = 'relative z-10 h-full w-full overflow-hidden rounded-3xl bg-[var(--ledger-background)]';
+const authTextPrimaryClassName = 'text-[var(--ledger-text-primary)]';
+const authLabelClassName = 'mb-1.5 block text-xs font-medium text-[var(--ledger-text-secondary)]';
+const authChipClassName =
+  'inline-flex h-8 w-8 items-center justify-center rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]';
 
 export const LoginForm: React.FC<LoginProps> = ({ onSuccess, notice }) => {
   const [email, setEmail] = useState('');
@@ -39,7 +46,6 @@ export const LoginForm: React.FC<LoginProps> = ({ onSuccess, notice }) => {
   });
   const [isSplashDismissing, setIsSplashDismissing] = useState(false);
   const preloginSplashDoneRef = useRef(false);
-  const preloginSplashVideoRef = useRef<HTMLVideoElement | null>(null);
   const splashDismissTimerRef = useRef<number | null>(null);
   const { signIn, signUp, isLoading } = useAuth();
   const { show: showToast } = useToast();
@@ -89,13 +95,10 @@ export const LoginForm: React.FC<LoginProps> = ({ onSuccess, notice }) => {
 
     const handleKeyDown = () => finishPreLoginSplash();
     const handlePointerDown = () => finishPreLoginSplash();
-    const handleError = () => finishPreLoginSplash();
-    const splashVideo = preloginSplashVideoRef.current;
-    const fallbackDelay = 5000;
+    const fallbackDelay = 1600;
 
     window.addEventListener('keydown', handleKeyDown, { once: true });
     window.addEventListener('pointerdown', handlePointerDown, { once: true });
-    splashVideo?.addEventListener('error', handleError, { once: true });
 
     const fallbackTimer = window.setTimeout(() => {
       finishPreLoginSplash();
@@ -105,7 +108,6 @@ export const LoginForm: React.FC<LoginProps> = ({ onSuccess, notice }) => {
       window.clearTimeout(fallbackTimer);
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('pointerdown', handlePointerDown);
-      splashVideo?.removeEventListener('error', handleError);
     };
   }, [showPreLoginSplash]);
 
@@ -153,15 +155,15 @@ export const LoginForm: React.FC<LoginProps> = ({ onSuccess, notice }) => {
 
   return (
     <div className="relative h-screen w-screen overflow-hidden bg-transparent p-3">
-      <div className="absolute inset-3 rounded-3xl border border-white/60 bg-[#FEF9F5] shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]" />
-      <div className="relative z-10 h-full w-full overflow-hidden rounded-3xl bg-[#FEF9F5]">
+      <div className={authFrameClassName} />
+      <div className={authSurfaceClassName}>
         {!splashOverlayVisible && (
           <button
             type="button"
             onMouseDown={triggerOnPrimaryMouseDown}
             onClick={handleCloseWindow}
             aria-label="Close"
-            className="absolute right-6 top-7 z-30 inline-flex h-8 w-8 items-center justify-center rounded-full border border-black/5 bg-white/60 text-gray-500 transition hover:bg-white/90 hover:text-gray-900"
+            className={authChipClassName + ' absolute right-6 top-7 z-30'}
             style={noDragRegionStyle}
           >
             <X size={16} />
@@ -178,35 +180,40 @@ export const LoginForm: React.FC<LoginProps> = ({ onSuccess, notice }) => {
 
         {(showPreLoginSplash || isSplashDismissing) && (
           <div
-            className={`absolute inset-0 z-20 bg-[#FEF9F5] transition-opacity duration-200 ease-out ${
+            className={`absolute inset-0 z-20 bg-[var(--ledger-background)] transition-opacity duration-200 ease-out ${
               showPreLoginSplash && !isSplashDismissing ? 'opacity-100' : 'pointer-events-none opacity-0'
             }`}
             aria-hidden={!splashOverlayVisible}
           >
             <div className="absolute inset-0 flex items-center justify-center p-6 sm:p-10">
-              <video
-                ref={preloginSplashVideoRef}
-                className="h-full w-full max-h-[52vh] max-w-[min(52vw,540px)] object-contain object-center"
-                src="./preload-splash.mp4"
-                autoPlay
-                muted
-                playsInline
-                preload="auto"
-                onEnded={finishPreLoginSplash}
-                onError={finishPreLoginSplash}
-              />
+              <div className="flex flex-col items-center text-center">
+                <div className="relative flex h-28 w-28 items-center justify-center">
+                  <span className="ledger-prelogin-ring ledger-prelogin-ring-1" />
+                  <span className="ledger-prelogin-ring ledger-prelogin-ring-2" />
+                  <span className="ledger-prelogin-ring ledger-prelogin-ring-3" />
+                  <div className="ledger-prelogin-mark">
+                    <img src="./logo-color.svg" alt="Ledger" className="h-12 w-12" />
+                  </div>
+                </div>
+                <p className="mt-5 text-base font-medium tracking-[0.01em] text-[var(--ledger-text-primary)]">
+                  Ledger
+                </p>
+                <p className="mt-1 text-sm text-[var(--ledger-text-muted)]">
+                  Preparing your workspace
+                </p>
+              </div>
             </div>
           </div>
         )}
 
-        <div className="relative z-10 grid h-full min-h-full w-full overflow-hidden bg-[#FEF9F5] min-[820px]:grid-cols-[0.42fr_0.58fr]">
+        <div className="relative z-10 grid h-full min-h-full w-full overflow-hidden bg-[var(--ledger-background)] min-[820px]:grid-cols-[0.42fr_0.58fr]">
         <div
-          className={`relative hidden overflow-hidden bg-[#FEF9F5] min-[820px]:block ${
+          className={`relative hidden overflow-hidden bg-[linear-gradient(180deg,rgba(17,24,39,0.96),rgba(17,24,39,0.88))] min-[820px]:block ${
             prefersReducedMotion ? '' : shouldPlayAuthIntro ? 'ledger-auth-left-enter' : 'opacity-0'
           }`}
         >
           {prefersReducedMotion ? (
-            <div className="flex h-full min-h-full items-center justify-center bg-[#FEF9F5]">
+            <div className="flex h-full min-h-full items-center justify-center bg-[var(--ledger-background)]">
               <img src="./logo-color.svg" alt="Ledger" className="h-16 w-16" />
             </div>
           ) : (
@@ -220,7 +227,7 @@ export const LoginForm: React.FC<LoginProps> = ({ onSuccess, notice }) => {
               loop
             />
           )}
-          <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(17,24,39,0.04),rgba(17,24,39,0.34)),linear-gradient(135deg,rgba(255,255,255,0.12),rgba(255,249,244,0.12))]" />
+          <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(17,24,39,0.12),rgba(17,24,39,0.55)),linear-gradient(135deg,rgba(255,255,255,0.08),rgba(17,24,39,0.04))]" />
           <div className="absolute bottom-0 left-0 right-0 p-8 text-white">
             <p className="max-w-65 text-[24px] font-medium leading-0.5 [text-shadow:0_1px_12px_rgba(17,24,39,0.42)]">
               Live a little simpler.
@@ -232,7 +239,7 @@ export const LoginForm: React.FC<LoginProps> = ({ onSuccess, notice }) => {
         </div>
 
         <div
-          className={`flex h-full min-h-full items-center justify-center bg-[#FEF9F5] px-7 py-10 sm:px-10 min-[820px]:px-16 ${
+          className={`flex h-full min-h-full items-center justify-center bg-[var(--ledger-background)] px-7 py-10 sm:px-10 min-[820px]:px-16 ${
             prefersReducedMotion ? '' : shouldPlayAuthIntro ? 'ledger-auth-pane-enter' : 'opacity-0'
           }`}
         >
@@ -248,9 +255,9 @@ export const LoginForm: React.FC<LoginProps> = ({ onSuccess, notice }) => {
             >
               <div className="mb-5 flex items-center gap-3">
                 <img src="./logo-color.svg" alt="Ledger" className="h-10 w-10" />
-                <h1 className="text-[28px] font-medium leading-none text-gray-950">Ledger</h1>
+                <h1 className={`text-[28px] font-medium leading-none ${authTextPrimaryClassName}`}>Ledger</h1>
               </div>
-              <p className="text-[22px] font-medium leading-tight text-gray-950 transition-all duration-150 ease-out">
+              <p className={`text-[22px] font-medium leading-tight ${authTextPrimaryClassName} transition-all duration-150 ease-out`}>
                 {isSignUp ? 'Create your account' : 'Sign in to continue'}
               </p>
             </div>
@@ -266,7 +273,7 @@ export const LoginForm: React.FC<LoginProps> = ({ onSuccess, notice }) => {
               }`}
             >
               {notice && (
-                <div className="rounded-2xl border border-amber-200/80 bg-amber-50/80 px-3 py-2 text-xs leading-5 text-amber-800">
+                <div className="rounded-2xl border border-[color:rgba(245,158,11,0.2)] bg-[color:rgba(245,158,11,0.08)] px-3 py-2 text-xs leading-5 text-[color:#FCD34D]">
                   {notice}
                 </div>
               )}
@@ -274,9 +281,7 @@ export const LoginForm: React.FC<LoginProps> = ({ onSuccess, notice }) => {
               <div className="transition-all duration-150 ease-out">
                 {isSignUp && (
                   <div className="pb-3">
-                    <label className="mb-1.5 block text-xs font-medium text-gray-700">
-                      Full name
-                    </label>
+                    <label className={authLabelClassName}>Full name</label>
                     <input
                       type="text"
                       value={fullName}
@@ -290,13 +295,11 @@ export const LoginForm: React.FC<LoginProps> = ({ onSuccess, notice }) => {
               </div>
 
               <div>
-                <label className="mb-1.5 block text-xs font-medium text-gray-700">
-                  Email address
-                </label>
+                <label className={authLabelClassName}>Email address</label>
                 <div className="relative">
                   <Mail
                     size={15}
-                    className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400"
+                    className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--ledger-text-muted)]"
                   />
                   <input
                     type="email"
@@ -311,11 +314,11 @@ export const LoginForm: React.FC<LoginProps> = ({ onSuccess, notice }) => {
               </div>
 
               <div>
-                <label className="mb-1.5 block text-xs font-medium text-gray-700">Password</label>
+                <label className={authLabelClassName}>Password</label>
                 <div className="relative">
                   <Lock
                     size={15}
-                    className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400"
+                    className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--ledger-text-muted)]"
                   />
                   <input
                     type={showPassword ? 'text' : 'password'}
@@ -330,7 +333,7 @@ export const LoginForm: React.FC<LoginProps> = ({ onSuccess, notice }) => {
                     type="button"
                     aria-label={showPassword ? 'Hide password' : 'Show password'}
                     onClick={() => setShowPassword((value) => !value)}
-                    className="absolute right-3.5 top-1/2 inline-flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-full text-gray-400 transition hover:bg-black/5 hover:text-gray-700"
+                    className="absolute right-3.5 top-1/2 inline-flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-full text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
                   >
                     {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
                   </button>
@@ -352,7 +355,7 @@ export const LoginForm: React.FC<LoginProps> = ({ onSuccess, notice }) => {
                   onClick={() => {
                     setIsSignUp(!isSignUp);
                   }}
-                  className="text-sm font-medium text-gray-500 transition hover:text-gray-950"
+                  className="text-sm font-medium text-[var(--ledger-text-secondary)] transition hover:text-[var(--ledger-text-primary)]"
                 >
                   {isSignUp ? 'Already have an account? Sign in' : "Don't have an account? Sign up"}
                 </button>

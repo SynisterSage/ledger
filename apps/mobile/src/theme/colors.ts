@@ -1,48 +1,67 @@
 // Temporary mobile theme tokens.
 // These mirror the Ledger desktop token structure until shared tokens are wired in.
+// Palette direction: Option B / Graphite Workspace.
+// Light mode uses warm stone/paper neutrals.
+// Dark mode uses warm graphite/charcoal, not navy.
+
 export const lightColors = {
-  background: '#FFF9F4',
-  backgroundMuted: '#FFF4EA',
-  surface: '#FFFFFF',
-  surfaceMuted: '#FAF5F0',
-  selectedSurface: '#FFF0EA',
-  textPrimary: '#111827',
-  textSecondary: '#4B5563',
-  textMuted: '#6B7280',
-  borderSubtle: '#E8DDD4',
-  borderStrong: '#D8C6B6',
+  background: '#F7F4EF',
+  backgroundMuted: '#EFEAE3',
+  surface: '#FFFCF7',
+  surfaceMuted: '#F1ECE4',
+  selectedSurface: '#F4E7DE',
+
+  textPrimary: '#171512',
+  textSecondary: '#4F4A43',
+  textMuted: '#766F65',
+
+  borderSubtle: '#DED6CB',
+  borderStrong: '#C8BDAF',
+
   accent: '#FF5F40',
-  accentSoft: '#FDBA74',
-  danger: '#D92D20',
-  success: '#12B76A',
-  warning: '#DC6803',
-  inputBackground: '#FFFDFB',
-  placeholder: '#9CA3AF',
-  tabBar: '#FFF8F1',
-  tabBarBorder: '#E9DDCF',
+  accentSoft: '#FFE1D7',
+
+  danger: '#C24135',
+  success: '#168A5B',
+  warning: '#B86B16',
+
+  inputBackground: '#FFFCF8',
+  placeholder: '#9A9288',
+
+  tabBar: '#F4EFE7',
+  tabBarBorder: '#DED6CB',
 };
 
 export const darkColors = {
-  background: '#0B1220',
-  backgroundMuted: '#111A2E',
-  surface: '#121B2E',
-  surfaceMuted: '#17233B',
-  selectedSurface: '#16253B',
-  textPrimary: '#F8FAFC',
-  textSecondary: '#CBD5E1',
-  textMuted: '#94A3B8',
-  borderSubtle: '#26324A',
-  borderStrong: '#334155',
+  background: '#11100E',
+  backgroundMuted: '#171512',
+  surface: '#1A1815',
+  surfaceMuted: '#28251F',
+  selectedSurface: '#332820',
+
+  textPrimary: '#F7F2EA',
+  textSecondary: '#D4CCC0',
+  textMuted: '#A79D90',
+
+  borderSubtle: '#38332B',
+  borderStrong: '#51493D',
+
   accent: '#FF7A59',
-  accentSoft: '#FDBA74',
+  accentSoft: '#4B2B22',
+
   danger: '#F97066',
   success: '#32D583',
   warning: '#FDB022',
-  inputBackground: '#111A2E',
-  placeholder: '#64748B',
-  tabBar: '#0E1729',
-  tabBarBorder: '#22304A',
+
+  inputBackground: '#181612',
+  placeholder: '#81786C',
+
+  tabBar: '#15130F',
+  tabBarBorder: '#332E27',
 };
 
 export type LedgerColorScheme = 'light' | 'dark';
 export type LedgerColors = typeof lightColors;
+
+export const getLedgerColors = (scheme: LedgerColorScheme) =>
+  scheme === 'dark' ? darkColors : lightColors;

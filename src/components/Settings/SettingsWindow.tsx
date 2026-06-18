@@ -369,9 +369,10 @@ const inlineSwitchClassName =
 
 const settingsTheme = {
   shell:
-    'relative h-screen overflow-hidden rounded-3xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] text-[var(--ledger-text-primary)] flex flex-col shadow-[0_24px_80px_rgba(15,23,42,0.08)]',
+    'relative flex h-screen flex-col overflow-hidden rounded-3xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] text-[var(--ledger-text-primary)] shadow-[0_24px_80px_rgba(15,23,42,0.08)]',
   root: 'flex-1 overflow-hidden bg-[var(--ledger-background)]',
-  aside: 'border-r border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] p-4 overflow-auto',
+  aside:
+    'overflow-auto border-r border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] p-4',
   sideHeader: 'mb-4 border-b border-[color:var(--ledger-border-subtle)] pb-4',
   sideLabel: 'text-xs font-medium text-[var(--ledger-text-muted)]',
   sideTitle: 'mt-1 text-sm font-semibold text-[var(--ledger-text-primary)]',
@@ -380,11 +381,25 @@ const settingsTheme = {
   sectionTitle: 'text-sm font-semibold text-[var(--ledger-text-primary)]',
   sectionSubtitle: 'text-sm text-[var(--ledger-text-secondary)]',
   sectionStatus: 'text-xs text-[var(--ledger-text-muted)]',
+  pageTitle: 'text-[28px] font-semibold tracking-tight text-[var(--ledger-text-primary)]',
+  pageSubtitle: 'text-sm text-[var(--ledger-text-secondary)]',
+  pageStatus: 'text-xs text-[var(--ledger-text-muted)]',
+  sectionShell: 'border-t border-[color:var(--ledger-border-subtle)] pt-6',
+  sectionRows: 'mt-5 divide-y divide-[color:var(--ledger-border-subtle)] border-t border-[color:var(--ledger-border-subtle)]',
+  rowLabel: 'text-sm font-medium text-[var(--ledger-text-secondary)]',
+  rowValue: 'text-sm text-[var(--ledger-text-primary)]',
+  rowMuted: 'text-xs text-[var(--ledger-text-muted)]',
   divider: 'border-[color:var(--ledger-border-subtle)]',
   surfaceCard: 'bg-[var(--ledger-surface-card)]',
   surfaceMuted: 'bg-[var(--ledger-surface-muted)]',
   surfaceHover: 'hover:bg-[var(--ledger-surface-hover)]',
   rowHover: 'transition hover:bg-[var(--ledger-surface-hover)]',
+  subtleDivider: 'border-[color:var(--ledger-border-subtle)]',
+  modalShell:
+    'rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-[0_24px_70px_rgba(15,23,42,0.12)]',
+  modalHeader: 'border-t border-[color:var(--ledger-border-subtle)]',
+  modalBody: 'border-t border-[color:var(--ledger-border-subtle)]',
+  modalFooter: 'border-t border-[color:var(--ledger-border-subtle)]',
   controlButton:
     'h-8 rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3 text-xs font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]',
   controlButtonNeutral:
@@ -396,7 +411,7 @@ const settingsTheme = {
   sectionCard:
     'mt-2 divide-y divide-[color:var(--ledger-border-subtle)] border-y border-[color:var(--ledger-border-subtle)]',
   radioRow:
-    'flex cursor-pointer items-center gap-3 rounded-2xl border border-transparent px-4 py-3 transition',
+    'flex cursor-pointer items-center gap-3 rounded-2xl border border-transparent px-4 py-3',
   radioInput:
     'mt-0.5 h-4 w-4 border-[color:var(--ledger-border-subtle)] text-[var(--ledger-accent)] outline-none focus:outline-none focus:ring-0 focus:ring-offset-0 focus-visible:outline-none focus-visible:ring-0',
   label: 'text-sm font-medium text-[var(--ledger-text-primary)]',
@@ -406,6 +421,22 @@ const settingsTheme = {
     'h-9 rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-4 text-sm font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]',
   headerButton:
     'h-9 rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3 text-xs font-semibold text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]',
+  navButton:
+    'w-full rounded-2xl border px-3 py-2.5 text-left transition outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-accent)]/20 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--ledger-surface)]',
+  navButtonActive:
+    'border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-hover)] text-[var(--ledger-text-primary)]',
+  navButtonIdle:
+    'border-transparent text-[var(--ledger-text-secondary)] hover:border-[color:var(--ledger-border-subtle)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]',
+  input:
+    'h-10 w-full rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 text-sm text-[var(--ledger-text-primary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60',
+  inputSecondary:
+    'h-10 rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 text-sm text-[var(--ledger-text-primary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60',
+  pill:
+    'inline-flex rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2.5 py-1 text-[11px] font-medium text-[var(--ledger-text-secondary)]',
+  dangerPill:
+    'inline-flex rounded-full border border-[color:rgba(217,45,32,0.18)] bg-[var(--ledger-surface-card)] px-3 text-xs font-medium text-[var(--ledger-danger)] transition hover:bg-[color:rgba(217,45,32,0.08)]',
+  disabledButton:
+    'h-8 rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 text-xs font-medium text-[var(--ledger-text-muted)] transition',
 } as const;
 
 const PreferenceRow = ({
@@ -1780,10 +1811,10 @@ export const SettingsWindow = () => {
                 <button
                   key={section.id}
                   onClick={() => setActiveSection(section.id)}
-                  className={`w-full rounded-2xl border px-3 py-2.5 text-left transition outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-accent)]/20 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--ledger-surface)] ${
+                  className={`${settingsTheme.navButton} ${
                     activeSection === section.id
-                      ? 'border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-hover)] text-[var(--ledger-text-primary)]'
-                      : 'border-transparent text-[var(--ledger-text-secondary)] hover:border-[color:var(--ledger-border-subtle)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]'
+                      ? settingsTheme.navButtonActive
+                      : settingsTheme.navButtonIdle
                   }`}
                   aria-current={activeSection === section.id ? 'page' : undefined}
                 >
@@ -1802,73 +1833,62 @@ export const SettingsWindow = () => {
               {activeSection === 'account' && (
                 <section className="w-full max-w-215" aria-labelledby="settings-account">
                   <div className="space-y-2">
-                    <h2
-                      id="settings-account"
-                      className="text-[28px] font-semibold tracking-tight text-gray-950"
-                    >
+                    <h2 id="settings-account" className={settingsTheme.pageTitle}>
                       Account
                     </h2>
-                    <p className="text-sm text-gray-600">
+                    <p className={settingsTheme.pageSubtitle}>
                       Basic identity and security settings.
                     </p>
-                    <p className="text-xs text-gray-500" role="status">
+                    <p className={settingsTheme.pageStatus} role="status">
                       {saveStatus ?? 'Changes save automatically.'}
                     </p>
                   </div>
 
                   <div className="mt-8 space-y-10">
-                    <section className="border-t border-gray-200 pt-6" aria-labelledby="settings-profile">
-                      <h3 id="settings-profile" className="text-sm font-semibold text-gray-900">
+                    <section className={settingsTheme.sectionShell} aria-labelledby="settings-profile">
+                      <h3 id="settings-profile" className={settingsTheme.sectionTitle}>
                         Profile
                       </h3>
 
-                      <div className="mt-5 divide-y divide-gray-100 border-t border-gray-200">
+                      <div className={settingsTheme.sectionRows}>
                         <div className="grid gap-4 py-5 md:grid-cols-[220px_minmax(0,1fr)] md:items-start">
                           <div className="space-y-1">
-                            <label
-                              htmlFor="settings-full-name"
-                              className="text-sm font-medium text-gray-800"
-                            >
+                            <label htmlFor="settings-full-name" className={settingsTheme.rowLabel}>
                               Display name
                             </label>
-                            <p className="text-xs text-gray-500">
-                              Your name as it appears in Ledger.
-                            </p>
+                            <p className={settingsTheme.rowMuted}>Your name as it appears in Ledger.</p>
                           </div>
                           <div className="max-w-130">
                             <input
                               id="settings-full-name"
                               value={fullName}
                               onChange={(e) => setFullName(e.target.value)}
-                              className="h-10 w-full rounded-xl border border-gray-200 bg-[#FFFDFB] px-3 text-sm text-gray-900 outline-none transition focus:border-gray-300 focus:ring-4 focus:ring-gray-100"
+                              className={settingsTheme.input}
                             />
                           </div>
                         </div>
 
                         <div className="grid gap-4 py-5 md:grid-cols-[220px_minmax(0,1fr)] md:items-start">
                           <div className="space-y-1">
-                            <label
-                              htmlFor="settings-email"
-                              className="text-sm font-medium text-gray-800"
-                            >
+                            <label htmlFor="settings-email" className={settingsTheme.rowLabel}>
                               Email
                             </label>
-                            <p className="text-xs text-gray-500">Used for signing in.</p>
+                            <p className={settingsTheme.rowMuted}>Used for signing in.</p>
                           </div>
-                          <div className="max-w-130 text-sm text-gray-700">
+                          <div className="max-w-130 text-sm text-[var(--ledger-text-secondary)]">
                             {user?.email ?? 'No email available'}
                           </div>
                         </div>
                       </div>
                     </section>
 
-                    <section className="border-t border-gray-200 pt-6" aria-labelledby="settings-security">
+                    <section className={settingsTheme.sectionShell} aria-labelledby="settings-security">
                       <div className="flex items-center justify-between gap-4">
                         <div className="space-y-1">
-                          <h3 id="settings-security" className="text-sm font-semibold text-gray-900">
+                          <h3 id="settings-security" className={settingsTheme.sectionTitle}>
                             Security
                           </h3>
-                          <p className="text-xs text-gray-500">
+                          <p className={settingsTheme.rowMuted}>
                             Change your account password.
                           </p>
                         </div>
@@ -1876,7 +1896,7 @@ export const SettingsWindow = () => {
                           <button
                             type="button"
                             onClick={() => setShowPasswordEditor(true)}
-                            className="h-8 rounded-full border border-gray-200 bg-[#FFFDFB] px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-50"
+                            className={settingsTheme.headerButton}
                           >
                             Change password
                           </button>
@@ -1890,7 +1910,7 @@ export const SettingsWindow = () => {
                               setPasswordError(null);
                               setPasswordStatus(null);
                             }}
-                            className="h-8 rounded-full border border-gray-200 bg-[#FFFDFB] px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-50"
+                            className={settingsTheme.headerButton}
                           >
                             Cancel
                           </button>
@@ -1903,7 +1923,7 @@ export const SettingsWindow = () => {
                             <div className="grid gap-2">
                               <label
                                 htmlFor="settings-password"
-                                className="text-xs font-medium text-gray-700"
+                                className={settingsTheme.rowLabel}
                               >
                                 New password
                               </label>
@@ -1912,13 +1932,13 @@ export const SettingsWindow = () => {
                                 type="password"
                                 value={newPassword}
                                 onChange={(e) => setNewPassword(e.target.value)}
-                                className="h-10 rounded-xl border border-gray-200 bg-[#FFFDFB] px-3 text-sm text-gray-900 outline-none transition focus:border-gray-300 focus:ring-4 focus:ring-gray-100"
+                                className={settingsTheme.inputSecondary}
                               />
                             </div>
                             <div className="grid gap-2">
                               <label
                                 htmlFor="settings-password-confirm"
-                                className="text-xs font-medium text-gray-700"
+                                className={settingsTheme.rowLabel}
                               >
                                 Confirm password
                               </label>
@@ -1927,7 +1947,7 @@ export const SettingsWindow = () => {
                                 type="password"
                                 value={confirmPassword}
                                 onChange={(e) => setConfirmPassword(e.target.value)}
-                                className="h-10 rounded-xl border border-gray-200 bg-[#FFFDFB] px-3 text-sm text-gray-900 outline-none transition focus:border-gray-300 focus:ring-4 focus:ring-gray-100"
+                                className={settingsTheme.inputSecondary}
                               />
                             </div>
                           </div>
@@ -1936,34 +1956,34 @@ export const SettingsWindow = () => {
                             <button
                               onClick={() => void handleUpdatePassword()}
                               disabled={isUpdatingPassword}
-                              className="h-9 rounded-full bg-[#FF5F40] px-4 text-sm font-medium text-white transition hover:bg-[#ea5336] disabled:opacity-60"
+                              className={settingsTheme.primaryButton}
                             >
                               {isUpdatingPassword ? 'Updating...' : 'Update password'}
                             </button>
                             {isUpdatingPassword && (
-                              <Loader2 size={14} className="animate-spin text-gray-500" />
+                              <Loader2 size={14} className="animate-spin text-[var(--ledger-text-muted)]" />
                             )}
                           </div>
                           {passwordError && (
-                            <p className="flex items-center gap-1.5 text-xs text-red-700">
+                            <p className="flex items-center gap-1.5 text-xs text-[var(--ledger-danger)]">
                               <CircleAlert size={12} />
                               {passwordError}
                             </p>
                           )}
                           {passwordStatus && (
-                            <p className="text-xs text-green-700">{passwordStatus}</p>
+                            <p className="text-xs text-[var(--ledger-success)]">{passwordStatus}</p>
                           )}
                         </div>
                       ) : null}
                     </section>
 
-                    <section className="border-t border-gray-200 pt-6" aria-labelledby="settings-session">
+                    <section className={settingsTheme.sectionShell} aria-labelledby="settings-session">
                       <div className="flex items-center justify-between gap-4">
                         <div className="space-y-1">
-                          <h3 id="settings-session" className="text-sm font-semibold text-gray-900">
+                          <h3 id="settings-session" className={settingsTheme.sectionTitle}>
                             Session
                           </h3>
-                          <p className="text-xs text-gray-500">
+                          <p className={settingsTheme.rowMuted}>
                             Sign out of Ledger on this device.
                           </p>
                         </div>
@@ -1972,7 +1992,7 @@ export const SettingsWindow = () => {
                           onClick={() => {
                             void signOut();
                           }}
-                          className="h-8 rounded-full border border-gray-200 bg-[#FFFDFB] px-3 text-xs font-medium text-red-600 transition hover:bg-red-50"
+                          className={settingsTheme.dangerButton}
                         >
                           Sign out
                         </button>
@@ -1985,16 +2005,13 @@ export const SettingsWindow = () => {
               {activeSection === 'sessions' && (
                 <section className="w-full max-w-215" aria-labelledby="settings-sessions">
                   <div className="space-y-2">
-                    <h2
-                      id="settings-sessions"
-                      className="text-[28px] font-semibold tracking-tight text-gray-950"
-                    >
+                    <h2 id="settings-sessions" className={settingsTheme.pageTitle}>
                       Sessions
                     </h2>
-                    <p className="text-sm text-gray-600">
+                    <p className={settingsTheme.pageSubtitle}>
                       Manage devices signed in to your Ledger account.
                     </p>
-                    <p className="text-xs text-gray-500" role="status">
+                    <p className={settingsTheme.pageStatus} role="status">
                       {accountSessionsError ||
                         (isLoadingAccountSessions
                           ? 'Loading sessions...'
@@ -2003,13 +2020,13 @@ export const SettingsWindow = () => {
                   </div>
 
                   <div className="mt-8 space-y-10">
-                    <section className="border-t border-gray-200 pt-6" aria-labelledby="settings-current-session">
+                    <section className={settingsTheme.sectionShell} aria-labelledby="settings-current-session">
                       <div className="flex items-center justify-between gap-4">
                         <div className="space-y-1">
-                          <h3 id="settings-current-session" className="text-sm font-semibold text-gray-900">
+                          <h3 id="settings-current-session" className={settingsTheme.sectionTitle}>
                             Current device
                           </h3>
-                          <p className="text-xs text-gray-500">
+                          <p className={settingsTheme.rowMuted}>
                             The device currently signed in to Ledger.
                           </p>
                         </div>
@@ -2018,52 +2035,52 @@ export const SettingsWindow = () => {
                           onClick={() => {
                             void signOut();
                           }}
-                          className="h-8 rounded-full border border-gray-200 bg-[#FFFDFB] px-3 text-xs font-medium text-red-600 transition hover:bg-red-50"
+                          className={settingsTheme.dangerButton}
                         >
                           Sign out this device
                         </button>
                       </div>
 
-                      <div className="mt-5 divide-y divide-gray-100 border-t border-gray-200">
+                      <div className={settingsTheme.sectionRows}>
                         <div className="grid gap-4 py-5 md:grid-cols-[220px_minmax(0,1fr)]">
-                          <div className="text-sm font-medium text-gray-800">Device</div>
-                          <div className="text-sm text-gray-900">
+                          <div className={settingsTheme.rowLabel}>Device</div>
+                          <div className={settingsTheme.rowValue}>
                             {currentSessionDeviceLabel}
                           </div>
                         </div>
                         <div className="grid gap-4 py-5 md:grid-cols-[220px_minmax(0,1fr)]">
-                          <div className="text-sm font-medium text-gray-800">App</div>
-                          <div className="text-sm text-gray-900">{currentSessionPlatformLabel}</div>
+                          <div className={settingsTheme.rowLabel}>App</div>
+                          <div className={settingsTheme.rowValue}>{currentSessionPlatformLabel}</div>
                         </div>
                         <div className="grid gap-4 py-5 md:grid-cols-[220px_minmax(0,1fr)]">
-                          <div className="text-sm font-medium text-gray-800">Status</div>
-                          <div className="text-sm text-gray-900">
+                          <div className={settingsTheme.rowLabel}>Status</div>
+                          <div className={settingsTheme.rowValue}>
                             {formatLedgerSessionRelativeTime(currentAccountSession?.last_seen_at)}
                           </div>
                         </div>
                       </div>
                     </section>
 
-                    <section className="border-t border-gray-200 pt-6" aria-labelledby="settings-other-sessions">
+                    <section className={settingsTheme.sectionShell} aria-labelledby="settings-other-sessions">
                       <div className="flex items-center justify-between gap-4">
                         <div className="space-y-1">
-                          <h3 id="settings-other-sessions" className="text-sm font-semibold text-gray-900">
+                          <h3 id="settings-other-sessions" className={settingsTheme.sectionTitle}>
                             Other devices
                           </h3>
-                          <p className="text-xs text-gray-500">
+                          <p className={settingsTheme.rowMuted}>
                             Signed-in devices besides this one.
                           </p>
                         </div>
-                        <span className="inline-flex rounded-full border border-gray-200 bg-[#FFFDFB] px-2.5 py-1 text-[11px] font-medium text-gray-700">
+                        <span className={settingsTheme.pill}>
                           {otherAccountSessions.length} device{otherAccountSessions.length === 1 ? '' : 's'}
                         </span>
                       </div>
 
-                      <div className="mt-5 divide-y divide-gray-100 border-t border-gray-200">
+                      <div className={settingsTheme.sectionRows}>
                         {isLoadingAccountSessions ? (
-                          <div className="py-5 text-sm text-gray-500">Loading sessions...</div>
+                          <div className="py-5 text-sm text-[var(--ledger-text-muted)]">Loading sessions...</div>
                         ) : otherAccountSessions.length === 0 ? (
-                          <div className="py-5 text-sm text-gray-500">
+                          <div className="py-5 text-sm text-[var(--ledger-text-muted)]">
                             No other devices are currently listed.
                           </div>
                         ) : (
@@ -2072,15 +2089,15 @@ export const SettingsWindow = () => {
                               key={session.id}
                               className="grid gap-4 py-5 md:grid-cols-[220px_minmax(0,1fr)_auto]"
                             >
-                              <div className="text-sm font-medium text-gray-800">
+                              <div className={settingsTheme.rowLabel}>
                                 {session.device_name?.trim() ||
                                   formatLedgerSessionPlatformLabel(session.platform)}
                               </div>
                               <div className="space-y-0.5">
-                                <div className="text-sm text-gray-900">
+                                <div className={settingsTheme.rowValue}>
                                   {formatLedgerSessionPlatformLabel(session.platform)}
                                 </div>
-                                <div className="text-xs text-gray-500">
+                                <div className={settingsTheme.rowMuted}>
                                   {formatLedgerSessionRelativeTime(session.last_seen_at)}
                                 </div>
                               </div>
@@ -2088,7 +2105,7 @@ export const SettingsWindow = () => {
                                 <button
                                   type="button"
                                   disabled
-                                  className="h-8 rounded-full border border-gray-200 bg-[#FFFDFB] px-3 text-xs font-medium text-gray-400 transition"
+                                  className={settingsTheme.disabledButton}
                                 >
                                   Coming soon
                                 </button>
@@ -2099,7 +2116,7 @@ export const SettingsWindow = () => {
                       </div>
                     </section>
 
-                    <div className="rounded-2xl border border-dashed border-gray-200 bg-[#FFFDFB] px-4 py-3 text-xs text-gray-500">
+                    <div className="rounded-2xl border border-dashed border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-4 py-3 text-xs text-[var(--ledger-text-muted)]">
                       Sign-out for other devices is scaffolded here. It will be wired only when the auth
                       provider can revoke sessions safely.
                     </div>
@@ -2110,78 +2127,75 @@ export const SettingsWindow = () => {
               {activeSection === 'workspace' && (
                 <section className="w-full max-w-215" aria-labelledby="settings-workspace">
                   <div className="space-y-2">
-                    <h2
-                      id="settings-workspace"
-                      className="text-[28px] font-semibold tracking-tight text-gray-950"
-                    >
+                    <h2 id="settings-workspace" className={settingsTheme.pageTitle}>
                       Workspace
                     </h2>
-                    <p className="text-sm text-gray-600">
+                    <p className={settingsTheme.pageSubtitle}>
                       Manage workspace identity, members, and defaults.
                     </p>
-                    <p className="text-xs text-gray-500" role="status">
+                    <p className={settingsTheme.pageStatus} role="status">
                       {workspaceStatus || workspaceError || 'Changes save automatically.'}
                     </p>
                   </div>
 
                   <div className="mt-8 space-y-10">
-                    <section className="border-t border-gray-200 pt-6" aria-labelledby="settings-current-workspace">
+                    <section className={settingsTheme.sectionShell} aria-labelledby="settings-current-workspace">
                       <div className="flex items-center justify-between gap-4">
                         <div className="space-y-1">
-                          <h3 id="settings-current-workspace" className="text-sm font-semibold text-gray-900">
+                          <h3 id="settings-current-workspace" className={settingsTheme.sectionTitle}>
                             Current workspace
                           </h3>
-                          <p className="text-xs text-gray-500">The workspace currently active in Ledger.</p>
+                          <p className={settingsTheme.sectionStatus}>The workspace currently active in Ledger.</p>
                         </div>
                         <div className="flex items-center gap-2">
                           <button
                             onClick={() => void refreshWorkspaces()}
                             disabled={isLoadingWorkspaces || isSwitchingWorkspace}
-                            className="h-8 rounded-full border border-gray-200 bg-[#FFFDFB] px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-50 disabled:opacity-60"
+                            className={settingsTheme.controlButtonNeutral}
                           >
                             Refresh
                           </button>
                           {canManageWorkspace ? (
                             <button
                               onClick={openWorkspaceManageModal}
-                              className="h-8 rounded-full border border-gray-200 bg-[#FFFDFB] px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-50"
+                              className={settingsTheme.controlButton}
                             >
                               Manage
                             </button>
                           ) : (
-                            <span className="rounded-full border border-gray-200 bg-[#FFFDFB] px-3 py-2 text-xs font-medium text-gray-500">
+                            <span className={settingsTheme.pill}>
                               Owner only
                             </span>
                           )}
                         </div>
                       </div>
 
-                      <div className="mt-5 divide-y divide-gray-100 border-t border-gray-200">
+                      <div className={settingsTheme.sectionRows}>
                         <div className="grid gap-4 py-5 md:grid-cols-[220px_minmax(0,1fr)]">
-                          <div className="text-sm font-medium text-gray-800">Name</div>
-                          <div className="text-sm text-gray-900">
+                          <div className={settingsTheme.rowLabel}>Name</div>
+                          <div className={settingsTheme.rowValue}>
                             {activeWorkspace?.name ?? 'No workspace selected'}
                           </div>
                         </div>
                         <div className="grid gap-4 py-5 md:grid-cols-[220px_minmax(0,1fr)]">
-                          <div className="text-sm font-medium text-gray-800">Type</div>
-                          <div className="text-sm text-gray-900">{activeWorkspaceKindLabel}</div>
+                          <div className={settingsTheme.rowLabel}>Type</div>
+                          <div className={settingsTheme.rowValue}>{activeWorkspaceKindLabel}</div>
                         </div>
                         <div className="grid gap-4 py-5 md:grid-cols-[220px_minmax(0,1fr)]">
-                          <div className="text-sm font-medium text-gray-800">Description</div>
-                          <div className="max-w-140 text-sm leading-6 text-gray-700">
+                          <div className={settingsTheme.rowLabel}>Description</div>
+                          <div className="max-w-140 text-sm leading-6 text-[var(--ledger-text-secondary)]">
                             {activeWorkspace?.description?.trim() || 'No description set.'}
                           </div>
                         </div>
                         <div className="grid gap-4 py-5 md:grid-cols-[220px_minmax(0,1fr)] md:items-center">
-                          <div className="text-sm font-medium text-gray-800">Switch workspace</div>
+                          <div className={settingsTheme.rowLabel}>Switch workspace</div>
                           <div className="max-w-130">
                             <select
                               id="settings-active-workspace"
                               value={activeWorkspaceId ?? ''}
                               onChange={(e) => void handleSwitchWorkspace(e.target.value)}
                               disabled={isLoadingWorkspaces || isSwitchingWorkspace || workspaces.length === 0}
-                              className="h-10 w-full appearance-none rounded-xl border border-gray-200 bg-[#FFFDFB] px-3 pr-9 text-sm text-gray-900 outline-none transition focus:border-gray-300 focus:ring-4 focus:ring-gray-100 disabled:opacity-60"
+                              className={settingsTheme.inputSecondary + ' appearance-none pr-9'}
                               style={selectChevronStyle}
                             >
                               {workspaces.length === 0 && (
@@ -2198,24 +2212,24 @@ export const SettingsWindow = () => {
                       </div>
                     </section>
 
-                    <section className="border-t border-gray-200 pt-6" aria-labelledby="settings-members">
+                    <section className={settingsTheme.sectionShell} aria-labelledby="settings-members">
                       <div className="flex items-center justify-between gap-4">
                         <div className="space-y-1">
-                          <h3 id="settings-members" className="text-sm font-semibold text-gray-900">
+                          <h3 id="settings-members" className={settingsTheme.sectionTitle}>
                             Members
                           </h3>
-                          <p className="text-xs text-gray-500">Manage access for the selected workspace.</p>
+                          <p className={settingsTheme.sectionStatus}>Manage access for the selected workspace.</p>
                         </div>
-                        <span className="inline-flex rounded-full border border-gray-200 bg-[#FFFDFB] px-2.5 py-1 text-[11px] font-medium text-gray-700">
+                        <span className={settingsTheme.pill}>
                           {workspaceUserRole === 'owner' ? 'Owner' : `Role: ${workspaceUserRole}`}
                         </span>
                       </div>
 
-                      <div className="mt-5 divide-y divide-gray-100 border-t border-gray-200">
+                      <div className={settingsTheme.sectionRows}>
                         {isLoadingWorkspaceAdmin ? (
-                          <div className="py-4 text-xs text-gray-500">Loading members...</div>
+                          <div className="py-4 text-xs text-[var(--ledger-text-muted)]">Loading members...</div>
                         ) : workspaceMembers.length === 0 ? (
-                          <div className="py-4 text-xs text-gray-500">No members yet.</div>
+                          <div className="py-4 text-xs text-[var(--ledger-text-muted)]">No members yet.</div>
                         ) : (
                           workspaceMembers.map((member) => {
                             const displayName = member.full_name || member.email || member.user_id;
@@ -2227,8 +2241,8 @@ export const SettingsWindow = () => {
                                 className="grid gap-4 py-4 md:grid-cols-[minmax(0,1fr)_auto_auto] md:items-center"
                               >
                                 <div className="min-w-0">
-                                  <p className="truncate text-sm font-medium text-gray-900">{displayName}</p>
-                                  <p className="truncate text-xs text-gray-500">
+                                  <p className="truncate text-sm font-medium text-[var(--ledger-text-primary)]">{displayName}</p>
+                                  <p className="truncate text-xs text-[var(--ledger-text-muted)]">
                                     {member.email || 'No email'}{member.is_owner ? ' · Owner' : ''}
                                   </p>
                                 </div>
@@ -2241,7 +2255,7 @@ export const SettingsWindow = () => {
                                     )
                                   }
                                   disabled={!canEditRole || memberActionId === member.user_id}
-                                  className="h-8 w-full appearance-none rounded-lg border border-gray-200 bg-[#FFFDFB] px-2 pr-8 text-xs text-gray-800 outline-none disabled:opacity-60 md:w-auto"
+                                  className={settingsTheme.inputSecondary + ' h-8 w-full appearance-none rounded-lg px-2 pr-8 text-xs md:w-auto'}
                                   style={selectChevronStyle}
                                   aria-label={`Update ${displayName} role`}
                                 >
@@ -2263,7 +2277,7 @@ export const SettingsWindow = () => {
                                     member.user_id === user?.id ||
                                     memberActionId === member.user_id
                                   }
-                                  className="h-8 rounded-lg border border-gray-200 bg-[#FFFDFB] px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-50 disabled:opacity-50"
+                                  className={settingsTheme.controlButtonNeutral + ' rounded-lg'}
                                 >
                                   Remove
                                 </button>
@@ -2273,19 +2287,19 @@ export const SettingsWindow = () => {
                         )}
                       </div>
                       {workspaceAdminError && (
-                        <p className="mt-3 text-xs text-red-700" role="status">
+                        <p className="mt-3 text-xs text-[var(--ledger-danger)]" role="status">
                           {workspaceAdminError}
                         </p>
                       )}
                     </section>
 
-                    <section className="border-t border-gray-200 pt-6" aria-labelledby="settings-invites">
+                    <section className={settingsTheme.sectionShell} aria-labelledby="settings-invites">
                       <div className="flex items-center justify-between gap-4">
                         <div className="space-y-1">
-                          <h3 id="settings-invites" className="text-sm font-semibold text-gray-900">
+                          <h3 id="settings-invites" className={settingsTheme.sectionTitle}>
                             Invites
                           </h3>
-                          <p className="text-xs text-gray-500">Invite someone to this workspace.</p>
+                          <p className={settingsTheme.sectionStatus}>Invite someone to this workspace.</p>
                         </div>
                       </div>
 
@@ -2296,14 +2310,14 @@ export const SettingsWindow = () => {
                           onChange={(e) => setInviteEmail(e.target.value)}
                           placeholder="name@example.com"
                           disabled={!canManageWorkspace || isSendingInvite}
-                          className="h-9 rounded-xl border border-gray-200 bg-[#FFFDFB] px-3 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 focus:border-gray-300 focus:ring-4 focus:ring-gray-100 disabled:opacity-60"
+                          className={settingsTheme.input}
                           aria-label="Invite email optional"
                         />
                         <select
                           value={inviteRole}
                           onChange={(e) => setInviteRole(e.target.value as 'admin' | 'member')}
                           disabled={!canManageWorkspace || isSendingInvite}
-                          className="h-9 appearance-none rounded-xl border border-gray-200 bg-[#FFFDFB] px-3 pr-8 text-sm text-gray-900 outline-none transition focus:border-gray-300 focus:ring-4 focus:ring-gray-100 disabled:opacity-60"
+                          className={settingsTheme.inputSecondary + ' appearance-none pr-8'}
                           style={selectChevronStyle}
                           aria-label="Invite role"
                         >
@@ -2313,21 +2327,21 @@ export const SettingsWindow = () => {
                         <button
                           onClick={() => void handleCreateInvitation()}
                           disabled={!canManageWorkspace || isSendingInvite}
-                          className="h-9 rounded-xl border border-gray-200 bg-[#FFFDFB] px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-50 disabled:opacity-60"
+                          className={settingsTheme.footerButton + ' h-9 px-3 text-xs'}
                         >
                           {isSendingInvite ? 'Creating...' : 'Create invite'}
                         </button>
                       </div>
-                      <p className="mt-2 text-xs leading-5 text-gray-500">
+                      <p className={settingsTheme.rowMuted + ' mt-2 leading-5'}>
                         Optional email. Invite links can be copied and shared manually.
                       </p>
 
                       {(inviteLink || inviteToken) && (
-                        <div className="mt-4 border-t border-gray-200 pt-4">
-                          <p className="text-xs font-medium text-gray-500">Invite link</p>
+                        <div className="mt-4 border-t border-[color:var(--ledger-border-subtle)] pt-4">
+                          <p className={settingsTheme.rowMuted.replace('text-xs', 'text-xs font-medium')}>Invite link</p>
                           <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center">
                             {inviteLink && (
-                              <p className="min-w-0 flex-1 break-all text-sm text-gray-700">
+                              <p className="min-w-0 flex-1 break-all text-sm text-[var(--ledger-text-secondary)]">
                                 {inviteLink}
                               </p>
                             )}
@@ -2335,23 +2349,23 @@ export const SettingsWindow = () => {
                               type="button"
                               onClick={() => void handleCopyInvitationLink()}
                               disabled={!inviteLink}
-                              className="inline-flex h-8 items-center justify-center gap-2 rounded-full border border-gray-200 bg-[#FFFDFB] px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-50 disabled:opacity-50"
+                              className={settingsTheme.controlButtonNeutral + ' inline-flex items-center justify-center gap-2'}
                             >
                               <Copy size={14} />
                               Copy link
                             </button>
                           </div>
                           {inviteCopyStatus && (
-                            <p className="mt-2 text-xs text-gray-600">{inviteCopyStatus}</p>
+                            <p className="mt-2 text-xs text-[var(--ledger-text-secondary)]">{inviteCopyStatus}</p>
                           )}
                         </div>
                       )}
 
-                      <div className="mt-4 border-t border-gray-200 pt-4">
-                        <p className="text-xs font-medium text-gray-500">Recent invites</p>
-                        <div className="mt-2 divide-y divide-gray-100 border-t border-gray-200">
+                      <div className="mt-4 border-t border-[color:var(--ledger-border-subtle)] pt-4">
+                        <p className={settingsTheme.rowMuted.replace('text-xs', 'text-xs font-medium')}>Recent invites</p>
+                        <div className={settingsTheme.sectionRows}>
                           {workspaceInvitations.length === 0 ? (
-                            <div className="py-4 text-xs text-gray-500">No pending invites.</div>
+                            <div className="py-4 text-xs text-[var(--ledger-text-muted)]">No pending invites.</div>
                           ) : (
                             workspaceInvitations.map((invite) => (
                               <div
@@ -2359,14 +2373,14 @@ export const SettingsWindow = () => {
                                 className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-3 py-4"
                               >
                                 <div className="min-w-0">
-                                  <p className="truncate text-sm font-medium text-gray-900">
+                                  <p className="truncate text-sm font-medium text-[var(--ledger-text-primary)]">
                                     {invite.invited_email}
                                   </p>
-                                  <p className="text-xs text-gray-500">
+                                  <p className="text-xs text-[var(--ledger-text-muted)]">
                                     {invite.role} · {invite.status}
                                   </p>
                                 </div>
-                                <p className="text-[11px] text-gray-500">
+                                <p className="text-[11px] text-[var(--ledger-text-muted)]">
                                   {new Date(invite.expires_at).toLocaleDateString([], {
                                     month: 'short',
                                     day: 'numeric',
@@ -2375,7 +2389,7 @@ export const SettingsWindow = () => {
                                 <button
                                   onClick={() => setInviteModal({ id: invite.id })}
                                   disabled={!canManageWorkspace}
-                                  className="h-8 rounded-lg border border-gray-200 bg-[#FFFDFB] px-2 text-xs font-medium text-gray-700 transition hover:bg-gray-50 disabled:opacity-50"
+                                  className={settingsTheme.controlButtonNeutral + ' rounded-lg px-2'}
                                 >
                                   Manage
                                 </button>
@@ -2386,11 +2400,11 @@ export const SettingsWindow = () => {
                       </div>
                     </section>
 
-                    <section className="border-t border-gray-200 pt-6" aria-labelledby="settings-defaults">
-                      <h3 id="settings-defaults" className="text-sm font-semibold text-gray-900">Defaults</h3>
+                    <section className={settingsTheme.sectionShell} aria-labelledby="settings-defaults">
+                      <h3 id="settings-defaults" className={settingsTheme.sectionTitle}>Defaults</h3>
                       <div className="mt-5 grid gap-4 md:grid-cols-2">
                         <div>
-                          <label htmlFor="settings-week-start" className="mb-2 block text-xs font-medium text-gray-500">
+                          <label htmlFor="settings-week-start" className="mb-2 block text-xs font-medium text-[var(--ledger-text-muted)]">
                             Week starts on
                           </label>
                           <select
@@ -2402,7 +2416,7 @@ export const SettingsWindow = () => {
                                 weekStartsOn: e.target.value as 'sunday' | 'monday',
                               }))
                             }
-                            className="h-10 w-full appearance-none rounded-xl border border-gray-200 bg-[#FFFDFB] px-3 pr-9 text-sm text-gray-900 outline-none focus:border-gray-300 focus:ring-4 focus:ring-gray-100"
+                            className={settingsTheme.inputSecondary + ' appearance-none pr-9'}
                             style={selectChevronStyle}
                           >
                             <option value="monday">Monday</option>
@@ -2410,7 +2424,7 @@ export const SettingsWindow = () => {
                           </select>
                         </div>
                         <div>
-                          <label htmlFor="settings-time-format" className="mb-2 block text-xs font-medium text-gray-500">
+                          <label htmlFor="settings-time-format" className="mb-2 block text-xs font-medium text-[var(--ledger-text-muted)]">
                             Time format
                           </label>
                           <select
@@ -2422,7 +2436,7 @@ export const SettingsWindow = () => {
                                 timeFormat: e.target.value as '12h' | '24h',
                               }))
                             }
-                            className="h-10 w-full appearance-none rounded-xl border border-gray-200 bg-[#FFFDFB] px-3 pr-9 text-sm text-gray-900 outline-none focus:border-gray-300 focus:ring-4 focus:ring-gray-100"
+                            className={settingsTheme.inputSecondary + ' appearance-none pr-9'}
                             style={selectChevronStyle}
                           >
                             <option value="12h">12-hour (2:00 PM)</option>
@@ -2432,20 +2446,20 @@ export const SettingsWindow = () => {
                       </div>
                     </section>
 
-                    <section className="border-t border-gray-200 pt-6" aria-labelledby="settings-create-workspace">
+                    <section className={settingsTheme.sectionShell} aria-labelledby="settings-create-workspace">
                       <div className="flex items-center justify-between gap-4">
                         <div className="space-y-1">
-                          <h3 id="settings-create-workspace" className="text-sm font-semibold text-gray-900">
+                          <h3 id="settings-create-workspace" className={settingsTheme.sectionTitle}>
                             Create workspace
                           </h3>
-                          <p className="text-xs text-gray-500">
+                          <p className={settingsTheme.sectionStatus}>
                             Create another focused space for school, internship, freelance, or personal work.
                           </p>
                         </div>
                         <button
                           type="button"
                           onClick={() => setShowCreateWorkspaceForm((value) => !value)}
-                          className="h-8 rounded-full border border-gray-200 bg-[#FFFDFB] px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-50"
+                          className={settingsTheme.controlButton}
                           aria-label={showCreateWorkspaceForm ? 'Close workspace creation' : 'Create workspace'}
                         >
                           {showCreateWorkspaceForm ? 'Collapse' : 'Create workspace'}
@@ -2479,19 +2493,19 @@ export const SettingsWindow = () => {
                             value={workspaceCreateDescription}
                             onChange={(e) => setWorkspaceCreateDescription(e.target.value)}
                             placeholder="Optional description"
-                            className="min-h-14 w-full resize-none rounded-xl border border-gray-200 bg-[#FFFDFB] px-3 py-2 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 focus:border-gray-300 focus:ring-4 focus:ring-gray-100"
+                            className={settingsTheme.input + ' min-h-14 resize-none py-2'}
                             aria-label="Workspace description"
                           />
                           <div className="flex items-center justify-between gap-3">
                             <div className="min-h-5">
                               {workspaceCreateStatus && (
-                                <p className="text-xs text-green-700">{workspaceCreateStatus}</p>
+                                <p className="text-xs text-[color:var(--ledger-accent)]">{workspaceCreateStatus}</p>
                               )}
                             </div>
                             <button
                               onClick={() => void handleCreateWorkspace()}
                               disabled={isCreatingWorkspace || !workspaceCreateName.trim()}
-                              className="h-8 rounded-lg bg-[#FF5F40] px-3 text-xs font-medium text-white transition hover:bg-[#ea5336] disabled:opacity-60"
+                              className={settingsTheme.primaryButton + ' h-8 rounded-lg px-3 text-xs'}
                             >
                               {isCreatingWorkspace ? 'Creating...' : 'Create workspace'}
                             </button>
@@ -2500,20 +2514,20 @@ export const SettingsWindow = () => {
                       ) : null}
                     </section>
 
-                    <section className="border-t border-gray-200 pt-6" aria-labelledby="settings-danger-zone">
+                    <section className={settingsTheme.sectionShell} aria-labelledby="settings-danger-zone">
                       <div className="flex items-center justify-between gap-4">
                         <div className="space-y-1">
-                          <h3 id="settings-danger-zone" className="text-sm font-semibold text-gray-900">
+                          <h3 id="settings-danger-zone" className={settingsTheme.sectionTitle}>
                             Danger zone
                           </h3>
-                          <p className="text-xs text-gray-500">
+                          <p className={settingsTheme.sectionStatus}>
                             Delete this workspace and all data inside it.
                           </p>
                         </div>
                         <button
                           onClick={openWorkspaceDeleteModal}
                           disabled={workspaceUserRole !== 'owner' || isDeletingWorkspace}
-                          className="h-8 rounded-full border border-red-200 bg-[#FFFDFB] px-3 text-xs font-medium text-red-700 transition hover:bg-red-50 disabled:opacity-50"
+                          className={settingsTheme.dangerButton}
                         >
                           Delete workspace
                         </button>
@@ -2525,23 +2539,23 @@ export const SettingsWindow = () => {
               {activeSection === 'calendar' && (
                 <section className="w-full max-w-215" aria-labelledby="settings-calendar">
                   <div className="space-y-2">
-                    <h2 id="settings-calendar" className="text-[28px] font-semibold tracking-tight text-gray-950">
+                    <h2 id="settings-calendar" className={settingsTheme.pageTitle}>
                       Calendar and reminders
                     </h2>
-                    <p className="text-sm text-gray-600">
+                    <p className={settingsTheme.pageSubtitle}>
                       Set how Ledger schedules events, reminders, follow-ups, and overdue items.
                     </p>
-                    <p className="text-xs text-gray-500" role="status">
+                    <p className={settingsTheme.pageStatus} role="status">
                       Changes save automatically.
                     </p>
                   </div>
 
                   <div className="mt-8 space-y-8">
-                    <section className="border-t border-gray-200 pt-6" aria-labelledby="calendar-defaults">
-                      <h3 id="calendar-defaults" className="text-sm font-semibold text-gray-900">
+                    <section className={settingsTheme.sectionShell} aria-labelledby="calendar-defaults">
+                      <h3 id="calendar-defaults" className={settingsTheme.sectionTitle}>
                         Calendar defaults
                       </h3>
-                      <div className="mt-2 divide-y divide-gray-200 border-y border-gray-200">
+                      <div className={settingsTheme.sectionRows}>
                         <PreferenceRow
                           label="Default event duration"
                           help="Used when creating a new event."
@@ -2631,11 +2645,11 @@ export const SettingsWindow = () => {
                       </div>
                     </section>
 
-                    <section className="border-t border-gray-200 pt-6" aria-labelledby="reminder-defaults">
-                      <h3 id="reminder-defaults" className="text-sm font-semibold text-gray-900">
+                    <section className={settingsTheme.sectionShell} aria-labelledby="reminder-defaults">
+                      <h3 id="reminder-defaults" className={settingsTheme.sectionTitle}>
                         Reminder defaults
                       </h3>
-                      <div className="mt-2 divide-y divide-gray-200 border-y border-gray-200">
+                      <div className={settingsTheme.sectionRows}>
                         <PreferenceRow
                           label="Default reminder timing"
                           help="When reminders should alert you before due time."
@@ -2735,11 +2749,11 @@ export const SettingsWindow = () => {
                       </div>
                     </section>
 
-                    <section className="border-t border-gray-200 pt-6" aria-labelledby="overdue-behavior">
-                      <h3 id="overdue-behavior" className="text-sm font-semibold text-gray-900">
+                    <section className={settingsTheme.sectionShell} aria-labelledby="overdue-behavior">
+                      <h3 id="overdue-behavior" className={settingsTheme.sectionTitle}>
                         Overdue behavior
                       </h3>
-                      <div className="mt-2 divide-y divide-gray-200 border-y border-gray-200">
+                      <div className={settingsTheme.sectionRows}>
                         <PreferenceRow
                           label="When reminders are missed"
                           help="What Ledger does when a reminder is overdue."
@@ -2813,17 +2827,17 @@ export const SettingsWindow = () => {
                           </select>
                         </PreferenceRow>
                       </div>
-                      <p className="mt-3 text-xs leading-5 text-gray-500">
+                      <p className={settingsTheme.rowMuted + ' mt-3 leading-5'}>
                         Past events stay in Calendar history. Missed reminders stay visible until
                         completed, rescheduled, or dismissed.
                       </p>
                     </section>
 
-                    <section className="border-t border-gray-200 pt-6" aria-labelledby="follow-up-behavior">
-                      <h3 id="follow-up-behavior" className="text-sm font-semibold text-gray-900">
+                    <section className={settingsTheme.sectionShell} aria-labelledby="follow-up-behavior">
+                      <h3 id="follow-up-behavior" className={settingsTheme.sectionTitle}>
                         Follow-up behavior
                       </h3>
-                      <div className="mt-2 divide-y divide-gray-200 border-y border-gray-200">
+                      <div className={settingsTheme.sectionRows}>
                         <PreferenceRow
                           label="After events end"
                           help="What Ledger offers after an event finishes."
@@ -2921,11 +2935,11 @@ export const SettingsWindow = () => {
                       </div>
                     </section>
 
-                    <section className="border-t border-gray-200 pt-6" aria-labelledby="calendar-display">
-                      <h3 id="calendar-display" className="text-sm font-semibold text-gray-900">
+                    <section className={settingsTheme.sectionShell} aria-labelledby="calendar-display">
+                      <h3 id="calendar-display" className={settingsTheme.sectionTitle}>
                         Calendar display
                       </h3>
-                      <div className="mt-2 divide-y divide-gray-200 border-y border-gray-200">
+                      <div className={settingsTheme.sectionRows}>
                         <PreferenceRow
                           label="Default calendar view"
                           help="Which calendar view opens first."
@@ -3038,15 +3052,15 @@ export const SettingsWindow = () => {
                       </div>
                     </section>
 
-                    <section className="border-t border-gray-200 pt-6" aria-labelledby="workspace-calendars">
-                      <h3 id="workspace-calendars" className="text-sm font-semibold text-gray-900">
+                    <section className={settingsTheme.sectionShell} aria-labelledby="workspace-calendars">
+                      <h3 id="workspace-calendars" className={settingsTheme.sectionTitle}>
                         Workspace calendars
                       </h3>
-                      <p className="mt-1 text-xs leading-5 text-gray-500">
+                      <p className={settingsTheme.sectionStatus + ' mt-1 leading-5'}>
                         Workspace calendars keep school, internship, freelance, and personal
                         commitments separated while Today can still surface what needs attention.
                       </p>
-                      <div className="mt-2 divide-y divide-gray-200 border-y border-gray-200">
+                      <div className={settingsTheme.sectionRows}>
                         <PreferenceRow
                           label="Calendar scope"
                           help="Choose whether Ledger shows the current workspace or all accessible workspaces."
@@ -3130,16 +3144,13 @@ export const SettingsWindow = () => {
               {activeSection === 'notifications' && (
                 <section className="w-full max-w-215" aria-labelledby="settings-notifications">
                   <div className="space-y-2">
-                    <h2
-                      id="settings-notifications"
-                      className="text-[28px] font-semibold tracking-tight text-gray-950"
-                    >
+                    <h2 id="settings-notifications" className={settingsTheme.pageTitle}>
                       Notifications
                     </h2>
-                    <p className="text-sm text-gray-600">
+                    <p className={settingsTheme.pageSubtitle}>
                       Choose what Ledger should bring to your attention.
                     </p>
-                    <p className="text-xs text-gray-500" role="status">
+                    <p className={settingsTheme.pageStatus} role="status">
                       {isSavingNotificationPrefs
                         ? 'Saving automatically...'
                         : saveStatus ?? 'Changes save automatically.'}
@@ -3147,23 +3158,20 @@ export const SettingsWindow = () => {
                   </div>
 
                   <div className="mt-8 space-y-8">
-                    <section
-                      className="border-t border-gray-200 pt-6"
-                      aria-labelledby="notification-control"
-                    >
-                      <h3 id="notification-control" className="text-sm font-semibold text-gray-900">
+                    <section className={settingsTheme.sectionShell} aria-labelledby="notification-control">
+                      <h3 id="notification-control" className={settingsTheme.sectionTitle}>
                         Control
                       </h3>
-                      <p className="mt-1 text-xs leading-5 text-gray-500">
+                      <p className={settingsTheme.sectionStatus + ' mt-1 leading-5'}>
                         Pause new alerts without changing your delivery preferences.
                       </p>
-                      <div className="mt-2 divide-y divide-gray-200 border-y border-gray-200">
+                      <div className={settingsTheme.sectionRows}>
                         <div className="flex items-start justify-between gap-4 px-4 py-3">
                           <span className="min-w-0">
-                            <span className="block text-sm font-medium text-gray-900">
+                            <span className={settingsTheme.label}>
                               Pause notifications
                             </span>
-                            <span className="mt-1 block text-xs leading-5 text-gray-500">
+                            <span className={settingsTheme.help}>
                               Temporarily mute new reminders and alerts from Ledger.
                             </span>
                           </span>
@@ -3181,11 +3189,11 @@ export const SettingsWindow = () => {
                       </div>
                     </section>
 
-                    <section className="border-t border-gray-200 pt-6" aria-labelledby="notification-delivery">
-                      <h3 id="notification-delivery" className="text-sm font-semibold text-gray-900">
+                    <section className={settingsTheme.sectionShell} aria-labelledby="notification-delivery">
+                      <h3 id="notification-delivery" className={settingsTheme.sectionTitle}>
                         Delivery
                       </h3>
-                      <div className="mt-2 divide-y divide-gray-200 border-y border-gray-200">
+                      <div className={settingsTheme.sectionRows}>
                         <PreferenceRow
                           label="Desktop notifications"
                           help="Use native system notifications when Ledger is running."
@@ -3219,11 +3227,11 @@ export const SettingsWindow = () => {
                       </div>
                     </section>
 
-                    <section className="border-t border-gray-200 pt-6" aria-labelledby="notification-sources">
-                      <h3 id="notification-sources" className="text-sm font-semibold text-gray-900">
+                    <section className={settingsTheme.sectionShell} aria-labelledby="notification-sources">
+                      <h3 id="notification-sources" className={settingsTheme.sectionTitle}>
                         Notify me about
                       </h3>
-                      <div className="mt-2 divide-y divide-gray-200 border-y border-gray-200">
+                      <div className={settingsTheme.sectionRows}>
                         <PreferenceRow label="Reminders" help="Time-based reminders you create.">
                           <InlineSwitch
                             checked={notificationPreferences.remindersEnabled}
@@ -3308,11 +3316,11 @@ export const SettingsWindow = () => {
                       </div>
                     </section>
 
-                    <section className="border-t border-gray-200 pt-6" aria-labelledby="notification-timing">
-                      <h3 id="notification-timing" className="text-sm font-semibold text-gray-900">
+                    <section className={settingsTheme.sectionShell} aria-labelledby="notification-timing">
+                      <h3 id="notification-timing" className={settingsTheme.sectionTitle}>
                         Timing
                       </h3>
-                      <div className="mt-2 divide-y divide-gray-200 border-y border-gray-200">
+                      <div className={settingsTheme.sectionRows}>
                         <PreferenceRow
                           label="Default event reminder"
                           help="How far in advance event reminders should fire."
@@ -3407,11 +3415,11 @@ export const SettingsWindow = () => {
                       </div>
                     </section>
 
-                    <section className="border-t border-gray-200 pt-6" aria-labelledby="notification-behavior">
-                      <h3 id="notification-behavior" className="text-sm font-semibold text-gray-900">
+                    <section className={settingsTheme.sectionShell} aria-labelledby="notification-behavior">
+                      <h3 id="notification-behavior" className={settingsTheme.sectionTitle}>
                         Behavior
                       </h3>
-                      <div className="mt-2 divide-y divide-gray-200 border-y border-gray-200">
+                      <div className={settingsTheme.sectionRows}>
                         <PreferenceRow
                           label="Keep overdue items visible"
                           help="Keep overdue items surfaced in Today and Dashboard."
@@ -3451,30 +3459,27 @@ export const SettingsWindow = () => {
               {activeSection === 'integrations' && (
                 <section className="w-full max-w-215" aria-labelledby="settings-integrations">
                   <div className="space-y-2">
-                    <h2
-                      id="settings-integrations"
-                      className="text-[28px] font-semibold tracking-tight text-gray-950"
-                    >
+                    <h2 id="settings-integrations" className={settingsTheme.pageTitle}>
                       Integrations
                     </h2>
-                    <p className="text-sm text-gray-600">
+                    <p className={settingsTheme.pageSubtitle}>
                       Connect tools that send captures into Ledger.
                     </p>
                   </div>
 
                   <div className="mt-8 space-y-8">
-                    <section className="border-t border-gray-200 pt-6" aria-labelledby="integration-list">
+                    <section className={settingsTheme.sectionShell} aria-labelledby="integration-list">
                       <h3 id="integration-list" className="sr-only">
                         Connected integrations
                       </h3>
-                      <div className="divide-y divide-gray-200 border-y border-gray-200">
+                      <div className={settingsTheme.sectionRows}>
                         <div className="grid gap-4 py-5 md:grid-cols-[minmax(0,1fr)_auto] md:items-start md:gap-6">
                           <div className="min-w-0">
-                            <h3 className="text-sm font-medium text-gray-900">Slack</h3>
-                            <p className="mt-1 text-sm text-gray-600">
+                            <h3 className={settingsTheme.sectionTitle}>Slack</h3>
+                            <p className={settingsTheme.sectionSubtitle + ' mt-1'}>
                               Save Slack messages to Inbox.
                             </p>
-                            <p className="mt-1 text-xs text-gray-500">
+                            <p className={settingsTheme.sectionStatus + ' mt-1'}>
                               {isLoadingSlackStatus
                                 ? 'Checking status'
                                 : slackStatus?.connected
@@ -3494,8 +3499,8 @@ export const SettingsWindow = () => {
                               disabled={isConnectingSlack || !activeWorkspaceId || !canManageWorkspace}
                               className={`h-8 rounded-lg px-3 text-xs font-medium transition disabled:opacity-50 ${
                                 slackStatus?.connected
-                                  ? 'border border-gray-200 bg-[#FFFDFB] text-gray-700 hover:bg-gray-50'
-                                  : 'bg-[#FF5F40] text-white hover:bg-[#ea5336]'
+                                  ? `${settingsTheme.controlButtonNeutral} rounded-lg`
+                                  : 'bg-[var(--ledger-accent)] text-white hover:bg-[var(--ledger-accent-hover)]'
                               }`}
                             >
                               {isConnectingSlack
@@ -3511,7 +3516,7 @@ export const SettingsWindow = () => {
                                 disabled={
                                   isDisconnectingSlack || !activeWorkspaceId || !canManageWorkspace
                                 }
-                                className="h-8 rounded-lg border border-gray-200 bg-[#FFFDFB] px-3 text-xs font-medium text-gray-600 transition hover:border-red-200 hover:bg-red-50 hover:text-red-700 disabled:opacity-50"
+                                className={settingsTheme.controlButtonNeutral + ' rounded-lg'}
                               >
                                 {isDisconnectingSlack ? 'Disconnecting...' : 'Disconnect'}
                               </button>
@@ -3521,11 +3526,11 @@ export const SettingsWindow = () => {
 
                         <div className="grid gap-4 py-5 md:grid-cols-[minmax(0,1fr)_auto] md:items-start md:gap-6">
                           <div className="min-w-0">
-                            <h3 className="text-sm font-medium text-gray-900">Browser Extension</h3>
-                            <p className="mt-1 text-sm text-gray-600">
+                            <h3 className={settingsTheme.sectionTitle}>Browser Extension</h3>
+                            <p className={settingsTheme.sectionSubtitle + ' mt-1'}>
                               Capture links, selected text, and quick notes from Chrome.
                             </p>
-                            <p className="mt-1 text-xs text-gray-500">
+                            <p className={settingsTheme.sectionStatus + ' mt-1'}>
                               {isLoadingExtensionTokenStatus
                                 ? 'Checking status'
                                 : extensionTokenStatus?.exists
@@ -3551,7 +3556,7 @@ export const SettingsWindow = () => {
                                   <button
                                     type="button"
                                     onClick={() => void handleCopyExtensionToken()}
-                                    className="h-8 rounded-lg border border-gray-200 bg-[#FFFDFB] px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-50"
+                                    className={settingsTheme.controlButtonNeutral + ' rounded-lg'}
                                   >
                                     Copy token
                                   </button>
@@ -3564,7 +3569,7 @@ export const SettingsWindow = () => {
                                     !activeWorkspaceId ||
                                     !canUseWorkspaceIntegrations
                                   }
-                                  className="h-8 rounded-lg border border-gray-200 bg-[#FFFDFB] px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-50 disabled:opacity-50"
+                                  className={settingsTheme.controlButtonNeutral + ' rounded-lg'}
                                 >
                                   Regenerate
                                 </button>
@@ -3576,7 +3581,7 @@ export const SettingsWindow = () => {
                                     !activeWorkspaceId ||
                                     !canUseWorkspaceIntegrations
                                   }
-                                  className="h-8 rounded-lg border border-gray-200 bg-[#FFFDFB] px-3 text-xs font-medium text-gray-600 transition hover:border-red-200 hover:bg-red-50 hover:text-red-700 disabled:opacity-50"
+                                  className={settingsTheme.dangerButton}
                                 >
                                   Revoke
                                 </button>
@@ -3590,7 +3595,7 @@ export const SettingsWindow = () => {
                                   !activeWorkspaceId ||
                                   !canUseWorkspaceIntegrations
                                 }
-                                className="h-8 rounded-lg bg-[#FF5F40] px-3 text-xs font-medium text-white transition hover:bg-[#ea5336] disabled:opacity-50"
+                                className="h-8 rounded-lg bg-[var(--ledger-accent)] px-3 text-xs font-medium text-white transition hover:bg-[var(--ledger-accent-hover)] disabled:opacity-50"
                               >
                                 {isExtensionTokenBusy ? 'Generating...' : 'Generate token'}
                               </button>
@@ -3602,7 +3607,7 @@ export const SettingsWindow = () => {
                       {(slackError || extensionTokenError || extensionTokenCopyStatus) && (
                         <p
                           className={`mt-4 flex items-center gap-1.5 text-xs ${
-                            slackError || extensionTokenError ? 'text-red-700' : 'text-gray-600'
+                            slackError || extensionTokenError ? 'text-[var(--ledger-danger)]' : 'text-[var(--ledger-text-secondary)]'
                           }`}
                         >
                           {(slackError || extensionTokenError) && <CircleAlert size={12} />}
@@ -3611,20 +3616,20 @@ export const SettingsWindow = () => {
                       )}
                     </section>
 
-                    <section className="border-t border-gray-200 pt-6" aria-labelledby="integration-coming-soon">
-                      <h3 id="integration-coming-soon" className="text-sm font-medium text-gray-900">
+                    <section className={settingsTheme.sectionShell} aria-labelledby="integration-coming-soon">
+                      <h3 id="integration-coming-soon" className={settingsTheme.sectionTitle}>
                         Coming soon
                       </h3>
-                      <div className="mt-3 divide-y divide-gray-100 border-y border-gray-100">
+                      <div className="mt-3 divide-y divide-[color:var(--ledger-border-subtle)] border-y border-[color:var(--ledger-border-subtle)]">
                         {['Email', 'Google Calendar', 'GitHub', 'Linear'].map((source) => (
-                          <div key={source} className="py-3 text-sm text-gray-600">
+                          <div key={source} className="py-3 text-sm text-[var(--ledger-text-secondary)]">
                             {source}
                           </div>
                         ))}
                       </div>
                     </section>
 
-                    <p className="border-t border-gray-200 pt-4 text-xs leading-5 text-gray-500">
+                    <p className={settingsTheme.sectionShell + ' pt-4 text-xs leading-5 text-[var(--ledger-text-muted)]'}>
                       Connected tools send captures to Inbox. You decide later whether they become
                       tasks, notes, reminders, or events.
                     </p>
@@ -3634,20 +3639,17 @@ export const SettingsWindow = () => {
 
               {activeSection === 'sidebar' && (
                 <section className="w-full max-w-215" aria-labelledby="settings-sidebar">
-                  <h2
-                    id="settings-sidebar"
-                    className="text-[28px] font-semibold tracking-tight text-gray-950"
-                  >
+                  <h2 id="settings-sidebar" className={settingsTheme.pageTitle}>
                     Sidebar
                   </h2>
-                  <p className="mt-1 text-sm text-gray-600">
+                  <p className={settingsTheme.pageSubtitle + ' mt-1'}>
                     Configure where Ledger lives and how it behaves.
                   </p>
-                  <p className="mt-2 text-xs text-gray-500">
+                  <p className={settingsTheme.pageStatus + ' mt-2'}>
                     {saveStatus ?? 'Changes save automatically.'}
                   </p>
 
-                  <section className="mt-6 border-t border-gray-200 pt-6" aria-labelledby="sidebar-position">
+                  <section className="mt-6 pt-6" aria-labelledby="sidebar-position">
                     <h3 id="sidebar-position" className={settingsTheme.sectionTitle}>
                       Position
                     </h3>
@@ -3682,7 +3684,7 @@ export const SettingsWindow = () => {
                     </div>
                   </section>
 
-                  <section className="border-t border-gray-200 pt-6" aria-labelledby="sidebar-behavior">
+                  <section className={settingsTheme.sectionShell} aria-labelledby="sidebar-behavior">
                     <h3 id="sidebar-behavior" className={settingsTheme.sectionTitle}>
                       Behavior
                     </h3>
@@ -3755,7 +3757,7 @@ export const SettingsWindow = () => {
                     </div>
                   </section>
 
-                  <section className="border-t border-gray-200 pt-6" aria-labelledby="sidebar-desktop-utility">
+                  <section className={settingsTheme.sectionShell} aria-labelledby="sidebar-desktop-utility">
                     <h3 id="sidebar-desktop-utility" className={settingsTheme.sectionTitle}>
                       Desktop utility
                     </h3>
@@ -3806,7 +3808,7 @@ export const SettingsWindow = () => {
                     </div>
                   </section>
 
-                  <section className="border-t border-gray-200 pt-6" aria-labelledby="sidebar-default-state">
+                  <section className={settingsTheme.sectionShell} aria-labelledby="sidebar-default-state">
                     <h3 id="sidebar-default-state" className={settingsTheme.sectionTitle}>
                       Default state
                     </h3>
@@ -3839,7 +3841,7 @@ export const SettingsWindow = () => {
                     </div>
                   </section>
 
-                  <section className="border-t border-gray-200 pt-6" aria-labelledby="sidebar-appearance">
+                  <section className={settingsTheme.sectionShell} aria-labelledby="sidebar-appearance">
                     <h3 id="sidebar-appearance" className={settingsTheme.sectionTitle}>
                       Appearance
                     </h3>
@@ -3882,28 +3884,25 @@ export const SettingsWindow = () => {
 
               {activeSection === 'accessibility' && (
                 <section className="w-full max-w-215" aria-labelledby="settings-accessibility">
-                  <h2
-                    id="settings-accessibility"
-                    className="text-[28px] font-semibold tracking-tight text-gray-950"
-                  >
+                  <h2 id="settings-accessibility" className={settingsTheme.pageTitle}>
                     Accessibility
                   </h2>
-                  <p className="mt-1 text-sm text-gray-600">
+                  <p className={settingsTheme.pageSubtitle + ' mt-1'}>
                     Adjust motion, contrast, and density for a more comfortable workspace.
                   </p>
-                  <p className="mt-2 text-xs text-gray-500">Changes save automatically.</p>
+                  <p className={settingsTheme.pageStatus + ' mt-2'}>Changes save automatically.</p>
 
-                  <section className="mt-6 border-t border-gray-200 pt-6" aria-labelledby="accessibility-core">
-                    <h3 id="accessibility-core" className="text-sm font-semibold text-gray-900">
+                  <section className="mt-6 pt-6" aria-labelledby="accessibility-core">
+                    <h3 id="accessibility-core" className={settingsTheme.sectionTitle}>
                       Accessibility
                     </h3>
-                    <div className="mt-2 divide-y divide-gray-200 border-y border-gray-200">
+                    <div className={settingsTheme.sectionRows}>
                       <div className="flex items-start justify-between gap-4 px-4 py-3">
                         <span className="min-w-0">
-                          <span className="block text-sm font-medium text-gray-900">
+                          <span className={settingsTheme.label}>
                             Reduce motion
                           </span>
-                          <span className="mt-1 block text-xs leading-5 text-gray-500">
+                          <span className={settingsTheme.help}>
                             Minimize non-essential animations.
                           </span>
                         </span>
@@ -3917,10 +3916,10 @@ export const SettingsWindow = () => {
                       </div>
                       <div className="flex items-start justify-between gap-4 px-4 py-3">
                         <span className="min-w-0">
-                          <span className="block text-sm font-medium text-gray-900">
+                          <span className={settingsTheme.label}>
                             High contrast
                           </span>
-                          <span className="mt-1 block text-xs leading-5 text-gray-500">
+                          <span className={settingsTheme.help}>
                             Increase contrast for text, borders, and controls.
                           </span>
                         </span>
@@ -3934,10 +3933,10 @@ export const SettingsWindow = () => {
                       </div>
                       <div className="flex items-start justify-between gap-4 px-4 py-3">
                         <span className="min-w-0">
-                          <span className="block text-sm font-medium text-gray-900">
+                          <span className={settingsTheme.label}>
                             Compact density
                           </span>
-                          <span className="mt-1 block text-xs leading-5 text-gray-500">
+                          <span className={settingsTheme.help}>
                             Use tighter spacing across Ledger.
                           </span>
                         </span>
@@ -3955,17 +3954,17 @@ export const SettingsWindow = () => {
                     </div>
                   </section>
 
-                  <section className="border-t border-gray-200 pt-6" aria-labelledby="accessibility-startup">
-                    <h3 id="accessibility-startup" className="text-sm font-semibold text-gray-900">
+                  <section className={settingsTheme.sectionShell} aria-labelledby="accessibility-startup">
+                    <h3 id="accessibility-startup" className={settingsTheme.sectionTitle}>
                       Startup
                     </h3>
-                    <div className="mt-2 divide-y divide-gray-200 border-y border-gray-200">
+                    <div className={settingsTheme.sectionRows}>
                       <div className="flex items-start justify-between gap-4 px-4 py-3">
                         <span className="min-w-0">
-                          <span className="block text-sm font-medium text-gray-900">
+                          <span className={settingsTheme.label}>
                             Open dashboard by default
                           </span>
-                          <span className="mt-1 block text-xs leading-5 text-gray-500">
+                          <span className={settingsTheme.help}>
                             Open Dashboard when Ledger starts.
                           </span>
                         </span>
@@ -3988,27 +3987,24 @@ export const SettingsWindow = () => {
               {activeSection === 'shortcuts' && (
                 <section className="w-full max-w-215" aria-labelledby="settings-shortcuts">
                   <div className="space-y-2">
-                    <h2
-                      id="settings-shortcuts"
-                      className="text-[28px] font-semibold tracking-tight text-gray-950"
-                    >
+                    <h2 id="settings-shortcuts" className={settingsTheme.pageTitle}>
                       Keyboard Shortcuts
                     </h2>
-                    <p className="text-sm text-gray-600">Quick reference for actions.</p>
+                    <p className={settingsTheme.pageSubtitle}>Quick reference for actions.</p>
                   </div>
 
                   <div className="mt-8 space-y-6">
                     {shortcutSections.map((section) => (
-                      <section key={section.id} className="border-t border-gray-200 pt-6">
-                        <h3 className="text-sm font-medium text-gray-900">{section.title}</h3>
-                        <div className="mt-3 divide-y divide-gray-100 border-y border-gray-100">
+                      <section key={section.id} className={settingsTheme.sectionShell}>
+                        <h3 className={settingsTheme.sectionTitle}>{section.title}</h3>
+                        <div className="mt-3 divide-y divide-[color:var(--ledger-border-subtle)] border-y border-[color:var(--ledger-border-subtle)]">
                           {section.shortcuts.map((shortcut) => (
                             <div
                               key={`${section.id}-${shortcut.keys}`}
                               className="grid gap-3 py-3 md:grid-cols-[160px_minmax(0,1fr)] md:items-center"
                             >
-                              <p className="text-xs font-medium text-gray-500">{shortcut.keys}</p>
-                              <p className="text-sm text-gray-700">{shortcut.description}</p>
+                              <p className={settingsTheme.rowMuted + ' font-medium'}>{shortcut.keys}</p>
+                              <p className="text-sm text-[var(--ledger-text-secondary)]">{shortcut.description}</p>
                             </div>
                           ))}
                         </div>
@@ -4024,29 +4020,29 @@ export const SettingsWindow = () => {
               backdropBorderRadius="inherit"
               disablePortal
               manageWindowChrome={false}
-              classNameContainer="w-full max-w-115 rounded-2xl border border-gray-200 bg-[#FFFDFB]"
+              classNameContainer={`w-full max-w-115 ${settingsTheme.modalShell}`}
             >
               <div className="flex items-start justify-between gap-4 px-5 pt-5">
                 <div>
-                  <h3 className="text-lg font-semibold text-gray-900">Connect browser extension</h3>
-                  <p className="mt-1 text-sm leading-5 text-gray-600">
+                  <h3 className="text-lg font-semibold text-[var(--ledger-text-primary)]">Connect browser extension</h3>
+                  <p className="mt-1 text-sm leading-5 text-[var(--ledger-text-secondary)]">
                     Use this token in the Ledger browser extension.
                   </p>
                 </div>
                 <ModalCloseButton onClick={closeExtensionTokenModal} ariaLabel="Close extension token modal" />
               </div>
 
-              <div className="mt-5 border-y border-gray-100 px-5 py-4">
-                <div className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2">
-                  <p className="break-all font-mono text-xs leading-5 text-gray-900">
+              <div className="mt-5 border-y border-[color:var(--ledger-border-subtle)] px-5 py-4">
+                <div className="rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 py-2">
+                  <p className="break-all font-mono text-xs leading-5 text-[var(--ledger-text-primary)]">
                     {generatedExtensionToken}
                   </p>
                 </div>
-                <p className="mt-2 text-xs leading-5 text-gray-500">
+                <p className="mt-2 text-xs leading-5 text-[var(--ledger-text-muted)]">
                   This token is shown once. Keep it somewhere safe.
                 </p>
                 {extensionTokenCopyStatus && (
-                  <p className="mt-2 text-xs text-gray-600">{extensionTokenCopyStatus}</p>
+                  <p className="mt-2 text-xs text-[var(--ledger-text-secondary)]">{extensionTokenCopyStatus}</p>
                 )}
               </div>
 
@@ -4055,14 +4051,14 @@ export const SettingsWindow = () => {
                   type="button"
                   onClick={() => setExtensionTokenConfirmAction('regenerate')}
                   disabled={isExtensionTokenBusy}
-                  className="h-8 rounded-lg border border-gray-200 bg-[#FFFDFB] px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-50 disabled:opacity-50"
+                  className={settingsTheme.controlButtonNeutral + ' rounded-lg'}
                 >
                   Regenerate
                 </button>
                 <button
                   type="button"
                   onClick={() => void handleCopyExtensionToken()}
-                  className="inline-flex h-8 items-center gap-2 rounded-lg border border-gray-200 bg-[#FFFDFB] px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-50"
+                  className={settingsTheme.controlButtonNeutral + ' inline-flex items-center gap-2 rounded-lg'}
                 >
                   <Copy size={13} />
                   Copy token
@@ -4083,12 +4079,12 @@ export const SettingsWindow = () => {
               backdropBorderRadius="inherit"
               disablePortal
               manageWindowChrome={false}
-              classNameContainer="w-full max-w-115 rounded-2xl border border-gray-200 bg-[#FFFDFB]"
+              classNameContainer={`w-full max-w-115 ${settingsTheme.modalShell}`}
             >
               <div className="flex items-start justify-between gap-4 px-5 pt-5">
                 <div>
-                  <h3 className="text-lg font-semibold text-gray-900">Regenerate extension token?</h3>
-                  <p className="mt-1 text-sm leading-5 text-gray-600">
+                  <h3 className="text-lg font-semibold text-[var(--ledger-text-primary)]">Regenerate extension token?</h3>
+                  <p className="mt-1 text-sm leading-5 text-[var(--ledger-text-secondary)]">
                     Your existing browser extension token will stop working. You’ll need to paste the
                     new token into the extension.
                   </p>
@@ -4098,11 +4094,11 @@ export const SettingsWindow = () => {
                   ariaLabel="Close regenerate token modal"
                 />
               </div>
-              <div className="mt-5 flex items-center justify-end gap-2 border-t border-gray-100 px-5 py-4">
+              <div className="mt-5 flex items-center justify-end gap-2 border-t border-[color:var(--ledger-border-subtle)] px-5 py-4">
                 <button
                   type="button"
                   onClick={() => setExtensionTokenConfirmAction(null)}
-                  className="h-8 rounded-lg border border-gray-200 bg-[#FFFDFB] px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-50"
+                  className={settingsTheme.controlButtonNeutral + ' rounded-lg'}
                 >
                   Cancel
                 </button>
@@ -4123,12 +4119,12 @@ export const SettingsWindow = () => {
               backdropBorderRadius="inherit"
               disablePortal
               manageWindowChrome={false}
-              classNameContainer="w-full max-w-115 rounded-2xl border border-gray-200 bg-[#FFFDFB]"
+              classNameContainer={`w-full max-w-115 ${settingsTheme.modalShell}`}
             >
               <div className="flex items-start justify-between gap-4 px-5 pt-5">
                 <div>
-                  <h3 className="text-lg font-semibold text-gray-900">Revoke extension token?</h3>
-                  <p className="mt-1 text-sm leading-5 text-gray-600">
+                  <h3 className="text-lg font-semibold text-[var(--ledger-text-primary)]">Revoke extension token?</h3>
+                  <p className="mt-1 text-sm leading-5 text-[var(--ledger-text-secondary)]">
                     The browser extension will no longer be able to save captures to Ledger.
                   </p>
                 </div>
@@ -4137,11 +4133,11 @@ export const SettingsWindow = () => {
                   ariaLabel="Close revoke token modal"
                 />
               </div>
-              <div className="mt-5 flex items-center justify-end gap-2 border-t border-gray-100 px-5 py-4">
+              <div className="mt-5 flex items-center justify-end gap-2 border-t border-[color:var(--ledger-border-subtle)] px-5 py-4">
                 <button
                   type="button"
                   onClick={() => setExtensionTokenConfirmAction(null)}
-                  className="h-8 rounded-lg border border-gray-200 bg-[#FFFDFB] px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-50"
+                  className={settingsTheme.controlButtonNeutral + ' rounded-lg'}
                 >
                   Cancel
                 </button>
@@ -4149,7 +4145,7 @@ export const SettingsWindow = () => {
                   type="button"
                   onClick={() => void handleRevokeExtensionToken()}
                   disabled={isExtensionTokenBusy}
-                  className="h-8 rounded-lg border border-red-200 bg-[#FFFDFB] px-3 text-xs font-medium text-red-700 transition hover:bg-red-50 disabled:opacity-50"
+                  className={settingsTheme.dangerButton + ' rounded-lg'}
                 >
                   {isExtensionTokenBusy ? 'Revoking...' : 'Revoke'}
                 </button>
@@ -4162,31 +4158,31 @@ export const SettingsWindow = () => {
               backdropBorderRadius="inherit"
               disablePortal
               manageWindowChrome={false}
-              classNameContainer="w-full max-w-[720px] rounded-2xl border border-gray-200 bg-[#FFFDFB] shadow-[0_24px_70px_rgba(15,23,42,0.12)]"
+              classNameContainer={`w-full max-w-[720px] ${settingsTheme.modalShell}`}
             >
               <div className="flex items-start justify-between gap-4 px-5 pt-5">
                 <div>
-                  <p className="text-xs font-medium text-gray-500">Workspace settings</p>
-                  <h3 id="workspace-manage-title" className="mt-1 text-lg font-semibold text-gray-900">
+                  <p className={settingsTheme.rowMuted + ' font-medium'}>Workspace settings</p>
+                  <h3 id="workspace-manage-title" className="mt-1 text-lg font-semibold text-[var(--ledger-text-primary)]">
                     {activeWorkspace?.name}
                   </h3>
-                  <p className="mt-0.5 text-xs text-gray-500">{activeWorkspaceKindLabel}</p>
+                  <p className={settingsTheme.rowMuted + ' mt-0.5'}>{activeWorkspaceKindLabel}</p>
                 </div>
                 <ModalCloseButton onClick={closeWorkspaceManageModal} ariaLabel="Close workspace settings modal" />
               </div>
 
-              <div className="mt-4 border-t border-gray-100 px-5 pt-4">
+              <div className="mt-4 border-t border-[color:var(--ledger-border-subtle)] px-5 pt-4">
                 <div className="grid gap-4 md:grid-cols-[220px_minmax(0,1fr)] md:items-start">
                   <div className="space-y-1 pt-1">
-                    <p className="text-sm font-medium text-gray-800">Name</p>
-                    <p className="text-xs text-gray-500">Workspace display name.</p>
+                    <p className="text-sm font-medium text-[var(--ledger-text-primary)]">Name</p>
+                    <p className={settingsTheme.rowMuted}>Workspace display name.</p>
                   </div>
                   <input
                     id="workspace-edit-name"
                     value={workspaceEditName}
                     onChange={(e) => setWorkspaceEditName(e.target.value)}
                     disabled={!canManageWorkspace || isSavingWorkspace}
-                    className="h-10 w-full rounded-xl border border-gray-200 bg-[#FFFDFB] px-3 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 focus:border-gray-300 focus:ring-4 focus:ring-gray-100 disabled:opacity-60"
+                    className={settingsTheme.input}
                     aria-label="Edit workspace name"
                   />
                 </div>
@@ -4195,31 +4191,31 @@ export const SettingsWindow = () => {
               <div className="mt-4 px-5">
                 <div className="grid gap-4 md:grid-cols-[220px_minmax(0,1fr)] md:items-start">
                   <div className="space-y-1 pt-1">
-                    <p className="text-sm font-medium text-gray-800">Description</p>
-                    <p className="text-xs text-gray-500">Optional workspace context.</p>
+                    <p className="text-sm font-medium text-[var(--ledger-text-primary)]">Description</p>
+                    <p className={settingsTheme.rowMuted}>Optional workspace context.</p>
                   </div>
                   <textarea
                     id="workspace-edit-description"
                     value={workspaceEditDescription}
                     onChange={(e) => setWorkspaceEditDescription(e.target.value)}
                     disabled={!canManageWorkspace || isSavingWorkspace}
-                    className="min-h-24 w-full resize-none rounded-xl border border-gray-200 bg-[#FFFDFB] px-3 py-2 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 focus:border-gray-300 focus:ring-4 focus:ring-gray-100 disabled:opacity-60"
+                    className={settingsTheme.input + ' min-h-24 resize-none py-2'}
                     aria-label="Edit workspace description"
                   />
                 </div>
               </div>
 
-              <div className="mt-4 border-t border-gray-100 px-5 pt-4">
+              <div className="mt-4 border-t border-[color:var(--ledger-border-subtle)] px-5 pt-4">
                 <div className="flex items-center justify-between gap-4">
                   <div>
-                    <p className="text-sm font-semibold text-gray-900">Danger zone</p>
-                    <p className="mt-1 text-xs text-gray-500">Delete this workspace and all data inside it.</p>
+                    <p className="text-sm font-semibold text-[var(--ledger-text-primary)]">Danger zone</p>
+                    <p className={settingsTheme.rowMuted + ' mt-1'}>Delete this workspace and all data inside it.</p>
                   </div>
                   <button
                     type="button"
                     onClick={openWorkspaceDeleteModal}
                     disabled={workspaceUserRole !== 'owner' || isDeletingWorkspace}
-                    className="h-8 rounded-full border border-red-200 bg-[#FFFDFB] px-3 text-xs font-medium text-red-700 transition hover:bg-red-50 disabled:opacity-50"
+                    className={settingsTheme.dangerButton}
                   >
                     Delete workspace
                   </button>
@@ -4227,16 +4223,16 @@ export const SettingsWindow = () => {
               </div>
 
               {(workspaceEditError || workspaceEditStatus) && (
-                <p className="px-5 pt-3 text-xs text-gray-700" role="status">
+                <p className="px-5 pt-3 text-xs text-[var(--ledger-text-secondary)]" role="status">
                   {workspaceEditError || workspaceEditStatus}
                 </p>
               )}
 
-              <div className="mt-5 flex items-center justify-end gap-2 border-t border-gray-100 px-5 py-4">
+              <div className="mt-5 flex items-center justify-end gap-2 border-t border-[color:var(--ledger-border-subtle)] px-5 py-4">
                 <button
                   type="button"
                   onClick={closeWorkspaceManageModal}
-                  className="h-8 rounded-lg border border-gray-200 bg-[#FFFDFB] px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-50"
+                  className={settingsTheme.controlButtonNeutral + ' rounded-lg'}
                 >
                   Cancel
                 </button>
@@ -4244,7 +4240,7 @@ export const SettingsWindow = () => {
                   type="button"
                   onClick={() => void handleSaveWorkspaceChanges()}
                   disabled={!canManageWorkspace || isSavingWorkspace}
-                  className="h-8 rounded-lg bg-[#FF5F40] px-3 text-xs font-medium text-white transition hover:bg-[#ea5336] disabled:opacity-60"
+                  className="h-8 rounded-lg bg-[var(--ledger-accent)] px-3 text-xs font-medium text-white transition hover:bg-[var(--ledger-accent-hover)] disabled:opacity-60"
                 >
                   {isSavingWorkspace ? 'Saving...' : 'Save changes'}
                 </button>
@@ -4256,25 +4252,25 @@ export const SettingsWindow = () => {
               backdropBorderRadius="inherit"
               disablePortal
               manageWindowChrome={false}
-              classNameContainer="w-full max-w-[640px] rounded-2xl border border-gray-200 bg-[#FFFDFB] shadow-[0_24px_70px_rgba(15,23,42,0.12)]"
+              classNameContainer={`w-full max-w-[640px] ${settingsTheme.modalShell}`}
             >
               <div className="flex items-start justify-between gap-4 px-5 pt-5">
                 <div>
-                  <p className="text-xs font-medium text-gray-500">Danger zone</p>
-                  <h3 id="workspace-delete-title" className="mt-1 text-lg font-semibold text-gray-900">
+                  <p className={settingsTheme.rowMuted + ' font-medium'}>Danger zone</p>
+                  <h3 id="workspace-delete-title" className="mt-1 text-lg font-semibold text-[var(--ledger-text-primary)]">
                     Delete workspace
                   </h3>
-                  <p className="mt-1 text-sm text-gray-600">
-                    Type <span className="font-medium text-gray-900">{activeWorkspace?.name}</span> to confirm deletion.
+                  <p className="mt-1 text-sm text-[var(--ledger-text-secondary)]">
+                    Type <span className="font-medium text-[var(--ledger-text-primary)]">{activeWorkspace?.name}</span> to confirm deletion.
                   </p>
                 </div>
                 <ModalCloseButton onClick={closeWorkspaceDeleteModal} ariaLabel="Close delete workspace modal" />
               </div>
 
-              <div className="mt-4 border-t border-gray-100 px-5 pt-4">
+              <div className="mt-4 border-t border-[color:var(--ledger-border-subtle)] px-5 pt-4">
                 <label
                   htmlFor="workspace-delete-confirm"
-                  className="mb-2 block text-xs font-medium text-gray-500"
+                  className="mb-2 block text-xs font-medium text-[var(--ledger-text-muted)]"
                 >
                   Workspace name
                 </label>
@@ -4284,23 +4280,23 @@ export const SettingsWindow = () => {
                   onChange={(e) => setWorkspaceDeleteConfirm(e.target.value)}
                   disabled={workspaceUserRole !== 'owner' || isDeletingWorkspace}
                   placeholder={activeWorkspace?.name}
-                  className="h-9 w-full rounded-xl border border-gray-200 bg-[#FFFDFB] px-3 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 focus:border-gray-300 focus:ring-4 focus:ring-gray-100 disabled:opacity-60"
+                  className={settingsTheme.inputSecondary + ' h-9 w-full'}
                   aria-label="Confirm workspace deletion"
                 />
-                <p className="mt-2 text-xs text-gray-500">This removes the workspace and all data inside it.</p>
+                <p className="mt-2 text-xs text-[var(--ledger-text-muted)]">This removes the workspace and all data inside it.</p>
               </div>
 
               {workspaceDeleteError && (
-                <p className="px-5 pt-3 text-xs text-red-700" role="alert">
+                <p className="px-5 pt-3 text-xs text-[var(--ledger-danger)]" role="alert">
                   {workspaceDeleteError}
                 </p>
               )}
 
-              <div className="mt-5 flex items-center justify-end gap-2 border-t border-gray-100 px-5 py-4">
+              <div className="mt-5 flex items-center justify-end gap-2 border-t border-[color:var(--ledger-border-subtle)] px-5 py-4">
                 <button
                   type="button"
                   onClick={closeWorkspaceDeleteModal}
-                  className="h-8 rounded-lg border border-gray-200 bg-[#FFFDFB] px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-50"
+                  className={settingsTheme.controlButtonNeutral + ' rounded-lg'}
                 >
                   Cancel
                 </button>
@@ -4312,7 +4308,7 @@ export const SettingsWindow = () => {
                     isDeletingWorkspace ||
                     workspaceDeleteConfirm.trim() !== activeWorkspace?.name?.trim()
                   }
-                  className="h-8 rounded-lg border border-red-200 bg-[#FFFDFB] px-3 text-xs font-medium text-red-700 transition hover:bg-red-50 disabled:opacity-50"
+                  className={settingsTheme.dangerButton + ' rounded-lg'}
                 >
                   {isDeletingWorkspace ? 'Deleting...' : 'Delete workspace'}
                 </button>
@@ -4325,27 +4321,27 @@ export const SettingsWindow = () => {
               backdropBorderRadius="inherit"
               disablePortal
               manageWindowChrome={false}
-              classNameContainer="w-full max-w-[560px] overflow-hidden rounded-2xl border border-gray-200 bg-[#FFFDFB] shadow-[0_24px_70px_rgba(15,23,42,0.12)]"
+              classNameContainer={`w-full max-w-[560px] overflow-hidden ${settingsTheme.modalShell}`}
             >
               <div className="flex min-h-70 flex-col">
               <div className="flex items-start justify-between gap-4 px-5 pt-5">
                 <div>
-                  <p className="text-xs font-medium text-gray-500">Manage invite</p>
-                  <h3 className="mt-1 text-lg font-semibold text-gray-900">
+                  <p className={settingsTheme.rowMuted + ' font-medium'}>Manage invite</p>
+                  <h3 className="mt-1 text-lg font-semibold text-[var(--ledger-text-primary)]">
                     {selectedInvite?.invited_email}
                   </h3>
-                  <p className="mt-0.5 text-xs text-gray-500">
+                  <p className={settingsTheme.rowMuted + ' mt-0.5'}>
                     {selectedInvite?.role} · {selectedInvite?.status}
                   </p>
                 </div>
                 <ModalCloseButton onClick={() => setInviteModal(null)} ariaLabel="Close invite modal" />
               </div>
 
-              <div className="mt-4 flex-1 border-t border-gray-100 px-5 pt-4 pb-5">
-                <p className="text-xs font-medium text-gray-500">Invite link</p>
+              <div className="mt-4 flex-1 border-t border-[color:var(--ledger-border-subtle)] px-5 pt-4 pb-5">
+                <p className={settingsTheme.rowMuted + ' font-medium'}>Invite link</p>
                 {selectedInvite?.status === 'pending' ? (
                   <>
-                    <p className="mt-2 break-all text-sm text-gray-700">
+                    <p className="mt-2 break-all text-sm text-[var(--ledger-text-secondary)]">
                       {getInviteUrl(selectedInvite) ?? 'No link available'}
                     </p>
                     <div className="mt-3 flex gap-2">
@@ -4353,7 +4349,7 @@ export const SettingsWindow = () => {
                         type="button"
                         onClick={() => void handleCopySelectedInviteLink()}
                         disabled={!getInviteUrl(selectedInvite)}
-                        className="inline-flex h-8 flex-1 items-center justify-center gap-2 rounded-full border border-gray-200 bg-[#FFFDFB] px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-50 disabled:opacity-50"
+                        className={settingsTheme.controlButtonNeutral + ' inline-flex flex-1 items-center justify-center gap-2 rounded-full'}
                       >
                         <Copy size={14} />
                         Copy link
@@ -4362,14 +4358,14 @@ export const SettingsWindow = () => {
                         type="button"
                         onClick={() => void handleRevokeInvitation(selectedInvite.id)}
                         disabled={invitationActionId === selectedInvite.id}
-                        className="inline-flex h-8 flex-1 items-center justify-center rounded-full border border-red-200 bg-[#FFFDFB] px-3 text-xs font-medium text-red-700 transition hover:bg-red-50 disabled:opacity-50"
+                        className={settingsTheme.dangerButton + ' inline-flex flex-1 items-center justify-center rounded-full'}
                       >
                         {invitationActionId === selectedInvite.id ? 'Revoking...' : 'Revoke'}
                       </button>
                     </div>
                   </>
                 ) : (
-                  <p className="mt-2 text-sm text-gray-600">This invite is no longer pending.</p>
+                  <p className="mt-2 text-sm text-[var(--ledger-text-secondary)]">This invite is no longer pending.</p>
                 )}
               </div>
               </div>

@@ -609,7 +609,7 @@ export default function InboxWindow() {
               </>
             )}
           </div>
-          <h3 className="mt-1 truncate text-sm font-semibold text-gray-950">{title}</h3>
+          <h3 className="mt-1 truncate text-sm font-semibold text-[var(--ledger-text-primary)]">{title}</h3>
           {preview && <p className={`mt-1 line-clamp-2 text-xs leading-5 ${inboxTheme.bodyText}`}>{preview}</p>}
           <p className={`mt-2 text-xs ${inboxTheme.mutedText}`}>
             {item.author_name || 'Unknown sender'} · {formatDateTime(item.created_at)}

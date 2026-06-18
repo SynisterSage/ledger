@@ -540,6 +540,8 @@ export default function NotificationsScreen() {
             paddingBottom: theme.spacing['3xl'] + 132,
             flexGrow: 1,
           }}
+          contentInsetAdjustmentBehavior="always"
+          automaticallyAdjustsScrollIndicatorInsets
           refreshControl={
             <RefreshControl
               refreshing={isRefreshing}

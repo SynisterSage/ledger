@@ -50,7 +50,7 @@ function TodayItemBase({ title, subtitle, active = false, onPress, onLongPress }
             variant="body"
             style={{
               color: active ? theme.colors.textPrimary : theme.colors.textPrimary,
-              fontWeight: active ? '500' : '400',
+              fontWeight: active ? '600' : '400',
             }}>
             {title}
           </AppText>

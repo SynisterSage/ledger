@@ -293,10 +293,10 @@ const getColorClasses = (color: string) => {
       border: 'border-l-2 border-slate-400',
     },
     gray: {
-      dot: 'bg-gray-400',
-      text: 'text-gray-600',
-      bg: 'bg-[#FFF6EE]',
-      border: 'border-l-2 border-gray-300',
+      dot: 'bg-[var(--ledger-text-muted)]',
+      text: 'text-[var(--ledger-text-secondary)]',
+      bg: 'bg-[var(--ledger-surface-muted)]',
+      border: 'border-l-2 border-[color:var(--ledger-border-subtle)]',
     },
   };
   return colorMap[normalizedColor] || colorMap.gray;
@@ -364,8 +364,8 @@ const displayFirstName = (value: string) => {
 
 const InspectorInfoRow = ({ label, value }: { label: string; value: string }) => (
   <div className="py-1">
-    <p className="text-[11px] text-gray-500">{label}</p>
-    <p className="mt-0.5 text-sm font-medium text-gray-900 wrap-break-word">{value}</p>
+    <p className="text-[11px] text-[var(--ledger-text-muted)]">{label}</p>
+    <p className="mt-0.5 text-sm font-medium text-[var(--ledger-text-primary)] wrap-break-word">{value}</p>
   </div>
 );
 
@@ -529,9 +529,9 @@ const getDropPreviewClasses = (
   targetId: string
 ) => {
   if (!preview || preview.targetId !== targetId) return '';
-  if (preview.position === 'inside') return 'bg-[#E8DDD4] border-l-gray-400';
-  if (preview.position === 'before') return 'border-t border-gray-300';
-  return 'border-b border-gray-300';
+  if (preview.position === 'inside') return 'bg-[var(--ledger-surface-hover)] border-l-[color:var(--ledger-border-strong)]';
+  if (preview.position === 'before') return 'border-t border-[color:var(--ledger-border-subtle)]';
+  return 'border-b border-[color:var(--ledger-border-subtle)]';
 };
 
 export const NotesWindow = () => {
@@ -3217,7 +3217,7 @@ export const NotesWindow = () => {
 
   return (
     <div
-      className="ledger-notes-shell relative h-screen overflow-hidden rounded-3xl border border-[#E2D4C4] bg-[#FFF9F4] flex flex-col shadow-[0_24px_80px_rgba(15,23,42,0.08)]"
+      className="ledger-notes-shell relative flex h-screen flex-col overflow-hidden rounded-3xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] shadow-none"
       style={{ scrollbarGutter: isNotesModalOpen ? 'auto' : 'stable' }}
     >
       <CloseGuardModal
@@ -3321,7 +3321,7 @@ export const NotesWindow = () => {
       {/* Toasts handled by global ToastProvider */}
 
       {error && (
-        <div className="px-5 py-2 text-xs text-red-700 bg-red-50 border-b border-red-100">
+        <div className="border-b border-[color:rgba(217,45,32,0.18)] bg-[color:rgba(217,45,32,0.08)] px-5 py-2 text-xs text-[var(--ledger-danger)]">
           {error}
         </div>
       )}
@@ -3329,20 +3329,20 @@ export const NotesWindow = () => {
         {!isLeftPaneCollapsed && hasLoadedOnce ? (
           <>
             <aside
-              className={`border-r border-[#E2D4C4] bg-[#FFF6EE] flex flex-col overflow-hidden shrink-0 ${
+              className={`flex shrink-0 flex-col overflow-hidden border-r border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] ${
                 isCompactLayout ? 'text-sm' : ''
               }`}
               style={{ width: `${leftPaneWidth}px` }}
             >
-              <div className={`${isCompactLayout ? 'p-3' : 'p-4'} border-b border-[#E2D4C4] bg-[#FFF6EE]`}>
+              <div className={`${isCompactLayout ? 'p-3' : 'p-4'} border-b border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)]`}>
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-2 min-w-0">
-                    <h2 className="text-xs font-medium text-gray-500">
+                    <h2 className="text-xs font-medium text-[var(--ledger-text-muted)]">
                       Notes
                     </h2>
                     <button
                       onClick={() => setIsLeftPaneCollapsed(true)}
-                    className="h-7 w-7 rounded-lg border border-[#E2D4C4] bg-[#FFF6EE] text-gray-500 hover:bg-[#FFF1E3] flex items-center justify-center shadow-sm"
+                      className="flex h-7 w-7 items-center justify-center rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)]"
                       title="Hide left panel"
                       aria-label="Hide left panel"
                     >
@@ -3353,13 +3353,13 @@ export const NotesWindow = () => {
                     <button
                       onClick={() => setShowNewMenu((current) => !current)}
                       disabled={isCreating}
-                      className="h-7 w-7 rounded-lg border border-[#E2D4C4] bg-[#FFF6EE] text-[#FF5F40] hover:bg-[#FFF1E3] transition inline-flex items-center justify-center disabled:opacity-60"
+                      className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-accent)] transition hover:bg-[var(--ledger-surface-hover)] disabled:opacity-60"
                       title="Notes actions"
                     >
                       <MoreVertical size={13} />
                     </button>
                     {showNewMenu && (
-                      <div className="absolute right-0 top-8 z-40 min-w-48 max-h-[60vh] overflow-y-auto rounded-lg border border-[#E8DDD4] bg-[#FFF6EE] p-1 shadow-lg">
+                      <div className="absolute right-0 top-8 z-40 max-h-[60vh] min-w-48 overflow-y-auto rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-1 shadow-[var(--ledger-shadow)]">
                         <button
                           type="button"
                           onClick={() => {
@@ -3368,7 +3368,7 @@ export const NotesWindow = () => {
                             setNoteCreationSectionId(null);
                             setShowCreateNoteModal(true);
                           }}
-                          className="w-full rounded-md px-2.5 py-1.5 text-left text-xs font-medium text-gray-800 hover:bg-[#FFF1E3]"
+                          className="w-full rounded-md px-2.5 py-1.5 text-left text-xs font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
                         >
                           New note
                         </button>
@@ -3378,20 +3378,20 @@ export const NotesWindow = () => {
                             setShowNewMenu(false);
                             setShowNewSectionPrompt(true);
                           }}
-                          className="w-full rounded-md px-2.5 py-1.5 text-left text-xs font-medium text-gray-800 hover:bg-[#FFF1E3]"
+                          className="w-full rounded-md px-2.5 py-1.5 text-left text-xs font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
                         >
                           New folder
                         </button>
-                        <div className="my-1 h-px bg-[#E8DDD4]" />
+                        <div className="my-1 h-px bg-[var(--ledger-border-subtle)]" />
                         <div className="px-2.5 pb-1 pt-0.5">
-                          <p className="text-[11px] font-medium text-gray-500">
+                          <p className="text-[11px] font-medium text-[var(--ledger-text-muted)]">
                             Sort notes
                           </p>
-                          <p className="mt-0.5 text-[11px] text-gray-400">
+                          <p className="mt-0.5 text-[11px] text-[var(--ledger-text-muted)]">
                             {formatNoteSortLabel(noteSortPreferences.root)}
                           </p>
                         </div>
-                        <div className="mx-2 mb-1 h-px bg-[#E8DDD4]" />
+                        <div className="mx-2 mb-1 h-px bg-[var(--ledger-border-subtle)]" />
                         {NOTE_SORT_OPTIONS.map((option) => {
                           const isActive =
                             JSON.stringify(option.preference) ===
@@ -3406,13 +3406,13 @@ export const NotesWindow = () => {
                               }}
                               className={`relative w-full rounded-md px-2.5 py-1.5 text-left text-xs font-medium transition ${
                                 isActive
-                                  ? 'bg-[#FFF1E3] text-gray-900'
-                                  : 'text-gray-800 hover:bg-[#FFF1E3]'
+                                ? 'bg-[var(--ledger-surface-hover)] text-[var(--ledger-text-primary)]'
+                                : 'text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]'
                               }`}
                             >
                               {option.label}
                               {isActive && (
-                                <span className="absolute inset-x-2.5 bottom-0 h-px bg-[#E8DDD4]" />
+                                <span className="absolute inset-x-2.5 bottom-0 h-px bg-[var(--ledger-border-subtle)]" />
                               )}
                             </button>
                           );
@@ -3425,24 +3425,24 @@ export const NotesWindow = () => {
                 <div className="relative">
                   <Search
                     size={14}
-                    className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
+                    className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--ledger-text-muted)]"
                   />
                   <input
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
                     placeholder="Search notes"
-                    className="w-full h-8 pl-9 pr-3 text-sm border border-[#E2D4C4] rounded-lg bg-[#FFF6EE] focus:outline-none focus:border-gray-300 focus:ring-1 focus:ring-[#E2D4C4]"
+                    className="h-8 w-full rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] pl-9 pr-3 text-sm text-[var(--ledger-text-primary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60"
                   />
                 </div>
 
                 {showNewSectionPrompt && (
-                  <div className="mt-3 flex items-center gap-2 rounded-lg border border-[#E2D4C4] bg-[#FFF6EE] p-1.5">
+                  <div className="mt-3 flex items-center gap-2 rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] p-1.5">
                     <input
                       autoFocus
                       value={newSectionName}
                       onChange={(e) => setNewSectionName(e.target.value)}
                       placeholder="Folder name"
-                      className="min-w-0 flex-1 bg-transparent px-1.5 text-sm text-gray-900 outline-none placeholder:text-gray-400"
+                      className="min-w-0 flex-1 bg-transparent px-1.5 text-sm text-[var(--ledger-text-primary)] outline-none placeholder:text-[var(--ledger-text-muted)]"
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') {
                           e.preventDefault();
@@ -3465,7 +3465,7 @@ export const NotesWindow = () => {
                         });
                       }}
                       disabled={!newSectionName.trim()}
-                      className="h-7 rounded-full bg-[#FF5F40] px-3 text-xs font-semibold text-white hover:bg-[#f4583a] disabled:opacity-50"
+                      className="h-7 rounded-full bg-[var(--ledger-accent)] px-3 text-xs font-semibold text-white transition hover:bg-[var(--ledger-accent-hover)] disabled:opacity-50"
                     >
                       Create
                     </button>
@@ -3499,14 +3499,14 @@ export const NotesWindow = () => {
                           }}
                           onClick={(event) => void handleSidebarNoteClick(note, event.shiftKey)}
                           onContextMenu={(event) => handleSidebarNoteContextMenu(note, event)}
-                          className={`w-full text-left px-3 py-2 rounded text-sm transition ${
+                          className={`w-full rounded px-3 py-2 text-left text-sm transition ${
                             active
-                            ? 'bg-[#FFF1E3] text-gray-900 ring-1 ring-[#E8DDD4]'
-                            : 'bg-transparent hover:bg-[#FFF1E3] text-gray-700'
+                              ? 'bg-[var(--ledger-surface-hover)] text-[var(--ledger-text-primary)] ring-1 ring-[color:var(--ledger-border-subtle)]'
+                              : 'bg-transparent text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]'
                           }`}
                         >
                           <div className="flex items-center gap-2 min-w-0">
-                            <StickyNote size={12} className="text-gray-400 shrink-0" />
+                            <StickyNote size={12} className="shrink-0 text-[var(--ledger-text-muted)]" />
                             <div className="min-w-0 flex-1">
                               <p
                                 className="font-medium truncate text-sm leading-5"
@@ -3518,7 +3518,7 @@ export const NotesWindow = () => {
                               >
                                 {note.title || 'Untitled'}
                               </p>
-                              <p className="text-xs text-gray-400 truncate">{preview}</p>
+                              <p className="truncate text-xs text-[var(--ledger-text-muted)]">{preview}</p>
                             </div>
                           </div>
                         </button>
@@ -3623,20 +3623,20 @@ export const NotesWindow = () => {
                                 sectionName: section.name,
                               });
                             }}
-                            className={`w-full text-left px-3 py-2 flex items-center gap-2 text-sm font-semibold text-gray-800 hover:bg-[#FFF1E3] rounded-lg transition group ${
+                            className={`w-full flex items-center gap-2 rounded-lg px-3 py-2 text-left text-sm font-semibold text-[var(--ledger-text-secondary)] transition group hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] ${
                               sectionDropTargetId === section.id
-                                ? 'bg-[#FFF1E3] ring-1 ring-[#E8DDD4] border border-dashed border-[#D8C6B6]'
+                                ? 'border border-dashed border-[color:var(--ledger-border-strong)] bg-[var(--ledger-surface-hover)] ring-1 ring-[color:var(--ledger-border-subtle)]'
                                 : draggedSectionId === section.id
-                                ? 'bg-[#FFF1E3]/80 ring-1 ring-[#E8DDD4]'
+                                ? 'bg-[var(--ledger-surface-hover)]/80 ring-1 ring-[color:var(--ledger-border-subtle)]'
                                 : dropPreview?.targetId === section.id
-                                ? 'bg-[#FFF1E3] ring-1 ring-[#E8DDD4]'
+                                ? 'bg-[var(--ledger-surface-hover)] ring-1 ring-[color:var(--ledger-border-subtle)]'
                                 : ''
                             }`}
                           >
                             <div
                               className={`h-1.5 w-1.5 rounded-full shrink-0 ${sectionColor.dot}`}
                             />
-                            <Folder size={14} className="text-gray-500 shrink-0" />
+                            <Folder size={14} className="shrink-0 text-[var(--ledger-text-muted)]" />
                             <span
                               className="flex-1 truncate"
                               onDoubleClick={(event) => {
@@ -3663,7 +3663,7 @@ export const NotesWindow = () => {
                                     }
                                   }}
                                   onClick={(event) => event.stopPropagation()}
-                                  className="w-full bg-transparent text-sm font-semibold text-gray-900 outline-none"
+                                  className="w-full bg-transparent text-sm font-semibold text-[var(--ledger-text-primary)] outline-none"
                                 />
                               ) : (
                                 section.name
@@ -3671,11 +3671,11 @@ export const NotesWindow = () => {
                             </span>
                             <ChevronRight
                               size={14}
-                              className={`text-gray-400 transition-transform shrink-0 ${
+                              className={`shrink-0 text-[var(--ledger-text-muted)] transition-transform ${
                                 !isSectionCollapsed ? 'rotate-90' : ''
                               }`}
                             />
-                            <span className="text-xs text-gray-400 mr-1">{sectionTotalCount}</span>
+                            <span className="mr-1 text-xs text-[var(--ledger-text-muted)]">{sectionTotalCount}</span>
                           </button>
 
                           {/* Section notes */}
@@ -3717,19 +3717,19 @@ export const NotesWindow = () => {
                                         onContextMenu={(event) =>
                                           handleSidebarNoteContextMenu(note, event)
                                         }
-                                        className={`flex-1 min-w-0 px-2.5 py-1.5 rounded text-left text-sm transition ${
+                                        className={`flex-1 min-w-0 rounded px-2.5 py-1.5 text-left text-sm transition ${
                                           active
-                                          ? 'bg-[#FFF1E3] text-gray-900 ring-1 ring-[#E8DDD4]'
-                                            : 'bg-transparent hover:bg-[#FFF1E3] text-gray-700'
+                                            ? 'bg-[var(--ledger-surface-hover)] text-[var(--ledger-text-primary)] ring-1 ring-[color:var(--ledger-border-subtle)]'
+                                            : 'bg-transparent text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]'
                                         } ${getDropPreviewClasses(dropPreview, note.id)}`}
                                       >
                                         <div className="flex items-center gap-2 min-w-0">
                                           {childCount > 0 ? (
-                                            <Folder size={12} className="text-gray-400 shrink-0" />
+                                            <Folder size={12} className="shrink-0 text-[var(--ledger-text-muted)]" />
                                           ) : (
                                             <StickyNote
                                               size={12}
-                                              className="text-gray-400 shrink-0"
+                                              className="shrink-0 text-[var(--ledger-text-muted)]"
                                             />
                                           )}
                                           <div className="min-w-0 flex-1">
@@ -3752,7 +3752,7 @@ export const NotesWindow = () => {
                                                     cancelInlineRename();
                                                   }
                                                 }}
-                                                className="w-full bg-transparent font-medium text-gray-900 outline-none"
+                                                className="w-full bg-transparent font-medium text-[var(--ledger-text-primary)] outline-none"
                                               />
                                             ) : (
                                               <p
@@ -3766,7 +3766,7 @@ export const NotesWindow = () => {
                                                 {note.title || 'Untitled'}
                                               </p>
                                             )}
-                                            <p className="text-xs text-gray-400 truncate">
+                                            <p className="truncate text-xs text-[var(--ledger-text-muted)]">
                                               {preview}
                                             </p>
                                           </div>
@@ -3783,7 +3783,7 @@ export const NotesWindow = () => {
                                               return next;
                                             });
                                           }}
-                                          className="h-5 w-5 shrink-0 rounded text-gray-500 hover:text-gray-700"
+                                          className="h-5 w-5 shrink-0 rounded text-[var(--ledger-text-secondary)] transition hover:text-[var(--ledger-text-primary)]"
                                           aria-label={isExpanded ? 'Collapse' : 'Expand'}
                                         >
                                           {isExpanded ? (
@@ -3837,14 +3837,14 @@ export const NotesWindow = () => {
                                                 }}
                                                 className={`flex-1 min-w-0 px-2.5 py-1.5 rounded text-left text-xs transition ${
                                                   selectedNoteIdSet.has(child.id)
-                                                    ? 'bg-[#FFF1E3] text-gray-900 ring-1 ring-[#E8DDD4]'
-                                                    : 'bg-transparent hover:bg-[#FFF1E3] text-gray-600'
+                                                    ? 'bg-[var(--ledger-surface-hover)] text-[var(--ledger-text-primary)] ring-1 ring-[color:var(--ledger-border-subtle)]'
+                                                    : 'bg-transparent hover:bg-[var(--ledger-surface-hover)] text-[var(--ledger-text-secondary)]'
                                                 } ${getDropPreviewClasses(dropPreview, child.id)}`}
                                               >
                                                 <div className="flex items-center gap-2 min-w-0">
                                                   <StickyNote
                                                     size={11}
-                                                    className="text-gray-400 shrink-0"
+                                                    className="text-[var(--ledger-text-muted)] shrink-0"
                                                   />
                                                   <p className="font-medium truncate leading-5">
                                                     {child.title || 'Untitled'}
@@ -3866,7 +3866,7 @@ export const NotesWindow = () => {
                                   setNoteCreationSectionId(section.id);
                                   setShowCreateNoteModal(true);
                                 }}
-                                        className="w-full text-left px-2.5 py-1.5 rounded text-xs font-medium text-gray-400 hover:text-gray-600 hover:bg-[#FFF1E3] transition flex items-center gap-2"
+                                className="flex w-full items-center gap-2 rounded px-2.5 py-1.5 text-left text-xs font-medium text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
                               >
                                 <Plus size={12} />
                                 Add note
@@ -3879,8 +3879,8 @@ export const NotesWindow = () => {
 
                     {notes.length === 0 && (
                       <div className="px-3 py-5 text-center">
-                        <p className="text-sm font-medium text-gray-800">No notes yet</p>
-                        <p className="mt-1 text-xs text-gray-500">
+                        <p className="text-sm font-medium text-[var(--ledger-text-primary)]">No notes yet</p>
+                        <p className="mt-1 text-xs text-[var(--ledger-text-muted)]">
                           Create a note or drop one into a folder to start organizing.
                         </p>
                       </div>
@@ -3922,20 +3922,20 @@ export const NotesWindow = () => {
                               event.preventDefault();
                               void handleDropOnSection(null);
                             }}
-                            className="w-full text-left px-3 py-1.5 flex items-center gap-2 text-sm font-semibold text-gray-800 hover:bg-[#FFF1E3] rounded-lg transition group"
+                            className="w-full flex items-center gap-2 rounded-lg px-3 py-1.5 text-left text-sm font-semibold text-[var(--ledger-text-secondary)] transition group hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
                           >
                             <div
                               className={`h-1.5 w-1.5 rounded-full shrink-0 ${sectionColor.dot}`}
                             />
-                            <Folder size={14} className="text-gray-500 shrink-0" />
+                            <Folder size={14} className="shrink-0 text-[var(--ledger-text-muted)]" />
                             <span className="flex-1 truncate">Unsorted</span>
                             <ChevronRight
                               size={14}
-                              className={`text-gray-400 transition-transform shrink-0 ${
+                              className={`shrink-0 text-[var(--ledger-text-muted)] transition-transform ${
                                 !isUnsortedCollapsed ? 'rotate-90' : ''
                               }`}
                             />
-                            <span className="text-xs text-gray-400 mr-1">
+                            <span className="mr-1 text-xs text-[var(--ledger-text-muted)]">
                               {unsortedNotes.length}
                             </span>
                           </button>
@@ -3974,18 +3974,18 @@ export const NotesWindow = () => {
                                         onContextMenu={(event) =>
                                           handleSidebarNoteContextMenu(note, event)
                                         }
-                                        className={`flex-1 min-w-0 text-left px-2.5 py-1 rounded text-sm transition flex items-center gap-2 ${
+                                        className={`flex-1 min-w-0 flex items-center gap-2 rounded px-2.5 py-1 text-left text-sm transition ${
                                           active
-                                            ? 'bg-[#FFF1E3] text-gray-900 ring-1 ring-[#E8DDD4]'
-                                            : 'bg-transparent hover:bg-[#FFF1E3] text-gray-700'
+                                            ? 'bg-[var(--ledger-surface-hover)] text-[var(--ledger-text-primary)] ring-1 ring-[color:var(--ledger-border-subtle)]'
+                                            : 'bg-transparent text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]'
                                         } ${getDropPreviewClasses(dropPreview, note.id)}`}
                                       >
                                         {childCount > 0 ? (
-                                          <Folder size={13} className="text-gray-400 shrink-0" />
+                                          <Folder size={13} className="shrink-0 text-[var(--ledger-text-muted)]" />
                                         ) : (
                                           <StickyNote
                                             size={13}
-                                            className="text-gray-400 shrink-0"
+                                            className="shrink-0 text-[var(--ledger-text-muted)]"
                                           />
                                         )}
                                         <div className="min-w-0 flex-1">
@@ -4008,7 +4008,7 @@ export const NotesWindow = () => {
                                                   cancelInlineRename();
                                                 }
                                               }}
-                                              className="w-full bg-transparent font-medium text-gray-900 outline-none"
+                                              className="w-full bg-transparent font-medium text-[var(--ledger-text-primary)] outline-none"
                                             />
                                           ) : (
                                             <p
@@ -4022,7 +4022,7 @@ export const NotesWindow = () => {
                                               {note.title || 'Untitled'}
                                             </p>
                                           )}
-                                          <p className="text-xs text-gray-500 truncate">
+                                          <p className="truncate text-xs text-[var(--ledger-text-muted)]">
                                             {preview}
                                           </p>
                                         </div>
@@ -4038,7 +4038,7 @@ export const NotesWindow = () => {
                                               return next;
                                             });
                                           }}
-                                          className="h-5 w-5 shrink-0 rounded text-gray-500 hover:text-gray-700"
+                                          className="h-5 w-5 shrink-0 rounded text-[var(--ledger-text-secondary)] transition hover:text-[var(--ledger-text-primary)]"
                                           aria-label={isExpanded ? 'Collapse' : 'Expand'}
                                         >
                                           {isExpanded ? (
@@ -4085,15 +4085,15 @@ export const NotesWindow = () => {
                                                 onContextMenu={(event) =>
                                                   handleSidebarNoteContextMenu(child, event)
                                                 }
-                                                className={`w-full text-left px-2.5 py-1 rounded text-xs transition flex items-center gap-2 ${
+                                                className={`w-full flex items-center gap-2 rounded px-2.5 py-1 text-left text-xs transition ${
                                                   childActive
-                                                    ? 'bg-[#FFF1E3] text-gray-900 ring-1 ring-[#E8DDD4]'
-                                                    : 'bg-transparent hover:bg-[#FFF1E3] text-gray-600'
+                                                    ? 'bg-[var(--ledger-surface-hover)] text-[var(--ledger-text-primary)] ring-1 ring-[color:var(--ledger-border-subtle)]'
+                                                    : 'bg-transparent text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]'
                                                 } ${getDropPreviewClasses(dropPreview, child.id)}`}
                                               >
                                                 <StickyNote
                                                   size={12}
-                                                  className="text-gray-400 shrink-0"
+                                                  className="shrink-0 text-[var(--ledger-text-muted)]"
                                                 />
                                                 <div className="min-w-0 flex-1">
                                                   {renamingNoteId === child.id ? (
@@ -4117,7 +4117,7 @@ export const NotesWindow = () => {
                                                           cancelInlineRename();
                                                         }
                                                       }}
-                                                      className="w-full bg-transparent font-medium text-gray-900 outline-none"
+                                                      className="w-full bg-transparent font-medium text-[var(--ledger-text-primary)] outline-none"
                                                     />
                                                   ) : (
                                                   <p
@@ -4131,7 +4131,7 @@ export const NotesWindow = () => {
                                                     {child.title || 'Untitled'}
                                                   </p>
                                                   )}
-                                                  <p className="text-xs text-gray-500 truncate">
+                                                  <p className="truncate text-xs text-[var(--ledger-text-muted)]">
                                                     {childPreview}
                                                   </p>
                                                 </div>
@@ -4153,7 +4153,7 @@ export const NotesWindow = () => {
               </div>
 
               {/* Collapsible Templates section */}
-              <div className="border-t border-[#E8DDD4]">
+              <div className="border-t border-[color:var(--ledger-border-subtle)]">
                 <button
                   onClick={() => {
                     const newState = !isTemplatesExpanded;
@@ -4164,15 +4164,15 @@ export const NotesWindow = () => {
                       console.error('Failed to save templates state:', e);
                     }
                   }}
-                  className="w-full flex items-center justify-between px-4 py-3 text-sm font-medium text-gray-700 hover:bg-[#FFF1E3] transition"
+                  className="flex w-full items-center justify-between px-4 py-3 text-sm font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
                 >
                   <span className="flex items-center gap-2">
-                    <Zap size={13} className="text-gray-500" />
+                    <Zap size={13} className="text-[var(--ledger-text-muted)]" />
                     Templates
                   </span>
                   <ChevronRight
                     size={13}
-                    className={`text-gray-400 transition-transform ${
+                    className={`text-[var(--ledger-text-muted)] transition-transform ${
                       isTemplatesExpanded ? 'rotate-90' : ''
                     }`}
                   />
@@ -4190,7 +4190,7 @@ export const NotesWindow = () => {
                           }
                           void handleQuickTemplate(template.name);
                         }}
-                        className="w-full text-left px-2.5 py-1 rounded text-sm text-gray-700 bg-transparent hover:bg-[#FFF1E3] transition truncate"
+                        className="w-full rounded px-2.5 py-1 text-left text-sm text-[var(--ledger-text-secondary)] transition truncate hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
                       >
                         {template.name}
                       </button>
@@ -4200,7 +4200,7 @@ export const NotesWindow = () => {
                         setNoteCreationSectionId(null);
                         setShowCreateNoteModal(true);
                       }}
-                      className="w-full text-left px-2.5 py-1.5 rounded text-xs font-medium text-gray-600 bg-[#FFF6EE] border border-[#E8DDD4] hover:bg-[#FFF1E3] hover:border-[#D8C6B6] transition"
+                      className="w-full rounded px-2.5 py-1.5 text-left text-xs font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
                     >
                       Browse All Templates
                     </button>
@@ -4213,15 +4213,15 @@ export const NotesWindow = () => {
               role="separator"
               aria-orientation="vertical"
               onMouseDown={() => setIsResizingLeftPane(true)}
-              className="w-1.5 cursor-col-resize bg-transparent hover:bg-gray-200/70 transition"
+              className="w-1.5 cursor-col-resize bg-transparent transition hover:bg-[color:rgba(255,255,255,0.06)]"
               title="Resize panels"
             />
           </>
         ) : (
-          <div className="w-10 shrink-0 border-r border-[#E2D4C4] bg-[#FFF6EE] flex items-start justify-center pt-4">
+          <div className="flex w-10 shrink-0 items-start justify-center border-r border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] pt-4">
             <button
               onClick={() => setIsLeftPaneCollapsed(false)}
-              className="h-7 w-7 rounded-lg border border-[#E2D4C4] bg-[#FFF6EE] text-gray-500 hover:bg-[#FFF1E3] flex items-center justify-center shadow-sm"
+              className="flex h-7 w-7 items-center justify-center rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)]"
               title="Show left panel"
               aria-label="Show left panel"
             >
@@ -4235,28 +4235,28 @@ export const NotesWindow = () => {
             areSidePanelsCollapsed ? 'p-4' : isCompactLayout ? 'p-2' : 'p-2.5'
           }`}
         >
-          <div className="h-full rounded-3xl border border-[#E8DDD4] bg-[#FFF6EE] shadow-sm overflow-hidden flex flex-col">
+          <div className="flex h-full flex-col overflow-hidden rounded-3xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] shadow-none">
             {isLoading ? (
               <div className="flex-1 p-5 space-y-4">
                 <SkeletonLoader />
                 <div className="grid grid-cols-3 gap-3">
-                  <div className="h-20 rounded-2xl bg-[#FFF3E7] animate-pulse" />
-                  <div className="h-20 rounded-2xl bg-[#FFF3E7] animate-pulse" />
-                  <div className="h-20 rounded-2xl bg-[#FFF3E7] animate-pulse" />
+                  <div className="h-20 animate-pulse rounded-2xl bg-[var(--ledger-surface-hover)]" />
+                  <div className="h-20 animate-pulse rounded-2xl bg-[var(--ledger-surface-hover)]" />
+                  <div className="h-20 animate-pulse rounded-2xl bg-[var(--ledger-surface-hover)]" />
                 </div>
               </div>
             ) : selectedNote ? (
               <div className="flex-1 flex flex-col min-h-0">
-                <div className="border-b border-[#E8DDD4] bg-[#FFF6EE] px-6 py-4">
+                <div className="border-b border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-6 py-4">
                   <div className="flex items-center justify-between gap-4">
-                    <p className="text-[11px] text-gray-500 truncate">
+                    <p className="truncate text-[11px] text-[var(--ledger-text-muted)]">
                       Home
                       {selectedBreadcrumb.length
                         ? ` > ${selectedBreadcrumb.map((crumb) => crumb.title).join(' > ')}`
                         : ''}
                     </p>
                     <div className="flex items-center gap-2 shrink-0">
-                      <span className="text-[11px] text-gray-500">{saveStatus}</span>
+                      <span className="text-[11px] text-[var(--ledger-text-muted)]">{saveStatus}</span>
                       <div className="relative" ref={noteActionsMenuRef}>
                         <button
                           type="button"
@@ -4264,19 +4264,19 @@ export const NotesWindow = () => {
                             event.stopPropagation();
                             setIsNoteActionsOpen((current) => !current);
                           }}
-                          className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-[#E8DDD4] bg-[#FFF6EE] text-gray-600 hover:bg-[#FFF1E3]"
+                          className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)]"
                           aria-label="Note actions"
                         >
                           <MoreHorizontal size={14} />
                         </button>
                         {isNoteActionsOpen && (
-                          <div className="absolute right-0 top-9 z-40 min-w-44 rounded-xl border border-[#E8DDD4] bg-[#FFF6EE] p-1.5 shadow-lg">
+                          <div className="absolute right-0 top-9 z-40 min-w-44 rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-1.5 shadow-[var(--ledger-shadow)]">
                             <button
                               onClick={() => {
                                 setIsNoteActionsOpen(false);
                                 void createChildNote(selectedNote.id);
                               }}
-                              className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-gray-700 hover:bg-[#FFF1E3]"
+                              className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
                             >
                               Add child note
                             </button>
@@ -4285,7 +4285,7 @@ export const NotesWindow = () => {
                                 setIsNoteActionsOpen(false);
                                 titleRef.current?.focus();
                               }}
-                              className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-gray-700 hover:bg-[#FFF1E3]"
+                              className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
                             >
                               Rename
                             </button>
@@ -4295,7 +4295,7 @@ export const NotesWindow = () => {
                                 setIsNoteActionsOpen(false);
                                 runAutoCorrectSpelling();
                               }}
-                              className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-gray-700 hover:bg-[#FFF1E3] disabled:cursor-not-allowed disabled:text-gray-400"
+                              className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] disabled:cursor-not-allowed disabled:text-[var(--ledger-text-muted)]"
                             >
                               Auto-correct spelling
                             </button>
@@ -4313,7 +4313,7 @@ export const NotesWindow = () => {
                                     );
                                   });
                               }}
-                              className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-gray-700 hover:bg-[#FFF1E3]"
+                              className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
                             >
                               Move to section...
                             </button>
@@ -4325,7 +4325,7 @@ export const NotesWindow = () => {
                                   draftTitle || selectedNote.title || 'Untitled note'
                                 );
                               }}
-                              className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-gray-700 hover:bg-[#FFF1E3]"
+                              className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
                             >
                               Save as template
                             </button>
@@ -4337,7 +4337,7 @@ export const NotesWindow = () => {
                                 setShowVersionHistoryModal(true);
                                 void openVersionHistory(id);
                               }}
-                              className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-gray-700 hover:bg-[#FFF1E3]"
+                              className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
                             >
                               Version history
                             </button>
@@ -4346,7 +4346,7 @@ export const NotesWindow = () => {
                                 setIsNoteActionsOpen(false);
                                 void duplicateNoteById(selectedNote.id);
                               }}
-                              className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-gray-700 hover:bg-[#FFF1E3]"
+                              className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
                             >
                               Duplicate
                             </button>
@@ -4356,7 +4356,7 @@ export const NotesWindow = () => {
                                 setIsNoteActionsOpen(false);
                                 void deleteSelectedNote();
                               }}
-                              className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-red-600 hover:bg-red-50 disabled:opacity-50"
+                              className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-[var(--ledger-danger)] transition hover:bg-[color:rgba(217,45,32,0.08)] disabled:opacity-50"
                             >
                               {isDeleting ? 'Deleting...' : 'Delete note'}
                             </button>
@@ -4380,9 +4380,9 @@ export const NotesWindow = () => {
                         isEditingRef.current = false;
                       }}
                       placeholder="Untitled note"
-                      className="block w-full bg-transparent py-1.5 text-4xl font-semibold leading-tight tracking-tight text-gray-900 placeholder:text-gray-300 focus:outline-none"
+                      className="block w-full bg-transparent py-1.5 text-4xl font-semibold leading-tight tracking-tight text-[var(--ledger-text-primary)] placeholder:text-[var(--ledger-text-muted)] focus:outline-none"
                     />
-                    <div className="flex items-center rounded-lg border border-[#E8DDD4] bg-[#FFF6EE] p-0.5 shrink-0">
+                    <div className="flex shrink-0 items-center rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] p-0.5">
                       <button
                         type="button"
                         onClick={() => {
@@ -4391,8 +4391,8 @@ export const NotesWindow = () => {
                         }}
                         className={`h-7 rounded-md px-2.5 text-xs font-medium ${
                           draftMode === 'text'
-                            ? 'bg-[#FF5F40] text-white'
-                            : 'text-gray-600 hover:bg-[#FFF1E3]'
+                            ? 'bg-[var(--ledger-accent)] text-white'
+                            : 'text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]'
                         }`}
                       >
                         Write
@@ -4405,8 +4405,8 @@ export const NotesWindow = () => {
                         }}
                         className={`h-7 rounded-md px-2.5 text-xs font-medium ${
                           draftMode === 'mind_map'
-                            ? 'bg-[#FF5F40] text-white'
-                            : 'text-gray-600 hover:bg-[#FFF1E3]'
+                            ? 'bg-[var(--ledger-accent)] text-white'
+                            : 'text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]'
                         }`}
                       >
                         Mind Map
@@ -4415,7 +4415,7 @@ export const NotesWindow = () => {
                   </div>
                 </div>
 
-                <div className="flex-1 min-h-0 overflow-auto bg-[#FFF6EE] p-6">
+                <div className="flex-1 min-h-0 overflow-auto bg-[var(--ledger-surface-muted)] p-6">
                   <div className="max-w-3xl mx-auto space-y-6">
                     {draftMode === 'text' ? (
                       <RichTextEditor
@@ -4461,12 +4461,12 @@ export const NotesWindow = () => {
               </div>
             ) : (
               <div className="flex-1 flex items-center justify-center p-8">
-                <div className="max-w-md text-center">
-                  <div className="h-12 w-12 rounded-2xl bg-[#FFF3E7] border border-[#E8DDD4] flex items-center justify-center mx-auto">
-                    <StickyNote size={22} className="text-[#FF5F40]" />
+                  <div className="max-w-md text-center">
+                  <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-hover)]">
+                    <StickyNote size={22} className="text-[var(--ledger-accent)]" />
                   </div>
-                  <h2 className="mt-4 text-xl font-semibold text-gray-900">No note selected</h2>
-                  <p className="mt-2 text-sm text-gray-600">
+                  <h2 className="mt-4 text-xl font-semibold text-[var(--ledger-text-primary)]">No note selected</h2>
+                  <p className="mt-2 text-sm text-[var(--ledger-text-secondary)]">
                     Create a note to start writing, planning, or dumping ideas.
                   </p>
                   <button
@@ -4474,7 +4474,7 @@ export const NotesWindow = () => {
                       setNoteCreationSectionId(null);
                       setShowCreateNoteModal(true);
                     }}
-                    className="mt-5 px-4 py-2 rounded-full bg-[#111827] text-white text-sm font-medium hover:bg-[#0f172a]"
+                    className="mt-5 rounded-full bg-[var(--ledger-accent)] px-4 py-2 text-sm font-medium text-white transition hover:bg-[var(--ledger-accent-hover)]"
                   >
                     New note
                   </button>
@@ -4490,12 +4490,12 @@ export const NotesWindow = () => {
               role="separator"
               aria-orientation="vertical"
               onMouseDown={() => setIsResizingRightPane(true)}
-              className="w-1.5 cursor-col-resize bg-[#E8DDD4] hover:bg-[#D8C6B6] transition"
+              className="w-1.5 cursor-col-resize bg-[var(--ledger-border-subtle)] hover:bg-[var(--ledger-border-strong)] transition"
               title="Resize panels"
             />
 
             <aside
-              className={`border-l border-[#E2D4C4] bg-[#FFF6EE] overflow-auto ${
+              className={`overflow-auto border-l border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] ${
                 isCompactLayout ? 'p-3 space-y-3' : 'p-4 space-y-4'
               } shrink-0`}
               style={{ width: `${rightPaneWidth}px` }}
@@ -4503,13 +4503,13 @@ export const NotesWindow = () => {
               <div className="space-y-5">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0 flex-1">
-                    <p className="text-xs font-medium text-gray-500">
+                    <p className="text-xs font-medium text-[var(--ledger-text-muted)]">
                       Inspector
                     </p>
-                    <p className="mt-1 text-sm font-semibold text-gray-900 truncate">
+                    <p className="mt-1 truncate text-sm font-semibold text-[var(--ledger-text-primary)]">
                       {selectedNote ? 'Current note' : 'No note selected'}
                     </p>
-                    <p className="mt-1 text-xs text-gray-500 truncate">
+                    <p className="mt-1 truncate text-xs text-[var(--ledger-text-muted)]">
                       {selectedNote
                         ? selectedBreadcrumb.length
                           ? selectedBreadcrumb.map((crumb) => crumb.title).join(' > ')
@@ -4522,7 +4522,7 @@ export const NotesWindow = () => {
                     <button
                       type="button"
                       onClick={() => setIsRightPaneCollapsed(true)}
-                      className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-[#E2D4C4] bg-[#FFF6EE] text-gray-600 hover:bg-[#FFF1E3]"
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)]"
                       aria-label="Hide right panel"
                       title="Hide right panel"
                     >
@@ -4536,20 +4536,20 @@ export const NotesWindow = () => {
                             event.stopPropagation();
                             setIsInspectorActionsOpen((current) => !current);
                           }}
-                          className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-[#E2D4C4] bg-[#FFF6EE] text-gray-600 hover:bg-[#FFF1E3]"
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)]"
                           aria-label="Inspector actions"
                         >
                           <MoreHorizontal size={14} />
                         </button>
 
                         {isInspectorActionsOpen && selectedNote && (
-                          <div className="absolute right-0 top-10 z-40 min-w-52 rounded-xl border border-[#E2D4C4] bg-[#FFF6EE] p-1.5 shadow-lg">
+                          <div className="absolute right-0 top-10 z-40 min-w-52 rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-1.5 shadow-[var(--ledger-shadow)]">
                             <button
                               onClick={() => {
                                 setIsInspectorActionsOpen(false);
                                 titleRef.current?.focus();
                               }}
-                              className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-gray-700 hover:bg-[#FFF1E3]"
+                              className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
                             >
                               Rename
                             </button>
@@ -4559,7 +4559,7 @@ export const NotesWindow = () => {
                                 setIsInspectorActionsOpen(false);
                                 runAutoCorrectSpelling();
                               }}
-                              className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-gray-700 hover:bg-[#FFF1E3] disabled:cursor-not-allowed disabled:text-gray-400"
+                              className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] disabled:cursor-not-allowed disabled:text-[var(--ledger-text-muted)]"
                             >
                               Auto-correct spelling
                             </button>
@@ -4568,7 +4568,7 @@ export const NotesWindow = () => {
                                 setIsInspectorActionsOpen(false);
                                 void duplicateNoteById(selectedNote.id);
                               }}
-                              className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-gray-700 hover:bg-[#FFF1E3]"
+                              className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
                             >
                               Duplicate
                             </button>
@@ -4580,7 +4580,7 @@ export const NotesWindow = () => {
                                   draftTitle || selectedNote.title || 'Untitled note'
                                 );
                               }}
-                              className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-gray-700 hover:bg-[#FFF1E3]"
+                              className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
                             >
                               Save as template
                             </button>
@@ -4592,7 +4592,7 @@ export const NotesWindow = () => {
                                 setShowVersionHistoryModal(true);
                                 void openVersionHistory(id);
                               }}
-                              className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-gray-700 hover:bg-[#FFF1E3]"
+                              className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
                             >
                               Version history
                             </button>
@@ -4602,7 +4602,7 @@ export const NotesWindow = () => {
                                 setIsInspectorActionsOpen(false);
                                 void restoreLatestVersion();
                               }}
-                              className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-gray-700 hover:bg-[#FFF1E3]"
+                              className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
                             >
                               Restore last version
                             </button>
@@ -4620,7 +4620,7 @@ export const NotesWindow = () => {
                                     );
                                   });
                               }}
-                              className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-gray-700 hover:bg-[#FFF1E3]"
+                              className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]"
                             >
                               Move to section...
                             </button>
@@ -4629,18 +4629,18 @@ export const NotesWindow = () => {
                                 setIsInspectorActionsOpen(false);
                                 void createChildNote(selectedNote.id);
                               }}
-                              className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-gray-700 hover:bg-[#FFF1E3]"
+                              className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]"
                             >
                               Add child note
                             </button>
-                            <div className="my-1 h-px bg-[#E8DDD4]" />
+                            <div className="my-1 h-px bg-[var(--ledger-border-subtle)]" />
                             <button
                               disabled={isDeleting}
                               onClick={() => {
                                 setIsInspectorActionsOpen(false);
                                 void deleteSelectedNote();
                               }}
-                              className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-red-600 hover:bg-red-50 disabled:opacity-50"
+                              className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-[var(--ledger-danger)] transition hover:bg-[color:rgba(217,45,32,0.08)] disabled:opacity-50"
                             >
                               {isDeleting ? 'Deleting...' : 'Delete note'}
                             </button>
@@ -4651,47 +4651,47 @@ export const NotesWindow = () => {
                   </div>
                 </div>
 
-                <div className="space-y-2 border-t border-[#E2D4C4] pt-4">
-                  <p className="text-xs font-medium text-gray-500">
+                <div className="space-y-2 border-t border-[color:var(--ledger-border-subtle)] pt-4">
+                  <p className="text-xs font-medium text-[var(--ledger-text-muted)]">
                     Details
                   </p>
                   {selectedNote ? (
                     <div className="space-y-2">
                       <div className="flex items-center justify-between gap-3 text-sm">
-                        <span className="text-gray-500">Created</span>
-                        <span className="text-gray-900">
+                        <span className="text-[var(--ledger-text-muted)]">Created</span>
+                        <span className="text-[var(--ledger-text-primary)]">
                           {formatCompactDateTime(selectedNote.created_at)}
                         </span>
                       </div>
                       <div className="flex items-center justify-between gap-3 text-sm">
-                        <span className="text-gray-500">Updated</span>
-                        <span className="text-gray-900">
+                        <span className="text-[var(--ledger-text-muted)]">Updated</span>
+                        <span className="text-[var(--ledger-text-primary)]">
                           {formatCompactDateTime(selectedNote.updated_at)}
                         </span>
                       </div>
                       <div className="flex items-center justify-between gap-3 text-sm">
-                        <span className="text-gray-500">Date</span>
-                        <span className="text-gray-900">{selectedNote.date || 'Not set'}</span>
+                        <span className="text-[var(--ledger-text-muted)]">Date</span>
+                        <span className="text-[var(--ledger-text-primary)]">{selectedNote.date || 'Not set'}</span>
                       </div>
                       <div className="flex items-center justify-between gap-3 text-sm">
-                        <span className="text-gray-500">Words</span>
-                        <span className="text-gray-900">{wordCount(selectedNote.content)}</span>
+                        <span className="text-[var(--ledger-text-muted)]">Words</span>
+                        <span className="text-[var(--ledger-text-primary)]">{wordCount(selectedNote.content)}</span>
                       </div>
                     </div>
                   ) : (
-                    <p className="text-sm text-gray-500">
+                    <p className="text-sm text-[var(--ledger-text-muted)]">
                       No metadata to show until a note is selected.
                     </p>
                   )}
                 </div>
 
-                <div className="space-y-2 border-t border-[#E2D4C4] pt-4">
-                  <p className="text-xs font-medium text-gray-500">
+                <div className="space-y-2 border-t border-[color:var(--ledger-border-subtle)] pt-4">
+                  <p className="text-xs font-medium text-[var(--ledger-text-muted)]">
                     Workspace
                   </p>
                   {selectedNote ? (
                     <div className="space-y-2">
-                      <div className="text-sm font-medium text-gray-900 truncate">
+                      <div className="truncate text-sm font-medium text-[var(--ledger-text-primary)]">
                         {activeWorkspace?.name?.trim() || 'Current workspace'}
                       </div>
                       <InspectorInfoRow label="Created by" value={displayUserName(creatorMember)} />
@@ -4702,21 +4702,21 @@ export const NotesWindow = () => {
                         )}`}
                       />
                       <div className="py-1">
-                        <p className="text-[11px] text-gray-500">Viewing</p>
-                        <p className="mt-0.5 text-sm font-medium text-gray-900">{viewingSummary}</p>
+                        <p className="text-[11px] text-[var(--ledger-text-muted)]">Viewing</p>
+                        <p className="mt-0.5 text-sm font-medium text-[var(--ledger-text-primary)]">{viewingSummary}</p>
                       </div>
                       <InspectorInfoRow label="Notes" value={String(notes.length)} />
                     </div>
                   ) : (
-                    <p className="text-sm text-gray-500">
+                    <p className="text-sm text-[var(--ledger-text-muted)]">
                       Select a note to view workspace details.
                     </p>
                   )}
                 </div>
 
-                <div className="space-y-2 border-t border-[#E2D4C4] pt-4">
+                <div className="space-y-2 border-t border-[color:var(--ledger-border-subtle)] pt-4">
                   <div className="flex items-center justify-between gap-3">
-                    <p className="text-xs font-medium text-gray-500">
+                    <p className="text-xs font-medium text-[var(--ledger-text-muted)]">
                       Recent updates
                     </p>
                   </div>
@@ -4729,31 +4729,31 @@ export const NotesWindow = () => {
                             if (event.shiftKey) event.preventDefault();
                           }}
                           onClick={(event) => void handleSidebarNoteClick(note, event.shiftKey)}
-                          className="flex w-full items-center justify-between gap-3 rounded-lg bg-[#FFF6EE] px-2 py-1.5 text-left text-sm transition hover:bg-[#FFF1E3] active:bg-[#FFF1E3]"
+                          className="flex w-full items-center justify-between gap-3 rounded-lg bg-[var(--ledger-surface-muted)] px-2 py-1.5 text-left text-sm transition hover:bg-[var(--ledger-surface-hover)] active:bg-[var(--ledger-surface-hover)]"
                         >
                           <div className="min-w-0">
-                            <p className="truncate font-medium text-gray-900">
+                            <p className="truncate font-medium text-[var(--ledger-text-primary)]">
                               {note.title || 'Untitled note'}
                             </p>
                           </div>
-                          <span className="shrink-0 text-[11px] text-gray-500">
+                          <span className="shrink-0 text-[11px] text-[var(--ledger-text-muted)]">
                             {formatCompactDateTime(note.updated_at)}
                           </span>
                         </button>
                       ))}
                     </div>
                   ) : (
-                    <p className="text-sm text-gray-500">No recent updates yet.</p>
+                    <p className="text-sm text-[var(--ledger-text-muted)]">No recent updates yet.</p>
                   )}
                 </div>
               </div>
             </aside>
           </>
         ) : (
-          <div className="w-10 shrink-0 border-l border-[#E2D4C4] bg-[#FFF6EE] flex items-start justify-center pt-4">
+          <div className="flex w-10 shrink-0 items-start justify-center border-l border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] pt-4">
             <button
               onClick={() => setIsRightPaneCollapsed(false)}
-              className="h-7 w-7 rounded-lg border border-[#E2D4C4] bg-[#FFF6EE] text-gray-500 hover:bg-[#FFF1E3] flex items-center justify-center shadow-sm"
+              className="flex h-7 w-7 items-center justify-center rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)]"
               title="Show right panel"
               aria-label="Show right panel"
             >
@@ -4764,14 +4764,14 @@ export const NotesWindow = () => {
       </div>
 
       {draftMode === 'mind_map' && isMindMapFullscreen && (
-        <div className="fixed inset-0 z-80 bg-[#FFF6EE]">
+        <div className="fixed inset-0 z-80 bg-[var(--ledger-background)]">
           <div className="flex h-full w-full flex-col">
-            <div className="flex items-center justify-between border-b border-[#E2D4C4] bg-[#FFF6EE] px-5 py-4 shadow-sm">
+            <div className="flex items-center justify-between border-b border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-5 py-4 shadow-none">
               <div className="min-w-0">
-                <p className="text-xs font-medium text-gray-500">
+                <p className="text-xs font-medium text-[var(--ledger-text-muted)]">
                   Mind map fullscreen
                 </p>
-                <h2 className="truncate text-sm font-semibold text-gray-900">
+                <h2 className="truncate text-sm font-semibold text-[var(--ledger-text-primary)]">
                   {draftTitle || 'Untitled note'}
                 </h2>
               </div>
@@ -4779,7 +4779,7 @@ export const NotesWindow = () => {
                 type="button"
                 onMouseDown={(event) => event.stopPropagation()}
                 onClick={exitMindMapFullscreen}
-                className="rounded-full border border-[#E2D4C4] bg-gray-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-gray-800"
+                className="rounded-full bg-[var(--ledger-accent)] px-3 py-1.5 text-xs font-medium text-white transition hover:bg-[var(--ledger-accent-hover)]"
               >
                 Exit fullscreen
               </button>
@@ -4801,7 +4801,7 @@ export const NotesWindow = () => {
 
       {sectionContextMenu && (
         <div
-          className="fixed z-210 min-w-40 rounded-lg border border-[#E2D4C4] bg-[#FFFDFB] text-gray-900 shadow-lg p-0"
+          className="fixed z-210 min-w-40 rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-0 text-[var(--ledger-text-primary)] shadow-[var(--ledger-shadow)]"
           style={{
             left: Math.max(8, Math.min(sectionContextMenu.x, window.innerWidth - 180)),
             top: Math.max(8, Math.min(sectionContextMenu.y, window.innerHeight - 220)),
@@ -4813,9 +4813,9 @@ export const NotesWindow = () => {
             onClick={() => {
               beginInlineSectionRename(sectionContextMenu.sectionId);
             }}
-            className="w-full h-9 px-3 rounded-none text-left hover:bg-[#FFF1E3] flex items-center gap-3 text-sm transition border-b border-[#E8DDD4]"
+            className="flex h-9 w-full items-center gap-3 rounded-none border-b border-[color:var(--ledger-border-subtle)] px-3 text-left text-sm transition hover:bg-[var(--ledger-surface-hover)]"
           >
-            <span className="text-gray-500 shrink-0">Aa</span>
+            <span className="shrink-0 text-[var(--ledger-text-muted)]">Aa</span>
             <span className="font-medium">Rename folder</span>
           </button>
           <button
@@ -4833,13 +4833,13 @@ export const NotesWindow = () => {
                 });
               });
             }}
-            className="w-full h-9 px-3 rounded-none text-left hover:bg-[#FFF1E3] flex items-center gap-3 text-sm transition border-b border-[#E8DDD4]"
+            className="flex h-9 w-full items-center gap-3 rounded-none border-b border-[color:var(--ledger-border-subtle)] px-3 text-left text-sm transition hover:bg-[var(--ledger-surface-hover)]"
           >
-            <Plus size={14} className="text-gray-500 shrink-0" />
+            <Plus size={14} className="shrink-0 text-[var(--ledger-text-muted)]" />
             <span className="font-medium">Create subfolder</span>
           </button>
-          <div className="px-3 py-2 border-b border-[#E8DDD4]">
-            <p className="text-xs font-medium text-gray-500">
+          <div className="border-b border-[color:var(--ledger-border-subtle)] px-3 py-2">
+            <p className="text-xs font-medium text-[var(--ledger-text-muted)]">
               Folder color
             </p>
             <div className="relative mt-2">
@@ -4859,8 +4859,8 @@ export const NotesWindow = () => {
                         }}
                         className={`h-5 w-5 rounded-full transition ${
                           isActive
-                            ? 'border-2 border-gray-500 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.85)]'
-                            : 'border border-[#E2D4C4] hover:border-gray-300'
+                            ? 'border-2 border-[color:var(--ledger-text-muted)] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)]'
+                            : 'border border-[color:var(--ledger-border-subtle)] hover:border-[color:var(--ledger-border-strong)]'
                         }`}
                         title={`Set ${sectionContextMenu.sectionName} color to ${color}`}
                       >
@@ -4884,12 +4884,12 @@ export const NotesWindow = () => {
                 scopeName: sectionContextMenu.sectionName,
               });
             }}
-            className="w-full h-9 px-3 rounded-none text-left hover:bg-[#FFF1E3] flex items-center gap-3 text-sm transition"
+            className="flex h-9 w-full items-center gap-3 rounded-none px-3 text-left text-sm transition hover:bg-[var(--ledger-surface-hover)]"
           >
-            <MoreHorizontal size={14} className="text-gray-600 shrink-0" />
+            <MoreHorizontal size={14} className="shrink-0 text-[var(--ledger-text-secondary)]" />
             <span className="font-medium">Sort folder</span>
           </button>
-          <div className="h-px bg-[#E8DDD4] my-1" />
+          <div className="my-1 h-px bg-[var(--ledger-border-subtle)]" />
           <button
             onClick={() => {
               const target = sections.find(
@@ -4915,10 +4915,10 @@ export const NotesWindow = () => {
               }
               setSectionContextMenu(null);
             }}
-            className="w-full h-9 px-3 rounded-none text-left hover:bg-red-50 flex items-center gap-3 text-sm transition"
+            className="flex h-9 w-full items-center gap-3 rounded-none px-3 text-left text-sm transition hover:bg-[color:rgba(217,45,32,0.08)]"
           >
-            <Trash2 size={14} className="text-red-500 shrink-0" />
-            <span className="font-medium text-red-600">Delete folder</span>
+            <Trash2 size={14} className="shrink-0 text-[var(--ledger-danger)]" />
+            <span className="font-medium text-[var(--ledger-danger)]">Delete folder</span>
           </button>
         </div>
       )}
@@ -4927,7 +4927,7 @@ export const NotesWindow = () => {
         createPortal(
           <div
             ref={sortMenuRef}
-            className="fixed z-210 min-w-52 rounded-lg border border-[#E2D4C4] bg-[#FFFDFB] text-gray-900 shadow-lg p-0 overflow-hidden"
+          className="fixed z-210 min-w-52 overflow-hidden rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-0 text-[var(--ledger-text-primary)] shadow-[var(--ledger-shadow)]"
             style={{
               left: Math.max(8, Math.min(sortMenu.x, window.innerWidth - 240)),
               top: Math.max(8, Math.min(sortMenu.y, window.innerHeight - 380)),
@@ -4935,11 +4935,11 @@ export const NotesWindow = () => {
             onClick={(e) => e.stopPropagation()}
             onMouseDown={(e) => e.stopPropagation()}
           >
-            <div className="px-3 py-2 border-b border-[#E8DDD4]">
-              <p className="text-xs font-medium text-gray-500">
+            <div className="border-b border-[color:var(--ledger-border-subtle)] px-3 py-2">
+              <p className="text-xs font-medium text-[var(--ledger-text-muted)]">
                 Sort {sortMenu.scopeId === ROOT_NOTE_SCOPE_ID ? 'notes' : sortMenu.scopeName}
               </p>
-              <p className="mt-0.5 text-[11px] text-gray-400">
+              <p className="mt-0.5 text-[11px] text-[var(--ledger-text-muted)]">
                 {formatNoteSortLabel(getSortPreferenceForScope(sortMenu.scopeId))}
               </p>
             </div>
@@ -4953,13 +4953,15 @@ export const NotesWindow = () => {
                   onClick={() => {
                     setSortPreferenceForScope(sortMenu.scopeId, option.preference);
                   }}
-                  className={`w-full h-9 px-3 rounded-none text-left flex items-center gap-3 text-sm transition ${
-                    isActive ? 'bg-[#FFF1E3] text-gray-900' : 'hover:bg-[#FFF1E3] text-gray-700'
+                  className={`flex h-9 w-full items-center gap-3 rounded-none px-3 text-left text-sm transition ${
+                    isActive
+                      ? 'bg-[var(--ledger-surface-hover)] text-[var(--ledger-text-primary)]'
+                      : 'text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]'
                   }`}
                 >
                   <span
                     className={`h-2 w-2 rounded-full shrink-0 ${
-                      isActive ? 'bg-[#FF5F40]' : 'bg-gray-300'
+                      isActive ? 'bg-[var(--ledger-accent)]' : 'bg-[var(--ledger-border-subtle)]'
                     }`}
                   />
                   <span className="font-medium">{option.label}</span>
@@ -4979,7 +4981,7 @@ export const NotesWindow = () => {
           if (isBulkSelection) {
             return (
               <div
-                className="fixed z-210 min-w-44 rounded-lg border border-[#E2D4C4] bg-[#FFFDFB] text-gray-900 shadow-lg p-0"
+                className="fixed z-210 min-w-44 rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-0 text-[var(--ledger-text-primary)] shadow-[var(--ledger-shadow)]"
                 style={{
                   left: Math.max(8, Math.min(noteContextMenu.x, window.innerWidth - 180)),
                   top: Math.max(8, Math.min(noteContextMenu.y, window.innerHeight - 180)),
@@ -4987,8 +4989,8 @@ export const NotesWindow = () => {
                 onClick={(e) => e.stopPropagation()}
                 onMouseDown={(e) => e.stopPropagation()}
               >
-                <div className="px-3 py-2 border-b border-[#E8DDD4]">
-                  <p className="text-xs font-medium text-gray-500">
+                <div className="border-b border-[color:var(--ledger-border-subtle)] px-3 py-2">
+                  <p className="text-xs font-medium text-[var(--ledger-text-muted)]">
                     {selectedCount} selected
                   </p>
                 </div>
@@ -4996,9 +4998,9 @@ export const NotesWindow = () => {
                   onClick={() => {
                     handleBulkExportSelectedNotes();
                   }}
-                  className="w-full h-9 px-3 rounded-none text-left hover:bg-[#FFF1E3] flex items-center gap-3 text-sm transition"
+                  className="flex h-9 w-full items-center gap-3 rounded-none px-3 text-left text-sm transition hover:bg-[var(--ledger-surface-hover)]"
                 >
-                  <Download size={14} className="text-gray-600 shrink-0" />
+                  <Download size={14} className="shrink-0 text-[var(--ledger-text-secondary)]" />
                   <span className="font-medium">Export selected</span>
                 </button>
                 <button
@@ -5006,20 +5008,20 @@ export const NotesWindow = () => {
                     clearSidebarSelection();
                     setNoteContextMenu(null);
                   }}
-                  className="w-full h-9 px-3 rounded-none text-left hover:bg-[#FFF1E3] flex items-center gap-3 text-sm transition"
+                  className="flex h-9 w-full items-center gap-3 rounded-none px-3 text-left text-sm transition hover:bg-[var(--ledger-surface-hover)]"
                 >
-                  <X size={14} className="text-gray-600 shrink-0" />
+                  <X size={14} className="shrink-0 text-[var(--ledger-text-secondary)]" />
                   <span className="font-medium">Clear selection</span>
                 </button>
-                <div className="h-px bg-[#E8DDD4] my-1" />
+                <div className="my-1 h-px bg-[var(--ledger-border-subtle)]" />
                 <button
                   onClick={() => {
                     void handleBulkDeleteSelectedNotes();
                   }}
-                  className="w-full h-9 px-3 rounded-none text-left hover:bg-red-50 flex items-center gap-3 text-sm transition"
+                  className="flex h-9 w-full items-center gap-3 rounded-none px-3 text-left text-sm transition hover:bg-[color:rgba(217,45,32,0.08)]"
                 >
-                  <Trash2 size={14} className="text-red-500 shrink-0" />
-                  <span className="font-medium text-red-600">Delete selected</span>
+                  <Trash2 size={14} className="shrink-0 text-[var(--ledger-danger)]" />
+                  <span className="font-medium text-[var(--ledger-danger)]">Delete selected</span>
                 </button>
               </div>
             );
@@ -5027,7 +5029,7 @@ export const NotesWindow = () => {
 
           return (
         <div
-          className="fixed z-210 min-w-44 rounded-lg border border-[#E2D4C4] bg-[#FFFDFB] text-gray-900 shadow-lg p-0"
+          className="fixed z-210 min-w-44 rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-0 text-[var(--ledger-text-primary)] shadow-[var(--ledger-shadow)]"
           style={{
             left: Math.max(8, Math.min(noteContextMenu.x, window.innerWidth - 180)),
             top: Math.max(8, Math.min(noteContextMenu.y, window.innerHeight - 280)),
@@ -5042,9 +5044,9 @@ export const NotesWindow = () => {
               if (note) void openNote(note);
               setNoteContextMenu(null);
             }}
-            className="w-full h-9 px-3 rounded-none text-left hover:bg-[#FFF1E3] flex items-center gap-3 text-sm transition"
+            className="flex h-9 w-full items-center gap-3 rounded-none px-3 text-left text-sm transition hover:bg-[var(--ledger-surface-hover)]"
           >
-            <StickyNote size={14} className="text-gray-600 shrink-0" />
+            <StickyNote size={14} className="shrink-0 text-[var(--ledger-text-secondary)]" />
             <span className="font-medium">Open</span>
           </button>
           <button
@@ -5052,9 +5054,9 @@ export const NotesWindow = () => {
               beginInlineRename(noteContextMenu.noteId);
               setNoteContextMenu(null);
             }}
-            className="w-full h-9 px-3 rounded-none text-left hover:bg-[#FFF1E3] flex items-center gap-3 text-sm transition"
+            className="w-full h-9 px-3 rounded-none text-left hover:bg-[var(--ledger-surface-hover)] flex items-center gap-3 text-sm transition"
           >
-            <span className="text-gray-500 shrink-0">Aa</span>
+            <span className="shrink-0 text-[var(--ledger-text-muted)]">Aa</span>
             <span className="font-medium">Rename</span>
           </button>
           <button
@@ -5062,9 +5064,9 @@ export const NotesWindow = () => {
               void createChildNote(noteContextMenu.noteId);
               setNoteContextMenu(null);
             }}
-            className="w-full h-9 px-3 rounded-none text-left hover:bg-[#FFF1E3] flex items-center gap-3 text-sm transition"
+            className="flex h-9 w-full items-center gap-3 rounded-none px-3 text-left text-sm transition hover:bg-[var(--ledger-surface-hover)]"
           >
-            <Plus size={14} className="text-gray-600 shrink-0" />
+            <Plus size={14} className="shrink-0 text-[var(--ledger-text-secondary)]" />
             <span className="font-medium">Create child</span>
           </button>
           <button
@@ -5075,14 +5077,14 @@ export const NotesWindow = () => {
                 .catch(() => {});
               setNoteContextMenu(null);
             }}
-            className="w-full h-9 px-3 rounded-none text-left hover:bg-[#FFF1E3] flex items-center gap-3 text-sm transition"
+            className="flex h-9 w-full items-center gap-3 rounded-none px-3 text-left text-sm transition hover:bg-[var(--ledger-surface-hover)]"
           >
-            <Folder size={14} className="text-gray-600 shrink-0" />
+            <Folder size={14} className="shrink-0 text-[var(--ledger-text-secondary)]" />
             <span className="font-medium">Move to root</span>
           </button>
 
           {/* Divider */}
-          <div className="h-px bg-[#E8DDD4] my-1" />
+          <div className="my-1 h-px bg-[var(--ledger-border-subtle)]" />
 
           {/* Second group: Duplicate, Save as template */}
           <button
@@ -5090,9 +5092,9 @@ export const NotesWindow = () => {
               void duplicateNoteById(noteContextMenu.noteId);
               setNoteContextMenu(null);
             }}
-            className="w-full h-9 px-3 rounded-none text-left hover:bg-[#FFF1E3] flex items-center gap-3 text-sm transition"
+            className="flex h-9 w-full items-center gap-3 rounded-none px-3 text-left text-sm transition hover:bg-[var(--ledger-surface-hover)]"
           >
-            <Copy size={14} className="text-gray-600 shrink-0" />
+            <Copy size={14} className="shrink-0 text-[var(--ledger-text-secondary)]" />
             <span className="font-medium">Duplicate</span>
           </button>
           <button
@@ -5105,14 +5107,14 @@ export const NotesWindow = () => {
               }
               setNoteContextMenu(null);
             }}
-            className="w-full h-9 px-3 rounded-none text-left hover:bg-[#FFF1E3] flex items-center gap-3 text-sm transition"
+            className="flex h-9 w-full items-center gap-3 rounded-none px-3 text-left text-sm transition hover:bg-[var(--ledger-surface-hover)]"
           >
-            <Zap size={14} className="text-gray-600 shrink-0" />
+            <Zap size={14} className="shrink-0 text-[var(--ledger-text-secondary)]" />
             <span className="font-medium">Save as template</span>
           </button>
 
           {/* Divider */}
-          <div className="h-px bg-[#E8DDD4] my-1" />
+          <div className="my-1 h-px bg-[var(--ledger-border-subtle)]" />
 
           {/* Third group: Delete (destructive) */}
           <button
@@ -5120,10 +5122,10 @@ export const NotesWindow = () => {
               void deleteNoteById(noteContextMenu.noteId);
               setNoteContextMenu(null);
             }}
-            className="w-full h-9 px-3 rounded-none text-left hover:bg-red-50 flex items-center gap-3 text-sm transition"
+            className="flex h-9 w-full items-center gap-3 rounded-none px-3 text-left text-sm transition hover:bg-[color:rgba(217,45,32,0.08)]"
           >
-            <Trash2 size={14} className="text-red-500 shrink-0" />
-            <span className="font-medium text-red-600">Delete</span>
+            <Trash2 size={14} className="shrink-0 text-[var(--ledger-danger)]" />
+            <span className="font-medium text-[var(--ledger-danger)]">Delete</span>
           </button>
         </div>
           );

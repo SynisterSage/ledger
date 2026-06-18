@@ -1065,30 +1065,38 @@ export const CalendarWindow = () => {
       case 'done':
         return {
           label: 'Done',
-          chipClass: 'border-green-200 bg-green-50 text-green-900',
-          dotClass: 'bg-green-500',
-          previewClass: 'bg-green-50 border-green-200 text-green-950',
+          chipClass:
+            'border-[color:rgba(50,213,131,0.26)] bg-[color:rgba(50,213,131,0.12)] text-[rgb(150,255,201)]',
+          dotClass: 'bg-[rgb(50,213,131)]',
+          previewClass:
+            'bg-[color:rgba(50,213,131,0.12)] border-[color:rgba(50,213,131,0.22)] text-[var(--ledger-text-primary)]',
         };
       case 'missed':
         return {
           label: 'Missed',
-          chipClass: 'border-amber-200 bg-amber-50 text-amber-900',
-          dotClass: 'bg-amber-500',
-          previewClass: 'bg-amber-50 border-amber-200 text-amber-950',
+          chipClass:
+            'border-[color:rgba(245,158,11,0.26)] bg-[color:rgba(245,158,11,0.12)] text-[rgb(253,224,130)]',
+          dotClass: 'bg-[rgb(245,158,11)]',
+          previewClass:
+            'bg-[color:rgba(245,158,11,0.12)] border-[color:rgba(245,158,11,0.22)] text-[var(--ledger-text-primary)]',
         };
       case 'cancelled':
         return {
           label: 'Cancelled',
-          chipClass: 'border-[#E2D4C4] bg-[#FFF1E3] text-gray-700',
-          dotClass: 'bg-gray-400',
-          previewClass: 'bg-[#FFF1E3] border-[#E2D4C4] text-gray-700',
+          chipClass:
+            'border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-hover)] text-[var(--ledger-text-secondary)]',
+          dotClass: 'bg-[var(--ledger-text-muted)]',
+          previewClass:
+            'bg-[var(--ledger-surface-hover)] border-[color:var(--ledger-border-subtle)] text-[var(--ledger-text-secondary)]',
         };
       default:
         return {
           label: 'Planned',
-          chipClass: 'border-blue-200 bg-blue-50 text-blue-900',
-          dotClass: 'bg-blue-500',
-          previewClass: 'bg-blue-50 border-blue-200 text-blue-950',
+          chipClass:
+            'border-[color:rgba(59,130,246,0.26)] bg-[color:rgba(59,130,246,0.12)] text-[rgb(191,219,254)]',
+          dotClass: 'bg-[rgb(59,130,246)]',
+          previewClass:
+            'bg-[color:rgba(59,130,246,0.12)] border-[color:rgba(59,130,246,0.22)] text-[var(--ledger-text-primary)]',
         };
     }
   };
@@ -3239,18 +3247,18 @@ export const CalendarWindow = () => {
   };
 
   const loadingSkeleton = (
-    <div className="h-full overflow-auto bg-[#FFF8F2]">
+    <div className="h-full overflow-auto bg-[var(--ledger-background)]">
       <div className="p-4 space-y-4 animate-pulse">
-        <div className="h-6 w-56 rounded bg-[#EDE3D8]" />
-        <div className="grid grid-cols-7 gap-px overflow-hidden rounded-2xl border border-[#E2D4C4]">
+        <div className="h-6 w-56 rounded bg-[var(--ledger-surface-hover)]" />
+        <div className="grid grid-cols-7 gap-px overflow-hidden rounded-2xl border border-[color:var(--ledger-border-subtle)]">
           {Array.from({ length: 7 }).map((_, index) => (
-            <div key={index} className="h-12 bg-[#FFF1E3]" />
+            <div key={index} className="h-12 bg-[var(--ledger-surface-hover)]" />
           ))}
           {Array.from({ length: 28 }).map((_, index) => (
-            <div key={index} className="min-h-16 border-t border-[#E2D4C4] bg-[#FFF8F2] p-2">
-              <div className="h-3 w-6 rounded bg-[#EDE3D8]" />
-              <div className="mt-2 h-3 w-4/5 rounded bg-[#EDE3D8]" />
-              <div className="mt-2 h-3 w-2/3 rounded bg-[#EDE3D8]" />
+            <div key={index} className="min-h-16 border-t border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-2">
+              <div className="h-3 w-6 rounded bg-[var(--ledger-surface-hover)]" />
+              <div className="mt-2 h-3 w-4/5 rounded bg-[var(--ledger-surface-hover)]" />
+              <div className="mt-2 h-3 w-2/3 rounded bg-[var(--ledger-surface-hover)]" />
             </div>
           ))}
         </div>
@@ -3278,7 +3286,7 @@ export const CalendarWindow = () => {
 
   return (
     <div
-      className="relative h-screen overflow-hidden rounded-3xl border border-[#E2D4C4] bg-[#FFF9F4] flex flex-col shadow-[0_24px_80px_rgba(15,23,42,0.08)]"
+      className="relative flex h-screen flex-col overflow-hidden rounded-3xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] shadow-none"
       style={{ scrollbarGutter: isCalendarModalOpen ? 'auto' : 'stable' }}
     >
       <CloseGuardModal
@@ -3372,7 +3380,7 @@ export const CalendarWindow = () => {
 
       {appleSyncMessage && (
         <div
-          className={`px-5 py-2 text-xs text-green-700 bg-green-50 border-b border-green-100 transition-opacity duration-300 ${
+          className={`border-b border-[color:rgba(50,213,131,0.18)] bg-[color:rgba(50,213,131,0.08)] px-5 py-2 text-xs text-[var(--ledger-success)] transition-opacity duration-300 ${
             isAppleSyncMessageVisible ? 'opacity-100' : 'opacity-0'
           }`}
         >
@@ -3381,7 +3389,7 @@ export const CalendarWindow = () => {
       )}
       {importMessage && (
         <div
-          className={`px-5 py-2 text-xs text-blue-700 bg-blue-50 border-b border-blue-100 transition-opacity duration-300 ${
+          className={`border-b border-[color:rgba(59,130,246,0.18)] bg-[color:rgba(59,130,246,0.08)] px-5 py-2 text-xs text-[rgb(191,219,254)] transition-opacity duration-300 ${
             isImportMessageVisible ? 'opacity-100' : 'opacity-0'
           }`}
         >
@@ -3393,53 +3401,53 @@ export const CalendarWindow = () => {
         {!isLeftPaneCollapsed ? (
           <>
             <aside
-              className="border-r border-[#E8DDD4] p-4 overflow-auto shrink-0 bg-[#FFF8F1]"
+              className="shrink-0 overflow-auto border-r border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] p-4"
               style={{ width: `${leftPaneWidth}px` }}
             >
               <div className="flex items-center justify-between mb-3">
-                <p className="text-xs font-medium text-gray-500">
+                <p className="text-xs font-medium text-[var(--ledger-text-muted)]">
                   Workspace
                 </p>
                 <button
                   onClick={() => setIsLeftPaneCollapsed(true)}
-                  className="h-7 w-7 rounded-lg border border-[#E2D4C4] bg-[#FFF8F2] text-gray-500 hover:bg-[#FFF4EA] flex items-center justify-center shadow-sm"
+                  className="flex h-7 w-7 items-center justify-center rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)]"
                   title="Hide left panel"
                 >
                   <ChevronLeft size={13} strokeWidth={2.25} className="-translate-x-px" />
                 </button>
               </div>
-              <div className="mb-5 rounded-2xl border border-[#E8DDD4] bg-[#FFF8F2] p-3">
+              <div className="mb-5 rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-3">
                 <div className="flex items-start justify-between mb-3">
                   <div>
-                    <p className="text-xs font-medium text-gray-500">
+                    <p className="text-xs font-medium text-[var(--ledger-text-muted)]">
                       Month
                     </p>
-                    <h2 className="text-sm font-semibold text-gray-900">{monthPreview.label}</h2>
+                    <h2 className="text-sm font-semibold text-[var(--ledger-text-primary)]">{monthPreview.label}</h2>
                   </div>
                   <div className="flex items-center gap-1">
                     <button
                       onClick={() => moveView(-1)}
-                      className="h-7 w-7 rounded-full border border-[#E8DDD4] bg-[#FFF8F2] text-gray-600 hover:bg-[#FFF4EA] flex items-center justify-center shadow-sm"
+                      className="flex h-7 w-7 items-center justify-center rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)]"
                       title="Previous period"
                     >
                       <ChevronLeft size={13} strokeWidth={2.25} />
                     </button>
                     <button
                       onClick={() => jumpToToday()}
-                      className="h-7 px-2 rounded-md border border-[#E8DDD4] bg-[#FFF8F2] text-[11px] font-medium text-gray-700 hover:bg-[#FFF4EA]"
+                      className="h-7 rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2 text-[11px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)]"
                     >
                       Today
                     </button>
                     <button
                       onClick={() => moveView(1)}
-                      className="h-7 w-7 rounded-full border border-[#E8DDD4] bg-[#FFF8F2] text-gray-600 hover:bg-[#FFF4EA] flex items-center justify-center shadow-sm"
+                      className="flex h-7 w-7 items-center justify-center rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)]"
                       title="Next period"
                     >
                       <ChevronRight size={13} strokeWidth={2.25} />
                     </button>
                   </div>
                 </div>
-                <div className="grid grid-cols-7 gap-1 text-[10px] font-medium text-gray-400 mb-2">
+                <div className="mb-2 grid grid-cols-7 gap-1 text-[10px] font-medium text-[var(--ledger-text-muted)]">
                   {days.map((day) => (
                     <span key={day} className="text-center">
                       {day.slice(0, 1)}
@@ -3462,12 +3470,12 @@ export const CalendarWindow = () => {
                         }}
                         className={`h-7 rounded-md text-[11px] font-medium transition ${
                           isActive
-                            ? 'bg-[#FF5F40] text-white shadow-[0_1px_2px_rgba(15,23,42,0.12)]'
+                            ? 'bg-[var(--ledger-accent)] text-white shadow-[0_1px_2px_rgba(15,23,42,0.12)]'
                             : isToday
-                            ? 'bg-[#FFF0EA] text-[#FF5F40]'
+                            ? 'bg-[var(--ledger-surface-hover)] text-[var(--ledger-accent)]'
                             : inMonth
-                            ? 'text-gray-700 hover:bg-[#FFF0EA] hover:text-[#FF5F40]'
-                            : 'text-gray-300 hover:bg-[#FFF0EA] hover:text-[#FF5F40]'
+                            ? 'text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-accent)]'
+                            : 'text-[var(--ledger-text-muted)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-accent)]'
                         }`}
                       >
                         {dayDate.getDate()}
@@ -3478,32 +3486,32 @@ export const CalendarWindow = () => {
               </div>
 
               <div className="mb-5">
-                <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-2">
+                <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-[var(--ledger-text-muted)]">
                   Overview
                 </p>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <p className="text-[10px] text-gray-500 uppercase tracking-wide whitespace-nowrap">
+                    <p className="whitespace-nowrap text-[10px] uppercase tracking-wide text-[var(--ledger-text-muted)]">
                       Events
                     </p>
-                    <p className="text-xl font-semibold text-gray-900 leading-tight">
+                    <p className="text-xl font-semibold leading-tight text-[var(--ledger-text-primary)]">
                       {overviewEventCount}
                     </p>
                   </div>
                   <div>
-                    <p className="text-[10px] text-gray-500 uppercase tracking-wide whitespace-nowrap">
+                    <p className="whitespace-nowrap text-[10px] uppercase tracking-wide text-[var(--ledger-text-muted)]">
                       Reminders
                     </p>
-                    <p className="text-xl font-semibold text-gray-900 leading-tight">
+                    <p className="text-xl font-semibold leading-tight text-[var(--ledger-text-primary)]">
                       {overviewReminderCount}
                     </p>
                   </div>
                 </div>
               </div>
 
-              <div className="mb-5 border-t border-[#E8DDD4] pt-4">
+              <div className="mb-5 border-t border-[color:var(--ledger-border-subtle)] pt-4">
                 <div className="mb-3 flex items-center justify-between gap-2">
-                  <h2 className="text-xs font-medium text-gray-500">
+                  <h2 className="text-xs font-medium text-[var(--ledger-text-muted)]">
                     Calendars
                   </h2>
                   <button
@@ -3513,7 +3521,7 @@ export const CalendarWindow = () => {
                       setNewCalendarColor(preferenceColorMap[calendarPreferences.calendarColor ?? 'ledger-orange']);
                       setIsNewCalendarModalOpen(true);
                     }}
-                    className="h-6 w-6 rounded-full border border-[#E2D4C4] bg-[#FFF8F2] text-gray-500 hover:bg-[#FFF4EA] flex items-center justify-center shadow-sm"
+                    className="flex h-6 w-6 items-center justify-center rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)]"
                     title="New calendar"
                     aria-label="New calendar"
                   >
@@ -3537,8 +3545,8 @@ export const CalendarWindow = () => {
                       }}
                       className={`flex items-center justify-between gap-2 rounded-lg border px-2 py-1.5 text-sm ${
                         calendar.is_visible === false
-                          ? 'border-[#F1E4D7] bg-[#FFF4EA] text-gray-400'
-                          : 'border-transparent text-gray-800 hover:bg-[#FFF4EA]'
+                          ? 'border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-hover)] text-[var(--ledger-text-muted)]'
+                          : 'border-transparent text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]'
                       }`}
                     >
                       <div className="flex items-center gap-2 min-w-0">
@@ -3560,11 +3568,11 @@ export const CalendarWindow = () => {
                                 setEditingCalendarId(null);
                               }
                             }}
-                            className="truncate font-medium bg-[#FFF8F2] border border-[#D8C6B6] rounded px-1 py-0.5 text-sm focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                            className="truncate rounded border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-1 py-0.5 text-sm font-medium text-[var(--ledger-text-primary)] outline-none focus:border-[color:var(--ledger-border-strong)] focus:ring-2 focus:ring-[color:var(--ledger-surface-hover)]/60"
                           />
                         ) : (
                           <span
-                            className="truncate font-medium cursor-pointer hover:bg-[#FFF4EA] rounded px-1 py-0.5"
+                            className="cursor-pointer truncate rounded px-1 py-0.5 font-medium hover:bg-[var(--ledger-surface-hover)]"
                             onDoubleClick={() => {
                               setEditingCalendarId(calendar.id);
                               setEditingCalendarName(calendar.name);
@@ -3578,13 +3586,13 @@ export const CalendarWindow = () => {
                     </div>
                   ))}
                   {!isLoading && calendars.length === 0 && (
-                    <p className="text-xs text-gray-500">No calendars yet.</p>
+                    <p className="text-xs text-[var(--ledger-text-muted)]">No calendars yet.</p>
                   )}
                 </div>
               </div>
 
-              <div className="mb-5 border-t border-[#E8DDD4] pt-4">
-                <h2 className="mb-3 text-xs font-medium text-gray-500">
+              <div className="mb-5 border-t border-[color:var(--ledger-border-subtle)] pt-4">
+                <h2 className="mb-3 text-xs font-medium text-[var(--ledger-text-muted)]">
                   Quick Actions
                 </h2>
                 <div className="grid grid-cols-2 gap-2">
@@ -3592,7 +3600,7 @@ export const CalendarWindow = () => {
                     onClick={() => {
                       openComposerAtSlot(formatDateKey(viewAnchor), 9, '', 'event');
                     }}
-                    className="h-9 rounded-md bg-[#FF5F40] text-white text-xs font-medium hover:bg-[#f4583a] transition"
+                    className="h-9 rounded-md bg-[var(--ledger-accent)] text-xs font-medium text-white transition hover:bg-[var(--ledger-accent-hover)]"
                   >
                     New Event
                   </button>
@@ -3600,14 +3608,14 @@ export const CalendarWindow = () => {
                     onClick={() => {
                       openComposerAtSlot(formatDateKey(viewAnchor), 9, '', 'reminder');
                     }}
-                    className="h-9 rounded-md bg-[#FF5F40] text-white text-xs font-medium hover:bg-[#f4583a] transition"
+                    className="h-9 rounded-md bg-[var(--ledger-accent)] text-xs font-medium text-white transition hover:bg-[var(--ledger-accent-hover)]"
                   >
                     New Reminder
                   </button>
                   <button
                     onClick={() => importInputRef.current?.click()}
                     disabled={isImportingIcs}
-                    className="h-9 rounded-md border border-[#E8DDD4] bg-[#FFF8F2] text-gray-700 text-xs font-medium hover:bg-[#FFF4EA] transition disabled:opacity-60 disabled:cursor-not-allowed inline-flex items-center justify-center gap-1.5"
+                    className="inline-flex h-9 items-center justify-center gap-1.5 rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-xs font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     {isImportingIcs ? (
                       <>
@@ -3620,7 +3628,7 @@ export const CalendarWindow = () => {
                   </button>
                   <button
                     onClick={() => void syncAppleCalendar()}
-                    className="h-9 rounded-md border border-[#E8DDD4] bg-[#FFF8F2] text-gray-700 text-xs font-medium hover:bg-[#FFF4EA] transition"
+                    className="h-9 rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-xs font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)]"
                   >
                     Sync iCal
                   </button>
@@ -3637,7 +3645,7 @@ export const CalendarWindow = () => {
                 />
               </div>
 
-              {error && <p className="text-xs text-red-600 mt-4">{error}</p>}
+              {error && <p className="mt-4 text-xs text-[var(--ledger-danger)]">{error}</p>}
             </aside>
 
             <div
@@ -3648,16 +3656,16 @@ export const CalendarWindow = () => {
                 setIsResizingSidebar(true);
               }}
               className={`w-1.5 shrink-0 cursor-col-resize bg-transparent hover:bg-[#EDE3D8] transition-colors ${
-                isResizingSidebar ? 'bg-gray-300' : ''
+                isResizingSidebar ? 'bg-[var(--ledger-border-strong)]' : ''
               }`}
               title="Drag to resize sidebar"
             />
           </>
         ) : (
-          <div className="w-10 shrink-0 border-r border-[#E8DDD4] bg-[#FFF8F1] flex items-start justify-center pt-4">
+          <div className="flex w-10 shrink-0 items-start justify-center border-r border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] pt-4">
             <button
               onClick={() => setIsLeftPaneCollapsed(false)}
-              className="h-7 w-7 rounded-lg border border-[#E8DDD4] bg-[#FFF8F2] text-gray-500 hover:bg-[#FFF4EA] flex items-center justify-center shadow-sm"
+              className="flex h-7 w-7 items-center justify-center rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)]"
               title="Show left panel"
             >
               <ChevronRight size={14} />
@@ -3666,7 +3674,7 @@ export const CalendarWindow = () => {
         )}
 
         <section className="flex-1 min-w-0 p-2.5">
-          <div className="h-full rounded-3xl border border-[#E8DDD4] bg-[#FFF8F2] shadow-sm overflow-hidden flex flex-col">
+          <div className="flex h-full flex-col overflow-hidden rounded-3xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-none">
             <div
               ref={centerScrollRef}
               className="flex-1 min-w-0 overflow-auto"
@@ -3688,11 +3696,11 @@ export const CalendarWindow = () => {
                 loadingSkeleton
               ) : viewMode === 'month' ? (
                 <div className="min-w-210 p-3">
-                  <div className="grid grid-cols-7 border-l border-t border-[#E8DDD4] rounded-t-lg overflow-hidden">
+                  <div className="grid grid-cols-7 overflow-hidden rounded-t-lg border-l border-t border-[color:var(--ledger-border-subtle)]">
                     {days.map((day) => (
                       <div
                         key={day}
-                        className="h-10 flex items-center justify-center bg-[#FFF4EA] border-r border-b border-[#E8DDD4] text-xs font-semibold text-gray-600"
+                        className="flex h-10 items-center justify-center border-b border-r border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-hover)] text-xs font-semibold text-[var(--ledger-text-secondary)]"
                       >
                         {day}
                       </div>
@@ -3728,20 +3736,22 @@ export const CalendarWindow = () => {
                               hour: 9,
                             });
                           }}
-                          className={`min-h-29 border-r border-b border-[#E2D4C4] text-left p-2 align-top hover:bg-[#FFF1E3] transition-colors ${
-                            inMonth ? 'bg-[#FFF8F2]' : 'bg-[#FFF8F2] text-gray-400'
+                          className={`min-h-29 border-b border-r border-[color:var(--ledger-border-subtle)] p-2 text-left align-top transition-colors hover:bg-[var(--ledger-surface-hover)] ${
+                            inMonth ? 'bg-[var(--ledger-surface-card)]' : 'bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-muted)]'
                           }`}
                         >
                           <div className="flex items-start justify-between">
                             <span
                               className={`text-xs font-semibold ${
-                                inMonth ? 'text-gray-900' : 'text-gray-400'
+                                inMonth
+                                  ? 'text-[var(--ledger-text-primary)]'
+                                  : 'text-[var(--ledger-text-muted)]'
                               }`}
                             >
                               {dayDate.getDate()}
                             </span>
                             {dayEvents.length + dayReminders.length > 0 && (
-                              <span className="text-[10px] text-gray-500">
+                              <span className="text-[10px] text-[var(--ledger-text-muted)]">
                                 {dayEvents.length + dayReminders.length}
                               </span>
                             )}
@@ -3796,7 +3806,7 @@ export const CalendarWindow = () => {
                                 return (
                                   <div
                                     key={event.id}
-                                    className={`text-[10px] leading-tight rounded-md px-2 py-1 truncate border shadow-sm ${
+                                    className={`rounded-md border px-2 py-1 text-[10px] leading-tight shadow-sm ${
                                       meta.previewClass
                                     } ${event.status === 'done' ? 'line-through opacity-80' : ''} ${
                                       event.status === 'cancelled' ? 'opacity-65' : ''
@@ -3804,9 +3814,15 @@ export const CalendarWindow = () => {
                                       pastEvent && !pastEventMuted ? 'opacity-75 grayscale-[0.15]' : ''
                                     }`}
                                     style={{
-                                      backgroundColor: pastEvent ? '#F6EFE8' : '#FFF8F2',
-                                      borderColor: pastEvent ? '#E5E7EB' : `${calendarColor}44`,
-                                      color: pastEvent ? '#6B7280' : '#1F2937',
+                                      backgroundColor: pastEvent
+                                        ? 'var(--ledger-surface-hover)'
+                                        : `${calendarColor}22`,
+                                      borderColor: pastEvent
+                                        ? 'var(--ledger-border-subtle)'
+                                        : `${calendarColor}44`,
+                                      color: pastEvent
+                                        ? 'var(--ledger-text-muted)'
+                                        : 'var(--ledger-text-primary)',
                                     }}
                                     onClick={(e) => {
                                       e.stopPropagation();
@@ -3838,7 +3854,7 @@ export const CalendarWindow = () => {
                                       style={{ backgroundColor: calendarColor }}
                                     />
                                     {event.status === 'done' && (
-                                      <span className="text-green-600 mr-1 inline-block align-middle text-[12px]">
+                                      <span className="mr-1 inline-block align-middle text-[12px] text-[var(--ledger-success)]">
                                         ✓
                                       </span>
                                     )}
@@ -3855,11 +3871,8 @@ export const CalendarWindow = () => {
                                       })()
                                     }
                                     {event.project_id && (
-                                      <Folder
-                                        size={8}
-                                        className="mr-1 inline-block align-middle text-gray-500"
-                                      />
-                                    )}
+                                        <Folder size={8} className="mr-1 inline-block align-middle text-[var(--ledger-text-muted)]" />
+                                      )}
                                     {event.title}
                                   </div>
                                 );
@@ -3871,7 +3884,7 @@ export const CalendarWindow = () => {
                                   event.stopPropagation();
                                   setOverflowDayKey(key);
                                 }}
-                                className="text-[10px] text-gray-500 hover:text-gray-700"
+                                className="text-[10px] text-[var(--ledger-text-muted)] transition hover:text-[var(--ledger-text-primary)]"
                               >
                                 +{extraCount} more
                               </button>
@@ -3891,22 +3904,22 @@ export const CalendarWindow = () => {
                       gridTemplateColumns: `72px repeat(${viewConfig.dates.length}, minmax(0, 1fr))`,
                     }}
                   >
-                  <div className="sticky top-0 z-50 h-12 bg-[#FFF8F2] border-b border-[#E2D4C4]" />
+                  <div className="sticky top-0 z-50 h-12 border-b border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)]" />
                   {viewConfig.dates.map((dayDate) => (
                     <div
                       key={dayDate.toISOString()}
-                      className="sticky top-0 z-50 h-12 bg-[#FFF8F2] border-b border-l border-[#E2D4C4] flex flex-col items-center justify-center"
+                      className="sticky top-0 z-50 flex h-12 flex-col items-center justify-center border-b border-l border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)]"
                     >
-                      <span className="text-xs font-semibold text-gray-600">
+                      <span className="text-xs font-semibold text-[var(--ledger-text-secondary)]">
                         {dayDate.toLocaleDateString([], { weekday: 'short' })}
                       </span>
-                      <span className="text-[10px] text-gray-400">
+                      <span className="text-[10px] text-[var(--ledger-text-muted)]">
                         {dayDate.getMonth() + 1}/{dayDate.getDate()}
                       </span>
                     </div>
                   ))}
 
-                  <div className="h-10 border-b border-[#E8DDD4] pr-3 text-[11px] text-gray-400 flex items-start justify-end pt-1.5">
+                  <div className="flex h-10 items-start justify-end border-b border-[color:var(--ledger-border-subtle)] pr-3 pt-1.5 text-[11px] text-[var(--ledger-text-muted)]">
                     All day
                   </div>
                   {viewConfig.dates.map((dayDate) => {
@@ -3920,7 +3933,7 @@ export const CalendarWindow = () => {
                     return (
                       <div
                         key={`all-day-${key}`}
-                        className="h-10 border-b border-l border-[#E8DDD4] relative px-1 py-1 bg-[#FFF8F2]/30"
+                        className="relative h-10 border-b border-l border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)]/30 px-1 py-1"
                       >
                         <div className="space-y-0.5">
                           {visibleAllDayItems.map((evt) => {
@@ -3947,23 +3960,29 @@ export const CalendarWindow = () => {
                                     id: evt.id,
                                   });
                                 }}
-                                className={`text-[10px] leading-tight rounded-md px-2 py-1 truncate w-full text-left border shadow-sm ${
+                                className={`w-full truncate rounded-md border px-2 py-1 text-left text-[10px] leading-tight shadow-sm ${
                                   pastEventMuted ? 'opacity-50 grayscale-[0.35]' : ''
                                 }`}
                                 style={{
-                                      backgroundColor: pastEvent ? '#F6EFE8' : '#FFF8F2',
-                                  borderColor: pastEvent ? '#E5E7EB' : `${eventColor}44`,
-                                  color: pastEvent ? '#6B7280' : '#1F2937',
-                                }}
+                                      backgroundColor: pastEvent
+                                        ? 'var(--ledger-surface-hover)'
+                                        : `${eventColor}22`,
+                                      borderColor: pastEvent
+                                        ? 'var(--ledger-border-subtle)'
+                                        : `${eventColor}44`,
+                                      color: pastEvent
+                                        ? 'var(--ledger-text-muted)'
+                                        : 'var(--ledger-text-primary)',
+                                    }}
                               >
                                 <span
                                   className="mr-1 inline-block h-1.5 w-1.5 rounded-full align-middle"
                                   style={{ backgroundColor: eventColor }}
                                 />
                                 {evt.status === 'done' && (
-                                  <span className="text-green-600 mr-1 inline-block align-middle text-[12px]">
-                                    ✓
-                                  </span>
+                                    <span className="mr-1 inline-block align-middle text-[12px] text-[var(--ledger-success)]">
+                                      ✓
+                                    </span>
                                 )}
                                 {evt.title}
                               </button>
@@ -3975,7 +3994,7 @@ export const CalendarWindow = () => {
                                 e.stopPropagation();
                                 setOverflowDayKey(key);
                               }}
-                              className="text-[10px] text-gray-500 hover:text-gray-700"
+                              className="text-[10px] text-[var(--ledger-text-muted)] transition hover:text-[var(--ledger-text-primary)]"
                               title={`${hiddenAllDayCount} more all-day event${
                                 hiddenAllDayCount === 1 ? '' : 's'
                               }`}
@@ -4014,7 +4033,7 @@ export const CalendarWindow = () => {
                           <>
                             <div
                               data-timeline-hour={hourInt}
-                              className="border-b border-[#E8DDD4] pr-3 text-[11px] text-gray-400 flex items-start justify-end pt-1.5"
+                              className="flex items-start justify-end border-b border-[color:var(--ledger-border-subtle)] pr-3 pt-1.5 text-[11px] text-[var(--ledger-text-muted)]"
                               style={{ minHeight: `${rowHeight}px` }}
                             >
                               {formatCalendarHourLabel(hourInt)}
@@ -4052,7 +4071,7 @@ export const CalendarWindow = () => {
                               return (
                                 <div
                                   key={`${hour}-${key}`}
-                                  className="border-b border-l border-[#E8DDD4] relative px-1 py-1 hover:bg-[#FFF1E3] cursor-pointer"
+                                  className="relative cursor-pointer border-b border-l border-[color:var(--ledger-border-subtle)] px-1 py-1 hover:bg-[var(--ledger-surface-hover)]"
                                   style={{ minHeight: `${rowHeight}px` }}
                                   onClick={() => {
                                     setSelectedEvent(null);
@@ -4078,7 +4097,7 @@ export const CalendarWindow = () => {
                                 >
                             {isQuickAddOpen && (
                               <div
-                                className="absolute top-1 left-1 right-1 z-20 rounded-md border border-[#E2D4C4] bg-[#FFF8F2] shadow-lg p-1.5"
+                                className="absolute left-1 right-1 top-1 z-20 rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-1.5 shadow-[var(--ledger-shadow)]"
                                 onClick={(e) => e.stopPropagation()}
                               >
                                 <input
@@ -4096,7 +4115,7 @@ export const CalendarWindow = () => {
                                     }
                                   }}
                                   placeholder="Quick event title"
-                                  className="w-full h-7 px-2 text-[11px] border border-[#E2D4C4] rounded focus:outline-none focus:border-gray-400"
+                                  className="h-7 w-full rounded border border-[color:var(--ledger-border-subtle)] px-2 text-[11px] outline-none focus:border-[color:var(--ledger-border-strong)]"
                                 />
                                 <div className="mt-1 flex justify-end gap-1">
                                   <button
@@ -4104,14 +4123,14 @@ export const CalendarWindow = () => {
                                       setGridQuickAdd(null);
                                       setGridQuickTitle('');
                                     }}
-                                    className="px-1.5 py-0.5 text-[10px] text-gray-600 bg-[#FFF1E3] rounded"
+                                    className="rounded bg-[var(--ledger-surface-hover)] px-1.5 py-0.5 text-[10px] text-[var(--ledger-text-secondary)]"
                                   >
                                     Cancel
                                   </button>
                                   <button
                                     onClick={() => void createGridEvent()}
                                     disabled={!gridQuickTitle.trim() || isSavingEvent}
-                                    className="px-1.5 py-0.5 text-[10px] text-white bg-gray-900 rounded disabled:opacity-60"
+                                    className="rounded bg-[var(--ledger-accent)] px-1.5 py-0.5 text-[10px] text-white disabled:opacity-60"
                                   >
                                     Add
                                   </button>
@@ -4149,11 +4168,15 @@ export const CalendarWindow = () => {
                                         : ''
                                     } ${isPastReminder(reminder) ? 'opacity-80' : ''}`}
                                     style={{
-                                      backgroundColor: isPastReminder(reminder) ? '#F6EFE8' : '#FFF8F2',
+                                      backgroundColor: isPastReminder(reminder)
+                                        ? 'var(--ledger-surface-hover)'
+                                        : `${reminder.color ?? '#F59E0B'}1a`,
                                       borderColor: isPastReminder(reminder)
-                                        ? '#E5E7EB'
+                                        ? 'var(--ledger-border-subtle)'
                                         : `${reminder.color ?? '#F59E0B'}55`,
-                                      color: isPastReminder(reminder) ? '#6B7280' : '#1F2937',
+                                      color: isPastReminder(reminder)
+                                        ? 'var(--ledger-text-muted)'
+                                        : 'var(--ledger-text-primary)',
                                     }}
                                     title={`${formatCalendarTime(new Date(reminder.remind_at))} • ${reminder.title}`}
                                   >
@@ -4174,7 +4197,7 @@ export const CalendarWindow = () => {
                                       e.stopPropagation();
                                       setOverflowDayKey(key);
                                     }}
-                                    className="relative z-40 text-[10px] font-medium text-amber-700"
+                                    className="relative z-40 text-[10px] font-medium text-[var(--ledger-warning)]"
                                     title={`${hiddenReminders} more reminder${
                                       hiddenReminders === 1 ? '' : 's'
                                     }`}
@@ -4206,15 +4229,21 @@ export const CalendarWindow = () => {
                                       id: evt.id,
                                     });
                                   }}
-                                  className={`absolute inset-x-1 z-10 rounded-md border text-left text-[10px] leading-tight shadow-sm flex flex-col ${
+                                  className={`absolute inset-x-1 z-10 flex flex-col rounded-md border text-left text-[10px] leading-tight shadow-sm ${
                                     durationRows > 1 ? 'p-2' : 'px-2 py-1.5'
                                   }`}
                                   style={{
                                     top: `${Math.max(8, reminderStackHeight + 6)}px`,
                                     height: `${Math.max(40, durationRows * 64 - 12)}px`,
-                                    backgroundColor: pastEvent ? '#F6EFE8' : '#FFF8F2',
-                                    borderColor: pastEvent ? '#E5E7EB' : `${eventColor}55`,
-                                    color: pastEvent ? '#6B7280' : '#1F2937',
+                                    backgroundColor: pastEvent
+                                      ? 'var(--ledger-surface-hover)'
+                                      : `${eventColor}18`,
+                                    borderColor: pastEvent
+                                      ? 'var(--ledger-border-subtle)'
+                                      : `${eventColor}55`,
+                                    color: pastEvent
+                                      ? 'var(--ledger-text-muted)'
+                                      : 'var(--ledger-text-primary)',
                                     boxSizing: 'border-box',
                                     lineHeight: 1.2,
                                     overflow: 'hidden',
@@ -4231,14 +4260,14 @@ export const CalendarWindow = () => {
                                     <div className="min-w-0 flex-1">
                                       <div className="flex items-start gap-1 min-w-0">
                                         {evt.status === 'done' && (
-                                          <span className="text-green-600 shrink-0 text-[10px] leading-none font-semibold -mt-0.5">
+                                          <span className="shrink-0 text-[10px] font-semibold leading-none -mt-0.5 text-[var(--ledger-success)]">
                                             ✓
                                           </span>
                                         )}
                                         {evt.project_id && (
                                           <Folder
                                             size={8}
-                                            className="shrink-0 text-gray-500"
+                                            className="shrink-0 text-[var(--ledger-text-muted)]"
                                           />
                                         )}
                                         <span
@@ -4250,7 +4279,7 @@ export const CalendarWindow = () => {
                                         </span>
                                       </div>
                                       {durationRows > 1 && (
-                                        <div className={`text-[9px] text-gray-500 ${durationRows > 1 ? 'mt-1' : 'mt-0.5'}`}>
+                                        <div className={`text-[9px] text-[var(--ledger-text-muted)] ${durationRows > 1 ? 'mt-1' : 'mt-0.5'}`}>
                                           {formatEventTimeRangeLabel(evt)}
                                         </div>
                                       )}
@@ -4265,7 +4294,7 @@ export const CalendarWindow = () => {
                                   e.stopPropagation();
                                   setOverflowDayKey(key);
                                 }}
-                                className="relative z-30 text-[10px] text-gray-600 hover:text-gray-800 px-1.5 py-0.5"
+                                className="relative z-30 px-1.5 py-0.5 text-[10px] text-[var(--ledger-text-secondary)] transition hover:text-[var(--ledger-text-primary)]"
                               >
                                 +{hiddenCount} more
                               </button>
@@ -4294,35 +4323,35 @@ export const CalendarWindow = () => {
                 event.preventDefault();
                 setIsResizingRightPane(true);
               }}
-              className={`w-1.5 shrink-0 cursor-col-resize bg-transparent hover:bg-[#EDE3D8] transition-colors ${
-                isResizingRightPane ? 'bg-gray-300' : ''
+              className={`w-1.5 shrink-0 cursor-col-resize bg-transparent transition-colors hover:bg-[var(--ledger-surface-hover)] ${
+                isResizingRightPane ? 'bg-[var(--ledger-border-strong)]' : ''
               }`}
               title="Drag to resize inspector"
             />
 
             <aside
-              className="border-l border-[#E2D4C4] bg-[#FFF8F2] overflow-auto px-5 py-6"
+              className="overflow-auto border-l border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-5 py-6"
               style={{ width: `${rightPaneWidth}px` }}
             >
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <p className="text-xs font-medium text-gray-500">
+                  <p className="text-xs font-medium text-[var(--ledger-text-muted)]">
                     Day context
                   </p>
-                  <h2 className="mt-2 text-[15px] font-semibold leading-5 text-gray-900">
+                  <h2 className="mt-2 text-[15px] font-semibold leading-5 text-[var(--ledger-text-primary)]">
                     {selectedContextDate.toLocaleDateString([], {
                       weekday: 'long',
                       month: 'short',
                       day: 'numeric',
                     })}
                   </h2>
-                  <p className="mt-1 text-[13px] text-gray-600">
+                  <p className="mt-1 text-[13px] text-[var(--ledger-text-secondary)]">
                     {selectedContextDayEventCountLabel} · {selectedContextDayReminderCountLabel}
                   </p>
                 </div>
                 <button
                   onClick={() => setIsRightPaneCollapsed(true)}
-                  className="h-7 w-7 shrink-0 rounded-lg border border-[#E2D4C4] bg-[#FFF8F2] text-gray-500 shadow-sm hover:bg-[#FFF4EA] flex items-center justify-center"
+                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)]"
                   title="Hide right panel"
                   aria-label="Hide right panel"
                 >
@@ -4331,8 +4360,8 @@ export const CalendarWindow = () => {
               </div>
 
               <div className="mt-6 space-y-6">
-                <div className="space-y-2 border-t border-[#E8DDD4] pt-6">
-                  <p className="text-xs font-medium text-gray-500">
+                <div className="space-y-2 border-t border-[color:var(--ledger-border-subtle)] pt-6">
+                  <p className="text-xs font-medium text-[var(--ledger-text-muted)]">
                     Selected event
                   </p>
                   {selectedEventPreview ? (
@@ -4348,19 +4377,19 @@ export const CalendarWindow = () => {
                             />
                             <div className="min-w-0 flex-1">
                               <div className="flex items-start gap-2">
-                                <p className="text-[14px] font-semibold leading-5 text-gray-900 flex-1">
+                                <p className="flex-1 text-[14px] font-semibold leading-5 text-[var(--ledger-text-primary)]">
                                   {selectedEventPreview.title}
                                 </p>
                                 <div className="flex shrink-0 items-center gap-1">
                                   {selectedEventPreview.status === 'done' && (
-                                    <span className="text-green-600 text-[14px] leading-none font-semibold">
+                                    <span className="text-[14px] font-semibold leading-none text-[var(--ledger-success)]">
                                       ✓
                                     </span>
                                   )}
                                   {canEditEvent(selectedEventPreview) && (
                                     <button
                                       onClick={() => openEventEditor(selectedEventPreview)}
-                                      className="inline-flex h-7 w-7 items-center justify-center rounded-full text-gray-500 transition hover:bg-[#FFF1E3] hover:text-[#FF5F40]"
+                                      className="inline-flex h-7 w-7 items-center justify-center rounded-full text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-accent)]"
                                       aria-label="Edit event"
                                       title="Edit event"
                                     >
@@ -4369,24 +4398,24 @@ export const CalendarWindow = () => {
                                   )}
                                 </div>
                               </div>
-                              <p className="mt-1 text-[13px] text-gray-600">
+                              <p className="mt-1 text-[13px] text-[var(--ledger-text-secondary)]">
                                 {formatEventDateTimeLabel(selectedEventPreview)}
                               </p>
-                              <p className="mt-1 text-[13px] text-gray-700">{meta.label}</p>
-                              <p className="mt-1 text-[12px] text-gray-500">
+                              <p className="mt-1 text-[13px] text-[var(--ledger-text-primary)]">{meta.label}</p>
+                              <p className="mt-1 text-[12px] text-[var(--ledger-text-muted)]">
                                 Visibility ·{' '}
                                 {selectedEventPreview.visibility === 'workspace'
                                   ? 'Workspace'
                                   : 'Private'}
                               </p>
                               {showWorkspaceNames && selectedEventPreview.workspace_name && (
-                                <p className="mt-1 text-[12px] text-gray-500">
+                                <p className="mt-1 text-[12px] text-[var(--ledger-text-muted)]">
                                   Workspace · {selectedEventPreview.workspace_name}
                                 </p>
                               )}
                               <div className="mt-3 space-y-2 text-[13px]">
                                 <div className="flex items-center justify-between gap-3">
-                                  <span className="text-gray-500">Project</span>
+                                  <span className="text-[var(--ledger-text-muted)]">Project</span>
                                   {selectedEventProject ? (
                                     <button
                                       type="button"
@@ -4395,7 +4424,7 @@ export const CalendarWindow = () => {
                                           focusProjectId: selectedEventProject.id,
                                         })
                                       }
-                                      className="truncate font-medium text-gray-700 hover:text-[#FF5F40]"
+                                      className="truncate font-medium text-[var(--ledger-text-secondary)] transition hover:text-[var(--ledger-accent)]"
                                     >
                                       {selectedEventProject.name} →
                                     </button>
@@ -4405,14 +4434,14 @@ export const CalendarWindow = () => {
                                       onClick={() =>
                                         void (selectedEventPreview ? openLinkProjectModal() : null)
                                       }
-                                      className="font-medium text-gray-500 hover:text-[#FF5F40]"
+                                      className="font-medium text-[var(--ledger-text-muted)] transition hover:text-[var(--ledger-accent)]"
                                     >
                                       + Link project
                                     </button>
                                   )}
                                 </div>
                                 <div className="flex items-center justify-between gap-3">
-                                  <span className="text-gray-500">Linked note</span>
+                                  <span className="text-[var(--ledger-text-muted)]">Linked note</span>
                                   {selectedEventNote ? (
                                     <button
                                       type="button"
@@ -4421,7 +4450,7 @@ export const CalendarWindow = () => {
                                           focusNoteId: selectedEventNote.id,
                                         })
                                       }
-                                      className="max-w-36 truncate font-medium text-gray-700 hover:text-[#FF5F40]"
+                                      className="max-w-36 truncate font-medium text-[var(--ledger-text-secondary)] transition hover:text-[var(--ledger-accent)]"
                                     >
                                       {selectedEventNote.title} →
                                     </button>
@@ -4429,7 +4458,7 @@ export const CalendarWindow = () => {
                                     <button
                                       type="button"
                                       onClick={() => void openLinkNoteModal()}
-                                      className="font-medium text-gray-500 hover:text-[#FF5F40]"
+                                      className="font-medium text-[var(--ledger-text-muted)] transition hover:text-[var(--ledger-accent)]"
                                     >
                                       + Link note
                                     </button>
@@ -4449,10 +4478,10 @@ export const CalendarWindow = () => {
                           style={{ backgroundColor: selectedReminder.color ?? '#F59E0B' }}
                         />
                         <div className="min-w-0">
-                          <p className="text-[14px] font-semibold leading-5 text-gray-900">
+                          <p className="text-[14px] font-semibold leading-5 text-[var(--ledger-text-primary)]">
                             {selectedReminder.title}
                           </p>
-                          <p className="mt-1 text-[13px] text-gray-600">
+                          <p className="mt-1 text-[13px] text-[var(--ledger-text-secondary)]">
                             {new Date(selectedReminder.remind_at).toLocaleString([], {
                               weekday: 'short',
                               month: 'short',
@@ -4461,15 +4490,15 @@ export const CalendarWindow = () => {
                               minute: '2-digit',
                             })}
                           </p>
-                          <p className="mt-1 text-[13px] text-gray-700">Reminder context</p>
+                          <p className="mt-1 text-[13px] text-[var(--ledger-text-primary)]">Reminder context</p>
                           {showWorkspaceNames && selectedReminder.workspace_name && (
-                            <p className="mt-1 text-[12px] text-gray-500">
+                            <p className="mt-1 text-[12px] text-[var(--ledger-text-muted)]">
                               Workspace · {selectedReminder.workspace_name}
                             </p>
                           )}
                           <div className="mt-3 space-y-2 text-[13px]">
                             <div className="flex items-center justify-between gap-3">
-                              <span className="text-gray-500">Project</span>
+                              <span className="text-[var(--ledger-text-muted)]">Project</span>
                               {selectedReminderProject ? (
                                 <button
                                   type="button"
@@ -4478,7 +4507,7 @@ export const CalendarWindow = () => {
                                       focusProjectId: selectedReminderProject.id,
                                     })
                                   }
-                                  className="truncate font-medium text-gray-700 hover:text-[#FF5F40]"
+                                  className="truncate font-medium text-[var(--ledger-text-secondary)] transition hover:text-[var(--ledger-accent)]"
                                 >
                                   {selectedReminderProject.name} →
                                 </button>
@@ -4486,14 +4515,14 @@ export const CalendarWindow = () => {
                                 <button
                                   type="button"
                                   onClick={() => void openLinkProjectModal()}
-                                  className="font-medium text-gray-500 hover:text-[#FF5F40]"
+                                  className="font-medium text-[var(--ledger-text-muted)] transition hover:text-[var(--ledger-accent)]"
                                 >
                                   + Link project
                                 </button>
                               )}
                             </div>
                             <div className="flex items-center justify-between gap-3">
-                              <span className="text-gray-500">Linked note</span>
+                              <span className="text-[var(--ledger-text-muted)]">Linked note</span>
                               {selectedReminderNote ? (
                                 <button
                                   type="button"
@@ -4502,7 +4531,7 @@ export const CalendarWindow = () => {
                                       focusNoteId: selectedReminderNote.id,
                                     })
                                   }
-                                  className="truncate font-medium text-gray-700 hover:text-[#FF5F40]"
+                                  className="truncate font-medium text-[var(--ledger-text-secondary)] transition hover:text-[var(--ledger-accent)]"
                                 >
                                   {selectedReminderNote.title} →
                                 </button>
@@ -4510,7 +4539,7 @@ export const CalendarWindow = () => {
                                 <button
                                   type="button"
                                   onClick={() => void openLinkNoteModal()}
-                                  className="font-medium text-gray-500 hover:text-[#FF5F40]"
+                                  className="font-medium text-[var(--ledger-text-muted)] transition hover:text-[var(--ledger-accent)]"
                                 >
                                   + Link note
                                 </button>
@@ -4522,22 +4551,22 @@ export const CalendarWindow = () => {
                       <div className="mt-1">
                         <button
                           onClick={() => openReminderEditor(selectedReminder)}
-                          className="w-full text-left text-[13px] font-medium text-gray-700 hover:text-[#FF5F40]"
+                          className="w-full text-left text-[13px] font-medium text-[var(--ledger-text-secondary)] transition hover:text-[var(--ledger-accent)]"
                         >
                           Open reminder
                         </button>
                       </div>
                     </div>
                   ) : (
-                    <p className="text-[14px] text-gray-500">
+                    <p className="text-[14px] text-[var(--ledger-text-muted)]">
                       Select an event or reminder to view context.
                     </p>
                   )}
                 </div>
 
                 {selectedEventPreview && calendarPreferences.eventNotesBehavior !== 'disabled' && (
-                  <div className="space-y-2 border-t border-[#E8DDD4] pt-6">
-                    <p className="text-xs font-medium text-gray-500">Event notes</p>
+                  <div className="space-y-2 border-t border-[color:var(--ledger-border-subtle)] pt-6">
+                    <p className="text-xs font-medium text-[var(--ledger-text-muted)]">Event notes</p>
                     <textarea
                       value={selectedEventNoteDraft}
                       onChange={(e) => {
@@ -4549,14 +4578,14 @@ export const CalendarWindow = () => {
                       }}
                       rows={2}
                       placeholder="Add notes for this event..."
-                      className="w-full rounded-lg border border-[#E2D4C4] bg-[#FFF8F2] px-3 py-2 text-[13px] text-gray-800 placeholder:text-gray-400 outline-none focus:border-gray-300"
+                      className="w-full rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3 py-2 text-[13px] text-[var(--ledger-text-primary)] outline-none placeholder:text-[var(--ledger-text-muted)] focus:border-[color:var(--ledger-border-strong)]"
                     />
                     <div className="flex items-center justify-between gap-2">
-                      <p className="text-[12px] text-gray-500">Saved to the event.</p>
+                      <p className="text-[12px] text-[var(--ledger-text-muted)]">Saved to the event.</p>
                       <button
                         type="button"
                         onClick={() => void saveSelectedEventNotes()}
-                        className="text-[12px] font-medium text-gray-600 hover:text-gray-900"
+                        className="text-[12px] font-medium text-[var(--ledger-text-secondary)] transition hover:text-[var(--ledger-text-primary)]"
                       >
                         Save notes
                       </button>
@@ -4565,9 +4594,9 @@ export const CalendarWindow = () => {
                 )}
 
                 {selectedEventPreview && calendarPreferences.followUpBehavior !== 'none' && (
-                  <div className="space-y-2 border-t border-[#E8DDD4] pt-6">
+                  <div className="space-y-2 border-t border-[color:var(--ledger-border-subtle)] pt-6">
                     <div className="flex items-center justify-between gap-3">
-                      <p className="text-xs font-medium text-gray-500">Follow-ups</p>
+                      <p className="text-xs font-medium text-[var(--ledger-text-muted)]">Follow-ups</p>
                       <button
                         type="button"
                         onClick={() =>
@@ -4581,7 +4610,7 @@ export const CalendarWindow = () => {
                             }|${calendarPreferences.linkedProjectFollowUps ?? 'project_and_today'}`,
                           })
                         }
-                        className="inline-flex items-center gap-0.5 text-[12px] font-medium text-gray-600 hover:text-[#FF5F40]"
+                        className="inline-flex items-center gap-0.5 text-[12px] font-medium text-[var(--ledger-text-secondary)] transition hover:text-[var(--ledger-accent)]"
                       >
                         <span>+ </span>
                         <span>
@@ -4601,29 +4630,29 @@ export const CalendarWindow = () => {
                                 focusTaskId: task.id,
                               })
                             }
-                            className="flex h-8 w-full items-center justify-between gap-2 rounded-md px-2 text-left text-[13px] hover:bg-[#FFF4EA]"
+                            className="flex h-8 w-full items-center justify-between gap-2 rounded-md px-2 text-left text-[13px] transition hover:bg-[var(--ledger-surface-hover)]"
                             title={task.title}
                           >
-                            <span className="min-w-0 truncate text-gray-800">{task.title}</span>
-                            <span className="shrink-0 text-[12px] text-gray-500">
+                            <span className="min-w-0 truncate text-[var(--ledger-text-primary)]">{task.title}</span>
+                            <span className="shrink-0 text-[12px] text-[var(--ledger-text-muted)]">
                               {task.status === 'done' ? 'Done' : 'Todo'}
                             </span>
                           </button>
                         ))}
                       </div>
                     ) : (
-                      <p className="text-[14px] text-gray-500">No follow-ups yet.</p>
+                      <p className="text-[14px] text-[var(--ledger-text-muted)]">No follow-ups yet.</p>
                     )}
                   </div>
                 )}
 
-                <div className="space-y-2 border-t border-[#E8DDD4] pt-6">
-                  <p className="text-xs font-medium text-gray-500">
+                <div className="space-y-2 border-t border-[color:var(--ledger-border-subtle)] pt-6">
+                  <p className="text-xs font-medium text-[var(--ledger-text-muted)]">
                     Agenda
                   </p>
                     <div className="space-y-1">
                       {selectedContextDayEvents.length === 0 ? (
-                        <p className="text-[14px] text-gray-500">No events for this day.</p>
+                        <p className="text-[14px] text-[var(--ledger-text-muted)]">No events for this day.</p>
                       ) : (
                         selectedContextDayEvents.map((event) => {
                           const isSelected = selectedEventPreview?.id === event.id;
@@ -4633,22 +4662,24 @@ export const CalendarWindow = () => {
                               key={event.id}
                               onClick={() => setSelectedEvent(event)}
                               className={`flex h-8 w-full items-center gap-2 rounded-md px-2 text-left transition ${
-                                isSelected ? 'bg-[#FFF4EA] ring-1 ring-[#E8DDD4]' : 'hover:bg-[#FFF4EA]'
+                                isSelected
+                                  ? 'bg-[var(--ledger-surface-hover)] ring-1 ring-[color:var(--ledger-border-subtle)]'
+                                  : 'hover:bg-[var(--ledger-surface-hover)]'
                               }`}
                             >
                               <span
                                 className="h-2 w-2 shrink-0 rounded-full"
                                 style={{ backgroundColor: isPastEvent(event) ? '#9CA3AF' : eventColor }}
                               />
-                              <p className="w-28 shrink-0 whitespace-nowrap text-[12px] font-medium text-gray-900">
+                              <p className="w-28 shrink-0 whitespace-nowrap text-[12px] font-medium text-[var(--ledger-text-primary)]">
                                 {formatEventTimeLabel(event)}
                               </p>
                               <div className="min-w-0 flex-1">
-                                <p className={`truncate text-[13px] ${isPastEvent(event) ? 'text-gray-500' : 'text-gray-700'}`}>
+                                <p className={`truncate text-[13px] ${isPastEvent(event) ? 'text-[var(--ledger-text-muted)]' : 'text-[var(--ledger-text-secondary)]'}`}>
                                   {event.title}
                                 </p>
                                 {showWorkspaceNames && event.workspace_name && (
-                                  <p className="mt-0.5 truncate text-[11px] text-gray-500">
+                                  <p className="mt-0.5 truncate text-[11px] text-[var(--ledger-text-muted)]">
                                     Workspace · {event.workspace_name}
                                   </p>
                                 )}
@@ -4664,10 +4695,10 @@ export const CalendarWindow = () => {
           </>
         )}
         {isRightPaneCollapsed && (
-          <div className="w-10 shrink-0 border-l border-[#E2D4C4] bg-[#FFF8F2] flex items-start justify-center pt-4">
+          <div className="flex w-10 shrink-0 items-start justify-center border-l border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] pt-4">
             <button
               onClick={() => setIsRightPaneCollapsed(false)}
-              className="h-7 w-7 rounded-lg border border-[#E2D4C4] bg-[#FFF8F2] text-gray-500 hover:bg-[#FFF4EA] flex items-center justify-center shadow-sm"
+              className="flex h-7 w-7 items-center justify-center rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)]"
               title="Show right panel"
             >
               <ChevronLeft size={13} strokeWidth={2.25} />

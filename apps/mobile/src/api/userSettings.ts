@@ -39,6 +39,7 @@ export type MobileNotificationOnboardingState = {
 export type MobileAppPreferences = {
   hapticsEnabled: boolean;
   reduceMotionEnabled: boolean;
+  themeMode: 'system' | 'light' | 'dark';
 };
 
 export const defaultMobileNotificationPreferences: MobileNotificationPreferences = {
@@ -62,6 +63,7 @@ export const defaultMobileSiriPreferences: MobileSiriPreferences = {
 export const defaultMobileAppPreferences: MobileAppPreferences = {
   hapticsEnabled: true,
   reduceMotionEnabled: false,
+  themeMode: 'system',
 };
 
 type MobileUserSettingsPatch = {
@@ -193,5 +195,9 @@ export function readMobileAppPreferences(settings: MobileUserSettings | null | u
       typeof mobilePreferences?.reduceMotionEnabled === 'boolean'
         ? mobilePreferences.reduceMotionEnabled
         : defaultMobileAppPreferences.reduceMotionEnabled,
+    themeMode:
+      mobilePreferences?.themeMode === 'light' || mobilePreferences?.themeMode === 'dark'
+        ? mobilePreferences.themeMode
+        : defaultMobileAppPreferences.themeMode,
   } satisfies MobileAppPreferences;
 }

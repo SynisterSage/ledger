@@ -102,6 +102,7 @@ function getActionsForItem(item: TodayActionSheetItem): SheetAction[] {
       ];
     case 'event':
       return [
+        { id: 'complete', label: 'Mark as done', primary: true },
         { id: 'add_note', label: 'Add note' },
         { id: 'create_follow_up', label: 'Create follow-up' },
         { id: 'reschedule', label: 'Reschedule' },

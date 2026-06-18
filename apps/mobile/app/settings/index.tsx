@@ -33,6 +33,7 @@ import {
   bootstrapAppPreferencesState,
   setHapticsEnabled,
   setReduceMotionEnabled,
+  setThemeMode,
   useAppPreferencesState,
 } from '@/store/appPreferencesStore';
 import { useAuthState } from '@/store/sessionStore';
@@ -71,6 +72,7 @@ export default function SettingsScreen() {
   const [sheetMode, setSheetMode] = useState<SettingsEditSheetMode | null>(null);
   const [workspaceSheetTarget, setWorkspaceSheetTarget] = useState<'default_capture' | 'today_scope' | 'default_siri' | null>(null);
   const [captureSheetTarget, setCaptureSheetTarget] = useState<'shared_items' | 'default_type' | null>(null);
+  const [themeSheetVisible, setThemeSheetVisible] = useState(false);
   const [siriShortcutsVisible, setSiriShortcutsVisible] = useState(false);
 
   const switchTrackColor = useMemo(
@@ -106,6 +108,9 @@ export default function SettingsScreen() {
   const captureTypeLabel = useMemo(() => {
     return formatCaptureTypeLabel(capturePrefs.defaultCaptureType);
   }, [capturePrefs.defaultCaptureType]);
+  const themeModeLabel = useMemo(() => {
+    return formatThemeModeLabel(appPreferences.themeMode);
+  }, [appPreferences.themeMode]);
 
   useEffect(() => {
     setSheetMode(null);
@@ -298,6 +303,16 @@ export default function SettingsScreen() {
 
   return (
     <View style={[styles.screen, { backgroundColor: theme.colors.background }]}>
+      <View
+        pointerEvents="none"
+        style={[
+          styles.statusBarCover,
+          {
+            height: insets.top + 12,
+            backgroundColor: theme.colors.background,
+          },
+        ]}
+      />
       <Animated.View
         pointerEvents="box-none"
         style={[
@@ -342,12 +357,14 @@ export default function SettingsScreen() {
         contentContainerStyle={[
           styles.scrollContent,
           {
-            paddingTop: MOBILE_PAGE_HEADER_SCROLL_SPACE,
+            paddingTop: MOBILE_PAGE_HEADER_SCROLL_SPACE - 12,
             paddingHorizontal: theme.spacing.screenX,
             paddingBottom: theme.spacing['3xl'] + 96,
             flexGrow: 1,
           },
         ]}
+        contentInsetAdjustmentBehavior="always"
+        automaticallyAdjustsScrollIndicatorInsets
         keyboardShouldPersistTaps="handled"
         onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], {
           useNativeDriver: true,
@@ -529,6 +546,12 @@ export default function SettingsScreen() {
 
           <Section title="App">
             <SettingsRow
+              title="Theme"
+              value={themeModeLabel}
+              chevron
+              onPress={() => setThemeSheetVisible(true)}
+            />
+            <SettingsRow
               title="Haptics"
               right={
                 <Switch
@@ -646,6 +669,22 @@ export default function SettingsScreen() {
         }
         onClose={() => setCaptureSheetTarget(null)}
       />
+
+      <SettingsChoiceSheet
+        visible={themeSheetVisible}
+        title="Theme"
+        subtitle="Choose how Ledger appears on this device."
+        selectedValue={appPreferences.themeMode}
+        options={[
+          { value: 'system', title: 'System', subtitle: 'Match your phone setting.' },
+          { value: 'light', title: 'Light' },
+          { value: 'dark', title: 'Dark' },
+        ]}
+        onSelect={(value) => {
+          setThemeMode(value as typeof appPreferences.themeMode);
+        }}
+        onClose={() => setThemeSheetVisible(false)}
+      />
     </View>
   );
 }
@@ -653,6 +692,13 @@ export default function SettingsScreen() {
 const styles = {
   screen: {
     flex: 1,
+  },
+  statusBarCover: {
+    position: 'absolute' as const,
+    left: 0,
+    right: 0,
+    top: 0,
+    zIndex: 6,
   },
   header: {
     position: 'absolute' as const,
@@ -703,4 +749,10 @@ function formatCaptureTypeLabel(captureType: string) {
   if (captureType === 'project-action') return 'Project action';
   if (!captureType) return 'Reminder';
   return captureType.charAt(0).toUpperCase() + captureType.slice(1);
+}
+
+function formatThemeModeLabel(themeMode: 'system' | 'light' | 'dark') {
+  if (themeMode === 'light') return 'Light';
+  if (themeMode === 'dark') return 'Dark';
+  return 'System';
 }

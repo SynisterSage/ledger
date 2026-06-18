@@ -123,10 +123,10 @@ const taskPriorityLabels: Record<string, string> = {
 };
 
 const taskPriorityTone: Record<string, string> = {
-  low: 'bg-[#E8DDD4] text-gray-700',
-  medium: 'bg-blue-50 text-blue-700',
-  high: 'bg-amber-50 text-amber-700',
-  urgent: 'bg-red-50 text-red-700',
+  low: 'bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)]',
+  medium: 'bg-[rgba(59,130,246,0.16)] text-[rgb(147,197,253)]',
+  high: 'bg-[rgba(245,158,11,0.16)] text-[rgb(251,191,36)]',
+  urgent: 'bg-[rgba(239,68,68,0.16)] text-[rgb(248,113,113)]',
 };
 
 const projectColorOptions = [
@@ -1342,7 +1342,7 @@ export const ProjectsWindow = () => {
 
   return (
     <div
-      className="relative h-screen overflow-hidden rounded-3xl border border-[#E2D4C4] bg-[#FFF9F4] flex flex-col text-gray-900 shadow-[0_24px_80px_rgba(15,23,42,0.08)]"
+      className="relative flex h-screen flex-col overflow-hidden rounded-3xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] text-[var(--ledger-text-primary)] shadow-none"
       style={{ scrollbarGutter: isLinkNoteModalOpen ? 'auto' : 'stable' }}
     >
       <CloseGuardModal
@@ -1431,7 +1431,7 @@ export const ProjectsWindow = () => {
       />
 
       {error && (
-        <div className="px-5 py-2 text-xs text-red-700 bg-red-50 border-b border-red-100">
+        <div className="border-b border-[color:rgba(217,45,32,0.18)] bg-[color:rgba(217,45,32,0.08)] px-5 py-2 text-xs text-[var(--ledger-danger)]">
           {error}
         </div>
       )}
@@ -1440,30 +1440,30 @@ export const ProjectsWindow = () => {
         {!isLeftPaneCollapsed ? (
           <>
             <aside
-              className="border-r border-[#E2D4C4] bg-[#FFF6EE] flex flex-col overflow-hidden shrink-0"
+              className="flex shrink-0 flex-col overflow-hidden border-r border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)]"
               style={{ width: `${leftPaneWidth}px` }}
             >
-              <div className={`${isCompactLayout ? 'p-3' : 'p-4'} border-b border-[#E2D4C4] bg-[#FFF6EE]`}>
+              <div className={`${isCompactLayout ? 'p-3' : 'p-4'} border-b border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)]`}>
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-2 min-w-0">
                     <div>
-                      <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">
+                      <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--ledger-text-muted)]">
                         Library
                       </p>
-                      <h2 className="text-sm font-semibold text-gray-900">
+                      <h2 className="text-sm font-semibold text-[var(--ledger-text-primary)]">
                         {projects.length} projects
                       </h2>
                     </div>
                     <button
                       onClick={() => setIsLeftPaneCollapsed(true)}
-                      className="h-7 w-7 rounded-lg border border-[#E2D4C4] bg-[#FFF8F2] text-gray-500 hover:bg-[#FFF1E3] flex items-center justify-center shadow-sm"
+                      className="flex h-7 w-7 items-center justify-center rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)]"
                       title="Hide left panel"
                       aria-label="Hide left panel"
                     >
                       <ChevronLeft size={13} strokeWidth={2.25} className="-translate-x-px" />
                     </button>
                   </div>
-                  <span className="text-[10px] text-gray-500">
+                  <span className="text-[10px] text-[var(--ledger-text-muted)]">
                     {isLoadingProjects ? 'Syncing...' : 'Live'}
                   </span>
                 </div>
@@ -1471,13 +1471,13 @@ export const ProjectsWindow = () => {
                 <div className="relative">
                   <Search
                     size={16}
-                    className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
+                    className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--ledger-text-muted)]"
                   />
                   <input
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
                     placeholder="Search projects"
-                    className="w-full h-9 pl-9 pr-3 text-sm border border-[#E2D4C4] rounded-xl focus:outline-none focus:border-gray-300 bg-[#FFF8F2] text-gray-900 placeholder-gray-500"
+                    className="h-9 w-full rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] pl-9 pr-3 text-sm text-[var(--ledger-text-primary)] outline-none transition placeholder:text-[var(--ledger-placeholder)] focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60"
                   />
                 </div>
 
@@ -1490,8 +1490,8 @@ export const ProjectsWindow = () => {
                           onClick={() => setStatusFilter(filter)}
                           className={`rounded-full border px-2.5 py-1 text-[10px] font-medium whitespace-nowrap transition ${
                             statusFilter === filter
-                              ? 'border-[#E2D4C4] bg-[#FFF1E3] text-gray-900'
-                              : 'border-[#E2D4C4] bg-[#FFF8F2] text-gray-600 hover:border-[#CBB6A3] hover:bg-[#FFF1E3] hover:text-gray-900'
+                              ? 'border-[color:var(--ledger-border-strong)] bg-[var(--ledger-surface-hover)] text-[var(--ledger-text-primary)]'
+                              : 'border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)] hover:border-[color:var(--ledger-border-strong)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]'
                           }`}
                         >
                           {filter === 'all'
@@ -1505,11 +1505,11 @@ export const ProjectsWindow = () => {
                       ))}
                     </div>
                   </div>
-                  <div className="pointer-events-none absolute right-0 top-0 h-7 w-7 bg-linear-to-l from-[#FFF6EE] to-transparent" />
+                  <div className="pointer-events-none absolute right-0 top-0 h-7 w-7 bg-linear-to-l from-[var(--ledger-surface-muted)] to-transparent" />
                 </div>
 
                 {isCreatingProject && (
-                  <div className="mt-3 space-y-2 rounded-2xl border border-[#E2D4C4] bg-[#FFF8F2] p-3">
+                  <div className="mt-3 space-y-2 rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-3">
                     <input
                       ref={createProjectInputRef}
                       value={newProjectName}
@@ -1521,12 +1521,12 @@ export const ProjectsWindow = () => {
                         }
                       }}
                       placeholder="Project name"
-                        className="w-full h-9 px-3 text-sm border border-[#E2D4C4] rounded-lg focus:outline-none focus:border-gray-300 bg-[#FFF8F2] text-gray-900 placeholder-gray-500"
+                      className="h-9 w-full rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 text-sm text-[var(--ledger-text-primary)] outline-none transition placeholder:text-[var(--ledger-placeholder)] focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60"
                     />
                     <button
                       onClick={() => void createProject()}
                       disabled={!newProjectName.trim() || isCreatingProjectNow}
-                      className="w-full h-9 rounded-lg bg-[#FF5F40] text-white text-sm font-medium hover:bg-[#f4583a] disabled:opacity-60"
+                      className="h-9 w-full rounded-lg bg-[var(--ledger-accent)] text-sm font-medium text-white transition hover:bg-[var(--ledger-accent-hover)] disabled:opacity-60"
                     >
                       {isCreatingProjectNow ? 'Creating...' : 'Create project'}
                     </button>
@@ -1544,9 +1544,9 @@ export const ProjectsWindow = () => {
                     ))}
                   </div>
                 ) : visibleProjects.length === 0 ? (
-                  <div className="rounded-2xl border border-dashed border-[#E2D4C4] bg-[#FFF8F2] p-5">
-                    <p className="text-sm font-medium text-gray-800">No matching projects.</p>
-                    <p className="mt-1 text-sm text-gray-500">
+                  <div className="rounded-2xl border border-dashed border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-5">
+                    <p className="text-sm font-medium text-[var(--ledger-text-primary)]">No matching projects.</p>
+                    <p className="mt-1 text-sm text-[var(--ledger-text-muted)]">
                       Create one for internships, classes, or job applications.
                     </p>
                   </div>
@@ -1582,8 +1582,8 @@ export const ProjectsWindow = () => {
                         }}
                         className={`w-full rounded-xl border px-2.5 py-2.5 text-left transition ${
                           active
-                          ? 'border-[#E2D4C4] bg-[#FFF1E3]'
-                            : 'border-[#E2D4C4] bg-[#FFF8F2] hover:bg-[#FFF1E3] hover:border-[#CBB6A3]'
+                            ? 'border-[color:var(--ledger-border-strong)] bg-[var(--ledger-surface-hover)]'
+                            : 'border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] hover:border-[color:var(--ledger-border-strong)] hover:bg-[var(--ledger-surface-hover)]'
                         }`}
                         title={project.name}
                       >
@@ -1597,16 +1597,16 @@ export const ProjectsWindow = () => {
                                   : project.color || '#FF5F40',
                               }}
                             />
-                            <p className="truncate text-[13px] font-semibold text-gray-900">
+                            <p className="truncate text-[13px] font-semibold text-[var(--ledger-text-primary)]">
                               {project.name}
                             </p>
                           </div>
-                          <p className="mt-1 text-[11px] text-gray-600">
+                          <p className="mt-1 text-[11px] text-[var(--ledger-text-secondary)]">
                             {statusLabel} · {displayCompleteness}%
                           </p>
-                          <p className="mt-1 text-[11px] text-gray-500">{dueLabel}</p>
+                          <p className="mt-1 text-[11px] text-[var(--ledger-text-muted)]">{dueLabel}</p>
                         </div>
-                        <div className="mt-1.5 h-1 rounded-full bg-[#E8DDD4]/85 overflow-hidden">
+                        <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-[var(--ledger-border-subtle)]/80">
                           <div
                             className="h-full rounded-full"
                             style={{
@@ -1623,7 +1623,7 @@ export const ProjectsWindow = () => {
             </aside>
 
             <div
-              className="w-1.5 cursor-col-resize bg-[#E8DDD4] hover:bg-[#D8C6B6] transition touch-none"
+              className="w-1.5 cursor-col-resize bg-[var(--ledger-border-subtle)] transition hover:bg-[var(--ledger-border-strong)] touch-none"
               onMouseDown={(e) => {
                 e.preventDefault();
                 setIsResizingLeftPane(true);
@@ -1631,10 +1631,10 @@ export const ProjectsWindow = () => {
             />
           </>
         ) : (
-          <div className="w-10 shrink-0 border-r border-[#E2D4C4] bg-[#FFF6EE] flex items-start justify-center pt-4">
+          <div className="flex w-10 shrink-0 items-start justify-center border-r border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] pt-4">
             <button
               onClick={() => setIsLeftPaneCollapsed(false)}
-              className="h-7 w-7 rounded-lg border border-[#E2D4C4] bg-[#FFF8F2] text-gray-500 hover:bg-[#FFF1E3] flex items-center justify-center shadow-sm"
+              className="flex h-7 w-7 items-center justify-center rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)]"
               title="Show left panel"
               aria-label="Show left panel"
             >
@@ -1643,11 +1643,11 @@ export const ProjectsWindow = () => {
           </div>
         )}
 
-        <main className="flex-1 overflow-hidden bg-[#FFF8F1]">
+        <main className="flex-1 overflow-hidden bg-[var(--ledger-background)]">
           <div className={`h-full overflow-auto ${isCompactLayout ? 'p-4' : 'p-5'}`}>
             {selectedProject ? (
               <div className="mx-auto max-w-4xl space-y-4">
-                <section className="rounded-3xl border border-[#E2D4C4] bg-[#FFF8F2] p-6 shadow-sm">
+                <section className="rounded-3xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-6 shadow-none">
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="min-w-0">
                       <div className="flex items-center gap-2 min-w-0">
@@ -1655,11 +1655,11 @@ export const ProjectsWindow = () => {
                           className="h-2 w-2 rounded-full shrink-0"
                           style={{ backgroundColor: projectDraft.color || '#FF5F40' }}
                         />
-                        <h2 className="truncate text-3xl font-semibold tracking-tight text-gray-900">
+                        <h2 className="truncate text-3xl font-semibold tracking-tight text-[var(--ledger-text-primary)]">
                           {projectDraft.name}
                         </h2>
                       </div>
-                      <p className="mt-1 text-xs text-gray-500">
+                      <p className="mt-1 text-xs text-[var(--ledger-text-muted)]">
                         {isSavingProject
                           ? 'Saving…'
                           : isDirtyRef.current
@@ -1676,7 +1676,7 @@ export const ProjectsWindow = () => {
                             e.target.value as ProjectSemanticStatus
                           )
                         }
-                        className="h-9 appearance-none rounded-xl border border-[#E2D4C4] bg-[#FFF8F2] py-0 pl-3 pr-8 text-sm font-medium text-gray-800 outline-none focus:border-gray-300"
+                        className="h-9 appearance-none rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] py-0 pl-3 pr-8 text-sm font-medium text-[var(--ledger-text-primary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60"
                       >
                         {(Object.keys(projectStatusLabels) as ProjectSemanticStatus[]).map(
                           (status) => (
@@ -1688,14 +1688,14 @@ export const ProjectsWindow = () => {
                       </select>
                       <ChevronDown
                         size={14}
-                        className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500"
+                        className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[var(--ledger-text-muted)]"
                       />
                     </div>
                   </div>
                   <div className="mt-5 space-y-2.5">
                     <div className="flex items-center justify-between">
-                      <span className="text-xs text-gray-500">Progress</span>
-                      <span className="text-sm font-semibold text-gray-900">
+                      <span className="text-xs text-[var(--ledger-text-muted)]">Progress</span>
+                      <span className="text-sm font-semibold text-[var(--ledger-text-primary)]">
                         {projectDraft.completeness}%
                       </span>
                     </div>
@@ -1732,7 +1732,7 @@ export const ProjectsWindow = () => {
                       }
                       className="ledger-range w-full"
                     />
-                    <p className="text-xs text-gray-500">
+                    <p className="text-xs text-[var(--ledger-text-muted)]">
                       {projectDraft.endDate
                         ? `Due ${formatShortDate(projectDraft.endDate)}`
                         : 'No due date'}{' '}
@@ -1741,35 +1741,35 @@ export const ProjectsWindow = () => {
                   </div>
                 </section>
 
-                <section className="rounded-3xl border border-[#E2D4C4] bg-[#FFF8F2] p-6 shadow-sm">
-                  <p className="text-xs font-medium text-gray-500">
+                <section className="rounded-3xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-6 shadow-none">
+                  <p className="text-xs font-medium text-[var(--ledger-text-muted)]">
                     Timeline
                   </p>
                   <div className="mt-3 grid gap-3 sm:grid-cols-3">
-                    <label className="text-xs text-gray-600">
+                    <label className="text-xs text-[var(--ledger-text-secondary)]">
                       <span className="mb-1 block">Start</span>
                       <input
                         type="date"
                         value={projectDraft.startDate}
                         onChange={(e) => updateProjectDraft({ startDate: e.target.value })}
-                        className="h-9 w-full rounded-lg border border-[#E2D4C4] bg-[#FFF8F2] px-2.5 text-sm text-gray-900 outline-none focus:border-gray-300"
+                        className="h-9 w-full rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2.5 text-sm text-[var(--ledger-text-primary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60"
                       />
                     </label>
-                    <label className="text-xs text-gray-600">
+                    <label className="text-xs text-[var(--ledger-text-secondary)]">
                       <span className="mb-1 block">Due</span>
                       <input
                         type="date"
                         value={projectDraft.endDate}
                         onChange={(e) => updateProjectDraft({ endDate: e.target.value })}
-                        className="h-9 w-full rounded-lg border border-[#E2D4C4] bg-[#FFF8F2] px-2.5 text-sm text-gray-900 outline-none focus:border-gray-300"
+                        className="h-9 w-full rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2.5 text-sm text-[var(--ledger-text-primary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60"
                       />
                     </label>
-                    <div className="text-xs text-gray-600">
+                    <div className="text-xs text-[var(--ledger-text-secondary)]">
                       <span className="mb-1 block">Duration</span>
-                      <div className="flex h-9 w-full items-center gap-1.5 rounded-lg border border-[#E2D4C4] bg-[#FFF8F2] px-1.5 text-sm text-gray-800">
+                      <div className="flex h-9 w-full items-center gap-1.5 rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-1.5 text-sm text-[var(--ledger-text-primary)]">
                         <button
                           type="button"
-                          className="h-6 w-6 rounded border border-[#E2D4C4] bg-[#FFF8F2] text-gray-700 hover:bg-[#FFF1E3] disabled:opacity-40"
+                          className="h-6 w-6 rounded border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] disabled:opacity-40"
                           onClick={() => {
                             if (!projectDurationDays) return;
                             setDurationDays(projectDurationDays - 1);
@@ -1794,11 +1794,11 @@ export const ProjectsWindow = () => {
                             placeholder="--"
                             className="w-12 bg-transparent text-center leading-none outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none disabled:opacity-60"
                           />
-                          <span className="self-center text-xs leading-none text-gray-600">days</span>
+                          <span className="self-center text-xs leading-none text-[var(--ledger-text-secondary)]">days</span>
                         </div>
                         <button
                           type="button"
-                          className="ml-auto h-6 w-6 rounded border border-[#E2D4C4] bg-[#FFF8F2] text-gray-700 hover:bg-[#FFF1E3] disabled:opacity-40"
+                          className="ml-auto h-6 w-6 rounded border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] disabled:opacity-40"
                           onClick={() => setDurationDays((projectDurationDays ?? 0) + 1)}
                           disabled={!projectDraft.startDate}
                           aria-label="Increase duration"
@@ -1810,27 +1810,27 @@ export const ProjectsWindow = () => {
                   </div>
                 </section>
 
-                <section className="rounded-3xl border border-[#E2D4C4] bg-[#FFF8F2] p-6 shadow-sm">
-                  <p className="text-xs font-medium text-gray-500">
+                <section className="rounded-3xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-6 shadow-none">
+                  <p className="text-xs font-medium text-[var(--ledger-text-muted)]">
                     Objective
                   </p>
                   <textarea
                     value={projectDraft.description}
                     onChange={(e) => updateProjectDraft({ description: e.target.value })}
                     placeholder="Add a short objective for this project..."
-                    className="mt-3 h-24 w-full resize-none rounded-xl border border-[#E2D4C4] bg-[#FFF8F2] px-3 py-2 text-sm text-gray-800 outline-none focus:border-gray-300"
+                    className="mt-3 h-24 w-full resize-none rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 py-2 text-sm text-[var(--ledger-text-primary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60"
                   />
                 </section>
 
-                <section className="min-w-0 overflow-hidden rounded-3xl border border-[#E2D4C4] bg-[#FFF8F2] shadow-sm">
-                  <div className="border-b border-[#E2D4C4] px-6 py-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+                <section className="min-w-0 overflow-hidden rounded-3xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-none">
+                  <div className="flex flex-col gap-2 border-b border-[color:var(--ledger-border-subtle)] px-6 py-4 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
                     <div className="min-w-0">
-                      <p className="text-xs font-medium text-gray-500">Tasks</p>
-                      <h3 className="mt-1 text-xl font-semibold tracking-tight text-gray-900">
+                      <p className="text-xs font-medium text-[var(--ledger-text-muted)]">Tasks</p>
+                      <h3 className="mt-1 text-xl font-semibold tracking-tight text-[var(--ledger-text-primary)]">
                         Next actions
                       </h3>
                     </div>
-                    <div className="text-left sm:text-right text-xs text-gray-500 shrink-0">
+                    <div className="shrink-0 text-left text-xs text-[var(--ledger-text-muted)] sm:text-right">
                       <p>
                         {taskCounts.active} active · {taskCounts.completed} done
                       </p>
@@ -1840,14 +1840,14 @@ export const ProjectsWindow = () => {
                   <div className="min-w-0 p-6 space-y-4">
                     <button
                       onClick={() => setIsTaskComposerOpen((prev) => !prev)}
-                      className="inline-flex items-center gap-2 rounded-lg border border-[#E2D4C4] bg-[#FFF8F2] px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-[#FFF1E3]"
+                      className="inline-flex items-center gap-2 rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 py-1.5 text-sm font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
                     >
                       <Plus size={14} />
                       Add task
                     </button>
 
                     {isTaskComposerOpen && (
-                      <div className="space-y-2 rounded-xl border border-[#E2D4C4] bg-[#FFF8F2] p-3">
+                      <div className="space-y-2 rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] p-3">
                         <input
                           value={newTaskTitle}
                           onChange={(e) => setNewTaskTitle(e.target.value)}
@@ -1858,7 +1858,7 @@ export const ProjectsWindow = () => {
                             }
                           }}
                           placeholder="Add a next action"
-                          className="w-full rounded-lg border border-[#E2D4C4] bg-[#FFF8F2] px-3 py-2 text-sm text-gray-900 outline-none focus:border-gray-300"
+                          className="w-full rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3 py-2 text-sm text-[var(--ledger-text-primary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60"
                         />
                         <div
                           className={`grid gap-2 ${
@@ -1873,7 +1873,7 @@ export const ProjectsWindow = () => {
                               onChange={(e) =>
                                 setNewTaskPriority(e.target.value as typeof newTaskPriority)
                               }
-                              className={`w-full min-w-0 appearance-none rounded-lg border border-[#E2D4C4] bg-[#FFF8F2] text-sm text-gray-700 outline-none ${
+                              className={`w-full min-w-0 appearance-none rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] text-sm text-[var(--ledger-text-secondary)] outline-none transition ${
                                 isCompactLayout ? 'py-2 pl-3 pr-9' : 'py-2 pl-3 pr-10'
                               }`}
                             >
@@ -1885,19 +1885,19 @@ export const ProjectsWindow = () => {
                             </select>
                             <ChevronDown
                               size={isCompactLayout ? 12 : 14}
-                              className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-gray-500"
+                              className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[var(--ledger-text-muted)]"
                             />
                           </div>
                           <input
                             type="date"
                             value={newTaskDueDate}
                             onChange={(e) => setNewTaskDueDate(e.target.value)}
-                            className="w-full min-w-0 rounded-lg border border-[#E2D4C4] bg-[#FFF8F2] px-3 py-2 text-sm text-gray-700 outline-none"
+                            className="w-full min-w-0 rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3 py-2 text-sm text-[var(--ledger-text-secondary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60"
                           />
                           <button
                             onClick={() => void createTask()}
                             disabled={!newTaskTitle.trim() || isCreatingTask}
-                            className="w-full rounded-lg bg-gray-900 px-3 py-2 text-sm font-medium text-white transition hover:bg-gray-800 disabled:opacity-60"
+                            className="w-full rounded-lg bg-[var(--ledger-accent)] px-3 py-2 text-sm font-medium text-white transition hover:bg-[var(--ledger-accent-hover)] disabled:opacity-60"
                           >
                             {isCreatingTask ? 'Adding...' : 'Add'}
                           </button>
@@ -1906,7 +1906,7 @@ export const ProjectsWindow = () => {
                     )}
 
                     {taskError && (
-                      <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                      <div className="rounded-xl border border-[color:rgba(217,45,32,0.18)] bg-[color:rgba(217,45,32,0.08)] px-3 py-2 text-sm text-[var(--ledger-danger)]">
                         {taskError}
                       </div>
                     )}
@@ -1918,20 +1918,20 @@ export const ProjectsWindow = () => {
                         ))}
                       </div>
                     ) : selectedProjectTasks.length === 0 ? (
-                      <div className="rounded-xl border border-dashed border-[#E2D4C4] bg-[#FFF8F2] p-4">
-                        <p className="text-sm font-medium text-gray-800">No next actions yet.</p>
-                        <p className="mt-1 text-sm text-gray-500">
+                      <div className="rounded-xl border border-dashed border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] p-4">
+                        <p className="text-sm font-medium text-[var(--ledger-text-primary)]">No next actions yet.</p>
+                        <p className="mt-1 text-sm text-[var(--ledger-text-muted)]">
                           Add the first action to start execution.
                         </p>
                       </div>
                     ) : (
                       <div className="space-y-4">
                         <div className="space-y-1.5">
-                          <p className="text-xs font-medium text-gray-500">
+                          <p className="text-xs font-medium text-[var(--ledger-text-muted)]">
                             Active
                           </p>
                           {activeProjectTasks.length === 0 ? (
-                            <p className="text-sm text-gray-500">No active next actions.</p>
+                            <p className="text-sm text-[var(--ledger-text-muted)]">No active next actions.</p>
                           ) : (
                             activeProjectTasks.map((task) => {
                               const activeTask = selectedTaskId === task.id;
@@ -1953,24 +1953,24 @@ export const ProjectsWindow = () => {
                                   }}
                                   className={`w-full rounded-lg border px-3 py-2 text-left transition ${
                                     activeTask
-                                      ? 'border-[#E2D4C4] bg-[#FFF1E3]'
-                                      : 'border-[#E2D4C4] bg-[#FFF8F2] hover:bg-[#FFF1E3]'
+                                      ? 'border-[color:var(--ledger-border-strong)] bg-[var(--ledger-surface-hover)]'
+                                      : 'border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] hover:border-[color:var(--ledger-border-strong)] hover:bg-[var(--ledger-surface-hover)]'
                                   }`}
                                 >
                                   <div className="flex items-center gap-2">
-                                    <span className="flex h-4 w-4 items-center justify-center rounded-full border border-[#E2D4C4] bg-[#FFF8F2]" />
-                                    <p className="min-w-0 flex-1 truncate text-sm font-medium text-gray-900">
+                                    <span className="flex h-4 w-4 items-center justify-center rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)]" />
+                                    <p className="min-w-0 flex-1 truncate text-sm font-medium text-[var(--ledger-text-primary)]">
                                       {task.title}
                                     </p>
                                     {task.due_date && (
-                                      <span className="shrink-0 text-[11px] text-gray-500">
+                                      <span className="shrink-0 text-[11px] text-[var(--ledger-text-muted)]">
                                         Due {formatShortDate(task.due_date)}
                                       </span>
                                     )}
                                     <span
                                       className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium ${
                                         taskPriorityTone[String(task.priority)] ??
-                                        'bg-[#E8DDD4] text-gray-700'
+                                        'bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)]'
                                       }`}
                                     >
                                       {taskPriorityLabels[String(task.priority)] ?? 'Medium'}
@@ -1984,7 +1984,7 @@ export const ProjectsWindow = () => {
 
                         {completedProjectTasks.length > 0 && (
                           <div className="space-y-1.5">
-                            <p className="text-xs font-medium text-gray-500">
+                            <p className="text-xs font-medium text-[var(--ledger-text-muted)]">
                               Completed
                             </p>
                             {completedProjectTasks.map((task) => {
@@ -2007,18 +2007,18 @@ export const ProjectsWindow = () => {
                                   }}
                                   className={`w-full rounded-lg border px-3 py-2 text-left transition ${
                                     activeTask
-                                      ? 'border-[#E2D4C4] bg-[#FFF1E3]'
-                                      : 'border-[#E2D4C4] bg-[#FFF8F2] hover:bg-[#FFF1E3]'
+                                      ? 'border-[color:var(--ledger-border-strong)] bg-[var(--ledger-surface-hover)]'
+                                      : 'border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] hover:border-[color:var(--ledger-border-strong)] hover:bg-[var(--ledger-surface-hover)]'
                                   }`}
                                 >
                                   <div className="flex items-center gap-2">
-                                    <span className="flex h-4 w-4 items-center justify-center rounded-full border border-green-600 bg-green-600">
+                                    <span className="flex h-4 w-4 items-center justify-center rounded-full border border-[color:rgba(50,213,131,0.35)] bg-[color:rgba(50,213,131,0.18)]">
                                       <CheckCircle2 size={10} className="text-white" />
                                     </span>
-                                    <p className="min-w-0 flex-1 truncate text-sm text-gray-500 line-through">
+                                    <p className="min-w-0 flex-1 truncate text-sm text-[var(--ledger-text-muted)] line-through">
                                       {task.title}
                                     </p>
-                                    <span className="shrink-0 text-[11px] text-gray-500">
+                                    <span className="shrink-0 text-[11px] text-[var(--ledger-text-muted)]">
                                       {formatShortDate(task.updated_at)}
                                     </span>
                                   </div>
@@ -2032,14 +2032,14 @@ export const ProjectsWindow = () => {
                   </div>
                 </section>
 
-                <section className="rounded-3xl border border-[#E2D4C4] bg-[#FFF8F2] p-6 shadow-sm">
+                <section className="rounded-3xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-6 shadow-none">
                   <div className="flex items-center justify-between gap-3">
-                    <p className="text-xs font-medium text-gray-500">
+                    <p className="text-xs font-medium text-[var(--ledger-text-muted)]">
                       Linked notes
                     </p>
                     <button
                       type="button"
-                      className="inline-flex items-center gap-1 rounded-lg border border-[#E2D4C4] bg-[#FFF8F2] px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-[#FFF1E3] active:bg-[#FFF0EA]"
+                      className="inline-flex items-center gap-1 rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2.5 py-1 text-xs font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] active:bg-[var(--ledger-surface-hover)]"
                       onClick={() => {
                         void openLinkNoteModal();
                       }}
@@ -2049,9 +2049,9 @@ export const ProjectsWindow = () => {
                     </button>
                   </div>
                   {isLoadingLinkedNotes ? (
-                    <p className="mt-3 text-sm text-gray-500">Loading linked notes…</p>
+                    <p className="mt-3 text-sm text-[var(--ledger-text-muted)]">Loading linked notes…</p>
                   ) : linkedNotes.length === 0 ? (
-                    <p className="mt-3 text-sm text-gray-500">No notes linked yet.</p>
+                    <p className="mt-3 text-sm text-[var(--ledger-text-muted)]">No notes linked yet.</p>
                   ) : (
                     <div className="mt-3 space-y-2">
                       {linkedNotes.map((link) => (
@@ -2067,21 +2067,21 @@ export const ProjectsWindow = () => {
                             });
                           }}
                           onDoubleClick={() => openLinkedNoteInNotesModule(link.note_id)}
-                          className="rounded-lg border border-[#E2D4C4] bg-[#FFF8F2] px-3 py-2 transition hover:bg-[#FFF1E3]"
+                          className="rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 py-2 transition hover:bg-[var(--ledger-surface-hover)]"
                         >
                           <div className="flex items-start justify-between gap-2">
                             <div className="min-w-0">
-                              <p className="truncate text-sm font-medium text-gray-900">
+                              <p className="truncate text-sm font-medium text-[var(--ledger-text-primary)]">
                                 {link.note.title}
                               </p>
-                              <p className="mt-0.5 truncate text-xs text-gray-500">
+                              <p className="mt-0.5 truncate text-xs text-[var(--ledger-text-muted)]">
                                 {link.note.preview || 'No content'}
                               </p>
                             </div>
                             <button
                               type="button"
                               onClick={() => void unlinkNoteFromProject(link.note_id)}
-                              className="shrink-0 text-xs font-medium text-gray-500 hover:text-red-600"
+                              className="shrink-0 text-xs font-medium text-[var(--ledger-text-muted)] transition hover:text-[var(--ledger-danger)]"
                             >
                               Remove
                             </button>
@@ -2094,20 +2094,20 @@ export const ProjectsWindow = () => {
               </div>
             ) : (
               <div className="mx-auto flex h-full max-w-3xl items-center justify-center">
-                <div className="rounded-3xl border border-dashed border-[#E2D4C4] bg-[#FFF8F2] px-8 py-10 text-center shadow-sm">
-                  <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl border border-[#E2D4C4] bg-[#FFF3E7]">
-                    <Folder size={18} className="text-gray-700" />
+                <div className="rounded-3xl border border-dashed border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-8 py-10 text-center shadow-none">
+                  <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-hover)]">
+                    <Folder size={18} className="text-[var(--ledger-text-secondary)]" />
                   </div>
-                  <h3 className="mt-4 text-2xl font-semibold tracking-tight text-gray-900">
+                  <h3 className="mt-4 text-2xl font-semibold tracking-tight text-[var(--ledger-text-primary)]">
                     Start a project
                   </h3>
-                  <p className="mt-2 text-sm leading-6 text-gray-600">
+                  <p className="mt-2 text-sm leading-6 text-[var(--ledger-text-secondary)]">
                     Projects keep internships, applications, classes, and personal goals organized
                     around a clear next step.
                   </p>
                   <button
                     onClick={() => setIsCreatingProject(true)}
-                    className="mt-5 inline-flex items-center gap-2 rounded-2xl bg-gray-900 px-4 py-3 text-sm font-medium text-white transition hover:bg-gray-800"
+                    className="mt-5 inline-flex items-center gap-2 rounded-2xl bg-[var(--ledger-accent)] px-4 py-3 text-sm font-medium text-white transition hover:bg-[var(--ledger-accent-hover)]"
                   >
                     <Plus size={16} />
                     New project
@@ -2121,7 +2121,7 @@ export const ProjectsWindow = () => {
         {!isRightPaneCollapsed ? (
           <>
             <div
-              className="w-1.5 cursor-col-resize bg-[#E8DDD4] hover:bg-[#D8C6B6] transition touch-none"
+              className="w-1.5 cursor-col-resize bg-[var(--ledger-border-subtle)] transition hover:bg-[var(--ledger-border-strong)] touch-none"
               onMouseDown={(e) => {
                 e.preventDefault();
                 setIsResizingRightPane(true);
@@ -2129,19 +2129,19 @@ export const ProjectsWindow = () => {
             />
 
             <aside
-              className="flex shrink-0 flex-col overflow-hidden border-l border-[#E8DDD4] bg-[#FFF8F1]"
+              className="flex shrink-0 flex-col overflow-hidden border-l border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)]"
               style={{ width: `${rightPaneWidth}px` }}
             >
               <div className="flex-1 overflow-auto p-4 space-y-5">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0 flex-1">
-                    <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--ledger-text-muted)]">
                       Inspector
                     </p>
-                    <p className="mt-1 text-sm font-semibold text-gray-900 truncate">
+                    <p className="mt-1 truncate text-sm font-semibold text-[var(--ledger-text-primary)]">
                       {selectedProject ? 'Project context' : 'No project selected'}
                     </p>
-                    <p className="mt-1 text-xs text-gray-500 truncate">
+                    <p className="mt-1 truncate text-xs text-[var(--ledger-text-muted)]">
                       {selectedProject ? projectDraft.name : 'Click a project to view details'}
                     </p>
                   </div>
@@ -2149,7 +2149,7 @@ export const ProjectsWindow = () => {
                     <button
                       type="button"
                       onClick={() => setIsRightPaneCollapsed(true)}
-                      className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-[#E8DDD4] bg-[#FFF8F2] text-gray-600 hover:bg-[#FFF1E3]"
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
                       aria-label="Hide right panel"
                       title="Hide right panel"
                     >
@@ -2160,15 +2160,15 @@ export const ProjectsWindow = () => {
                         <button
                           type="button"
                           onClick={() => setIsContextMenuOpen((current) => !current)}
-                          className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-[#E8DDD4] bg-[#FFF8F2] text-gray-600 hover:bg-[#FFF1E3]"
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
                           aria-label="Project context actions"
                         >
                           <MoreHorizontal size={14} />
                         </button>
                         {isContextMenuOpen && (
-                          <div className="absolute right-0 top-9 z-50 min-w-44 rounded-lg border border-[#E8DDD4] bg-[#FFF8F2] py-1 shadow-lg">
+                          <div className="absolute right-0 top-9 z-50 min-w-44 rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] py-1 shadow-[var(--ledger-shadow)]">
                             <button
-                              className="w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-[#FFF1E3]"
+                              className="w-full px-3 py-2 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
                               onClick={() => {
                                 setIsContextMenuOpen(false);
                               }}
@@ -2176,7 +2176,7 @@ export const ProjectsWindow = () => {
                               Edit project notes
                             </button>
                             <button
-                              className="w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-[#FFF1E3]"
+                              className="w-full px-3 py-2 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
                               onClick={() => {
                                 setIsContextMenuOpen(false);
                                 void openLinkNoteModal();
@@ -2185,7 +2185,7 @@ export const ProjectsWindow = () => {
                               Link note
                             </button>
                             <button
-                              className="w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-[#FFF1E3]"
+                              className="w-full px-3 py-2 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
                               onClick={() => {
                                 setIsContextMenuOpen(false);
                               }}
@@ -2193,7 +2193,7 @@ export const ProjectsWindow = () => {
                               Copy project link
                             </button>
                             <button
-                              className="w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-[#FFF1E3]"
+                              className="w-full px-3 py-2 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
                               onClick={() => {
                                 setIsContextMenuOpen(false);
                                 if (!selectedProject) return;
@@ -2202,9 +2202,9 @@ export const ProjectsWindow = () => {
                             >
                               Archive project
                             </button>
-                            <div className="my-1 h-px bg-[#E8DDD4]" />
+                            <div className="my-1 h-px bg-[var(--ledger-border-subtle)]" />
                             <button
-                              className="w-full px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50"
+                              className="w-full px-3 py-2 text-left text-sm text-[var(--ledger-danger)] transition hover:bg-[color:rgba(217,45,32,0.08)]"
                               onClick={() => {
                                 setIsContextMenuOpen(false);
                                 if (!selectedProject) return;
@@ -2221,30 +2221,30 @@ export const ProjectsWindow = () => {
                 </div>
 
                 {!selectedProject ? (
-                  <p className="text-sm text-gray-500">
+                  <p className="text-sm text-[var(--ledger-text-muted)]">
                     Select a project to view notes, details, and workspace activity.
                   </p>
                 ) : (
                   <>
                     <section className="space-y-2">
-                      <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">
+                      <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--ledger-text-muted)]">
                         Project notes
                       </p>
-                      <p className="text-sm text-gray-500 leading-6">
+                      <p className="text-sm leading-6 text-[var(--ledger-text-secondary)]">
                         {projectDraft.description?.trim()
                           ? projectDraft.description.trim()
                           : 'Add project context, decisions, links, or reminders.'}
                       </p>
                     </section>
 
-                    <section className="space-y-2 border-t border-[#E8DDD4] pt-4">
+                    <section className="space-y-2 border-t border-[color:var(--ledger-border-subtle)] pt-4">
                       <div className="flex items-center justify-between gap-3">
-                        <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">
+                        <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--ledger-text-muted)]">
                           Linked notes
                         </p>
                         <button
                           type="button"
-                          className="text-xs font-medium text-[#FF5F40] hover:text-[#EA5336]"
+                          className="text-xs font-medium text-[var(--ledger-accent)] transition hover:text-[var(--ledger-accent-hover)]"
                           onClick={() => {
                             void openLinkNoteModal();
                           }}
@@ -2253,9 +2253,9 @@ export const ProjectsWindow = () => {
                         </button>
                       </div>
                       {isLoadingLinkedNotes ? (
-                        <p className="text-sm text-gray-500">Loading linked notes…</p>
+                        <p className="text-sm text-[var(--ledger-text-muted)]">Loading linked notes…</p>
                       ) : linkedNotes.length === 0 ? (
-                        <p className="text-sm text-gray-500">No notes linked yet.</p>
+                        <p className="text-sm text-[var(--ledger-text-muted)]">No notes linked yet.</p>
                       ) : (
                         <div className="space-y-1">
                           {linkedNotes.slice(0, 6).map((link) => (
@@ -2271,20 +2271,20 @@ export const ProjectsWindow = () => {
                                 });
                               }}
                               onDoubleClick={() => openLinkedNoteInNotesModule(link.note_id)}
-                              className="flex items-start justify-between gap-2 rounded-md px-1 py-1 hover:bg-[#FFF1E3]"
+                              className="flex items-start justify-between gap-2 rounded-md px-1 py-1 transition hover:bg-[var(--ledger-surface-hover)]"
                             >
                               <div className="min-w-0">
-                                <p className="truncate text-sm font-medium text-gray-900">
+                                <p className="truncate text-sm font-medium text-[var(--ledger-text-primary)]">
                                   {link.note.title}
                                 </p>
-                                <p className="truncate text-xs text-gray-500">
+                                <p className="truncate text-xs text-[var(--ledger-text-muted)]">
                                   {link.note.preview || 'No content'}
                                 </p>
                               </div>
                               <button
                                 type="button"
                                 onClick={() => void unlinkNoteFromProject(link.note_id)}
-                                className="shrink-0 text-[11px] text-gray-500 hover:text-red-600"
+                                className="shrink-0 text-[11px] text-[var(--ledger-text-muted)] transition hover:text-[var(--ledger-danger)]"
                               >
                                 Remove
                               </button>
@@ -2294,100 +2294,100 @@ export const ProjectsWindow = () => {
                       )}
                     </section>
 
-                    <section className="space-y-2 border-t border-[#E8DDD4] pt-4">
-                      <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">
+                    <section className="space-y-2 border-t border-[color:var(--ledger-border-subtle)] pt-4">
+                      <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--ledger-text-muted)]">
                         Details
                       </p>
                       <div className="space-y-1.5 text-sm">
                         <div className="flex items-center justify-between gap-3">
-                          <span className="text-gray-500">Status</span>
-                          <span className="text-gray-900">
+                          <span className="text-[var(--ledger-text-muted)]">Status</span>
+                          <span className="text-[var(--ledger-text-primary)]">
                             {projectStatusLabels[projectDraft.status]}
                           </span>
                         </div>
                         <div className="flex items-center justify-between gap-3">
-                          <span className="text-gray-500">Progress</span>
-                          <span className="text-gray-900">{projectDraft.completeness}%</span>
+                          <span className="text-[var(--ledger-text-muted)]">Progress</span>
+                          <span className="text-[var(--ledger-text-primary)]">{projectDraft.completeness}%</span>
                         </div>
                         <div className="flex items-center justify-between gap-3">
-                          <span className="text-gray-500">Start</span>
-                          <span className="text-gray-900">
+                          <span className="text-[var(--ledger-text-muted)]">Start</span>
+                          <span className="text-[var(--ledger-text-primary)]">
                             {projectDraft.startDate
                               ? formatShortDate(projectDraft.startDate)
                               : 'Not set'}
                           </span>
                         </div>
                         <div className="flex items-center justify-between gap-3">
-                          <span className="text-gray-500">Due</span>
-                          <span className="text-gray-900">
+                          <span className="text-[var(--ledger-text-muted)]">Due</span>
+                          <span className="text-[var(--ledger-text-primary)]">
                             {projectDraft.endDate
                               ? formatShortDate(projectDraft.endDate)
                               : 'Not set'}
                           </span>
                         </div>
                         <div className="flex items-center justify-between gap-3">
-                          <span className="text-gray-500">Active</span>
-                          <span className="text-gray-900">{taskCounts.active}</span>
+                          <span className="text-[var(--ledger-text-muted)]">Active</span>
+                          <span className="text-[var(--ledger-text-primary)]">{taskCounts.active}</span>
                         </div>
                         <div className="flex items-center justify-between gap-3">
-                          <span className="text-gray-500">Done</span>
-                          <span className="text-gray-900">{taskCounts.completed}</span>
+                          <span className="text-[var(--ledger-text-muted)]">Done</span>
+                          <span className="text-[var(--ledger-text-primary)]">{taskCounts.completed}</span>
                         </div>
                         <div className="flex items-center justify-between gap-3">
-                          <span className="text-gray-500">Updated</span>
-                          <span className="text-gray-900">
+                          <span className="text-[var(--ledger-text-muted)]">Updated</span>
+                          <span className="text-[var(--ledger-text-primary)]">
                             {formatRelativeFromNow(selectedProject.updated_at)}
                           </span>
                         </div>
                       </div>
                     </section>
 
-                    <section className="space-y-2 border-t border-[#E8DDD4] pt-4">
-                      <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">
+                    <section className="space-y-2 border-t border-[color:var(--ledger-border-subtle)] pt-4">
+                      <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--ledger-text-muted)]">
                         Workspace
                       </p>
-                      <p className="text-sm font-medium text-gray-900 truncate">
+                      <p className="truncate text-sm font-medium text-[var(--ledger-text-primary)]">
                         {activeWorkspace?.name?.trim() || 'Current workspace'}
                       </p>
                       <div className="space-y-1.5 text-sm">
                         <div className="flex items-center justify-between gap-3">
-                          <span className="text-gray-500">Created by</span>
-                          <span className="text-gray-900">{creatorDisplayName}</span>
+                          <span className="text-[var(--ledger-text-muted)]">Created by</span>
+                          <span className="text-[var(--ledger-text-primary)]">{creatorDisplayName}</span>
                         </div>
                         <div className="flex items-center justify-between gap-3">
-                          <span className="text-gray-500">Last edited</span>
-                          <span className="max-w-[60%] truncate text-right text-gray-900">
+                          <span className="text-[var(--ledger-text-muted)]">Last edited</span>
+                          <span className="max-w-[60%] truncate text-right text-[var(--ledger-text-primary)]">
                             {creatorDisplayName} ·{' '}
                             {formatRelativeFromNow(selectedProject.updated_at)}
                           </span>
                         </div>
                         <div className="flex items-center justify-between gap-3">
-                          <span className="text-gray-500">Viewing</span>
-                          <span className="max-w-[60%] truncate text-right text-gray-900">
+                          <span className="text-[var(--ledger-text-muted)]">Viewing</span>
+                          <span className="max-w-[60%] truncate text-right text-[var(--ledger-text-primary)]">
                             {projectViewingSummary}
                           </span>
                         </div>
                       </div>
                     </section>
 
-                    <section className="space-y-2 border-t border-[#E8DDD4] pt-4">
-                      <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">
+                    <section className="space-y-2 border-t border-[color:var(--ledger-border-subtle)] pt-4">
+                      <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--ledger-text-muted)]">
                         Recent activity
                       </p>
                       {recentProjectActivity.length === 0 ? (
-                        <p className="text-sm text-gray-500">No recent activity.</p>
+                        <p className="text-sm text-[var(--ledger-text-muted)]">No recent activity.</p>
                       ) : (
                         <div className="space-y-1">
                           {recentProjectActivity.map((item) => (
                             <button
                               key={item.id}
                               type="button"
-                            className="flex w-full items-center justify-between gap-3 rounded-lg px-2 py-1.5 text-left text-sm hover:bg-[#FFF1E3] transition"
-                            >
-                              <span className="min-w-0 truncate font-medium text-gray-900">
+                            className="flex w-full items-center justify-between gap-3 rounded-lg px-2 py-1.5 text-left text-sm transition hover:bg-[var(--ledger-surface-hover)]"
+                          >
+                              <span className="min-w-0 truncate font-medium text-[var(--ledger-text-primary)]">
                                 {item.label}
                               </span>
-                              <span className="shrink-0 text-[11px] text-gray-500">
+                              <span className="shrink-0 text-[11px] text-[var(--ledger-text-muted)]">
                                 {formatShortDate(item.at)}
                               </span>
                             </button>
@@ -2401,10 +2401,10 @@ export const ProjectsWindow = () => {
             </aside>
           </>
         ) : (
-          <div className="w-10 shrink-0 border-l border-[#E8DDD4] bg-[#FFF8F1] flex items-start justify-center pt-4">
+          <div className="flex w-10 shrink-0 items-start justify-center border-l border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] pt-4">
             <button
               onClick={() => setIsRightPaneCollapsed(false)}
-              className="h-7 w-7 rounded-lg border border-[#E8DDD4] bg-[#FFF8F2] text-gray-500 hover:bg-[#FFF1E3] flex items-center justify-center shadow-sm"
+              className="flex h-7 w-7 items-center justify-center rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)]"
               title="Show right panel"
               aria-label="Show right panel"
             >
@@ -2421,15 +2421,15 @@ export const ProjectsWindow = () => {
             setTaskNotesTaskId(null);
             setTaskNotesDraft('');
           }}
-          classNameContainer="w-full max-w-xl overflow-hidden rounded-2xl border border-[#E2D4C4] bg-[#FFFDFB] shadow-xl"
+          classNameContainer="w-full max-w-xl overflow-hidden rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-[var(--ledger-shadow)]"
         >
           <div>
-            <div className="flex items-start justify-between gap-4 border-b border-[#E8DDD4] px-5 py-4">
+            <div className="flex items-start justify-between gap-4 border-b border-[color:var(--ledger-border-subtle)] px-5 py-4">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500">
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--ledger-text-muted)]">
                   Task notes
                 </p>
-                <p className="mt-1 truncate text-base font-semibold text-gray-900">
+                <p className="mt-1 truncate text-base font-semibold text-[var(--ledger-text-primary)]">
                   {taskNotesTask.title}
                 </p>
               </div>
@@ -2447,7 +2447,7 @@ export const ProjectsWindow = () => {
                 value={taskNotesDraft}
                 onChange={(e) => setTaskNotesDraft(e.target.value)}
                 placeholder="Capture details, links, blockers, or handoff notes for this task."
-                className="h-48 w-full resize-none rounded-xl border border-[#E2D4C4] bg-[#FFF8F2] px-3 py-2 text-sm text-gray-800 outline-none focus:border-gray-300"
+                className="h-48 w-full resize-none rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 py-2 text-sm text-[var(--ledger-text-primary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60"
               />
               <div className="mt-4 flex items-center justify-end gap-2">
                 <button
@@ -2455,14 +2455,14 @@ export const ProjectsWindow = () => {
                     setTaskNotesTaskId(null);
                     setTaskNotesDraft('');
                   }}
-                  className="rounded-xl border border-[#E2D4C4] bg-[#FFFDFB] px-3 py-2 text-sm font-medium text-gray-700 hover:bg-[#FFF8F2]"
+                  className="rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 py-2 text-sm font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={() => void saveTaskNotes()}
                   disabled={isSavingTaskNotes}
-                  className="rounded-xl bg-gray-900 px-3 py-2 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-60"
+                  className="rounded-xl bg-[var(--ledger-accent)] px-3 py-2 text-sm font-medium text-white transition hover:bg-[var(--ledger-accent-hover)] disabled:opacity-60"
                 >
                   {isSavingTaskNotes ? 'Saving...' : 'Save notes'}
                 </button>
@@ -2475,7 +2475,7 @@ export const ProjectsWindow = () => {
       {linkedNoteContextMenu && linkedNoteMenuPosition && (
         <div
           ref={linkedNoteContextRef}
-          className="fixed z-50 min-w-44 overflow-hidden rounded-xl border border-[#E2D4C4] bg-[#FFFDFB] py-1 shadow-xl"
+          className="fixed z-50 min-w-44 overflow-hidden rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] py-1 shadow-[var(--ledger-shadow)]"
           style={{ left: `${linkedNoteMenuPosition.x}px`, top: `${linkedNoteMenuPosition.y}px` }}
           role="menu"
           aria-label="Linked note actions"
@@ -2486,7 +2486,7 @@ export const ProjectsWindow = () => {
               openLinkedNoteInNotesModule(linkedNoteContextMenu.noteId);
               setLinkedNoteContextMenu(null);
             }}
-            className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-700 hover:bg-[#FFF8F2]"
+            className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
           >
             <FileText size={14} />
             Open in notes
@@ -2497,7 +2497,7 @@ export const ProjectsWindow = () => {
               void unlinkNoteFromProject(linkedNoteContextMenu.noteId);
               setLinkedNoteContextMenu(null);
             }}
-            className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50"
+            className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-danger)] transition hover:bg-[color:rgba(217,45,32,0.08)]"
           >
             <Trash2 size={14} />
             Unlink note
@@ -2511,12 +2511,12 @@ export const ProjectsWindow = () => {
         backdropBorderRadius="inherit"
         disablePortal
         manageWindowChrome={false}
-        classNameContainer="w-full max-w-[420px] overflow-hidden rounded-xl border border-[#E2D4C4] bg-[#FFF8F2] shadow-xl"
+        classNameContainer="w-full max-w-[420px] overflow-hidden rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-[var(--ledger-shadow)]"
       >
-        <div className="flex items-start justify-between gap-4 border-b border-[#E8DDD4] px-5 py-4">
+        <div className="flex items-start justify-between gap-4 border-b border-[color:var(--ledger-border-subtle)] px-5 py-4">
           <div>
-            <p className="text-sm font-semibold text-gray-900">Link note</p>
-            <p className="mt-1 text-sm text-gray-600">
+            <p className="text-sm font-semibold text-[var(--ledger-text-primary)]">Link note</p>
+            <p className="mt-1 text-sm text-[var(--ledger-text-secondary)]">
               Attach a workspace note to this project
             </p>
           </div>
@@ -2532,13 +2532,13 @@ export const ProjectsWindow = () => {
             value={linkNotesSearch}
             onChange={(e) => setLinkNotesSearch(e.target.value)}
             placeholder="Search notes"
-            className="w-full rounded-md border border-[#E2D4C4] bg-[#FFF8F2] px-3 py-2 text-sm text-gray-900 outline-none focus:border-gray-400"
+            className="w-full rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 py-2 text-sm text-[var(--ledger-text-primary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60"
           />
-          <div className="max-h-80 overflow-auto rounded-lg border border-[#E2D4C4] bg-[#FFF8F2]">
+          <div className="max-h-80 overflow-auto rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)]">
             {isLoadingLinkableNotes ? (
-              <p className="p-3 text-sm text-gray-500">Loading notes…</p>
+              <p className="p-3 text-sm text-[var(--ledger-text-muted)]">Loading notes…</p>
             ) : filteredLinkableNotes.length === 0 ? (
-              <p className="p-3 text-sm text-gray-500">No available notes to link.</p>
+              <p className="p-3 text-sm text-[var(--ledger-text-muted)]">No available notes to link.</p>
             ) : (
               filteredLinkableNotes.map((note) => (
                 <button
@@ -2546,10 +2546,10 @@ export const ProjectsWindow = () => {
                   type="button"
                   disabled={isLinkingNote}
                   onClick={() => void linkNoteToProject(note.id)}
-                  className="w-full border-b border-[#E8DDD4] px-3 py-2 text-left last:border-b-0 hover:bg-[#FFF1E3] disabled:opacity-50"
+                  className="w-full border-b border-[color:var(--ledger-border-subtle)] px-3 py-2 text-left transition last:border-b-0 hover:bg-[var(--ledger-surface-hover)] disabled:opacity-50"
                 >
-                  <p className="truncate text-sm font-medium text-gray-900">{note.title}</p>
-                  <p className="truncate text-xs text-gray-500">
+                  <p className="truncate text-sm font-medium text-[var(--ledger-text-primary)]">{note.title}</p>
+                  <p className="truncate text-xs text-[var(--ledger-text-muted)]">
                     {note.preview || 'No content'}
                   </p>
                 </button>
@@ -2557,11 +2557,11 @@ export const ProjectsWindow = () => {
             )}
           </div>
         </div>
-        <div className="flex items-center justify-end border-t border-[#E8DDD4] px-5 py-3">
+        <div className="flex items-center justify-end border-t border-[color:var(--ledger-border-subtle)] px-5 py-3">
           <button
             type="button"
             onClick={() => setIsLinkNoteModalOpen(false)}
-            className="rounded-lg border border-[#E2D4C4] bg-[#FFF8F2] px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-[#FFF1E3]"
+            className="rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 py-1.5 text-sm font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
           >
             Cancel
           </button>
@@ -2571,7 +2571,7 @@ export const ProjectsWindow = () => {
       {projectContextMenu && projectMenuPosition && (
         <div
           ref={projectContextRef}
-          className="fixed z-50 min-w-44 overflow-hidden rounded-xl border border-[#E2D4C4] bg-[#FFFDFB] py-1 shadow-xl"
+          className="fixed z-50 min-w-44 overflow-hidden rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] py-1 shadow-[var(--ledger-shadow)]"
           style={{ left: `${projectMenuPosition.x}px`, top: `${projectMenuPosition.y}px` }}
           onClick={(e) => e.stopPropagation()}
         >
@@ -2583,7 +2583,7 @@ export const ProjectsWindow = () => {
               }
               setProjectContextMenu(null);
             }}
-            className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-700 hover:bg-[#FFF8F2]"
+            className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
           >
             <Folder size={14} />
             Open
@@ -2593,7 +2593,7 @@ export const ProjectsWindow = () => {
               void updateProjectStatus(projectContextMenu.projectId, 'in_progress');
               setProjectContextMenu(null);
             }}
-            className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-700 hover:bg-[#FFF8F2]"
+            className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
           >
             <ChevronDown size={14} />
             Mark active
@@ -2603,7 +2603,7 @@ export const ProjectsWindow = () => {
               void updateProjectStatus(projectContextMenu.projectId, 'paused');
               setProjectContextMenu(null);
             }}
-            className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-700 hover:bg-[#FFF8F2]"
+            className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
           >
             <ChevronDown size={14} />
             Mark paused
@@ -2613,13 +2613,13 @@ export const ProjectsWindow = () => {
               void updateProjectStatus(projectContextMenu.projectId, 'completed');
               setProjectContextMenu(null);
             }}
-            className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-700 hover:bg-[#FFF8F2]"
+            className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
           >
             <CheckCircle2 size={14} />
             Mark complete
           </button>
           <div className="px-4 py-2">
-            <p className="mb-2 text-[11px] font-medium uppercase tracking-wide text-gray-500">
+            <p className="mb-2 text-[11px] font-medium uppercase tracking-wide text-[var(--ledger-text-muted)]">
               Color
             </p>
             <div className="grid grid-cols-8 gap-2">
@@ -2631,7 +2631,7 @@ export const ProjectsWindow = () => {
                     void updateProjectColor(projectContextMenu.projectId, color);
                     setProjectContextMenu(null);
                   }}
-                  className="h-4 w-4 rounded-full border border-black/10 transition hover:scale-110"
+                className="h-4 w-4 rounded-full border border-[color:rgba(255,255,255,0.1)] transition hover:scale-110"
                   style={{ backgroundColor: color }}
                   aria-label={`Set project color ${color}`}
                 />
@@ -2643,7 +2643,7 @@ export const ProjectsWindow = () => {
               void deleteProject(projectContextMenu.projectId);
               setProjectContextMenu(null);
             }}
-            className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50"
+            className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-danger)] transition hover:bg-[color:rgba(217,45,32,0.08)]"
           >
             <Trash2 size={14} />
             Delete
@@ -2654,7 +2654,7 @@ export const ProjectsWindow = () => {
       {taskContextMenu && taskMenuPosition && (
         <div
           ref={taskContextRef}
-          className="fixed z-50 min-w-44 overflow-hidden rounded-xl border border-[#E2D4C4] bg-[#FFFDFB] py-1 shadow-xl"
+          className="fixed z-50 min-w-44 overflow-hidden rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] py-1 shadow-[var(--ledger-shadow)]"
           style={{ left: `${taskMenuPosition.x}px`, top: `${taskMenuPosition.y}px` }}
           onClick={(e) => e.stopPropagation()}
         >
@@ -2664,7 +2664,7 @@ export const ProjectsWindow = () => {
               if (task) void updateTaskStatus(task, 'todo');
               setTaskContextMenu(null);
             }}
-            className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-700 hover:bg-[#FFF8F2]"
+            className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
           >
             <CheckCircle2 size={14} />
             Mark todo
@@ -2675,7 +2675,7 @@ export const ProjectsWindow = () => {
               if (task) void updateTaskStatus(task, 'in_progress');
               setTaskContextMenu(null);
             }}
-            className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-700 hover:bg-[#FFF8F2]"
+            className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
           >
             <ChevronDown size={14} />
             Mark in progress
@@ -2686,7 +2686,7 @@ export const ProjectsWindow = () => {
               if (task) void updateTaskStatus(task, 'completed');
               setTaskContextMenu(null);
             }}
-            className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-700 hover:bg-[#FFF8F2]"
+            className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
           >
             <CheckCircle2 size={14} />
             Mark complete
@@ -2697,7 +2697,7 @@ export const ProjectsWindow = () => {
               if (task) openTaskNotes(task);
               setTaskContextMenu(null);
             }}
-            className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-700 hover:bg-[#FFF8F2]"
+            className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
           >
             <FileText size={14} />
             Task notes
@@ -2707,7 +2707,7 @@ export const ProjectsWindow = () => {
               void deleteTask(taskContextMenu.taskId);
               setTaskContextMenu(null);
             }}
-            className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50"
+            className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-danger)] transition hover:bg-[color:rgba(217,45,32,0.08)]"
           >
             <Trash2 size={14} />
             Delete

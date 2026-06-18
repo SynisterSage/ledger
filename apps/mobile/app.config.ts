@@ -14,7 +14,7 @@ const config: ExpoConfig = {
   version: '1.0.0',
   icon: './assets/images/icon.png',
   scheme: 'ledger',
-  userInterfaceStyle: 'light',
+  userInterfaceStyle: 'automatic',
   ios: {
     bundleIdentifier: iosBundleIdentifier,
     buildNumber: '4',

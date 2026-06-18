@@ -311,7 +311,9 @@ export const ModuleHeaderSegmentedButton = ({
           ? `${sidebarTheme.surface} ${sidebarTheme.textPrimary} shadow-[0_1px_2px_rgba(15,23,42,0.08)]`
           : `${sidebarTheme.textSecondary} hover:${sidebarTheme.hoverSurface} hover:${sidebarTheme.textPrimary}`
       } ${iconOnly ? 'w-8 px-0' : ''} ${
-        pill ? 'rounded-full border border-[#E2D4C4] bg-[#FFF8F2] px-4 shadow-[0_1px_2px_rgba(15,23,42,0.06)]' : ''
+        pill
+          ? 'rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-4 text-[var(--ledger-text-secondary)] shadow-[0_1px_2px_rgba(17,24,39,0.04)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]'
+          : ''
       }`}
     >
       {children}
@@ -455,6 +457,13 @@ export const ModuleWindowHeader = ({
     }
   };
 
+  const handleStripDoubleClick = (event: ReactMouseEvent<HTMLDivElement>) => {
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+    if (target.closest('button, a, input, textarea, select, [role="button"]')) return;
+    handleTitleBarDoubleClick();
+  };
+
   const triggerOnPrimaryMouseDown = (
     event: ReactMouseEvent<HTMLButtonElement>,
   ) => {
@@ -467,7 +476,7 @@ export const ModuleWindowHeader = ({
       <div
         className={`flex h-8 w-full cursor-default items-center justify-between border-b ${sidebarTheme.subtleBorder} ${sidebarTheme.hoverSurface} px-4`}
         style={dragRegionStyle}
-        onDoubleClick={handleTitleBarDoubleClick}
+        onDoubleClickCapture={handleStripDoubleClick}
       >
         <div className="flex items-center gap-1" style={noDragRegionStyle}>
           <button

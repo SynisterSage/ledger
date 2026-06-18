@@ -14,6 +14,7 @@ export type AppPreferencesState = {
   userId: string | null;
   hapticsEnabled: boolean;
   reduceMotionEnabled: boolean;
+  themeMode: 'system' | 'light' | 'dark';
   error: string | null;
 };
 
@@ -23,6 +24,7 @@ const initialState: AppPreferencesState = {
   userId: null,
   hapticsEnabled: defaultMobileAppPreferences.hapticsEnabled,
   reduceMotionEnabled: defaultMobileAppPreferences.reduceMotionEnabled,
+  themeMode: defaultMobileAppPreferences.themeMode,
   error: null,
 };
 
@@ -51,6 +53,7 @@ async function persistPreferences(userId: string | null, payload: AppPreferences
   const storagePayload = JSON.stringify({
     hapticsEnabled: payload.hapticsEnabled,
     reduceMotionEnabled: payload.reduceMotionEnabled,
+    themeMode: payload.themeMode,
     updatedAt: new Date().toISOString(),
   });
 
@@ -62,13 +65,14 @@ async function persistPreferences(userId: string | null, payload: AppPreferences
 
   try {
     await updateMobileUserSettings({
-      preferences: {
-        mobileAppPreferences: {
-          hapticsEnabled: payload.hapticsEnabled,
-          reduceMotionEnabled: payload.reduceMotionEnabled,
+        preferences: {
+          mobileAppPreferences: {
+            hapticsEnabled: payload.hapticsEnabled,
+            reduceMotionEnabled: payload.reduceMotionEnabled,
+            themeMode: payload.themeMode,
+          },
         },
-      },
-    });
+      });
   } catch {
     // Ignore sync failures; local state remains updated and the cache is best-effort.
   }
@@ -135,6 +139,10 @@ export async function bootstrapAppPreferencesState(userId: string | null) {
               typeof parsed?.reduceMotionEnabled === 'boolean'
                 ? parsed.reduceMotionEnabled
                 : defaultMobileAppPreferences.reduceMotionEnabled,
+            themeMode:
+              parsed?.themeMode === 'light' || parsed?.themeMode === 'dark'
+                ? parsed.themeMode
+                : defaultMobileAppPreferences.themeMode,
           };
         }
       } catch {
@@ -170,6 +178,12 @@ export function setHapticsEnabled(enabled: boolean) {
 
 export function setReduceMotionEnabled(enabled: boolean) {
   const next = { ...state, reduceMotionEnabled: enabled };
+  setState(next);
+  void persistPreferences(state.userId, next);
+}
+
+export function setThemeMode(themeMode: 'system' | 'light' | 'dark') {
+  const next = { ...state, themeMode };
   setState(next);
   void persistPreferences(state.userId, next);
 }

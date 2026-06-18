@@ -82,11 +82,11 @@ const editorConfig = {
       underline: 'underline',
     },
     heading: {
-      h1: 'mb-4 text-4xl font-semibold tracking-tight text-gray-900',
-      h2: 'mb-3 text-3xl font-semibold tracking-tight text-gray-900',
-      h3: 'mb-2 text-2xl font-semibold tracking-tight text-gray-900',
+      h1: 'mb-4 text-4xl font-semibold tracking-tight text-[var(--ledger-text-primary)]',
+      h2: 'mb-3 text-3xl font-semibold tracking-tight text-[var(--ledger-text-primary)]',
+      h3: 'mb-2 text-2xl font-semibold tracking-tight text-[var(--ledger-text-primary)]',
     },
-    quote: 'my-4 border-l-4 border-gray-300 pl-4 italic text-gray-600',
+    quote: 'my-4 border-l-4 border-[color:var(--ledger-border-subtle)] pl-4 italic text-[var(--ledger-text-secondary)]',
     paragraph: 'mb-4',
     list: {
       nested: {
@@ -96,13 +96,13 @@ const editorConfig = {
       ul: 'list-disc list-inside',
       listitem: 'mb-1',
     },
-    code: 'bg-gray-100 px-2 py-1 rounded font-mono text-sm',
+    code: 'rounded bg-[var(--ledger-surface-hover)] px-2 py-1 font-mono text-sm text-[var(--ledger-text-primary)]',
     codeHighlight: {
-      aml: 'text-red-600',
-      tag: 'text-blue-600',
-      self: 'text-blue-600',
-      property: 'text-orange-600',
-      comment: 'text-green-600',
+      aml: 'text-[var(--ledger-danger)]',
+      tag: 'text-[var(--ledger-accent)]',
+      self: 'text-[var(--ledger-accent)]',
+      property: 'text-[color:var(--ledger-accent-hover)]',
+      comment: 'text-[var(--ledger-text-muted)]',
     },
   },
   onError: (error: Error) => console.error(error),
@@ -151,9 +151,9 @@ const ToolbarButton = ({
   onClick,
   title,
   children,
-  isActive = false,
-  onMouseDown,
-}: {
+    isActive = false,
+    onMouseDown,
+  }: {
   onClick: () => void;
   title: string;
   children: React.ReactNode;
@@ -168,10 +168,10 @@ const ToolbarButton = ({
     }}
     onClick={onClick}
     title={title}
-    className={`h-7 w-7 rounded-md border transition inline-flex items-center justify-center ${
+    className={`inline-flex h-7 w-7 items-center justify-center rounded-md border outline-none transition focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-border-strong)] focus-visible:ring-offset-0 ${
       isActive
-        ? 'border-[#D8C6B6] bg-[#FFF1E3] text-gray-900'
-        : 'border-[#E2D4C4] bg-[#FFF8F2] text-gray-700 hover:bg-[#FFF1E3]'
+        ? 'border-[color:var(--ledger-border-strong)] bg-[var(--ledger-surface-hover)] text-[var(--ledger-text-primary)]'
+        : 'border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]'
     }`}
   >
     {children}
@@ -332,7 +332,7 @@ const ToolbarPlugin = ({ onAutoCorrect }: { onAutoCorrect?: () => void | Promise
         style={{ top: 'var(--notes-toolbar-sticky-top, 0px)' }}
         className={`sticky z-20 mb-2 mx-auto flex w-fit max-w-full flex-wrap items-center gap-1.5 rounded-xl px-1.5 py-1 transition-[background-color,border-color,box-shadow,opacity,transform,backdrop-filter] duration-150 ease-out ${
           isSticky
-            ? 'border border-[#E8DDD4] bg-[rgba(255,246,238,0.96)] shadow-[0_8px_24px_rgba(17,24,39,0.08)] backdrop-blur-[14px]'
+            ? 'border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-[var(--ledger-shadow)] backdrop-blur-[14px]'
             : 'border border-transparent bg-transparent shadow-none backdrop-blur-none'
         }`}
       >
@@ -343,23 +343,23 @@ const ToolbarPlugin = ({ onAutoCorrect }: { onAutoCorrect?: () => void | Promise
           onMouseDown={(event) => event.preventDefault()}
           onClick={() => setIsDropdownOpen(!isDropdownOpen)}
           onBlur={() => setTimeout(() => setIsDropdownOpen(false), 150)}
-          className="h-7 px-2.5 rounded-md border border-[#E2D4C4] bg-[#FFF8F2] text-gray-700 hover:bg-[#FFF1E3] inline-flex items-center justify-center gap-1 text-[11px] font-medium transition"
+          className="inline-flex h-7 items-center justify-center gap-1 rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2.5 text-[11px] font-medium text-[var(--ledger-text-secondary)] outline-none transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-border-strong)] focus-visible:ring-offset-0"
         >
           {blockTypeLabels[blockType]}
           <ChevronDown size={13} />
         </button>
         {isDropdownOpen && (
-          <div className="absolute top-full mt-1 left-0 z-50 rounded-lg border border-[#E8DDD4] bg-[#FFF8F2] shadow-lg min-w-40">
+          <div className="absolute left-0 top-full z-50 mt-1 min-w-40 rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-[var(--ledger-shadow)]">
             {(['paragraph', 'h1', 'h2', 'h3', 'quote'] as BlockType[]).map((type) => (
               <button
                 key={type}
                 type="button"
                 onMouseDown={(event) => event.preventDefault()}
                 onClick={() => changeBlockType(type)}
-                className={`w-full text-left px-3 py-2 text-sm ${
+                className={`w-full px-3 py-2 text-left text-sm ${
                   blockType === type
-                    ? 'bg-[#FFF1E3] font-medium text-gray-900'
-                    : 'text-gray-700 hover:bg-[#FFF1E3]'
+                    ? 'bg-[var(--ledger-surface-hover)] font-medium text-[var(--ledger-text-primary)]'
+                    : 'text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]'
                 }`}
               >
                 {blockTypeLabels[type]}
@@ -369,7 +369,7 @@ const ToolbarPlugin = ({ onAutoCorrect }: { onAutoCorrect?: () => void | Promise
         )}
       </div>
 
-      <div className="mx-1 h-5 w-px bg-[#E8DDD4]" />
+      <div className="mx-1 h-5 w-px bg-[var(--ledger-border-subtle)]" />
 
       <ToolbarButton
         title="Bold (Ctrl+B)"
@@ -393,7 +393,7 @@ const ToolbarPlugin = ({ onAutoCorrect }: { onAutoCorrect?: () => void | Promise
         <Underline size={14} />
       </ToolbarButton>
 
-      <div className="mx-1 h-5 w-px bg-[#E8DDD4]" />
+      <div className="mx-1 h-5 w-px bg-[var(--ledger-border-subtle)]" />
 
       <ToolbarButton
         title="Bullet List"
@@ -415,7 +415,7 @@ const ToolbarPlugin = ({ onAutoCorrect }: { onAutoCorrect?: () => void | Promise
         <Code2 size={14} />
       </ToolbarButton>
 
-      <div className="mx-1 h-5 w-px bg-[#E8DDD4]" />
+      <div className="mx-1 h-5 w-px bg-[var(--ledger-border-subtle)]" />
 
       <ToolbarButton
         title="Add Link"
@@ -782,11 +782,11 @@ export function RichTextEditor({
               <ContentEditable
                 onFocus={onFocus}
                 onBlur={onBlur}
-                className="outline-none min-h-[calc(100vh-420px)] rounded-2xl border border-[#E8DDD4] bg-[#FFF8F2] px-6 py-5 text-[16px] leading-8 text-gray-800 shadow-[0_1px_2px_rgba(15,23,42,0.03)] focus:border-[#D8C6B6] focus:ring-1 focus:ring-[#E8DDD4] transition"
+                className="min-h-[calc(100vh-420px)] rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-6 py-5 text-[16px] leading-8 text-[var(--ledger-text-primary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60"
               />
             }
             placeholder={
-              <div className="pointer-events-none absolute left-0 right-0 top-0 flex items-start px-6 py-5 text-gray-400 text-[16px] leading-8">
+              <div className="pointer-events-none absolute left-0 right-0 top-0 flex items-start px-6 py-5 text-[16px] leading-8 text-[var(--ledger-text-muted)]">
                 Write something...
               </div>
             }
