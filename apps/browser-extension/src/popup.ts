@@ -58,7 +58,7 @@ if (!app) {
   throw new Error('Popup mount point missing.');
 }
 
-const extensionChrome = globalThis.chrome as typeof chrome | undefined;
+const extensionChrome = typeof chrome === 'undefined' ? undefined : chrome;
 const hasExtensionApi = Boolean(extensionChrome?.storage?.local && extensionChrome?.tabs);
 const LOADING_MIN_MS = 650;
 

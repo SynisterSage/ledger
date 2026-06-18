@@ -1,22 +1,39 @@
 :root {
-  color-scheme: light;
-  --bg: #fffbf7;
-  --surface: #ffffff;
-  --border: rgba(17, 24, 39, 0.1);
-  --text: #111827;
-  --muted: #6b7280;
-  --accent: #ff5f40;
+  color-scheme: light dark;
+  --ledger-background: #fffbf7;
+  --ledger-surface: #ffffff;
+  --ledger-surface-card: #ffffff;
+  --ledger-surface-muted: #fff4ec;
+  --ledger-surface-hover: #ffefe4;
+  --ledger-border-subtle: rgba(17, 24, 39, 0.1);
+  --ledger-border-strong: rgba(17, 24, 39, 0.14);
+  --ledger-text-primary: #111827;
+  --ledger-text-secondary: #6b7280;
+  --ledger-text-muted: #9ca3af;
+  --ledger-accent: #ff5f40;
+  --ledger-success: #166534;
+  --ledger-danger: #b45309;
+  --ledger-input-background: rgba(255, 255, 255, 0.72);
+  --ledger-placeholder: #9ca3af;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    color-scheme: dark;
-    --bg: #0b1220;
-    --surface: #10192a;
-    --border: rgba(148, 163, 184, 0.16);
-    --text: #f8fafc;
-    --muted: #cbd5e1;
-    --accent: #ff7a59;
+    --ledger-background: #0b1220;
+    --ledger-surface: #10192a;
+    --ledger-surface-card: #10192a;
+    --ledger-surface-muted: #17233b;
+    --ledger-surface-hover: #1f2d47;
+    --ledger-border-subtle: rgba(148, 163, 184, 0.16);
+    --ledger-border-strong: rgba(148, 163, 184, 0.24);
+    --ledger-text-primary: #f8fafc;
+    --ledger-text-secondary: #cbd5e1;
+    --ledger-text-muted: #94a3b8;
+    --ledger-accent: #ff7a59;
+    --ledger-success: #32d583;
+    --ledger-danger: #f97066;
+    --ledger-input-background: rgba(16, 25, 42, 0.9);
+    --ledger-placeholder: #94a3b8;
   }
 }
 
@@ -28,8 +45,8 @@ html,
 body {
   margin: 0;
   min-height: 100%;
-  background: var(--bg);
-  color: var(--text);
+  background: var(--ledger-background);
+  color: var(--ledger-text-primary);
   font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI',
     sans-serif;
 }
@@ -43,8 +60,8 @@ body {
 }
 
 .card {
-  background: var(--surface);
-  border: 1px solid var(--border);
+  background: var(--ledger-surface-card);
+  border: 1px solid var(--ledger-border-subtle);
   border-radius: 16px;
   box-shadow: 0 12px 34px rgba(17, 24, 39, 0.08);
   overflow: hidden;
@@ -52,12 +69,12 @@ body {
 
 .header {
   padding: 18px 20px 14px;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--ledger-border-subtle);
 }
 
 .eyebrow {
   margin: 0 0 5px;
-  color: var(--muted);
+  color: var(--ledger-text-secondary);
   font-size: 11px;
   letter-spacing: 0.12em;
   text-transform: uppercase;
@@ -73,12 +90,12 @@ body {
   margin: 6px 0 0;
   font-size: 13px;
   line-height: 1.5;
-  color: var(--muted);
+  color: var(--ledger-text-secondary);
 }
 
 .section {
   padding: 18px 20px;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--ledger-border-subtle);
 }
 
 .section:last-child {
@@ -98,24 +115,24 @@ body {
 .field label,
 .label {
   font-size: 12px;
-  color: var(--muted);
+  color: var(--ledger-text-secondary);
 }
 
 .input,
 .select {
   width: 100%;
-  border: 1px solid var(--border);
-  background: #fff;
+  border: 1px solid var(--ledger-border-subtle);
+  background: var(--ledger-input-background);
   border-radius: 12px;
-  color: var(--text);
+  color: var(--ledger-text-primary);
   padding: 11px 12px;
   outline: none;
 }
 
 .input:focus,
 .select:focus {
-  border-color: rgba(255, 95, 64, 0.5);
-  box-shadow: 0 0 0 3px rgba(255, 95, 64, 0.12);
+  border-color: color-mix(in srgb, var(--ledger-accent) 50%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ledger-accent) 12%, transparent);
 }
 
 .row {
@@ -133,6 +150,7 @@ body {
 .meta strong {
   display: block;
   margin-bottom: 2px;
+  color: var(--ledger-text-primary);
 }
 
 .button-row {
@@ -143,9 +161,9 @@ body {
 }
 
 .button {
-  border: 1px solid var(--border);
-  background: #fff;
-  color: var(--text);
+  border: 1px solid var(--ledger-border-subtle);
+  background: var(--ledger-surface-muted);
+  color: var(--ledger-text-primary);
   border-radius: 12px;
   padding: 10px 12px;
   font-weight: 600;
@@ -153,7 +171,7 @@ body {
 
 .button.primary {
   border-color: transparent;
-  background: var(--accent);
+  background: var(--ledger-accent);
   color: #fff;
 }
 
@@ -165,20 +183,20 @@ body {
 .status {
   padding: 16px 20px 20px;
   font-size: 13px;
-  color: var(--muted);
+  color: var(--ledger-text-secondary);
 }
 
 .status[data-tone='success'] {
-  color: #166534;
+  color: var(--ledger-success);
 }
 
 .status[data-tone='error'] {
-  color: #b45309;
+  color: var(--ledger-danger);
 }
 
 .help {
   font-size: 12px;
-  color: var(--muted);
+  color: var(--ledger-text-secondary);
   line-height: 1.5;
   margin-top: 10px;
 }
