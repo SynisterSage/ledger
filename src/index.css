@@ -35,6 +35,63 @@ body.has-modal-open #root > * {
   outline: none !important;
 }
 
+.ledger-modal-surface {
+  color: var(--ledger-text-primary, rgb(17 24 39));
+  background-color: var(--ledger-surface-card, rgb(251 247 240));
+  border-color: var(--ledger-border-subtle, rgba(232, 221, 212, 0.92));
+  box-shadow: var(--ledger-shadow, 0 24px 70px rgba(15, 23, 42, 0.12));
+}
+
+.ledger-modal-surface [class*='bg-white'],
+.ledger-modal-surface [class*='bg-gray-50'],
+.ledger-modal-surface [class*='bg-[#FFF'] {
+  background-color: var(--ledger-surface-card, rgb(251 247 240)) !important;
+}
+
+.ledger-modal-surface [class*='bg-gray-100'],
+.ledger-modal-surface [class*='bg-gray-200'],
+.ledger-modal-surface [class*='bg-[#FFF0'],
+.ledger-modal-surface [class*='bg-[#FFF1'],
+.ledger-modal-surface [class*='bg-[#FFF3'],
+.ledger-modal-surface [class*='bg-[#FFF7'],
+.ledger-modal-surface [class*='bg-[#FFFB'] {
+  background-color: var(--ledger-surface-muted, rgb(241 236 228)) !important;
+}
+
+.ledger-modal-surface [class*='hover:bg-white']:hover,
+.ledger-modal-surface [class*='hover:bg-gray-50']:hover,
+.ledger-modal-surface [class*='hover:bg-gray-100']:hover,
+.ledger-modal-surface [class*='hover:bg-[#FFF']:hover {
+  background-color: var(--ledger-surface-hover, rgb(226 221 213)) !important;
+}
+
+.ledger-modal-surface [class*='border-gray-100'],
+.ledger-modal-surface [class*='border-gray-200'],
+.ledger-modal-surface [class*='border-gray-300'],
+.ledger-modal-surface [class*='border-[#E2D4C4'],
+.ledger-modal-surface [class*='border-[#E8DDD4'] {
+  border-color: var(--ledger-border-subtle, rgba(232, 221, 212, 0.92)) !important;
+}
+
+.ledger-modal-surface [class*='text-gray-500'] {
+  color: var(--ledger-text-muted, rgb(118 111 101)) !important;
+}
+
+.ledger-modal-surface [class*='text-gray-600'],
+.ledger-modal-surface [class*='text-gray-700'] {
+  color: var(--ledger-text-secondary, rgb(79 74 67)) !important;
+}
+
+.ledger-modal-surface [class*='text-gray-800'],
+.ledger-modal-surface [class*='text-gray-900'] {
+  color: var(--ledger-text-primary, rgb(17 24 39)) !important;
+}
+
+.ledger-modal-surface [class*='focus:border-gray-300']:focus,
+.ledger-modal-surface [class*='focus:border-gray-400']:focus {
+  border-color: var(--ledger-border-strong, rgb(200 189 175)) !important;
+}
+
 .sidebar-glass {
   position: relative;
   isolation: isolate;

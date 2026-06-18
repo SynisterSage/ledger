@@ -444,6 +444,7 @@ export const ModuleWindowHeader = ({
   stripActions,
   actions,
 }: ModuleWindowHeaderProps) => {
+  void icon;
   const controlClassName =
     `flex h-5 w-5 items-center justify-center rounded-full border ${sidebarTheme.subtleBorder} ${sidebarTheme.mutedSurface} ${sidebarTheme.textSecondary} shadow-[0_1px_2px_rgba(15,23,42,0.05)] transition hover:${sidebarTheme.hoverSurface} hover:${sidebarTheme.textPrimary}`;
 
@@ -522,22 +523,12 @@ export const ModuleWindowHeader = ({
       </div>
 
       <div className="flex min-h-12 w-full items-center justify-between gap-4 px-6 py-3">
-        <div className="flex min-w-0 items-center gap-3" style={dragRegionStyle}>
-          <div className={`flex h-10 w-10 items-center justify-center rounded-2xl border ${sidebarTheme.subtleBorder} ${sidebarTheme.mutedSurface} shadow-[0_1px_2px_rgba(15,23,42,0.04)]`}>
-            {icon}
-          </div>
-
-          <div className="min-w-0 space-y-0.5">
-            {eyebrow && (
-              <p className={`text-[11px] font-medium leading-none ${sidebarTheme.textMuted}`}>
-                {eyebrow}
-              </p>
-            )}
-            <h1 className={`truncate text-[22px] font-semibold leading-[1.15] tracking-tight ${sidebarTheme.textPrimary}`}>
-              {title}
-            </h1>
-            {subtitle && <p className={`truncate text-[13px] leading-tight ${sidebarTheme.textMuted}`}>{subtitle}</p>}
-          </div>
+        <div className="min-w-0 space-y-0.5" style={dragRegionStyle}>
+          {eyebrow && <p className={`text-[11px] font-medium leading-none ${sidebarTheme.textMuted}`}>{eyebrow}</p>}
+          <h1 className={`truncate text-[22px] font-semibold leading-[1.15] tracking-tight ${sidebarTheme.textPrimary}`}>
+            {title}
+          </h1>
+          {subtitle && <p className={`truncate text-[13px] leading-tight ${sidebarTheme.textMuted}`}>{subtitle}</p>}
         </div>
 
         {(showPanelToggle || rightActions || secondaryActions || viewControls || syncStatus) && (

@@ -3427,7 +3427,7 @@ export const CalendarWindow = () => {
                   <div className="flex items-center gap-1">
                     <button
                       onClick={() => moveView(-1)}
-                      className="flex h-7 w-7 items-center justify-center rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)]"
+                      className="flex h-7 w-7 items-center justify-center rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)]"
                       title="Previous period"
                     >
                       <ChevronLeft size={13} strokeWidth={2.25} />
@@ -3440,7 +3440,7 @@ export const CalendarWindow = () => {
                     </button>
                     <button
                       onClick={() => moveView(1)}
-                      className="flex h-7 w-7 items-center justify-center rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)]"
+                      className="flex h-7 w-7 items-center justify-center rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)]"
                       title="Next period"
                     >
                       <ChevronRight size={13} strokeWidth={2.25} />
@@ -3486,12 +3486,12 @@ export const CalendarWindow = () => {
               </div>
 
               <div className="mb-5">
-                <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-[var(--ledger-text-muted)]">
+                <p className="mb-2 text-xs font-medium text-[var(--ledger-text-muted)]">
                   Overview
                 </p>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <p className="whitespace-nowrap text-[10px] uppercase tracking-wide text-[var(--ledger-text-muted)]">
+                    <p className="whitespace-nowrap text-xs font-medium text-[var(--ledger-text-muted)]">
                       Events
                     </p>
                     <p className="text-xl font-semibold leading-tight text-[var(--ledger-text-primary)]">
@@ -3499,7 +3499,7 @@ export const CalendarWindow = () => {
                     </p>
                   </div>
                   <div>
-                    <p className="whitespace-nowrap text-[10px] uppercase tracking-wide text-[var(--ledger-text-muted)]">
+                    <p className="whitespace-nowrap text-xs font-medium text-[var(--ledger-text-muted)]">
                       Reminders
                     </p>
                     <p className="text-xl font-semibold leading-tight text-[var(--ledger-text-primary)]">
@@ -4071,7 +4071,7 @@ export const CalendarWindow = () => {
                               return (
                                 <div
                                   key={`${hour}-${key}`}
-                                  className="relative cursor-pointer border-b border-l border-[color:var(--ledger-border-subtle)] px-1 py-1 hover:bg-[var(--ledger-surface-hover)]"
+                                  className="relative isolate cursor-pointer border-b border-l border-[color:var(--ledger-border-subtle)] px-1 py-1 hover:bg-[var(--ledger-surface-hover)]"
                                   style={{ minHeight: `${rowHeight}px` }}
                                   onClick={() => {
                                     setSelectedEvent(null);
@@ -4158,7 +4158,7 @@ export const CalendarWindow = () => {
                                         id: reminder.id,
                                       });
                                     }}
-                                    className={`relative z-40 block w-full truncate rounded-md border px-2 py-1.5 text-left text-[10px] leading-tight shadow-sm ${
+                                    className={`relative z-30 block w-full truncate rounded-md border px-2 py-1.5 text-left text-[10px] leading-tight shadow-sm ${
                                       reminder.is_done &&
                                       (calendarPreferences.completedReminderBehavior ?? 'collapse') ===
                                         'collapse'
@@ -4229,10 +4229,11 @@ export const CalendarWindow = () => {
                                       id: evt.id,
                                     });
                                   }}
-                                  className={`absolute inset-x-1 z-10 flex flex-col rounded-md border text-left text-[10px] leading-tight shadow-sm ${
+                                  className={`absolute inset-x-1 z-30 flex flex-col rounded-md border text-left text-[10px] leading-tight shadow-sm ${
                                     durationRows > 1 ? 'p-2' : 'px-2 py-1.5'
                                   }`}
                                   style={{
+                                    pointerEvents: 'auto',
                                     top: `${Math.max(8, reminderStackHeight + 6)}px`,
                                     height: `${Math.max(40, durationRows * 64 - 12)}px`,
                                     backgroundColor: pastEvent

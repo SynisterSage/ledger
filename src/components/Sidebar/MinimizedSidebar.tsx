@@ -124,7 +124,11 @@ export const MinimizedSidebar = ({
             <ExpandChevron size={20} />
           </button>
 
-          <button onClick={signOut} onMouseDown={(e) => e.stopPropagation()} className={neutralIcon}>
+          <button
+            onClick={signOut}
+            onMouseDown={(e) => e.stopPropagation()}
+            className="inline-flex h-9 w-9 items-center justify-center rounded-xl transition-colors duration-150 text-[var(--ledger-text-secondary)] hover:bg-[color:rgba(255,95,64,0.08)] hover:text-[var(--ledger-accent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-accent)]/20"
+          >
             <LogOut size={18} />
           </button>
         </div>

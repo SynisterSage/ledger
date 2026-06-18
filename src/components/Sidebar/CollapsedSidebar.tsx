@@ -115,7 +115,11 @@ export const CollapsedSidebar = ({
             >
               <ExpandChevron size={18} />
             </button>
-            <button onClick={signOut} onMouseDown={(e) => e.stopPropagation()} className={iconButtonClass}>
+            <button
+              onClick={signOut}
+              onMouseDown={(e) => e.stopPropagation()}
+              className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)] transition-colors duration-150 hover:bg-[color:rgba(255,95,64,0.08)] hover:text-[var(--ledger-accent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-accent)]/20"
+            >
               <LogOut size={18} />
             </button>
           </div>

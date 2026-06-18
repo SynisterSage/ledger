@@ -2333,7 +2333,7 @@ export const ExpandedSidebar = ({
             </button>
             <button
               onClick={signOut}
-              className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-[color:var(--ledger-border-strong)] bg-[var(--ledger-surface-selected)] text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-background-muted)]"
+              className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-[color:var(--ledger-border-strong)] bg-[var(--ledger-surface-selected)] text-[var(--ledger-text-secondary)] transition-colors duration-150 hover:bg-[color:rgba(255,95,64,0.08)] hover:text-[var(--ledger-accent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-accent)]/20"
               title="Sign out"
               aria-label="Sign out"
             >
@@ -3768,7 +3768,7 @@ export const ExpandedSidebar = ({
         </button>
         <button
           onClick={signOut}
-          className={`w-full px-3 py-2 text-sm font-medium rounded-lg transition flex items-center justify-center gap-2 ${sidebarTheme.surfaceSoft}`}
+          className={`w-full px-3 py-2 text-sm font-medium rounded-lg transition flex items-center justify-center gap-2 border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)] hover:bg-[color:rgba(255,95,64,0.08)] hover:text-[var(--ledger-accent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-accent)]/20`}
         >
           <LogOut size={15} />
           Sign Out

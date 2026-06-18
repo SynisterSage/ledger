@@ -96,7 +96,7 @@ export const ModalOverlay = ({
         onClick={handleBackdropClick}
       >
         <div
-          className={classNameContainer}
+          className={`ledger-modal-surface ${classNameContainer}`.trim()}
           onClick={(event) => event.stopPropagation()}
           onMouseDown={(event) => event.stopPropagation()}
         >

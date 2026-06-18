@@ -146,7 +146,7 @@ const lightColors: DesktopColorTokens = {
   surfaceCard: '#FBF7F0',
   surfaceMuted: '#F1ECE4',
   surfaceSelected: '#F4E7DE',
-  surfaceHover: '#F3EEE7',
+  surfaceHover: '#E2DDD5',
 
   textPrimary: '#171512',
   textSecondary: '#4F4A43',
