@@ -1,4 +1,5 @@
 export type DesktopThemeScheme = 'light' | 'dark';
+export type DesktopThemePreference = DesktopThemeScheme | 'system';
 
 type DesktopColorTokens = {
   background: string;
@@ -271,6 +272,17 @@ export const getSystemDesktopThemeScheme = (): DesktopThemeScheme => {
   }
 
   return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+};
+
+export const resolveDesktopThemeScheme = (
+  preference: DesktopThemePreference | undefined,
+  systemScheme: DesktopThemeScheme = getSystemDesktopThemeScheme()
+): DesktopThemeScheme => {
+  if (preference === 'light' || preference === 'dark') {
+    return preference;
+  }
+
+  return systemScheme;
 };
 
 export const getDesktopCssVars = (scheme: DesktopThemeScheme = 'light'): Record<string, string> => {

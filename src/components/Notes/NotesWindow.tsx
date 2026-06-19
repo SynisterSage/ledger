@@ -3213,7 +3213,7 @@ export const NotesWindow = () => {
     };
   }, [sortMenu]);
 
-  const isNotesModalOpen = showCreateNoteModal || showExportModal || showVersionHistoryModal;
+  const isNotesModalOpen = showCreateNoteModal || showExportModal || showVersionHistoryModal || showCloseGuardModal;
 
   return (
     <div

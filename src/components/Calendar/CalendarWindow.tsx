@@ -3275,6 +3275,7 @@ export const CalendarWindow = () => {
   };
 
   const isCalendarModalOpen =
+    showCloseGuardModal ||
     isComposerOpen ||
     isSpecificDatesModalOpen ||
     isNewCalendarModalOpen ||
@@ -4061,6 +4062,7 @@ export const CalendarWindow = () => {
                         );
                         const visibleReminders = remindersForHour.slice(0, 2);
                         const hiddenReminders = remindersForHour.length - visibleReminders.length;
+                        const hasOccupiedTimelineCell = hourEvents.length > 0 || remindersForHour.length > 0;
                         const reminderStackHeight =
                           visibleReminders.length > 0
                             ? visibleReminders.length * 24 + (hiddenReminders > 0 ? 16 : 6)
@@ -4071,7 +4073,11 @@ export const CalendarWindow = () => {
                               return (
                                 <div
                                   key={`${hour}-${key}`}
-                                  className="relative isolate cursor-pointer border-b border-l border-[color:var(--ledger-border-subtle)] px-1 py-1 hover:bg-[var(--ledger-surface-hover)]"
+                                  className={`relative isolate cursor-pointer border-b border-l border-[color:var(--ledger-border-subtle)] px-1 py-1 transition-colors ${
+                                    hasOccupiedTimelineCell
+                                      ? ''
+                                      : 'hover:bg-[var(--ledger-surface-hover)]'
+                                  }`}
                                   style={{ minHeight: `${rowHeight}px` }}
                                   onClick={() => {
                                     setSelectedEvent(null);
@@ -4229,7 +4235,7 @@ export const CalendarWindow = () => {
                                       id: evt.id,
                                     });
                                   }}
-                                  className={`absolute inset-x-1 z-30 flex flex-col rounded-md border text-left text-[10px] leading-tight shadow-sm ${
+                                  className={`group absolute inset-x-1 z-30 flex flex-col rounded-md border text-left text-[10px] leading-tight shadow-sm transition-[border-color,box-shadow,transform] relative ${
                                     durationRows > 1 ? 'p-2' : 'px-2 py-1.5'
                                   }`}
                                   style={{
@@ -4253,12 +4259,21 @@ export const CalendarWindow = () => {
                                       : `0 0 0 1px ${eventColor}12, 0 1px 2px rgba(15, 23, 42, 0.04)`,
                                   }}
                                 >
+                                  <span
+                                    aria-hidden="true"
+                                    className="pointer-events-none absolute inset-0 rounded-md opacity-0 transition-opacity duration-150 group-hover:opacity-100"
+                                    style={{
+                                      backgroundColor: pastEvent
+                                        ? 'var(--ledger-surface-hover)'
+                                        : `${eventColor}24`,
+                                    }}
+                                  />
                                   <div className="flex gap-1.5 min-w-0">
                                     <span
-                                      className="h-1.5 w-1.5 rounded-full shrink-0 mt-0.5"
+                                      className="relative z-10 h-1.5 w-1.5 rounded-full shrink-0 mt-0.5"
                                       style={{ backgroundColor: eventColor }}
                                     />
-                                    <div className="min-w-0 flex-1">
+                                    <div className="relative z-10 min-w-0 flex-1">
                                       <div className="flex items-start gap-1 min-w-0">
                                         {evt.status === 'done' && (
                                           <span className="shrink-0 text-[10px] font-semibold leading-none -mt-0.5 text-[var(--ledger-success)]">
@@ -4917,7 +4932,7 @@ export const CalendarWindow = () => {
                   calendars.length === 0 ||
                   Boolean(specificDatesValidationMessage)
                 }
-                className="rounded-md bg-gray-900 px-3 py-2 text-xs font-medium text-white hover:bg-gray-800 disabled:opacity-60"
+                className="rounded-md bg-[var(--ledger-accent)] px-3 py-2 text-xs font-medium text-white hover:bg-[var(--ledger-accent-hover)] disabled:opacity-60"
               >
                 {isSavingEvent
                   ? 'Saving...'

@@ -25,6 +25,11 @@ import {
   getLedgerSessionDeviceName,
   getLedgerSessionPlatform,
 } from '../../utils/deviceSession';
+import {
+  applyDesktopCssVars,
+  getSystemDesktopThemeScheme,
+  resolveDesktopThemeScheme,
+} from '../../theme/desktopTokens';
 import { useWorkspaceContext } from '../../context/WorkspaceContext';
 import { useApi } from '../../hooks/useApi';
 import { buildInviteUrl } from '../../config/invite';
@@ -439,6 +444,12 @@ const settingsTheme = {
     'h-8 rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 text-xs font-medium text-[var(--ledger-text-muted)] transition',
 } as const;
 
+const themeOptionOrder: Array<{ value: UserPreferences['theme']; label: string; description: string }> = [
+  { value: 'system', label: 'System', description: 'Match your OS appearance.' },
+  { value: 'light', label: 'Light', description: 'Always use the warm light theme.' },
+  { value: 'dark', label: 'Dark', description: 'Always use the graphite dark theme.' },
+];
+
 const PreferenceRow = ({
   label,
   help,
@@ -726,6 +737,19 @@ export const SettingsWindow = () => {
       cancelled = true;
     };
   }, [api, user?.email, user?.user_metadata?.full_name]);
+
+  useEffect(() => {
+    if (!settingsHydratedRef.current) return;
+
+    const scheme = resolveDesktopThemeScheme(
+      preferences.theme,
+      getSystemDesktopThemeScheme()
+    );
+    applyDesktopCssVars(document.documentElement, scheme);
+    window.ipcRenderer?.send('ledger:theme-updated', {
+      theme: preferences.theme,
+    });
+  }, [preferences.theme]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1749,6 +1773,7 @@ export const SettingsWindow = () => {
   };
 
   const isSettingsModalOpen =
+    showCloseGuardModal ||
     isExtensionTokenModalOpen ||
     extensionTokenConfirmAction !== null ||
     (isWorkspaceManageModalOpen && Boolean(activeWorkspace)) ||
@@ -2171,6 +2196,41 @@ export const SettingsWindow = () => {
                       </div>
 
                       <div className={settingsTheme.sectionRows}>
+                        <div className="grid gap-4 py-5 md:grid-cols-[220px_minmax(0,1fr)] md:items-center">
+                          <div className={settingsTheme.rowLabel}>Theme</div>
+                          <div className="space-y-2">
+                            <div className="inline-flex w-full overflow-hidden rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)]">
+                              {themeOptionOrder.map((option, index) => {
+                                const isSelected = preferences.theme === option.value;
+                                return (
+                                  <button
+                                    key={option.value}
+                                    type="button"
+                                    onClick={() =>
+                                      setPreferences((current) => ({
+                                        ...current,
+                                        theme: option.value,
+                                      }))
+                                    }
+                                    className={`flex-1 px-4 py-3 text-sm font-medium transition ${
+                                      index > 0 ? 'border-l border-[color:var(--ledger-border-subtle)]' : ''
+                                    } ${
+                                      isSelected
+                                        ? 'bg-[var(--ledger-surface-hover)] text-[var(--ledger-text-primary)]'
+                                        : 'text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]'
+                                    }`}
+                                    aria-pressed={isSelected}
+                                  >
+                                    {option.label}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                            <p className="text-xs leading-5 text-[var(--ledger-text-muted)]">
+                              {themeOptionOrder.find((option) => option.value === preferences.theme)?.description}
+                            </p>
+                          </div>
+                        </div>
                         <div className="grid gap-4 py-5 md:grid-cols-[220px_minmax(0,1fr)]">
                           <div className={settingsTheme.rowLabel}>Name</div>
                           <div className={settingsTheme.rowValue}>

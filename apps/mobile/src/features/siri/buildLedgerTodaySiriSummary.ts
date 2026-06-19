@@ -9,6 +9,52 @@ function cleanText(value: string | null | undefined) {
   return trimmed ? trimmed : null;
 }
 
+function itemKind(value: string | null | undefined) {
+  switch (cleanText(value)?.toLowerCase()) {
+    case 'event':
+      return 'event';
+    case 'reminder':
+      return 'reminder';
+    case 'task':
+      return 'task';
+    case 'deadline':
+      return 'deadline';
+    case 'focus':
+      return 'focus';
+    case 'project_action':
+      return 'project action';
+    default:
+      return null;
+  }
+}
+
+function naturalList(values: string[]) {
+  if (values.length <= 1) return values[0] ?? '';
+  if (values.length === 2) return values.join(' and ');
+
+  return `${values.slice(0, -1).join(', ')}, and ${values.at(-1)}`;
+}
+
+function itemDescription(item: {
+  type?: string | null;
+  title?: string | null;
+  timeLabel?: string | null;
+  dateLabel?: string | null;
+}, options: { prefersFullDate: boolean }) {
+  const title = cleanText(item.title);
+  if (!title) return null;
+
+  const parts = [itemKind(item.type), title].filter(Boolean);
+  const schedule = options.prefersFullDate
+    ? cleanText(item.dateLabel) ?? cleanText(item.timeLabel)
+    : cleanText(item.timeLabel) ?? cleanText(item.dateLabel);
+  if (schedule) {
+    parts.push(`at ${schedule}`);
+  }
+
+  return parts.join(' ');
+}
+
 export function buildLedgerTodaySiriSummary(todayResponse: MobileTodayResponse) {
   const upcoming = todayResponse.upcoming ?? [];
   const today = todayResponse.today ?? [];
@@ -29,21 +75,21 @@ export function buildLedgerTodaySiriSummary(todayResponse: MobileTodayResponse) 
     )}, and ${formatCount(capturesCount, 'capture', 'captures')} waiting in Ledger.`,
   ];
 
-  const nextUpcoming = upcoming[0];
-  const nextUpcomingTitle = cleanText(nextUpcoming?.title);
-  const nextUpcomingTime = cleanText(nextUpcoming?.timeLabel);
+  const todayItems = today
+    .slice(0, 2)
+    .map((item) => itemDescription(item, { prefersFullDate: false }))
+    .filter((item): item is string => Boolean(item));
+  const upcomingItems = upcoming
+    .slice(0, 2)
+    .map((item) => itemDescription(item, { prefersFullDate: true }))
+    .filter((item): item is string => Boolean(item));
 
-  if (nextUpcomingTitle) {
-    parts.push(
-      nextUpcomingTime
-        ? `Your next item is ${nextUpcomingTitle} at ${nextUpcomingTime}.`
-        : `Your next item is ${nextUpcomingTitle}.`,
-    );
-  } else {
-    const firstTodayTitle = cleanText(today[0]?.title);
-    if (firstTodayTitle) {
-      parts.push(`First up: ${firstTodayTitle}.`);
-    }
+  if (todayItems.length > 0) {
+    parts.push(`Today: ${naturalList(todayItems)}.`);
+  }
+
+  if (upcomingItems.length > 0) {
+    parts.push(`Upcoming: ${naturalList(upcomingItems)}.`);
   }
 
   if (upcomingCount === 0 && todayCount <= 1 && capturesCount === 0 && todayCount === 1) {

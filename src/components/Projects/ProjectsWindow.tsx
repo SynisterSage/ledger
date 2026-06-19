@@ -1343,7 +1343,7 @@ export const ProjectsWindow = () => {
   return (
     <div
       className="relative flex h-screen flex-col overflow-hidden rounded-3xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] text-[var(--ledger-text-primary)] shadow-none"
-      style={{ scrollbarGutter: isLinkNoteModalOpen ? 'auto' : 'stable' }}
+      style={{ scrollbarGutter: isLinkNoteModalOpen || showCloseGuardModal ? 'auto' : 'stable' }}
     >
       <CloseGuardModal
         isOpen={showCloseGuardModal}

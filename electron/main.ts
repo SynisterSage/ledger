@@ -5295,6 +5295,15 @@ ipcMain.on('calendar:items-updated', () => {
   broadcastCalendarItemsUpdated();
 });
 
+ipcMain.on('ledger:theme-updated', (_event, payload: { theme?: 'light' | 'dark' | 'system' } | null) => {
+  const windows = BrowserWindow.getAllWindows().filter((win) => !win.isDestroyed());
+  for (const win of windows) {
+    if (!win.webContents.isDestroyed()) {
+      win.webContents.send('ledger:theme-updated', payload ?? null);
+    }
+  }
+});
+
 // Touch Bar setup for macOS
 function syncTouchBar() {
   if (process.platform !== 'darwin' || !sidebarWin || sidebarWin.isDestroyed()) return;

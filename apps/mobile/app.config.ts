@@ -22,6 +22,8 @@ const config: ExpoConfig = {
     infoPlist: {
       NSSiriUsageDescription: 'Allow Ledger to capture tasks, reminders, notes, and events with Siri.',
       LedgerAPIBaseURL: apiUrl,
+      LedgerSupabaseURL: supabaseUrl,
+      LedgerSupabaseAnonKey: supabaseAnonKey,
     },
   },
   android: {

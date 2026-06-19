@@ -1,6 +1,7 @@
 import AppIntents
 import Foundation
 import Security
+import SwiftUI
 import UIKit
 
 enum LedgerSiriCaptureKind: String {
@@ -49,12 +50,36 @@ enum LedgerSiriIntentSupport {
 }
 
 struct LedgerTodaySiriItem: Decodable {
+  let type: String?
   let title: String?
   let timeLabel: String?
+  let dateLabel: String?
 }
 
 struct LedgerTodaySiriCaptures: Decodable {
   let count: Int?
+}
+
+struct LedgerSiriAuthCredentials {
+  let accessToken: String
+  let refreshToken: String?
+}
+
+struct LedgerTodaySiriRow: Identifiable {
+  let id = UUID()
+  let kind: String
+  let title: String
+  let detail: String?
+  let tint: Color
+}
+
+struct LedgerTodaySiriSnapshot {
+  let spokenSummary: String
+  let todayCount: Int
+  let upcomingCount: Int
+  let captureCount: Int
+  let todayRows: [LedgerTodaySiriRow]
+  let upcomingRows: [LedgerTodaySiriRow]
 }
 
 struct LedgerTodaySiriResponse: Decodable {
@@ -64,7 +89,7 @@ struct LedgerTodaySiriResponse: Decodable {
 }
 
 enum LedgerTodaySiriSummaryBuilder {
-  static func build(from response: LedgerTodaySiriResponse) -> String {
+  static func build(from response: LedgerTodaySiriResponse) -> LedgerTodaySiriSnapshot {
     let upcoming = response.upcoming ?? []
     let today = response.today ?? []
     let captureCount = max(0, response.captures?.count ?? 0)
@@ -73,42 +98,29 @@ enum LedgerTodaySiriSummaryBuilder {
     let totalCount = upcomingCount + todayCount + captureCount
 
     if totalCount == 0 {
-      return "Nothing needs attention in Ledger today."
+      return LedgerTodaySiriSnapshot(
+        spokenSummary: "Nothing needs attention in Ledger today.",
+        todayCount: todayCount,
+        upcomingCount: upcomingCount,
+        captureCount: captureCount,
+        todayRows: [],
+        upcomingRows: []
+      )
     }
 
-    var parts: [String] = [
-      "You have \(formatCount(upcomingCount, singular: "upcoming item", plural: "upcoming items")), \(formatCount(todayCount, singular: "action", plural: "actions")), and \(formatCount(captureCount, singular: "capture", plural: "captures")) waiting in Ledger."
-    ]
+    let todayRows = Array(today.prefix(3)).compactMap { rowModel(for: $0) }
+    let upcomingRows = Array(upcoming.prefix(3)).compactMap { rowModel(for: $0, prefersFullDate: true) }
 
-    if let nextUpcoming = upcoming.first, let title = cleaned(nextUpcoming.title) {
-      if let timeLabel = cleaned(nextUpcoming.timeLabel) {
-        parts.append("Your next item is \(title) at \(timeLabel).")
-      } else {
-        parts.append("Your next item is \(title).")
-      }
-    } else if let firstToday = today.first, let title = cleaned(firstToday.title) {
-      parts.append("First up: \(title).")
-    }
-
-    if upcomingCount == 0, todayCount <= 1, captureCount == 0 {
-      parts[0] = todayCount == 1
-        ? "Today looks light in Ledger. You have one action due."
-        : parts[0]
-    } else if todayCount == 0, captureCount == 0, upcomingCount <= 1 {
-      parts[0] = upcomingCount == 1
-        ? "Today looks light in Ledger. You have one upcoming item and no actions due."
-        : parts[0]
-    }
-
-    if totalCount > 3 {
-      let actionTitles = today.compactMap { cleaned($0.title) }.prefix(2)
-      if !actionTitles.isEmpty, upcomingCount > 0 {
-        parts.append("You also have \(actionTitles.joined(separator: " and ")).")
-      }
-      parts.append("Open Ledger to see the full list.")
-    }
-
-    return parts.joined(separator: " ")
+    return LedgerTodaySiriSnapshot(
+      spokenSummary: todayCount == 0 && upcomingCount == 0
+        ? "Nothing needs attention in Ledger today."
+        : "Here’s today in Ledger.",
+      todayCount: todayCount,
+      upcomingCount: upcomingCount,
+      captureCount: captureCount,
+      todayRows: todayRows,
+      upcomingRows: upcomingRows
+    )
   }
 
   private static func formatCount(_ count: Int, singular: String, plural: String) -> String {
@@ -120,55 +132,222 @@ enum LedgerTodaySiriSummaryBuilder {
     guard let trimmed, !trimmed.isEmpty else { return nil }
     return trimmed
   }
+
+  private static func rowModel(for item: LedgerTodaySiriItem, prefersFullDate: Bool = false) -> LedgerTodaySiriRow? {
+    guard let title = cleaned(item.title) else { return nil }
+
+    let kind = itemKind(item.type) ?? "Item"
+    let schedule = prefersFullDate
+      ? cleaned(item.dateLabel) ?? cleaned(item.timeLabel)
+      : cleaned(item.timeLabel) ?? cleaned(item.dateLabel)
+
+    let detail = [kind, schedule].compactMap { $0 }.joined(separator: " · ")
+    let tint: Color
+    switch cleaned(item.type)?.lowercased() {
+    case "event":
+      tint = .orange
+    case "reminder":
+      tint = .blue
+    case "task":
+      tint = .green
+    case "deadline":
+      tint = .red
+    default:
+      tint = .secondary
+    }
+
+    return LedgerTodaySiriRow(
+      kind: kind,
+      title: title,
+      detail: detail.isEmpty ? nil : detail,
+      tint: tint
+    )
+  }
+
+  private static func itemKind(_ value: String?) -> String? {
+    switch cleaned(value)?.lowercased() {
+    case "event":
+      return "event"
+    case "reminder":
+      return "reminder"
+    case "task":
+      return "task"
+    case "deadline":
+      return "deadline"
+    case "focus":
+      return "focus"
+    case "project_action":
+      return "project action"
+    default:
+      return nil
+    }
+  }
+
+}
+
+struct LedgerTodaySiriSnippetView: View {
+  let snapshot: LedgerTodaySiriSnapshot
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 16) {
+      HStack(alignment: .firstTextBaseline) {
+        VStack(alignment: .leading, spacing: 2) {
+          Text("Today in Ledger")
+            .font(.headline)
+          Text(summaryLine)
+            .font(.subheadline)
+            .foregroundStyle(.secondary)
+        }
+        Spacer(minLength: 12)
+        VStack(alignment: .trailing, spacing: 4) {
+          countPill(label: "Today", value: snapshot.todayCount)
+          countPill(label: "Next", value: snapshot.upcomingCount)
+        }
+      }
+
+      if !snapshot.todayRows.isEmpty {
+        siriSection(title: "Today", rows: snapshot.todayRows)
+      }
+
+      if !snapshot.upcomingRows.isEmpty {
+        siriSection(title: "Upcoming", rows: snapshot.upcomingRows)
+      }
+
+      if snapshot.captureCount > 0 {
+        HStack {
+          Text("Captures")
+            .font(.subheadline.weight(.semibold))
+          Spacer()
+          Text("\(snapshot.captureCount)")
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(.secondary)
+        }
+        .padding(.top, 2)
+      }
+    }
+    .padding(.vertical, 10)
+    .padding(.horizontal, 14)
+  }
+
+  private var summaryLine: String {
+    if snapshot.todayCount == 0, snapshot.upcomingCount == 0, snapshot.captureCount == 0 {
+      return "Nothing needs attention today."
+    }
+
+    var parts: [String] = []
+    if snapshot.todayCount > 0 {
+      parts.append("\(snapshot.todayCount) today")
+    }
+    if snapshot.upcomingCount > 0 {
+      parts.append("\(snapshot.upcomingCount) upcoming")
+    }
+    if snapshot.captureCount > 0 {
+      parts.append("\(snapshot.captureCount) captures")
+    }
+    return parts.joined(separator: " | ")
+  }
+
+  private func countPill(label: String, value: Int) -> some View {
+    HStack(spacing: 6) {
+      Text(label)
+      Text("\(value)")
+        .fontWeight(.semibold)
+    }
+    .font(.caption)
+    .foregroundStyle(.secondary)
+  }
+
+  private func siriSection(title: String, rows: [LedgerTodaySiriRow]) -> some View {
+    VStack(alignment: .leading, spacing: 12) {
+      Text(title)
+        .font(.subheadline.weight(.semibold))
+        .foregroundStyle(.secondary)
+
+      VStack(alignment: .leading, spacing: 12) {
+        ForEach(rows) { row in
+          HStack(alignment: .top, spacing: 10) {
+            Circle()
+              .fill(row.tint)
+              .frame(width: 8, height: 8)
+              .padding(.top, 6)
+
+            VStack(alignment: .leading, spacing: 2) {
+              Text(row.title)
+                .font(.body.weight(.medium))
+                .lineLimit(1)
+              if let detail = row.detail {
+                Text(detail)
+                  .font(.caption)
+                  .foregroundStyle(.secondary)
+                  .lineLimit(1)
+              }
+            }
+
+            Spacer(minLength: 8)
+          }
+        }
+      }
+      .padding(.leading, 2)
+    }
+  }
 }
 
 enum LedgerTodaySiriAPI {
   private static let authStorageKey = "ledger-mobile-auth"
 
-  static func loadTodaySummary() async -> String {
-    guard let accessToken = readMobileAccessToken() else {
-      return "Open Ledger to sign in first."
+  static func loadTodaySnapshot() async -> LedgerTodaySiriSnapshot {
+    guard let credentials = readMobileAuthCredentials() else {
+      return LedgerTodaySiriSnapshot(
+        spokenSummary: "Open Ledger to sign in first.",
+        todayCount: 0,
+        upcomingCount: 0,
+        captureCount: 0,
+        todayRows: [],
+        upcomingRows: []
+      )
     }
 
     guard let baseURL = readAPIBaseURL() else {
-      return "I couldn't reach Ledger right now."
+      return LedgerTodaySiriSnapshot(
+        spokenSummary: "I couldn't reach Ledger right now.",
+        todayCount: 0,
+        upcomingCount: 0,
+        captureCount: 0,
+        todayRows: [],
+        upcomingRows: []
+      )
     }
 
-    var components = URLComponents(url: baseURL.appendingPathComponent("api/mobile/today"), resolvingAgainstBaseURL: false)
-    components?.queryItems = [
-      URLQueryItem(name: "workspace_id", value: "all"),
-      URLQueryItem(name: "date", value: todayDateKey()),
-    ]
-
-    guard let url = components?.url else {
-      return "I couldn't load Today from Ledger."
+    if let snapshot = await fetchTodaySnapshot(baseURL: baseURL, accessToken: credentials.accessToken) {
+      return snapshot
     }
 
-    var request = URLRequest(url: url)
-    request.httpMethod = "GET"
-    request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
-    request.setValue("application/json", forHTTPHeaderField: "Accept")
-    request.timeoutInterval = 12
-
-    do {
-      let (data, response) = try await URLSession.shared.data(for: request)
-      guard let httpResponse = response as? HTTPURLResponse else {
-        return "I couldn't reach Ledger right now."
-      }
-
-      if httpResponse.statusCode == 401 || httpResponse.statusCode == 403 {
-        return "Open Ledger to sign in first."
-      }
-
-      guard (200...299).contains(httpResponse.statusCode) else {
-        return "I couldn't reach Ledger right now."
-      }
-
-      let today = try JSONDecoder().decode(LedgerTodaySiriResponse.self, from: data)
-      return LedgerTodaySiriSummaryBuilder.build(from: today)
-    } catch {
-      return "I couldn't reach Ledger right now."
+    guard
+      let refreshToken = credentials.refreshToken,
+      let refreshedAccessToken = await refreshAccessToken(refreshToken)
+    else {
+      return LedgerTodaySiriSnapshot(
+        spokenSummary: "Open Ledger to sign in first.",
+        todayCount: 0,
+        upcomingCount: 0,
+        captureCount: 0,
+        todayRows: [],
+        upcomingRows: []
+      )
     }
+
+    guard let snapshot = await fetchTodaySnapshot(baseURL: baseURL, accessToken: refreshedAccessToken) else {
+      return LedgerTodaySiriSnapshot(
+        spokenSummary: "I couldn't reach Ledger right now.",
+        todayCount: 0,
+        upcomingCount: 0,
+        captureCount: 0,
+        todayRows: [],
+        upcomingRows: []
+      )
+    }
+
+    return snapshot
   }
 
   private static func readAPIBaseURL() -> URL? {
@@ -182,7 +361,29 @@ enum LedgerTodaySiriAPI {
     return URL(string: rawValue.trimmingCharacters(in: .whitespacesAndNewlines))
   }
 
-  private static func readMobileAccessToken() -> String? {
+  private static func readSupabaseBaseURL() -> URL? {
+    guard
+      let rawValue = Bundle.main.object(forInfoDictionaryKey: "LedgerSupabaseURL") as? String,
+      !rawValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    else {
+      return nil
+    }
+
+    return URL(string: rawValue.trimmingCharacters(in: .whitespacesAndNewlines))
+  }
+
+  private static func readSupabaseAnonKey() -> String? {
+    guard
+      let rawValue = Bundle.main.object(forInfoDictionaryKey: "LedgerSupabaseAnonKey") as? String
+    else {
+      return nil
+    }
+
+    let trimmed = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+    return trimmed.isEmpty ? nil : trimmed
+  }
+
+  private static func readMobileAuthCredentials() -> LedgerSiriAuthCredentials? {
     guard let sessionJSON = readSecureStoreValue(forKey: authStorageKey) else {
       return nil
     }
@@ -194,37 +395,58 @@ enum LedgerTodaySiriAPI {
       return nil
     }
 
-    return findAccessToken(in: object)
+    guard let accessToken = findString(in: object, key: "access_token") else {
+      return nil
+    }
+
+    return LedgerSiriAuthCredentials(
+      accessToken: accessToken,
+      refreshToken: findString(in: object, key: "refresh_token")
+    )
   }
 
   private static func readSecureStoreValue(forKey key: String) -> String? {
     let encodedKey = Data(key.utf8)
-    let query: [String: Any] = [
+    let baseQuery: [String: Any] = [
       kSecClass as String: kSecClassGenericPassword,
       kSecAttrService as String: "app",
       kSecAttrGeneric as String: encodedKey,
       kSecAttrAccount as String: encodedKey,
-      kSecMatchLimit as String: kSecMatchLimitOne,
-      kSecReturnData as String: kCFBooleanTrue as Any,
     ]
 
-    var item: CFTypeRef?
-    let status = SecItemCopyMatching(query as CFDictionary, &item)
-    guard status == errSecSuccess, let data = item as? Data else {
-      return nil
+    for query in [
+      baseQuery.merging([
+        kSecMatchLimit as String: kSecMatchLimitOne,
+        kSecReturnData as String: kCFBooleanTrue as Any,
+      ], uniquingKeysWith: { _, new in new }),
+      [
+        kSecClass as String: kSecClassGenericPassword,
+        kSecAttrGeneric as String: encodedKey,
+        kSecAttrAccount as String: encodedKey,
+        kSecMatchLimit as String: kSecMatchLimitOne,
+        kSecReturnData as String: kCFBooleanTrue as Any,
+      ],
+    ] {
+      var item: CFTypeRef?
+      let status = SecItemCopyMatching(query as CFDictionary, &item)
+      guard status == errSecSuccess, let data = item as? Data else {
+        continue
+      }
+
+      return String(data: data, encoding: .utf8)
     }
 
-    return String(data: data, encoding: .utf8)
+    return nil
   }
 
-  private static func findAccessToken(in value: Any) -> String? {
+  private static func findString(in value: Any, key: String) -> String? {
     if let dictionary = value as? [String: Any] {
-      if let token = dictionary["access_token"] as? String, !token.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+      if let token = dictionary[key] as? String, !token.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
         return token.trimmingCharacters(in: .whitespacesAndNewlines)
       }
 
       for nestedValue in dictionary.values {
-        if let token = findAccessToken(in: nestedValue) {
+        if let token = findString(in: nestedValue, key: key) {
           return token
         }
       }
@@ -232,13 +454,93 @@ enum LedgerTodaySiriAPI {
 
     if let array = value as? [Any] {
       for nestedValue in array {
-        if let token = findAccessToken(in: nestedValue) {
+        if let token = findString(in: nestedValue, key: key) {
           return token
         }
       }
     }
 
     return nil
+  }
+
+  private static func fetchTodaySnapshot(baseURL: URL, accessToken: String) async -> LedgerTodaySiriSnapshot? {
+    guard let url = todayRequestURL(baseURL: baseURL) else {
+      return nil
+    }
+
+    var request = URLRequest(url: url)
+    request.httpMethod = "GET"
+    request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+    request.setValue("application/json", forHTTPHeaderField: "Accept")
+    request.timeoutInterval = 12
+
+    do {
+      let (data, response) = try await URLSession.shared.data(for: request)
+      guard let httpResponse = response as? HTTPURLResponse else {
+        return nil
+      }
+
+      guard (200...299).contains(httpResponse.statusCode) else {
+        return nil
+      }
+
+      let today = try JSONDecoder().decode(LedgerTodaySiriResponse.self, from: data)
+      return LedgerTodaySiriSummaryBuilder.build(from: today)
+    } catch {
+      return nil
+    }
+  }
+
+  private static func todayRequestURL(baseURL: URL) -> URL? {
+    var components = URLComponents(url: baseURL.appendingPathComponent("api/mobile/today"), resolvingAgainstBaseURL: false)
+    components?.queryItems = [
+      URLQueryItem(name: "workspace_id", value: "all"),
+      URLQueryItem(name: "date", value: todayDateKey()),
+    ]
+
+    return components?.url
+  }
+
+  private static func refreshAccessToken(_ refreshToken: String) async -> String? {
+    guard let baseURL = readSupabaseBaseURL(), let anonKey = readSupabaseAnonKey() else {
+      return nil
+    }
+
+    guard let url = URLComponents(
+      url: baseURL.appendingPathComponent("auth/v1/token"),
+      resolvingAgainstBaseURL: false
+    )?.url else {
+      return nil
+    }
+
+    var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+    components?.queryItems = [URLQueryItem(name: "grant_type", value: "refresh_token")]
+
+    guard let tokenURL = components?.url else {
+      return nil
+    }
+
+    var request = URLRequest(url: tokenURL)
+    request.httpMethod = "POST"
+    request.setValue(anonKey, forHTTPHeaderField: "apikey")
+    request.setValue("Bearer \(anonKey)", forHTTPHeaderField: "Authorization")
+    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    request.timeoutInterval = 12
+    request.httpBody = try? JSONSerialization.data(withJSONObject: [
+      "refresh_token": refreshToken
+    ])
+
+    do {
+      let (data, response) = try await URLSession.shared.data(for: request)
+      guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else {
+        return nil
+      }
+
+      let object = try JSONSerialization.jsonObject(with: data)
+      return findString(in: object, key: "access_token")
+    } catch {
+      return nil
+    }
   }
 
   private static func todayDateKey() -> String {
@@ -254,15 +556,17 @@ enum LedgerTodaySiriAPI {
 struct GetLedgerTodayIntent: AppIntent {
   static let title: LocalizedStringResource = "What's Today in Ledger?"
   static let description = IntentDescription("Get a short read-only summary of Today in Ledger.")
-  static let openAppWhenRun = true
+  static let openAppWhenRun = false
 
   static var parameterSummary: some ParameterSummary {
     Summary("Check Today in Ledger")
   }
 
-  func perform() async throws -> some IntentResult {
-    let summary = await LedgerTodaySiriAPI.loadTodaySummary()
-    return .result(dialog: IntentDialog(stringLiteral: summary))
+  func perform() async throws -> some IntentResult & ProvidesDialog & ShowsSnippetView {
+    let snapshot = await LedgerTodaySiriAPI.loadTodaySnapshot()
+    return .result(dialog: IntentDialog(stringLiteral: snapshot.spokenSummary)) {
+      LedgerTodaySiriSnippetView(snapshot: snapshot)
+    }
   }
 }
 

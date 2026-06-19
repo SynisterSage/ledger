@@ -11,6 +11,9 @@ type CloseGuardModalProps = {
   onCancel: () => void;
   onRetrySaveAndClose?: () => void;
   onCloseWithoutSaving?: () => void;
+  backdropBorderRadius?: string;
+  disablePortal?: boolean;
+  manageWindowChrome?: boolean;
 };
 
 export const CloseGuardModal = ({
@@ -22,6 +25,9 @@ export const CloseGuardModal = ({
   onCancel,
   onRetrySaveAndClose,
   onCloseWithoutSaving,
+  backdropBorderRadius = 'inherit',
+  disablePortal = true,
+  manageWindowChrome = false,
 }: CloseGuardModalProps) => {
   useEffect(() => {
     if (!isOpen) return;
@@ -45,6 +51,9 @@ export const CloseGuardModal = ({
     <ModalOverlay
       isOpen={isOpen}
       onClose={onCancel}
+      backdropBorderRadius={backdropBorderRadius}
+      disablePortal={disablePortal}
+      manageWindowChrome={manageWindowChrome}
       classNameContainer="w-full max-w-lg overflow-hidden rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] p-5 shadow-[0_24px_70px_rgba(17,24,39,0.12)]"
     >
       <div className="flex items-start justify-between gap-4">

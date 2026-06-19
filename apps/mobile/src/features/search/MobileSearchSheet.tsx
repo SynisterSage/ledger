@@ -597,31 +597,31 @@ export function MobileSearchSheet() {
 
           {!query.trim() ? (
             <View style={styles.stateWrap}>
-              <AppText variant="body" style={{ paddingTop: theme.spacing.sm + 150, color: theme.colors.textSecondary}}>
+              <AppText variant="body" style={[styles.stateText, { color: theme.colors.textSecondary }]}>
                 Search across your Ledger workspaces.
               </AppText>
             </View>
           ) : query.trim().length < 2 ? (
             <View style={styles.stateWrap}>
-              <AppText variant="body" style={{ color: theme.colors.textSecondary }}>
+              <AppText variant="body" style={[styles.stateText, { color: theme.colors.textSecondary }]}>
                 Type at least 2 characters to search.
               </AppText>
             </View>
           ) : isLoading ? (
             <View style={styles.stateWrap}>
-              <AppText variant="body" style={{ color: theme.colors.textSecondary }}>
+              <AppText variant="body" style={[styles.stateText, { color: theme.colors.textSecondary }]}>
                 Searching…
               </AppText>
             </View>
           ) : error ? (
             <View style={styles.stateWrap}>
-              <AppText variant="body" style={{ color: theme.colors.textSecondary }}>
+              <AppText variant="body" style={[styles.stateText, { color: theme.colors.textSecondary }]}>
                 Couldn’t search Ledger.
               </AppText>
             </View>
           ) : results.length === 0 ? (
             <View style={styles.stateWrap}>
-              <AppText variant="body" style={{ color: theme.colors.textSecondary }}>
+              <AppText variant="body" style={[styles.stateText, { color: theme.colors.textSecondary }]}>
                 No results found.
               </AppText>
             </View>
@@ -705,9 +705,15 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   stateWrap: {
-    minHeight: 160,
+    minHeight: 170,
     alignItems: 'center',
     justifyContent: 'center',
+    paddingVertical: 20,
+    paddingHorizontal: 24,
+  },
+  stateText: {
+    textAlign: 'center',
+    lineHeight: 22,
   },
   detailTitle: {
     fontSize: 26,

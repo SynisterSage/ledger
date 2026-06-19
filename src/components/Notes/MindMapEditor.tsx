@@ -17,6 +17,22 @@ type MindMapStructure = {
   rootId: string;
 };
 
+const mindMapTheme = {
+  surface: 'var(--ledger-surface-card)',
+  surfaceMuted: 'var(--ledger-surface-muted)',
+  surfaceHover: 'var(--ledger-surface-hover)',
+  borderSubtle: 'var(--ledger-border-subtle)',
+  borderStrong: 'var(--ledger-border-strong)',
+  textPrimary: 'var(--ledger-text-primary)',
+  textSecondary: 'var(--ledger-text-secondary)',
+  textMuted: 'var(--ledger-text-muted)',
+  accent: 'var(--ledger-accent)',
+  accentHover: 'var(--ledger-accent-hover)',
+  danger: 'var(--ledger-danger)',
+  inputBackground: 'var(--ledger-input-background)',
+  shadow: 'var(--ledger-shadow)',
+} as const;
+
 interface MindMapEditorProps {
   structure: unknown;
   onChange: (structure: MindMapStructure) => void;
@@ -673,8 +689,8 @@ export const MindMapEditor: React.FC<MindMapEditorProps> = ({
       Math.min(isTiny ? 144 : 162, 42 + node.label.length * (isTiny ? 5 : 6))
     );
     const nodeHeight = isRoot ? 54 : isTiny ? 42 : 46;
-    const fill = isSelected ? '#FF5F40' : node.color || (isRoot ? '#fff4ef' : '#ffffff');
-    const stroke = isSelected ? '#ea5336' : isRoot ? '#ffc8bc' : '#d1d5db';
+    const fill = isSelected ? mindMapTheme.accent : node.color || (isRoot ? 'var(--ledger-surface-muted)' : mindMapTheme.surface);
+    const stroke = isSelected ? mindMapTheme.accentHover : isRoot ? 'var(--ledger-border-strong)' : mindMapTheme.borderSubtle;
 
     return (
       <g key={nodeId}>
@@ -684,7 +700,7 @@ export const MindMapEditor: React.FC<MindMapEditorProps> = ({
             y1={parentY}
             x2={displayX}
             y2={displayY}
-            stroke={isRoot ? '#ffc8bc' : '#d1d5db'}
+            stroke={isRoot ? mindMapTheme.borderStrong : mindMapTheme.borderSubtle}
             strokeWidth="2"
             strokeLinecap="round"
             pointerEvents="none"
@@ -734,7 +750,7 @@ export const MindMapEditor: React.FC<MindMapEditorProps> = ({
             cx={-nodeWidth / 2 + 12}
             cy={0}
             r="4"
-            fill={isSelected ? 'white' : isRoot ? '#FF5F40' : '#FFBB3F'}
+            fill={isSelected ? 'white' : isRoot ? mindMapTheme.accent : 'var(--ledger-warning)'}
             opacity={isSelected ? 0.95 : 1}
           />
           <text
@@ -743,7 +759,7 @@ export const MindMapEditor: React.FC<MindMapEditorProps> = ({
             fontSize={isRoot ? '13' : '12'}
             fontWeight="600"
             textAnchor={isRoot ? 'middle' : 'start'}
-            fill={isSelected ? 'white' : '#1f2937'}
+            fill={isSelected ? 'white' : mindMapTheme.textPrimary}
             style={{ userSelect: 'none', pointerEvents: 'none' }}
           >
             {isRoot
@@ -763,8 +779,8 @@ export const MindMapEditor: React.FC<MindMapEditorProps> = ({
               y={displayY + nodeHeight / 2 + 4}
               width="16"
               height="16"
-              fill="white"
-              stroke="#d1d5db"
+              fill={mindMapTheme.surface}
+              stroke={mindMapTheme.borderSubtle}
               strokeWidth="1"
               rx="2"
             />
@@ -774,7 +790,7 @@ export const MindMapEditor: React.FC<MindMapEditorProps> = ({
               fontSize="10"
               fontWeight="bold"
               textAnchor="middle"
-              fill="#6b7280"
+              fill={mindMapTheme.textSecondary}
             >
               {node.collapsed ? '+' : '−'}
             </text>
@@ -793,7 +809,13 @@ export const MindMapEditor: React.FC<MindMapEditorProps> = ({
                 if (e.key === 'Enter') handleRenameNode(nodeId, editingLabel);
                 if (e.key === 'Escape') setEditingNodeId(null);
               }}
-              className="w-full text-xs text-center bg-white border border-gray-300 rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-gray-900"
+              className="w-full text-xs text-center rounded px-1 py-0.5 outline-none"
+              style={{
+                backgroundColor: mindMapTheme.surface,
+                border: `1px solid ${mindMapTheme.borderSubtle}`,
+                color: mindMapTheme.textPrimary,
+                boxShadow: `0 0 0 1px ${mindMapTheme.surface}`,
+              }}
             />
           </foreignObject>
         )}
@@ -804,16 +826,25 @@ export const MindMapEditor: React.FC<MindMapEditorProps> = ({
   return (
     <div
       ref={containerRef}
-      className="relative flex h-full min-h-0 w-full flex-col overflow-hidden rounded-lg border border-gray-200 bg-gray-50"
+      className="relative flex h-full min-h-0 w-full flex-col overflow-hidden rounded-lg border"
+      style={{
+        borderColor: mindMapTheme.borderSubtle,
+        backgroundColor: mindMapTheme.surfaceMuted,
+        color: mindMapTheme.textPrimary,
+      }}
     >
       {isCompact ? (
-        <div className="border-b border-gray-200 bg-white px-3 py-2">
+        <div
+          className="border-b px-3 py-2"
+          style={{ borderColor: mindMapTheme.borderSubtle, backgroundColor: mindMapTheme.surface }}
+        >
           <div className="flex items-center gap-2">
             <div className="flex min-w-0 flex-wrap items-center gap-2">
               <button
                 onClick={() => handleAddChild()}
                 disabled={!selectedNodeId}
-                className="flex items-center gap-1 rounded-lg bg-[#FF5F40] px-2.5 py-1.5 text-xs font-medium text-white transition hover:bg-[#ea5336] disabled:cursor-not-allowed disabled:opacity-50"
+                className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-medium text-white transition disabled:cursor-not-allowed disabled:opacity-50"
+                style={{ backgroundColor: mindMapTheme.accent }}
                 title="Ctrl+N"
               >
                 <Plus size={14} />
@@ -822,14 +853,22 @@ export const MindMapEditor: React.FC<MindMapEditorProps> = ({
               <button
                 onClick={() => handleDeleteNode()}
                 disabled={!selectedNodeId || selectedNodeId === rootId}
-                className="flex items-center gap-1 rounded-lg bg-red-50 px-2.5 py-1.5 text-xs font-medium text-red-700 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
+                className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-medium transition disabled:cursor-not-allowed disabled:opacity-50"
+                style={{
+                  backgroundColor: 'color-mix(in srgb, var(--ledger-danger) 8%, transparent)',
+                  color: mindMapTheme.danger,
+                }}
                 title="Delete"
               >
                 <Trash2 size={14} />
               </button>
               <button
                 onClick={reflowLayout}
-                className="rounded-lg bg-gray-100 px-2.5 py-1.5 text-xs font-medium text-gray-700 transition hover:bg-gray-200"
+                className="rounded-lg px-2.5 py-1.5 text-xs font-medium transition"
+                style={{
+                  backgroundColor: mindMapTheme.surfaceMuted,
+                  color: mindMapTheme.textSecondary,
+                }}
                 title="Arrange nodes"
               >
                 Arrange
@@ -839,16 +878,18 @@ export const MindMapEditor: React.FC<MindMapEditorProps> = ({
             <div className="ml-auto flex items-center gap-1 shrink-0">
               <button
                 onClick={() => setZoom(Math.max(0.5, zoom - 0.1))}
-                className="h-8 w-8 rounded bg-gray-100 text-xs font-medium text-gray-700 hover:bg-gray-200"
+                className="h-8 w-8 rounded text-xs font-medium transition"
+                style={{ backgroundColor: mindMapTheme.surfaceMuted, color: mindMapTheme.textSecondary }}
               >
                 −
               </button>
-              <span className="w-11 text-center text-xs font-medium text-gray-600">
+              <span className="w-11 text-center text-xs font-medium" style={{ color: mindMapTheme.textSecondary }}>
                 {Math.round(zoom * 100)}%
               </span>
               <button
                 onClick={() => setZoom(Math.min(2, zoom + 0.1))}
-                className="h-8 w-8 rounded bg-gray-100 text-xs font-medium text-gray-700 hover:bg-gray-200"
+                className="h-8 w-8 rounded text-xs font-medium transition"
+                style={{ backgroundColor: mindMapTheme.surfaceMuted, color: mindMapTheme.textSecondary }}
               >
                 +
               </button>
@@ -858,14 +899,22 @@ export const MindMapEditor: React.FC<MindMapEditorProps> = ({
                     setContextMenu(null);
                     setMenuOpen((s) => !s);
                   }}
-                  className="h-8 w-8 rounded bg-gray-100 text-xs font-medium text-gray-700 hover:bg-gray-200"
+                  className="h-8 w-8 rounded text-xs font-medium transition"
+                  style={{ backgroundColor: mindMapTheme.surfaceMuted, color: mindMapTheme.textSecondary }}
                   aria-expanded={menuOpen}
                   aria-haspopup="true"
                 >
                   ⋯
                 </button>
                 {menuOpen && (
-                  <div className="absolute right-0 mt-1 w-40 bg-white border border-gray-200 rounded-lg shadow-lg transition z-10">
+                  <div
+                    className="absolute right-0 mt-1 w-40 rounded-lg border shadow-lg transition z-10"
+                    style={{
+                      backgroundColor: mindMapTheme.surface,
+                      borderColor: mindMapTheme.borderSubtle,
+                      boxShadow: mindMapTheme.shadow,
+                    }}
+                  >
                     {canToggleFullscreen && (
                       <>
                         <button
@@ -873,36 +922,41 @@ export const MindMapEditor: React.FC<MindMapEditorProps> = ({
                             onToggleFullscreen?.();
                             setMenuOpen(false);
                           }}
-                          className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs hover:bg-gray-50 first:rounded-t-lg"
+                          className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs first:rounded-t-lg"
+                          style={{ color: mindMapTheme.textSecondary }}
                         >
                           {isFullscreen ? <Minimize2 size={12} /> : <Maximize2 size={12} />}
                           {isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
                         </button>
-                        <div className="border-t border-gray-100" />
+                        <div className="border-t" style={{ borderColor: mindMapTheme.borderSubtle }} />
                       </>
                     )}
                     <button
                       onClick={resetMindMap}
-                      className="w-full text-left px-3 py-2 text-xs hover:bg-gray-50 first:rounded-t-lg text-red-600"
+                      className="w-full text-left px-3 py-2 text-xs first:rounded-t-lg"
+                      style={{ color: mindMapTheme.danger }}
                     >
                       Reset mind map
                     </button>
-                    <div className="border-t border-gray-100" />
+                    <div className="border-t" style={{ borderColor: mindMapTheme.borderSubtle }} />
                     <button
                       onClick={exportAsJSON}
-                      className="w-full text-left px-3 py-2 text-xs hover:bg-gray-50"
+                      className="w-full text-left px-3 py-2 text-xs"
+                      style={{ color: mindMapTheme.textSecondary }}
                     >
                       Export as JSON
                     </button>
                     <button
                       onClick={exportAsMarkdown}
-                      className="w-full text-left px-3 py-2 text-xs hover:bg-gray-50"
+                      className="w-full text-left px-3 py-2 text-xs"
+                      style={{ color: mindMapTheme.textSecondary }}
                     >
                       Export as Markdown
                     </button>
                     <button
                       onClick={copyAsMarkdown}
-                      className="last:rounded-b-lg flex w-full items-center gap-1 px-3 py-2 text-left text-xs hover:bg-gray-50"
+                      className="last:rounded-b-lg flex w-full items-center gap-1 px-3 py-2 text-left text-xs"
+                      style={{ color: mindMapTheme.textSecondary }}
                     >
                       <Copy size={12} />
                       Copy as Markdown
@@ -923,7 +977,8 @@ export const MindMapEditor: React.FC<MindMapEditorProps> = ({
                     className="h-5 w-5 rounded border-2 transition hover:shadow-md"
                     style={{
                       backgroundColor: color,
-                      borderColor: nodes[selectedNodeId]?.color === color ? '#FF5F40' : '#d1d5db',
+                      borderColor:
+                        nodes[selectedNodeId]?.color === color ? mindMapTheme.accent : mindMapTheme.borderSubtle,
                     }}
                     title={nodeColorLabels[idx]}
                   />
@@ -932,7 +987,12 @@ export const MindMapEditor: React.FC<MindMapEditorProps> = ({
               <select
                 value={nodes[selectedNodeId]?.group ?? 'Ungrouped'}
                 onChange={(e) => handleAssignGroup(e.target.value)}
-                className="min-w-0 flex-1 rounded border border-gray-200 bg-white px-2 py-1 text-xs text-gray-700"
+                className="min-w-0 flex-1 rounded border px-2 py-1 text-xs"
+                style={{
+                  borderColor: mindMapTheme.borderSubtle,
+                  backgroundColor: mindMapTheme.surface,
+                  color: mindMapTheme.textSecondary,
+                }}
               >
                 {availableGroups.map((group) => (
                   <option key={group} value={group}>
@@ -944,11 +1004,15 @@ export const MindMapEditor: React.FC<MindMapEditorProps> = ({
           )}
         </div>
       ) : (
-        <div className="flex flex-wrap items-center gap-2 border-b border-gray-200 bg-white px-4 py-3">
+        <div
+          className="flex flex-wrap items-center gap-2 border-b px-4 py-3"
+          style={{ borderColor: mindMapTheme.borderSubtle, backgroundColor: mindMapTheme.surface }}
+        >
           <button
             onClick={() => handleAddChild()}
             disabled={!selectedNodeId}
-            className="flex items-center gap-1 rounded-lg bg-[#FF5F40] px-3 py-1.5 text-xs font-medium text-white transition hover:bg-[#ea5336] disabled:cursor-not-allowed disabled:opacity-50"
+            className="flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-medium text-white transition disabled:cursor-not-allowed disabled:opacity-50"
+            style={{ backgroundColor: mindMapTheme.accent }}
             title="Ctrl+N"
           >
             <Plus size={14} />
@@ -957,7 +1021,11 @@ export const MindMapEditor: React.FC<MindMapEditorProps> = ({
           <button
             onClick={() => handleDeleteNode()}
             disabled={!selectedNodeId || selectedNodeId === rootId}
-            className="flex items-center gap-1 rounded-lg bg-red-50 px-3 py-1.5 text-xs font-medium text-red-700 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
+            className="flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-medium transition disabled:cursor-not-allowed disabled:opacity-50"
+            style={{
+              backgroundColor: 'rgba(217, 45, 32, 0.08)',
+              color: mindMapTheme.danger,
+            }}
             title="Delete"
           >
             <Trash2 size={14} />
@@ -965,7 +1033,8 @@ export const MindMapEditor: React.FC<MindMapEditorProps> = ({
 
           <button
             onClick={reflowLayout}
-            className="rounded-lg bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-700 transition hover:bg-gray-200"
+            className="rounded-lg px-3 py-1.5 text-xs font-medium transition"
+            style={{ backgroundColor: mindMapTheme.surfaceMuted, color: mindMapTheme.textSecondary }}
             title="Arrange nodes"
           >
             Arrange
@@ -981,7 +1050,8 @@ export const MindMapEditor: React.FC<MindMapEditorProps> = ({
                     className="h-5 w-5 rounded border-2 transition hover:shadow-md"
                     style={{
                       backgroundColor: color,
-                      borderColor: nodes[selectedNodeId]?.color === color ? '#FF5F40' : '#d1d5db',
+                      borderColor:
+                        nodes[selectedNodeId]?.color === color ? mindMapTheme.accent : mindMapTheme.borderSubtle,
                     }}
                     title={nodeColorLabels[idx]}
                   />
@@ -990,7 +1060,12 @@ export const MindMapEditor: React.FC<MindMapEditorProps> = ({
               <select
                 value={nodes[selectedNodeId]?.group ?? 'Ungrouped'}
                 onChange={(e) => handleAssignGroup(e.target.value)}
-                className="ml-2 rounded border border-gray-200 bg-white px-2 py-1 text-xs text-gray-700"
+                className="ml-2 rounded border px-2 py-1 text-xs"
+                style={{
+                  borderColor: mindMapTheme.borderSubtle,
+                  backgroundColor: mindMapTheme.surface,
+                  color: mindMapTheme.textSecondary,
+                }}
               >
                 {availableGroups.map((group) => (
                   <option key={group} value={group}>
@@ -1004,16 +1079,18 @@ export const MindMapEditor: React.FC<MindMapEditorProps> = ({
           <div className="ml-auto flex items-center gap-1.5">
             <button
               onClick={() => setZoom(Math.max(0.5, zoom - 0.1))}
-              className="rounded bg-gray-100 px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-200"
+            className="rounded px-2 py-1 text-xs font-medium transition"
+            style={{ backgroundColor: mindMapTheme.surfaceMuted, color: mindMapTheme.textSecondary }}
             >
               −
             </button>
-            <span className="min-w-12 text-center text-xs font-medium text-gray-600">
+            <span className="min-w-12 text-center text-xs font-medium" style={{ color: mindMapTheme.textSecondary }}>
               {Math.round(zoom * 100)}%
             </span>
             <button
               onClick={() => setZoom(Math.min(2, zoom + 0.1))}
-              className="rounded bg-gray-100 px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-200"
+            className="rounded px-2 py-1 text-xs font-medium transition"
+            style={{ backgroundColor: mindMapTheme.surfaceMuted, color: mindMapTheme.textSecondary }}
             >
               +
             </button>
@@ -1024,36 +1101,48 @@ export const MindMapEditor: React.FC<MindMapEditorProps> = ({
                   setContextMenu(null);
                   setMenuOpen((s) => !s);
                 }}
-                className="rounded bg-gray-100 px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-200"
+                className="rounded px-2 py-1 text-xs font-medium transition"
+                style={{ backgroundColor: mindMapTheme.surfaceMuted, color: mindMapTheme.textSecondary }}
                 aria-expanded={menuOpen}
                 aria-haspopup="true"
               >
                 ⋯
               </button>
               {menuOpen && (
-                <div className="absolute right-0 mt-1 w-40 bg-white border border-gray-200 rounded-lg shadow-lg transition z-10">
+                <div
+                  className="absolute right-0 mt-1 w-40 rounded-lg border shadow-lg transition z-10"
+                  style={{
+                    backgroundColor: mindMapTheme.surface,
+                    borderColor: mindMapTheme.borderSubtle,
+                    boxShadow: mindMapTheme.shadow,
+                  }}
+                >
                   <button
                     onClick={resetMindMap}
-                    className="w-full text-left px-3 py-2 text-xs hover:bg-gray-50 first:rounded-t-lg text-red-600"
+                    className="w-full text-left px-3 py-2 text-xs first:rounded-t-lg"
+                    style={{ color: mindMapTheme.danger }}
                   >
                     Reset mind map
                   </button>
-                  <div className="border-t border-gray-100" />
+                  <div className="border-t" style={{ borderColor: mindMapTheme.borderSubtle }} />
                   <button
                     onClick={exportAsJSON}
-                    className="w-full text-left px-3 py-2 text-xs hover:bg-gray-50"
+                    className="w-full text-left px-3 py-2 text-xs"
+                    style={{ color: mindMapTheme.textSecondary }}
                   >
                     Export as JSON
                   </button>
                   <button
                     onClick={exportAsMarkdown}
-                    className="w-full text-left px-3 py-2 text-xs hover:bg-gray-50"
+                    className="w-full text-left px-3 py-2 text-xs"
+                    style={{ color: mindMapTheme.textSecondary }}
                   >
                     Export as Markdown
                   </button>
                   <button
                     onClick={copyAsMarkdown}
-                    className="w-full text-left px-3 py-2 text-xs hover:bg-gray-50 last:rounded-b-lg flex items-center gap-1"
+                    className="w-full text-left px-3 py-2 text-xs last:rounded-b-lg flex items-center gap-1"
+                    style={{ color: mindMapTheme.textSecondary }}
                   >
                     <Copy size={12} />
                     Copy as Markdown
@@ -1067,7 +1156,14 @@ export const MindMapEditor: React.FC<MindMapEditorProps> = ({
 
       {toastMessage && (
         <div className="pointer-events-none absolute bottom-16 left-4 z-20">
-          <div className="bg-black text-white text-xs px-3 py-2 rounded shadow-lg">
+          <div
+            className="text-xs px-3 py-2 rounded shadow-lg"
+            style={{
+              backgroundColor: mindMapTheme.textPrimary,
+              color: mindMapTheme.surface,
+              boxShadow: mindMapTheme.shadow,
+            }}
+          >
             {toastMessage}
           </div>
         </div>
@@ -1076,26 +1172,35 @@ export const MindMapEditor: React.FC<MindMapEditorProps> = ({
       {contextMenu && (
         <div
           ref={contextMenuRef}
-          className="absolute z-30 w-44 bg-white border border-gray-200 rounded-lg shadow-xl py-1"
-          style={{ left: contextMenu.x, top: contextMenu.y }}
+          className="absolute z-30 w-44 rounded-lg border py-1 shadow-xl"
+          style={{
+            left: contextMenu.x,
+            top: contextMenu.y,
+            backgroundColor: mindMapTheme.surface,
+            borderColor: mindMapTheme.borderSubtle,
+            boxShadow: mindMapTheme.shadow,
+          }}
         >
           {contextMenu.nodeId ? (
             <>
               <button
                 onClick={() => handleAddChild(contextMenu.nodeId as string)}
-                className="w-full text-left px-3 py-2 text-xs hover:bg-gray-50"
+                className="w-full text-left px-3 py-2 text-xs"
+                style={{ color: mindMapTheme.textSecondary }}
               >
                 Add child
               </button>
               <button
                 onClick={() => handleAddSibling(contextMenu.nodeId as string)}
-                className="w-full text-left px-3 py-2 text-xs hover:bg-gray-50"
+                className="w-full text-left px-3 py-2 text-xs"
+                style={{ color: mindMapTheme.textSecondary }}
               >
                 Add sibling
               </button>
               <button
                 onClick={() => handleDuplicateBranch(contextMenu.nodeId as string)}
-                className="w-full text-left px-3 py-2 text-xs hover:bg-gray-50"
+                className="w-full text-left px-3 py-2 text-xs"
+                style={{ color: mindMapTheme.textSecondary }}
               >
                 Duplicate branch
               </button>
@@ -1107,34 +1212,38 @@ export const MindMapEditor: React.FC<MindMapEditorProps> = ({
                   setEditingLabel(node.label);
                   setContextMenu(null);
                 }}
-                className="w-full text-left px-3 py-2 text-xs hover:bg-gray-50"
+                className="w-full text-left px-3 py-2 text-xs"
+                style={{ color: mindMapTheme.textSecondary }}
               >
                 Rename
               </button>
               <button
                 onClick={() => handleToggleCollapse(contextMenu.nodeId as string)}
-                className="w-full text-left px-3 py-2 text-xs hover:bg-gray-50"
+                className="w-full text-left px-3 py-2 text-xs"
+                style={{ color: mindMapTheme.textSecondary }}
               >
                 {nodes[contextMenu.nodeId as string]?.collapsed
                   ? 'Expand branch'
                   : 'Collapse branch'}
               </button>
-              <div className="my-1 border-t border-gray-100" />
+              <div className="my-1 border-t" style={{ borderColor: mindMapTheme.borderSubtle }} />
               {availableGroups.map((group) => (
                 <button
                   key={group}
                   onClick={() => handleAssignGroup(group, contextMenu.nodeId as string)}
-                  className="w-full text-left px-3 py-2 text-xs hover:bg-gray-50"
+                  className="w-full text-left px-3 py-2 text-xs"
+                  style={{ color: mindMapTheme.textSecondary }}
                 >
                   Move to {group}
                 </button>
               ))}
               {(contextMenu.nodeId as string) !== rootId && (
                 <>
-                  <div className="my-1 border-t border-gray-100" />
+                  <div className="my-1 border-t" style={{ borderColor: mindMapTheme.borderSubtle }} />
                   <button
                     onClick={() => handleDeleteNode(contextMenu.nodeId as string)}
-                    className="w-full text-left px-3 py-2 text-xs text-red-600 hover:bg-red-50"
+                    className="w-full text-left px-3 py-2 text-xs"
+                    style={{ color: mindMapTheme.danger }}
                   >
                     Delete branch
                   </button>
@@ -1148,7 +1257,8 @@ export const MindMapEditor: React.FC<MindMapEditorProps> = ({
                   handleAddChild(rootId);
                   setContextMenu(null);
                 }}
-                className="w-full text-left px-3 py-2 text-xs hover:bg-gray-50"
+                className="w-full text-left px-3 py-2 text-xs"
+                style={{ color: mindMapTheme.textSecondary }}
               >
                 Add root branch
               </button>
@@ -1158,7 +1268,8 @@ export const MindMapEditor: React.FC<MindMapEditorProps> = ({
                   setContextMenu(null);
                   showToast('Layout arranged');
                 }}
-                className="w-full text-left px-3 py-2 text-xs hover:bg-gray-50"
+                className="w-full text-left px-3 py-2 text-xs"
+                style={{ color: mindMapTheme.textSecondary }}
               >
                 Arrange nodes
               </button>
@@ -1170,7 +1281,8 @@ export const MindMapEditor: React.FC<MindMapEditorProps> = ({
                   setContextMenu(null);
                   showToast('View reset');
                 }}
-                className="w-full text-left px-3 py-2 text-xs hover:bg-gray-50"
+                className="w-full text-left px-3 py-2 text-xs"
+                style={{ color: mindMapTheme.textSecondary }}
               >
                 Reset view
               </button>
@@ -1181,7 +1293,8 @@ export const MindMapEditor: React.FC<MindMapEditorProps> = ({
 
       <div
         ref={mapViewportRef}
-        className="flex-1 overflow-hidden bg-white overscroll-contain"
+        className="flex-1 overflow-hidden overscroll-contain"
+        style={{ backgroundColor: mindMapTheme.surfaceMuted }}
         onWheelCapture={handleViewportWheelCapture}
       >
         <svg
@@ -1190,7 +1303,8 @@ export const MindMapEditor: React.FC<MindMapEditorProps> = ({
           height="100%"
           viewBox={`0 0 ${sceneWidth} ${sceneHeight}`}
           preserveAspectRatio="xMidYMid meet"
-          className={`w-full h-full bg-white ${isPanning ? 'cursor-grabbing' : 'cursor-grab'}`}
+          className={`w-full h-full ${isPanning ? 'cursor-grabbing' : 'cursor-grab'}`}
+          style={{ backgroundColor: mindMapTheme.surfaceMuted }}
           onWheel={handleWheel}
           onMouseDown={(e) => {
             if (e.button !== 0) return;
@@ -1262,7 +1376,12 @@ export const MindMapEditor: React.FC<MindMapEditorProps> = ({
               height={isTiny ? '24' : '28'}
               patternUnits="userSpaceOnUse"
             >
-              <path d="M 28 0 L 0 0 0 28" fill="none" stroke="#eef2f7" strokeWidth="1" />
+              <path
+                d="M 28 0 L 0 0 0 28"
+                fill="none"
+                stroke={mindMapTheme.borderSubtle}
+                strokeWidth="1"
+              />
             </pattern>
           </defs>
           <rect
@@ -1276,20 +1395,27 @@ export const MindMapEditor: React.FC<MindMapEditorProps> = ({
       </div>
 
       <div
-        className={`border-t border-gray-200 bg-white text-xs text-gray-600 ${
+        className={`border-t text-xs ${
           isCompact ? 'px-3 py-2' : 'px-4 py-2'
         }`}
+        style={{ borderColor: mindMapTheme.borderSubtle, backgroundColor: mindMapTheme.surface }}
       >
         <div className={`flex gap-1 ${isCompact ? 'flex-col' : 'items-center justify-between'}`}>
-          <p className="min-w-0 truncate">
+          <p className="min-w-0 truncate" style={{ color: mindMapTheme.textSecondary }}>
             {selectedNodeId
               ? `Selected: "${nodes[selectedNodeId]?.label}"`
               : 'Click a node to select'}{' '}
             • {Object.keys(nodes).length} nodes
           </p>
-          <p className="shrink-0">
-            <kbd className="rounded bg-gray-100 px-1">Ctrl+N</kbd> add ·{' '}
-            <kbd className="rounded bg-gray-100 px-1">Delete</kbd> remove
+          <p className="shrink-0" style={{ color: mindMapTheme.textSecondary }}>
+            <kbd className="rounded px-1" style={{ backgroundColor: mindMapTheme.surfaceMuted }}>
+              Ctrl+N
+            </kbd>{' '}
+            add ·{' '}
+            <kbd className="rounded px-1" style={{ backgroundColor: mindMapTheme.surfaceMuted }}>
+              Delete
+            </kbd>{' '}
+            remove
           </p>
         </div>
       </div>
