@@ -17,7 +17,7 @@ const config: ExpoConfig = {
   userInterfaceStyle: 'automatic',
   ios: {
     bundleIdentifier: iosBundleIdentifier,
-    buildNumber: '5',
+    buildNumber: '6',
     supportsTablet: true,
     infoPlist: {
       NSSiriUsageDescription: 'Allow Ledger to capture tasks, reminders, notes, and events with Siri.',
