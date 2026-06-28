@@ -143,6 +143,7 @@ type SortMenuState = {
 const ROOT_NOTE_SCOPE_ID = '__root__';
 const NOTE_SORT_STORAGE_PREFIX = 'notes-sort-preferences:v1';
 const NOTE_LAST_OPENED_STORAGE_PREFIX = 'notes-last-opened:v1';
+const NOTE_LAST_SELECTED_STORAGE_PREFIX = 'notes-last-selected:v1';
 
 const todayKey = () => new Date().toISOString().slice(0, 10);
 
@@ -391,6 +392,9 @@ const getNotesSortStorageKey = (workspaceId?: string | null) =>
 const getLastOpenedStorageKey = (workspaceId?: string | null) =>
   `${NOTE_LAST_OPENED_STORAGE_PREFIX}:${workspaceId ?? 'default'}`;
 
+const getLastSelectedStorageKey = (workspaceId?: string | null) =>
+  `${NOTE_LAST_SELECTED_STORAGE_PREFIX}:${workspaceId ?? 'default'}`;
+
 const normalizeNoteSortPreference = (value: unknown): NoteSortPreference | null => {
   if (!value || typeof value !== 'object') return null;
   const candidate = value as Partial<NoteSortPreference>;
@@ -431,6 +435,15 @@ const loadLastOpenedAtById = (workspaceId?: string | null) => {
   );
   const entries = Object.entries(stored ?? {}).filter(([, value]) => Number.isFinite(Number(value)));
   return Object.fromEntries(entries.map(([id, value]) => [id, Number(value)]));
+};
+
+const loadLastSelectedNoteId = (workspaceId?: string | null) => {
+  try {
+    const stored = localStorage.getItem(getLastSelectedStorageKey(workspaceId));
+    return stored?.trim() ? stored : null;
+  } catch {
+    return null;
+  }
 };
 
 const formatNoteSortLabel = (pref: NoteSortPreference | null) => {
@@ -661,6 +674,7 @@ export const NotesWindow = () => {
   const [noteSortPreferences, setNoteSortPreferences] = useState<NoteSortPreferences>(() =>
     loadNoteSortPreferences(activeWorkspaceId)
   );
+  const didRestoreInitialSelectionRef = useRef(false);
   const [lastOpenedAtById, setLastOpenedAtById] = useState<Record<string, number>>(() =>
     loadLastOpenedAtById(activeWorkspaceId)
   );
@@ -723,6 +737,10 @@ export const NotesWindow = () => {
   useEffect(() => {
     setNoteSortPreferences(loadNoteSortPreferences(activeWorkspaceId));
     setLastOpenedAtById(loadLastOpenedAtById(activeWorkspaceId));
+    setSelectedNoteId(null);
+    setSelectedNoteIds([]);
+    selectionAnchorNoteIdRef.current = null;
+    didRestoreInitialSelectionRef.current = false;
   }, [activeWorkspaceId]);
 
   useEffect(() => {
@@ -842,6 +860,19 @@ export const NotesWindow = () => {
   useEffect(() => {
     selectedNoteIdRef.current = selectedNoteId;
   }, [selectedNoteId]);
+
+  useEffect(() => {
+    try {
+      const storageKey = getLastSelectedStorageKey(activeWorkspaceId);
+      if (selectedNoteId) {
+        localStorage.setItem(storageKey, selectedNoteId);
+      } else {
+        localStorage.removeItem(storageKey);
+      }
+    } catch (error) {
+      console.error('Failed to save last selected note:', error);
+    }
+  }, [activeWorkspaceId, selectedNoteId]);
 
   useEffect(() => {
     selectedNoteIdsRef.current = selectedNoteIds;
@@ -1773,6 +1804,26 @@ export const NotesWindow = () => {
           setHasUserEdited(false);
           setIsHydratingNote(false);
         }
+
+        if (
+          !didRestoreInitialSelectionRef.current &&
+          !initialFocusNoteId &&
+          !selectedExists &&
+          !preservedSelection.length &&
+          rows.length > 0
+        ) {
+          didRestoreInitialSelectionRef.current = true;
+          const lastSelectedNoteId = loadLastSelectedNoteId(activeWorkspaceId);
+          const lastSelectedNote = lastSelectedNoteId
+            ? rows.find((note) => note.id === lastSelectedNoteId) ?? null
+            : null;
+          if (lastSelectedNote) {
+            setSelectedNoteId(lastSelectedNote.id);
+            setSelectedNoteIds([lastSelectedNote.id]);
+            selectionAnchorNoteIdRef.current = lastSelectedNote.id;
+            syncDraftFromNote(lastSelectedNote);
+          }
+        }
       } catch (fetchError) {
         setError(fetchError instanceof Error ? fetchError.message : 'Could not load notes.');
       } finally {
@@ -1781,7 +1832,14 @@ export const NotesWindow = () => {
         setHasLoadedOnce(true);
       }
     },
-    [api, activeWorkspaceId, hasLoadedOnce, user]
+    [
+      api,
+      activeWorkspaceId,
+      hasLoadedOnce,
+      initialFocusNoteId,
+      syncDraftFromNote,
+      user,
+    ]
   );
 
   const refreshCurrentNoteFromServer = useCallback(

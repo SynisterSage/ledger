@@ -12,7 +12,7 @@ const config: ExpoConfig = {
   slug: 'ledger',
   owner: 'synastrr',
   version: '1.0.0',
-  icon: './assets/images/icon.png',
+  icon: './assets/images/icon2.png',
   scheme: 'ledger',
   userInterfaceStyle: 'automatic',
   ios: {

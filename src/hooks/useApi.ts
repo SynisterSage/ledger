@@ -469,12 +469,13 @@ export const useApi = () => {
       getEvents: (
         startDate?: string,
         endDate?: string,
-        options?: { scope?: 'current_workspace' | 'all_accessible_workspaces' }
+        options?: { scope?: 'current_workspace' | 'all_accessible_workspaces'; projectId?: string }
       ) => {
         const params = new URLSearchParams();
         if (startDate) params.set('startDate', startDate);
         if (endDate) params.set('endDate', endDate);
         if (options?.scope) params.set('scope', options.scope);
+        if (options?.projectId) params.set('projectId', options.projectId);
         const query = params.toString();
         return request(`/api/events${query ? `?${query}` : ''}`);
       },
@@ -516,9 +517,15 @@ export const useApi = () => {
         }),
 
       // Reminders
-      getReminders: (options?: { scope?: 'current_workspace' | 'all_accessible_workspaces' }) => {
+      getReminders: (
+        options?: {
+          scope?: 'current_workspace' | 'all_accessible_workspaces';
+          projectId?: string;
+        }
+      ) => {
         const params = new URLSearchParams();
         if (options?.scope) params.set('scope', options.scope);
+        if (options?.projectId) params.set('projectId', options.projectId);
         const query = params.toString();
         return request(`/api/reminders${query ? `?${query}` : ''}`);
       },

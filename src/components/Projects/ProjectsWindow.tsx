@@ -1,18 +1,22 @@
 import {
   Bell,
+  CalendarDays,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  Clock3,
   FileText,
   Folder,
   Inbox,
+  Link2,
   MoreHorizontal,
   Plus,
   Search,
   CheckCircle2,
+  Share2,
   Trash2,
 } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { ModalOverlay } from '../Common/ModalOverlay';
 import { useAuthContext } from '../../context/AuthContext';
 import {
@@ -65,6 +69,7 @@ type TaskRow = {
 
 type ProjectStatusFilter = 'all' | 'active' | 'paused' | 'completed';
 type ProjectSemanticStatus = 'not_started' | 'in_progress' | 'paused' | 'completed';
+type ProjectTab = 'overview' | 'actions' | 'notes' | 'calendar' | 'activity';
 type ProjectContextMenuState = { x: number; y: number; projectId: string };
 type TaskContextMenuState = { x: number; y: number; taskId: string };
 type LinkedNoteContextMenuState = {
@@ -93,6 +98,39 @@ type ProjectNoteLink = {
   note: NoteOption;
 };
 
+type ProjectCalendarEvent = {
+  id: string;
+  title: string;
+  start_at: string;
+  end_at?: string | null;
+  all_day?: boolean;
+  status?: string;
+  notes?: string | null;
+  project_id?: string | null;
+  note_id?: string | null;
+  calendar_id?: string | null;
+  color?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+};
+
+type ProjectCalendarReminder = {
+  id: string;
+  title: string;
+  remind_at: string;
+  status?: string;
+  notes?: string | null;
+  project_id?: string | null;
+  note_id?: string | null;
+  calendar_id?: string | null;
+  color?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+  is_done?: boolean;
+};
+
+type CalendarLinkKind = 'event' | 'reminder';
+
 const LEFT_PANE_MIN_WIDTH = 260;
 const LEFT_PANE_MAX_WIDTH = 400;
 const RIGHT_PANE_MIN_WIDTH = 260;
@@ -114,6 +152,13 @@ const projectStatusCandidates: Record<ProjectSemanticStatus, string[]> = {
 };
 
 const statusOrder: ProjectStatusFilter[] = ['all', 'active', 'paused', 'completed'];
+const projectTabs: Array<{ id: ProjectTab; label: string }> = [
+  { id: 'overview', label: 'Overview' },
+  { id: 'actions', label: 'Actions' },
+  { id: 'notes', label: 'Notes' },
+  { id: 'calendar', label: 'Calendar' },
+  { id: 'activity', label: 'Activity' },
+];
 
 const taskPriorityLabels: Record<string, string> = {
   low: 'Low',
@@ -169,6 +214,44 @@ const formatShortDate = (value: string | null) => {
   return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
 };
 
+const formatDateRange = (start: string | null, end: string | null) => {
+  if (start && end) return `${formatShortDate(start)} -> ${formatShortDate(end)}`;
+  if (start) return `Started ${formatShortDate(start)}`;
+  if (end) return `Due ${formatShortDate(end)}`;
+  return 'No dates set';
+};
+
+const formatCompactTime = (value: string | null) => {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+};
+
+const formatEventDateLabel = (event: ProjectCalendarEvent) => {
+  const date = formatShortDate(event.start_at);
+  const time = event.all_day ? '' : formatCompactTime(event.start_at);
+  return time ? `${date} · ${time}` : date;
+};
+
+const formatReminderDateLabel = (reminder: ProjectCalendarReminder) => {
+  const date = formatShortDate(reminder.remind_at);
+  const time = formatCompactTime(reminder.remind_at);
+  return time ? `${date} · ${time}` : date;
+};
+
+const displayMemberName = (member: WorkspaceMember | null | undefined) => {
+  if (!member) return 'Unknown';
+  return member.full_name?.trim() || member.email?.trim() || 'Unknown';
+};
+
+const getInitials = (value: string) => {
+  const parts = value.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return '?';
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return `${parts[0][0] ?? ''}${parts[1][0] ?? ''}`.toUpperCase();
+};
+
 const formatRelativeFromNow = (value: string | null | undefined) => {
   if (!value) return 'just now';
   const delta = Math.max(0, Math.floor((Date.now() - new Date(value).getTime()) / 1000));
@@ -179,14 +262,6 @@ const formatRelativeFromNow = (value: string | null | undefined) => {
   if (hours < 24) return `${hours}h ago`;
   const days = Math.floor(hours / 24);
   return `${days}d ago`;
-};
-
-const formatSidebarDueDate = (project: ProjectRow, semantic: ProjectSemanticStatus) => {
-  const anchorDate = project.end_date || project.start_date || null;
-  if (!anchorDate) return 'No due date';
-  const label = formatShortDate(anchorDate);
-  if (semantic === 'completed') return `Completed ${label}`;
-  return `Due ${label}`;
 };
 
 const CONTEXT_MENU_GUTTER = 8;
@@ -254,8 +329,8 @@ export const ProjectsWindow = () => {
   const [rightPaneWidth, setRightPaneWidth] = useState(() =>
     getPaneWidthForViewport(viewportWidth, modulePaneSizing.projects.right)
   );
-  const [isLeftPaneCollapsed, setIsLeftPaneCollapsed] = useState(false);
-  const [isRightPaneCollapsed, setIsRightPaneCollapsed] = useState(true);
+  const [isLeftPaneCollapsed, setIsLeftPaneCollapsed] = useState(() => viewportWidth < 760);
+  const [isRightPaneCollapsed, setIsRightPaneCollapsed] = useState(() => viewportWidth < 1200);
   const [isResizingLeftPane, setIsResizingLeftPane] = useState(false);
   const [isResizingRightPane, setIsResizingRightPane] = useState(false);
   const [projectContextMenu, setProjectContextMenu] = useState<ProjectContextMenuState | null>(
@@ -298,8 +373,23 @@ export const ProjectsWindow = () => {
   const [linkableNotes, setLinkableNotes] = useState<NoteOption[]>([]);
   const [isLoadingLinkableNotes, setIsLoadingLinkableNotes] = useState(false);
   const [linkNotesSearch, setLinkNotesSearch] = useState('');
+  const [projectEvents, setProjectEvents] = useState<ProjectCalendarEvent[]>([]);
+  const [projectReminders, setProjectReminders] = useState<ProjectCalendarReminder[]>([]);
+  const [isLoadingProjectCalendarItems, setIsLoadingProjectCalendarItems] = useState(false);
+  const [isLinkCalendarModalOpen, setIsLinkCalendarModalOpen] = useState(false);
+  const [calendarLinkKind, setCalendarLinkKind] = useState<CalendarLinkKind>('event');
+  const [calendarLinkSearch, setCalendarLinkSearch] = useState('');
+  const [isLinkingCalendarItem, setIsLinkingCalendarItem] = useState(false);
+  const [linkableCalendarEvents, setLinkableCalendarEvents] = useState<ProjectCalendarEvent[]>([]);
+  const [linkableCalendarReminders, setLinkableCalendarReminders] = useState<
+    ProjectCalendarReminder[]
+  >([]);
+  const [isLoadingLinkableCalendarItems, setIsLoadingLinkableCalendarItems] = useState(false);
   const [showCloseGuardModal, setShowCloseGuardModal] = useState(false);
   const [workspaceRefreshToken, setWorkspaceRefreshToken] = useState(0);
+  const [activeTab, setActiveTab] = useState<ProjectTab>('overview');
+  const [isEditingTitle, setIsEditingTitle] = useState(false);
+  const [isEditingBrief, setIsEditingBrief] = useState(false);
   const areSidePanelsCollapsed = isLeftPaneCollapsed && isRightPaneCollapsed;
 
   const handleWorkspaceRefresh = useCallback(() => {
@@ -308,7 +398,7 @@ export const ProjectsWindow = () => {
 
   useWorkspaceRealtimeRefresh({
     workspaceId: activeWorkspaceId,
-    tables: ['projects', 'tasks', 'notes', 'project_note_links'],
+    tables: ['projects', 'tasks', 'notes', 'project_note_links', 'events', 'reminders'],
     enabled: Boolean(user && activeWorkspaceId),
     onChange: handleWorkspaceRefresh,
   });
@@ -395,15 +485,6 @@ export const ProjectsWindow = () => {
     [selectedProjectTasks]
   );
 
-  const projectDurationDays = useMemo(() => {
-    if (!projectDraft.startDate || !projectDraft.endDate) return null;
-    const start = new Date(projectDraft.startDate);
-    const end = new Date(projectDraft.endDate);
-    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null;
-    const diff = Math.round((end.getTime() - start.getTime()) / 86400000) + 1;
-    return diff > 0 ? diff : null;
-  }, [projectDraft.endDate, projectDraft.startDate]);
-
   const recentProjectActivity = useMemo(() => {
     const events: Array<{ id: string; label: string; at: string | null }> = [];
     if (selectedProject?.updated_at) {
@@ -411,6 +492,20 @@ export const ProjectsWindow = () => {
         id: 'project-updated',
         label: 'Project updated',
         at: selectedProject.updated_at,
+      });
+    }
+    for (const event of projectEvents.slice(0, 3)) {
+      events.push({
+        id: `event-${event.id}`,
+        label: `Event linked: ${event.title}`,
+        at: event.updated_at ?? event.created_at ?? null,
+      });
+    }
+    for (const reminder of projectReminders.slice(0, 3)) {
+      events.push({
+        id: `reminder-${reminder.id}`,
+        label: `Reminder linked: ${reminder.title}`,
+        at: reminder.updated_at ?? reminder.created_at ?? null,
       });
     }
     for (const task of completedProjectTasks.slice(0, 4)) {
@@ -424,7 +519,7 @@ export const ProjectsWindow = () => {
       .filter((event) => event.at)
       .sort((a, b) => String(b.at).localeCompare(String(a.at)))
       .slice(0, 5);
-  }, [completedProjectTasks, selectedProject?.updated_at]);
+  }, [completedProjectTasks, projectEvents, projectReminders, selectedProject?.updated_at]);
 
   const workspaceMemberById = useMemo(() => {
     return new Map(workspaceMembers.map((member) => [member.user_id, member]));
@@ -450,6 +545,69 @@ export const ProjectsWindow = () => {
     if (!firstName) return 'Only you';
     return firstName;
   }, [creatorDisplayName, selectedProject?.created_by, user?.id]);
+
+  const isSharedWorkspace = workspaceMembers.length > 1;
+  const workspaceLabel = activeWorkspace?.name?.trim() || 'Current workspace';
+  const projectMetaLine = selectedProject
+    ? `${projectStatusLabels[projectDraft.status]} · ${projectDraft.completeness}% · ${workspaceLabel}`
+    : '';
+  const collaborationLabel = isSharedWorkspace
+    ? `Shared project · ${workspaceMembers.length} collaborators`
+    : 'Personal project';
+  const memberPreview = workspaceMembers.slice(0, 4);
+  const upcomingItems = useMemo(() => {
+    if (!selectedProject) return [];
+    const items: Array<{ id: string; title: string; meta: string; kind: string }> = [];
+    if (projectDraft.endDate) {
+      items.push({
+        id: 'project-deadline',
+        title: `${projectDraft.name || selectedProject.name} deadline`,
+        meta: formatShortDate(projectDraft.endDate),
+        kind: 'Deadline',
+      });
+    }
+    for (const event of projectEvents.slice(0, 3)) {
+      items.push({
+        id: `event-${event.id}`,
+        title: event.title,
+        meta: formatEventDateLabel(event),
+        kind: 'Event',
+      });
+    }
+    for (const reminder of projectReminders.slice(0, 3)) {
+      items.push({
+        id: `reminder-${reminder.id}`,
+        title: reminder.title,
+        meta: formatReminderDateLabel(reminder),
+        kind: 'Reminder',
+      });
+    }
+    for (const task of activeProjectTasks.filter((item) => item.due_date).slice(0, 2)) {
+      items.push({
+        id: `task-${task.id}`,
+        title: task.title,
+        meta: task.due_time
+          ? `${formatShortDate(task.due_date)} · ${task.due_time}`
+          : formatShortDate(task.due_date),
+        kind: 'Action',
+      });
+    }
+    return items.slice(0, 6);
+  }, [
+    activeProjectTasks,
+    projectDraft.endDate,
+    projectDraft.name,
+    projectEvents,
+    projectReminders,
+    selectedProject,
+  ]);
+
+  const linkedObjectCounts = {
+    notes: linkedNotes.length,
+    events: projectEvents.length,
+    reminders: projectReminders.length,
+    captures: 0,
+  };
 
   const projectMenuPosition = useMemo(() => {
     if (!projectContextMenu) return null;
@@ -478,6 +636,38 @@ export const ProjectsWindow = () => {
       `${note.title} ${note.preview}`.toLowerCase().includes(term)
     );
   }, [linkNotesSearch, linkableNotes]);
+
+  const filteredLinkableCalendarItems = useMemo(() => {
+    const term = calendarLinkSearch.trim().toLowerCase();
+    if (calendarLinkKind === 'event') {
+      return linkableCalendarEvents.filter((event) => {
+        const haystack = [
+          event.title,
+          event.notes ?? '',
+          formatEventDateLabel(event),
+        ]
+          .join(' ')
+          .toLowerCase();
+        return !term || haystack.includes(term);
+      });
+    }
+
+    return linkableCalendarReminders.filter((reminder) => {
+      const haystack = [
+        reminder.title,
+        reminder.notes ?? '',
+        formatReminderDateLabel(reminder),
+      ]
+        .join(' ')
+        .toLowerCase();
+      return !term || haystack.includes(term);
+    });
+  }, [
+    calendarLinkKind,
+    calendarLinkSearch,
+    linkableCalendarEvents,
+    linkableCalendarReminders,
+  ]);
 
   const syncDraftFromProject = useCallback((project: ProjectRow) => {
     setProjectDraft({
@@ -612,6 +802,9 @@ export const ProjectsWindow = () => {
       setSelectedProjectId(project.id);
       syncDraftFromProject(project);
       setSelectedTaskId(null);
+      setActiveTab('overview');
+      setIsEditingTitle(false);
+      setIsEditingBrief(false);
     },
     [flushProjectDraft, selectedProjectId, syncDraftFromProject]
   );
@@ -629,22 +822,6 @@ export const ProjectsWindow = () => {
     isDirtyRef.current = true;
     setProjectDraft((prev) => ({ ...prev, ...patch }));
   }, []);
-
-  const setDurationDays = useCallback(
-    (days: number) => {
-      if (!projectDraft.startDate) return;
-      const safeDays = Math.max(1, Math.min(3650, Math.floor(days)));
-      const start = new Date(`${projectDraft.startDate}T00:00:00`);
-      if (Number.isNaN(start.getTime())) return;
-      const nextDue = new Date(start);
-      nextDue.setDate(nextDue.getDate() + safeDays - 1);
-      const yyyy = nextDue.getFullYear();
-      const mm = String(nextDue.getMonth() + 1).padStart(2, '0');
-      const dd = String(nextDue.getDate()).padStart(2, '0');
-      updateProjectDraft({ endDate: `${yyyy}-${mm}-${dd}` });
-    },
-    [projectDraft.startDate, updateProjectDraft]
-  );
 
   const createProject = useCallback(async () => {
     const name = newProjectName.trim();
@@ -848,6 +1025,30 @@ export const ProjectsWindow = () => {
     [api]
   );
 
+  const loadProjectCalendarItems = useCallback(
+    async (projectId: string) => {
+      setIsLoadingProjectCalendarItems(true);
+      try {
+        const [eventsPayload, remindersPayload] = await Promise.all([
+          api.getEvents(undefined, undefined, { projectId }),
+          api.getReminders({ projectId }),
+        ]);
+        setProjectEvents(Array.isArray(eventsPayload) ? (eventsPayload as ProjectCalendarEvent[]) : []);
+        setProjectReminders(
+          Array.isArray(remindersPayload) ? (remindersPayload as ProjectCalendarReminder[]) : []
+        );
+      } catch (error) {
+        console.error('Failed to load project calendar items:', error);
+        setError(error instanceof Error ? error.message : 'Could not load project calendar items.');
+        setProjectEvents([]);
+        setProjectReminders([]);
+      } finally {
+        setIsLoadingProjectCalendarItems(false);
+      }
+    },
+    [api]
+  );
+
   const loadLinkableNotes = useCallback(async () => {
     setIsLoadingLinkableNotes(true);
     try {
@@ -883,12 +1084,54 @@ export const ProjectsWindow = () => {
     }
   }, [api, linkedNotes]);
 
+  const loadLinkableCalendarItems = useCallback(
+    async () => {
+      if (!selectedProjectId) return;
+      setIsLoadingLinkableCalendarItems(true);
+      try {
+        const [eventsPayload, remindersPayload] = await Promise.all([
+          api.getEvents(),
+          api.getReminders(),
+        ]);
+        const allEvents = Array.isArray(eventsPayload) ? (eventsPayload as ProjectCalendarEvent[]) : [];
+        const allReminders = Array.isArray(remindersPayload)
+          ? (remindersPayload as ProjectCalendarReminder[])
+          : [];
+        setLinkableCalendarEvents(
+          allEvents.filter((item) => item.id && item.project_id !== selectedProjectId)
+        );
+        setLinkableCalendarReminders(
+          allReminders.filter((item) => item.id && item.project_id !== selectedProjectId)
+        );
+      } catch (error) {
+        console.error('Failed to load linkable calendar items:', error);
+        setError(error instanceof Error ? error.message : 'Could not load calendar items.');
+        setLinkableCalendarEvents([]);
+        setLinkableCalendarReminders([]);
+      } finally {
+        setIsLoadingLinkableCalendarItems(false);
+      }
+    },
+    [api, selectedProjectId]
+  );
+
   const openLinkNoteModal = useCallback(async () => {
     if (!selectedProjectId) return;
     setIsLinkNoteModalOpen(true);
     setLinkNotesSearch('');
     await loadLinkableNotes();
   }, [loadLinkableNotes, selectedProjectId]);
+
+  const openLinkCalendarModal = useCallback(
+    async (kind: CalendarLinkKind) => {
+      if (!selectedProjectId) return;
+      setCalendarLinkKind(kind);
+      setCalendarLinkSearch('');
+      setIsLinkCalendarModalOpen(true);
+      await loadLinkableCalendarItems();
+    },
+    [loadLinkableCalendarItems, selectedProjectId]
+  );
 
   const linkNoteToProject = useCallback(
     async (noteId: string) => {
@@ -928,6 +1171,66 @@ export const ProjectsWindow = () => {
     [api, linkedNotes, loadLinkedNotes, selectedProjectId]
   );
 
+  const linkCalendarItemToProject = useCallback(
+    async (kind: CalendarLinkKind, itemId: string) => {
+      if (!selectedProjectId) return;
+      setIsLinkingCalendarItem(true);
+      try {
+        if (kind === 'event') {
+          const updated = (await api.updateEvent(itemId, {
+            project_id: selectedProjectId,
+          })) as ProjectCalendarEvent;
+          setProjectEvents((prev) =>
+            prev.some((item) => item.id === updated.id)
+              ? prev.map((item) => (item.id === updated.id ? { ...item, ...updated } : item))
+              : [updated, ...prev]
+          );
+          setLinkableCalendarEvents((prev) => prev.filter((item) => item.id !== itemId));
+        } else {
+          const updated = (await api.updateReminder(itemId, {
+            project_id: selectedProjectId,
+          })) as ProjectCalendarReminder;
+          setProjectReminders((prev) =>
+            prev.some((item) => item.id === updated.id)
+              ? prev.map((item) => (item.id === updated.id ? { ...item, ...updated } : item))
+              : [updated, ...prev]
+          );
+          setLinkableCalendarReminders((prev) => prev.filter((item) => item.id !== itemId));
+        }
+        setIsLinkCalendarModalOpen(false);
+      } catch (error) {
+        setError(
+          error instanceof Error ? error.message : 'Could not link calendar item to project.'
+        );
+      } finally {
+        setIsLinkingCalendarItem(false);
+      }
+    },
+    [api, selectedProjectId]
+  );
+
+  const unlinkCalendarItemFromProject = useCallback(
+    async (kind: CalendarLinkKind, itemId: string) => {
+      if (!selectedProjectId) return;
+      try {
+        if (kind === 'event') {
+          const updated = (await api.updateEvent(itemId, { project_id: null })) as ProjectCalendarEvent;
+          setProjectEvents((prev) => prev.filter((item) => item.id !== updated.id));
+        } else {
+          const updated = (await api.updateReminder(itemId, { project_id: null })) as ProjectCalendarReminder;
+          setProjectReminders((prev) => prev.filter((item) => item.id !== updated.id));
+        }
+        void loadLinkableCalendarItems();
+      } catch (error) {
+        setError(error instanceof Error ? error.message : 'Could not unlink calendar item.');
+        if (selectedProjectId) {
+          void loadProjectCalendarItems(selectedProjectId);
+        }
+      }
+    },
+    [api, loadLinkableCalendarItems, loadProjectCalendarItems, selectedProjectId]
+  );
+
   const openLinkedNoteInNotesModule = useCallback((noteId: string) => {
     void window.desktopWindow?.toggleModule('notes', { focusNoteId: noteId });
   }, []);
@@ -960,6 +1263,12 @@ export const ProjectsWindow = () => {
     setRightPaneWidth((current) =>
       clampPaneWidth(current, viewportWidth, modulePaneSizing.projects.right)
     );
+    if (viewportWidth < 760) {
+      setIsLeftPaneCollapsed(true);
+    }
+    if (viewportWidth < 1200) {
+      setIsRightPaneCollapsed(true);
+    }
   }, [viewportWidth]);
 
   useEffect(() => {
@@ -1060,10 +1369,16 @@ export const ProjectsWindow = () => {
     if (!selectedProjectId) {
       setLinkedNotes([]);
       setIsLoadingLinkedNotes(false);
+      setProjectEvents([]);
+      setProjectReminders([]);
+      setIsLoadingProjectCalendarItems(false);
       return;
     }
+    setProjectEvents([]);
+    setProjectReminders([]);
     void loadLinkedNotes(selectedProjectId);
-  }, [loadLinkedNotes, selectedProjectId, workspaceRefreshToken]);
+    void loadProjectCalendarItems(selectedProjectId);
+  }, [loadLinkedNotes, loadProjectCalendarItems, selectedProjectId, workspaceRefreshToken]);
 
   useEffect(() => {
     let mounted = true;
@@ -1332,6 +1647,483 @@ export const ProjectsWindow = () => {
     return () => window.removeEventListener('keydown', onEscape);
   }, [taskNotesTask]);
 
+  const renderTaskRow = (task: TaskRow, completed = false) => {
+    const activeTask = selectedTaskId === task.id;
+    return (
+      <button
+        id={`task-row-${task.id}`}
+        key={task.id}
+        type="button"
+        onClick={() => {
+          setSelectedTaskId(task.id);
+          void updateTaskStatus(task, completed ? 'todo' : 'completed');
+        }}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          setTaskContextMenu({
+            x: e.clientX,
+            y: e.clientY,
+            taskId: task.id,
+          });
+        }}
+        className={`group w-full border-b border-[color:var(--ledger-border-subtle)] px-1 py-2.5 text-left transition last:border-b-0 hover:bg-[var(--ledger-surface-hover)] ${
+          activeTask ? 'bg-[var(--ledger-surface-hover)]' : ''
+        }`}
+      >
+        <div className="flex items-start gap-2.5">
+          <span
+            className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border ${
+              completed
+                ? 'border-[color:rgba(50,213,131,0.35)] bg-[color:rgba(50,213,131,0.16)]'
+                : 'border-[color:var(--ledger-border-strong)] bg-[var(--ledger-surface-muted)]'
+            }`}
+          >
+            {completed && <CheckCircle2 size={10} className="text-[rgb(22,163,74)]" />}
+          </span>
+          <div className="min-w-0 flex-1">
+            <p
+              className={`truncate text-sm font-medium ${
+                completed
+                  ? 'text-[var(--ledger-text-muted)] line-through'
+                  : 'text-[var(--ledger-text-primary)]'
+              }`}
+            >
+              {task.title}
+            </p>
+            <p className="mt-0.5 truncate text-xs text-[var(--ledger-text-muted)]">
+              {task.due_date ? `Due ${formatShortDate(task.due_date)}` : 'No due date'}
+              {isSharedWorkspace ? ' · Unassigned' : ''}
+              {task.notes ? ' · Has notes' : ''}
+            </p>
+          </div>
+          {!completed && (
+            <span
+              className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                taskPriorityTone[String(task.priority)] ??
+                'bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)]'
+              }`}
+            >
+              {taskPriorityLabels[String(task.priority)] ?? 'Medium'}
+            </span>
+          )}
+        </div>
+      </button>
+    );
+  };
+
+  const renderTaskComposer = () =>
+    isTaskComposerOpen ? (
+      <div className="mt-3 space-y-2 rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] p-3">
+        <input
+          value={newTaskTitle}
+          onChange={(e) => setNewTaskTitle(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              void createTask();
+            }
+          }}
+          placeholder="Add a next action"
+          className="w-full rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3 py-2 text-sm text-[var(--ledger-text-primary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60"
+        />
+        <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,140px)_auto]">
+          <div className="relative min-w-0">
+            <select
+              value={newTaskPriority}
+              onChange={(e) => setNewTaskPriority(e.target.value as typeof newTaskPriority)}
+              className="w-full min-w-0 appearance-none rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] py-2 pl-3 pr-9 text-sm text-[var(--ledger-text-secondary)] outline-none transition"
+            >
+              {Object.entries(taskPriorityLabels).map(([key, label]) => (
+                <option key={key} value={key}>
+                  {label}
+                </option>
+              ))}
+            </select>
+            <ChevronDown
+              size={14}
+              className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[var(--ledger-text-muted)]"
+            />
+          </div>
+          <input
+            type="date"
+            value={newTaskDueDate}
+            onChange={(e) => setNewTaskDueDate(e.target.value)}
+            className="w-full min-w-0 rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3 py-2 text-sm text-[var(--ledger-text-secondary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60"
+          />
+          <button
+            type="button"
+            onClick={() => void createTask()}
+            disabled={!newTaskTitle.trim() || isCreatingTask}
+            className="w-full rounded-md bg-[var(--ledger-accent)] px-3 py-2 text-sm font-medium text-white transition hover:bg-[var(--ledger-accent-hover)] disabled:opacity-60"
+          >
+            {isCreatingTask ? 'Adding...' : 'Add'}
+          </button>
+        </div>
+      </div>
+    ) : null;
+
+  const renderSectionShell = (
+    title: string,
+    action: ReactNode,
+    children: ReactNode,
+    className = ''
+  ) => (
+    <section className={`min-w-0 ${className}`}>
+      <div className="flex items-center justify-between gap-3 border-b border-[color:var(--ledger-border-subtle)] pb-2">
+        <h3 className="text-sm font-semibold text-[var(--ledger-text-primary)]">{title}</h3>
+        {action}
+      </div>
+      <div className="pt-2">{children}</div>
+    </section>
+  );
+
+  const renderNextActionsSection = (showAll = false) =>
+    renderSectionShell(
+      'Next actions',
+      <div className="flex items-center gap-2">
+        <span className="hidden text-xs text-[var(--ledger-text-muted)] sm:inline">
+          {taskCounts.active} active · {taskCounts.completed} done
+        </span>
+        <button
+          type="button"
+          onClick={() => setIsTaskComposerOpen((prev) => !prev)}
+          className="inline-flex items-center gap-1.5 rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2 py-1 text-xs font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+        >
+          <Plus size={12} />
+          Add action
+        </button>
+      </div>,
+      <>
+        {renderTaskComposer()}
+        {taskError && (
+          <div className="mt-3 rounded-lg border border-[color:rgba(217,45,32,0.18)] bg-[color:rgba(217,45,32,0.08)] px-3 py-2 text-sm text-[var(--ledger-danger)]">
+            {taskError}
+          </div>
+        )}
+        {isLoadingTasks ? (
+          <div className="mt-3 space-y-2">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <SkeletonTaskItem key={i} />
+            ))}
+          </div>
+        ) : selectedProjectTasks.length === 0 ? (
+          <div className="mt-3 py-2">
+            <p className="text-sm font-medium text-[var(--ledger-text-primary)]">
+              No next actions yet.
+            </p>
+            <p className="mt-1 text-sm text-[var(--ledger-text-muted)]">
+              Add the first action to keep this project moving.
+            </p>
+          </div>
+        ) : (
+          <div className="mt-2">
+            {activeProjectTasks.length === 0 ? (
+              <p className="px-1 py-2 text-sm text-[var(--ledger-text-muted)]">
+                No active next actions.
+              </p>
+            ) : (
+              (showAll ? activeProjectTasks : activeProjectTasks.slice(0, 4)).map((task) =>
+                renderTaskRow(task)
+              )
+            )}
+            {showAll && completedProjectTasks.length > 0 && (
+              <div className="mt-4">
+                <p className="mb-1 text-xs font-medium text-[var(--ledger-text-muted)]">Done</p>
+                {completedProjectTasks.map((task) => renderTaskRow(task, true))}
+              </div>
+            )}
+          </div>
+        )}
+      </>
+    );
+
+  const renderProjectNotesSection = () =>
+    renderSectionShell(
+      'Project notes',
+      <button
+        type="button"
+        onClick={() => {
+          void openLinkNoteModal();
+        }}
+        className="inline-flex items-center gap-1.5 rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2 py-1 text-xs font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+      >
+        <Plus size={12} />
+        Link note
+      </button>,
+      <>
+        <button
+          type="button"
+          onClick={() => setIsEditingBrief(true)}
+          className="w-full rounded-md px-1 py-2 text-left transition hover:bg-[var(--ledger-surface-hover)]"
+        >
+          <p className="text-xs font-medium text-[var(--ledger-text-muted)]">Brief</p>
+          {isEditingBrief ? (
+            <textarea
+              autoFocus
+              value={projectDraft.description}
+              onClick={(event) => event.stopPropagation()}
+              onChange={(e) => updateProjectDraft({ description: e.target.value })}
+              onBlur={() => {
+                setIsEditingBrief(false);
+                void flushProjectDraft();
+              }}
+              placeholder="Add a short project brief..."
+              className="mt-2 h-24 w-full resize-none rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 py-2 text-sm text-[var(--ledger-text-primary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60"
+            />
+          ) : (
+            <p className="mt-1 text-sm leading-6 text-[var(--ledger-text-primary)]">
+              {projectDraft.description?.trim() || 'Add the outcome, constraints, or project brief.'}
+            </p>
+          )}
+        </button>
+        {isLoadingLinkedNotes ? (
+          <p className="mt-2 text-sm text-[var(--ledger-text-muted)]">Loading linked notes...</p>
+        ) : linkedNotes.length === 0 ? (
+          <div className="mt-2 py-2">
+            <p className="text-sm font-medium text-[var(--ledger-text-primary)]">
+              No notes linked yet.
+            </p>
+            <p className="mt-1 text-sm text-[var(--ledger-text-muted)]">
+              Attach project notes, captures, or documents.
+            </p>
+          </div>
+        ) : (
+          <div className="mt-2 divide-y divide-[color:var(--ledger-border-subtle)]">
+            {linkedNotes.slice(0, 4).map((link) => (
+              <button
+                key={link.id}
+                type="button"
+                onContextMenu={(event) => {
+                  event.preventDefault();
+                  setLinkedNoteContextMenu({
+                    x: event.clientX,
+                    y: event.clientY,
+                    noteId: link.note_id,
+                    source: 'center',
+                  });
+                }}
+                onDoubleClick={() => openLinkedNoteInNotesModule(link.note_id)}
+                className="flex w-full items-start justify-between gap-3 px-1 py-2 text-left transition hover:bg-[var(--ledger-surface-hover)]"
+              >
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium text-[var(--ledger-text-primary)]">
+                    {link.note.title}
+                  </p>
+                  <p className="mt-0.5 truncate text-xs text-[var(--ledger-text-muted)]">
+                    {link.note.preview || 'Linked note'}
+                  </p>
+                </div>
+                <span className="shrink-0 text-xs text-[var(--ledger-text-muted)]">Note</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </>
+    );
+
+  const renderCalendarItemRow = (
+    kind: CalendarLinkKind,
+    item: ProjectCalendarEvent | ProjectCalendarReminder
+  ) => {
+    const dateLabel =
+      kind === 'event'
+        ? formatEventDateLabel(item as ProjectCalendarEvent)
+        : formatReminderDateLabel(item as ProjectCalendarReminder);
+    const notes = item.notes?.trim() || null;
+    return (
+      <div
+        key={item.id}
+        className="flex items-start justify-between gap-3 rounded-md px-1 py-1.5 transition hover:bg-[var(--ledger-surface-hover)]"
+      >
+        <div className="min-w-0">
+          <p className="truncate text-sm font-medium text-[var(--ledger-text-primary)]">
+            {item.title}
+          </p>
+          <p className="mt-0.5 truncate text-xs text-[var(--ledger-text-muted)]">
+            {kind === 'event' ? 'Event' : 'Reminder'} · {dateLabel}
+            {notes ? ` · ${notes}` : ''}
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => void unlinkCalendarItemFromProject(kind, item.id)}
+          className="shrink-0 text-xs font-medium text-[var(--ledger-text-muted)] transition hover:text-[var(--ledger-danger)]"
+        >
+          Remove
+        </button>
+      </div>
+    );
+  };
+
+  const renderCalendarSection = () =>
+    renderSectionShell(
+      'Calendar',
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => void openLinkCalendarModal('event')}
+          className="inline-flex items-center gap-1.5 rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2 py-1 text-xs font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+        >
+          <Plus size={12} />
+          Link event
+        </button>
+        <button
+          type="button"
+          onClick={() => void openLinkCalendarModal('reminder')}
+          className="inline-flex items-center gap-1.5 rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2 py-1 text-xs font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+        >
+          <Plus size={12} />
+          Link reminder
+        </button>
+      </div>,
+      <>
+        <div className="flex items-center gap-1 rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] p-0.5 text-xs text-[var(--ledger-text-muted)]">
+          <span className="rounded bg-[var(--ledger-surface-card)] px-2 py-0.5 text-[var(--ledger-text-primary)]">
+            List
+          </span>
+          <span className="px-2 py-0.5">Timeline</span>
+          <span className="px-2 py-0.5">Calendar</span>
+        </div>
+
+        {isLoadingProjectCalendarItems ? (
+          <p className="mt-3 text-sm text-[var(--ledger-text-muted)]">Loading calendar items...</p>
+        ) : projectEvents.length === 0 && projectReminders.length === 0 ? (
+          <div className="mt-3 py-2">
+            <p className="text-sm font-medium text-[var(--ledger-text-primary)]">
+              No calendar items linked yet.
+            </p>
+            <p className="mt-1 text-sm text-[var(--ledger-text-muted)]">
+              Attach events or reminders that belong to this project.
+            </p>
+          </div>
+        ) : (
+          <div className="mt-3 space-y-5">
+            <section className="space-y-2">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-xs font-semibold text-[var(--ledger-text-primary)]">Events</p>
+                <span className="text-xs text-[var(--ledger-text-muted)]">
+                  {projectEvents.length}
+                </span>
+              </div>
+              {projectEvents.length === 0 ? (
+                <p className="py-1 text-sm text-[var(--ledger-text-muted)]">No events linked.</p>
+              ) : (
+                <div className="divide-y divide-[color:var(--ledger-border-subtle)]">
+                  {projectEvents
+                    .slice()
+                    .sort((left, right) => String(left.start_at).localeCompare(String(right.start_at)))
+                    .map((event) => renderCalendarItemRow('event', event))}
+                </div>
+              )}
+            </section>
+
+            <section className="space-y-2">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-xs font-semibold text-[var(--ledger-text-primary)]">Reminders</p>
+                <span className="text-xs text-[var(--ledger-text-muted)]">
+                  {projectReminders.length}
+                </span>
+              </div>
+              {projectReminders.length === 0 ? (
+                <p className="py-1 text-sm text-[var(--ledger-text-muted)]">No reminders linked.</p>
+              ) : (
+                <div className="divide-y divide-[color:var(--ledger-border-subtle)]">
+                  {projectReminders
+                    .slice()
+                    .sort((left, right) => String(left.remind_at).localeCompare(String(right.remind_at)))
+                    .map((reminder) => renderCalendarItemRow('reminder', reminder))}
+                </div>
+              )}
+            </section>
+          </div>
+        )}
+      </>
+    );
+
+  const renderUpcomingSection = () =>
+    renderSectionShell(
+      'Upcoming',
+      <button
+        type="button"
+        onClick={() => setActiveTab('calendar')}
+        className="text-xs font-medium text-[var(--ledger-text-muted)] transition hover:text-[var(--ledger-text-primary)]"
+      >
+        View
+      </button>,
+      upcomingItems.length === 0 ? (
+        <div className="py-2">
+          <p className="text-sm font-medium text-[var(--ledger-text-primary)]">No upcoming dates.</p>
+          <p className="mt-1 text-sm text-[var(--ledger-text-muted)]">
+            Add an event, reminder, or deadline.
+          </p>
+        </div>
+      ) : (
+        <div className="divide-y divide-[color:var(--ledger-border-subtle)]">
+          {upcomingItems.map((item) => (
+            <div key={item.id} className="flex items-start gap-2 px-1 py-2">
+              <CalendarDays size={14} className="mt-0.5 shrink-0 text-[var(--ledger-text-muted)]" />
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-medium text-[var(--ledger-text-primary)]">
+                  {item.title}
+                </p>
+                <p className="mt-0.5 text-xs text-[var(--ledger-text-muted)]">
+                  {item.kind} · {item.meta}
+                </p>
+              </div>
+            </div>
+          ))}
+        </div>
+      )
+    );
+
+  const renderRecentActivitySection = () =>
+    renderSectionShell(
+      'Recent updates',
+      <button
+        type="button"
+        onClick={() => setActiveTab('activity')}
+        className="text-xs font-medium text-[var(--ledger-text-muted)] transition hover:text-[var(--ledger-text-primary)]"
+      >
+        View
+      </button>,
+      recentProjectActivity.length === 0 ? (
+        <p className="py-2 text-sm text-[var(--ledger-text-muted)]">No recent activity.</p>
+      ) : (
+        <div className="divide-y divide-[color:var(--ledger-border-subtle)]">
+          {recentProjectActivity.map((item) => (
+            <div key={item.id} className="flex items-center justify-between gap-3 px-1 py-2">
+              <p className="min-w-0 truncate text-sm font-medium text-[var(--ledger-text-primary)]">
+                {item.label}
+              </p>
+              <span className="shrink-0 text-xs text-[var(--ledger-text-muted)]">
+                {formatRelativeFromNow(item.at)}
+              </span>
+            </div>
+          ))}
+        </div>
+      )
+    );
+
+  const renderTabContent = () => {
+    if (activeTab === 'actions') return renderNextActionsSection(true);
+    if (activeTab === 'notes') return renderProjectNotesSection();
+    if (activeTab === 'calendar') return renderCalendarSection();
+    if (activeTab === 'activity') return renderRecentActivitySection();
+
+    return (
+      <div className={`grid gap-6 ${isCompactLayout ? 'grid-cols-1' : 'xl:grid-cols-[minmax(0,1.45fr)_minmax(260px,0.8fr)]'}`}>
+        <div className="space-y-6">
+          {renderNextActionsSection(false)}
+          {renderProjectNotesSection()}
+        </div>
+        <div className="space-y-6">
+          {renderUpcomingSection()}
+          {renderRecentActivitySection()}
+        </div>
+      </div>
+    );
+  };
+
   const attemptCloseProjects = useCallback(() => {
     if (isSavingProject || isSavingTaskNotes || isDirtyRef.current) {
       setShowCloseGuardModal(true);
@@ -1365,7 +2157,7 @@ export const ProjectsWindow = () => {
       />
       <ModuleWindowHeader
         title="Projects"
-        subtitle="Simple outcomes, clear next steps"
+        subtitle="Outcomes, notes, and next actions in one place."
         icon={<Folder size={18} className="text-[#FF5F40]" />}
         closeLabel="Close projects"
         minimizeLabel="Minimize projects"
@@ -1447,12 +2239,12 @@ export const ProjectsWindow = () => {
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-2 min-w-0">
                     <div>
-                      <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--ledger-text-muted)]">
-                        Library
-                      </p>
                       <h2 className="text-sm font-semibold text-[var(--ledger-text-primary)]">
-                        {projects.length} projects
+                        Project library
                       </h2>
+                      <p className="mt-0.5 text-xs text-[var(--ledger-text-muted)]">
+                        {projects.length} {projects.length === 1 ? 'project' : 'projects'}
+                      </p>
                     </div>
                     <button
                       onClick={() => setIsLeftPaneCollapsed(true)}
@@ -1463,7 +2255,7 @@ export const ProjectsWindow = () => {
                       <ChevronLeft size={13} strokeWidth={2.25} className="-translate-x-px" />
                     </button>
                   </div>
-                  <span className="text-[10px] text-[var(--ledger-text-muted)]">
+                  <span className="text-[11px] text-[var(--ledger-text-muted)]">
                     {isLoadingProjects ? 'Syncing...' : 'Live'}
                   </span>
                 </div>
@@ -1547,7 +2339,7 @@ export const ProjectsWindow = () => {
                   <div className="rounded-2xl border border-dashed border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-5">
                     <p className="text-sm font-medium text-[var(--ledger-text-primary)]">No matching projects.</p>
                     <p className="mt-1 text-sm text-[var(--ledger-text-muted)]">
-                      Create one for internships, classes, or job applications.
+                      Create one for outcomes, notes, and next actions.
                     </p>
                   </div>
                 ) : (
@@ -1560,13 +2352,19 @@ export const ProjectsWindow = () => {
                     const progressColor = active
                       ? projectDraft.color || '#FF5F40'
                       : project.color || '#FF5F40';
-                    const dueLabel = formatSidebarDueDate(project, semantic);
+                    const dueLabel = isSharedWorkspace
+                      ? `Shared · ${workspaceMembers.length} members`
+                      : workspaceLabel;
                     const statusLabel =
                       semantic === 'completed'
                         ? 'Completed'
                         : semantic === 'not_started'
                         ? 'Not started'
                         : projectStatusLabels[semantic];
+                    const actionLabel =
+                      active && taskCounts.total > 0
+                        ? `${taskCounts.active} active`
+                        : `${displayCompleteness}%`;
 
                     return (
                       <button
@@ -1580,13 +2378,19 @@ export const ProjectsWindow = () => {
                             projectId: project.id,
                           });
                         }}
-                        className={`w-full rounded-xl border px-2.5 py-2.5 text-left transition ${
+                        className={`group relative w-full rounded-lg border px-3 py-2.5 text-left transition ${
                           active
-                            ? 'border-[color:var(--ledger-border-strong)] bg-[var(--ledger-surface-hover)]'
-                            : 'border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] hover:border-[color:var(--ledger-border-strong)] hover:bg-[var(--ledger-surface-hover)]'
+                            ? 'border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-hover)]'
+                            : 'border-transparent bg-transparent hover:border-[color:var(--ledger-border-subtle)] hover:bg-[var(--ledger-surface-hover)]'
                         }`}
                         title={project.name}
                       >
+                        {active && (
+                          <span
+                            className="absolute left-0 top-2.5 bottom-2.5 w-0.5 rounded-full"
+                            style={{ backgroundColor: progressColor }}
+                          />
+                        )}
                         <div className="min-w-0">
                           <div className="flex items-center gap-2 min-w-0">
                             <span
@@ -1602,11 +2406,11 @@ export const ProjectsWindow = () => {
                             </p>
                           </div>
                           <p className="mt-1 text-[11px] text-[var(--ledger-text-secondary)]">
-                            {statusLabel} · {displayCompleteness}%
+                            {statusLabel} · {actionLabel}
                           </p>
                           <p className="mt-1 text-[11px] text-[var(--ledger-text-muted)]">{dueLabel}</p>
                         </div>
-                        <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-[var(--ledger-border-subtle)]/80">
+                        <div className="mt-2 h-px overflow-hidden rounded-full bg-[var(--ledger-border-subtle)]/80">
                           <div
                             className="h-full rounded-full"
                             style={{
@@ -1644,470 +2448,248 @@ export const ProjectsWindow = () => {
         )}
 
         <main className="flex-1 overflow-hidden bg-[var(--ledger-background)]">
-          <div className={`h-full overflow-auto ${isCompactLayout ? 'p-4' : 'p-5'}`}>
+          <div className={`h-full overflow-auto ${isCompactLayout ? 'p-4' : 'p-6'}`}>
             {selectedProject ? (
-              <div className="mx-auto max-w-4xl space-y-4">
-                <section className="rounded-3xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-6 shadow-none">
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2 min-w-0">
+              <div className="mx-auto max-w-5xl">
+                <section className="border-b border-[color:var(--ledger-border-subtle)] pb-5">
+                  <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2 text-xs text-[var(--ledger-text-muted)]">
                         <span
-                          className="h-2 w-2 rounded-full shrink-0"
+                          className="h-2 w-2 rounded-full"
                           style={{ backgroundColor: projectDraft.color || '#FF5F40' }}
                         />
-                        <h2 className="truncate text-3xl font-semibold tracking-tight text-[var(--ledger-text-primary)]">
-                          {projectDraft.name}
-                        </h2>
-                      </div>
-                      <p className="mt-1 text-xs text-[var(--ledger-text-muted)]">
-                        {isSavingProject
-                          ? 'Saving…'
-                          : isDirtyRef.current
-                          ? 'Unsaved changes'
-                          : 'Saved'}
-                      </p>
-                    </div>
-                    <div className="relative shrink-0">
-                      <select
-                        value={projectDraft.status}
-                        onChange={(e) =>
-                          void updateProjectStatus(
-                            selectedProject.id,
-                            e.target.value as ProjectSemanticStatus
-                          )
-                        }
-                        className="h-9 appearance-none rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] py-0 pl-3 pr-8 text-sm font-medium text-[var(--ledger-text-primary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60"
-                      >
-                        {(Object.keys(projectStatusLabels) as ProjectSemanticStatus[]).map(
-                          (status) => (
-                            <option key={status} value={status}>
-                              {projectStatusLabels[status]}
-                            </option>
-                          )
-                        )}
-                      </select>
-                      <ChevronDown
-                        size={14}
-                        className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[var(--ledger-text-muted)]"
-                      />
-                    </div>
-                  </div>
-                  <div className="mt-5 space-y-2.5">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs text-[var(--ledger-text-muted)]">Progress</span>
-                      <span className="text-sm font-semibold text-[var(--ledger-text-primary)]">
-                        {projectDraft.completeness}%
-                      </span>
-                    </div>
-                    <input
-                      type="range"
-                      min="0"
-                      max="100"
-                      value={projectDraft.completeness}
-                      onPointerDown={() => {
-                        isCompletenessDraggingRef.current = true;
-                        if (autosaveTimerRef.current) window.clearTimeout(autosaveTimerRef.current);
-                      }}
-                      onChange={(e) => updateProjectDraft({ completeness: Number(e.target.value) })}
-                      onPointerUp={() => {
-                        isCompletenessDraggingRef.current = false;
-                        void flushProjectDraft();
-                      }}
-                      onPointerCancel={() => {
-                        isCompletenessDraggingRef.current = false;
-                        void flushProjectDraft();
-                      }}
-                      onBlur={() => {
-                        isCompletenessDraggingRef.current = false;
-                        void flushProjectDraft();
-                      }}
-                      style={
-                        {
-                          '--ledger-range-fill': projectDraft.color || '#FF5F40',
-                          '--ledger-range-progress': `${Math.max(
-                            0,
-                            Math.min(100, projectDraft.completeness)
-                          )}%`,
-                        } as any
-                      }
-                      className="ledger-range w-full"
-                    />
-                    <p className="text-xs text-[var(--ledger-text-muted)]">
-                      {projectDraft.endDate
-                        ? `Due ${formatShortDate(projectDraft.endDate)}`
-                        : 'No due date'}{' '}
-                      · {taskCounts.active} active tasks · {taskCounts.completed} completed
-                    </p>
-                  </div>
-                </section>
-
-                <section className="rounded-3xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-6 shadow-none">
-                  <p className="text-xs font-medium text-[var(--ledger-text-muted)]">
-                    Timeline
-                  </p>
-                  <div className="mt-3 grid gap-3 sm:grid-cols-3">
-                    <label className="text-xs text-[var(--ledger-text-secondary)]">
-                      <span className="mb-1 block">Start</span>
-                      <input
-                        type="date"
-                        value={projectDraft.startDate}
-                        onChange={(e) => updateProjectDraft({ startDate: e.target.value })}
-                        className="h-9 w-full rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2.5 text-sm text-[var(--ledger-text-primary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60"
-                      />
-                    </label>
-                    <label className="text-xs text-[var(--ledger-text-secondary)]">
-                      <span className="mb-1 block">Due</span>
-                      <input
-                        type="date"
-                        value={projectDraft.endDate}
-                        onChange={(e) => updateProjectDraft({ endDate: e.target.value })}
-                        className="h-9 w-full rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2.5 text-sm text-[var(--ledger-text-primary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60"
-                      />
-                    </label>
-                    <div className="text-xs text-[var(--ledger-text-secondary)]">
-                      <span className="mb-1 block">Duration</span>
-                      <div className="flex h-9 w-full items-center gap-1.5 rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-1.5 text-sm text-[var(--ledger-text-primary)]">
-                        <button
-                          type="button"
-                          className="h-6 w-6 rounded border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] disabled:opacity-40"
-                          onClick={() => {
-                            if (!projectDurationDays) return;
-                            setDurationDays(projectDurationDays - 1);
-                          }}
-                          disabled={!projectDurationDays || !projectDraft.startDate}
-                          aria-label="Decrease duration"
-                        >
-                          -
-                        </button>
-                        <div className="flex flex-1 items-center justify-center gap-1.5">
-                          <input
-                            type="number"
-                            min={1}
-                            max={3650}
-                            value={projectDurationDays ?? ''}
-                            onChange={(e) => {
-                              const next = Number(e.target.value);
-                              if (!Number.isFinite(next)) return;
-                              setDurationDays(next);
-                            }}
-                            disabled={!projectDraft.startDate}
-                            placeholder="--"
-                            className="w-12 bg-transparent text-center leading-none outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none disabled:opacity-60"
-                          />
-                          <span className="self-center text-xs leading-none text-[var(--ledger-text-secondary)]">days</span>
-                        </div>
-                        <button
-                          type="button"
-                          className="ml-auto h-6 w-6 rounded border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] disabled:opacity-40"
-                          onClick={() => setDurationDays((projectDurationDays ?? 0) + 1)}
-                          disabled={!projectDraft.startDate}
-                          aria-label="Increase duration"
-                        >
-                          +
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                </section>
-
-                <section className="rounded-3xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-6 shadow-none">
-                  <p className="text-xs font-medium text-[var(--ledger-text-muted)]">
-                    Objective
-                  </p>
-                  <textarea
-                    value={projectDraft.description}
-                    onChange={(e) => updateProjectDraft({ description: e.target.value })}
-                    placeholder="Add a short objective for this project..."
-                    className="mt-3 h-24 w-full resize-none rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 py-2 text-sm text-[var(--ledger-text-primary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60"
-                  />
-                </section>
-
-                <section className="min-w-0 overflow-hidden rounded-3xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-none">
-                  <div className="flex flex-col gap-2 border-b border-[color:var(--ledger-border-subtle)] px-6 py-4 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
-                    <div className="min-w-0">
-                      <p className="text-xs font-medium text-[var(--ledger-text-muted)]">Tasks</p>
-                      <h3 className="mt-1 text-xl font-semibold tracking-tight text-[var(--ledger-text-primary)]">
-                        Next actions
-                      </h3>
-                    </div>
-                    <div className="shrink-0 text-left text-xs text-[var(--ledger-text-muted)] sm:text-right">
-                      <p>
-                        {taskCounts.active} active · {taskCounts.completed} done
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="min-w-0 p-6 space-y-4">
-                    <button
-                      onClick={() => setIsTaskComposerOpen((prev) => !prev)}
-                      className="inline-flex items-center gap-2 rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 py-1.5 text-sm font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
-                    >
-                      <Plus size={14} />
-                      Add task
-                    </button>
-
-                    {isTaskComposerOpen && (
-                      <div className="space-y-2 rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] p-3">
-                        <input
-                          value={newTaskTitle}
-                          onChange={(e) => setNewTaskTitle(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') {
-                              e.preventDefault();
-                              void createTask();
-                            }
-                          }}
-                          placeholder="Add a next action"
-                          className="w-full rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3 py-2 text-sm text-[var(--ledger-text-primary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60"
-                        />
-                        <div
-                          className={`grid gap-2 ${
-                            isCompactLayout
-                              ? 'grid-cols-1'
-                              : 'sm:grid-cols-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,140px)_auto]'
-                          }`}
-                        >
-                          <div className="relative min-w-0">
-                            <select
-                              value={newTaskPriority}
-                              onChange={(e) =>
-                                setNewTaskPriority(e.target.value as typeof newTaskPriority)
-                              }
-                              className={`w-full min-w-0 appearance-none rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] text-sm text-[var(--ledger-text-secondary)] outline-none transition ${
-                                isCompactLayout ? 'py-2 pl-3 pr-9' : 'py-2 pl-3 pr-10'
-                              }`}
-                            >
-                              {Object.entries(taskPriorityLabels).map(([key, label]) => (
-                                <option key={key} value={key}>
-                                  {label}
-                                </option>
-                              ))}
-                            </select>
-                            <ChevronDown
-                              size={isCompactLayout ? 12 : 14}
-                              className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[var(--ledger-text-muted)]"
-                            />
-                          </div>
-                          <input
-                            type="date"
-                            value={newTaskDueDate}
-                            onChange={(e) => setNewTaskDueDate(e.target.value)}
-                            className="w-full min-w-0 rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3 py-2 text-sm text-[var(--ledger-text-secondary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60"
-                          />
-                          <button
-                            onClick={() => void createTask()}
-                            disabled={!newTaskTitle.trim() || isCreatingTask}
-                            className="w-full rounded-lg bg-[var(--ledger-accent)] px-3 py-2 text-sm font-medium text-white transition hover:bg-[var(--ledger-accent-hover)] disabled:opacity-60"
-                          >
-                            {isCreatingTask ? 'Adding...' : 'Add'}
-                          </button>
-                        </div>
-                      </div>
-                    )}
-
-                    {taskError && (
-                      <div className="rounded-xl border border-[color:rgba(217,45,32,0.18)] bg-[color:rgba(217,45,32,0.08)] px-3 py-2 text-sm text-[var(--ledger-danger)]">
-                        {taskError}
-                      </div>
-                    )}
-
-                    {isLoadingTasks ? (
-                      <div className="space-y-2">
-                        {Array.from({ length: 3 }).map((_, i) => (
-                          <SkeletonTaskItem key={i} />
-                        ))}
-                      </div>
-                    ) : selectedProjectTasks.length === 0 ? (
-                      <div className="rounded-xl border border-dashed border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] p-4">
-                        <p className="text-sm font-medium text-[var(--ledger-text-primary)]">No next actions yet.</p>
-                        <p className="mt-1 text-sm text-[var(--ledger-text-muted)]">
-                          Add the first action to start execution.
-                        </p>
-                      </div>
-                    ) : (
-                      <div className="space-y-4">
-                        <div className="space-y-1.5">
-                          <p className="text-xs font-medium text-[var(--ledger-text-muted)]">
-                            Active
-                          </p>
-                          {activeProjectTasks.length === 0 ? (
-                            <p className="text-sm text-[var(--ledger-text-muted)]">No active next actions.</p>
-                          ) : (
-                            activeProjectTasks.map((task) => {
-                              const activeTask = selectedTaskId === task.id;
+                        <span>{collaborationLabel}</span>
+                        {isSharedWorkspace && memberPreview.length > 0 && (
+                          <div className="ml-1 flex -space-x-1">
+                            {memberPreview.map((member) => {
+                              const name = displayMemberName(member);
                               return (
-                                <button
-                                  id={`task-row-${task.id}`}
-                                  key={task.id}
-                                  onClick={() => {
-                                    setSelectedTaskId(task.id);
-                                    void updateTaskStatus(task, 'completed');
-                                  }}
-                                  onContextMenu={(e) => {
-                                    e.preventDefault();
-                                    setTaskContextMenu({
-                                      x: e.clientX,
-                                      y: e.clientY,
-                                      taskId: task.id,
-                                    });
-                                  }}
-                                  className={`w-full rounded-lg border px-3 py-2 text-left transition ${
-                                    activeTask
-                                      ? 'border-[color:var(--ledger-border-strong)] bg-[var(--ledger-surface-hover)]'
-                                      : 'border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] hover:border-[color:var(--ledger-border-strong)] hover:bg-[var(--ledger-surface-hover)]'
-                                  }`}
+                                <span
+                                  key={member.user_id}
+                                  title={name}
+                                  className="flex h-5 w-5 items-center justify-center rounded-full border border-[color:var(--ledger-background)] bg-[var(--ledger-surface-hover)] text-[9px] font-semibold text-[var(--ledger-text-secondary)]"
                                 >
-                                  <div className="flex items-center gap-2">
-                                    <span className="flex h-4 w-4 items-center justify-center rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)]" />
-                                    <p className="min-w-0 flex-1 truncate text-sm font-medium text-[var(--ledger-text-primary)]">
-                                      {task.title}
-                                    </p>
-                                    {task.due_date && (
-                                      <span className="shrink-0 text-[11px] text-[var(--ledger-text-muted)]">
-                                        Due {formatShortDate(task.due_date)}
-                                      </span>
-                                    )}
-                                    <span
-                                      className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium ${
-                                        taskPriorityTone[String(task.priority)] ??
-                                        'bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)]'
-                                      }`}
-                                    >
-                                      {taskPriorityLabels[String(task.priority)] ?? 'Medium'}
-                                    </span>
-                                  </div>
-                                </button>
-                              );
-                            })
-                          )}
-                        </div>
-
-                        {completedProjectTasks.length > 0 && (
-                          <div className="space-y-1.5">
-                            <p className="text-xs font-medium text-[var(--ledger-text-muted)]">
-                              Completed
-                            </p>
-                            {completedProjectTasks.map((task) => {
-                              const activeTask = selectedTaskId === task.id;
-                              return (
-                                <button
-                                  id={`task-row-${task.id}`}
-                                  key={task.id}
-                                  onClick={() => {
-                                    setSelectedTaskId(task.id);
-                                    void updateTaskStatus(task, 'todo');
-                                  }}
-                                  onContextMenu={(e) => {
-                                    e.preventDefault();
-                                    setTaskContextMenu({
-                                      x: e.clientX,
-                                      y: e.clientY,
-                                      taskId: task.id,
-                                    });
-                                  }}
-                                  className={`w-full rounded-lg border px-3 py-2 text-left transition ${
-                                    activeTask
-                                      ? 'border-[color:var(--ledger-border-strong)] bg-[var(--ledger-surface-hover)]'
-                                      : 'border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] hover:border-[color:var(--ledger-border-strong)] hover:bg-[var(--ledger-surface-hover)]'
-                                  }`}
-                                >
-                                  <div className="flex items-center gap-2">
-                                    <span className="flex h-4 w-4 items-center justify-center rounded-full border border-[color:rgba(50,213,131,0.35)] bg-[color:rgba(50,213,131,0.18)]">
-                                      <CheckCircle2 size={10} className="text-white" />
-                                    </span>
-                                    <p className="min-w-0 flex-1 truncate text-sm text-[var(--ledger-text-muted)] line-through">
-                                      {task.title}
-                                    </p>
-                                    <span className="shrink-0 text-[11px] text-[var(--ledger-text-muted)]">
-                                      {formatShortDate(task.updated_at)}
-                                    </span>
-                                  </div>
-                                </button>
+                                  {getInitials(name)}
+                                </span>
                               );
                             })}
                           </div>
                         )}
                       </div>
-                    )}
+
+                      {isEditingTitle ? (
+                        <input
+                          autoFocus
+                          value={projectDraft.name}
+                          onChange={(e) => updateProjectDraft({ name: e.target.value })}
+                          onBlur={() => {
+                            setIsEditingTitle(false);
+                            void flushProjectDraft();
+                          }}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter') {
+                              event.preventDefault();
+                              setIsEditingTitle(false);
+                              void flushProjectDraft();
+                            }
+                          }}
+                          className="mt-2 w-full rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2 py-1 text-3xl font-semibold tracking-tight text-[var(--ledger-text-primary)] outline-none"
+                        />
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setIsEditingTitle(true)}
+                          className="mt-2 block max-w-full rounded-md text-left transition hover:bg-[var(--ledger-surface-hover)]"
+                        >
+                          <h2 className="truncate px-1 text-3xl font-semibold tracking-tight text-[var(--ledger-text-primary)]">
+                            {projectDraft.name || 'Untitled project'}
+                          </h2>
+                        </button>
+                      )}
+
+                      <p className="mt-2 text-sm text-[var(--ledger-text-secondary)]">
+                        {projectDraft.description?.trim() || 'Add a project brief.'}
+                      </p>
+                      <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-[var(--ledger-text-muted)]">
+                        <span>{projectMetaLine}</span>
+                        <span>{formatDateRange(projectDraft.startDate, projectDraft.endDate)}</span>
+                        <span>{isSavingProject ? 'Saving...' : isDirtyRef.current ? 'Unsaved' : 'Saved'}</span>
+                      </div>
+                    </div>
+
+                    <div className="flex shrink-0 flex-wrap items-center gap-2">
+                      <div className="relative">
+                        <select
+                          value={projectDraft.status}
+                          onChange={(e) =>
+                            void updateProjectStatus(
+                              selectedProject.id,
+                              e.target.value as ProjectSemanticStatus
+                            )
+                          }
+                          className="h-8 appearance-none rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] py-0 pl-2.5 pr-7 text-xs font-medium text-[var(--ledger-text-primary)] outline-none transition focus:border-[color:var(--ledger-border-strong)]"
+                        >
+                          {(Object.keys(projectStatusLabels) as ProjectSemanticStatus[]).map(
+                            (status) => (
+                              <option key={status} value={status}>
+                                {projectStatusLabels[status]}
+                              </option>
+                            )
+                          )}
+                        </select>
+                        <ChevronDown
+                          size={12}
+                          className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[var(--ledger-text-muted)]"
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setIsTaskComposerOpen(true)}
+                        className="inline-flex h-8 items-center gap-1.5 rounded-md bg-[var(--ledger-accent)] px-2.5 text-xs font-medium text-white transition hover:bg-[var(--ledger-accent-hover)]"
+                      >
+                        <Plus size={12} />
+                        Add action
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void openLinkNoteModal();
+                        }}
+                        className="inline-flex h-8 items-center gap-1.5 rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2.5 text-xs font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+                      >
+                        <Link2 size={12} />
+                        Link note
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setIsRightPaneCollapsed(false)}
+                        className="inline-flex h-8 items-center gap-1.5 rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2.5 text-xs font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+                      >
+                        <Share2 size={12} />
+                        Share
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          const rect = event.currentTarget.getBoundingClientRect();
+                          setProjectContextMenu({
+                            x: rect.right,
+                            y: rect.bottom + 6,
+                            projectId: selectedProject.id,
+                          });
+                        }}
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+                        aria-label="Project actions"
+                      >
+                        <MoreHorizontal size={14} />
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="mt-5 grid gap-4 lg:grid-cols-[minmax(0,1fr)_260px]">
+                    <div>
+                      <div className="flex items-center justify-between text-xs text-[var(--ledger-text-muted)]">
+                        <span>Progress</span>
+                        <span>{projectDraft.completeness}%</span>
+                      </div>
+                      <input
+                        type="range"
+                        min="0"
+                        max="100"
+                        value={projectDraft.completeness}
+                        onPointerDown={() => {
+                          isCompletenessDraggingRef.current = true;
+                          if (autosaveTimerRef.current) window.clearTimeout(autosaveTimerRef.current);
+                        }}
+                        onChange={(e) => updateProjectDraft({ completeness: Number(e.target.value) })}
+                        onPointerUp={() => {
+                          isCompletenessDraggingRef.current = false;
+                          void flushProjectDraft();
+                        }}
+                        onPointerCancel={() => {
+                          isCompletenessDraggingRef.current = false;
+                          void flushProjectDraft();
+                        }}
+                        onBlur={() => {
+                          isCompletenessDraggingRef.current = false;
+                          void flushProjectDraft();
+                        }}
+                        style={
+                          {
+                            '--ledger-range-fill': projectDraft.color || '#FF5F40',
+                            '--ledger-range-progress': `${Math.max(
+                              0,
+                              Math.min(100, projectDraft.completeness)
+                            )}%`,
+                          } as any
+                        }
+                        className="ledger-range mt-2 w-full"
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 text-xs text-[var(--ledger-text-secondary)]">
+                      <label>
+                        <span className="mb-1 block text-[var(--ledger-text-muted)]">Start</span>
+                        <input
+                          type="date"
+                          value={projectDraft.startDate}
+                          onChange={(e) => updateProjectDraft({ startDate: e.target.value })}
+                          className="h-8 w-full rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2 text-xs text-[var(--ledger-text-primary)] outline-none"
+                        />
+                      </label>
+                      <label>
+                        <span className="mb-1 block text-[var(--ledger-text-muted)]">Due</span>
+                        <input
+                          type="date"
+                          value={projectDraft.endDate}
+                          onChange={(e) => updateProjectDraft({ endDate: e.target.value })}
+                          className="h-8 w-full rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2 text-xs text-[var(--ledger-text-primary)] outline-none"
+                        />
+                      </label>
+                    </div>
                   </div>
                 </section>
 
-                <section className="rounded-3xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-6 shadow-none">
-                  <div className="flex items-center justify-between gap-3">
-                    <p className="text-xs font-medium text-[var(--ledger-text-muted)]">
-                      Linked notes
-                    </p>
-                    <button
-                      type="button"
-                      className="inline-flex items-center gap-1 rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2.5 py-1 text-xs font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] active:bg-[var(--ledger-surface-hover)]"
-                      onClick={() => {
-                        void openLinkNoteModal();
-                      }}
-                    >
-                      <Plus size={12} />
-                      Link note
-                    </button>
+                <div className="mt-4 overflow-x-auto border-b border-[color:var(--ledger-border-subtle)] [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                  <div className="flex w-max items-center gap-1">
+                    {projectTabs.map((tab) => (
+                      <button
+                        key={tab.id}
+                        type="button"
+                        onClick={() => setActiveTab(tab.id)}
+                        className={`relative px-3 py-2 text-sm font-medium transition ${
+                          activeTab === tab.id
+                            ? 'text-[var(--ledger-text-primary)]'
+                            : 'text-[var(--ledger-text-muted)] hover:text-[var(--ledger-text-primary)]'
+                        }`}
+                      >
+                        {tab.label}
+                        {activeTab === tab.id && (
+                          <span className="absolute inset-x-3 bottom-0 h-0.5 rounded-full bg-[var(--ledger-accent)]" />
+                        )}
+                      </button>
+                    ))}
                   </div>
-                  {isLoadingLinkedNotes ? (
-                    <p className="mt-3 text-sm text-[var(--ledger-text-muted)]">Loading linked notes…</p>
-                  ) : linkedNotes.length === 0 ? (
-                    <p className="mt-3 text-sm text-[var(--ledger-text-muted)]">No notes linked yet.</p>
-                  ) : (
-                    <div className="mt-3 space-y-2">
-                      {linkedNotes.map((link) => (
-                        <div
-                          key={link.id}
-                          onContextMenu={(event) => {
-                            event.preventDefault();
-                            setLinkedNoteContextMenu({
-                              x: event.clientX,
-                              y: event.clientY,
-                              noteId: link.note_id,
-                              source: 'center',
-                            });
-                          }}
-                          onDoubleClick={() => openLinkedNoteInNotesModule(link.note_id)}
-                          className="rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 py-2 transition hover:bg-[var(--ledger-surface-hover)]"
-                        >
-                          <div className="flex items-start justify-between gap-2">
-                            <div className="min-w-0">
-                              <p className="truncate text-sm font-medium text-[var(--ledger-text-primary)]">
-                                {link.note.title}
-                              </p>
-                              <p className="mt-0.5 truncate text-xs text-[var(--ledger-text-muted)]">
-                                {link.note.preview || 'No content'}
-                              </p>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => void unlinkNoteFromProject(link.note_id)}
-                              className="shrink-0 text-xs font-medium text-[var(--ledger-text-muted)] transition hover:text-[var(--ledger-danger)]"
-                            >
-                              Remove
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </section>
+                </div>
+
+                <div className="py-6">{renderTabContent()}</div>
               </div>
             ) : (
               <div className="mx-auto flex h-full max-w-3xl items-center justify-center">
-                <div className="rounded-3xl border border-dashed border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-8 py-10 text-center shadow-none">
-                  <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-hover)]">
+                <div className="border border-dashed border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-8 py-10 text-center shadow-none">
+                  <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-hover)]">
                     <Folder size={18} className="text-[var(--ledger-text-secondary)]" />
                   </div>
                   <h3 className="mt-4 text-2xl font-semibold tracking-tight text-[var(--ledger-text-primary)]">
                     Start a project
                   </h3>
                   <p className="mt-2 text-sm leading-6 text-[var(--ledger-text-secondary)]">
-                    Projects keep internships, applications, classes, and personal goals organized
-                    around a clear next step.
+                    Projects keep outcomes, notes, and next actions organized in one workspace.
                   </p>
                   <button
+                    type="button"
                     onClick={() => setIsCreatingProject(true)}
-                    className="mt-5 inline-flex items-center gap-2 rounded-2xl bg-[var(--ledger-accent)] px-4 py-3 text-sm font-medium text-white transition hover:bg-[var(--ledger-accent-hover)]"
+                    className="mt-5 inline-flex items-center gap-2 rounded-md bg-[var(--ledger-accent)] px-4 py-2.5 text-sm font-medium text-white transition hover:bg-[var(--ledger-accent-hover)]"
                   >
                     <Plus size={16} />
                     New project
@@ -2132,14 +2714,11 @@ export const ProjectsWindow = () => {
               className="flex shrink-0 flex-col overflow-hidden border-l border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)]"
               style={{ width: `${rightPaneWidth}px` }}
             >
-              <div className="flex-1 overflow-auto p-4 space-y-5">
+              <div className="flex-1 overflow-auto p-4">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0 flex-1">
-                    <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--ledger-text-muted)]">
-                      Inspector
-                    </p>
-                    <p className="mt-1 truncate text-sm font-semibold text-[var(--ledger-text-primary)]">
-                      {selectedProject ? 'Project context' : 'No project selected'}
+                    <p className="truncate text-sm font-semibold text-[var(--ledger-text-primary)]">
+                      Project context
                     </p>
                     <p className="mt-1 truncate text-xs text-[var(--ledger-text-muted)]">
                       {selectedProject ? projectDraft.name : 'Click a project to view details'}
@@ -2171,6 +2750,8 @@ export const ProjectsWindow = () => {
                               className="w-full px-3 py-2 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
                               onClick={() => {
                                 setIsContextMenuOpen(false);
+                                setActiveTab('notes');
+                                setIsEditingBrief(true);
                               }}
                             >
                               Edit project notes
@@ -2188,6 +2769,28 @@ export const ProjectsWindow = () => {
                               className="w-full px-3 py-2 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
                               onClick={() => {
                                 setIsContextMenuOpen(false);
+                                void openLinkCalendarModal('event');
+                              }}
+                            >
+                              Link event
+                            </button>
+                            <button
+                              className="w-full px-3 py-2 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+                              onClick={() => {
+                                setIsContextMenuOpen(false);
+                                void openLinkCalendarModal('reminder');
+                              }}
+                            >
+                              Link reminder
+                            </button>
+                            <button
+                              className="w-full px-3 py-2 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+                              onClick={() => {
+                                setIsContextMenuOpen(false);
+                                if (!selectedProject) return;
+                                const url = new URL(window.location.href);
+                                url.searchParams.set('focusProjectId', selectedProject.id);
+                                void navigator.clipboard?.writeText(url.toString());
                               }}
                             >
                               Copy project link
@@ -2225,23 +2828,85 @@ export const ProjectsWindow = () => {
                     Select a project to view notes, details, and workspace activity.
                   </p>
                 ) : (
-                  <>
+                  <div className="mt-5 space-y-5">
                     <section className="space-y-2">
-                      <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--ledger-text-muted)]">
-                        Project notes
+                      <p className="text-xs font-semibold text-[var(--ledger-text-primary)]">Workspace</p>
+                      <div className="rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3 py-2">
+                        <p className="truncate text-sm font-medium text-[var(--ledger-text-primary)]">
+                          {workspaceLabel}
+                        </p>
+                        <p className="mt-0.5 text-xs text-[var(--ledger-text-muted)]">
+                          {isSharedWorkspace
+                            ? `Shared workspace · ${workspaceMembers.length} members`
+                            : 'Personal workspace'}
+                        </p>
+                      </div>
+                    </section>
+
+                    <section className="space-y-2 border-t border-[color:var(--ledger-border-subtle)] pt-4">
+                      <p className="text-xs font-semibold text-[var(--ledger-text-primary)]">
+                        {isSharedWorkspace ? 'Members' : 'Viewing'}
                       </p>
-                      <p className="text-sm leading-6 text-[var(--ledger-text-secondary)]">
-                        {projectDraft.description?.trim()
-                          ? projectDraft.description.trim()
-                          : 'Add project context, decisions, links, or reminders.'}
-                      </p>
+                      {isSharedWorkspace ? (
+                        <div className="space-y-1.5">
+                          {workspaceMembers.slice(0, 6).map((member) => {
+                            const name = displayMemberName(member);
+                            const role =
+                              member.user_id === selectedProject.created_by ? 'Owner' : 'Member';
+                            return (
+                              <div key={member.user_id} className="flex items-center gap-2">
+                                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-hover)] text-[10px] font-semibold text-[var(--ledger-text-secondary)]">
+                                  {getInitials(name)}
+                                </span>
+                                <div className="min-w-0 flex-1">
+                                  <p className="truncate text-sm font-medium text-[var(--ledger-text-primary)]">
+                                    {name}
+                                  </p>
+                                  <p className="text-xs text-[var(--ledger-text-muted)]">{role}</p>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <div className="space-y-2 text-sm">
+                          <div className="flex items-center justify-between gap-3">
+                            <span className="text-[var(--ledger-text-muted)]">Viewing</span>
+                            <span className="text-[var(--ledger-text-primary)]">{projectViewingSummary}</span>
+                          </div>
+                          <div className="flex items-center justify-between gap-3">
+                            <span className="text-[var(--ledger-text-muted)]">Created by</span>
+                            <span className="text-[var(--ledger-text-primary)]">{creatorDisplayName}</span>
+                          </div>
+                        </div>
+                      )}
+                    </section>
+
+                    <section className="space-y-2 border-t border-[color:var(--ledger-border-subtle)] pt-4">
+                      <p className="text-xs font-semibold text-[var(--ledger-text-primary)]">Details</p>
+                      <div className="space-y-2 text-sm">
+                        {[
+                          ['Status', projectStatusLabels[projectDraft.status]],
+                          ['Progress', `${projectDraft.completeness}%`],
+                          ['Start', projectDraft.startDate ? formatShortDate(projectDraft.startDate) : 'Not set'],
+                          ['Due', projectDraft.endDate ? formatShortDate(projectDraft.endDate) : 'Not set'],
+                          ['Active', String(taskCounts.active)],
+                          ['Done', String(taskCounts.completed)],
+                          ['Updated', formatRelativeFromNow(selectedProject.updated_at)],
+                        ].map(([label, value]) => (
+                          <div key={label} className="flex items-center justify-between gap-3">
+                            <span className="text-[var(--ledger-text-muted)]">{label}</span>
+                            <span className="max-w-[60%] truncate text-right text-[var(--ledger-text-primary)]">
+                              {value}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
                     </section>
 
                     <section className="space-y-2 border-t border-[color:var(--ledger-border-subtle)] pt-4">
                       <div className="flex items-center justify-between gap-3">
-                        <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--ledger-text-muted)]">
-                          Linked notes
-                        </p>
+                        <p className="text-xs font-semibold text-[var(--ledger-text-primary)]">Linked</p>
                         <button
                           type="button"
                           className="text-xs font-medium text-[var(--ledger-accent)] transition hover:text-[var(--ledger-accent-hover)]"
@@ -2249,18 +2914,76 @@ export const ProjectsWindow = () => {
                             void openLinkNoteModal();
                           }}
                         >
-                          + Link note
+                          Link note
                         </button>
                       </div>
-                      {isLoadingLinkedNotes ? (
-                        <p className="text-sm text-[var(--ledger-text-muted)]">Loading linked notes…</p>
-                      ) : linkedNotes.length === 0 ? (
-                        <p className="text-sm text-[var(--ledger-text-muted)]">No notes linked yet.</p>
-                      ) : (
-                        <div className="space-y-1">
-                          {linkedNotes.slice(0, 6).map((link) => (
-                            <div
+                      <div className="grid grid-cols-2 gap-2 text-sm">
+                        {[
+                          ['Notes', linkedObjectCounts.notes],
+                          ['Events', linkedObjectCounts.events],
+                          ['Reminders', linkedObjectCounts.reminders],
+                          ['Captures', linkedObjectCounts.captures],
+                        ].map(([label, count]) => (
+                          <div key={label} className="rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-2 py-1.5">
+                            <p className="text-sm font-semibold text-[var(--ledger-text-primary)]">{count}</p>
+                            <p className="text-xs text-[var(--ledger-text-muted)]">{label}</p>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="space-y-2">
+                        <div>
+                          <p className="text-xs font-medium text-[var(--ledger-text-muted)]">Events</p>
+                          {projectEvents.length === 0 ? (
+                            <p className="mt-1 text-sm text-[var(--ledger-text-muted)]">
+                              No events linked.
+                            </p>
+                          ) : (
+                            projectEvents.slice(0, 2).map((event) => (
+                              <div
+                                key={event.id}
+                                className="mt-1 rounded-md px-1 py-1 transition hover:bg-[var(--ledger-surface-hover)]"
+                              >
+                                <p className="truncate text-sm font-medium text-[var(--ledger-text-primary)]">
+                                  {event.title}
+                                </p>
+                                <p className="truncate text-xs text-[var(--ledger-text-muted)]">
+                                  {formatEventDateLabel(event)}
+                                </p>
+                              </div>
+                            ))
+                          )}
+                        </div>
+                        <div>
+                          <p className="text-xs font-medium text-[var(--ledger-text-muted)]">
+                            Reminders
+                          </p>
+                          {projectReminders.length === 0 ? (
+                            <p className="mt-1 text-sm text-[var(--ledger-text-muted)]">
+                              No reminders linked.
+                            </p>
+                          ) : (
+                            projectReminders.slice(0, 2).map((reminder) => (
+                              <div
+                                key={reminder.id}
+                                className="mt-1 rounded-md px-1 py-1 transition hover:bg-[var(--ledger-surface-hover)]"
+                              >
+                                <p className="truncate text-sm font-medium text-[var(--ledger-text-primary)]">
+                                  {reminder.title}
+                                </p>
+                                <p className="truncate text-xs text-[var(--ledger-text-muted)]">
+                                  {formatReminderDateLabel(reminder)}
+                                </p>
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      </div>
+                      {linkedNotes.length > 0 && (
+                        <div className="mt-2 space-y-1">
+                          {linkedNotes.slice(0, 3).map((link) => (
+                            <button
                               key={link.id}
+                              type="button"
                               onContextMenu={(event) => {
                                 event.preventDefault();
                                 setLinkedNoteContextMenu({
@@ -2271,131 +2994,44 @@ export const ProjectsWindow = () => {
                                 });
                               }}
                               onDoubleClick={() => openLinkedNoteInNotesModule(link.note_id)}
-                              className="flex items-start justify-between gap-2 rounded-md px-1 py-1 transition hover:bg-[var(--ledger-surface-hover)]"
+                              className="flex w-full items-center gap-2 rounded-md px-1 py-1.5 text-left transition hover:bg-[var(--ledger-surface-hover)]"
                             >
-                              <div className="min-w-0">
-                                <p className="truncate text-sm font-medium text-[var(--ledger-text-primary)]">
-                                  {link.note.title}
-                                </p>
-                                <p className="truncate text-xs text-[var(--ledger-text-muted)]">
-                                  {link.note.preview || 'No content'}
-                                </p>
-                              </div>
-                              <button
-                                type="button"
-                                onClick={() => void unlinkNoteFromProject(link.note_id)}
-                                className="shrink-0 text-[11px] text-[var(--ledger-text-muted)] transition hover:text-[var(--ledger-danger)]"
-                              >
-                                Remove
-                              </button>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </section>
-
-                    <section className="space-y-2 border-t border-[color:var(--ledger-border-subtle)] pt-4">
-                      <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--ledger-text-muted)]">
-                        Details
-                      </p>
-                      <div className="space-y-1.5 text-sm">
-                        <div className="flex items-center justify-between gap-3">
-                          <span className="text-[var(--ledger-text-muted)]">Status</span>
-                          <span className="text-[var(--ledger-text-primary)]">
-                            {projectStatusLabels[projectDraft.status]}
-                          </span>
-                        </div>
-                        <div className="flex items-center justify-between gap-3">
-                          <span className="text-[var(--ledger-text-muted)]">Progress</span>
-                          <span className="text-[var(--ledger-text-primary)]">{projectDraft.completeness}%</span>
-                        </div>
-                        <div className="flex items-center justify-between gap-3">
-                          <span className="text-[var(--ledger-text-muted)]">Start</span>
-                          <span className="text-[var(--ledger-text-primary)]">
-                            {projectDraft.startDate
-                              ? formatShortDate(projectDraft.startDate)
-                              : 'Not set'}
-                          </span>
-                        </div>
-                        <div className="flex items-center justify-between gap-3">
-                          <span className="text-[var(--ledger-text-muted)]">Due</span>
-                          <span className="text-[var(--ledger-text-primary)]">
-                            {projectDraft.endDate
-                              ? formatShortDate(projectDraft.endDate)
-                              : 'Not set'}
-                          </span>
-                        </div>
-                        <div className="flex items-center justify-between gap-3">
-                          <span className="text-[var(--ledger-text-muted)]">Active</span>
-                          <span className="text-[var(--ledger-text-primary)]">{taskCounts.active}</span>
-                        </div>
-                        <div className="flex items-center justify-between gap-3">
-                          <span className="text-[var(--ledger-text-muted)]">Done</span>
-                          <span className="text-[var(--ledger-text-primary)]">{taskCounts.completed}</span>
-                        </div>
-                        <div className="flex items-center justify-between gap-3">
-                          <span className="text-[var(--ledger-text-muted)]">Updated</span>
-                          <span className="text-[var(--ledger-text-primary)]">
-                            {formatRelativeFromNow(selectedProject.updated_at)}
-                          </span>
-                        </div>
-                      </div>
-                    </section>
-
-                    <section className="space-y-2 border-t border-[color:var(--ledger-border-subtle)] pt-4">
-                      <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--ledger-text-muted)]">
-                        Workspace
-                      </p>
-                      <p className="truncate text-sm font-medium text-[var(--ledger-text-primary)]">
-                        {activeWorkspace?.name?.trim() || 'Current workspace'}
-                      </p>
-                      <div className="space-y-1.5 text-sm">
-                        <div className="flex items-center justify-between gap-3">
-                          <span className="text-[var(--ledger-text-muted)]">Created by</span>
-                          <span className="text-[var(--ledger-text-primary)]">{creatorDisplayName}</span>
-                        </div>
-                        <div className="flex items-center justify-between gap-3">
-                          <span className="text-[var(--ledger-text-muted)]">Last edited</span>
-                          <span className="max-w-[60%] truncate text-right text-[var(--ledger-text-primary)]">
-                            {creatorDisplayName} ·{' '}
-                            {formatRelativeFromNow(selectedProject.updated_at)}
-                          </span>
-                        </div>
-                        <div className="flex items-center justify-between gap-3">
-                          <span className="text-[var(--ledger-text-muted)]">Viewing</span>
-                          <span className="max-w-[60%] truncate text-right text-[var(--ledger-text-primary)]">
-                            {projectViewingSummary}
-                          </span>
-                        </div>
-                      </div>
-                    </section>
-
-                    <section className="space-y-2 border-t border-[color:var(--ledger-border-subtle)] pt-4">
-                      <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--ledger-text-muted)]">
-                        Recent activity
-                      </p>
-                      {recentProjectActivity.length === 0 ? (
-                        <p className="text-sm text-[var(--ledger-text-muted)]">No recent activity.</p>
-                      ) : (
-                        <div className="space-y-1">
-                          {recentProjectActivity.map((item) => (
-                            <button
-                              key={item.id}
-                              type="button"
-                            className="flex w-full items-center justify-between gap-3 rounded-lg px-2 py-1.5 text-left text-sm transition hover:bg-[var(--ledger-surface-hover)]"
-                          >
-                              <span className="min-w-0 truncate font-medium text-[var(--ledger-text-primary)]">
-                                {item.label}
-                              </span>
-                              <span className="shrink-0 text-[11px] text-[var(--ledger-text-muted)]">
-                                {formatShortDate(item.at)}
+                              <FileText size={13} className="shrink-0 text-[var(--ledger-text-muted)]" />
+                              <span className="min-w-0 truncate text-sm font-medium text-[var(--ledger-text-primary)]">
+                                {link.note.title}
                               </span>
                             </button>
                           ))}
                         </div>
                       )}
                     </section>
-                  </>
+
+                    <section className="space-y-2 border-t border-[color:var(--ledger-border-subtle)] pt-4">
+                      <p className="text-xs font-semibold text-[var(--ledger-text-primary)]">Recent activity</p>
+                      {recentProjectActivity.length === 0 ? (
+                        <p className="text-sm text-[var(--ledger-text-muted)]">No recent activity.</p>
+                      ) : (
+                        <div className="space-y-1">
+                          {recentProjectActivity.map((item) => (
+                            <div
+                              key={item.id}
+                              className="flex items-start gap-2 rounded-md px-1 py-1.5"
+                            >
+                              <Clock3 size={13} className="mt-0.5 shrink-0 text-[var(--ledger-text-muted)]" />
+                              <div className="min-w-0 flex-1">
+                                <p className="truncate text-sm font-medium text-[var(--ledger-text-primary)]">
+                                  {item.label}
+                                </p>
+                                <p className="text-xs text-[var(--ledger-text-muted)]">
+                                  {formatRelativeFromNow(item.at)}
+                                </p>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </section>
+                  </div>
                 )}
               </div>
             </aside>
@@ -2561,6 +3197,100 @@ export const ProjectsWindow = () => {
           <button
             type="button"
             onClick={() => setIsLinkNoteModalOpen(false)}
+            className="rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 py-1.5 text-sm font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+          >
+            Cancel
+          </button>
+        </div>
+      </ModalOverlay>
+
+      <ModalOverlay
+        isOpen={isLinkCalendarModalOpen}
+        onClose={() => setIsLinkCalendarModalOpen(false)}
+        backdropBorderRadius="inherit"
+        disablePortal
+        manageWindowChrome={false}
+        classNameContainer="w-full max-w-[460px] overflow-hidden rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-[var(--ledger-shadow)]"
+      >
+        <div className="flex items-start justify-between gap-4 border-b border-[color:var(--ledger-border-subtle)] px-5 py-4">
+          <div>
+            <p className="text-sm font-semibold text-[var(--ledger-text-primary)]">
+              Link {calendarLinkKind === 'event' ? 'event' : 'reminder'}
+            </p>
+            <p className="mt-1 text-sm text-[var(--ledger-text-secondary)]">
+              Attach an existing workspace {calendarLinkKind === 'event' ? 'event' : 'reminder'} to
+              this project
+            </p>
+          </div>
+          <ModalCloseButton
+            onClick={() => setIsLinkCalendarModalOpen(false)}
+            ariaLabel="Close link calendar modal"
+            className="shrink-0"
+          />
+        </div>
+        <div className="space-y-3 p-5">
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setCalendarLinkKind('event')}
+              className={`rounded-md px-3 py-1.5 text-sm font-medium transition ${
+                calendarLinkKind === 'event'
+                  ? 'bg-[var(--ledger-surface-hover)] text-[var(--ledger-text-primary)]'
+                  : 'bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]'
+              }`}
+            >
+              Events
+            </button>
+            <button
+              type="button"
+              onClick={() => setCalendarLinkKind('reminder')}
+              className={`rounded-md px-3 py-1.5 text-sm font-medium transition ${
+                calendarLinkKind === 'reminder'
+                  ? 'bg-[var(--ledger-surface-hover)] text-[var(--ledger-text-primary)]'
+                  : 'bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]'
+              }`}
+            >
+              Reminders
+            </button>
+          </div>
+          <input
+            type="text"
+            value={calendarLinkSearch}
+            onChange={(e) => setCalendarLinkSearch(e.target.value)}
+            placeholder={`Search ${calendarLinkKind === 'event' ? 'events' : 'reminders'}`}
+            className="w-full rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 py-2 text-sm text-[var(--ledger-text-primary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60"
+          />
+          <div className="max-h-80 overflow-auto rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)]">
+            {isLoadingLinkableCalendarItems ? (
+              <p className="p-3 text-sm text-[var(--ledger-text-muted)]">Loading items...</p>
+            ) : filteredLinkableCalendarItems.length === 0 ? (
+              <p className="p-3 text-sm text-[var(--ledger-text-muted)]">No items found.</p>
+            ) : (
+              filteredLinkableCalendarItems.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  disabled={isLinkingCalendarItem}
+                  onClick={() => void linkCalendarItemToProject(calendarLinkKind, item.id)}
+                  className="w-full border-b border-[color:var(--ledger-border-subtle)] px-3 py-2 text-left transition last:border-b-0 hover:bg-[var(--ledger-surface-hover)] disabled:opacity-50"
+                >
+                  <p className="truncate text-sm font-medium text-[var(--ledger-text-primary)]">
+                    {item.title}
+                  </p>
+                  <p className="mt-0.5 truncate text-xs text-[var(--ledger-text-muted)]">
+                    {calendarLinkKind === 'event'
+                      ? formatEventDateLabel(item as ProjectCalendarEvent)
+                      : formatReminderDateLabel(item as ProjectCalendarReminder)}
+                  </p>
+                </button>
+              ))
+            )}
+          </div>
+        </div>
+        <div className="flex items-center justify-end border-t border-[color:var(--ledger-border-subtle)] px-5 py-3">
+          <button
+            type="button"
+            onClick={() => setIsLinkCalendarModalOpen(false)}
             className="rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 py-1.5 text-sm font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
           >
             Cancel

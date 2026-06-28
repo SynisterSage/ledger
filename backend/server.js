@@ -7803,12 +7803,19 @@ app.get('/api/events', authMiddleware, rateLimit('read'), async (req, res) => {
     if (!workspaceIds.length) {
       return res.json([]);
     }
+    const projectId = normalizeNullableText(req.query?.projectId);
+    if (projectId && !isUuidLike(projectId)) {
+      return res.status(400).json({ error: 'Invalid projectId' });
+    }
     let query = supabase
       .from('events')
       .select(
-        'id, title, start_at, end_at, all_day, calendar_id, color, status, recurrence_rule, notes, project_id, note_id, series_id, series_type, created_at'
+        'id, title, start_at, end_at, all_day, calendar_id, color, status, recurrence_rule, notes, project_id, note_id, series_id, series_type, created_at, updated_at'
       )
       .in('workspace_id', workspaceIds);
+    if (projectId) {
+      query = query.eq('project_id', projectId);
+    }
 
     if (req.query?.startDate) {
       query = query.gte('start_at', String(req.query.startDate));
@@ -7880,7 +7887,7 @@ app.get('/api/events/upcoming', authMiddleware, rateLimit('read'), async (req, r
     const { data: futureData, error: futureError } = await supabase
       .from('events')
       .select(
-        'id, workspace_id, title, start_at, end_at, all_day, calendar_id, color, status, visibility, recurrence_rule, series_id, series_type, source, source_platform, project_id, note_id, notes'
+        'id, workspace_id, title, start_at, end_at, all_day, calendar_id, color, status, visibility, recurrence_rule, series_id, series_type, source, source_platform, project_id, note_id, notes, updated_at'
       )
       .in('workspace_id', workspaceIds)
       .gte('start_at', now.toISOString())
@@ -7893,7 +7900,7 @@ app.get('/api/events/upcoming', authMiddleware, rateLimit('read'), async (req, r
     const { data: ongoingData, error: ongoingError } = await supabase
       .from('events')
       .select(
-        'id, workspace_id, title, start_at, end_at, all_day, calendar_id, color, status, visibility, recurrence_rule, series_id, series_type, source, source_platform, project_id, note_id, notes'
+        'id, workspace_id, title, start_at, end_at, all_day, calendar_id, color, status, visibility, recurrence_rule, series_id, series_type, source, source_platform, project_id, note_id, notes, updated_at'
       )
       .in('workspace_id', workspaceIds)
       .lt('start_at', now.toISOString())
@@ -8570,6 +8577,7 @@ const loadRemindersForWorkspaces = async ({
   to = null,
   linkedType = null,
   linkedId = null,
+  projectId = null,
   limit = 500,
 }) => {
   const normalizedWorkspaceIds = Array.isArray(workspaceIds)
@@ -8603,6 +8611,7 @@ const loadRemindersForWorkspaces = async ({
   if (to) query = query.lte('remind_at', to);
   if (linkedType) query = query.eq('linked_type', linkedType);
   if (linkedId) query = query.eq('linked_id', linkedId);
+  if (projectId) query = query.eq('project_id', projectId);
   if (limit) query = query.limit(limit);
 
   const { data, error } = await query.order('remind_at', { ascending: true });
@@ -8653,8 +8662,12 @@ app.get('/api/reminders', authMiddleware, rateLimit('read'), async (req, res) =>
     const linkedType =
       req.query?.linked_type !== undefined ? normalizeReminderLinkedType(req.query.linked_type) : null;
     const linkedId = normalizeNullableText(req.query?.linked_id);
+    const projectId = normalizeNullableText(req.query?.projectId);
     if (linkedId && !isUuidLike(linkedId)) {
       return res.status(400).json({ error: 'Invalid linked_id' });
+    }
+    if (projectId && !isUuidLike(projectId)) {
+      return res.status(400).json({ error: 'Invalid projectId' });
     }
 
     const reminders = await loadRemindersForWorkspaces({
@@ -8664,6 +8677,7 @@ app.get('/api/reminders', authMiddleware, rateLimit('read'), async (req, res) =>
       to,
       linkedType,
       linkedId,
+      projectId,
     });
 
     res.json(reminders);
