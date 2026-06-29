@@ -416,6 +416,7 @@ export const ProjectsWindow = () => {
   const timelineContextRef = useRef<HTMLDivElement | null>(null);
   const timelineSurfaceRef = useRef<HTMLDivElement | null>(null);
   const timelineFieldRef = useRef<HTMLDivElement | null>(null);
+  const timelineCanvasRef = useRef<HTMLDivElement | null>(null);
   const milestoneEditorRef = useRef<HTMLDivElement | null>(null);
   const milestoneDetailRef = useRef<HTMLDivElement | null>(null);
   const milestoneNameInputRef = useRef<HTMLInputElement | null>(null);
@@ -794,6 +795,11 @@ export const ProjectsWindow = () => {
   }, [projectsOverviewRange, timelineRange]);
 
   const timelineDays = daysBetween(timelineRange.start, timelineRange.end);
+  const timelinePlacementSubdivisions = isMilestonePlacementActive
+    ? projectsOverviewRange === 'month'
+      ? 12
+      : 8
+    : 4;
   const datedProjects = useMemo(
     () =>
       projects
@@ -935,7 +941,7 @@ export const ProjectsWindow = () => {
 
   const milestoneEditorPosition = useMemo(() => {
     if (!pendingMilestone) return null;
-    return getClampedMenuPosition(pendingMilestone.x + 10, pendingMilestone.y + 10, 320, 390);
+    return getClampedMenuPosition(pendingMilestone.x + 10, pendingMilestone.y + 10, 320, 470);
   }, [pendingMilestone]);
 
   const milestoneDetailPosition = useMemo(() => {
@@ -1200,15 +1206,6 @@ export const ProjectsWindow = () => {
     [getProjectById, selectProject]
   );
 
-  const openProjectLinkCopy = useCallback(
-    async (projectId: string) => {
-      const url = new URL(window.location.href);
-      url.searchParams.set('focusProjectId', projectId);
-      await navigator.clipboard?.writeText(url.toString());
-    },
-    []
-  );
-
   const createTimelineTodo = useCallback((label: string, projectId: string, extra?: string) => {
     console.debug(`[projects timeline] TODO: ${label}`, { projectId, extra });
   }, []);
@@ -1238,29 +1235,31 @@ export const ProjectsWindow = () => {
     []
   );
 
-  const snapDateToTimelineInterval = useCallback(
-    (date: Date) => {
-      if (projectsOverviewRange === 'month') return date;
-      const snapped = new Date(date);
-      const day = snapped.getDay();
-      const offset = day >= 4 ? 7 - day : -day;
-      snapped.setDate(snapped.getDate() + offset);
-      return snapped;
-    },
-    [projectsOverviewRange]
-  );
-
   const getDateFromTimelinePosition = useCallback(
     (clientX: number, surface: HTMLElement | null) => {
       if (!surface || timelineDays <= 0) return null;
       const rect = surface.getBoundingClientRect();
       if (!rect.width) return null;
       const clampedX = Math.max(0, Math.min(rect.width, clientX - rect.left));
-      const ratio = clampedX / rect.width;
-      const dayOffset = Math.max(0, Math.min(timelineDays - 1, Math.round(ratio * (timelineDays - 1))));
-      return formatDateKey(snapDateToTimelineInterval(addDays(timelineRange.start, dayOffset)));
+      const placementColumns = Math.max(1, timelineMonths.length * timelinePlacementSubdivisions);
+      const columnWidth = rect.width / placementColumns;
+      const columnIndex = Math.max(0, Math.min(placementColumns - 1, Math.round(clampedX / columnWidth)));
+      const monthIndex = Math.max(0, Math.min(timelineMonths.length - 1, Math.floor(columnIndex / timelinePlacementSubdivisions)));
+      const localColumn = columnIndex % timelinePlacementSubdivisions;
+      const month = timelineMonths[monthIndex] ?? timelineRange.start;
+      const daysInMonth = new Date(month.getFullYear(), month.getMonth() + 1, 0).getDate();
+      const dayRatio =
+        timelinePlacementSubdivisions > 1 ? localColumn / (timelinePlacementSubdivisions - 1) : 0;
+      const day = Math.max(1, Math.min(daysInMonth, Math.round(dayRatio * (daysInMonth - 1)) + 1));
+      const snappedDate = new Date(month.getFullYear(), month.getMonth(), day);
+      return formatDateKey(snappedDate);
     },
-    [snapDateToTimelineInterval, timelineDays, timelineRange.start]
+    [
+      timelineDays,
+      timelineMonths,
+      timelinePlacementSubdivisions,
+      timelineRange.start,
+    ]
   );
 
   const getTimelinePositionFromDate = useCallback(
@@ -1276,7 +1275,7 @@ export const ProjectsWindow = () => {
     (event: ReactMouseEvent<HTMLElement>) => {
       event.preventDefault();
       event.stopPropagation();
-      const surface = timelineFieldRef.current ?? (event.currentTarget as HTMLElement | null);
+      const surface = timelineCanvasRef.current ?? timelineFieldRef.current ?? (event.currentTarget as HTMLElement | null);
       const date = getDateFromTimelinePosition(event.clientX, surface);
       openTimelineGridMenu(event.clientX, event.clientY, date);
     },
@@ -1287,7 +1286,7 @@ export const ProjectsWindow = () => {
     (event: ReactMouseEvent<HTMLElement>, projectId: string) => {
       event.preventDefault();
       event.stopPropagation();
-      const date = getDateFromTimelinePosition(event.clientX, timelineFieldRef.current);
+      const date = getDateFromTimelinePosition(event.clientX, timelineCanvasRef.current);
       openTimelineProjectMenu(event.clientX, event.clientY, projectId, date);
     },
     [getDateFromTimelinePosition, openTimelineProjectMenu]
@@ -1300,12 +1299,12 @@ export const ProjectsWindow = () => {
       const target = event.target instanceof HTMLElement ? event.target : null;
       const isProjectBar = Boolean(target?.closest('[data-timeline-project-bar="true"]'));
       if (isProjectBar) {
-        const date = getDateFromTimelinePosition(event.clientX, timelineFieldRef.current);
+        const date = getDateFromTimelinePosition(event.clientX, timelineCanvasRef.current);
         openTimelineProjectMenu(event.clientX, event.clientY, projectId, date);
         return;
       }
 
-      const surface = timelineFieldRef.current;
+      const surface = timelineCanvasRef.current;
       const date = getDateFromTimelinePosition(event.clientX, surface);
       openTimelineGridMenu(event.clientX, event.clientY, date);
     },
@@ -3080,12 +3079,24 @@ export const ProjectsWindow = () => {
     ) : null;
 
   const renderProjectsTimelineOverview = () => {
-    const timelineRailWidth = 316;
+    const timelineRailWidth = 280;
     const timelineWidth = Math.max(980, timelineMonths.length * 172);
     const timelineCanvasHeight = Math.max(560, 190 + visibleDatedProjects.length * 104);
     const timelineBodyHeight = Math.max(440, timelineCanvasHeight - 72);
+    const timelineSubdivisions = projectsOverviewRange === 'month' && isMilestonePlacementActive ? 12 : isMilestonePlacementActive ? 8 : 4;
     const todayLeft = getTimelinePositionFromDate(todayKey());
     const showTodayMarker = todayLeft > 0 && todayLeft < 100;
+    const getMonthTickDays = (month: Date) => {
+      const daysInMonth = new Date(month.getFullYear(), month.getMonth() + 1, 0).getDate();
+      const tickCount = projectsOverviewRange === 'month' && isMilestonePlacementActive ? 12 : isMilestonePlacementActive ? 8 : 4;
+      const ticks: number[] = [];
+      for (let index = 0; index < tickCount; index += 1) {
+        const position = tickCount > 1 ? index / (tickCount - 1) : 0;
+        const day = Math.round(position * (daysInMonth - 1)) + 1;
+        ticks.push(day);
+      }
+      return Array.from(new Set(ticks));
+    };
     const getProjectLane = (project: ProjectRow) => {
       const start = parseTimelineDate(project.start_date) ?? parseTimelineDate(project.end_date);
       const end = parseTimelineDate(project.end_date) ?? parseTimelineDate(project.start_date);
@@ -3094,8 +3105,27 @@ export const ProjectsWindow = () => {
       const right = Math.max(left + 2, timelineOffsetPercent(timelineRange.start, addDays(end, 1), timelineDays));
       return { left, width: right - left };
     };
-    const getMarkerLeft = (date: string) =>
-      Math.max(0, Math.min(100, getTimelinePositionFromDate(date)));
+    const getMarkerLeft = (date: string) => {
+      const parsed = parseTimelineDate(date);
+      if (!parsed || timelineMonths.length === 0) return 0;
+      const monthIndex = Math.max(
+        0,
+        Math.min(
+          timelineMonths.length - 1,
+          timelineMonths.findIndex(
+            (month) =>
+              month.getFullYear() === parsed.getFullYear() && month.getMonth() === parsed.getMonth()
+          )
+        )
+      );
+      const month = timelineMonths[monthIndex] ?? timelineRange.start;
+      const daysInMonth = new Date(month.getFullYear(), month.getMonth() + 1, 0).getDate();
+      const dayRatio = daysInMonth > 1 ? (parsed.getDate() - 1) / (daysInMonth - 1) : 0;
+      const localColumn = Math.round(dayRatio * (timelinePlacementSubdivisions - 1));
+      const totalColumns = Math.max(1, timelineMonths.length * timelinePlacementSubdivisions);
+      const columnIndex = monthIndex * timelinePlacementSubdivisions + localColumn;
+      return Math.max(0, Math.min(100, totalColumns > 1 ? (columnIndex / (totalColumns - 1)) * 100 : 0));
+    };
     const needsAttention = [
       ...datelessProjects.slice(0, 1).map((project) => ({
         id: `dates-${project.id}`,
@@ -3149,7 +3179,7 @@ export const ProjectsWindow = () => {
     ];
 
     return (
-      <div className="mx-auto flex h-full max-w-7xl flex-col gap-5">
+      <div className="mx-auto flex min-h-0 flex-1 max-w-7xl flex-col gap-5">
         <section className="flex flex-col gap-4 border-b border-[color:var(--ledger-border-subtle)] pb-5 lg:flex-row lg:items-end lg:justify-between">
           <div className="min-w-0">
             <div className="flex items-center gap-2 text-xs text-[var(--ledger-text-muted)]">
@@ -3245,20 +3275,29 @@ export const ProjectsWindow = () => {
               <p className="shrink-0 text-xs font-semibold text-[var(--ledger-text-primary)]">
                 Needs attention
               </p>
-              <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
-                {needsAttention.map((item) => (
-                  <button
-                    key={item.id}
-                    type="button"
-                    onClick={item.onClick}
-                    className="inline-flex min-w-0 items-center gap-2 rounded-md px-2 py-1 text-left text-xs text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
-                  >
-                    <span className="min-w-0 truncate">{item.label}</span>
-                    <span className="shrink-0 font-medium text-[var(--ledger-accent)]">
-                      {item.action}
-                    </span>
-                  </button>
-                ))}
+              <div className="relative min-w-0 flex-1">
+                <div className="pointer-events-none absolute inset-y-0 left-0 z-[1] w-6 bg-linear-to-r from-[var(--ledger-surface-muted)] to-transparent" />
+                <div className="pointer-events-none absolute inset-y-0 right-0 z-[1] w-8 bg-linear-to-l from-[var(--ledger-surface-muted)] to-transparent" />
+                <div className="overflow-x-auto pr-2 [scrollbar-width:thin]">
+                  <div className="flex min-w-max items-center gap-2">
+                    {needsAttention.map((item) => (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={item.onClick}
+                        className="inline-flex shrink-0 items-center gap-2 rounded-md px-2 py-1 text-left text-xs text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+                      >
+                        <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-[var(--ledger-accent)] text-[9px] font-semibold leading-none text-white">
+                          !
+                        </span>
+                        <span className="min-w-0 truncate">{item.label}</span>
+                        <span className="shrink-0 font-medium text-[var(--ledger-accent)]">
+                          {item.action}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
               </div>
             </div>
           </section>
@@ -3394,19 +3433,22 @@ export const ProjectsWindow = () => {
           </section>
         ) : (
           <section className="min-h-0 flex-1 overflow-hidden rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-[0_18px_50px_rgba(17,24,39,0.06)]">
-              <div className="relative h-full min-h-[560px] overflow-hidden">
-                <div className="h-full overflow-auto">
+              <div className="relative flex min-h-0 flex-1 overflow-hidden">
+                <div className="flex-1 overflow-auto">
                   <div
-                    className="relative min-h-full"
+                    className="relative flex min-h-full flex-1 flex-col"
                     style={{
                       width: `${timelineRailWidth + timelineWidth}px`,
                       minHeight: `${timelineCanvasHeight}px`,
                     }}
                   >
-                    <div className="grid min-h-full grid-cols-[316px_minmax(0,1fr)]">
+                    <div
+                      className="grid min-h-full"
+                      style={{ gridTemplateColumns: `${timelineRailWidth}px minmax(0, 1fr)` }}
+                    >
                       <aside className="sticky left-0 top-0 z-20 h-full border-r border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)]/75 backdrop-blur">
                         <div className="flex h-full flex-col">
-                          <div className="border-b border-[color:var(--ledger-border-subtle)] px-4 py-3">
+                          <div className="border-b border-[color:var(--ledger-border-subtle)] px-3 py-2.5">
                             <p className="text-sm font-semibold text-[var(--ledger-text-primary)]">
                               Workspace projects
                             </p>
@@ -3414,10 +3456,10 @@ export const ProjectsWindow = () => {
                               {overviewProjectStats.active} active · {overviewProjectStats.completed} completed
                             </p>
                           </div>
-                          <div className="min-h-0 flex-1 overflow-auto p-3">
+                          <div className="min-h-0 flex-1 overflow-auto p-2.5">
                             {groupedProjects.map((group) => (
-                              <div key={group.id} className="mb-4 last:mb-0">
-                                <p className="mb-1.5 px-1 text-xs font-semibold text-[var(--ledger-text-muted)]">
+                              <div key={group.id} className="mb-3 last:mb-0">
+                                <p className="mb-1 px-1 text-[11px] font-semibold text-[var(--ledger-text-muted)]">
                                   {group.label}
                                 </p>
                                 <div className="space-y-1">
@@ -3436,7 +3478,7 @@ export const ProjectsWindow = () => {
                                         onContextMenu={(event) =>
                                           handleTimelineProjectContextMenu(event, project.id)
                                         }
-                                        className="group w-full rounded-lg px-2.5 py-2 text-left transition hover:bg-[var(--ledger-surface-hover)]"
+                                        className="group w-full rounded-lg px-2 py-1.5 text-left transition hover:bg-[var(--ledger-surface-hover)]"
                                       >
                                         <div className="flex items-start gap-2">
                                           <span
@@ -3444,13 +3486,13 @@ export const ProjectsWindow = () => {
                                             style={{ backgroundColor: project.color || '#FF5F40' }}
                                           />
                                           <div className="min-w-0 flex-1">
-                                            <p className="truncate text-sm font-semibold text-[var(--ledger-text-primary)]">
+                                            <p className="truncate text-[13px] font-semibold text-[var(--ledger-text-primary)]">
                                               {project.name}
                                             </p>
-                                            <p className="mt-0.5 truncate text-xs text-[var(--ledger-text-muted)]">
+                                            <p className="mt-0.5 truncate text-[11px] text-[var(--ledger-text-muted)]">
                                               {projectStatusLabels[semantic]} · {stats.active} actions
                                             </p>
-                                            <p className="mt-0.5 truncate text-xs text-[var(--ledger-text-muted)]">
+                                            <p className="mt-0.5 truncate text-[11px] text-[var(--ledger-text-muted)]">
                                               {isSharedWorkspace
                                                 ? `${workspaceLabel} · ${workspaceMembers.length} members`
                                                 : workspaceLabel}
@@ -3465,7 +3507,7 @@ export const ProjectsWindow = () => {
                             ))}
                             {datelessProjects.length > 0 && (
                               <div className="border-t border-[color:var(--ledger-border-subtle)] pt-3">
-                                <p className="mb-1.5 px-1 text-xs font-semibold text-[var(--ledger-text-muted)]">
+                                <p className="mb-1 px-1 text-[11px] font-semibold text-[var(--ledger-text-muted)]">
                                   Needs dates
                                 </p>
                                 <div className="space-y-1">
@@ -3477,12 +3519,12 @@ export const ProjectsWindow = () => {
                                       onContextMenu={(event) =>
                                         handleTimelineProjectContextMenu(event, project.id)
                                       }
-                                      className="w-full rounded-lg px-2.5 py-2 text-left transition hover:bg-[var(--ledger-surface-hover)]"
+                                      className="w-full rounded-lg px-2 py-1.5 text-left transition hover:bg-[var(--ledger-surface-hover)]"
                                     >
-                                      <p className="truncate text-sm font-semibold text-[var(--ledger-text-primary)]">
+                                      <p className="truncate text-[13px] font-semibold text-[var(--ledger-text-primary)]">
                                         {project.name}
                                       </p>
-                                      <p className="mt-0.5 text-xs text-[var(--ledger-text-muted)]">
+                                      <p className="mt-0.5 text-[11px] text-[var(--ledger-text-muted)]">
                                         No dates set · Add start or due date
                                       </p>
                                     </button>
@@ -3509,6 +3551,7 @@ export const ProjectsWindow = () => {
                           <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 h-24 bg-linear-to-t from-[var(--ledger-surface-card)] to-transparent" />
                           <div className="h-full overflow-auto">
                             <div
+                              ref={timelineCanvasRef}
                               className="relative min-h-full"
                               style={{ width: `${timelineWidth}px`, minHeight: `${timelineCanvasHeight}px` }}
                             >
@@ -3525,8 +3568,13 @@ export const ProjectsWindow = () => {
                                       <p className="text-sm font-semibold text-[var(--ledger-text-primary)]">
                                         {month.toLocaleDateString([], { month: 'short' })}
                                       </p>
-                                      <div className="mt-2 grid grid-cols-4 text-[11px] text-[var(--ledger-text-muted)]">
-                                        {[1, 8, 15, 22].map((day) => (
+                                      <div
+                                        className="mt-2 grid text-[11px] text-[var(--ledger-text-muted)]"
+                                        style={{
+                                          gridTemplateColumns: `repeat(${getMonthTickDays(month).length}, minmax(0, 1fr))`,
+                                        }}
+                                      >
+                                        {getMonthTickDays(month).map((day) => (
                                           <span key={day}>{day}</span>
                                         ))}
                                       </div>
@@ -3541,7 +3589,7 @@ export const ProjectsWindow = () => {
                                   minHeight: `${timelineBodyHeight}px`,
                                   backgroundImage:
                                     'linear-gradient(to right, color-mix(in srgb, var(--ledger-border-subtle) 72%, transparent) 1px, transparent 1px), linear-gradient(to bottom, color-mix(in srgb, var(--ledger-border-subtle) 28%, transparent) 1px, transparent 1px)',
-                                  backgroundSize: `${timelineWidth / Math.max(1, timelineMonths.length * 4)}px 100%`,
+                                  backgroundSize: `${timelineWidth / Math.max(1, timelineMonths.length * timelineSubdivisions)}px 100%`,
                                 }}
                               >
                                 {showTodayMarker && (
@@ -3566,7 +3614,7 @@ export const ProjectsWindow = () => {
                                     </div>
                                   </div>
                                 ) : (
-                                  <div className="relative" style={{ minHeight: `${timelineBodyHeight}px` }}>
+                              <div className="relative flex-1" style={{ minHeight: `${timelineBodyHeight}px` }}>
                                     {visibleDatedProjects.map((project, index) => {
                           const semantic = parseProjectStatus(String(project.status));
                           const lane = getProjectLane(project);
@@ -3598,30 +3646,26 @@ export const ProjectsWindow = () => {
                               })),
                           ];
                           return (
-                            <button
+                            <div
                               key={project.id}
-                              type="button"
                               onClick={(event) => {
-                                if (isMilestonePlacementActive) {
-                                  event.preventDefault();
-                                  event.stopPropagation();
-                                  const date =
-                                    getDateFromTimelinePosition(event.clientX, timelineFieldRef.current) ??
-                                    project.end_date ??
-                                    todayKey();
-                                  openMilestoneEditor(project.id, date, {
-                                    x: event.clientX,
-                                    y: event.clientY,
-                                  });
-                                  return;
-                                }
-                                void selectProject(project);
+                                if (!isMilestonePlacementActive) return;
+                                event.preventDefault();
+                                event.stopPropagation();
+                                const date =
+                                  getDateFromTimelinePosition(event.clientX, timelineCanvasRef.current) ??
+                                  project.end_date ??
+                                  todayKey();
+                                openMilestoneEditor(project.id, date, {
+                                  x: event.clientX,
+                                  y: event.clientY,
+                                });
                               }}
                               onMouseMove={(event) => {
                                 if (!isMilestonePlacementActive) return;
                                 const date = getDateFromTimelinePosition(
                                   event.clientX,
-                                  timelineFieldRef.current
+                                  timelineCanvasRef.current
                                 );
                                 if (!date) {
                                   setMilestonePlacementHint('Choose a project row.');
@@ -3643,10 +3687,8 @@ export const ProjectsWindow = () => {
                                 handleTimelineProjectRowContextMenu(event, project.id)
                               }
                               title={`${project.name} · ${formatDateRange(project.start_date, project.end_date)} · ${stats.active} active actions · ${overviewNoteLinkCounts[project.id] ?? 0} notes`}
-                              className={`group absolute left-0 block h-24 w-full text-left transition ${
-                                isMilestonePlacementActive
-                                  ? 'cursor-crosshair hover:bg-[var(--ledger-surface-hover)]/35'
-                                  : 'hover:bg-[var(--ledger-surface-hover)]/20'
+                              className={`absolute left-0 block h-24 w-full text-left ${
+                                isMilestonePlacementActive ? 'cursor-crosshair' : 'cursor-default'
                               }`}
                               style={{ top: `${barTop - 46}px` }}
                             >
@@ -3658,9 +3700,29 @@ export const ProjectsWindow = () => {
                                     style={{ left: `${getMarkerLeft(milestoneHover.date)}%` }}
                                   />
                                 )}
-                              <div
+                              <button
+                                type="button"
                                 data-timeline-project-bar="true"
-                                className="absolute h-9 rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] shadow-[0_10px_28px_rgba(17,24,39,0.05)] transition group-hover:border-[color:var(--ledger-border-strong)] group-hover:shadow-[0_14px_34px_rgba(17,24,39,0.08)]"
+                                onClick={(event) => {
+                                  event.preventDefault();
+                                  event.stopPropagation();
+                                  if (isMilestonePlacementActive) {
+                                    const date =
+                                      getDateFromTimelinePosition(event.clientX, timelineCanvasRef.current) ??
+                                      project.end_date ??
+                                      todayKey();
+                                    openMilestoneEditor(project.id, date, {
+                                      x: event.clientX,
+                                      y: event.clientY,
+                                    });
+                                    return;
+                                  }
+                                  void selectProject(project);
+                                }}
+                                onContextMenu={(event) =>
+                                  handleTimelineProjectRowContextMenu(event, project.id)
+                                }
+                                className="absolute h-9 rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] shadow-[0_10px_28px_rgba(17,24,39,0.05)] transition hover:border-[color:var(--ledger-border-strong)] hover:shadow-[0_14px_34px_rgba(17,24,39,0.08)]"
                                 style={{
                                   left: `${lane.left}%`,
                                   top: '46px',
@@ -3705,7 +3767,7 @@ export const ProjectsWindow = () => {
                                       ))}
                                     </div>
                                   )}
-                                </div>
+                                </button>
                                 {projectMilestones.map((milestone) => {
                                   const markerLeft = getMarkerLeft(milestone.milestone_date);
                                   const isOverdue =
@@ -3772,8 +3834,17 @@ export const ProjectsWindow = () => {
                                       </div>
                                     </div>
                                   )}
-                                <div
-                                  className="absolute flex max-w-[420px] items-center gap-2"
+                                <button
+                                  type="button"
+                                  className="absolute flex max-w-[420px] items-center gap-2 text-left"
+                                  onClick={(event) => {
+                                    event.preventDefault();
+                                    event.stopPropagation();
+                                    void selectProject(project);
+                                  }}
+                                  onContextMenu={(event) =>
+                                    handleTimelineProjectRowContextMenu(event, project.id)
+                                  }
                                   style={{
                                     left: `${Math.max(0, Math.min(94, lane.left))}%`,
                                     top: `${labelTop - (barTop - 46)}px`,
@@ -3790,19 +3861,8 @@ export const ProjectsWindow = () => {
                                     {projectStatusLabels[semantic]} · {formatDateRange(project.start_date, project.end_date)}
                                   </span>
                                   {isSharedWorkspace && renderMemberStack('h-4 w-4')}
-                                </div>
-                                <div
-                                  className="absolute flex items-center gap-2 text-[11px] text-[var(--ledger-text-muted)]"
-                                  style={{
-                                    left: `${Math.max(0, Math.min(94, lane.left + Math.min(lane.width, 30)))}%`,
-                                    top: '88px',
-                                  }}
-                                >
-                                  <span>{stats.active} actions</span>
-                                  <span>·</span>
-                                  <span>{overviewNoteLinkCounts[project.id] ?? 0} notes</span>
-                                </div>
-                              </button>
+                                </button>
+                            </div>
                             );
                                     })}
                                   </div>
@@ -4497,7 +4557,7 @@ export const ProjectsWindow = () => {
                                 void updateProjectStatus(selectedProject.id, 'paused');
                               }}
                             >
-                              Archive project
+                              Pause project
                             </button>
                             <div className="my-1 h-px bg-[var(--ledger-border-subtle)]" />
                             <button
@@ -4717,14 +4777,12 @@ export const ProjectsWindow = () => {
                         ))}
                       </div>
                       <div className="space-y-2">
-                        <div>
-                          <p className="text-xs font-medium text-[var(--ledger-text-muted)]">Events</p>
-                          {projectEvents.length === 0 ? (
-                            <p className="mt-1 text-sm text-[var(--ledger-text-muted)]">
-                              No events linked.
+                        {projectEvents.length > 0 && (
+                          <div>
+                            <p className="text-xs font-medium text-[var(--ledger-text-muted)]">
+                              Events
                             </p>
-                          ) : (
-                            projectEvents.slice(0, 2).map((event) => (
+                            {projectEvents.slice(0, 2).map((event) => (
                               <div
                                 key={event.id}
                                 className="mt-1 rounded-md px-1 py-1 transition hover:bg-[var(--ledger-surface-hover)]"
@@ -4736,19 +4794,15 @@ export const ProjectsWindow = () => {
                                   {formatEventDateLabel(event)}
                                 </p>
                               </div>
-                            ))
-                          )}
-                        </div>
-                        <div>
-                          <p className="text-xs font-medium text-[var(--ledger-text-muted)]">
-                            Reminders
-                          </p>
-                          {projectReminders.length === 0 ? (
-                            <p className="mt-1 text-sm text-[var(--ledger-text-muted)]">
-                              No reminders linked.
+                            ))}
+                          </div>
+                        )}
+                        {projectReminders.length > 0 && (
+                          <div>
+                            <p className="text-xs font-medium text-[var(--ledger-text-muted)]">
+                              Reminders
                             </p>
-                          ) : (
-                            projectReminders.slice(0, 2).map((reminder) => (
+                            {projectReminders.slice(0, 2).map((reminder) => (
                               <div
                                 key={reminder.id}
                                 className="mt-1 rounded-md px-1 py-1 transition hover:bg-[var(--ledger-surface-hover)]"
@@ -4760,9 +4814,9 @@ export const ProjectsWindow = () => {
                                   {formatReminderDateLabel(reminder)}
                                 </p>
                               </div>
-                            ))
-                          )}
-                        </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
                       {linkedNotes.length > 0 && (
                         <div className="mt-2 space-y-1">
@@ -4928,9 +4982,9 @@ export const ProjectsWindow = () => {
       )}
 
       {pendingMilestone && milestoneEditorPosition && (
-        <div
+      <div
           ref={milestoneEditorRef}
-          className="fixed z-50 w-[320px] overflow-hidden rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-[var(--ledger-shadow)]"
+          className="fixed z-50 max-h-[calc(100vh-16px)] w-[320px] overflow-auto rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-[var(--ledger-shadow)]"
           style={{ left: `${milestoneEditorPosition.x}px`, top: `${milestoneEditorPosition.y}px` }}
           role="dialog"
           aria-label="New milestone"
@@ -5635,17 +5689,6 @@ export const ProjectsWindow = () => {
                 <Link2 size={14} />
                 Link note
               </button>
-              <button
-                type="button"
-                onClick={() => {
-                  void openProjectLinkCopy(timelineContextProject.id);
-                  setTimelineContextMenu(null);
-                }}
-                className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
-              >
-                <Link2 size={14} />
-                Copy link
-              </button>
               <div className="my-1 h-px bg-[var(--ledger-border-subtle)]" />
               <button
                 type="button"
@@ -5655,8 +5698,19 @@ export const ProjectsWindow = () => {
                 }}
                 className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
               >
-                  <ChevronDown size={14} />
-                  Archive
+                <ChevronDown size={14} />
+                Pause
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  void deleteProject(timelineContextProject.id);
+                  setTimelineContextMenu(null);
+                }}
+                className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-danger)] transition hover:bg-[color:rgba(217,45,32,0.08)]"
+              >
+                <Trash2 size={14} />
+                Delete project
               </button>
             </>
           ) : timelineContextProject ? (
@@ -5720,17 +5774,6 @@ export const ProjectsWindow = () => {
                   <CalendarDays size={14} />
                   Edit dates
                 </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    void openProjectLinkCopy(timelineContextProject.id);
-                    setTimelineContextMenu(null);
-                  }}
-                  className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
-                >
-                  <Link2 size={14} />
-                  Copy link
-                </button>
                 <div className="my-1 h-px bg-[var(--ledger-border-subtle)]" />
                 <button
                   type="button"
@@ -5741,7 +5784,18 @@ export const ProjectsWindow = () => {
                   className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
                 >
                   <ChevronDown size={14} />
-                  Archive
+                  Pause
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    void deleteProject(timelineContextProject.id);
+                    setTimelineContextMenu(null);
+                  }}
+                  className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-danger)] transition hover:bg-[color:rgba(217,45,32,0.08)]"
+                >
+                  <Trash2 size={14} />
+                  Delete project
                 </button>
               </>
             ) : (
@@ -5779,28 +5833,6 @@ export const ProjectsWindow = () => {
                   <Plus size={14} />
                   Add action
                 </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    void handleLinkNote(timelineContextProject.id);
-                    setTimelineContextMenu(null);
-                  }}
-                  className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
-                >
-                  <Link2 size={14} />
-                  Link note
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    void openProjectLinkCopy(timelineContextProject.id);
-                    setTimelineContextMenu(null);
-                  }}
-                  className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
-                >
-                  <Link2 size={14} />
-                  Copy link
-                </button>
                 <div className="my-1 h-px bg-[var(--ledger-border-subtle)]" />
                 <button
                   type="button"
@@ -5811,7 +5843,18 @@ export const ProjectsWindow = () => {
                   className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-danger)] transition hover:bg-[color:rgba(217,45,32,0.08)]"
                 >
                   <Trash2 size={14} />
-                  Archive
+                  Pause
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    void deleteProject(timelineContextProject.id);
+                    setTimelineContextMenu(null);
+                  }}
+                  className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-danger)] transition hover:bg-[color:rgba(217,45,32,0.08)]"
+                >
+                  <Trash2 size={14} />
+                  Delete project
                 </button>
               </>
             )
