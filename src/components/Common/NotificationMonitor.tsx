@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { useApi } from '../../hooks/useApi';
+import { useSidebar } from '../../context/SidebarContext';
 import { useToast } from './ToastProvider';
 
 type NotificationAction = 'open' | 'dismiss' | 'complete' | 'snooze';
@@ -60,7 +61,18 @@ const getToastFallbackTitle = (item: NotificationItem) => {
 export const NotificationMonitor: React.FC = () => {
   const api = useApi();
   const toast = useToast();
+  const { state } = useSidebar();
   const seenToastIdsRef = useRef<Set<string>>(new Set());
+  const activeToastIdsRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (state === 'expanded') return;
+
+    activeToastIdsRef.current.forEach((toastId) => {
+      toast.dismiss(toastId);
+    });
+    activeToastIdsRef.current.clear();
+  }, [state, toast]);
 
   useEffect(() => {
     const openNotificationTarget = async (item: NotificationItem) => {
@@ -70,6 +82,7 @@ export const NotificationMonitor: React.FC = () => {
 
     const handleBatch = (_event: unknown, notifications?: NotificationItem[]) => {
       if (!Array.isArray(notifications) || !notifications.length) return;
+      if (state !== 'expanded') return;
 
       const unseenItems = notifications.filter((item) => {
         if (!item?.id) return false;
@@ -82,7 +95,7 @@ export const NotificationMonitor: React.FC = () => {
         const snoozeMinutes = 10;
         const title = item.title ?? getToastFallbackTitle(item);
         const detail = item.body ?? (item.workspaceName ? `${item.workspaceName}` : undefined);
-        toast.show(title, {
+        const toastId = toast.show(title, {
           detail,
           variant: 'info',
           icon: 'alert',
@@ -139,6 +152,7 @@ export const NotificationMonitor: React.FC = () => {
             };
           }),
         });
+        activeToastIdsRef.current.add(toastId);
       });
     };
 
@@ -162,7 +176,7 @@ export const NotificationMonitor: React.FC = () => {
       window.ipcRenderer?.off('ledger:notifications-batch', handleBatch);
       window.ipcRenderer?.off('ledger:notifications-summary', handleSummary);
     };
-  }, [api, toast]);
+  }, [api, state, toast]);
 
   return null;
 };

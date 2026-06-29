@@ -221,6 +221,7 @@ const SIDEBAR_MIN_WIDTH = modulePaneSizing.calendar.left.min;
 const SIDEBAR_MAX_WIDTH = 460;
 const INSPECTOR_MIN_WIDTH = modulePaneSizing.calendar.right.min;
 const INSPECTOR_MAX_WIDTH = 420;
+const TIMELINE_HOUR_HEIGHT = 64;
 
 const startOfWeek = (date: Date, weekStartsOn: 'sunday' | 'monday' = 'monday') => {
   const d = new Date(date);
@@ -1611,6 +1612,10 @@ export const CalendarWindow = () => {
     Math.max(1, Math.round((new Date(event.end_at).getTime() - new Date(event.start_at).getTime()) / 60000));
   const getEventDurationRows = (event: EventRow) =>
     Math.max(1, Math.min(12, Math.ceil(getEventDurationMinutes(event) / 60)));
+  const getEventMinuteOffset = (event: EventRow) => {
+    const start = new Date(event.start_at);
+    return Math.max(0, Math.min(59, start.getMinutes()));
+  };
   const formatEventTimeRangeLabel = (event: EventRow) => {
     if (isAllDayEvent(event)) return 'All day';
     const start = new Date(event.start_at);
@@ -4073,12 +4078,15 @@ export const CalendarWindow = () => {
                               return (
                                 <div
                                   key={`${hour}-${key}`}
-                                  className={`relative isolate cursor-pointer border-b border-l border-[color:var(--ledger-border-subtle)] px-1 py-1 transition-colors ${
+                                  className={`relative cursor-pointer border-b border-l border-[color:var(--ledger-border-subtle)] px-1 py-1 transition-colors ${
                                     hasOccupiedTimelineCell
                                       ? ''
                                       : 'hover:bg-[var(--ledger-surface-hover)]'
                                   }`}
-                                  style={{ minHeight: `${rowHeight}px` }}
+                                  style={{
+                                    minHeight: `${rowHeight}px`,
+                                    zIndex: startingEvents.length > 0 ? 5 : 0,
+                                  }}
                                   onClick={() => {
                                     setSelectedEvent(null);
                                     setSelectedReminder(null);
@@ -4218,6 +4226,8 @@ export const CalendarWindow = () => {
                               const pastEvent = isPastEvent(evt);
                               const pastEventMuted = isPastEventMuted(evt);
                               const durationRows = getEventDurationRows(evt);
+                              const minuteOffset = getEventMinuteOffset(evt);
+                              const durationMinutes = getEventDurationMinutes(evt);
                               return (
                                 <button
                                   key={evt.id}
@@ -4235,13 +4245,19 @@ export const CalendarWindow = () => {
                                       id: evt.id,
                                     });
                                   }}
-                                  className={`group absolute inset-x-1 z-30 flex flex-col rounded-md border text-left text-[10px] leading-tight shadow-sm transition-[border-color,box-shadow,transform] relative ${
+                                  className={`group absolute inset-x-1 z-30 flex flex-col rounded-md border text-left text-[10px] leading-tight shadow-sm transition-[border-color,box-shadow,transform] ${
                                     durationRows > 1 ? 'p-2' : 'px-2 py-1.5'
                                   }`}
                                   style={{
                                     pointerEvents: 'auto',
-                                    top: `${Math.max(8, reminderStackHeight + 6)}px`,
-                                    height: `${Math.max(40, durationRows * 64 - 12)}px`,
+                                    top: `${Math.max(
+                                      8,
+                                      reminderStackHeight + 6 + (minuteOffset / 60) * TIMELINE_HOUR_HEIGHT
+                                    )}px`,
+                                    height: `${Math.max(
+                                      40,
+                                      (durationMinutes / 60) * TIMELINE_HOUR_HEIGHT - 12
+                                    )}px`,
                                     backgroundColor: pastEvent
                                       ? 'var(--ledger-surface-hover)'
                                       : `${eventColor}18`,

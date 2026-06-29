@@ -310,9 +310,17 @@ const projectStatusAliases = {
   paused: ['Paused', 'paused', 'archived', 'hold'],
   completed: ['Completed', 'completed', 'done'],
 };
+const projectMilestoneTypes = ['Deadline', 'Review', 'Decision', 'Handoff', 'Event', 'Custom'];
+
+const normalizeProjectMilestoneType = (value) => {
+  const raw = String(value ?? 'Custom').trim().toLowerCase();
+  return projectMilestoneTypes.find((type) => type.toLowerCase() === raw) ?? 'Custom';
+};
 
 const projectSelectColumns =
   'id, name, description, status, completeness, color, start_date, end_date, created_by, created_at, updated_at';
+const projectMilestoneSelectColumns =
+  'id, workspace_id, project_id, title, milestone_date, type, note, completed, linked_note_id, linked_reminder_id, linked_event_id, created_by, updated_by, created_at, updated_at';
 const taskSelectColumns =
   'id, workspace_id, project_id, title, description, notes, due_date, due_time, status, priority, assigned_to, tags, completed_at, source, source_platform, created_at, updated_at';
 const reminderSelectColumns =
@@ -7122,6 +7130,180 @@ app.delete(
     }
   }
 );
+
+app.get('/api/projects/:id/milestones', authMiddleware, rateLimit('read'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    const projectId = String(req.params.id);
+    const allowed = await ensureWorkspaceResource('projects', projectId, workspaceId);
+    if (!allowed) {
+      return res.status(404).json({ error: 'Project not found' });
+    }
+
+    const { data, error } = await supabase
+      .from('project_milestones')
+      .select(projectMilestoneSelectColumns)
+      .eq('workspace_id', workspaceId)
+      .eq('project_id', projectId)
+      .order('milestone_date', { ascending: true })
+      .order('created_at', { ascending: true });
+
+    if (error) throw error;
+    res.json(data ?? []);
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
+app.get('/api/project-milestones', authMiddleware, rateLimit('read'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    const { data, error } = await supabase
+      .from('project_milestones')
+      .select(projectMilestoneSelectColumns)
+      .eq('workspace_id', workspaceId)
+      .order('milestone_date', { ascending: true })
+      .order('created_at', { ascending: true });
+
+    if (error) throw error;
+    res.json(data ?? []);
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
+app.post('/api/projects/:id/milestones', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    const projectId = String(req.params.id);
+    const title = String(req.body?.title ?? '').trim();
+    const milestoneDate = normalizeNullableDate(req.body?.milestone_date, 'milestone date');
+    const type = normalizeProjectMilestoneType(req.body?.type);
+    const note = normalizeNullableText(req.body?.note);
+    const linkedNoteId = normalizeNullableText(req.body?.linked_note_id);
+    const linkedReminderId = normalizeNullableText(req.body?.linked_reminder_id);
+    const linkedEventId = normalizeNullableText(req.body?.linked_event_id);
+
+    if (!title) return res.status(400).json({ error: 'Milestone title required' });
+    if (!milestoneDate) return res.status(400).json({ error: 'Milestone date required' });
+
+    const [projectAllowed, noteAllowed, reminderAllowed, eventAllowed] = await Promise.all([
+      ensureWorkspaceResource('projects', projectId, workspaceId),
+      linkedNoteId ? ensureWorkspaceResource('notes', linkedNoteId, workspaceId) : Promise.resolve(true),
+      linkedReminderId
+        ? ensureWorkspaceResource('reminders', linkedReminderId, workspaceId)
+        : Promise.resolve(true),
+      linkedEventId ? ensureWorkspaceResource('events', linkedEventId, workspaceId) : Promise.resolve(true),
+    ]);
+
+    if (!projectAllowed) return res.status(404).json({ error: 'Project not found' });
+    if (!noteAllowed) return res.status(404).json({ error: 'Linked note not found' });
+    if (!reminderAllowed) return res.status(404).json({ error: 'Linked reminder not found' });
+    if (!eventAllowed) return res.status(404).json({ error: 'Linked event not found' });
+
+    const { data, error } = await supabase
+      .from('project_milestones')
+      .insert({
+        workspace_id: workspaceId,
+        project_id: projectId,
+        created_by: req.authUser.id,
+        updated_by: req.authUser.id,
+        title,
+        milestone_date: milestoneDate,
+        type,
+        note,
+        completed: Boolean(req.body?.completed),
+        linked_note_id: linkedNoteId,
+        linked_reminder_id: linkedReminderId,
+        linked_event_id: linkedEventId,
+      })
+      .select(projectMilestoneSelectColumns)
+      .single();
+
+    if (error) throw error;
+    res.json(data);
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
+app.patch('/api/project-milestones/:id', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    const milestoneId = String(req.params.id);
+    const allowed = await ensureWorkspaceResource('project_milestones', milestoneId, workspaceId);
+    if (!allowed) return res.status(404).json({ error: 'Milestone not found' });
+
+    const update = { updated_at: new Date().toISOString(), updated_by: req.authUser.id };
+    if (req.body?.title !== undefined) {
+      const title = String(req.body.title ?? '').trim();
+      if (!title) return res.status(400).json({ error: 'Milestone title required' });
+      update.title = title;
+    }
+    if (req.body?.milestone_date !== undefined) {
+      const milestoneDate = normalizeNullableDate(req.body.milestone_date, 'milestone date');
+      if (!milestoneDate) return res.status(400).json({ error: 'Milestone date required' });
+      update.milestone_date = milestoneDate;
+    }
+    if (req.body?.type !== undefined) update.type = normalizeProjectMilestoneType(req.body.type);
+    if (req.body?.note !== undefined) update.note = normalizeNullableText(req.body.note);
+    if (req.body?.completed !== undefined) update.completed = Boolean(req.body.completed);
+    if (req.body?.project_id !== undefined) {
+      const projectId = String(req.body.project_id ?? '').trim();
+      const projectAllowed = await ensureWorkspaceResource('projects', projectId, workspaceId);
+      if (!projectAllowed) return res.status(404).json({ error: 'Project not found' });
+      update.project_id = projectId;
+    }
+
+    const linkChecks = [];
+    const linkedNoteId =
+      req.body?.linked_note_id !== undefined ? normalizeNullableText(req.body.linked_note_id) : undefined;
+    const linkedReminderId =
+      req.body?.linked_reminder_id !== undefined
+        ? normalizeNullableText(req.body.linked_reminder_id)
+        : undefined;
+    const linkedEventId =
+      req.body?.linked_event_id !== undefined ? normalizeNullableText(req.body.linked_event_id) : undefined;
+    if (linkedNoteId) linkChecks.push(['note', ensureWorkspaceResource('notes', linkedNoteId, workspaceId)]);
+    if (linkedReminderId)
+      linkChecks.push(['reminder', ensureWorkspaceResource('reminders', linkedReminderId, workspaceId)]);
+    if (linkedEventId) linkChecks.push(['event', ensureWorkspaceResource('events', linkedEventId, workspaceId)]);
+    const linkResults = await Promise.all(linkChecks.map(([, check]) => check));
+    const failedLink = linkChecks.find((_, index) => !linkResults[index])?.[0];
+    if (failedLink) return res.status(404).json({ error: `Linked ${failedLink} not found` });
+    if (linkedNoteId !== undefined) update.linked_note_id = linkedNoteId;
+    if (linkedReminderId !== undefined) update.linked_reminder_id = linkedReminderId;
+    if (linkedEventId !== undefined) update.linked_event_id = linkedEventId;
+
+    const { data, error } = await supabase
+      .from('project_milestones')
+      .update(update)
+      .eq('workspace_id', workspaceId)
+      .eq('id', milestoneId)
+      .select(projectMilestoneSelectColumns)
+      .single();
+
+    if (error) throw error;
+    res.json(data);
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
+app.delete('/api/project-milestones/:id', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    const { error } = await supabase
+      .from('project_milestones')
+      .delete()
+      .eq('workspace_id', workspaceId)
+      .eq('id', req.params.id);
+    if (error) throw error;
+    res.json({ success: true });
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
 
 app.get('/api/tasks', authMiddleware, rateLimit('read'), async (req, res) => {
   try {

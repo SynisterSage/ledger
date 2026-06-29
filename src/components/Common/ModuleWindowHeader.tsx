@@ -2,6 +2,7 @@ import {
   type ReactNode,
   type CSSProperties,
   type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent,
   useEffect,
   useMemo,
   useRef,
@@ -244,6 +245,7 @@ type AppRegionStyle = CSSProperties & {
 
 const dragRegionStyle: AppRegionStyle = { WebkitAppRegion: 'drag' };
 const noDragRegionStyle: AppRegionStyle = { WebkitAppRegion: 'no-drag' };
+const HEADER_DRAG_THRESHOLD_PX = 3;
 const actionButtonClassName =
   `inline-flex h-9 items-center justify-center gap-1.5 rounded-full border ${sidebarTheme.subtleBorder} ${sidebarTheme.mutedSurface} px-3.5 text-xs font-medium ${sidebarTheme.textSecondary} transition hover:${sidebarTheme.hoverSurface} hover:${sidebarTheme.textPrimary} focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-accent)]/20`;
 
@@ -451,6 +453,12 @@ export const ModuleWindowHeader = ({
   const topRightActions = globalActions ?? stripActions;
   const rightActions = primaryActions ?? actions;
   const panelToggleText = panelToggleLabel ?? 'Hide panels';
+  const headerDragRef = useRef<{
+    pointerId: number;
+    startX: number;
+    startY: number;
+    isDragging: boolean;
+  } | null>(null);
 
   const handleTitleBarDoubleClick = () => {
     if (onToggleFullscreen) {
@@ -462,6 +470,8 @@ export const ModuleWindowHeader = ({
     const target = event.target;
     if (!(target instanceof Element)) return;
     if (target.closest('button, a, input, textarea, select, [role="button"]')) return;
+    event.preventDefault();
+    event.stopPropagation();
     handleTitleBarDoubleClick();
   };
 
@@ -472,8 +482,55 @@ export const ModuleWindowHeader = ({
     event.preventDefault();
   };
 
+  const handleHeaderPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0) return;
+
+    headerDragRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      isDragging: false,
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+
+  const handleHeaderPointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const drag = headerDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+
+    const movedDistance = Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY);
+
+    if (!drag.isDragging) {
+      if (movedDistance < HEADER_DRAG_THRESHOLD_PX) return;
+      drag.isDragging = true;
+      void window.desktopWindow?.beginHeaderDrag();
+    }
+
+    event.preventDefault();
+    void window.desktopWindow?.updateHeaderDrag();
+  };
+
+  const finishHeaderPointerDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const drag = headerDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+
+    headerDragRef.current = null;
+    if (drag.isDragging) {
+      event.preventDefault();
+      void window.desktopWindow?.finishHeaderDrag();
+    }
+  };
+
   return (
-    <div className={`w-full border-b ${sidebarTheme.subtleBorder} ${sidebarTheme.mutedSurface}`} style={dragRegionStyle}>
+    <div
+      className={`w-full border-b ${sidebarTheme.subtleBorder} ${sidebarTheme.mutedSurface}`}
+      style={dragRegionStyle}
+      onDoubleClickCapture={handleStripDoubleClick}
+    >
       <div
         className={`flex h-8 w-full cursor-default items-center justify-between border-b ${sidebarTheme.subtleBorder} ${sidebarTheme.hoverSurface} px-4`}
         style={dragRegionStyle}
@@ -516,13 +573,27 @@ export const ModuleWindowHeader = ({
           )}
         </div>
 
+        <div
+          className="mx-3 h-full min-w-0 flex-1"
+          style={noDragRegionStyle}
+          onPointerDown={handleHeaderPointerDown}
+          onPointerMove={handleHeaderPointerMove}
+          onPointerUp={finishHeaderPointerDrag}
+          onPointerCancel={finishHeaderPointerDrag}
+          onDoubleClick={handleStripDoubleClick}
+          aria-hidden="true"
+        />
+
         <div className="flex items-center gap-3" style={noDragRegionStyle}>
           <WorkspaceSwitcher />
           {topRightActions && <div className="flex items-center gap-1">{topRightActions}</div>}
         </div>
       </div>
 
-      <div className="flex min-h-12 w-full items-center justify-between gap-4 px-6 py-3">
+      <div
+        className="flex min-h-12 w-full items-center justify-between gap-4 px-6 py-3"
+        onDoubleClickCapture={handleStripDoubleClick}
+      >
         <div className="min-w-0 space-y-0.5" style={dragRegionStyle}>
           {eyebrow && <p className={`text-[11px] font-medium leading-none ${sidebarTheme.textMuted}`}>{eyebrow}</p>}
           <h1 className={`truncate text-[22px] font-semibold leading-[1.15] tracking-tight ${sidebarTheme.textPrimary}`}>

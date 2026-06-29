@@ -57,6 +57,24 @@ interface Window {
       width: number;
       height: number;
     } | null>;
+    beginHeaderDrag: () => Promise<{
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+    } | null>;
+    updateHeaderDrag: () => Promise<{
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+    } | null>;
+    finishHeaderDrag: () => Promise<{
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+    } | null>;
     applySidebarPreferences: (preferences: {
       position?: 'right' | 'left' | 'top' | 'bottom' | 'floating';
       opacity?: number;

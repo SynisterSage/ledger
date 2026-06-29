@@ -384,6 +384,55 @@ export const useApi = () => {
         request(`/api/projects/${projectId}/note-links/${noteId}`, {
           method: 'DELETE',
         }),
+      getProjectMilestones: (projectId: string) =>
+        request(`/api/projects/${projectId}/milestones`).then((data) => {
+          if (!Array.isArray(data)) return data;
+          return dedupeById(data);
+        }),
+      getWorkspaceProjectMilestones: () =>
+        request('/api/project-milestones').then((data) => {
+          if (!Array.isArray(data)) return data;
+          return dedupeById(data);
+        }),
+      createProjectMilestone: (
+        projectId: string,
+        payload: {
+          title: string;
+          milestone_date: string;
+          type?: string;
+          note?: string | null;
+          completed?: boolean;
+          linked_note_id?: string | null;
+          linked_reminder_id?: string | null;
+          linked_event_id?: string | null;
+        }
+      ) =>
+        request(`/api/projects/${projectId}/milestones`, {
+          method: 'POST',
+          body: JSON.stringify(payload),
+        }),
+      updateProjectMilestone: (
+        id: string,
+        payload: {
+          title?: string;
+          milestone_date?: string;
+          type?: string;
+          note?: string | null;
+          completed?: boolean;
+          project_id?: string;
+          linked_note_id?: string | null;
+          linked_reminder_id?: string | null;
+          linked_event_id?: string | null;
+        }
+      ) =>
+        request(`/api/project-milestones/${id}`, {
+          method: 'PATCH',
+          body: JSON.stringify(payload),
+        }),
+      deleteProjectMilestone: (id: string) =>
+        request(`/api/project-milestones/${id}`, {
+          method: 'DELETE',
+        }),
 
       // Tasks
       getTasks: (options?: { projectId?: string }) => {

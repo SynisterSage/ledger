@@ -5,7 +5,9 @@ import {
   ChevronLeft,
   ChevronRight,
   Clock3,
+  CircleDot,
   FileText,
+  Flag,
   Folder,
   Inbox,
   Link2,
@@ -13,10 +15,17 @@ import {
   Plus,
   Search,
   CheckCircle2,
-  Share2,
   Trash2,
 } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+  type ReactNode,
+} from 'react';
 import { ModalOverlay } from '../Common/ModalOverlay';
 import { useAuthContext } from '../../context/AuthContext';
 import {
@@ -70,7 +79,32 @@ type TaskRow = {
 type ProjectStatusFilter = 'all' | 'active' | 'paused' | 'completed';
 type ProjectSemanticStatus = 'not_started' | 'in_progress' | 'paused' | 'completed';
 type ProjectTab = 'overview' | 'actions' | 'notes' | 'calendar' | 'activity';
+type ProjectsOverviewView = 'timeline' | 'list';
+type ProjectsOverviewRange = 'month' | 'quarter' | 'all';
 type ProjectContextMenuState = { x: number; y: number; projectId: string };
+type TimelineContextMenuState =
+  | {
+      kind: 'project';
+      x: number;
+      y: number;
+      projectId: string;
+      date: string | null;
+    }
+  | {
+      kind: 'grid';
+      x: number;
+      y: number;
+      date: string | null;
+    }
+  | {
+      kind: 'marker';
+      x: number;
+      y: number;
+      markerId: string;
+      projectId: string | null;
+      label: string;
+      markerType: 'milestone' | 'event' | 'reminder';
+    };
 type TaskContextMenuState = { x: number; y: number; taskId: string };
 type LinkedNoteContextMenuState = {
   x: number;
@@ -96,6 +130,26 @@ type ProjectNoteLink = {
   note_id: string;
   created_at: string;
   note: NoteOption;
+};
+
+type ProjectMilestoneType = 'Deadline' | 'Review' | 'Decision' | 'Handoff' | 'Event' | 'Custom';
+
+type ProjectMilestoneRow = {
+  id: string;
+  workspace_id: string;
+  project_id: string;
+  title: string;
+  milestone_date: string;
+  type: ProjectMilestoneType | string;
+  note: string | null;
+  completed: boolean;
+  linked_note_id?: string | null;
+  linked_reminder_id?: string | null;
+  linked_event_id?: string | null;
+  created_by?: string | null;
+  updated_by?: string | null;
+  created_at: string;
+  updated_at: string;
 };
 
 type ProjectCalendarEvent = {
@@ -159,6 +213,14 @@ const projectTabs: Array<{ id: ProjectTab; label: string }> = [
   { id: 'calendar', label: 'Calendar' },
   { id: 'activity', label: 'Activity' },
 ];
+const projectMilestoneTypes: ProjectMilestoneType[] = [
+  'Deadline',
+  'Review',
+  'Decision',
+  'Handoff',
+  'Event',
+  'Custom',
+];
 
 const taskPriorityLabels: Record<string, string> = {
   low: 'Low',
@@ -215,11 +277,52 @@ const formatShortDate = (value: string | null) => {
 };
 
 const formatDateRange = (start: string | null, end: string | null) => {
-  if (start && end) return `${formatShortDate(start)} -> ${formatShortDate(end)}`;
+  if (start && end) return `${formatShortDate(start)} → ${formatShortDate(end)}`;
   if (start) return `Started ${formatShortDate(start)}`;
   if (end) return `Due ${formatShortDate(end)}`;
   return 'No dates set';
 };
+
+const formatShortDateLong = (value: string | null | undefined) => {
+  if (!value) return 'No date';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'No date';
+  return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+};
+
+const formatDateKey = (date: Date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const parseTimelineDate = (value: string | null | undefined) => {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  date.setHours(0, 0, 0, 0);
+  return date;
+};
+
+const addDays = (date: Date, days: number) => {
+  const next = new Date(date);
+  next.setDate(next.getDate() + days);
+  return next;
+};
+
+const startOfMonth = (date: Date) => new Date(date.getFullYear(), date.getMonth(), 1);
+
+const addMonths = (date: Date, months: number) =>
+  new Date(date.getFullYear(), date.getMonth() + months, 1);
+
+const daysBetween = (start: Date, end: Date) => {
+  const ms = end.getTime() - start.getTime();
+  return Math.max(1, Math.ceil(ms / 86_400_000));
+};
+
+const timelineOffsetPercent = (start: Date, end: Date, totalDays: number) =>
+  Math.max(0, Math.min(100, ((end.getTime() - start.getTime()) / 86_400_000 / totalDays) * 100));
 
 const formatCompactTime = (value: string | null) => {
   if (!value) return '';
@@ -310,6 +413,13 @@ export const ProjectsWindow = () => {
   const taskContextRef = useRef<HTMLDivElement | null>(null);
   const linkedNoteContextRef = useRef<HTMLDivElement | null>(null);
   const rightPanelMenuRef = useRef<HTMLDivElement | null>(null);
+  const timelineContextRef = useRef<HTMLDivElement | null>(null);
+  const timelineSurfaceRef = useRef<HTMLDivElement | null>(null);
+  const timelineFieldRef = useRef<HTMLDivElement | null>(null);
+  const milestoneEditorRef = useRef<HTMLDivElement | null>(null);
+  const milestoneDetailRef = useRef<HTMLDivElement | null>(null);
+  const milestoneNameInputRef = useRef<HTMLInputElement | null>(null);
+  const createProjectComposerRef = useRef<HTMLDivElement | null>(null);
   const createProjectInputRef = useRef<HTMLInputElement | null>(null);
 
   const [projects, setProjects] = useState<ProjectRow[]>([]);
@@ -330,7 +440,7 @@ export const ProjectsWindow = () => {
     getPaneWidthForViewport(viewportWidth, modulePaneSizing.projects.right)
   );
   const [isLeftPaneCollapsed, setIsLeftPaneCollapsed] = useState(() => viewportWidth < 760);
-  const [isRightPaneCollapsed, setIsRightPaneCollapsed] = useState(() => viewportWidth < 1200);
+  const [isRightPaneCollapsed, setIsRightPaneCollapsed] = useState(true);
   const [isResizingLeftPane, setIsResizingLeftPane] = useState(false);
   const [isResizingRightPane, setIsResizingRightPane] = useState(false);
   const [projectContextMenu, setProjectContextMenu] = useState<ProjectContextMenuState | null>(
@@ -339,6 +449,42 @@ export const ProjectsWindow = () => {
   const [taskContextMenu, setTaskContextMenu] = useState<TaskContextMenuState | null>(null);
   const [linkedNoteContextMenu, setLinkedNoteContextMenu] =
     useState<LinkedNoteContextMenuState | null>(null);
+  const [timelineContextMenu, setTimelineContextMenu] = useState<TimelineContextMenuState | null>(
+    null
+  );
+  const [workspaceMilestones, setWorkspaceMilestones] = useState<ProjectMilestoneRow[]>([]);
+  const [isMilestonePlacementActive, setIsMilestonePlacementActive] = useState(false);
+  const [milestonePlacementHint, setMilestonePlacementHint] = useState(
+    'Click a project row to place a milestone.'
+  );
+  const [milestoneHover, setMilestoneHover] = useState<{
+    projectId: string;
+    date: string;
+    x: number;
+    y: number;
+  } | null>(null);
+  const [pendingMilestone, setPendingMilestone] = useState<{
+    projectId: string | null;
+    date: string;
+    x: number;
+    y: number;
+  } | null>(null);
+  const [editingMilestoneId, setEditingMilestoneId] = useState<string | null>(null);
+  const [milestoneDraft, setMilestoneDraft] = useState<{
+    title: string;
+    type: ProjectMilestoneType;
+    date: string;
+    note: string;
+    projectId: string;
+  }>({ title: '', type: 'Custom', date: todayKey(), note: '', projectId: '' });
+  const [milestoneDraftTouched, setMilestoneDraftTouched] = useState(false);
+  const [milestoneDraftError, setMilestoneDraftError] = useState<string | null>(null);
+  const [isSavingMilestone, setIsSavingMilestone] = useState(false);
+  const [milestoneDetail, setMilestoneDetail] = useState<{
+    id: string;
+    x: number;
+    y: number;
+  } | null>(null);
   const [isCreatingProject, setIsCreatingProject] = useState(false);
   const [newProjectName, setNewProjectName] = useState('');
   const [isCreatingProjectNow, setIsCreatingProjectNow] = useState(false);
@@ -367,6 +513,9 @@ export const ProjectsWindow = () => {
   const [workspaceMembers, setWorkspaceMembers] = useState<WorkspaceMember[]>([]);
   const [isContextMenuOpen, setIsContextMenuOpen] = useState(false);
   const [linkedNotes, setLinkedNotes] = useState<ProjectNoteLink[]>([]);
+  const [overviewNoteLinkCounts, setOverviewNoteLinkCounts] = useState<Record<string, number>>({});
+  const [workspaceEvents, setWorkspaceEvents] = useState<ProjectCalendarEvent[]>([]);
+  const [workspaceReminders, setWorkspaceReminders] = useState<ProjectCalendarReminder[]>([]);
   const [isLoadingLinkedNotes, setIsLoadingLinkedNotes] = useState(false);
   const [isLinkNoteModalOpen, setIsLinkNoteModalOpen] = useState(false);
   const [isLinkingNote, setIsLinkingNote] = useState(false);
@@ -388,6 +537,10 @@ export const ProjectsWindow = () => {
   const [showCloseGuardModal, setShowCloseGuardModal] = useState(false);
   const [workspaceRefreshToken, setWorkspaceRefreshToken] = useState(0);
   const [activeTab, setActiveTab] = useState<ProjectTab>('overview');
+  const [projectsOverviewView, setProjectsOverviewView] =
+    useState<ProjectsOverviewView>('timeline');
+  const [projectsOverviewRange, setProjectsOverviewRange] =
+    useState<ProjectsOverviewRange>('quarter');
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [isEditingBrief, setIsEditingBrief] = useState(false);
   const areSidePanelsCollapsed = isLeftPaneCollapsed && isRightPaneCollapsed;
@@ -398,7 +551,15 @@ export const ProjectsWindow = () => {
 
   useWorkspaceRealtimeRefresh({
     workspaceId: activeWorkspaceId,
-    tables: ['projects', 'tasks', 'notes', 'project_note_links', 'events', 'reminders'],
+    tables: [
+      'projects',
+      'tasks',
+      'notes',
+      'project_note_links',
+      'project_milestones',
+      'events',
+      'reminders',
+    ],
     enabled: Boolean(user && activeWorkspaceId),
     onChange: handleWorkspaceRefresh,
   });
@@ -471,6 +632,22 @@ export const ProjectsWindow = () => {
     const completed = selectedProjectTasks.filter((task) => task.status === 'completed').length;
     return { active, completed, total: selectedProjectTasks.length };
   }, [selectedProjectTasks]);
+
+  const projectTaskStats = useMemo(() => {
+    const stats = new Map<string, { active: number; completed: number; total: number }>();
+    for (const task of tasks) {
+      if (!task.project_id) continue;
+      const current = stats.get(task.project_id) ?? { active: 0, completed: 0, total: 0 };
+      current.total += 1;
+      if (task.status === 'completed') {
+        current.completed += 1;
+      } else if (task.status !== 'cancelled') {
+        current.active += 1;
+      }
+      stats.set(task.project_id, current);
+    }
+    return stats;
+  }, [tasks]);
 
   const activeProjectTasks = useMemo(
     () =>
@@ -552,9 +729,142 @@ export const ProjectsWindow = () => {
     ? `${projectStatusLabels[projectDraft.status]} · ${projectDraft.completeness}% · ${workspaceLabel}`
     : '';
   const collaborationLabel = isSharedWorkspace
-    ? `Shared project · ${workspaceMembers.length} collaborators`
-    : 'Personal project';
-  const memberPreview = workspaceMembers.slice(0, 4);
+    ? `${workspaceLabel} · ${workspaceMembers.length} members`
+    : `Workspace · ${workspaceLabel}`;
+  const overviewProjectStats = useMemo(() => {
+    const total = projects.length;
+    const active = projects.filter((project) => {
+      const semantic = parseProjectStatus(String(project.status));
+      return semantic !== 'completed' && semantic !== 'paused';
+    }).length;
+    const completed = projects.filter(
+      (project) => parseProjectStatus(String(project.status)) === 'completed'
+    ).length;
+    const withoutDates = projects.filter((project) => !project.start_date && !project.end_date).length;
+    const withoutActions = projects.filter(
+      (project) => (projectTaskStats.get(project.id)?.active ?? 0) === 0
+    ).length;
+    const notes = Object.values(overviewNoteLinkCounts).reduce((sum, count) => sum + count, 0);
+    return {
+      total,
+      active,
+      completed,
+      withoutDates,
+      withoutActions,
+      notes,
+      events: workspaceEvents.length,
+      reminders: workspaceReminders.length,
+    };
+  }, [overviewNoteLinkCounts, projectTaskStats, projects, workspaceEvents.length, workspaceReminders.length]);
+
+  const timelineRange = useMemo(() => {
+    const dated = projects
+      .flatMap((project) => [parseTimelineDate(project.start_date), parseTimelineDate(project.end_date)])
+      .filter((date): date is Date => Boolean(date));
+    const now = new Date();
+    const fallbackStart = startOfMonth(now);
+    const fallbackEnd = addMonths(fallbackStart, projectsOverviewRange === 'month' ? 1 : 3);
+    if (dated.length === 0) {
+      return { start: fallbackStart, end: fallbackEnd };
+    }
+    const min = new Date(Math.min(...dated.map((date) => date.getTime())));
+    const max = new Date(Math.max(...dated.map((date) => date.getTime())));
+    const anchor = startOfMonth(min);
+    if (projectsOverviewRange === 'month') {
+      return { start: anchor, end: addMonths(anchor, 1) };
+    }
+    if (projectsOverviewRange === 'quarter') {
+      return { start: anchor, end: addMonths(anchor, 3) };
+    }
+    return {
+      start: startOfMonth(addMonths(min, -1)),
+      end: addMonths(startOfMonth(max), 3),
+    };
+  }, [projects, projectsOverviewRange]);
+
+  const timelineMonths = useMemo(() => {
+    const months: Date[] = [];
+    let cursor = startOfMonth(timelineRange.start);
+    const maxMonths = projectsOverviewRange === 'all' ? 18 : projectsOverviewRange === 'quarter' ? 3 : 1;
+    while (cursor < timelineRange.end && months.length < maxMonths) {
+      months.push(cursor);
+      cursor = addMonths(cursor, 1);
+    }
+    return months;
+  }, [projectsOverviewRange, timelineRange]);
+
+  const timelineDays = daysBetween(timelineRange.start, timelineRange.end);
+  const datedProjects = useMemo(
+    () =>
+      projects
+        .filter((project) => project.start_date || project.end_date)
+        .sort((left, right) =>
+          String(left.start_date ?? left.end_date ?? '').localeCompare(
+            String(right.start_date ?? right.end_date ?? '')
+          )
+        ),
+    [projects]
+  );
+  const visibleDatedProjects = useMemo(
+    () =>
+      datedProjects.filter((project) => {
+        if (projectsOverviewRange === 'all') return true;
+        const start = parseTimelineDate(project.start_date) ?? parseTimelineDate(project.end_date);
+        const end = parseTimelineDate(project.end_date) ?? parseTimelineDate(project.start_date);
+        if (!start || !end) return false;
+        return end >= timelineRange.start && start < timelineRange.end;
+      }),
+    [datedProjects, projectsOverviewRange, timelineRange]
+  );
+  const datelessProjects = useMemo(
+    () => projects.filter((project) => !project.start_date && !project.end_date),
+    [projects]
+  );
+  const workspaceMilestonesByProject = useMemo(() => {
+    const grouped = new Map<string, ProjectMilestoneRow[]>();
+    for (const milestone of workspaceMilestones) {
+      const items = grouped.get(milestone.project_id) ?? [];
+      items.push(milestone);
+      grouped.set(milestone.project_id, items);
+    }
+    for (const items of grouped.values()) {
+      items.sort((left, right) => String(left.milestone_date).localeCompare(String(right.milestone_date)));
+    }
+    return grouped;
+  }, [workspaceMilestones]);
+  const milestoneDetailRow = useMemo(
+    () =>
+      milestoneDetail
+        ? workspaceMilestones.find((milestone) => milestone.id === milestoneDetail.id) ?? null
+        : null,
+    [milestoneDetail, workspaceMilestones]
+  );
+  const milestoneDetailProject = milestoneDetailRow
+    ? projects.find((project) => project.id === milestoneDetailRow.project_id) ?? null
+    : null;
+  const overviewActivity = useMemo(() => {
+    const events: Array<{ id: string; label: string; at: string | null }> = [
+      ...projects.map((project) => ({
+        id: `project-${project.id}`,
+        label: `${project.name} updated`,
+        at: project.updated_at ?? project.created_at ?? null,
+      })),
+      ...workspaceEvents.map((event) => ({
+        id: `event-${event.id}`,
+        label: `${event.title} linked`,
+        at: event.updated_at ?? event.created_at ?? null,
+      })),
+      ...workspaceReminders.map((reminder) => ({
+        id: `reminder-${reminder.id}`,
+        label: `${reminder.title} linked`,
+        at: reminder.updated_at ?? reminder.created_at ?? null,
+      })),
+    ];
+    return events
+      .filter((event) => event.at)
+      .sort((left, right) => String(right.at).localeCompare(String(left.at)))
+      .slice(0, 4);
+  }, [projects, workspaceEvents, workspaceReminders]);
   const upcomingItems = useMemo(() => {
     if (!selectedProject) return [];
     const items: Array<{ id: string; title: string; meta: string; kind: string }> = [];
@@ -622,6 +932,54 @@ export const ProjectsWindow = () => {
     if (!linkedNoteContextMenu) return null;
     return getClampedMenuPosition(linkedNoteContextMenu.x, linkedNoteContextMenu.y, 208, 144);
   }, [linkedNoteContextMenu]);
+
+  const milestoneEditorPosition = useMemo(() => {
+    if (!pendingMilestone) return null;
+    return getClampedMenuPosition(pendingMilestone.x + 10, pendingMilestone.y + 10, 320, 390);
+  }, [pendingMilestone]);
+
+  const milestoneDetailPosition = useMemo(() => {
+    if (!milestoneDetail) return null;
+    return getClampedMenuPosition(milestoneDetail.x + 10, milestoneDetail.y + 10, 280, 260);
+  }, [milestoneDetail]);
+
+  const timelineMenuPosition = useMemo(() => {
+    if (!timelineContextMenu) return null;
+    const width = 248;
+    const contextProject =
+      timelineContextMenu.kind === 'grid'
+        ? null
+        : projects.find((project) => project.id === timelineContextMenu.projectId) ?? null;
+    const height =
+      timelineContextMenu.kind === 'grid'
+        ? 224
+        : timelineContextMenu.kind === 'marker'
+        ? 244
+        : timelineContextMenu.kind === 'project' &&
+          contextProject &&
+          parseProjectStatus(String(contextProject.status)) === 'completed'
+        ? 240
+        : 304;
+    return getClampedMenuPosition(timelineContextMenu.x, timelineContextMenu.y, width, height);
+  }, [projects, timelineContextMenu]);
+
+  const timelineContextProject = useMemo(() => {
+    if (!timelineContextMenu || timelineContextMenu.kind === 'grid') return null;
+    if (timelineContextMenu.kind === 'project') {
+      return projects.find((project) => project.id === timelineContextMenu.projectId) ?? null;
+    }
+    if (timelineContextMenu.projectId) {
+      return projects.find((project) => project.id === timelineContextMenu.projectId) ?? null;
+    }
+    return null;
+  }, [projects, timelineContextMenu]);
+
+  const timelineContextProjectStatus = timelineContextProject
+    ? parseProjectStatus(String(timelineContextProject.status))
+    : null;
+  const timelineContextProjectHasDates = Boolean(
+    timelineContextProject?.start_date || timelineContextProject?.end_date
+  );
 
   const isCompactLayout = viewportWidth < modulePaneSizing.projects.right.compactBreakpoint;
   const taskNotesTask = useMemo(
@@ -712,12 +1070,6 @@ export const ProjectsWindow = () => {
           return currentId;
         }
 
-        const next = rows[0] ?? null;
-        if (next) {
-          syncDraftFromProject(next);
-          return next.id;
-        }
-
         isDirtyRef.current = false;
         setProjectDraft({
           name: '',
@@ -737,10 +1089,10 @@ export const ProjectsWindow = () => {
     } finally {
       setIsLoadingProjects(false);
     }
-  }, [api, activeWorkspaceId, syncDraftFromProject, user]);
+  }, [api, activeWorkspaceId, user]);
 
   const loadTasks = useCallback(async () => {
-    if (!user || !activeWorkspaceId || !selectedProjectId) {
+    if (!user || !activeWorkspaceId) {
       setTasks([]);
       setIsLoadingTasks(false);
       return;
@@ -750,12 +1102,16 @@ export const ProjectsWindow = () => {
     setTaskError(null);
 
     try {
-      const data = await api.getTasks({ projectId: selectedProjectId });
+      const data = await api.getTasks();
       const rows = (data ?? []) as TaskRow[];
       setTasks(rows);
-      setSelectedTaskId((current) =>
-        current && rows.some((task) => task.id === current) ? current : rows[0]?.id ?? null
-      );
+      setSelectedTaskId((current) => {
+        if (!selectedProjectId) return null;
+        if (current && rows.some((task) => task.id === current && task.project_id === selectedProjectId)) {
+          return current;
+        }
+        return rows.find((task) => task.project_id === selectedProjectId)?.id ?? null;
+      });
     } catch (fetchError) {
       setTaskError(fetchError instanceof Error ? fetchError.message : 'Could not load tasks.');
       setTasks([]);
@@ -807,6 +1163,168 @@ export const ProjectsWindow = () => {
       setIsEditingBrief(false);
     },
     [flushProjectDraft, selectedProjectId, syncDraftFromProject]
+  );
+
+  const selectProjectsOverview = useCallback(async () => {
+    if (!selectedProjectId) return;
+    const saved = await flushProjectDraft();
+    if (!saved && isDirtyRef.current) return;
+    setSelectedProjectId(null);
+    setSelectedTaskId(null);
+    setActiveTab('overview');
+    setIsEditingTitle(false);
+    setIsEditingBrief(false);
+    isDirtyRef.current = false;
+    setProjectDraft({
+      name: '',
+      description: '',
+      status: 'not_started',
+      completeness: 0,
+      color: '#007AFF',
+      startDate: '',
+      endDate: '',
+    });
+  }, [flushProjectDraft, selectedProjectId]);
+
+  const getProjectById = useCallback(
+    (projectId: string) => projects.find((project) => project.id === projectId) ?? null,
+    [projects]
+  );
+
+  const openProjectById = useCallback(
+    async (projectId: string) => {
+      const project = getProjectById(projectId);
+      if (!project) return;
+      await selectProject(project);
+    },
+    [getProjectById, selectProject]
+  );
+
+  const openProjectLinkCopy = useCallback(
+    async (projectId: string) => {
+      const url = new URL(window.location.href);
+      url.searchParams.set('focusProjectId', projectId);
+      await navigator.clipboard?.writeText(url.toString());
+    },
+    []
+  );
+
+  const createTimelineTodo = useCallback((label: string, projectId: string, extra?: string) => {
+    console.debug(`[projects timeline] TODO: ${label}`, { projectId, extra });
+  }, []);
+
+  const openTimelineGridMenu = useCallback((x: number, y: number, date: string | null) => {
+    setTimelineContextMenu({ kind: 'grid', x, y, date });
+  }, []);
+
+  const openTimelineProjectMenu = useCallback(
+    (x: number, y: number, projectId: string, date: string | null = null) => {
+      setTimelineContextMenu({ kind: 'project', x, y, projectId, date });
+    },
+    []
+  );
+
+  const openTimelineMarkerMenu = useCallback(
+    (
+      x: number,
+      y: number,
+      markerId: string,
+      projectId: string | null,
+      label: string,
+      markerType: 'milestone' | 'event' | 'reminder'
+    ) => {
+      setTimelineContextMenu({ kind: 'marker', x, y, markerId, projectId, label, markerType });
+    },
+    []
+  );
+
+  const snapDateToTimelineInterval = useCallback(
+    (date: Date) => {
+      if (projectsOverviewRange === 'month') return date;
+      const snapped = new Date(date);
+      const day = snapped.getDay();
+      const offset = day >= 4 ? 7 - day : -day;
+      snapped.setDate(snapped.getDate() + offset);
+      return snapped;
+    },
+    [projectsOverviewRange]
+  );
+
+  const getDateFromTimelinePosition = useCallback(
+    (clientX: number, surface: HTMLElement | null) => {
+      if (!surface || timelineDays <= 0) return null;
+      const rect = surface.getBoundingClientRect();
+      if (!rect.width) return null;
+      const clampedX = Math.max(0, Math.min(rect.width, clientX - rect.left));
+      const ratio = clampedX / rect.width;
+      const dayOffset = Math.max(0, Math.min(timelineDays - 1, Math.round(ratio * (timelineDays - 1))));
+      return formatDateKey(snapDateToTimelineInterval(addDays(timelineRange.start, dayOffset)));
+    },
+    [snapDateToTimelineInterval, timelineDays, timelineRange.start]
+  );
+
+  const getTimelinePositionFromDate = useCallback(
+    (value: string | null | undefined) => {
+      const date = parseTimelineDate(value);
+      if (!date || timelineDays <= 0) return 0;
+      return timelineOffsetPercent(timelineRange.start, date, timelineDays);
+    },
+    [timelineDays, timelineRange.start]
+  );
+
+  const handleTimelineGridContextMenu = useCallback(
+    (event: ReactMouseEvent<HTMLElement>) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const surface = timelineFieldRef.current ?? (event.currentTarget as HTMLElement | null);
+      const date = getDateFromTimelinePosition(event.clientX, surface);
+      openTimelineGridMenu(event.clientX, event.clientY, date);
+    },
+    [getDateFromTimelinePosition, openTimelineGridMenu]
+  );
+
+  const handleTimelineProjectContextMenu = useCallback(
+    (event: ReactMouseEvent<HTMLElement>, projectId: string) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const date = getDateFromTimelinePosition(event.clientX, timelineFieldRef.current);
+      openTimelineProjectMenu(event.clientX, event.clientY, projectId, date);
+    },
+    [getDateFromTimelinePosition, openTimelineProjectMenu]
+  );
+
+  const handleTimelineProjectRowContextMenu = useCallback(
+    (event: ReactMouseEvent<HTMLElement>, projectId: string) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const target = event.target instanceof HTMLElement ? event.target : null;
+      const isProjectBar = Boolean(target?.closest('[data-timeline-project-bar="true"]'));
+      if (isProjectBar) {
+        const date = getDateFromTimelinePosition(event.clientX, timelineFieldRef.current);
+        openTimelineProjectMenu(event.clientX, event.clientY, projectId, date);
+        return;
+      }
+
+      const surface = timelineFieldRef.current;
+      const date = getDateFromTimelinePosition(event.clientX, surface);
+      openTimelineGridMenu(event.clientX, event.clientY, date);
+    },
+    [getDateFromTimelinePosition, openTimelineGridMenu, openTimelineProjectMenu]
+  );
+
+  const handleTimelineMarkerContextMenu = useCallback(
+    (
+      event: ReactMouseEvent<HTMLElement>,
+      markerId: string,
+      projectId: string | null,
+      label: string,
+      markerType: 'milestone' | 'event' | 'reminder'
+    ) => {
+      event.preventDefault();
+      event.stopPropagation();
+      openTimelineMarkerMenu(event.clientX, event.clientY, markerId, projectId, label, markerType);
+    },
+    [openTimelineMarkerMenu]
   );
 
   const focusProjectById = useCallback(
@@ -864,6 +1382,12 @@ export const ProjectsWindow = () => {
       createProjectInputRef.current?.select();
     }, 60);
   }, []);
+
+  const closeCreateProjectComposer = useCallback(() => {
+    if (isCreatingProjectNow) return;
+    setIsCreatingProject(false);
+    setNewProjectName('');
+  }, [isCreatingProjectNow]);
 
   const deleteProject = useCallback(
     async (projectId: string) => {
@@ -1049,6 +1573,66 @@ export const ProjectsWindow = () => {
     [api]
   );
 
+  const loadWorkspaceProjectContext = useCallback(async () => {
+    if (!user || !activeWorkspaceId) {
+      setOverviewNoteLinkCounts({});
+      setWorkspaceEvents([]);
+      setWorkspaceReminders([]);
+      setWorkspaceMilestones([]);
+      return;
+    }
+
+    try {
+      const [eventsPayload, remindersPayload, milestonesPayload, noteLinkPayloads] = await Promise.all([
+        api.getEvents(),
+        api.getReminders(),
+        api.getWorkspaceProjectMilestones(),
+        Promise.all(
+          projects.map(async (project) => {
+            try {
+              const payload = (await api.getProjectNoteLinks(project.id)) as {
+                links?: ProjectNoteLink[];
+              };
+              return [project.id, Array.isArray(payload?.links) ? payload.links.length : 0] as const;
+            } catch {
+              return [project.id, 0] as const;
+            }
+          })
+        ),
+      ]);
+
+      const projectIds = new Set(projects.map((project) => project.id));
+      setWorkspaceEvents(
+        Array.isArray(eventsPayload)
+          ? (eventsPayload as ProjectCalendarEvent[]).filter((event) =>
+              event.project_id ? projectIds.has(event.project_id) : false
+            )
+          : []
+      );
+      setWorkspaceReminders(
+        Array.isArray(remindersPayload)
+          ? (remindersPayload as ProjectCalendarReminder[]).filter((reminder) =>
+              reminder.project_id ? projectIds.has(reminder.project_id) : false
+            )
+          : []
+      );
+      setWorkspaceMilestones(
+        Array.isArray(milestonesPayload)
+          ? (milestonesPayload as ProjectMilestoneRow[]).filter((milestone) =>
+              milestone.project_id ? projectIds.has(milestone.project_id) : false
+            )
+          : []
+      );
+      setOverviewNoteLinkCounts(Object.fromEntries(noteLinkPayloads));
+    } catch (error) {
+      console.error('Failed to load workspace project context:', error);
+      setWorkspaceEvents([]);
+      setWorkspaceReminders([]);
+      setWorkspaceMilestones([]);
+      setOverviewNoteLinkCounts({});
+    }
+  }, [activeWorkspaceId, api, projects, user]);
+
   const loadLinkableNotes = useCallback(async () => {
     setIsLoadingLinkableNotes(true);
     try {
@@ -1131,6 +1715,276 @@ export const ProjectsWindow = () => {
       await loadLinkableCalendarItems();
     },
     [loadLinkableCalendarItems, selectedProjectId]
+  );
+
+  const handleAddAction = useCallback(
+    async (projectId: string) => {
+      await openProjectById(projectId);
+      setActiveTab('actions');
+      setIsTaskComposerOpen(true);
+    },
+    [openProjectById]
+  );
+
+  const handleEditDates = useCallback(
+    async (projectId: string) => {
+      createTimelineTodo('edit dates', projectId);
+      await openProjectById(projectId);
+      setActiveTab('overview');
+    },
+    [createTimelineTodo, openProjectById]
+  );
+
+  const handleAddDates = useCallback(
+    async (projectId: string) => {
+      createTimelineTodo('add dates', projectId);
+      await openProjectById(projectId);
+      setActiveTab('overview');
+    },
+    [createTimelineTodo, openProjectById]
+  );
+
+  const handleLinkNote = useCallback(
+    async (projectId: string) => {
+      await openProjectById(projectId);
+      await openLinkNoteModal();
+    },
+    [openLinkNoteModal, openProjectById]
+  );
+
+  const handleArchiveProject = useCallback(
+    async (projectId: string) => {
+      await updateProjectStatus(projectId, 'paused');
+    },
+    [updateProjectStatus]
+  );
+
+  const handleReviewProject = useCallback(
+    async (projectId: string) => {
+      await openProjectById(projectId);
+      setActiveTab('activity');
+    },
+    [openProjectById]
+  );
+
+  const handleReopenProject = useCallback(
+    async (projectId: string) => {
+      await updateProjectStatus(projectId, 'in_progress');
+    },
+    [updateProjectStatus]
+  );
+
+  const handleNewProjectAtDate = useCallback((date: string | null) => {
+    createTimelineTodo('new project at date', '__new__', date ?? undefined);
+    setIsCreatingProject(true);
+  }, [createTimelineTodo]);
+
+  const handleAddReminderAtDate = useCallback((date: string | null) => {
+    createTimelineTodo('add reminder at date', '__new__', date ?? undefined);
+  }, [createTimelineTodo]);
+
+  const handleCreateNoteAtDate = useCallback((date: string | null) => {
+    createTimelineTodo('create note at date', '__new__', date ?? undefined);
+  }, [createTimelineTodo]);
+
+  const resetMilestoneDraft = useCallback(() => {
+    setMilestoneDraft({
+      title: '',
+      type: 'Custom',
+      date: todayKey(),
+      note: '',
+      projectId: '',
+    });
+    setMilestoneDraftTouched(false);
+    setMilestoneDraftError(null);
+  }, []);
+
+  const cancelMilestonePlacement = useCallback(() => {
+    setIsMilestonePlacementActive(false);
+    setMilestonePlacementHint('Click a project row to place a milestone.');
+    setMilestoneHover(null);
+    setPendingMilestone(null);
+    setEditingMilestoneId(null);
+    setMilestoneDetail(null);
+    resetMilestoneDraft();
+  }, [resetMilestoneDraft]);
+
+  const enterMilestonePlacementMode = useCallback(() => {
+    if (viewportWidth < 760 || 'ontouchstart' in window) {
+      const project = selectedProject ?? projects[0] ?? null;
+      const date = project?.end_date ?? todayKey();
+      setPendingMilestone({
+        projectId: project?.id ?? null,
+        date,
+        x: Math.min(window.innerWidth - 280, Math.max(24, window.innerWidth / 2 - 140)),
+        y: 180,
+      });
+      setEditingMilestoneId(null);
+      setMilestoneDraft({
+        title: '',
+        type: 'Custom',
+        date,
+        note: '',
+        projectId: project?.id ?? '',
+      });
+      setMilestoneDraftTouched(false);
+      setMilestoneDraftError(null);
+      setIsMilestonePlacementActive(false);
+      window.setTimeout(() => milestoneNameInputRef.current?.focus(), 60);
+      return;
+    }
+
+    setIsMilestonePlacementActive(true);
+    setMilestonePlacementHint('Click a project row to place a milestone.');
+    setTimelineContextMenu(null);
+      setMilestoneDetail(null);
+      setPendingMilestone(null);
+      setEditingMilestoneId(null);
+      resetMilestoneDraft();
+  }, [projects, resetMilestoneDraft, selectedProject, viewportWidth]);
+
+  const openMilestoneEditor = useCallback(
+    (projectId: string | null, date: string, position: { x: number; y: number }) => {
+      const project = projectId ? getProjectById(projectId) : null;
+      setPendingMilestone({
+        projectId,
+        date,
+        x: position.x,
+        y: position.y,
+      });
+      setEditingMilestoneId(null);
+      setMilestoneDraft({
+        title: '',
+        type: 'Custom',
+        date,
+        note: '',
+        projectId: project?.id ?? (projects.length === 1 ? projects[0].id : ''),
+      });
+      setMilestoneDraftTouched(false);
+      setMilestoneDraftError(null);
+      setMilestoneDetail(null);
+      window.setTimeout(() => milestoneNameInputRef.current?.focus(), 60);
+    },
+    [getProjectById, projects]
+  );
+
+  const handleAddMilestone = useCallback(
+    async (projectId: string, date?: string | null, position?: { x: number; y: number }) => {
+      const project = getProjectById(projectId);
+      const nextDate = date || project?.end_date || todayKey();
+      openMilestoneEditor(projectId, nextDate, position ?? { x: window.innerWidth / 2, y: 220 });
+    },
+    [getProjectById, openMilestoneEditor]
+  );
+
+  const handleAddMilestoneAtDate = useCallback(
+    (date: string | null, position?: { x: number; y: number }) => {
+      const nextDate = date || todayKey();
+      const projectId = projects.length === 1 ? projects[0].id : null;
+      openMilestoneEditor(projectId, nextDate, position ?? { x: window.innerWidth / 2, y: 220 });
+    },
+    [openMilestoneEditor, projects]
+  );
+
+  const saveMilestone = useCallback(async () => {
+    const title = milestoneDraft.title.trim();
+    const projectId = milestoneDraft.projectId || pendingMilestone?.projectId || '';
+    const date = milestoneDraft.date || pendingMilestone?.date || '';
+    if (!title) {
+      setMilestoneDraftError('Name this milestone.');
+      milestoneNameInputRef.current?.focus();
+      return;
+    }
+    if (!projectId || !date) {
+      setMilestoneDraftError(projectId ? 'Choose a date.' : 'Choose a project.');
+      return;
+    }
+
+    setIsSavingMilestone(true);
+    setMilestoneDraftError(null);
+    try {
+      const saved = editingMilestoneId
+        ? ((await api.updateProjectMilestone(editingMilestoneId, {
+            title,
+            milestone_date: date,
+            type: milestoneDraft.type,
+            note: milestoneDraft.note.trim() || null,
+            project_id: projectId,
+          })) as ProjectMilestoneRow)
+        : ((await api.createProjectMilestone(projectId, {
+            title,
+            milestone_date: date,
+            type: milestoneDraft.type,
+            note: milestoneDraft.note.trim() || null,
+          })) as ProjectMilestoneRow);
+      setWorkspaceMilestones((prev) =>
+        [saved, ...prev.filter((milestone) => milestone.id !== saved.id)].sort((left, right) =>
+          String(left.milestone_date).localeCompare(String(right.milestone_date))
+        )
+      );
+      setPendingMilestone(null);
+      setEditingMilestoneId(null);
+      setIsMilestonePlacementActive(false);
+      setMilestoneHover(null);
+      resetMilestoneDraft();
+    } catch (error) {
+      setMilestoneDraftError(error instanceof Error ? error.message : 'Could not save milestone.');
+    } finally {
+      setIsSavingMilestone(false);
+    }
+  }, [api, editingMilestoneId, milestoneDraft, pendingMilestone, resetMilestoneDraft]);
+
+  const openMilestoneDetail = useCallback((milestoneId: string, x: number, y: number) => {
+    setMilestoneDetail({ id: milestoneId, x, y });
+    setTimelineContextMenu(null);
+    setPendingMilestone(null);
+  }, []);
+
+  const handleMilestoneCompleteToggle = useCallback(
+    async (milestoneId: string) => {
+      const current = workspaceMilestones.find((milestone) => milestone.id === milestoneId);
+      if (!current) return;
+      try {
+        const updated = (await api.updateProjectMilestone(milestoneId, {
+          completed: !current.completed,
+        })) as ProjectMilestoneRow;
+        setWorkspaceMilestones((prev) =>
+          prev.map((milestone) => (milestone.id === updated.id ? updated : milestone))
+        );
+      } catch (error) {
+        setError(error instanceof Error ? error.message : 'Could not update milestone.');
+      }
+    },
+    [api, workspaceMilestones]
+  );
+
+  const handleMilestoneDateChange = useCallback(
+    async (milestoneId: string, date: string) => {
+      try {
+        const updated = (await api.updateProjectMilestone(milestoneId, {
+          milestone_date: date,
+        })) as ProjectMilestoneRow;
+        setWorkspaceMilestones((prev) =>
+          prev.map((milestone) => (milestone.id === updated.id ? updated : milestone))
+        );
+      } catch (error) {
+        setError(error instanceof Error ? error.message : 'Could not update milestone date.');
+      }
+    },
+    [api]
+  );
+
+  const handleMilestoneDelete = useCallback(
+    async (milestoneId: string) => {
+      try {
+        await api.deleteProjectMilestone(milestoneId);
+        setWorkspaceMilestones((prev) => prev.filter((milestone) => milestone.id !== milestoneId));
+        setMilestoneDetail(null);
+      } catch (error) {
+        setError(error instanceof Error ? error.message : 'Could not delete milestone.');
+      }
+    },
+    [api]
   );
 
   const linkNoteToProject = useCallback(
@@ -1266,14 +2120,16 @@ export const ProjectsWindow = () => {
     if (viewportWidth < 760) {
       setIsLeftPaneCollapsed(true);
     }
-    if (viewportWidth < 1200) {
-      setIsRightPaneCollapsed(true);
-    }
+    setIsRightPaneCollapsed(true);
   }, [viewportWidth]);
 
   useEffect(() => {
     void loadTasks();
   }, [loadTasks, workspaceRefreshToken]);
+
+  useEffect(() => {
+    void loadWorkspaceProjectContext();
+  }, [loadWorkspaceProjectContext, workspaceRefreshToken]);
 
   useEffect(() => {
     if (!user) {
@@ -1379,6 +2235,10 @@ export const ProjectsWindow = () => {
     void loadLinkedNotes(selectedProjectId);
     void loadProjectCalendarItems(selectedProjectId);
   }, [loadLinkedNotes, loadProjectCalendarItems, selectedProjectId, workspaceRefreshToken]);
+
+  useEffect(() => {
+    setIsRightPaneCollapsed(true);
+  }, [workspaceRefreshToken]);
 
   useEffect(() => {
     let mounted = true;
@@ -1544,6 +2404,28 @@ export const ProjectsWindow = () => {
   }, [isResizingRightPane]);
 
   useEffect(() => {
+    if (!isCreatingProject || isCreatingProjectNow) return;
+
+    const onPointerDown = (event: MouseEvent) => {
+      if (createProjectComposerRef.current?.contains(event.target as Node)) return;
+      closeCreateProjectComposer();
+    };
+
+    const onEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      closeCreateProjectComposer();
+    };
+
+    window.addEventListener('mousedown', onPointerDown);
+    window.addEventListener('keydown', onEscape);
+
+    return () => {
+      window.removeEventListener('mousedown', onPointerDown);
+      window.removeEventListener('keydown', onEscape);
+    };
+  }, [closeCreateProjectComposer, isCreatingProject, isCreatingProjectNow]);
+
+  useEffect(() => {
     if (!projectContextMenu) return;
 
     const closeMenu = () => setProjectContextMenu(null);
@@ -1592,6 +2474,73 @@ export const ProjectsWindow = () => {
       window.removeEventListener('keydown', onEscape);
     };
   }, [taskContextMenu]);
+
+  useEffect(() => {
+    if (!timelineContextMenu) return;
+
+    const closeMenu = () => setTimelineContextMenu(null);
+    const onPointerDown = (event: MouseEvent) => {
+      if (timelineContextRef.current?.contains(event.target as Node)) return;
+      closeMenu();
+    };
+    const onEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') closeMenu();
+    };
+
+    window.addEventListener('mousedown', onPointerDown);
+    window.addEventListener('scroll', closeMenu, true);
+    window.addEventListener('resize', closeMenu);
+    window.addEventListener('keydown', onEscape);
+
+    return () => {
+      window.removeEventListener('mousedown', onPointerDown);
+      window.removeEventListener('scroll', closeMenu, true);
+      window.removeEventListener('resize', closeMenu);
+      window.removeEventListener('keydown', onEscape);
+    };
+  }, [timelineContextMenu]);
+
+  useEffect(() => {
+    if (!isMilestonePlacementActive && !pendingMilestone && !milestoneDetail) return;
+
+    const onEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      if (pendingMilestone || isMilestonePlacementActive) {
+        cancelMilestonePlacement();
+        return;
+      }
+      setMilestoneDetail(null);
+    };
+    const onPointerDown = (event: MouseEvent) => {
+      if (pendingMilestone) {
+        if (milestoneEditorRef.current?.contains(event.target as Node)) return;
+        if (milestoneDraftTouched) return;
+        setPendingMilestone(null);
+        setEditingMilestoneId(null);
+        resetMilestoneDraft();
+        return;
+      }
+      if (milestoneDetail) {
+        if (milestoneDetailRef.current?.contains(event.target as Node)) return;
+        setMilestoneDetail(null);
+      }
+    };
+
+    window.addEventListener('keydown', onEscape);
+    window.addEventListener('mousedown', onPointerDown);
+    return () => {
+      window.removeEventListener('keydown', onEscape);
+      window.removeEventListener('mousedown', onPointerDown);
+    };
+  }, [
+    cancelMilestonePlacement,
+    isMilestonePlacementActive,
+    milestoneDetail,
+    milestoneDraftTouched,
+    pendingMilestone,
+    resetMilestoneDraft,
+  ]);
 
   useEffect(() => {
     if (!linkedNoteContextMenu) return;
@@ -2104,6 +3053,775 @@ export const ProjectsWindow = () => {
       )
     );
 
+  const renderMemberStack = (size = 'h-5 w-5') =>
+    isSharedWorkspace && workspaceMembers.length > 0 ? (
+      <div className="flex -space-x-1">
+        {workspaceMembers.slice(0, 5).map((member) => {
+          const name = displayMemberName(member);
+          return (
+            <span
+              key={member.user_id}
+              title={name}
+              className={`flex ${size} items-center justify-center rounded-full border border-[color:var(--ledger-surface-card)] bg-[var(--ledger-surface-hover)] text-[9px] font-semibold text-[var(--ledger-text-secondary)]`}
+            >
+              {getInitials(name)}
+            </span>
+          );
+        })}
+        {workspaceMembers.length > 5 && (
+          <span
+            title={`+${workspaceMembers.length - 5} more members`}
+            className={`flex ${size} items-center justify-center rounded-full border border-[color:var(--ledger-surface-card)] bg-[var(--ledger-surface-hover)] text-[9px] font-semibold text-[var(--ledger-text-secondary)]`}
+          >
+            +{workspaceMembers.length - 5}
+          </span>
+        )}
+      </div>
+    ) : null;
+
+  const renderProjectsTimelineOverview = () => {
+    const timelineRailWidth = 316;
+    const timelineWidth = Math.max(980, timelineMonths.length * 172);
+    const timelineCanvasHeight = Math.max(560, 190 + visibleDatedProjects.length * 104);
+    const timelineBodyHeight = Math.max(440, timelineCanvasHeight - 72);
+    const todayLeft = getTimelinePositionFromDate(todayKey());
+    const showTodayMarker = todayLeft > 0 && todayLeft < 100;
+    const getProjectLane = (project: ProjectRow) => {
+      const start = parseTimelineDate(project.start_date) ?? parseTimelineDate(project.end_date);
+      const end = parseTimelineDate(project.end_date) ?? parseTimelineDate(project.start_date);
+      if (!start || !end) return { left: 0, width: 0 };
+      const left = timelineOffsetPercent(timelineRange.start, start, timelineDays);
+      const right = Math.max(left + 2, timelineOffsetPercent(timelineRange.start, addDays(end, 1), timelineDays));
+      return { left, width: right - left };
+    };
+    const getMarkerLeft = (date: string) =>
+      Math.max(0, Math.min(100, getTimelinePositionFromDate(date)));
+    const needsAttention = [
+      ...datelessProjects.slice(0, 1).map((project) => ({
+        id: `dates-${project.id}`,
+        label: `${project.name} has no dates set.`,
+        action: 'Add dates',
+        onClick: () => void selectProject(project),
+      })),
+      ...projects
+        .filter((project) => (projectTaskStats.get(project.id)?.active ?? 0) === 0)
+        .slice(0, 1)
+        .map((project) => ({
+          id: `actions-${project.id}`,
+          label: `${project.name} has no next actions.`,
+          action: 'Add action',
+          onClick: () => {
+            void selectProject(project).then(() => setIsTaskComposerOpen(true));
+          },
+        })),
+      ...projects
+        .filter((project) => parseProjectStatus(String(project.status)) === 'completed')
+        .slice(0, 1)
+        .map((project) => ({
+          id: `complete-${project.id}`,
+          label: `${project.name} is complete.`,
+          action: 'Review',
+          onClick: () => void selectProject(project),
+        })),
+    ].slice(0, 3);
+    const currentProjects = visibleDatedProjects.filter(
+      (project) => parseProjectStatus(String(project.status)) !== 'completed'
+    );
+    const completedProjects = visibleDatedProjects.filter(
+      (project) => parseProjectStatus(String(project.status)) === 'completed'
+    );
+    const groupedProjects = [
+      { id: 'current', label: 'Current', projects: currentProjects },
+      { id: 'completed', label: 'Completed', projects: completedProjects },
+    ].filter((group) => group.projects.length > 0);
+    const listProjects =
+      projectsOverviewRange === 'all'
+        ? [...datedProjects, ...datelessProjects]
+        : [...visibleDatedProjects, ...datelessProjects];
+    const viewOptions: Array<{ id: ProjectsOverviewView; label: string }> = [
+      { id: 'timeline', label: 'Timeline' },
+      { id: 'list', label: 'List' },
+    ];
+    const rangeOptions: Array<{ id: ProjectsOverviewRange; label: string }> = [
+      { id: 'month', label: 'Month' },
+      { id: 'quarter', label: 'Quarter' },
+      { id: 'all', label: 'All' },
+    ];
+
+    return (
+      <div className="mx-auto flex h-full max-w-7xl flex-col gap-5">
+        <section className="flex flex-col gap-4 border-b border-[color:var(--ledger-border-subtle)] pb-5 lg:flex-row lg:items-end lg:justify-between">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 text-xs text-[var(--ledger-text-muted)]">
+              <span>{workspaceLabel}</span>
+              {isSharedWorkspace ? (
+                <span className="flex items-center gap-2">
+                  <span>·</span>
+                  {renderMemberStack('h-5 w-5')}
+                </span>
+              ) : (
+                <span>· Personal workspace</span>
+              )}
+            </div>
+            <h2 className="mt-2 text-3xl font-semibold tracking-tight text-[var(--ledger-text-primary)]">
+              Projects timeline
+            </h2>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-[var(--ledger-text-secondary)]">
+              See how outcomes, notes, and next actions unfold across this workspace.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex h-8 items-center rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] p-0.5 text-xs font-medium">
+              {viewOptions.map((option) => (
+                <button
+                  key={option.id}
+                  type="button"
+                  onClick={() => setProjectsOverviewView(option.id)}
+                  className={`rounded px-2.5 py-1 transition ${
+                    projectsOverviewView === option.id
+                      ? 'bg-[var(--ledger-surface-card)] text-[var(--ledger-text-primary)]'
+                      : 'text-[var(--ledger-text-muted)] hover:text-[var(--ledger-text-primary)]'
+                  }`}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+            <div className="flex h-8 items-center rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] p-0.5 text-xs font-medium">
+              {rangeOptions.map((option) => (
+                <button
+                  key={option.id}
+                  type="button"
+                  onClick={() => setProjectsOverviewRange(option.id)}
+                  className={`rounded px-2 py-1 transition ${
+                    projectsOverviewRange === option.id
+                      ? 'bg-[var(--ledger-surface-card)] text-[var(--ledger-text-primary)]'
+                      : 'text-[var(--ledger-text-muted)] hover:text-[var(--ledger-text-primary)]'
+                  }`}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={openCreateProjectComposer}
+              className="inline-flex h-8 items-center gap-1.5 rounded-md bg-[var(--ledger-accent)] px-2.5 text-xs font-medium text-white transition hover:bg-[var(--ledger-accent-hover)]"
+            >
+              <Plus size={12} />
+              New project
+            </button>
+            <button
+              type="button"
+              onClick={
+                isMilestonePlacementActive || pendingMilestone
+                  ? cancelMilestonePlacement
+                  : enterMilestonePlacementMode
+              }
+              title={isMilestonePlacementActive ? 'Cancel milestone placement' : 'Place a milestone'}
+              className={`inline-flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium transition ${
+                isMilestonePlacementActive || pendingMilestone
+                  ? 'border-[color:var(--ledger-border-strong)] bg-[var(--ledger-surface-hover)] text-[var(--ledger-text-primary)]'
+                  : 'border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]'
+              }`}
+            >
+              <Flag size={12} />
+              {isMilestonePlacementActive || pendingMilestone ? 'Cancel placement' : 'Add milestone'}
+            </button>
+          </div>
+        </section>
+
+        {(isMilestonePlacementActive || milestonePlacementHint !== 'Click a project row to place a milestone.') && (
+          <section className="flex items-center gap-2 rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 py-2 text-xs text-[var(--ledger-text-secondary)]">
+            <Flag size={13} className="shrink-0 text-[var(--ledger-accent)]" />
+            <span className="font-medium text-[var(--ledger-text-primary)]">Place a milestone</span>
+            <span>{milestonePlacementHint}</span>
+          </section>
+        )}
+
+        {needsAttention.length > 0 && (
+          <section className="rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 py-2">
+            <div className="flex flex-col gap-2 lg:flex-row lg:items-center">
+              <p className="shrink-0 text-xs font-semibold text-[var(--ledger-text-primary)]">
+                Needs attention
+              </p>
+              <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+                {needsAttention.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={item.onClick}
+                    className="inline-flex min-w-0 items-center gap-2 rounded-md px-2 py-1 text-left text-xs text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+                  >
+                    <span className="min-w-0 truncate">{item.label}</span>
+                    <span className="shrink-0 font-medium text-[var(--ledger-accent)]">
+                      {item.action}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </section>
+        )}
+
+        {projects.length === 0 ? (
+          <section className="flex min-h-[360px] items-center justify-center rounded-lg border border-dashed border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-6 py-10 text-center">
+            <div className="max-w-sm">
+              <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-hover)]">
+                <Folder size={18} className="text-[var(--ledger-text-secondary)]" />
+              </div>
+              <h3 className="mt-4 text-xl font-semibold tracking-tight text-[var(--ledger-text-primary)]">
+                Start a project
+              </h3>
+              <p className="mt-2 text-sm leading-6 text-[var(--ledger-text-secondary)]">
+                Projects keep outcomes, notes, calendar context, and next actions connected.
+              </p>
+              <button
+                type="button"
+                onClick={openCreateProjectComposer}
+                className="mt-5 inline-flex items-center gap-2 rounded-md bg-[var(--ledger-accent)] px-4 py-2.5 text-sm font-medium text-white transition hover:bg-[var(--ledger-accent-hover)]"
+              >
+                <Plus size={16} />
+                New project
+              </button>
+            </div>
+          </section>
+        ) : projectsOverviewView === 'list' ? (
+          <section className="min-h-0 flex-1 overflow-hidden rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-none">
+            <div className="border-b border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-4 py-3">
+              <p className="text-sm font-semibold text-[var(--ledger-text-primary)]">
+                Project list
+              </p>
+              <p className="mt-1 text-xs text-[var(--ledger-text-muted)]">
+                {projectsOverviewRange === 'month'
+                  ? 'Month view'
+                  : projectsOverviewRange === 'quarter'
+                  ? 'Quarter view'
+                  : 'All dated and unscheduled projects'}
+              </p>
+            </div>
+            <div className="overflow-auto">
+              <div className="min-w-[880px] divide-y divide-[color:var(--ledger-border-subtle)]">
+                <div className="grid grid-cols-[minmax(260px,1.5fr)_120px_140px_minmax(150px,0.9fr)_minmax(180px,1fr)] gap-2 px-4 py-2 text-xs font-medium text-[var(--ledger-text-muted)]">
+                  <span>Project</span>
+                  <span>Status</span>
+                  <span>Timeline</span>
+                  <span>Context</span>
+                  <span>Workspace</span>
+                </div>
+                {listProjects.length === 0 ? (
+                  <div className="px-4 py-8 text-sm text-[var(--ledger-text-muted)]">
+                    No projects in this range.
+                  </div>
+                ) : (
+                  listProjects.map((project) => {
+                    const semantic = parseProjectStatus(String(project.status));
+                    const completeness = Math.max(
+                      0,
+                      Math.min(100, Number(project.completeness) || 0)
+                    );
+                    const stats = projectTaskStats.get(project.id) ?? {
+                      active: 0,
+                      completed: 0,
+                      total: 0,
+                    };
+                    const linkedEvents = workspaceEvents.filter(
+                      (event) => event.project_id === project.id
+                    ).length;
+                    const linkedReminders = workspaceReminders.filter(
+                      (reminder) => reminder.project_id === project.id
+                    ).length;
+                    return (
+                      <button
+                        key={project.id}
+                        type="button"
+                        onClick={() => void selectProject(project)}
+                        onContextMenu={(event) => handleTimelineProjectContextMenu(event, project.id)}
+                        className="grid w-full grid-cols-[minmax(260px,1.5fr)_120px_140px_minmax(150px,0.9fr)_minmax(180px,1fr)] gap-2 px-4 py-2.5 text-left transition hover:bg-[var(--ledger-surface-hover)]"
+                      >
+                        <span className="flex min-w-0 items-start gap-2">
+                          <span
+                            className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full"
+                            style={{ backgroundColor: project.color || '#FF5F40' }}
+                          />
+                          <span className="min-w-0">
+                            <span className="block truncate text-sm font-semibold text-[var(--ledger-text-primary)]">
+                              {project.name}
+                            </span>
+                            <span className="mt-0.5 block truncate text-xs text-[var(--ledger-text-muted)]">
+                              {project.description?.trim() || 'No brief yet'}
+                            </span>
+                          </span>
+                        </span>
+                        <span className="min-w-0">
+                          <span className="block truncate text-sm font-medium text-[var(--ledger-text-primary)]">
+                            {projectStatusLabels[semantic]}
+                          </span>
+                          <span className="mt-0.5 block truncate text-xs text-[var(--ledger-text-muted)]">
+                            {completeness}%
+                          </span>
+                        </span>
+                        <span className="truncate text-sm text-[var(--ledger-text-secondary)]">
+                          {formatDateRange(project.start_date, project.end_date)}
+                        </span>
+                        <span className="min-w-0 text-sm text-[var(--ledger-text-secondary)]">
+                          <span className="block truncate">
+                            {stats.active} actions · {overviewNoteLinkCounts[project.id] ?? 0} notes
+                          </span>
+                          <span className="mt-0.5 block truncate text-xs text-[var(--ledger-text-muted)]">
+                            {(linkedEvents || linkedReminders) > 0
+                              ? `${linkedEvents + linkedReminders} linked dates`
+                              : 'No linked dates'}
+                          </span>
+                        </span>
+                        <span className="min-w-0 text-sm text-[var(--ledger-text-secondary)]">
+                          <span className="flex min-w-0 items-center gap-2">
+                            <span className="min-w-0 truncate">{workspaceLabel}</span>
+                            {isSharedWorkspace && (
+                              <span className="flex shrink-0 items-center gap-2">
+                                <span className="text-[var(--ledger-text-muted)]">·</span>
+                                {renderMemberStack('h-4 w-4')}
+                              </span>
+                            )}
+                          </span>
+                        </span>
+                      </button>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+          </section>
+        ) : (
+          <section className="min-h-0 flex-1 overflow-hidden rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-[0_18px_50px_rgba(17,24,39,0.06)]">
+              <div className="relative h-full min-h-[560px] overflow-hidden">
+                <div className="h-full overflow-auto">
+                  <div
+                    className="relative min-h-full"
+                    style={{
+                      width: `${timelineRailWidth + timelineWidth}px`,
+                      minHeight: `${timelineCanvasHeight}px`,
+                    }}
+                  >
+                    <div className="grid min-h-full grid-cols-[316px_minmax(0,1fr)]">
+                      <aside className="sticky left-0 top-0 z-20 h-full border-r border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)]/75 backdrop-blur">
+                        <div className="flex h-full flex-col">
+                          <div className="border-b border-[color:var(--ledger-border-subtle)] px-4 py-3">
+                            <p className="text-sm font-semibold text-[var(--ledger-text-primary)]">
+                              Workspace projects
+                            </p>
+                            <p className="mt-1 text-xs text-[var(--ledger-text-muted)]">
+                              {overviewProjectStats.active} active · {overviewProjectStats.completed} completed
+                            </p>
+                          </div>
+                          <div className="min-h-0 flex-1 overflow-auto p-3">
+                            {groupedProjects.map((group) => (
+                              <div key={group.id} className="mb-4 last:mb-0">
+                                <p className="mb-1.5 px-1 text-xs font-semibold text-[var(--ledger-text-muted)]">
+                                  {group.label}
+                                </p>
+                                <div className="space-y-1">
+                                  {group.projects.map((project) => {
+                                    const semantic = parseProjectStatus(String(project.status));
+                                    const stats = projectTaskStats.get(project.id) ?? {
+                                      active: 0,
+                                      completed: 0,
+                                      total: 0,
+                                    };
+                                    return (
+                                      <button
+                                        key={project.id}
+                                        type="button"
+                                        onClick={() => void selectProject(project)}
+                                        onContextMenu={(event) =>
+                                          handleTimelineProjectContextMenu(event, project.id)
+                                        }
+                                        className="group w-full rounded-lg px-2.5 py-2 text-left transition hover:bg-[var(--ledger-surface-hover)]"
+                                      >
+                                        <div className="flex items-start gap-2">
+                                          <span
+                                            className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full"
+                                            style={{ backgroundColor: project.color || '#FF5F40' }}
+                                          />
+                                          <div className="min-w-0 flex-1">
+                                            <p className="truncate text-sm font-semibold text-[var(--ledger-text-primary)]">
+                                              {project.name}
+                                            </p>
+                                            <p className="mt-0.5 truncate text-xs text-[var(--ledger-text-muted)]">
+                                              {projectStatusLabels[semantic]} · {stats.active} actions
+                                            </p>
+                                            <p className="mt-0.5 truncate text-xs text-[var(--ledger-text-muted)]">
+                                              {isSharedWorkspace
+                                                ? `${workspaceLabel} · ${workspaceMembers.length} members`
+                                                : workspaceLabel}
+                                            </p>
+                                          </div>
+                                        </div>
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            ))}
+                            {datelessProjects.length > 0 && (
+                              <div className="border-t border-[color:var(--ledger-border-subtle)] pt-3">
+                                <p className="mb-1.5 px-1 text-xs font-semibold text-[var(--ledger-text-muted)]">
+                                  Needs dates
+                                </p>
+                                <div className="space-y-1">
+                                  {datelessProjects.map((project) => (
+                                    <button
+                                      key={project.id}
+                                      type="button"
+                                      onClick={() => void selectProject(project)}
+                                      onContextMenu={(event) =>
+                                        handleTimelineProjectContextMenu(event, project.id)
+                                      }
+                                      className="w-full rounded-lg px-2.5 py-2 text-left transition hover:bg-[var(--ledger-surface-hover)]"
+                                    >
+                                      <p className="truncate text-sm font-semibold text-[var(--ledger-text-primary)]">
+                                        {project.name}
+                                      </p>
+                                      <p className="mt-0.5 text-xs text-[var(--ledger-text-muted)]">
+                                        No dates set · Add start or due date
+                                      </p>
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </aside>
+
+                      <div
+                        ref={timelineSurfaceRef}
+                        data-timeline-surface="true"
+                        className="relative min-w-0 overflow-hidden"
+                        onContextMenu={handleTimelineGridContextMenu}
+                      >
+                        <div
+                          ref={timelineFieldRef}
+                          className="relative h-full min-h-[560px]"
+                        >
+                          <div className="pointer-events-none absolute inset-y-0 left-0 z-10 w-12 bg-linear-to-r from-[var(--ledger-surface-card)] to-transparent" />
+                          <div className="pointer-events-none absolute inset-y-0 right-0 z-10 w-16 bg-linear-to-l from-[var(--ledger-surface-card)] to-transparent" />
+                          <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 h-24 bg-linear-to-t from-[var(--ledger-surface-card)] to-transparent" />
+                          <div className="h-full overflow-auto">
+                            <div
+                              className="relative min-h-full"
+                              style={{ width: `${timelineWidth}px`, minHeight: `${timelineCanvasHeight}px` }}
+                            >
+                              <div className="sticky top-0 z-[5] border-b border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)]/92 backdrop-blur">
+                                <div
+                                  className="grid h-[72px]"
+                                  style={{ gridTemplateColumns: `repeat(${timelineMonths.length}, minmax(172px, 1fr))` }}
+                                >
+                                  {timelineMonths.map((month) => (
+                                    <div
+                                      key={month.toISOString()}
+                                      className="border-r border-[color:var(--ledger-border-subtle)] px-4 py-3 last:border-r-0"
+                                    >
+                                      <p className="text-sm font-semibold text-[var(--ledger-text-primary)]">
+                                        {month.toLocaleDateString([], { month: 'short' })}
+                                      </p>
+                                      <div className="mt-2 grid grid-cols-4 text-[11px] text-[var(--ledger-text-muted)]">
+                                        {[1, 8, 15, 22].map((day) => (
+                                          <span key={day}>{day}</span>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+
+                              <div
+                                className="relative"
+                                style={{
+                                  minHeight: `${timelineBodyHeight}px`,
+                                  backgroundImage:
+                                    'linear-gradient(to right, color-mix(in srgb, var(--ledger-border-subtle) 72%, transparent) 1px, transparent 1px), linear-gradient(to bottom, color-mix(in srgb, var(--ledger-border-subtle) 28%, transparent) 1px, transparent 1px)',
+                                  backgroundSize: `${timelineWidth / Math.max(1, timelineMonths.length * 4)}px 100%`,
+                                }}
+                              >
+                                {showTodayMarker && (
+                                  <div
+                                    className="pointer-events-none absolute inset-y-0 z-[2] w-px bg-[var(--ledger-accent)]/35"
+                                    style={{ left: `${todayLeft}%` }}
+                                  >
+                                    <span className="absolute -top-7 left-1/2 -translate-x-1/2 rounded-md bg-[var(--ledger-accent)] px-2 py-0.5 text-[10px] font-semibold text-white shadow-[0_8px_18px_rgba(255,95,64,0.22)]">
+                                      Today
+                                    </span>
+                                  </div>
+                                )}
+                                {visibleDatedProjects.length === 0 ? (
+                                  <div className="flex h-72 items-center justify-center px-6 text-center">
+                                    <div className="max-w-sm">
+                                      <p className="text-sm font-semibold text-[var(--ledger-text-primary)]">
+                                        No dated projects yet.
+                                      </p>
+                                      <p className="mt-1 text-sm text-[var(--ledger-text-muted)]">
+                                        Add start or due dates to place projects on the workspace timeline.
+                                      </p>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div className="relative" style={{ minHeight: `${timelineBodyHeight}px` }}>
+                                    {visibleDatedProjects.map((project, index) => {
+                          const semantic = parseProjectStatus(String(project.status));
+                          const lane = getProjectLane(project);
+                          const completeness = Math.max(0, Math.min(100, Number(project.completeness) || 0));
+                          const barTop = 70 + index * 104 + (index % 2 === 0 ? 0 : 22);
+                          const labelTop = Math.max(18, barTop - 32);
+                          const stats = projectTaskStats.get(project.id) ?? {
+                            active: 0,
+                            completed: 0,
+                            total: 0,
+                          };
+                          const projectMilestones = workspaceMilestonesByProject.get(project.id) ?? [];
+                          const projectMarkers = [
+                            ...projectEvents
+                              .filter((event) => event.project_id === project.id)
+                              .slice(0, 1)
+                              .map((event) => ({
+                                id: `event-${event.id}`,
+                                label: event.title,
+                                markerType: 'event' as const,
+                              })),
+                            ...projectReminders
+                              .filter((reminder) => reminder.project_id === project.id)
+                              .slice(0, 1)
+                              .map((reminder) => ({
+                                id: `reminder-${reminder.id}`,
+                                label: reminder.title,
+                                markerType: 'reminder' as const,
+                              })),
+                          ];
+                          return (
+                            <button
+                              key={project.id}
+                              type="button"
+                              onClick={(event) => {
+                                if (isMilestonePlacementActive) {
+                                  event.preventDefault();
+                                  event.stopPropagation();
+                                  const date =
+                                    getDateFromTimelinePosition(event.clientX, timelineFieldRef.current) ??
+                                    project.end_date ??
+                                    todayKey();
+                                  openMilestoneEditor(project.id, date, {
+                                    x: event.clientX,
+                                    y: event.clientY,
+                                  });
+                                  return;
+                                }
+                                void selectProject(project);
+                              }}
+                              onMouseMove={(event) => {
+                                if (!isMilestonePlacementActive) return;
+                                const date = getDateFromTimelinePosition(
+                                  event.clientX,
+                                  timelineFieldRef.current
+                                );
+                                if (!date) {
+                                  setMilestonePlacementHint('Choose a project row.');
+                                  setMilestoneHover(null);
+                                  return;
+                                }
+                                setMilestonePlacementHint('Click a project row to place a milestone.');
+                                setMilestoneHover({
+                                  projectId: project.id,
+                                  date,
+                                  x: event.clientX,
+                                  y: event.clientY,
+                                });
+                              }}
+                              onMouseLeave={() => {
+                                if (milestoneHover?.projectId === project.id) setMilestoneHover(null);
+                              }}
+                              onContextMenu={(event) =>
+                                handleTimelineProjectRowContextMenu(event, project.id)
+                              }
+                              title={`${project.name} · ${formatDateRange(project.start_date, project.end_date)} · ${stats.active} active actions · ${overviewNoteLinkCounts[project.id] ?? 0} notes`}
+                              className={`group absolute left-0 block h-24 w-full text-left transition ${
+                                isMilestonePlacementActive
+                                  ? 'cursor-crosshair hover:bg-[var(--ledger-surface-hover)]/35'
+                                  : 'hover:bg-[var(--ledger-surface-hover)]/20'
+                              }`}
+                              style={{ top: `${barTop - 46}px` }}
+                            >
+                              {isMilestonePlacementActive &&
+                                milestoneHover?.projectId === project.id &&
+                                milestoneHover.date && (
+                                  <div
+                                    className="pointer-events-none absolute inset-y-0 z-[1] w-px bg-[var(--ledger-accent)]/25"
+                                    style={{ left: `${getMarkerLeft(milestoneHover.date)}%` }}
+                                  />
+                                )}
+                              <div
+                                data-timeline-project-bar="true"
+                                className="absolute h-9 rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] shadow-[0_10px_28px_rgba(17,24,39,0.05)] transition group-hover:border-[color:var(--ledger-border-strong)] group-hover:shadow-[0_14px_34px_rgba(17,24,39,0.08)]"
+                                style={{
+                                  left: `${lane.left}%`,
+                                  top: '46px',
+                                  width: `${Math.max(5, lane.width)}%`,
+                                }}
+                              >
+                                  <div
+                                    className="h-full rounded-[inherit] opacity-20"
+                                    style={{
+                                      width: `${semantic === 'completed' ? 100 : completeness}%`,
+                                      backgroundColor: project.color || '#FF5F40',
+                                    }}
+                                  />
+                                  <div className="absolute inset-0 flex items-center justify-end px-3">
+                                    <span className="shrink-0 text-[11px] font-medium text-[var(--ledger-text-muted)]">
+                                      {completeness}%
+                                    </span>
+                                  </div>
+                                  {projectMarkers.length > 0 && (
+                                    <div className="absolute -top-2 right-2 flex items-center gap-1">
+                                      {projectMarkers.map((marker, index) => (
+                                        <span
+                                          key={marker.id}
+                                          title={marker.label}
+                                          onContextMenu={(event) =>
+                                            handleTimelineMarkerContextMenu(
+                                              event,
+                                              marker.id,
+                                              project.id,
+                                              marker.label,
+                                              marker.markerType
+                                            )
+                                          }
+                                          onClick={(event) => event.stopPropagation()}
+                                          className="flex h-4 w-4 items-center justify-center rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] text-[var(--ledger-accent)] shadow-none transition hover:bg-[var(--ledger-surface-hover)]"
+                                          style={{
+                                            opacity: index === 0 ? 1 : 0.92,
+                                          }}
+                                        >
+                                          <CircleDot size={10} />
+                                        </span>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                                {projectMilestones.map((milestone) => {
+                                  const markerLeft = getMarkerLeft(milestone.milestone_date);
+                                  const isOverdue =
+                                    !milestone.completed &&
+                                    parseTimelineDate(milestone.milestone_date) !== null &&
+                                    parseTimelineDate(milestone.milestone_date)!.getTime() <
+                                      new Date(todayKey()).getTime();
+                                  return (
+                                    <span
+                                      key={milestone.id}
+                                      title={`${milestone.title}\n${milestone.type} · ${formatShortDate(milestone.milestone_date)}\n${project.name}`}
+                                      onClick={(event) => {
+                                        event.preventDefault();
+                                        event.stopPropagation();
+                                        openMilestoneDetail(milestone.id, event.clientX, event.clientY);
+                                      }}
+                                      onContextMenu={(event) =>
+                                        handleTimelineMarkerContextMenu(
+                                          event,
+                                          milestone.id,
+                                          project.id,
+                                          milestone.title,
+                                          'milestone'
+                                        )
+                                      }
+                                      className={`absolute top-[35px] z-[3] flex h-4 w-4 -translate-x-1/2 rotate-45 items-center justify-center rounded-[3px] border transition hover:scale-110 ${
+                                        milestone.completed
+                                          ? 'border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-text-muted)]'
+                                          : isOverdue
+                                          ? 'border-[color:rgba(217,45,32,0.32)] bg-[color:rgba(217,45,32,0.12)]'
+                                          : 'border-[color:var(--ledger-accent)] bg-[var(--ledger-surface-card)]'
+                                      }`}
+                                      style={{ left: `${markerLeft}%`, top: '56px' }}
+                                    >
+                                      {milestone.completed && (
+                                        <CheckCircle2
+                                          size={10}
+                                          className="-rotate-45 text-[var(--ledger-surface-card)]"
+                                        />
+                                      )}
+                                    </span>
+                                  );
+                                })}
+                                {pendingMilestone?.projectId === project.id && (
+                                  <span
+                                    className="pointer-events-none absolute z-[4] flex h-4 w-4 -translate-x-1/2 rotate-45 items-center justify-center rounded-[3px] border border-[color:var(--ledger-accent)] bg-[var(--ledger-accent)]/20"
+                                    style={{ left: `${getMarkerLeft(pendingMilestone.date)}%`, top: '56px' }}
+                                  />
+                                )}
+                                {isMilestonePlacementActive &&
+                                  milestoneHover?.projectId === project.id &&
+                                  milestoneHover.date && (
+                                    <div
+                                      className="pointer-events-none absolute top-4 z-[4] -translate-x-1/2"
+                                      style={{ left: `${getMarkerLeft(milestoneHover.date)}%` }}
+                                    >
+                                      <div className="flex flex-col items-center gap-1">
+                                        <span className="rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--ledger-text-secondary)] shadow-[var(--ledger-shadow)]">
+                                          {formatShortDate(milestoneHover.date)}
+                                        </span>
+                                        <span className="flex h-5 w-5 items-center justify-center rounded-full border border-[color:var(--ledger-accent)] bg-[var(--ledger-surface-card)] text-[var(--ledger-accent)] opacity-80">
+                                          <Flag size={11} />
+                                        </span>
+                                      </div>
+                                    </div>
+                                  )}
+                                <div
+                                  className="absolute flex max-w-[420px] items-center gap-2"
+                                  style={{
+                                    left: `${Math.max(0, Math.min(94, lane.left))}%`,
+                                    top: `${labelTop - (barTop - 46)}px`,
+                                  }}
+                                >
+                                  <span
+                                    className="h-1.5 w-1.5 rounded-full"
+                                    style={{ backgroundColor: project.color || '#FF5F40' }}
+                                  />
+                                  <span className="truncate text-xs font-semibold text-[var(--ledger-text-secondary)]">
+                                    {project.name}
+                                  </span>
+                                  <span className="shrink-0 text-xs font-medium text-[var(--ledger-text-muted)]">
+                                    {projectStatusLabels[semantic]} · {formatDateRange(project.start_date, project.end_date)}
+                                  </span>
+                                  {isSharedWorkspace && renderMemberStack('h-4 w-4')}
+                                </div>
+                                <div
+                                  className="absolute flex items-center gap-2 text-[11px] text-[var(--ledger-text-muted)]"
+                                  style={{
+                                    left: `${Math.max(0, Math.min(94, lane.left + Math.min(lane.width, 30)))}%`,
+                                    top: '88px',
+                                  }}
+                                >
+                                  <span>{stats.active} actions</span>
+                                  <span>·</span>
+                                  <span>{overviewNoteLinkCounts[project.id] ?? 0} notes</span>
+                                </div>
+                              </button>
+                            );
+                                    })}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  </div>
+                </div>
+          </section>
+        )}
+      </div>
+    );
+  };
+
   const renderTabContent = () => {
     if (activeTab === 'actions') return renderNextActionsSection(true);
     if (activeTab === 'notes') return renderProjectNotesSection();
@@ -2201,8 +3919,18 @@ export const ProjectsWindow = () => {
         primaryActions={
           <div className="flex items-center gap-2">
             <ModuleHeaderActionButton
+              onClick={() => void selectProjectsOverview()}
+              title="Show projects overview"
+            >
+              Overview
+            </ModuleHeaderActionButton>
+            <ModuleHeaderActionButton
               onClick={() => {
-                setIsCreatingProject(!isCreatingProject);
+                if (isCreatingProject) {
+                  closeCreateProjectComposer();
+                  return;
+                }
+                openCreateProjectComposer();
               }}
               title={isCreatingProject ? 'Cancel new project' : 'Create a new project'}
             >
@@ -2301,7 +4029,10 @@ export const ProjectsWindow = () => {
                 </div>
 
                 {isCreatingProject && (
-                  <div className="mt-3 space-y-2 rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-3">
+                  <div
+                    ref={createProjectComposerRef}
+                    className="mt-3 space-y-2 rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-3"
+                  >
                     <input
                       ref={createProjectInputRef}
                       value={newProjectName}
@@ -2310,6 +4041,9 @@ export const ProjectsWindow = () => {
                         if (e.key === 'Enter') {
                           e.preventDefault();
                           void createProject();
+                        } else if (e.key === 'Escape') {
+                          e.preventDefault();
+                          closeCreateProjectComposer();
                         }
                       }}
                       placeholder="Project name"
@@ -2353,8 +4087,13 @@ export const ProjectsWindow = () => {
                       ? projectDraft.color || '#FF5F40'
                       : project.color || '#FF5F40';
                     const dueLabel = isSharedWorkspace
-                      ? `Shared · ${workspaceMembers.length} members`
+                      ? `${workspaceLabel} · ${workspaceMembers.length} members`
                       : workspaceLabel;
+                    const rowTaskStats = projectTaskStats.get(project.id) ?? {
+                      active: 0,
+                      completed: 0,
+                      total: 0,
+                    };
                     const statusLabel =
                       semantic === 'completed'
                         ? 'Completed'
@@ -2362,8 +4101,8 @@ export const ProjectsWindow = () => {
                         ? 'Not started'
                         : projectStatusLabels[semantic];
                     const actionLabel =
-                      active && taskCounts.total > 0
-                        ? `${taskCounts.active} active`
+                      rowTaskStats.total > 0
+                        ? `${rowTaskStats.active} active`
                         : `${displayCompleteness}%`;
 
                     return (
@@ -2385,12 +4124,6 @@ export const ProjectsWindow = () => {
                         }`}
                         title={project.name}
                       >
-                        {active && (
-                          <span
-                            className="absolute left-0 top-2.5 bottom-2.5 w-0.5 rounded-full"
-                            style={{ backgroundColor: progressColor }}
-                          />
-                        )}
                         <div className="min-w-0">
                           <div className="flex items-center gap-2 min-w-0">
                             <span
@@ -2410,7 +4143,7 @@ export const ProjectsWindow = () => {
                           </p>
                           <p className="mt-1 text-[11px] text-[var(--ledger-text-muted)]">{dueLabel}</p>
                         </div>
-                        <div className="mt-2 h-px overflow-hidden rounded-full bg-[var(--ledger-border-subtle)]/80">
+                        <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[var(--ledger-border-subtle)]/90">
                           <div
                             className="h-full rounded-full"
                             style={{
@@ -2450,7 +4183,7 @@ export const ProjectsWindow = () => {
         <main className="flex-1 overflow-hidden bg-[var(--ledger-background)]">
           <div className={`h-full overflow-auto ${isCompactLayout ? 'p-4' : 'p-6'}`}>
             {selectedProject ? (
-              <div className="mx-auto max-w-5xl">
+              <div className="mx-auto max-w-7xl">
                 <section className="border-b border-[color:var(--ledger-border-subtle)] pb-5">
                   <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                     <div className="min-w-0 flex-1">
@@ -2460,22 +4193,7 @@ export const ProjectsWindow = () => {
                           style={{ backgroundColor: projectDraft.color || '#FF5F40' }}
                         />
                         <span>{collaborationLabel}</span>
-                        {isSharedWorkspace && memberPreview.length > 0 && (
-                          <div className="ml-1 flex -space-x-1">
-                            {memberPreview.map((member) => {
-                              const name = displayMemberName(member);
-                              return (
-                                <span
-                                  key={member.user_id}
-                                  title={name}
-                                  className="flex h-5 w-5 items-center justify-center rounded-full border border-[color:var(--ledger-background)] bg-[var(--ledger-surface-hover)] text-[9px] font-semibold text-[var(--ledger-text-secondary)]"
-                                >
-                                  {getInitials(name)}
-                                </span>
-                              );
-                            })}
-                          </div>
-                        )}
+                        {isSharedWorkspace && <div className="ml-1">{renderMemberStack('h-5 w-5')}</div>}
                       </div>
 
                       {isEditingTitle ? (
@@ -2511,10 +4229,14 @@ export const ProjectsWindow = () => {
                       <p className="mt-2 text-sm text-[var(--ledger-text-secondary)]">
                         {projectDraft.description?.trim() || 'Add a project brief.'}
                       </p>
-                      <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-[var(--ledger-text-muted)]">
-                        <span>{projectMetaLine}</span>
-                        <span>{formatDateRange(projectDraft.startDate, projectDraft.endDate)}</span>
-                        <span>{isSavingProject ? 'Saving...' : isDirtyRef.current ? 'Unsaved' : 'Saved'}</span>
+                      <div className="mt-3 space-y-1 text-xs text-[var(--ledger-text-muted)]">
+                        <div className="min-w-0 truncate">{projectMetaLine}</div>
+                        <div className="min-w-0 truncate">
+                          {formatDateRange(projectDraft.startDate, projectDraft.endDate)}
+                        </div>
+                        <div className="min-w-0 truncate">
+                          {isSavingProject ? 'Saving...' : isDirtyRef.current ? 'Unsaved' : 'Saved'}
+                        </div>
                       </div>
                     </div>
 
@@ -2560,14 +4282,6 @@ export const ProjectsWindow = () => {
                       >
                         <Link2 size={12} />
                         Link note
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setIsRightPaneCollapsed(false)}
-                        className="inline-flex h-8 items-center gap-1.5 rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2.5 text-xs font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
-                      >
-                        <Share2 size={12} />
-                        Share
                       </button>
                       <button
                         type="button"
@@ -2675,27 +4389,7 @@ export const ProjectsWindow = () => {
                 <div className="py-6">{renderTabContent()}</div>
               </div>
             ) : (
-              <div className="mx-auto flex h-full max-w-3xl items-center justify-center">
-                <div className="border border-dashed border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-8 py-10 text-center shadow-none">
-                  <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-hover)]">
-                    <Folder size={18} className="text-[var(--ledger-text-secondary)]" />
-                  </div>
-                  <h3 className="mt-4 text-2xl font-semibold tracking-tight text-[var(--ledger-text-primary)]">
-                    Start a project
-                  </h3>
-                  <p className="mt-2 text-sm leading-6 text-[var(--ledger-text-secondary)]">
-                    Projects keep outcomes, notes, and next actions organized in one workspace.
-                  </p>
-                  <button
-                    type="button"
-                    onClick={() => setIsCreatingProject(true)}
-                    className="mt-5 inline-flex items-center gap-2 rounded-md bg-[var(--ledger-accent)] px-4 py-2.5 text-sm font-medium text-white transition hover:bg-[var(--ledger-accent-hover)]"
-                  >
-                    <Plus size={16} />
-                    New project
-                  </button>
-                </div>
-              </div>
+              renderProjectsTimelineOverview()
             )}
           </div>
         </main>
@@ -2718,10 +4412,10 @@ export const ProjectsWindow = () => {
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-semibold text-[var(--ledger-text-primary)]">
-                      Project context
+                      {selectedProject ? 'Project context' : 'Workspace context'}
                     </p>
                     <p className="mt-1 truncate text-xs text-[var(--ledger-text-muted)]">
-                      {selectedProject ? projectDraft.name : 'Click a project to view details'}
+                      {selectedProject ? projectDraft.name : workspaceLabel}
                     </p>
                   </div>
                   <div className="flex items-center gap-1 shrink-0">
@@ -2824,9 +4518,101 @@ export const ProjectsWindow = () => {
                 </div>
 
                 {!selectedProject ? (
-                  <p className="text-sm text-[var(--ledger-text-muted)]">
-                    Select a project to view notes, details, and workspace activity.
-                  </p>
+                  <div className="mt-5 space-y-5">
+                    <section className="space-y-2">
+                      <p className="text-xs font-semibold text-[var(--ledger-text-primary)]">Projects</p>
+                      <div className="space-y-2 text-sm">
+                        {[
+                          ['Total', String(overviewProjectStats.total)],
+                          ['Active', String(overviewProjectStats.active)],
+                          ['Completed', String(overviewProjectStats.completed)],
+                        ].map(([label, value]) => (
+                          <div key={label} className="flex items-center justify-between gap-3">
+                            <span className="text-[var(--ledger-text-muted)]">{label}</span>
+                            <span className="text-[var(--ledger-text-primary)]">{value}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </section>
+
+                    <section className="space-y-2 border-t border-[color:var(--ledger-border-subtle)] pt-4">
+                      <p className="text-xs font-semibold text-[var(--ledger-text-primary)]">Workspace</p>
+                      <div className="space-y-2 text-sm">
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="text-[var(--ledger-text-muted)]">Workspace</span>
+                          <span className="max-w-[58%] truncate text-right text-[var(--ledger-text-primary)]">
+                            {workspaceLabel}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="text-[var(--ledger-text-muted)]">Members</span>
+                          <span className="text-[var(--ledger-text-primary)]">
+                            {isSharedWorkspace ? `${workspaceMembers.length} members` : 'Only you'}
+                          </span>
+                        </div>
+                      </div>
+                    </section>
+
+                    <section className="space-y-2 border-t border-[color:var(--ledger-border-subtle)] pt-4">
+                      <p className="text-xs font-semibold text-[var(--ledger-text-primary)]">
+                        Needs attention
+                      </p>
+                      <div className="space-y-2 text-sm">
+                        {[
+                          ['Without dates', String(overviewProjectStats.withoutDates)],
+                          ['Without actions', String(overviewProjectStats.withoutActions)],
+                        ].map(([label, value]) => (
+                          <div key={label} className="flex items-center justify-between gap-3">
+                            <span className="text-[var(--ledger-text-muted)]">{label}</span>
+                            <span className="text-[var(--ledger-text-primary)]">{value}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </section>
+
+                    <section className="space-y-2 border-t border-[color:var(--ledger-border-subtle)] pt-4">
+                      <p className="text-xs font-semibold text-[var(--ledger-text-primary)]">Linked context</p>
+                      <div className="grid grid-cols-2 gap-2 text-sm">
+                        {[
+                          ['Notes', overviewProjectStats.notes],
+                          ['Events', overviewProjectStats.events],
+                          ['Reminders', overviewProjectStats.reminders],
+                          ['Captures', 0],
+                        ].map(([label, count]) => (
+                          <div
+                            key={label}
+                            className="rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-2 py-1.5"
+                          >
+                            <p className="text-sm font-semibold text-[var(--ledger-text-primary)]">{count}</p>
+                            <p className="text-xs text-[var(--ledger-text-muted)]">{label}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </section>
+
+                    <section className="space-y-2 border-t border-[color:var(--ledger-border-subtle)] pt-4">
+                      <p className="text-xs font-semibold text-[var(--ledger-text-primary)]">Recent activity</p>
+                      {overviewActivity.length === 0 ? (
+                        <p className="text-sm text-[var(--ledger-text-muted)]">No recent activity.</p>
+                      ) : (
+                        <div className="space-y-1">
+                          {overviewActivity.map((item) => (
+                            <div key={item.id} className="flex items-center gap-2 rounded-md px-1 py-1.5">
+                              <Clock3 size={13} className="shrink-0 text-[var(--ledger-text-muted)]" />
+                              <div className="min-w-0 flex-1">
+                                <p className="truncate text-sm font-medium text-[var(--ledger-text-primary)]">
+                                  {item.label}
+                                </p>
+                                <p className="text-xs text-[var(--ledger-text-muted)]">
+                                  {formatRelativeFromNow(item.at)}
+                                </p>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </section>
+                  </div>
                 ) : (
                   <div className="mt-5 space-y-5">
                     <section className="space-y-2">
@@ -2837,7 +4623,7 @@ export const ProjectsWindow = () => {
                         </p>
                         <p className="mt-0.5 text-xs text-[var(--ledger-text-muted)]">
                           {isSharedWorkspace
-                            ? `Shared workspace · ${workspaceMembers.length} members`
+                            ? `${workspaceLabel} · ${workspaceMembers.length} members`
                             : 'Personal workspace'}
                         </p>
                       </div>
@@ -3015,9 +4801,9 @@ export const ProjectsWindow = () => {
                           {recentProjectActivity.map((item) => (
                             <div
                               key={item.id}
-                              className="flex items-start gap-2 rounded-md px-1 py-1.5"
+                              className="flex items-center gap-2 rounded-md px-1 py-1.5"
                             >
-                              <Clock3 size={13} className="mt-0.5 shrink-0 text-[var(--ledger-text-muted)]" />
+                              <Clock3 size={13} className="shrink-0 text-[var(--ledger-text-muted)]" />
                               <div className="min-w-0 flex-1">
                                 <p className="truncate text-sm font-medium text-[var(--ledger-text-primary)]">
                                   {item.label}
@@ -3138,6 +4924,232 @@ export const ProjectsWindow = () => {
             <Trash2 size={14} />
             Unlink note
           </button>
+        </div>
+      )}
+
+      {pendingMilestone && milestoneEditorPosition && (
+        <div
+          ref={milestoneEditorRef}
+          className="fixed z-50 w-[320px] overflow-hidden rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-[var(--ledger-shadow)]"
+          style={{ left: `${milestoneEditorPosition.x}px`, top: `${milestoneEditorPosition.y}px` }}
+          role="dialog"
+          aria-label="New milestone"
+          onClick={(event) => event.stopPropagation()}
+        >
+          <div className="border-b border-[color:var(--ledger-border-subtle)] px-4 py-3">
+            <p className="text-sm font-semibold text-[var(--ledger-text-primary)]">
+              {editingMilestoneId ? 'Edit milestone' : 'New milestone'}
+            </p>
+            <p className="mt-0.5 truncate text-xs text-[var(--ledger-text-muted)]">
+              {getProjectById(milestoneDraft.projectId)?.name || 'Choose a project'} ·{' '}
+              {formatShortDate(milestoneDraft.date)}
+            </p>
+          </div>
+          <div className="space-y-3 p-4">
+            <label className="block">
+              <span className="mb-1 block text-xs font-medium text-[var(--ledger-text-muted)]">
+                Project
+              </span>
+              <select
+                value={milestoneDraft.projectId}
+                onChange={(event) => {
+                  setMilestoneDraftTouched(true);
+                  setMilestoneDraft((current) => ({ ...current, projectId: event.target.value }));
+                }}
+                disabled={Boolean(pendingMilestone.projectId)}
+                className="h-9 w-full rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2 text-sm text-[var(--ledger-text-primary)] outline-none transition focus:border-[color:var(--ledger-border-strong)]"
+              >
+                <option value="">Choose project</option>
+                {projects.map((project) => (
+                  <option key={project.id} value={project.id}>
+                    {project.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="block">
+              <span className="mb-1 block text-xs font-medium text-[var(--ledger-text-muted)]">
+                Date
+              </span>
+              <input
+                type="date"
+                value={milestoneDraft.date}
+                onChange={(event) => {
+                  setMilestoneDraftTouched(true);
+                  setMilestoneDraft((current) => ({ ...current, date: event.target.value }));
+                  setPendingMilestone((current) =>
+                    current ? { ...current, date: event.target.value } : current
+                  );
+                }}
+                className="h-9 w-full rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2 text-sm text-[var(--ledger-text-primary)] outline-none transition focus:border-[color:var(--ledger-border-strong)]"
+              />
+            </label>
+            <label className="block">
+              <span className="mb-1 block text-xs font-medium text-[var(--ledger-text-muted)]">
+                Milestone name
+              </span>
+              <input
+                ref={milestoneNameInputRef}
+                value={milestoneDraft.title}
+                onChange={(event) => {
+                  setMilestoneDraftTouched(true);
+                  setMilestoneDraftError(null);
+                  setMilestoneDraft((current) => ({ ...current, title: event.target.value }));
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') {
+                    event.preventDefault();
+                    void saveMilestone();
+                  }
+                }}
+                placeholder="Launch review"
+                className="h-9 w-full rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2 text-sm text-[var(--ledger-text-primary)] outline-none transition placeholder:text-[var(--ledger-placeholder)] focus:border-[color:var(--ledger-border-strong)]"
+              />
+            </label>
+            <label className="block">
+              <span className="mb-1 block text-xs font-medium text-[var(--ledger-text-muted)]">
+                Type
+              </span>
+              <select
+                value={milestoneDraft.type}
+                onChange={(event) => {
+                  setMilestoneDraftTouched(true);
+                  setMilestoneDraft((current) => ({
+                    ...current,
+                    type: event.target.value as ProjectMilestoneType,
+                  }));
+                }}
+                className="h-9 w-full rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2 text-sm text-[var(--ledger-text-primary)] outline-none transition focus:border-[color:var(--ledger-border-strong)]"
+              >
+                {projectMilestoneTypes.map((type) => (
+                  <option key={type} value={type}>
+                    {type}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="block">
+              <span className="mb-1 block text-xs font-medium text-[var(--ledger-text-muted)]">
+                Optional note
+              </span>
+              <textarea
+                value={milestoneDraft.note}
+                onChange={(event) => {
+                  setMilestoneDraftTouched(true);
+                  setMilestoneDraft((current) => ({ ...current, note: event.target.value }));
+                }}
+                placeholder="Add context for this moment."
+                className="h-20 w-full resize-none rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2 py-2 text-sm text-[var(--ledger-text-primary)] outline-none transition placeholder:text-[var(--ledger-placeholder)] focus:border-[color:var(--ledger-border-strong)]"
+              />
+            </label>
+            {milestoneDraftError && (
+              <p className="text-xs font-medium text-[var(--ledger-danger)]">{milestoneDraftError}</p>
+            )}
+          </div>
+          <div className="flex items-center justify-end gap-2 border-t border-[color:var(--ledger-border-subtle)] px-4 py-3">
+            <button
+              type="button"
+              onClick={cancelMilestonePlacement}
+              className="rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 py-1.5 text-xs font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => void saveMilestone()}
+              disabled={isSavingMilestone}
+              className="rounded-md bg-[var(--ledger-accent)] px-3 py-1.5 text-xs font-medium text-white transition hover:bg-[var(--ledger-accent-hover)] disabled:opacity-60"
+            >
+              {isSavingMilestone
+                ? 'Saving...'
+                : editingMilestoneId
+                ? 'Save changes'
+                : 'Save milestone'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {milestoneDetailRow && milestoneDetailPosition && (
+        <div
+          ref={milestoneDetailRef}
+          className="fixed z-50 w-[280px] overflow-hidden rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-[var(--ledger-shadow)]"
+          style={{ left: `${milestoneDetailPosition.x}px`, top: `${milestoneDetailPosition.y}px` }}
+          role="dialog"
+          aria-label="Milestone detail"
+          onClick={(event) => event.stopPropagation()}
+        >
+          <div className="border-b border-[color:var(--ledger-border-subtle)] px-4 py-3">
+            <p className="truncate text-sm font-semibold text-[var(--ledger-text-primary)]">
+              {milestoneDetailRow.title}
+            </p>
+            <p className="mt-0.5 truncate text-xs text-[var(--ledger-text-muted)]">
+              {milestoneDetailRow.type} · {formatShortDate(milestoneDetailRow.milestone_date)}
+            </p>
+            <p className="mt-0.5 truncate text-xs text-[var(--ledger-text-muted)]">
+              {milestoneDetailProject?.name ?? 'Project'}
+            </p>
+          </div>
+          {milestoneDetailRow.note && (
+            <p className="border-b border-[color:var(--ledger-border-subtle)] px-4 py-3 text-sm leading-5 text-[var(--ledger-text-secondary)]">
+              {milestoneDetailRow.note}
+            </p>
+          )}
+          <div className="py-1">
+            <button
+              type="button"
+              onClick={() => void handleMilestoneCompleteToggle(milestoneDetailRow.id)}
+              className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+            >
+              <CheckCircle2 size={14} />
+              {milestoneDetailRow.completed ? 'Mark incomplete' : 'Mark complete'}
+            </button>
+            <label className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]">
+              <CalendarDays size={14} />
+              <span className="flex-1">Change date</span>
+              <input
+                type="date"
+                value={milestoneDetailRow.milestone_date}
+                onChange={(event) =>
+                  void handleMilestoneDateChange(milestoneDetailRow.id, event.target.value)
+                }
+                className="h-7 max-w-[132px] rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-1.5 text-xs text-[var(--ledger-text-primary)] outline-none"
+              />
+            </label>
+            <button
+              type="button"
+              onClick={() => {
+                setMilestoneDetail(null);
+                void handleLinkNote(milestoneDetailRow.project_id);
+              }}
+              className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+            >
+              <Link2 size={14} />
+              Link note
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setMilestoneDetail(null);
+                createTimelineTodo('create reminder from milestone', milestoneDetailRow.project_id, milestoneDetailRow.id);
+              }}
+              className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+            >
+              <Bell size={14} />
+              Create reminder
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setMilestoneDetail(null);
+                void openProjectById(milestoneDetailRow.project_id);
+              }}
+              className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+            >
+              <Folder size={14} />
+              Open project
+            </button>
+          </div>
         </div>
       )}
 
@@ -3378,6 +5390,432 @@ export const ProjectsWindow = () => {
             <Trash2 size={14} />
             Delete
           </button>
+        </div>
+      )}
+
+      {timelineContextMenu && timelineMenuPosition && (
+        <div
+          ref={timelineContextRef}
+          className="fixed z-50 min-w-44 overflow-hidden rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] py-1 shadow-[var(--ledger-shadow)]"
+          style={{ left: `${timelineMenuPosition.x}px`, top: `${timelineMenuPosition.y}px` }}
+          role="menu"
+          aria-label="Timeline actions"
+          onClick={(event) => event.stopPropagation()}
+        >
+          {timelineContextMenu.kind === 'grid' ? (
+            <>
+              <button
+                type="button"
+                onClick={() => {
+                  handleNewProjectAtDate(timelineContextMenu.date);
+                  setTimelineContextMenu(null);
+                }}
+                className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+              >
+                <Plus size={14} />
+                {timelineContextMenu.date
+                  ? `New project on ${formatShortDateLong(timelineContextMenu.date)}`
+                  : 'New project here'}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  handleAddMilestoneAtDate(timelineContextMenu.date, {
+                    x: timelineContextMenu.x,
+                    y: timelineContextMenu.y,
+                  });
+                  setTimelineContextMenu(null);
+                }}
+                className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+              >
+                <Flag size={14} />
+                {timelineContextMenu.date
+                  ? `Add milestone on ${formatShortDateLong(timelineContextMenu.date)}`
+                  : 'Add milestone here'}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  handleAddReminderAtDate(timelineContextMenu.date);
+                  setTimelineContextMenu(null);
+                }}
+                className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+              >
+                <Bell size={14} />
+                {timelineContextMenu.date
+                  ? `Add reminder on ${formatShortDateLong(timelineContextMenu.date)}`
+                  : 'Add reminder here'}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  handleCreateNoteAtDate(timelineContextMenu.date);
+                  setTimelineContextMenu(null);
+                }}
+                className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+              >
+                <FileText size={14} />
+                {timelineContextMenu.date
+                  ? `Create note on ${formatShortDateLong(timelineContextMenu.date)}`
+                  : 'Create note for this date'}
+              </button>
+            </>
+          ) : timelineContextMenu.kind === 'marker' ? (
+            <>
+              <button
+                type="button"
+                onClick={() => {
+                  if (timelineContextMenu.markerType === 'milestone') {
+                    openMilestoneDetail(
+                      timelineContextMenu.markerId,
+                      timelineContextMenu.x,
+                      timelineContextMenu.y
+                    );
+                  } else if (timelineContextMenu.projectId) {
+                    void openProjectById(timelineContextMenu.projectId);
+                  }
+                  setTimelineContextMenu(null);
+                }}
+                className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+              >
+                <CircleDot size={14} />
+                Open milestone
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const milestone =
+                    timelineContextMenu.markerType === 'milestone'
+                      ? workspaceMilestones.find((item) => item.id === timelineContextMenu.markerId)
+                      : null;
+                  if (milestone) {
+                    setPendingMilestone({
+                      projectId: milestone.project_id,
+                      date: milestone.milestone_date,
+                      x: timelineContextMenu.x,
+                      y: timelineContextMenu.y,
+                    });
+                    setEditingMilestoneId(milestone.id);
+                    setMilestoneDraft({
+                      title: milestone.title,
+                      type: projectMilestoneTypes.includes(milestone.type as ProjectMilestoneType)
+                        ? (milestone.type as ProjectMilestoneType)
+                        : 'Custom',
+                      date: milestone.milestone_date,
+                      note: milestone.note ?? '',
+                      projectId: milestone.project_id,
+                    });
+                    setMilestoneDraftTouched(false);
+                    setMilestoneDraftError(null);
+                    window.setTimeout(() => milestoneNameInputRef.current?.focus(), 60);
+                  } else {
+                    console.debug('[projects timeline] TODO: rename marker', timelineContextMenu);
+                  }
+                  setTimelineContextMenu(null);
+                }}
+                className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+              >
+                <FileText size={14} />
+                Rename
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const milestone =
+                    timelineContextMenu.markerType === 'milestone'
+                      ? workspaceMilestones.find((item) => item.id === timelineContextMenu.markerId)
+                      : null;
+                  if (milestone) {
+                    openMilestoneDetail(milestone.id, timelineContextMenu.x, timelineContextMenu.y);
+                  } else {
+                    console.debug('[projects timeline] TODO: change marker date', timelineContextMenu);
+                  }
+                  setTimelineContextMenu(null);
+                }}
+                className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+              >
+                <CalendarDays size={14} />
+                Change date
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (timelineContextMenu.projectId) {
+                    void handleLinkNote(timelineContextMenu.projectId);
+                  } else {
+                    console.debug('[projects timeline] TODO: link note to marker', timelineContextMenu);
+                  }
+                  setTimelineContextMenu(null);
+                }}
+                className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+              >
+                <Link2 size={14} />
+                Link note
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  createTimelineTodo(
+                    'create reminder from milestone',
+                    timelineContextMenu.projectId ?? '__none__',
+                    timelineContextMenu.markerId
+                  );
+                  setTimelineContextMenu(null);
+                }}
+                className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+              >
+                <Bell size={14} />
+                Convert to reminder
+              </button>
+              {timelineContextMenu.markerType === 'milestone' && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    void handleMilestoneCompleteToggle(timelineContextMenu.markerId);
+                    setTimelineContextMenu(null);
+                  }}
+                  className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+                >
+                  <CheckCircle2 size={14} />
+                  {workspaceMilestones.find((item) => item.id === timelineContextMenu.markerId)
+                    ?.completed
+                    ? 'Mark incomplete'
+                    : 'Mark complete'}
+                </button>
+              )}
+              <div className="my-1 h-px bg-[var(--ledger-border-subtle)]" />
+              <button
+                type="button"
+                onClick={() => {
+                  if (timelineContextMenu.markerType === 'milestone') {
+                    void handleMilestoneDelete(timelineContextMenu.markerId);
+                  } else {
+                    console.debug('[projects timeline] TODO: delete marker', timelineContextMenu);
+                  }
+                  setTimelineContextMenu(null);
+                }}
+                className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-danger)] transition hover:bg-[color:rgba(217,45,32,0.08)]"
+              >
+                <Trash2 size={14} />
+                Delete
+              </button>
+            </>
+          ) : timelineContextProject && timelineContextProjectStatus === 'completed' ? (
+            <>
+              <button
+                type="button"
+                onClick={() => {
+                  void handleReviewProject(timelineContextProject.id);
+                  setTimelineContextMenu(null);
+                }}
+                className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+              >
+                <Clock3 size={14} />
+                Review project
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  void handleReopenProject(timelineContextProject.id);
+                  setTimelineContextMenu(null);
+                }}
+                className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+              >
+                <ChevronRight size={14} />
+                Reopen project
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  void handleLinkNote(timelineContextProject.id);
+                  setTimelineContextMenu(null);
+                }}
+                className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+              >
+                <Link2 size={14} />
+                Link note
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  void openProjectLinkCopy(timelineContextProject.id);
+                  setTimelineContextMenu(null);
+                }}
+                className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+              >
+                <Link2 size={14} />
+                Copy link
+              </button>
+              <div className="my-1 h-px bg-[var(--ledger-border-subtle)]" />
+              <button
+                type="button"
+                onClick={() => {
+                  void handleArchiveProject(timelineContextProject.id);
+                  setTimelineContextMenu(null);
+                }}
+                className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+              >
+                  <ChevronDown size={14} />
+                  Archive
+              </button>
+            </>
+          ) : timelineContextProject ? (
+            timelineContextProjectHasDates ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => {
+                    void openProjectById(timelineContextProject.id);
+                    setTimelineContextMenu(null);
+                  }}
+                  className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+                >
+                  <Folder size={14} />
+                  Open project
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    void handleAddAction(timelineContextProject.id);
+                    setTimelineContextMenu(null);
+                  }}
+                  className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+                >
+                  <Plus size={14} />
+                  Add action
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    void handleAddMilestone(timelineContextProject.id, timelineContextMenu.date, {
+                      x: timelineContextMenu.x,
+                      y: timelineContextMenu.y,
+                    });
+                    setTimelineContextMenu(null);
+                  }}
+                  className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+                >
+                  <Flag size={14} />
+                  Add milestone
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    void handleLinkNote(timelineContextProject.id);
+                    setTimelineContextMenu(null);
+                  }}
+                  className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+                >
+                  <Link2 size={14} />
+                  Link note
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    void handleEditDates(timelineContextProject.id);
+                    setTimelineContextMenu(null);
+                  }}
+                  className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+                >
+                  <CalendarDays size={14} />
+                  Edit dates
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    void openProjectLinkCopy(timelineContextProject.id);
+                    setTimelineContextMenu(null);
+                  }}
+                  className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+                >
+                  <Link2 size={14} />
+                  Copy link
+                </button>
+                <div className="my-1 h-px bg-[var(--ledger-border-subtle)]" />
+                <button
+                  type="button"
+                  onClick={() => {
+                    void handleArchiveProject(timelineContextProject.id);
+                    setTimelineContextMenu(null);
+                  }}
+                  className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+                >
+                  <ChevronDown size={14} />
+                  Archive
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={() => {
+                    void openProjectById(timelineContextProject.id);
+                    setTimelineContextMenu(null);
+                  }}
+                  className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+                >
+                  <Folder size={14} />
+                  Open project
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    void handleAddDates(timelineContextProject.id);
+                    setTimelineContextMenu(null);
+                  }}
+                  className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+                >
+                  <CalendarDays size={14} />
+                  Add dates
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    void handleAddAction(timelineContextProject.id);
+                    setTimelineContextMenu(null);
+                  }}
+                  className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+                >
+                  <Plus size={14} />
+                  Add action
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    void handleLinkNote(timelineContextProject.id);
+                    setTimelineContextMenu(null);
+                  }}
+                  className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+                >
+                  <Link2 size={14} />
+                  Link note
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    void openProjectLinkCopy(timelineContextProject.id);
+                    setTimelineContextMenu(null);
+                  }}
+                  className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+                >
+                  <Link2 size={14} />
+                  Copy link
+                </button>
+                <div className="my-1 h-px bg-[var(--ledger-border-subtle)]" />
+                <button
+                  type="button"
+                  onClick={() => {
+                    void handleArchiveProject(timelineContextProject.id);
+                    setTimelineContextMenu(null);
+                  }}
+                  className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-danger)] transition hover:bg-[color:rgba(217,45,32,0.08)]"
+                >
+                  <Trash2 size={14} />
+                  Archive
+                </button>
+              </>
+            )
+          ) : null}
         </div>
       )}
 

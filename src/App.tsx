@@ -3915,8 +3915,7 @@ function AppShell() {
 
 function App() {
   const { user } = useAuthContext();
-  const { state } = useSidebar();
-  const shouldShowNotificationMonitor = Boolean(user) && !isModuleWindow && state === 'expanded';
+  const shouldShowNotificationMonitor = Boolean(user) && !isModuleWindow;
 
   return (
     <SearchProvider>

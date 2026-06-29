@@ -718,6 +718,13 @@ let floatingDragStart:
       bounds: Electron.Rectangle;
     }
   | null = null;
+const headerDragStarts = new Map<
+  number,
+  {
+    cursor: Electron.Point;
+    bounds: Electron.Rectangle;
+  }
+>();
 let sidebarIsVisible = true;
 let sidebarAlwaysOnTop = true;
 let macAccessibilityPrompted = false;
@@ -5060,6 +5067,48 @@ ipcMain.handle('window:update-floating-drag', () => {
   currentFloatingPosition = nextPosition;
   sidebarWin.setPosition(nextPosition.x, nextPosition.y, false);
   return sidebarWin.getBounds();
+});
+
+ipcMain.handle('window:begin-header-drag', (event) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (!win || win.isDestroyed()) return null;
+  if (win.isFullScreen()) return win.getBounds();
+
+  if (win.isMaximized()) {
+    win.unmaximize();
+  }
+
+  const bounds = win.getBounds();
+  headerDragStarts.set(event.sender.id, {
+    cursor: screen.getCursorScreenPoint(),
+    bounds,
+  });
+  return bounds;
+});
+
+ipcMain.handle('window:update-header-drag', (event) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (!win || win.isDestroyed()) return null;
+  const dragStart = headerDragStarts.get(event.sender.id);
+  if (!dragStart) return win.getBounds();
+  if (win.isFullScreen()) return win.getBounds();
+
+  const cursor = screen.getCursorScreenPoint();
+  const nextPosition = {
+    x: dragStart.bounds.x + cursor.x - dragStart.cursor.x,
+    y: dragStart.bounds.y + cursor.y - dragStart.cursor.y,
+  };
+
+  win.setPosition(Math.round(nextPosition.x), Math.round(nextPosition.y), false);
+  return win.getBounds();
+});
+
+ipcMain.handle('window:finish-header-drag', (event) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  headerDragStarts.delete(event.sender.id);
+  if (!win || win.isDestroyed()) return null;
+  applyWindowsModuleWindowShape(win);
+  return win.getBounds();
 });
 
 ipcMain.handle('window:dock-floating-window', async () => {

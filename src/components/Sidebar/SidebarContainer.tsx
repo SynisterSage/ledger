@@ -173,12 +173,7 @@ export const SidebarContainer = () => {
       : 'w-16 h-16';
   const shellRadiusClass = isCollapsedIconMode ? 'rounded-2xl' : 'rounded-3xl';
   const shellClipRadius = isCollapsedIconMode ? '16px' : '24px';
-  const isRailToExpandedOpening =
-    state === 'expanded' && contentView.state === 'minimized' && contentView.isExpanded;
-  const shellOverflowClass =
-    (state === 'minimized' && isExpanded) || isRailToExpandedOpening
-      ? 'overflow-visible'
-      : 'overflow-hidden';
+  const shellOverflowClass = 'overflow-hidden';
   const isGlassShell = state === 'expanded' || (state === 'minimized' && isExpanded);
   const platformClass =
     typeof navigator !== 'undefined' && navigator.platform.toLowerCase().includes('win')

@@ -81,6 +81,30 @@ contextBridge.exposeInMainWorld('desktopWindow', {
       height: number;
     } | null>;
   },
+  beginHeaderDrag() {
+    return ipcRenderer.invoke('window:begin-header-drag') as Promise<{
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+    } | null>;
+  },
+  updateHeaderDrag() {
+    return ipcRenderer.invoke('window:update-header-drag') as Promise<{
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+    } | null>;
+  },
+  finishHeaderDrag() {
+    return ipcRenderer.invoke('window:finish-header-drag') as Promise<{
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+    } | null>;
+  },
   applySidebarPreferences(preferences: {
     position?: 'right' | 'left' | 'top' | 'bottom' | 'floating';
     opacity?: number;
