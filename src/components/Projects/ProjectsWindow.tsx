@@ -12,7 +12,9 @@ import {
   Inbox,
   Link2,
   MoreHorizontal,
+  Pause,
   Plus,
+  Play,
   Search,
   CheckCircle2,
   Trash2,
@@ -328,6 +330,11 @@ const addDays = (date: Date, days: number) => {
 
 const startOfMonth = (date: Date) => new Date(date.getFullYear(), date.getMonth(), 1);
 
+const startOfQuarter = (date: Date) => {
+  const quarterMonth = Math.floor(date.getMonth() / 3) * 3;
+  return new Date(date.getFullYear(), quarterMonth, 1);
+};
+
 const addMonths = (date: Date, months: number) =>
   new Date(date.getFullYear(), date.getMonth() + months, 1);
 
@@ -417,6 +424,8 @@ export const ProjectsWindow = () => {
   const { user } = useAuthContext();
   const { activeWorkspaceId, activeWorkspace } = useWorkspaceContext();
   const api = useApi();
+  const isWindowsPlatform =
+    typeof navigator !== 'undefined' && navigator.platform.toLowerCase().includes('win');
   const viewportWidth = useViewportWidth();
   const initialFocusProjectId = new URLSearchParams(window.location.search).get('focusProjectId');
   const initialFocusHandledRef = useRef(false);
@@ -556,7 +565,7 @@ export const ProjectsWindow = () => {
   const [projectsOverviewView, setProjectsOverviewView] =
     useState<ProjectsOverviewView>('timeline');
   const [projectsOverviewRange, setProjectsOverviewRange] =
-    useState<ProjectsOverviewRange>('quarter');
+    useState<ProjectsOverviewRange>('all');
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [isEditingBrief, setIsEditingBrief] = useState(false);
   const areSidePanelsCollapsed = isLeftPaneCollapsed && isRightPaneCollapsed;
@@ -744,9 +753,6 @@ export const ProjectsWindow = () => {
   const projectMetaLine = selectedProject
     ? `${projectStatusLabels[projectDraft.status]} · ${projectDraft.completeness}% · ${workspaceLabel}`
     : '';
-  const collaborationLabel = isSharedWorkspace
-    ? `${workspaceLabel} · ${workspaceMembers.length} members`
-    : `Workspace · ${workspaceLabel}`;
   const overviewProjectStats = useMemo(() => {
     const total = projects.length;
     const active = projects.filter((project) => {
@@ -783,15 +789,16 @@ export const ProjectsWindow = () => {
     if (dated.length === 0) {
       return { start: fallbackStart, end: fallbackEnd };
     }
-    const min = new Date(Math.min(...dated.map((date) => date.getTime())));
-    const max = new Date(Math.max(...dated.map((date) => date.getTime())));
-    const anchor = startOfMonth(min);
     if (projectsOverviewRange === 'month') {
+      const anchor = startOfMonth(now);
       return { start: anchor, end: addMonths(anchor, 1) };
     }
     if (projectsOverviewRange === 'quarter') {
+      const anchor = startOfQuarter(now);
       return { start: anchor, end: addMonths(anchor, 3) };
     }
+    const min = new Date(Math.min(...dated.map((date) => date.getTime())));
+    const max = new Date(Math.max(...dated.map((date) => date.getTime())));
     return {
       start: startOfMonth(addMonths(min, -1)),
       end: addMonths(startOfMonth(max), 3),
@@ -956,7 +963,7 @@ export const ProjectsWindow = () => {
 
   const milestoneDetailPosition = useMemo(() => {
     if (!milestoneDetail) return null;
-    return getClampedMenuPosition(milestoneDetail.x + 10, milestoneDetail.y + 10, 280, 260);
+    return getClampedMenuPosition(milestoneDetail.x + 10, milestoneDetail.y + 10, 280, 320);
   }, [milestoneDetail]);
 
   const timelineMenuPosition = useMemo(() => {
@@ -1876,10 +1883,10 @@ export const ProjectsWindow = () => {
   const handleAddMilestoneAtDate = useCallback(
     (date: string | null, position?: { x: number; y: number }) => {
       const nextDate = date || todayKey();
-      const projectId = projects.length === 1 ? projects[0].id : null;
+      const projectId = selectedProject?.id ?? (projects.length === 1 ? projects[0].id : null);
       openMilestoneEditor(projectId, nextDate, position ?? { x: window.innerWidth / 2, y: 220 });
     },
-    [openMilestoneEditor, projects]
+    [openMilestoneEditor, projects, selectedProject]
   );
 
   const saveMilestone = useCallback(async () => {
@@ -2293,6 +2300,8 @@ export const ProjectsWindow = () => {
   useEffect(() => {
     if (!initialFocusProjectId) return;
     if (initialFocusHandledRef.current) return;
+    setProjectsOverviewView('timeline');
+    setProjectsOverviewRange('all');
     if (initialFocusProjectId === '__new__') {
       initialFocusHandledRef.current = true;
       openCreateProjectComposer();
@@ -2316,6 +2325,8 @@ export const ProjectsWindow = () => {
       payload: { kind?: string; focusProjectId?: string | null }
     ) => {
       if (payload?.kind !== 'projects' || !payload.focusProjectId) return;
+      setProjectsOverviewView('timeline');
+      setProjectsOverviewRange('all');
       if (payload.focusProjectId === '__new__') {
         openCreateProjectComposer();
         return;
@@ -3075,14 +3086,24 @@ export const ProjectsWindow = () => {
       </div>
     ) : null;
 
+  const renderCreatorBubble = (name: string, size = 'h-5 w-5') => (
+    <span
+      title={name}
+      className={`flex ${size} items-center justify-center rounded-full border border-[color:var(--ledger-surface-card)] bg-[var(--ledger-surface-hover)] text-[9px] font-semibold text-[var(--ledger-text-secondary)]`}
+    >
+      {getInitials(name)}
+    </span>
+  );
+
   const renderProjectsTimelineOverview = () => {
     const timelineRailWidth = 280;
     const timelineWidth = Math.max(980, timelineMonths.length * 172);
-    const timelineCanvasHeight = Math.max(560, 190 + visibleDatedProjects.length * 104);
-    const timelineBodyHeight = Math.max(440, timelineCanvasHeight - 72);
+    const timelineCanvasHeight = Math.max(640, 220 + visibleDatedProjects.length * 104);
+    const timelineBodyHeight = Math.max(520, timelineCanvasHeight - 72);
     const timelineSubdivisions = 4;
     const todayLeft = getTimelinePositionFromDate(todayKey());
     const showTodayMarker = todayLeft > 0 && todayLeft < 100;
+    const [todayMonthLabel, todayDayLabel] = formatShortDate(todayKey()).split(' ');
     const getMonthTickDays = (month: Date) => {
       if (projectsOverviewRange === 'all') return [];
       const daysInMonth = new Date(month.getFullYear(), month.getMonth() + 1, 0).getDate();
@@ -3099,7 +3120,7 @@ export const ProjectsWindow = () => {
       const right = Math.max(left + 2, timelineOffsetPercent(timelineRange.start, addDays(end, 1), timelineDays));
       return { left, width: right - left };
     };
-    const getMarkerLeft = (date: string) => {
+    const dateToX = (date: string) => {
       const parsed = parseTimelineDate(date);
       if (!parsed || timelineDays <= 0) return 0;
       return timelineOffsetPercent(timelineRange.start, parsed, timelineDays);
@@ -3157,7 +3178,7 @@ export const ProjectsWindow = () => {
     ];
 
     return (
-      <div className="mx-auto flex min-h-0 flex-1 max-w-7xl flex-col gap-5">
+      <div className="flex min-h-0 w-full flex-1 flex-col gap-5">
         <section className="flex flex-col gap-4 border-b border-[color:var(--ledger-border-subtle)] pb-5 lg:flex-row lg:items-end lg:justify-between">
           <div className="min-w-0">
             <div className="flex items-center gap-2 text-xs text-[var(--ledger-text-muted)]">
@@ -3213,11 +3234,19 @@ export const ProjectsWindow = () => {
             </div>
             <button
               type="button"
-              onClick={openCreateProjectComposer}
+              onMouseDown={(event) => event.stopPropagation()}
+              onClick={() => {
+                if (isCreatingProject) {
+                  closeCreateProjectComposer();
+                  return;
+                }
+                openCreateProjectComposer();
+              }}
+              title={isCreatingProject ? 'Cancel new project' : 'Create a new project'}
               className="inline-flex h-8 items-center gap-1.5 rounded-md bg-[var(--ledger-accent)] px-2.5 text-xs font-medium text-white transition hover:bg-[var(--ledger-accent-hover)]"
             >
               <Plus size={12} />
-              New project
+              {isCreatingProject ? 'Cancel' : 'New project'}
             </button>
             <button
               type="button"
@@ -3295,11 +3324,19 @@ export const ProjectsWindow = () => {
               </p>
               <button
                 type="button"
-                onClick={openCreateProjectComposer}
+                onMouseDown={(event) => event.stopPropagation()}
+                onClick={() => {
+                  if (isCreatingProject) {
+                    closeCreateProjectComposer();
+                    return;
+                  }
+                  openCreateProjectComposer();
+                }}
+                title={isCreatingProject ? 'Cancel new project' : 'Create a new project'}
                 className="mt-5 inline-flex items-center gap-2 rounded-md bg-[var(--ledger-accent)] px-4 py-2.5 text-sm font-medium text-white transition hover:bg-[var(--ledger-accent-hover)]"
               >
                 <Plus size={16} />
-                New project
+                {isCreatingProject ? 'Cancel' : 'New project'}
               </button>
             </div>
           </section>
@@ -3424,7 +3461,13 @@ export const ProjectsWindow = () => {
                       className="grid min-h-full"
                       style={{ gridTemplateColumns: `${timelineRailWidth}px minmax(0, 1fr)` }}
                     >
-                      <aside className="sticky left-0 top-0 z-20 h-full border-r border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)]/75 backdrop-blur">
+                      <aside
+                        className={`sticky left-0 top-0 z-20 h-full overflow-hidden rounded-l-xl border-r border-[color:var(--ledger-border-subtle)] ${
+                          isWindowsPlatform
+                            ? 'bg-[var(--ledger-surface-muted)]/96'
+                            : 'bg-[var(--ledger-surface-muted)]/75 backdrop-blur'
+                        }`}
+                      >
                         <div className="flex h-full flex-col">
                           <div className="border-b border-[color:var(--ledger-border-subtle)] px-3 py-2.5">
                             <p className="text-sm font-semibold text-[var(--ledger-text-primary)]">
@@ -3535,13 +3578,23 @@ export const ProjectsWindow = () => {
                             >
                               {showTodayMarker && (
                                 <div
-                                  className="pointer-events-none absolute z-[7] w-px bg-[var(--ledger-accent)]/60"
-                                  style={{ left: `${todayLeft}%`, top: '14px', height: 'calc(100% - 14px)' }}
+                                  className="pointer-events-none absolute z-[7] -translate-x-1/2"
+                                  style={{ left: `${dateToX(todayKey())}%`, top: 0, bottom: 0 }}
                                 >
-                                  <span className="absolute top-0 left-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border border-[color:rgba(255,95,64,0.45)] bg-[var(--ledger-accent)] shadow-[0_0_0_3px_rgba(255,95,64,0.1)]" />
-                                  <span className="absolute top-3 left-1/2 -translate-x-1/2 whitespace-nowrap text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--ledger-accent)]">
-                                    {formatShortDate(todayKey()).toUpperCase()}
+                                  <span className="absolute left-1/2 top-4 z-[8] flex min-w-[38px] -translate-x-1/2 items-center justify-center rounded-full bg-[var(--ledger-accent)] px-2 py-0.5 text-[10px] font-semibold leading-none text-white shadow-[0_10px_20px_rgba(255,95,64,0.18)]">
+                                    <span className="flex flex-col items-center justify-center gap-0.5 text-center">
+                                      <span className="block">{todayMonthLabel}</span>
+                                      <span className="block">{todayDayLabel}</span>
+                                    </span>
                                   </span>
+                                  <span
+                                    className="absolute left-1/2 top-[38px] bottom-0 w-px -translate-x-1/2 bg-[var(--ledger-accent)]/60"
+                                    aria-hidden="true"
+                                  />
+                                  <span
+                                    className="absolute left-1/2 top-[38px] z-[8] h-0.5 w-0.5 -translate-x-1/2 rounded-full bg-[var(--ledger-accent)]/75"
+                                    aria-hidden="true"
+                                  />
                                 </div>
                               )}
                               <div className="sticky top-0 z-[5] border-b border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)]/96">
@@ -3615,6 +3668,17 @@ export const ProjectsWindow = () => {
                             total: 0,
                           };
                           const projectMilestones = workspaceMilestonesByProject.get(project.id) ?? [];
+                          const visibleProjectMilestones =
+                            projectsOverviewRange === 'all'
+                              ? projectMilestones
+                              : projectMilestones.filter((milestone) => {
+                                  const milestoneDate = parseTimelineDate(milestone.milestone_date);
+                                  if (!milestoneDate) return false;
+                                  return (
+                                    milestoneDate >= timelineRange.start &&
+                                    milestoneDate < timelineRange.end
+                                  );
+                                });
                           const projectMarkers = [
                             ...projectEvents
                               .filter((event) => event.project_id === project.id)
@@ -3685,7 +3749,7 @@ export const ProjectsWindow = () => {
                                 milestoneHover.date && (
                                   <div
                                     className="pointer-events-none absolute inset-y-0 z-[1] w-px bg-[var(--ledger-accent)]/25"
-                                    style={{ left: `${getMarkerLeft(milestoneHover.date)}%` }}
+                                    style={{ left: `${dateToX(milestoneHover.date)}%` }}
                                   />
                                 )}
                               <button
@@ -3756,53 +3820,62 @@ export const ProjectsWindow = () => {
                                     </div>
                                   )}
                                 </button>
-                                {projectMilestones.map((milestone) => {
-                                  const markerLeft = getMarkerLeft(milestone.milestone_date);
+                                {visibleProjectMilestones.map((milestone) => {
+                                  const markerLeft = dateToX(milestone.milestone_date);
                                   const isOverdue =
                                     !milestone.completed &&
                                     parseTimelineDate(milestone.milestone_date) !== null &&
                                     parseTimelineDate(milestone.milestone_date)!.getTime() <
                                       new Date(todayKey()).getTime();
                                   return (
-                                    <span
+                                    <div
                                       key={milestone.id}
-                                      title={`${milestone.title}\n${milestone.type} · ${formatShortDate(milestone.milestone_date)}\n${project.name}`}
-                                      onClick={(event) => {
-                                        event.preventDefault();
-                                        event.stopPropagation();
-                                        openMilestoneDetail(milestone.id, event.clientX, event.clientY);
-                                      }}
-                                      onContextMenu={(event) =>
-                                        handleTimelineMarkerContextMenu(
-                                          event,
-                                          milestone.id,
-                                          project.id,
-                                          milestone.title,
-                                          'milestone'
-                                        )
-                                      }
-                                      className={`absolute top-[35px] z-[3] flex h-4 w-4 -translate-x-1/2 rotate-45 items-center justify-center rounded-[3px] border transition hover:scale-110 ${
-                                        milestone.completed
-                                          ? 'border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-text-muted)]'
-                                          : isOverdue
-                                          ? 'border-[color:rgba(217,45,32,0.32)] bg-[color:rgba(217,45,32,0.12)]'
-                                          : 'border-[color:var(--ledger-accent)] bg-[var(--ledger-surface-card)]'
-                                      }`}
+                                      className="absolute z-[3] -translate-x-1/2"
                                       style={{ left: `${markerLeft}%`, top: '56px' }}
                                     >
-                                      {milestone.completed && (
-                                        <CheckCircle2
-                                          size={10}
-                                          className="-rotate-45 text-[var(--ledger-surface-card)]"
-                                        />
-                                      )}
-                                    </span>
+                                      <span
+                                        title={`${milestone.title}\n${milestone.type} · ${formatShortDate(
+                                          milestone.milestone_date
+                                        )}\n${project.name}`}
+                                        onClick={(event) => {
+                                          event.preventDefault();
+                                          event.stopPropagation();
+                                          openMilestoneDetail(milestone.id, event.clientX, event.clientY);
+                                        }}
+                                        onContextMenu={(event) =>
+                                          handleTimelineMarkerContextMenu(
+                                            event,
+                                            milestone.id,
+                                            project.id,
+                                            milestone.title,
+                                            'milestone'
+                                          )
+                                        }
+                                        className={`mx-auto flex h-4 w-4 rotate-45 items-center justify-center rounded-[3px] border transition hover:scale-110 ${
+                                          milestone.completed
+                                            ? 'border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-text-muted)]'
+                                            : isOverdue
+                                            ? 'border-[color:rgba(217,45,32,0.32)] bg-[color:rgba(217,45,32,0.12)]'
+                                            : 'border-[color:var(--ledger-accent)] bg-[var(--ledger-surface-card)]'
+                                        }`}
+                                      >
+                                        {milestone.completed && (
+                                          <CheckCircle2
+                                            size={10}
+                                            className="-rotate-45 text-[var(--ledger-surface-card)]"
+                                          />
+                                        )}
+                                      </span>
+                                      <span className="mt-3 block w-24 translate-y-[2px] truncate text-center text-[10px] font-medium leading-none text-[var(--ledger-text-muted)] opacity-80">
+                                        {milestone.title}
+                                      </span>
+                                    </div>
                                   );
                                 })}
                                 {pendingMilestone?.projectId === project.id && (
                                   <span
                                     className="pointer-events-none absolute z-[4] flex h-4 w-4 -translate-x-1/2 rotate-45 items-center justify-center rounded-[3px] border border-[color:var(--ledger-accent)] bg-[var(--ledger-accent)]/20"
-                                    style={{ left: `${getMarkerLeft(pendingMilestone.date)}%`, top: '56px' }}
+                                    style={{ left: `${dateToX(pendingMilestone.date)}%`, top: '56px' }}
                                   />
                                 )}
                                 {isMilestonePlacementActive &&
@@ -3810,7 +3883,7 @@ export const ProjectsWindow = () => {
                                   milestoneHover.date && (
                                     <div
                                       className="pointer-events-none absolute top-4 z-[4] -translate-x-1/2"
-                                      style={{ left: `${getMarkerLeft(milestoneHover.date)}%` }}
+                                      style={{ left: `${dateToX(milestoneHover.date)}%` }}
                                     >
                                       <div className="flex flex-col items-center gap-1">
                                         <span className="rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--ledger-text-secondary)] shadow-[var(--ledger-shadow)]">
@@ -3848,7 +3921,14 @@ export const ProjectsWindow = () => {
                                   <span className="shrink-0 text-xs font-medium text-[var(--ledger-text-muted)]">
                                     {projectStatusLabels[semantic]} · {formatDateRange(project.start_date, project.end_date)}
                                   </span>
-                                  {isSharedWorkspace && renderMemberStack('h-4 w-4')}
+                                  {renderCreatorBubble(
+                                    project.created_by
+                                      ? displayMemberName(
+                                          workspaceMemberById.get(project.created_by) ?? null
+                                        )
+                                      : 'Unknown user',
+                                    'h-4 w-4'
+                                  )}
                                 </button>
                             </div>
                             );
@@ -4231,7 +4311,7 @@ export const ProjectsWindow = () => {
         <main className="flex-1 overflow-hidden bg-[var(--ledger-background)]">
           <div className={`h-full overflow-auto ${isCompactLayout ? 'p-4' : 'p-6'}`}>
             {selectedProject ? (
-              <div className="mx-auto max-w-7xl">
+              <div className="w-full min-w-0">
                 <section className="border-b border-[color:var(--ledger-border-subtle)] pb-5">
                   <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                     <div className="min-w-0 flex-1">
@@ -4240,8 +4320,9 @@ export const ProjectsWindow = () => {
                           className="h-2 w-2 rounded-full"
                           style={{ backgroundColor: projectDraft.color || '#FF5F40' }}
                         />
-                        <span>{collaborationLabel}</span>
-                        {isSharedWorkspace && <div className="ml-1">{renderMemberStack('h-5 w-5')}</div>}
+                        <span>{workspaceLabel}</span>
+                        <span className="text-[var(--ledger-text-muted)]">·</span>
+                        {renderCreatorBubble(creatorDisplayName, 'h-5 w-5')}
                       </div>
 
                       {isEditingTitle ? (
@@ -4545,6 +4626,7 @@ export const ProjectsWindow = () => {
                                 void updateProjectStatus(selectedProject.id, 'paused');
                               }}
                             >
+                              <Pause size={14} className="mr-2 inline-block align-[-2px]" />
                               Pause project
                             </button>
                             <div className="my-1 h-px bg-[var(--ledger-border-subtle)]" />
@@ -4990,27 +5072,6 @@ export const ProjectsWindow = () => {
           <div className="space-y-3 p-4">
             <label className="block">
               <span className="mb-1 block text-xs font-medium text-[var(--ledger-text-muted)]">
-                Project
-              </span>
-              <select
-                value={milestoneDraft.projectId}
-                onChange={(event) => {
-                  setMilestoneDraftTouched(true);
-                  setMilestoneDraft((current) => ({ ...current, projectId: event.target.value }));
-                }}
-                disabled={Boolean(pendingMilestone.projectId)}
-                className="h-9 w-full rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2 text-sm text-[var(--ledger-text-primary)] outline-none transition focus:border-[color:var(--ledger-border-strong)]"
-              >
-                <option value="">Choose project</option>
-                {projects.map((project) => (
-                  <option key={project.id} value={project.id}>
-                    {project.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="block">
-              <span className="mb-1 block text-xs font-medium text-[var(--ledger-text-muted)]">
                 Date
               </span>
               <input
@@ -5115,7 +5176,7 @@ export const ProjectsWindow = () => {
       {milestoneDetailRow && milestoneDetailPosition && (
         <div
           ref={milestoneDetailRef}
-          className="fixed z-50 w-[280px] overflow-hidden rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-[var(--ledger-shadow)]"
+          className="fixed z-50 max-h-[calc(100vh-16px)] w-[280px] overflow-auto rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-[var(--ledger-shadow)]"
           style={{ left: `${milestoneDetailPosition.x}px`, top: `${milestoneDetailPosition.y}px` }}
           role="dialog"
           aria-label="Milestone detail"
@@ -5379,7 +5440,7 @@ export const ProjectsWindow = () => {
             }}
             className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
           >
-            <ChevronDown size={14} />
+            <Play size={14} />
             Mark active
           </button>
           <button
@@ -5389,7 +5450,7 @@ export const ProjectsWindow = () => {
             }}
             className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
           >
-            <ChevronDown size={14} />
+            <Pause size={14} />
             Mark paused
           </button>
           <button
@@ -5663,7 +5724,7 @@ export const ProjectsWindow = () => {
                 }}
                 className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
               >
-                <ChevronRight size={14} />
+                <Play size={14} />
                 Reopen project
               </button>
               <button
@@ -5686,7 +5747,7 @@ export const ProjectsWindow = () => {
                 }}
                 className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
               >
-                <ChevronDown size={14} />
+                <Pause size={14} />
                 Pause
               </button>
               <button
@@ -5771,7 +5832,7 @@ export const ProjectsWindow = () => {
                   }}
                   className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
                 >
-                  <ChevronDown size={14} />
+                  <Pause size={14} />
                   Pause
                 </button>
                 <button
