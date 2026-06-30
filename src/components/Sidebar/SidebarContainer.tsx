@@ -171,8 +171,9 @@ export const SidebarContainer = () => {
       : isHorizontal
       ? 'w-auto h-[60px]'
       : 'w-16 h-16';
-  const shellRadiusClass = isCollapsedIconMode ? 'rounded-2xl' : 'rounded-3xl';
-  const shellClipRadius = isCollapsedIconMode ? '16px' : '24px';
+  const shellRadiusClass =
+    isCollapsedIconMode && !isWindowsPlatform ? 'rounded-2xl' : 'rounded-3xl';
+  const shellClipRadius = isCollapsedIconMode && !isWindowsPlatform ? '16px' : '24px';
   const shellOverflowClass = 'overflow-hidden';
   const isGlassShell = state === 'expanded' || (state === 'minimized' && isExpanded);
   const platformClass =

@@ -758,6 +758,22 @@ const HORIZONTAL_DOCK_HEIGHT = 144;
 const HORIZONTAL_COLLAPSED_WIDTH = 1120;
 const HORIZONTAL_COLLAPSED_HEIGHT = 60;
 const FLOATING_EXPANDED_HEIGHT = 760;
+
+function syncCurrentFloatingPosition(bounds?: Electron.Rectangle | null) {
+  if (!bounds) {
+    if (!sidebarWin || sidebarWin.isDestroyed()) return;
+    bounds = sidebarWin.getBounds();
+  }
+
+  currentFloatingPosition = {
+    x: bounds.x,
+    y: bounds.y,
+  };
+
+  if (currentSidebarPosition === 'floating') {
+    currentFloatingDockDisplayId = getDisplayForBounds(bounds).id;
+  }
+}
 const FLOATING_RAIL_HEIGHT = 520;
 const MIN_DOCK_HEIGHT = {
   expanded: 640,
@@ -1611,7 +1627,14 @@ function getFloatingBounds(mode: SidebarWindowMode) {
     );
   }
 
-  const display = screen.getDisplayNearestPoint(currentFloatingPosition);
+  const anchorBounds = sidebarWin && !sidebarWin.isDestroyed() ? sidebarWin.getBounds() : null;
+  const anchorPoint = anchorBounds ?? {
+    x: currentFloatingPosition.x,
+    y: currentFloatingPosition.y,
+    width: 1,
+    height: 1,
+  };
+  const display = getDisplayForBounds(anchorPoint);
   const { width: workWidth, height: workHeight } = display.workArea;
   const maxWidth = workWidth - WINDOW_MARGIN * 2;
   const maxHeight = workHeight - WINDOW_MARGIN * 2;
@@ -1631,16 +1654,16 @@ function getFloatingBounds(mode: SidebarWindowMode) {
       : Math.min(FLOATING_EXPANDED_HEIGHT, maxHeight);
 
   const displayForRect = getDisplayForBounds({
-    x: currentFloatingPosition.x,
-    y: currentFloatingPosition.y,
+    x: anchorPoint.x,
+    y: anchorPoint.y,
     width,
     height,
   });
 
   return clampRectToWorkArea(
     {
-      x: currentFloatingPosition.x,
-      y: currentFloatingPosition.y,
+      x: anchorPoint.x,
+      y: anchorPoint.y,
       width,
       height,
     },
@@ -4527,6 +4550,12 @@ function createSidebarWindow() {
         applyWindowsModuleWindowShape(sidebarWin);
       }
     });
+
+    sidebarWin.on('move', () => {
+      if (!sidebarWin || sidebarWin.isDestroyed()) return;
+      if (currentSidebarMode === 'auth' || currentSidebarMode === 'fullscreen') return;
+      syncCurrentFloatingPosition(sidebarWin.getBounds());
+    });
   } catch (err) {
     console.error('[electron] Error while loading sidebar renderer:', err);
   }
@@ -4949,6 +4978,12 @@ ipcMain.handle(
         x: preferences.floatingPosition.x,
         y: preferences.floatingPosition.y,
       };
+      syncCurrentFloatingPosition({
+        x: preferences.floatingPosition.x,
+        y: preferences.floatingPosition.y,
+        width: 1,
+        height: 1,
+      });
     }
     if (preferences.floatingDockEnabled === false) {
       clearCurrentFloatingDockTarget();
@@ -4999,6 +5034,12 @@ ipcMain.handle(
     if (currentSidebarMode === 'auth' || currentSidebarMode === 'fullscreen') return;
 
     sidebarWin.setPosition(floatingPosition.x, floatingPosition.y, false);
+    syncCurrentFloatingPosition({
+      x: floatingPosition.x,
+      y: floatingPosition.y,
+      width: 1,
+      height: 1,
+    });
   }
 );
 
