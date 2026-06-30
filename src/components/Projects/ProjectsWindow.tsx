@@ -252,6 +252,22 @@ const normalizeProjectNameKey = (value: unknown) =>
     .trim()
     .toLowerCase();
 
+const parseDateValue = (value: string | null | undefined) => {
+  if (!value) return null;
+  const trimmed = String(value).trim();
+  if (!trimmed) return null;
+  const dateOnlyMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(trimmed);
+  if (dateOnlyMatch) {
+    const year = Number(dateOnlyMatch[1]);
+    const month = Number(dateOnlyMatch[2]);
+    const day = Number(dateOnlyMatch[3]);
+    const date = new Date(year, month - 1, day);
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+  const parsed = new Date(trimmed);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
+
 const todayKey = () => {
   const now = new Date();
   const year = now.getFullYear();
@@ -271,8 +287,8 @@ const parseProjectStatus = (status: string): ProjectSemanticStatus => {
 
 const formatShortDate = (value: string | null) => {
   if (!value) return 'No date';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return 'No date';
+  const date = parseDateValue(value);
+  if (!date) return 'No date';
   return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
 };
 
@@ -285,8 +301,8 @@ const formatDateRange = (start: string | null, end: string | null) => {
 
 const formatShortDateLong = (value: string | null | undefined) => {
   if (!value) return 'No date';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return 'No date';
+  const date = parseDateValue(value);
+  if (!date) return 'No date';
   return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
 };
 
@@ -298,9 +314,8 @@ const formatDateKey = (date: Date) => {
 };
 
 const parseTimelineDate = (value: string | null | undefined) => {
-  if (!value) return null;
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return null;
+  const date = parseDateValue(value);
+  if (!date) return null;
   date.setHours(0, 0, 0, 0);
   return date;
 };
@@ -795,11 +810,6 @@ export const ProjectsWindow = () => {
   }, [projectsOverviewRange, timelineRange]);
 
   const timelineDays = daysBetween(timelineRange.start, timelineRange.end);
-  const timelinePlacementSubdivisions = isMilestonePlacementActive
-    ? projectsOverviewRange === 'month'
-      ? 12
-      : 8
-    : 4;
   const datedProjects = useMemo(
     () =>
       projects
@@ -941,7 +951,7 @@ export const ProjectsWindow = () => {
 
   const milestoneEditorPosition = useMemo(() => {
     if (!pendingMilestone) return null;
-    return getClampedMenuPosition(pendingMilestone.x + 10, pendingMilestone.y + 10, 320, 470);
+    return getClampedMenuPosition(pendingMilestone.x + 10, pendingMilestone.y + 10, 320, 560);
   }, [pendingMilestone]);
 
   const milestoneDetailPosition = useMemo(() => {
@@ -1241,22 +1251,12 @@ export const ProjectsWindow = () => {
       const rect = surface.getBoundingClientRect();
       if (!rect.width) return null;
       const clampedX = Math.max(0, Math.min(rect.width, clientX - rect.left));
-      const placementColumns = Math.max(1, timelineMonths.length * timelinePlacementSubdivisions);
-      const columnIndex = Math.max(
-        0,
-        Math.min(placementColumns - 1, Math.round((clampedX / rect.width) * (placementColumns - 1)))
-      );
-      const timelineRatio = placementColumns > 1 ? columnIndex / (placementColumns - 1) : 0;
+      const timelineRatio = clampedX / rect.width;
       const dayOffset = Math.round(timelineRatio * Math.max(0, timelineDays - 1));
       const snappedDate = addDays(timelineRange.start, dayOffset);
       return formatDateKey(snappedDate);
     },
-    [
-      timelineDays,
-      timelineMonths,
-      timelinePlacementSubdivisions,
-      timelineRange.start,
-    ]
+    [timelineDays, timelineRange.start]
   );
 
   const getTimelinePositionFromDate = useCallback(
@@ -3080,19 +3080,16 @@ export const ProjectsWindow = () => {
     const timelineWidth = Math.max(980, timelineMonths.length * 172);
     const timelineCanvasHeight = Math.max(560, 190 + visibleDatedProjects.length * 104);
     const timelineBodyHeight = Math.max(440, timelineCanvasHeight - 72);
-    const timelineSubdivisions = projectsOverviewRange === 'month' && isMilestonePlacementActive ? 12 : isMilestonePlacementActive ? 8 : 4;
+    const timelineSubdivisions = 4;
     const todayLeft = getTimelinePositionFromDate(todayKey());
     const showTodayMarker = todayLeft > 0 && todayLeft < 100;
     const getMonthTickDays = (month: Date) => {
+      if (projectsOverviewRange === 'all') return [];
       const daysInMonth = new Date(month.getFullYear(), month.getMonth() + 1, 0).getDate();
-      const tickCount = projectsOverviewRange === 'month' && isMilestonePlacementActive ? 12 : isMilestonePlacementActive ? 8 : 4;
-      const ticks: number[] = [];
-      for (let index = 0; index < tickCount; index += 1) {
-        const position = tickCount > 1 ? index / (tickCount - 1) : 0;
-        const day = Math.round(position * (daysInMonth - 1)) + 1;
-        ticks.push(day);
+      if (projectsOverviewRange === 'month') {
+        return [1, 5, 10, 15, 20, 25, daysInMonth];
       }
-      return Array.from(new Set(ticks));
+      return [1, 15];
     };
     const getProjectLane = (project: ProjectRow) => {
       const start = parseTimelineDate(project.start_date) ?? parseTimelineDate(project.end_date);
@@ -3536,29 +3533,49 @@ export const ProjectsWindow = () => {
                               className="relative min-h-full"
                               style={{ width: `${timelineWidth}px`, minHeight: `${timelineCanvasHeight}px` }}
                             >
-                              <div className="sticky top-0 z-[5] border-b border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)]/92 backdrop-blur">
+                              {showTodayMarker && (
                                 <div
-                                  className="grid h-[72px]"
-                                  style={{ gridTemplateColumns: `repeat(${timelineMonths.length}, minmax(172px, 1fr))` }}
+                                  className="pointer-events-none absolute z-[7] w-px bg-[var(--ledger-accent)]/60"
+                                  style={{ left: `${todayLeft}%`, top: '14px', height: 'calc(100% - 14px)' }}
+                                >
+                                  <span className="absolute top-0 left-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border border-[color:rgba(255,95,64,0.45)] bg-[var(--ledger-accent)] shadow-[0_0_0_3px_rgba(255,95,64,0.1)]" />
+                                  <span className="absolute top-3 left-1/2 -translate-x-1/2 whitespace-nowrap text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--ledger-accent)]">
+                                    {formatShortDate(todayKey()).toUpperCase()}
+                                  </span>
+                                </div>
+                              )}
+                              <div className="sticky top-0 z-[5] border-b border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)]/96">
+                                <div
+                                  className="grid h-[58px]"
+                                  style={{
+                                    gridTemplateColumns: `repeat(${timelineMonths.length}, minmax(172px, 1fr))`,
+                                    backgroundImage:
+                                      'linear-gradient(to right, color-mix(in srgb, var(--ledger-border-subtle) 40%, transparent) 1px, transparent 1px)',
+                                    backgroundSize: `${timelineWidth / Math.max(1, timelineMonths.length * timelineSubdivisions)}px 100%`,
+                                  }}
                                 >
                                   {timelineMonths.map((month) => (
                                     <div
                                       key={month.toISOString()}
-                                      className="border-r border-[color:var(--ledger-border-subtle)] px-4 py-3 last:border-r-0"
+                                      className="border-r border-[color:var(--ledger-border-subtle)] px-3 py-2 last:border-r-0"
                                     >
-                                      <p className="text-sm font-semibold text-[var(--ledger-text-primary)]">
+                                      <p className="text-[12px] font-semibold uppercase tracking-[0.04em] text-[var(--ledger-text-secondary)]">
                                         {month.toLocaleDateString([], { month: 'short' })}
                                       </p>
-                                      <div
-                                        className="mt-2 grid text-[11px] text-[var(--ledger-text-muted)]"
-                                        style={{
-                                          gridTemplateColumns: `repeat(${getMonthTickDays(month).length}, minmax(0, 1fr))`,
-                                        }}
-                                      >
-                                        {getMonthTickDays(month).map((day) => (
-                                          <span key={day}>{day}</span>
-                                        ))}
-                                      </div>
+                                      {projectsOverviewRange !== 'all' && (
+                                        <div
+                                          className="mt-1 grid text-[10px] text-[var(--ledger-text-muted)]"
+                                          style={{
+                                            gridTemplateColumns: `repeat(${getMonthTickDays(month).length}, minmax(0, 1fr))`,
+                                          }}
+                                        >
+                                          {getMonthTickDays(month).map((day) => (
+                                            <span key={day} className="tabular-nums leading-none">
+                                              {day}
+                                            </span>
+                                          ))}
+                                        </div>
+                                      )}
                                     </div>
                                   ))}
                                 </div>
@@ -3573,16 +3590,6 @@ export const ProjectsWindow = () => {
                                   backgroundSize: `${timelineWidth / Math.max(1, timelineMonths.length * timelineSubdivisions)}px 100%`,
                                 }}
                               >
-                                {showTodayMarker && (
-                                  <div
-                                    className="pointer-events-none absolute inset-y-0 z-[2] w-px bg-[var(--ledger-accent)]/35"
-                                    style={{ left: `${todayLeft}%` }}
-                                  >
-                                    <span className="absolute -top-7 left-1/2 -translate-x-1/2 rounded-md bg-[var(--ledger-accent)] px-2 py-0.5 text-[10px] font-semibold text-white shadow-[0_8px_18px_rgba(255,95,64,0.22)]">
-                                      Today
-                                    </span>
-                                  </div>
-                                )}
                                 {visibleDatedProjects.length === 0 ? (
                                   <div className="flex h-72 items-center justify-center px-6 text-center">
                                     <div className="max-w-sm">
