@@ -310,7 +310,15 @@ const projectStatusAliases = {
   paused: ['Paused', 'paused', 'archived', 'hold'],
   completed: ['Completed', 'completed', 'done'],
 };
-const projectMilestoneTypes = ['Deadline', 'Review', 'Decision', 'Handoff', 'Event', 'Custom'];
+const projectMilestoneTypes = [
+  'Deadline',
+  'Decision',
+  'Review',
+  'Event',
+  'Reminder',
+  'Handoff',
+  'Custom',
+];
 
 const normalizeProjectMilestoneType = (value) => {
   const raw = String(value ?? 'Custom').trim().toLowerCase();
@@ -322,7 +330,7 @@ const projectSelectColumns =
 const projectMilestoneSelectColumns =
   'id, workspace_id, project_id, title, milestone_date, type, note, completed, linked_note_id, linked_reminder_id, linked_event_id, created_by, updated_by, created_at, updated_at';
 const taskSelectColumns =
-  'id, workspace_id, project_id, title, description, notes, due_date, due_time, status, priority, assigned_to, tags, completed_at, source, source_platform, created_at, updated_at';
+  'id, workspace_id, project_id, milestone_id, title, description, notes, due_date, due_time, status, priority, assigned_to, tags, completed_at, source, source_platform, created_at, updated_at';
 const reminderSelectColumns =
   'id, workspace_id, user_id, title, body, remind_at, status, linked_type, linked_id, completed_at, dismissed_at, snoozed_until, source, source_platform, created_at, updated_at, calendar_id, project_id, note_id, notes, color, is_done, created_by, series_id, series_type, recurrence_rule';
 const reminderDashboardSelectColumns =
@@ -7652,6 +7660,23 @@ app.post(
         }
       }
 
+      const milestoneId = req.body?.milestone_id ? String(req.body.milestone_id) : null;
+      if (milestoneId) {
+        const { data: milestone, error: milestoneError } = await supabase
+          .from('project_milestones')
+          .select('id, project_id, workspace_id')
+          .eq('id', milestoneId)
+          .eq('workspace_id', workspaceId)
+          .maybeSingle();
+        if (milestoneError) throw milestoneError;
+        if (!milestone) {
+          return res.status(404).json({ error: 'Milestone not found' });
+        }
+        if (projectId && milestone.project_id !== projectId) {
+          return res.status(400).json({ error: 'Milestone must belong to the task project' });
+        }
+      }
+
       const tags = Array.isArray(req.body?.tags)
         ? req.body.tags.map((tag) => String(tag).trim()).filter(Boolean)
         : [];
@@ -7659,6 +7684,7 @@ app.post(
       const notes = normalizeNullableText(req.body?.notes);
       const dueDate = normalizeNullableDate(req.body?.due_date, 'due date');
       const dueTime = normalizeNullableText(req.body?.due_time);
+      const assignedTo = req.body?.assigned_to ? String(req.body.assigned_to) : null;
       const showInToday = Boolean(req.body?.show_in_today ?? false);
       const isTodayFocus = Boolean(req.body?.is_today_focus ?? false);
       const source = normalizeCaptureSource(req.body?.source);
@@ -7687,6 +7713,7 @@ app.post(
         const payload = {
           workspace_id: workspaceId,
           project_id: projectId,
+          milestone_id: milestoneId,
           title,
           description,
           notes,
@@ -7694,6 +7721,7 @@ app.post(
           due_time: dueTime,
           status: req.body?.status ? String(req.body.status) : 'todo',
           priority: req.body?.priority ? String(req.body.priority) : 'medium',
+          assigned_to: assignedTo,
           tags,
           source,
           source_platform: sourcePlatform,
@@ -7745,7 +7773,7 @@ app.patch('/api/tasks/:id', authMiddleware, rateLimit('write'), async (req, res)
     // Load existing to detect status transitions
     const { data: existingTask, error: existingError } = await supabase
       .from('tasks')
-      .select('id, status, completed_at')
+      .select('id, status, completed_at, project_id')
       .eq('id', req.params.id)
       .maybeSingle();
     if (existingError) throw existingError;
@@ -7767,6 +7795,8 @@ app.patch('/api/tasks/:id', authMiddleware, rateLimit('write'), async (req, res)
       update.due_time = normalizeNullableText(req.body.due_time);
     if (req.body?.status !== undefined) update.status = String(req.body.status);
     if (req.body?.priority !== undefined) update.priority = String(req.body.priority);
+    if (req.body?.assigned_to !== undefined)
+      update.assigned_to = req.body.assigned_to ? String(req.body.assigned_to) : null;
     if (req.body?.tags !== undefined) {
       update.tags = Array.isArray(req.body.tags)
         ? req.body.tags.map((tag) => String(tag).trim()).filter(Boolean)
@@ -7790,6 +7820,27 @@ app.patch('/api/tasks/:id', authMiddleware, rateLimit('write'), async (req, res)
         }
       }
       update.project_id = nextProjectId;
+    }
+    if (req.body?.milestone_id !== undefined) {
+      const nextMilestoneId = req.body.milestone_id ? String(req.body.milestone_id) : null;
+      if (nextMilestoneId) {
+        const { data: milestone, error: milestoneError } = await supabase
+          .from('project_milestones')
+          .select('id, project_id, workspace_id')
+          .eq('id', nextMilestoneId)
+          .eq('workspace_id', workspaceId)
+          .maybeSingle();
+        if (milestoneError) throw milestoneError;
+        if (!milestone) {
+          return res.status(404).json({ error: 'Milestone not found' });
+        }
+        const nextProjectId =
+          update.project_id !== undefined ? update.project_id : existingTask?.project_id ?? null;
+        if (nextProjectId && milestone.project_id !== nextProjectId) {
+          return res.status(400).json({ error: 'Milestone must belong to the task project' });
+        }
+      }
+      update.milestone_id = nextMilestoneId;
     }
     const nowIso = new Date().toISOString();
     update.updated_at = nowIso;

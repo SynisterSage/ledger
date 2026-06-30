@@ -95,6 +95,7 @@ export type Database = {
           id: string;
           workspace_id: string;
           project_id: string | null;
+          milestone_id: string | null;
           title: string;
           description: string | null;
           notes: string | null;

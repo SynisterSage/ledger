@@ -456,8 +456,10 @@ export const useApi = () => {
         due_time?: string | null;
         status?: string;
         priority?: string;
+        assigned_to?: string | null;
         tags?: string[];
         project_id?: string | null;
+        milestone_id?: string | null;
         show_in_today?: boolean;
         is_today_focus?: boolean;
       }) =>

@@ -1,6 +1,7 @@
 import {
   Bell,
   CalendarDays,
+  Check,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -17,6 +18,7 @@ import {
   Play,
   Search,
   CheckCircle2,
+  Loader2,
   Trash2,
 } from 'lucide-react';
 import {
@@ -66,6 +68,8 @@ type ProjectRow = {
 type TaskRow = {
   id: string;
   project_id: string | null;
+  milestone_id?: string | null;
+  assigned_to?: string | null;
   title: string;
   description: string | null;
   notes: string | null;
@@ -81,6 +85,7 @@ type TaskRow = {
 type ProjectStatusFilter = 'all' | 'active' | 'paused' | 'completed';
 type ProjectSemanticStatus = 'not_started' | 'in_progress' | 'paused' | 'completed';
 type ProjectTab = 'overview' | 'actions' | 'notes' | 'calendar' | 'activity';
+type ActionsGroupBy = 'type' | 'due_date' | 'milestone';
 type ProjectsOverviewView = 'timeline' | 'list';
 type ProjectsOverviewRange = 'month' | 'quarter' | 'all';
 type ProjectContextMenuState = { x: number; y: number; projectId: string };
@@ -134,7 +139,14 @@ type ProjectNoteLink = {
   note: NoteOption;
 };
 
-type ProjectMilestoneType = 'Deadline' | 'Review' | 'Decision' | 'Handoff' | 'Event' | 'Custom';
+type ProjectMilestoneType =
+  | 'Deadline'
+  | 'Decision'
+  | 'Review'
+  | 'Event'
+  | 'Reminder'
+  | 'Handoff'
+  | 'Custom';
 
 type ProjectMilestoneRow = {
   id: string;
@@ -217,12 +229,22 @@ const projectTabs: Array<{ id: ProjectTab; label: string }> = [
 ];
 const projectMilestoneTypes: ProjectMilestoneType[] = [
   'Deadline',
-  'Review',
   'Decision',
-  'Handoff',
+  'Review',
   'Event',
+  'Reminder',
+  'Handoff',
   'Custom',
 ];
+const projectMilestoneTypeLabels: Record<ProjectMilestoneType, string> = {
+  Deadline: 'Deadline',
+  Decision: 'Decision',
+  Review: 'Review',
+  Event: 'Event',
+  Reminder: 'Reminder',
+  Handoff: 'Handoff',
+  Custom: 'Custom',
+};
 
 const taskPriorityLabels: Record<string, string> = {
   low: 'Low',
@@ -232,10 +254,13 @@ const taskPriorityLabels: Record<string, string> = {
 };
 
 const taskPriorityTone: Record<string, string> = {
-  low: 'bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)]',
-  medium: 'bg-[rgba(59,130,246,0.16)] text-[rgb(147,197,253)]',
-  high: 'bg-[rgba(245,158,11,0.16)] text-[rgb(251,191,36)]',
-  urgent: 'bg-[rgba(239,68,68,0.16)] text-[rgb(248,113,113)]',
+  low: 'border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)]',
+  medium:
+    'border border-[color:rgba(59,130,246,0.18)] bg-[rgba(59,130,246,0.12)] text-[rgb(37,99,235)]',
+  high:
+    'border border-[color:rgba(245,158,11,0.2)] bg-[rgba(245,158,11,0.14)] text-[rgb(180,83,9)]',
+  urgent:
+    'border border-[color:rgba(255,95,64,0.22)] bg-[rgba(255,95,64,0.14)] text-[rgb(220,77,52)]',
 };
 
 const projectColorOptions = [
@@ -529,9 +554,31 @@ export const ProjectsWindow = () => {
   );
   const [newTaskDueDate, setNewTaskDueDate] = useState(todayKey());
   const [newTaskDueTime, setNewTaskDueTime] = useState('');
+  const [newTaskAssignee, setNewTaskAssignee] = useState('');
+  const [newTaskMilestoneId, setNewTaskMilestoneId] = useState('');
   const [isCreatingTask, setIsCreatingTask] = useState(false);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [isTaskComposerOpen, setIsTaskComposerOpen] = useState(false);
+  const [actionsGroupBy, setActionsGroupBy] = useState<ActionsGroupBy>('type');
+  const [expandedActionId, setExpandedActionId] = useState<string | null>(null);
+  const [expandedMilestoneId, setExpandedMilestoneId] = useState<string | null>(null);
+  const [actionDraft, setActionDraft] = useState({
+    title: '',
+    dueDate: '',
+    dueTime: '',
+    priority: 'medium',
+    assignee: '',
+    milestoneId: '',
+    notes: '',
+  });
+  const [milestoneInlineDraft, setMilestoneInlineDraft] = useState({
+    title: '',
+    date: '',
+    type: 'Custom' as ProjectMilestoneType,
+    note: '',
+  });
+  const [isSavingActionDraft, setIsSavingActionDraft] = useState(false);
+  const [isSavingMilestoneDraft, setIsSavingMilestoneDraft] = useState(false);
   const [taskNotesTaskId, setTaskNotesTaskId] = useState<string | null>(null);
   const [taskNotesDraft, setTaskNotesDraft] = useState('');
   const [isSavingTaskNotes, setIsSavingTaskNotes] = useState(false);
@@ -543,7 +590,9 @@ export const ProjectsWindow = () => {
   const [workspaceReminders, setWorkspaceReminders] = useState<ProjectCalendarReminder[]>([]);
   const [isLoadingLinkedNotes, setIsLoadingLinkedNotes] = useState(false);
   const [isLinkNoteModalOpen, setIsLinkNoteModalOpen] = useState(false);
+  const [linkNoteTargetProjectId, setLinkNoteTargetProjectId] = useState<string | null>(null);
   const [isLinkingNote, setIsLinkingNote] = useState(false);
+  const [selectedLinkNoteIds, setSelectedLinkNoteIds] = useState<string[]>([]);
   const [linkableNotes, setLinkableNotes] = useState<NoteOption[]>([]);
   const [isLoadingLinkableNotes, setIsLoadingLinkableNotes] = useState(false);
   const [linkNotesSearch, setLinkNotesSearch] = useState('');
@@ -569,6 +618,8 @@ export const ProjectsWindow = () => {
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [isEditingBrief, setIsEditingBrief] = useState(false);
   const areSidePanelsCollapsed = isLeftPaneCollapsed && isRightPaneCollapsed;
+  const taskComposerRef = useRef<HTMLDivElement | null>(null);
+  const taskTitleInputRef = useRef<HTMLInputElement | null>(null);
 
   const handleWorkspaceRefresh = useCallback(() => {
     setWorkspaceRefreshToken((current) => current + 1);
@@ -650,6 +701,25 @@ export const ProjectsWindow = () => {
       });
   }, [selectedProjectId, tasks]);
 
+  const selectedProjectMilestones = useMemo(() => {
+    return workspaceMilestones
+      .filter((milestone) => milestone.project_id === selectedProjectId)
+      .sort((left, right) => String(left.milestone_date).localeCompare(String(right.milestone_date)));
+  }, [selectedProjectId, workspaceMilestones]);
+
+  const selectedProjectMilestoneById = useMemo(() => {
+    return new Map(selectedProjectMilestones.map((milestone) => [milestone.id, milestone]));
+  }, [selectedProjectMilestones]);
+
+  const selectedProjectTasksByMilestone = useMemo(() => {
+    const groups = new Map<string, TaskRow[]>();
+    for (const task of selectedProjectTasks) {
+      const milestoneId = task.milestone_id ?? '';
+      groups.set(milestoneId, [...(groups.get(milestoneId) ?? []), task]);
+    }
+    return groups;
+  }, [selectedProjectTasks]);
+
   const taskCounts = useMemo(() => {
     const active = selectedProjectTasks.filter(
       (task) => task.status !== 'completed' && task.status !== 'cancelled'
@@ -726,6 +796,14 @@ export const ProjectsWindow = () => {
   const workspaceMemberById = useMemo(() => {
     return new Map(workspaceMembers.map((member) => [member.user_id, member]));
   }, [workspaceMembers]);
+
+  const getAssigneeLabel = useCallback(
+    (assigneeId: string | null | undefined) => {
+      if (!assigneeId) return 'Unassigned';
+      return displayMemberName(workspaceMemberById.get(assigneeId) ?? null);
+    },
+    [workspaceMemberById]
+  );
 
   const createdByMember = useMemo(() => {
     const id = selectedProject?.created_by ?? null;
@@ -949,7 +1027,7 @@ export const ProjectsWindow = () => {
 
   const taskMenuPosition = useMemo(() => {
     if (!taskContextMenu) return null;
-    return getClampedMenuPosition(taskContextMenu.x, taskContextMenu.y, 208, 220);
+    return getClampedMenuPosition(taskContextMenu.x, taskContextMenu.y, 256, 520);
   }, [taskContextMenu]);
   const linkedNoteMenuPosition = useMemo(() => {
     if (!linkedNoteContextMenu) return null;
@@ -1173,6 +1251,16 @@ export const ProjectsWindow = () => {
     }
   }, [api, projectDraft, selectedProject, syncDraftFromProject]);
 
+  const resetTaskComposer = useCallback(() => {
+    setNewTaskTitle('');
+    setNewTaskPriority('medium');
+    setNewTaskDueDate(todayKey());
+    setNewTaskDueTime('');
+    setNewTaskAssignee('');
+    setNewTaskMilestoneId('');
+    setTaskError(null);
+  }, []);
+
   const selectProject = useCallback(
     async (project: ProjectRow) => {
       if (selectedProjectId === project.id) return;
@@ -1184,8 +1272,10 @@ export const ProjectsWindow = () => {
       setActiveTab('overview');
       setIsEditingTitle(false);
       setIsEditingBrief(false);
+      setIsTaskComposerOpen(false);
+      resetTaskComposer();
     },
-    [flushProjectDraft, selectedProjectId, syncDraftFromProject]
+    [flushProjectDraft, resetTaskComposer, selectedProjectId, syncDraftFromProject]
   );
 
   const selectProjectsOverview = useCallback(async () => {
@@ -1197,6 +1287,8 @@ export const ProjectsWindow = () => {
     setActiveTab('overview');
     setIsEditingTitle(false);
     setIsEditingBrief(false);
+    setIsTaskComposerOpen(false);
+    resetTaskComposer();
     isDirtyRef.current = false;
     setProjectDraft({
       name: '',
@@ -1207,7 +1299,7 @@ export const ProjectsWindow = () => {
       startDate: '',
       endDate: '',
     });
-  }, [flushProjectDraft, selectedProjectId]);
+  }, [flushProjectDraft, resetTaskComposer, selectedProjectId]);
 
   const getProjectById = useCallback(
     (projectId: string) => projects.find((project) => project.id === projectId) ?? null,
@@ -1464,7 +1556,7 @@ export const ProjectsWindow = () => {
     [api, selectedProjectId, syncDraftFromProject]
   );
 
-  const createTask = useCallback(async () => {
+  const createTask = useCallback(async (options?: { keepOpen?: boolean }) => {
     if (!selectedProjectId) return;
     const title = newTaskTitle.trim();
     if (!title) return;
@@ -1479,20 +1571,57 @@ export const ProjectsWindow = () => {
         priority: newTaskPriority,
         due_date: newTaskDueDate || null,
         due_time: newTaskDueTime || null,
+        assigned_to: newTaskAssignee || null,
+        milestone_id: newTaskMilestoneId || null,
         status: 'todo',
       });
       const created = data as TaskRow;
       setTasks((prev) => [created, ...prev]);
-      setNewTaskTitle('');
-      setNewTaskPriority('medium');
-      setNewTaskDueDate(todayKey());
-      setNewTaskDueTime('');
+      if (options?.keepOpen) {
+        setNewTaskTitle('');
+        setNewTaskDueDate(todayKey());
+        setNewTaskDueTime('');
+        setTaskError(null);
+        window.setTimeout(() => taskTitleInputRef.current?.focus(), 0);
+      } else {
+        setIsTaskComposerOpen(false);
+        resetTaskComposer();
+      }
     } catch (createError) {
       setTaskError(createError instanceof Error ? createError.message : 'Could not create task.');
     } finally {
       setIsCreatingTask(false);
     }
-  }, [api, newTaskDueDate, newTaskDueTime, newTaskPriority, newTaskTitle, selectedProjectId]);
+  }, [
+    api,
+    newTaskDueDate,
+    newTaskDueTime,
+    newTaskAssignee,
+    newTaskMilestoneId,
+    newTaskPriority,
+    newTaskTitle,
+    resetTaskComposer,
+    selectedProjectId,
+  ]);
+
+  const closeTaskComposer = useCallback(
+    (options?: { preserveDraft?: boolean }) => {
+      setIsTaskComposerOpen(false);
+      if (!options?.preserveDraft) {
+        resetTaskComposer();
+      }
+    },
+    [resetTaskComposer]
+  );
+
+  const taskComposerHasContent = Boolean(
+    newTaskTitle.trim() ||
+      newTaskPriority !== 'medium' ||
+      newTaskDueDate !== todayKey() ||
+      newTaskAssignee ||
+      newTaskMilestoneId ||
+      newTaskDueTime.trim()
+  );
 
   const updateTaskStatus = useCallback(
     async (task: TaskRow, status: string) => {
@@ -1511,6 +1640,101 @@ export const ProjectsWindow = () => {
       }
     },
     [api]
+  );
+
+  const openActionInlineEditor = useCallback((task: TaskRow) => {
+    setExpandedMilestoneId(null);
+    setExpandedActionId(task.id);
+    setActionDraft({
+      title: task.title,
+      dueDate: task.due_date ?? '',
+      dueTime: task.due_time ?? '',
+      priority: String(task.priority || 'medium'),
+      assignee: task.assigned_to ?? '',
+      milestoneId: task.milestone_id ?? '',
+      notes: task.notes ?? '',
+    });
+  }, []);
+
+  const closeActionInlineEditor = useCallback(() => {
+    setExpandedActionId(null);
+    setActionDraft({
+      title: '',
+      dueDate: '',
+      dueTime: '',
+      priority: 'medium',
+      assignee: '',
+      milestoneId: '',
+      notes: '',
+    });
+  }, []);
+
+  const saveActionInlineDraft = useCallback(
+    async (task: TaskRow) => {
+      const title = actionDraft.title.trim();
+      if (!title) {
+        setTaskError('Action title required.');
+        return;
+      }
+
+      setIsSavingActionDraft(true);
+      setTaskError(null);
+      try {
+        const updated = (await api.updateTask(task.id, {
+          title,
+          due_date: actionDraft.dueDate || null,
+          due_time: actionDraft.dueTime || null,
+          priority: actionDraft.priority,
+          assigned_to: actionDraft.assignee || null,
+          milestone_id: actionDraft.milestoneId || null,
+          notes: actionDraft.notes.trim() || null,
+        })) as TaskRow;
+        setTasks((prev) => prev.map((row) => (row.id === updated.id ? updated : row)));
+        closeActionInlineEditor();
+      } catch (updateError) {
+        setTaskError(updateError instanceof Error ? updateError.message : 'Could not update action.');
+      } finally {
+        setIsSavingActionDraft(false);
+      }
+    },
+    [actionDraft, api, closeActionInlineEditor]
+  );
+
+  const attachTaskToMilestone = useCallback(
+    async (task: TaskRow, milestoneId: string | null) => {
+      try {
+        const updated = (await api.updateTask(task.id, {
+          milestone_id: milestoneId,
+        })) as TaskRow;
+        setTasks((prev) => prev.map((row) => (row.id === updated.id ? updated : row)));
+      } catch (updateError) {
+        setTaskError(updateError instanceof Error ? updateError.message : 'Could not attach action.');
+      }
+    },
+    [api]
+  );
+
+  const duplicateTask = useCallback(
+    async (task: TaskRow) => {
+      try {
+        const created = (await api.createTask({
+          title: `${task.title} copy`,
+          description: task.description,
+          notes: task.notes,
+          due_date: task.due_date,
+          due_time: task.due_time,
+          priority: task.priority,
+          project_id: selectedProjectId,
+          milestone_id: task.milestone_id ?? null,
+          status: 'todo',
+          tags: task.tags,
+        })) as TaskRow;
+        setTasks((prev) => [created, ...prev]);
+      } catch (createError) {
+        setTaskError(createError instanceof Error ? createError.message : 'Could not duplicate action.');
+      }
+    },
+    [api, selectedProjectId]
   );
 
   const deleteTask = useCallback(
@@ -1636,10 +1860,21 @@ export const ProjectsWindow = () => {
     }
   }, [activeWorkspaceId, api, projects, user]);
 
-  const loadLinkableNotes = useCallback(async () => {
+  const loadLinkableNotes = useCallback(async (projectId: string) => {
     setIsLoadingLinkableNotes(true);
     try {
-      const payload = (await api.getNotes()) as {
+      const [projectLinksPayload, notesPayload] = await Promise.all([
+        api.getProjectNoteLinks(projectId),
+        api.getNotes(),
+      ]);
+      const linkedSet = new Set(
+        Array.isArray((projectLinksPayload as { links?: ProjectNoteLink[] } | null)?.links)
+          ? ((projectLinksPayload as { links?: ProjectNoteLink[] } | null)?.links ?? []).map(
+              (item) => item.note_id
+            )
+          : []
+      );
+      const payload = notesPayload as {
         notes?: Array<{
           id: string;
           title?: string;
@@ -1648,7 +1883,6 @@ export const ProjectsWindow = () => {
           updated_at?: string | null;
         }>;
       };
-      const linkedSet = new Set(linkedNotes.map((item) => item.note_id));
       const rows = Array.isArray(payload?.notes) ? payload.notes : [];
       const options = rows
         .filter((row) => row?.id && !linkedSet.has(row.id))
@@ -1669,7 +1903,7 @@ export const ProjectsWindow = () => {
     } finally {
       setIsLoadingLinkableNotes(false);
     }
-  }, [api, linkedNotes]);
+  }, [api]);
 
   const loadLinkableCalendarItems = useCallback(
     async () => {
@@ -1702,11 +1936,13 @@ export const ProjectsWindow = () => {
     [api, selectedProjectId]
   );
 
-  const openLinkNoteModal = useCallback(async () => {
-    if (!selectedProjectId) return;
+  const openLinkNoteModal = useCallback(async (projectId: string | null = selectedProjectId) => {
+    if (!projectId) return;
+    setLinkNoteTargetProjectId(projectId);
     setIsLinkNoteModalOpen(true);
     setLinkNotesSearch('');
-    await loadLinkableNotes();
+    setSelectedLinkNoteIds([]);
+    await loadLinkableNotes(projectId);
   }, [loadLinkableNotes, selectedProjectId]);
 
   const openLinkCalendarModal = useCallback(
@@ -1745,14 +1981,6 @@ export const ProjectsWindow = () => {
       setActiveTab('overview');
     },
     [createTimelineTodo, openProjectById]
-  );
-
-  const handleLinkNote = useCallback(
-    async (projectId: string) => {
-      await openProjectById(projectId);
-      await openLinkNoteModal();
-    },
-    [openLinkNoteModal, openProjectById]
   );
 
   const handleArchiveProject = useCallback(
@@ -1961,6 +2189,57 @@ export const ProjectsWindow = () => {
     [api, workspaceMilestones]
   );
 
+  const openMilestoneInlineEditor = useCallback((milestone: ProjectMilestoneRow) => {
+    setExpandedActionId(null);
+    setExpandedMilestoneId(milestone.id);
+    setMilestoneInlineDraft({
+      title: milestone.title,
+      date: milestone.milestone_date,
+      type: projectMilestoneTypes.includes(milestone.type as ProjectMilestoneType)
+        ? (milestone.type as ProjectMilestoneType)
+        : 'Custom',
+      note: milestone.note ?? '',
+    });
+  }, []);
+
+  const closeMilestoneInlineEditor = useCallback(() => {
+    setExpandedMilestoneId(null);
+    setMilestoneInlineDraft({
+      title: '',
+      date: '',
+      type: 'Custom',
+      note: '',
+    });
+  }, []);
+
+  const saveMilestoneInlineDraft = useCallback(
+    async (milestone: ProjectMilestoneRow) => {
+      const title = milestoneInlineDraft.title.trim();
+      if (!title) {
+        setError('Milestone title required.');
+        return;
+      }
+      setIsSavingMilestoneDraft(true);
+      try {
+        const updated = (await api.updateProjectMilestone(milestone.id, {
+          title,
+          milestone_date: milestoneInlineDraft.date || milestone.milestone_date,
+          type: milestoneInlineDraft.type,
+          note: milestoneInlineDraft.note.trim() || null,
+        })) as ProjectMilestoneRow;
+        setWorkspaceMilestones((prev) =>
+          prev.map((row) => (row.id === updated.id ? updated : row))
+        );
+        closeMilestoneInlineEditor();
+      } catch (updateError) {
+        setError(updateError instanceof Error ? updateError.message : 'Could not update milestone.');
+      } finally {
+        setIsSavingMilestoneDraft(false);
+      }
+    },
+    [api, closeMilestoneInlineEditor, milestoneInlineDraft]
+  );
+
   const handleMilestoneDateChange = useCallback(
     async (milestoneId: string, date: string) => {
       try {
@@ -1990,25 +2269,32 @@ export const ProjectsWindow = () => {
     [api]
   );
 
-  const linkNoteToProject = useCallback(
-    async (noteId: string) => {
-      if (!selectedProjectId) return;
-      setIsLinkingNote(true);
-      try {
-        const linked = (await api.linkProjectNote(selectedProjectId, noteId)) as ProjectNoteLink;
-        setLinkedNotes((prev) => {
-          if (prev.some((item) => item.note_id === linked.note_id)) return prev;
-          return [linked, ...prev];
-        });
-        setLinkableNotes((prev) => prev.filter((note) => note.id !== noteId));
-      } catch (error) {
-        setTaskError(error instanceof Error ? error.message : 'Could not link note.');
-      } finally {
-        setIsLinkingNote(false);
+  const linkSelectedNotesToProject = useCallback(async () => {
+    const projectId = linkNoteTargetProjectId ?? selectedProjectId;
+    if (!projectId || selectedLinkNoteIds.length === 0) return;
+
+    setIsLinkingNote(true);
+    try {
+      for (const noteId of selectedLinkNoteIds) {
+        await api.linkProjectNote(projectId, noteId);
       }
-    },
-    [api, selectedProjectId]
-  );
+      await loadLinkedNotes(projectId);
+      setLinkableNotes((prev) => prev.filter((note) => !selectedLinkNoteIds.includes(note.id)));
+      setSelectedLinkNoteIds([]);
+      setIsLinkNoteModalOpen(false);
+      setLinkNoteTargetProjectId(null);
+    } catch (error) {
+      setTaskError(error instanceof Error ? error.message : 'Could not link note.');
+    } finally {
+      setIsLinkingNote(false);
+    }
+  }, [
+    api,
+    loadLinkedNotes,
+    linkNoteTargetProjectId,
+    selectedLinkNoteIds,
+    selectedProjectId,
+  ]);
 
   const unlinkNoteFromProject = useCallback(
     async (noteId: string) => {
@@ -2603,16 +2889,75 @@ export const ProjectsWindow = () => {
     return () => window.removeEventListener('keydown', onEscape);
   }, [taskNotesTask]);
 
-  const renderTaskRow = (task: TaskRow, completed = false) => {
-    const activeTask = selectedTaskId === task.id;
+  useEffect(() => {
+    if (!isTaskComposerOpen) return;
+
+    window.setTimeout(() => {
+      taskTitleInputRef.current?.focus();
+    }, 0);
+  }, [isTaskComposerOpen]);
+
+  useEffect(() => {
+    if (!isTaskComposerOpen) return;
+
+    const onPointerDown = (event: MouseEvent) => {
+      if (taskComposerRef.current?.contains(event.target as Node)) return;
+      if (taskComposerHasContent) return;
+      setIsTaskComposerOpen(false);
+    };
+
+    const onEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      if (taskComposerHasContent) return;
+      setIsTaskComposerOpen(false);
+    };
+
+    window.addEventListener('mousedown', onPointerDown);
+    window.addEventListener('keydown', onEscape);
+
+    return () => {
+      window.removeEventListener('mousedown', onPointerDown);
+      window.removeEventListener('keydown', onEscape);
+    };
+  }, [isTaskComposerOpen, taskComposerHasContent]);
+
+  useEffect(() => {
+    if (!expandedActionId && !expandedMilestoneId) return;
+    const onEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      closeActionInlineEditor();
+      closeMilestoneInlineEditor();
+    };
+    window.addEventListener('keydown', onEscape);
+    return () => window.removeEventListener('keydown', onEscape);
+  }, [
+    closeActionInlineEditor,
+    closeMilestoneInlineEditor,
+    expandedActionId,
+    expandedMilestoneId,
+  ]);
+
+  const renderTaskRow = (task: TaskRow, completed = false, interactive = false) => {
+    const linkedMilestone = task.milestone_id
+      ? selectedProjectMilestoneById.get(task.milestone_id) ?? null
+      : null;
+    const expanded = interactive && expandedActionId === task.id;
+    const draftDirty =
+      expanded &&
+      (actionDraft.title !== task.title ||
+        actionDraft.dueDate !== (task.due_date ?? '') ||
+        actionDraft.dueTime !== (task.due_time ?? '') ||
+        actionDraft.priority !== String(task.priority || 'medium') ||
+        actionDraft.assignee !== (task.assigned_to ?? '') ||
+        actionDraft.milestoneId !== (task.milestone_id ?? '') ||
+        actionDraft.notes !== (task.notes ?? ''));
+
     return (
-      <button
+      <div
         id={`task-row-${task.id}`}
         key={task.id}
-        type="button"
         onClick={() => {
-          setSelectedTaskId(task.id);
-          void updateTaskStatus(task, completed ? 'todo' : 'completed');
+          if (interactive && !expanded) openActionInlineEditor(task);
         }}
         onContextMenu={(e) => {
           e.preventDefault();
@@ -2622,20 +2967,26 @@ export const ProjectsWindow = () => {
             taskId: task.id,
           });
         }}
-        className={`group w-full border-b border-[color:var(--ledger-border-subtle)] px-1 py-2.5 text-left transition last:border-b-0 hover:bg-[var(--ledger-surface-hover)] ${
-          activeTask ? 'bg-[var(--ledger-surface-hover)]' : ''
-        }`}
+        className={`group w-full rounded-lg px-2 py-2.5 text-left transition ${
+          interactive && !expanded ? 'cursor-pointer hover:bg-[var(--ledger-surface-hover)]' : ''
+        } ${expanded ? 'bg-[var(--ledger-background)]' : ''}`}
       >
-        <div className="flex items-start gap-2.5">
-          <span
-            className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border ${
+        <div className="flex items-center gap-2.5">
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              void updateTaskStatus(task, completed ? 'todo' : 'completed');
+            }}
+            className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border ${
               completed
                 ? 'border-[color:rgba(50,213,131,0.35)] bg-[color:rgba(50,213,131,0.16)]'
                 : 'border-[color:var(--ledger-border-strong)] bg-[var(--ledger-surface-muted)]'
             }`}
+            aria-label={completed ? 'Mark task incomplete' : 'Mark task complete'}
           >
             {completed && <CheckCircle2 size={10} className="text-[rgb(22,163,74)]" />}
-          </span>
+          </button>
           <div className="min-w-0 flex-1">
             <p
               className={`truncate text-sm font-medium ${
@@ -2648,46 +2999,377 @@ export const ProjectsWindow = () => {
             </p>
             <p className="mt-0.5 truncate text-xs text-[var(--ledger-text-muted)]">
               {task.due_date ? `Due ${formatShortDate(task.due_date)}` : 'No due date'}
-              {isSharedWorkspace ? ' · Unassigned' : ''}
+              {' · '}
+              {getAssigneeLabel(task.assigned_to)}
+              {linkedMilestone ? ` · ${linkedMilestone.title}` : ''}
               {task.notes ? ' · Has notes' : ''}
             </p>
           </div>
           {!completed && (
             <span
-              className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium ${
+              className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium shadow-[0_1px_0_rgba(255,255,255,0.45)] ${
                 taskPriorityTone[String(task.priority)] ??
-                'bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)]'
+                'border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)]'
               }`}
             >
               {taskPriorityLabels[String(task.priority)] ?? 'Medium'}
             </span>
           )}
+          {interactive && (
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                const rect = event.currentTarget.getBoundingClientRect();
+                setTaskContextMenu({
+                  x: rect.right,
+                  y: rect.bottom + 6,
+                  taskId: task.id,
+                });
+              }}
+              className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[var(--ledger-text-muted)] opacity-0 transition ${
+                expanded
+                  ? 'pointer-events-none'
+                  : 'hover:bg-[var(--ledger-surface-card)] hover:text-[var(--ledger-text-primary)] group-hover:opacity-100'
+              }`}
+              aria-label="Action options"
+            >
+              <MoreHorizontal size={14} />
+            </button>
+          )}
         </div>
-      </button>
+        {expanded && (
+          <div className="ml-6 mt-2 border-l border-[color:var(--ledger-border-subtle)] pl-3" onClick={(event) => event.stopPropagation()}>
+            <input
+              value={actionDraft.title}
+              onChange={(event) =>
+                setActionDraft((current) => ({ ...current, title: event.target.value }))
+              }
+              className="w-full rounded-md border border-transparent bg-transparent px-0 py-1 text-sm font-medium text-[var(--ledger-text-primary)] outline-none transition focus:border-[color:var(--ledger-border-subtle)] focus:bg-[var(--ledger-background)] focus:px-2"
+            />
+            <div className="mt-1 grid gap-1.5 md:grid-cols-[140px_130px_1fr_1fr]">
+              <input
+                type="date"
+                value={actionDraft.dueDate}
+                onChange={(event) =>
+                  setActionDraft((current) => ({ ...current, dueDate: event.target.value }))
+                }
+                className="h-8 rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] px-2 text-xs text-[var(--ledger-text-secondary)] outline-none"
+              />
+              <div className="relative min-w-0">
+                <select
+                  value={actionDraft.priority}
+                  onChange={(event) =>
+                    setActionDraft((current) => ({ ...current, priority: event.target.value }))
+                  }
+                  className="h-8 w-full appearance-none rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] px-2 pr-8 text-xs text-[var(--ledger-text-secondary)] outline-none"
+                >
+                  {Object.entries(taskPriorityLabels).map(([key, label]) => (
+                    <option key={key} value={key}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown
+                  size={12}
+                  className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[var(--ledger-text-muted)]"
+                />
+              </div>
+              <div className="relative min-w-0">
+                <select
+                  value={actionDraft.assignee}
+                  onChange={(event) =>
+                    setActionDraft((current) => ({ ...current, assignee: event.target.value }))
+                  }
+                  className="h-8 w-full appearance-none rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] px-2 pr-8 text-xs text-[var(--ledger-text-secondary)] outline-none"
+                >
+                  <option value="">Unassigned</option>
+                  {workspaceMembers.map((member) => (
+                    <option key={member.user_id} value={member.user_id}>
+                      {displayMemberName(member)}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown
+                  size={12}
+                  className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[var(--ledger-text-muted)]"
+                />
+              </div>
+              <div className="relative min-w-0">
+                <select
+                  value={actionDraft.milestoneId}
+                  onChange={(event) =>
+                    setActionDraft((current) => ({ ...current, milestoneId: event.target.value }))
+                  }
+                  className="h-8 w-full appearance-none rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] px-2 pr-8 text-xs text-[var(--ledger-text-secondary)] outline-none"
+                >
+                  <option value="">No milestone</option>
+                  {selectedProjectMilestones.map((milestone) => (
+                    <option key={milestone.id} value={milestone.id}>
+                      {milestone.title}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown
+                  size={12}
+                  className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[var(--ledger-text-muted)]"
+                />
+              </div>
+            </div>
+            <textarea
+              value={actionDraft.notes}
+              onChange={(event) =>
+                setActionDraft((current) => ({ ...current, notes: event.target.value }))
+              }
+              placeholder="Details, links, blockers, or handoff notes."
+              className="mt-1.5 h-14 w-full resize-none rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] px-2 py-1.5 text-xs text-[var(--ledger-text-primary)] outline-none transition placeholder:text-[var(--ledger-placeholder)] focus:border-[color:var(--ledger-border-strong)]"
+            />
+            <div className="mt-1.5 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  closeActionInlineEditor();
+                }}
+                className="rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-2.5 py-1 text-xs font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  void saveActionInlineDraft(task);
+                }}
+                disabled={!draftDirty || isSavingActionDraft}
+                className="rounded-md bg-[var(--ledger-accent)] px-2.5 py-1 text-xs font-medium text-white transition hover:bg-[var(--ledger-accent-hover)] disabled:opacity-50"
+              >
+                {isSavingActionDraft ? 'Saving...' : 'Save'}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const renderMilestoneRow = (milestone: ProjectMilestoneRow, interactive = false) => {
+    const isOverdue =
+      !milestone.completed &&
+      parseTimelineDate(milestone.milestone_date) !== null &&
+      parseTimelineDate(milestone.milestone_date)!.getTime() < new Date(todayKey()).getTime();
+    const linkedActions = selectedProjectTasksByMilestone.get(milestone.id) ?? [];
+    const expanded = interactive && expandedMilestoneId === milestone.id;
+    const draftDirty =
+      expanded &&
+      (milestoneInlineDraft.title !== milestone.title ||
+        milestoneInlineDraft.date !== milestone.milestone_date ||
+        milestoneInlineDraft.type !== milestone.type ||
+        milestoneInlineDraft.note !== (milestone.note ?? ''));
+
+    return (
+      <div
+        key={milestone.id}
+        className={`group rounded-lg px-2 py-2 transition ${
+          interactive && !expanded ? 'cursor-pointer hover:bg-[var(--ledger-surface-hover)]' : ''
+        } ${expanded ? 'bg-[var(--ledger-background)]' : ''}`}
+        onClick={() => {
+          if (interactive && !expanded) openMilestoneInlineEditor(milestone);
+        }}
+      >
+        <div className="flex w-full items-center gap-2 text-left">
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              void handleMilestoneCompleteToggle(milestone.id);
+            }}
+            className={`flex h-3.5 w-3.5 shrink-0 rotate-45 items-center justify-center rounded-[4px] border transition ${
+              milestone.completed
+                ? 'border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-text-muted)]'
+                : isOverdue
+                ? 'border-[color:rgba(217,45,32,0.32)] bg-[color:rgba(217,45,32,0.12)]'
+                : 'border-[color:var(--ledger-accent)] bg-[var(--ledger-surface-card)]'
+            }`}
+            aria-label={milestone.completed ? 'Mark milestone incomplete' : 'Mark milestone complete'}
+          />
+          <div className="min-w-0 flex-1">
+            <p
+              className={`truncate text-sm font-medium ${
+                milestone.completed
+                  ? 'text-[var(--ledger-text-muted)] line-through'
+                  : 'text-[var(--ledger-text-primary)]'
+              }`}
+            >
+              {milestone.title}
+            </p>
+            <p className="mt-0.5 truncate text-xs text-[var(--ledger-text-muted)]">
+              {milestone.type} · {formatShortDate(milestone.milestone_date)} ·{' '}
+              {linkedActions.length} linked {linkedActions.length === 1 ? 'action' : 'actions'}
+            </p>
+          </div>
+          {interactive && (
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                openMilestoneDetail(milestone.id, event.clientX, event.clientY);
+              }}
+              className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[var(--ledger-text-muted)] opacity-0 transition ${
+                expanded
+                  ? 'pointer-events-none'
+                  : 'hover:bg-[var(--ledger-surface-card)] hover:text-[var(--ledger-text-primary)] group-hover:opacity-100'
+              }`}
+              aria-label="Milestone options"
+            >
+              <MoreHorizontal size={14} />
+            </button>
+          )}
+        </div>
+        {expanded && (
+          <div className="ml-5 mt-3 border-l border-[color:var(--ledger-border-subtle)] pl-3" onClick={(event) => event.stopPropagation()}>
+            <input
+              value={milestoneInlineDraft.title}
+              onChange={(event) =>
+                setMilestoneInlineDraft((current) => ({ ...current, title: event.target.value }))
+              }
+              className="w-full rounded-md border border-transparent bg-transparent px-0 py-1 text-sm font-medium text-[var(--ledger-text-primary)] outline-none transition focus:border-[color:var(--ledger-border-subtle)] focus:bg-[var(--ledger-background)] focus:px-2"
+            />
+            <div className="mt-2 grid gap-2 md:grid-cols-2">
+              <input
+                type="date"
+                value={milestoneInlineDraft.date}
+                onChange={(event) =>
+                  setMilestoneInlineDraft((current) => ({ ...current, date: event.target.value }))
+                }
+                className="h-8 rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] px-2 text-xs text-[var(--ledger-text-secondary)] outline-none"
+              />
+              <div className="relative min-w-0">
+                <select
+                  value={milestoneInlineDraft.type}
+                  onChange={(event) =>
+                    setMilestoneInlineDraft((current) => ({
+                      ...current,
+                      type: event.target.value as ProjectMilestoneType,
+                    }))
+                  }
+                  className="h-8 w-full appearance-none rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] px-2 pr-8 text-xs text-[var(--ledger-text-secondary)] outline-none"
+                >
+                  {projectMilestoneTypes.map((type) => (
+                    <option key={type} value={type}>
+                      {projectMilestoneTypeLabels[type]}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown
+                  size={12}
+                  className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[var(--ledger-text-muted)]"
+                />
+              </div>
+            </div>
+            <textarea
+              value={milestoneInlineDraft.note}
+              onChange={(event) =>
+                setMilestoneInlineDraft((current) => ({ ...current, note: event.target.value }))
+              }
+              placeholder="Milestone note"
+              className="mt-2 h-16 w-full resize-none rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] px-3 py-2 text-sm text-[var(--ledger-text-primary)] outline-none placeholder:text-[var(--ledger-placeholder)]"
+            />
+            <div className="mt-3 space-y-1">
+              {linkedActions.length === 0 ? (
+                <p className="px-1 py-1 text-xs text-[var(--ledger-text-muted)]">
+                  No linked actions yet.
+                </p>
+              ) : (
+                linkedActions.slice(0, 4).map((action) => (
+                  <div
+                    key={action.id}
+                    className="flex items-center justify-between gap-3 rounded-md px-1 py-1.5 text-xs text-[var(--ledger-text-secondary)]"
+                  >
+                    <span className="min-w-0 truncate">{action.title}</span>
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        void attachTaskToMilestone(action, null);
+                      }}
+                      className="shrink-0 text-[var(--ledger-text-muted)] transition hover:text-[var(--ledger-danger)]"
+                    >
+                      Unlink
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+            <div className="mt-3 flex items-center justify-between gap-2">
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setNewTaskMilestoneId(milestone.id);
+                  setIsTaskComposerOpen(true);
+                  window.setTimeout(() => taskTitleInputRef.current?.focus(), 0);
+                }}
+                className="rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 py-1.5 text-xs font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+              >
+                Add linked action
+              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    closeMilestoneInlineEditor();
+                  }}
+                  className="rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 py-1.5 text-xs font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    void saveMilestoneInlineDraft(milestone);
+                  }}
+                  disabled={!draftDirty || isSavingMilestoneDraft}
+                  className="rounded-lg bg-[var(--ledger-accent)] px-3 py-1.5 text-xs font-medium text-white transition hover:bg-[var(--ledger-accent-hover)] disabled:opacity-50"
+                >
+                  {isSavingMilestoneDraft ? 'Saving...' : 'Save'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
     );
   };
 
   const renderTaskComposer = () =>
     isTaskComposerOpen ? (
-      <div className="mt-3 space-y-2 rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] p-3">
+      <div ref={taskComposerRef} className="mt-3 rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] p-3">
         <input
+          ref={taskTitleInputRef}
           value={newTaskTitle}
           onChange={(e) => setNewTaskTitle(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === 'Enter') {
               e.preventDefault();
-              void createTask();
+              void createTask({ keepOpen: e.metaKey || e.ctrlKey });
+            }
+            if (e.key === 'Escape' && !taskComposerHasContent) {
+              e.preventDefault();
+              closeTaskComposer();
             }
           }}
-          placeholder="Add a next action"
-          className="w-full rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3 py-2 text-sm text-[var(--ledger-text-primary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60"
+          placeholder="Add a next action..."
+          className="w-full rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] px-3 py-2 text-sm text-[var(--ledger-text-primary)] outline-none transition placeholder:text-[var(--ledger-placeholder)] focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60"
         />
-        <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,140px)_auto]">
+        <div className="mt-2 grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,140px)_minmax(0,140px)] lg:grid-cols-[minmax(0,1fr)_140px_140px_150px_150px_auto_auto]">
           <div className="relative min-w-0">
             <select
               value={newTaskPriority}
               onChange={(e) => setNewTaskPriority(e.target.value as typeof newTaskPriority)}
-              className="w-full min-w-0 appearance-none rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] py-2 pl-3 pr-9 text-sm text-[var(--ledger-text-secondary)] outline-none transition"
+              className="w-full min-w-0 appearance-none rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] py-2 pl-3 pr-9 text-sm text-[var(--ledger-text-secondary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60"
             >
               {Object.entries(taskPriorityLabels).map(([key, label]) => (
                 <option key={key} value={key}>
@@ -2704,13 +3386,62 @@ export const ProjectsWindow = () => {
             type="date"
             value={newTaskDueDate}
             onChange={(e) => setNewTaskDueDate(e.target.value)}
-            className="w-full min-w-0 rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3 py-2 text-sm text-[var(--ledger-text-secondary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60"
+            className="w-full min-w-0 rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] px-3 py-2 text-sm text-[var(--ledger-text-secondary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60"
           />
+          <div className="relative min-w-0">
+            <select
+              value={newTaskAssignee}
+              onChange={(e) => setNewTaskAssignee(e.target.value)}
+              className="w-full min-w-0 appearance-none rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] px-3 py-2 pr-8 text-sm text-[var(--ledger-text-secondary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60"
+            >
+              <option value="">Unassigned</option>
+              {workspaceMembers.map((member) => (
+                <option key={member.user_id} value={member.user_id}>
+                  {displayMemberName(member)}
+                </option>
+              ))}
+            </select>
+            <ChevronDown
+              size={14}
+              className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[var(--ledger-text-muted)]"
+            />
+          </div>
+          <div className="relative min-w-0">
+            <select
+              value={newTaskMilestoneId}
+              onChange={(e) => setNewTaskMilestoneId(e.target.value)}
+              className="w-full min-w-0 appearance-none rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] px-3 py-2 pr-8 text-sm text-[var(--ledger-text-secondary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60"
+            >
+              <option value="">No milestone</option>
+              {selectedProjectMilestones.map((milestone) => (
+                <option key={milestone.id} value={milestone.id}>
+                  {milestone.title}
+                </option>
+              ))}
+            </select>
+            <ChevronDown
+              size={14}
+              className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[var(--ledger-text-muted)]"
+            />
+          </div>
+          <input
+            type="time"
+            value={newTaskDueTime}
+            onChange={(e) => setNewTaskDueTime(e.target.value)}
+            className="w-full min-w-0 rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] px-3 py-2 text-sm text-[var(--ledger-text-secondary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60"
+          />
+          <button
+            type="button"
+            onClick={() => closeTaskComposer()}
+            className="rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3 py-2 text-sm font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+          >
+            Cancel
+          </button>
           <button
             type="button"
             onClick={() => void createTask()}
             disabled={!newTaskTitle.trim() || isCreatingTask}
-            className="w-full rounded-md bg-[var(--ledger-accent)] px-3 py-2 text-sm font-medium text-white transition hover:bg-[var(--ledger-accent-hover)] disabled:opacity-60"
+            className="rounded-lg bg-[var(--ledger-accent)] px-3 py-2 text-sm font-medium text-white transition hover:bg-[var(--ledger-accent-hover)] disabled:opacity-60"
           >
             {isCreatingTask ? 'Adding...' : 'Add'}
           </button>
@@ -2726,27 +3457,166 @@ export const ProjectsWindow = () => {
   ) => (
     <section className={`min-w-0 ${className}`}>
       <div className="flex items-center justify-between gap-3 border-b border-[color:var(--ledger-border-subtle)] pb-2">
-        <h3 className="text-sm font-semibold text-[var(--ledger-text-primary)]">{title}</h3>
+        <h3 className="text-sm font-medium text-[var(--ledger-text-primary)]">{title}</h3>
         {action}
       </div>
       <div className="pt-2">{children}</div>
     </section>
   );
 
+  const renderActionTaskGroup = (
+    label: string,
+    items: TaskRow[],
+    options?: { completed?: boolean; interactive?: boolean }
+  ) =>
+    items.length > 0 ? (
+      <div className="mt-4 first:mt-0">
+        <p className="mb-1 text-xs font-medium text-[var(--ledger-text-muted)]">{label}</p>
+        <div className="space-y-1">
+          {items.map((task) => renderTaskRow(task, Boolean(options?.completed), Boolean(options?.interactive)))}
+        </div>
+      </div>
+    ) : null;
+
+  const getDueDateGroups = (items: TaskRow[]) => {
+    const today = todayKey();
+    const weekEnd = formatDateKey(addDays(new Date(today), 7));
+    return {
+      overdue: items.filter((task) => task.due_date && task.due_date < today),
+      today: items.filter((task) => task.due_date === today),
+      week: items.filter((task) => task.due_date && task.due_date > today && task.due_date <= weekEnd),
+      later: items.filter((task) => !task.due_date || task.due_date > weekEnd),
+    };
+  };
+
+  const renderActionsContent = (interactive: boolean) => {
+    if (isLoadingTasks) {
+      return (
+        <div className="mt-3 space-y-2">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <SkeletonTaskItem key={i} />
+          ))}
+        </div>
+      );
+    }
+
+    if (selectedProjectTasks.length === 0 && selectedProjectMilestones.length === 0) {
+      return (
+        <div className="mt-3 py-2">
+          <p className="text-sm font-medium text-[var(--ledger-text-primary)]">No next actions yet.</p>
+          <p className="mt-1 text-sm text-[var(--ledger-text-muted)]">
+            Add the first action to keep this project moving.
+          </p>
+        </div>
+      );
+    }
+
+    if (interactive && actionsGroupBy === 'due_date') {
+      const groups = getDueDateGroups(activeProjectTasks);
+      return (
+        <div className="mt-2">
+          {renderActionTaskGroup('Overdue', groups.overdue, { interactive })}
+          {renderActionTaskGroup('Today', groups.today, { interactive })}
+          {renderActionTaskGroup('This week', groups.week, { interactive })}
+          {renderActionTaskGroup('Later', groups.later, { interactive })}
+          {renderActionTaskGroup('Done', completedProjectTasks, { completed: true, interactive })}
+        </div>
+      );
+    }
+
+    if (interactive && actionsGroupBy === 'milestone') {
+      const unlinkedActions = activeProjectTasks.filter((task) => !task.milestone_id);
+      return (
+        <div className="mt-2">
+          {renderActionTaskGroup('Unlinked actions', unlinkedActions, { interactive })}
+          {selectedProjectMilestones.map((milestone) => {
+            const linked = (selectedProjectTasksByMilestone.get(milestone.id) ?? []).filter(
+              (task) => task.status !== 'completed' && task.status !== 'cancelled'
+            );
+            return (
+              <div key={milestone.id} className="mt-4">
+                {renderMilestoneRow(milestone, interactive)}
+                {linked.length > 0 && (
+                  <div className="ml-5 mt-1 space-y-1">
+                    {linked.map((task) => renderTaskRow(task, false, interactive))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+          {renderActionTaskGroup('Done', completedProjectTasks, { completed: true, interactive })}
+        </div>
+      );
+    }
+
+    const visibleActiveTasks = interactive ? activeProjectTasks : activeProjectTasks.slice(0, 4);
+    const visibleMilestones = interactive
+      ? selectedProjectMilestones
+      : selectedProjectMilestones.slice(0, 4);
+
+    return (
+      <div className="mt-2 space-y-1">
+        {visibleActiveTasks.length === 0 ? (
+          <p className="px-2 py-2 text-sm text-[var(--ledger-text-muted)]">No active next actions.</p>
+        ) : (
+          <div className="space-y-1">
+            {visibleActiveTasks.map((task) => renderTaskRow(task, false, interactive))}
+          </div>
+        )}
+        {visibleMilestones.length > 0 && (
+          <div className="mt-4">
+            <p className="mb-1 text-xs font-medium text-[var(--ledger-text-muted)]">Milestones</p>
+            <div className="space-y-1">
+              {visibleMilestones.map((milestone) => renderMilestoneRow(milestone, interactive))}
+            </div>
+          </div>
+        )}
+        {interactive && completedProjectTasks.length > 0 && (
+          <div className="mt-4">
+            <p className="mb-1 text-xs font-medium text-[var(--ledger-text-muted)]">Done</p>
+            <div className="space-y-1">
+              {completedProjectTasks.map((task) => renderTaskRow(task, true, interactive))}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   const renderNextActionsSection = (showAll = false) =>
     renderSectionShell(
       'Next actions',
       <div className="flex items-center gap-2">
+        {showAll && (
+          <label className="flex items-center gap-1.5 text-xs text-[var(--ledger-text-muted)]">
+            <span>Group by</span>
+            <select
+              value={actionsGroupBy}
+              onChange={(event) => setActionsGroupBy(event.target.value as ActionsGroupBy)}
+              className="h-7 rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2 text-xs text-[var(--ledger-text-secondary)] outline-none"
+            >
+              <option value="type">Type</option>
+              <option value="due_date">Due date</option>
+              <option value="milestone">Milestone</option>
+            </select>
+          </label>
+        )}
         <span className="hidden text-xs text-[var(--ledger-text-muted)] sm:inline">
           {taskCounts.active} active · {taskCounts.completed} done
         </span>
         <button
           type="button"
-          onClick={() => setIsTaskComposerOpen((prev) => !prev)}
+          onClick={() => {
+            if (isTaskComposerOpen) {
+              closeTaskComposer();
+              return;
+            }
+            setIsTaskComposerOpen(true);
+          }}
           className="inline-flex items-center gap-1.5 rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2 py-1 text-xs font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
         >
-          <Plus size={12} />
-          Add action
+          {isTaskComposerOpen ? <span className="text-xs leading-none">×</span> : <Plus size={12} />}
+          {isTaskComposerOpen ? 'Cancel' : 'Add action'}
         </button>
       </div>,
       <>
@@ -2756,40 +3626,7 @@ export const ProjectsWindow = () => {
             {taskError}
           </div>
         )}
-        {isLoadingTasks ? (
-          <div className="mt-3 space-y-2">
-            {Array.from({ length: 3 }).map((_, i) => (
-              <SkeletonTaskItem key={i} />
-            ))}
-          </div>
-        ) : selectedProjectTasks.length === 0 ? (
-          <div className="mt-3 py-2">
-            <p className="text-sm font-medium text-[var(--ledger-text-primary)]">
-              No next actions yet.
-            </p>
-            <p className="mt-1 text-sm text-[var(--ledger-text-muted)]">
-              Add the first action to keep this project moving.
-            </p>
-          </div>
-        ) : (
-          <div className="mt-2">
-            {activeProjectTasks.length === 0 ? (
-              <p className="px-1 py-2 text-sm text-[var(--ledger-text-muted)]">
-                No active next actions.
-              </p>
-            ) : (
-              (showAll ? activeProjectTasks : activeProjectTasks.slice(0, 4)).map((task) =>
-                renderTaskRow(task)
-              )
-            )}
-            {showAll && completedProjectTasks.length > 0 && (
-              <div className="mt-4">
-                <p className="mb-1 text-xs font-medium text-[var(--ledger-text-muted)]">Done</p>
-                {completedProjectTasks.map((task) => renderTaskRow(task, true))}
-              </div>
-            )}
-          </div>
-        )}
+        {renderActionsContent(showAll)}
       </>
     );
 
@@ -2807,31 +3644,6 @@ export const ProjectsWindow = () => {
         Link note
       </button>,
       <>
-        <button
-          type="button"
-          onClick={() => setIsEditingBrief(true)}
-          className="w-full rounded-md px-1 py-2 text-left transition hover:bg-[var(--ledger-surface-hover)]"
-        >
-          <p className="text-xs font-medium text-[var(--ledger-text-muted)]">Brief</p>
-          {isEditingBrief ? (
-            <textarea
-              autoFocus
-              value={projectDraft.description}
-              onClick={(event) => event.stopPropagation()}
-              onChange={(e) => updateProjectDraft({ description: e.target.value })}
-              onBlur={() => {
-                setIsEditingBrief(false);
-                void flushProjectDraft();
-              }}
-              placeholder="Add a short project brief..."
-              className="mt-2 h-24 w-full resize-none rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 py-2 text-sm text-[var(--ledger-text-primary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60"
-            />
-          ) : (
-            <p className="mt-1 text-sm leading-6 text-[var(--ledger-text-primary)]">
-              {projectDraft.description?.trim() || 'Add the outcome, constraints, or project brief.'}
-            </p>
-          )}
-        </button>
         {isLoadingLinkedNotes ? (
           <p className="mt-2 text-sm text-[var(--ledger-text-muted)]">Loading linked notes...</p>
         ) : linkedNotes.length === 0 ? (
@@ -2844,11 +3656,12 @@ export const ProjectsWindow = () => {
             </p>
           </div>
         ) : (
-          <div className="mt-2 divide-y divide-[color:var(--ledger-border-subtle)]">
+          <div className="mt-2 space-y-1">
             {linkedNotes.slice(0, 4).map((link) => (
               <button
                 key={link.id}
                 type="button"
+                onClick={() => openLinkedNoteInNotesModule(link.note_id)}
                 onContextMenu={(event) => {
                   event.preventDefault();
                   setLinkedNoteContextMenu({
@@ -2858,8 +3671,7 @@ export const ProjectsWindow = () => {
                     source: 'center',
                   });
                 }}
-                onDoubleClick={() => openLinkedNoteInNotesModule(link.note_id)}
-                className="flex w-full items-start justify-between gap-3 px-1 py-2 text-left transition hover:bg-[var(--ledger-surface-hover)]"
+                className="flex w-full items-start justify-between gap-3 rounded-lg px-2 py-2 text-left transition hover:bg-[var(--ledger-surface-hover)]"
               >
                 <div className="min-w-0">
                   <p className="truncate text-sm font-medium text-[var(--ledger-text-primary)]">
@@ -2869,7 +3681,12 @@ export const ProjectsWindow = () => {
                     {link.note.preview || 'Linked note'}
                   </p>
                 </div>
-                <span className="shrink-0 text-xs text-[var(--ledger-text-muted)]">Note</span>
+                <div className="shrink-0 text-right">
+                  <p className="text-xs text-[var(--ledger-text-muted)]">Note</p>
+                  <p className="mt-0.5 text-[11px] text-[var(--ledger-text-muted)]">
+                    {link.note.updated_at ? formatRelativeFromNow(link.note.updated_at) : 'Linked'}
+                  </p>
+                </div>
               </button>
             ))}
           </div>
@@ -2889,9 +3706,9 @@ export const ProjectsWindow = () => {
     return (
       <div
         key={item.id}
-        className="flex items-start justify-between gap-3 rounded-md px-1 py-1.5 transition hover:bg-[var(--ledger-surface-hover)]"
+        className="flex items-center justify-between gap-3 rounded-lg px-2 py-2 transition hover:bg-[var(--ledger-surface-hover)]"
       >
-        <div className="min-w-0">
+        <div className="min-w-0 py-0.5">
           <p className="truncate text-sm font-medium text-[var(--ledger-text-primary)]">
             {item.title}
           </p>
@@ -2933,8 +3750,8 @@ export const ProjectsWindow = () => {
         </button>
       </div>,
       <>
-        <div className="flex items-center gap-1 rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] p-0.5 text-xs text-[var(--ledger-text-muted)]">
-          <span className="rounded bg-[var(--ledger-surface-card)] px-2 py-0.5 text-[var(--ledger-text-primary)]">
+        <div className="flex items-center gap-1 rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] p-0.5 text-xs text-[var(--ledger-text-muted)]">
+          <span className="rounded-md bg-[var(--ledger-surface-card)] px-2 py-0.5 text-[var(--ledger-text-primary)]">
             List
           </span>
           <span className="px-2 py-0.5">Timeline</span>
@@ -3014,11 +3831,14 @@ export const ProjectsWindow = () => {
           </p>
         </div>
       ) : (
-        <div className="divide-y divide-[color:var(--ledger-border-subtle)]">
+        <div className="space-y-1">
           {upcomingItems.map((item) => (
-            <div key={item.id} className="flex items-start gap-2 px-1 py-2">
-              <CalendarDays size={14} className="mt-0.5 shrink-0 text-[var(--ledger-text-muted)]" />
-              <div className="min-w-0 flex-1">
+            <div
+              key={item.id}
+              className="flex items-center gap-2 rounded-lg px-2 py-2"
+            >
+              <CalendarDays size={14} className="shrink-0 self-center text-[var(--ledger-text-muted)]" />
+              <div className="min-w-0 flex-1 py-0.5">
                 <p className="truncate text-sm font-medium text-[var(--ledger-text-primary)]">
                   {item.title}
                 </p>
@@ -3045,10 +3865,13 @@ export const ProjectsWindow = () => {
       recentProjectActivity.length === 0 ? (
         <p className="py-2 text-sm text-[var(--ledger-text-muted)]">No recent activity.</p>
       ) : (
-        <div className="divide-y divide-[color:var(--ledger-border-subtle)]">
+        <div className="space-y-1">
           {recentProjectActivity.map((item) => (
-            <div key={item.id} className="flex items-center justify-between gap-3 px-1 py-2">
-              <p className="min-w-0 truncate text-sm font-medium text-[var(--ledger-text-primary)]">
+            <div
+              key={item.id}
+              className="flex items-center justify-between gap-3 rounded-lg px-2 py-2"
+            >
+              <p className="min-w-0 truncate text-sm font-normal text-[var(--ledger-text-secondary)]">
                 {item.label}
               </p>
               <span className="shrink-0 text-xs text-[var(--ledger-text-muted)]">
@@ -3820,8 +4643,9 @@ export const ProjectsWindow = () => {
                                     </div>
                                   )}
                                 </button>
-                                {visibleProjectMilestones.map((milestone) => {
+                                {visibleProjectMilestones.map((milestone, milestoneIndex) => {
                                   const markerLeft = dateToX(milestone.milestone_date);
+                                  const labelLane = milestoneIndex % 3;
                                   const isOverdue =
                                     !milestone.completed &&
                                     parseTimelineDate(milestone.milestone_date) !== null &&
@@ -3866,7 +4690,12 @@ export const ProjectsWindow = () => {
                                           />
                                         )}
                                       </span>
-                                      <span className="mt-3 block w-24 translate-y-[2px] truncate text-center text-[10px] font-medium leading-none text-[var(--ledger-text-muted)] opacity-80">
+                                      <span
+                                        className="absolute left-1/2 w-28 -translate-x-1/2 truncate text-center text-[10px] font-medium leading-tight text-[var(--ledger-text-muted)] opacity-80"
+                                        style={{
+                                          top: `${18 + labelLane * 14}px`,
+                                        }}
+                                      >
                                         {milestone.title}
                                       </span>
                                     </div>
@@ -4341,23 +5170,46 @@ export const ProjectsWindow = () => {
                               void flushProjectDraft();
                             }
                           }}
-                          className="mt-2 w-full rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2 py-1 text-3xl font-semibold tracking-tight text-[var(--ledger-text-primary)] outline-none"
+                          className="mt-2 w-full rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3 py-2 text-[2rem] font-semibold tracking-tight text-[var(--ledger-text-primary)] outline-none shadow-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60"
                         />
                       ) : (
                         <button
                           type="button"
                           onClick={() => setIsEditingTitle(true)}
-                          className="mt-2 block max-w-full rounded-md text-left transition hover:bg-[var(--ledger-surface-hover)]"
+                          className="mt-2 block max-w-full rounded-xl text-left transition hover:bg-[var(--ledger-surface-hover)]"
                         >
-                          <h2 className="truncate px-1 text-3xl font-semibold tracking-tight text-[var(--ledger-text-primary)]">
+                          <h2 className="truncate px-2 py-1 text-[2rem] font-semibold tracking-tight text-[var(--ledger-text-primary)]">
                             {projectDraft.name || 'Untitled project'}
                           </h2>
                         </button>
                       )}
 
-                      <p className="mt-2 text-sm text-[var(--ledger-text-secondary)]">
-                        {projectDraft.description?.trim() || 'Add a project brief.'}
-                      </p>
+                      <div className="mt-2">
+                        {isEditingBrief ? (
+                          <textarea
+                            autoFocus
+                            value={projectDraft.description}
+                            onClick={(event) => event.stopPropagation()}
+                            onChange={(e) => updateProjectDraft({ description: e.target.value })}
+                            onBlur={() => {
+                              setIsEditingBrief(false);
+                              void flushProjectDraft();
+                            }}
+                            placeholder="Add a brief..."
+                            className="min-h-20 w-full resize-none rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3 py-2 text-sm leading-6 text-[var(--ledger-text-primary)] outline-none transition placeholder:text-[var(--ledger-text-muted)] focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60"
+                          />
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => setIsEditingBrief(true)}
+                            className="block w-full rounded-xl text-left transition hover:bg-[var(--ledger-surface-hover)]"
+                          >
+                            <p className="px-2 py-1 text-sm leading-6 text-[var(--ledger-text-secondary)]">
+                              {projectDraft.description?.trim() || 'Add a brief...'}
+                            </p>
+                          </button>
+                        )}
+                      </div>
                       <div className="mt-3 space-y-1 text-xs text-[var(--ledger-text-muted)]">
                         <div className="min-w-0 truncate">{projectMetaLine}</div>
                         <div className="min-w-0 truncate">
@@ -4379,7 +5231,7 @@ export const ProjectsWindow = () => {
                               e.target.value as ProjectSemanticStatus
                             )
                           }
-                          className="h-8 appearance-none rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] py-0 pl-2.5 pr-7 text-xs font-medium text-[var(--ledger-text-primary)] outline-none transition focus:border-[color:var(--ledger-border-strong)]"
+                          className="h-8 appearance-none rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] py-0 pl-2.5 pr-7 text-xs font-medium text-[var(--ledger-text-primary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60"
                         >
                           {(Object.keys(projectStatusLabels) as ProjectSemanticStatus[]).map(
                             (status) => (
@@ -4477,7 +5329,7 @@ export const ProjectsWindow = () => {
                           type="date"
                           value={projectDraft.startDate}
                           onChange={(e) => updateProjectDraft({ startDate: e.target.value })}
-                          className="h-8 w-full rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2 text-xs text-[var(--ledger-text-primary)] outline-none"
+                          className="h-8 w-full rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-2 text-xs text-[var(--ledger-text-primary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60"
                         />
                       </label>
                       <label>
@@ -4486,7 +5338,7 @@ export const ProjectsWindow = () => {
                           type="date"
                           value={projectDraft.endDate}
                           onChange={(e) => updateProjectDraft({ endDate: e.target.value })}
-                          className="h-8 w-full rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2 text-xs text-[var(--ledger-text-primary)] outline-none"
+                          className="h-8 w-full rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-2 text-xs text-[var(--ledger-text-primary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60"
                         />
                       </label>
                     </div>
@@ -4508,7 +5360,7 @@ export const ProjectsWindow = () => {
                       >
                         {tab.label}
                         {activeTab === tab.id && (
-                          <span className="absolute inset-x-3 bottom-0 h-0.5 rounded-full bg-[var(--ledger-accent)]" />
+                          <span className="absolute inset-x-3 -bottom-px h-0.5 rounded-full bg-[var(--ledger-accent)]" />
                         )}
                       </button>
                     ))}
@@ -4573,11 +5425,11 @@ export const ProjectsWindow = () => {
                               className="w-full px-3 py-2 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
                               onClick={() => {
                                 setIsContextMenuOpen(false);
-                                setActiveTab('notes');
+                                setActiveTab('overview');
                                 setIsEditingBrief(true);
                               }}
                             >
-                              Edit project notes
+                              Edit brief
                             </button>
                             <button
                               className="w-full px-3 py-2 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
@@ -5223,7 +6075,7 @@ export const ProjectsWindow = () => {
               type="button"
               onClick={() => {
                 setMilestoneDetail(null);
-                void handleLinkNote(milestoneDetailRow.project_id);
+                void openLinkNoteModal(milestoneDetailRow.project_id);
               }}
               className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
             >
@@ -5258,7 +6110,11 @@ export const ProjectsWindow = () => {
 
       <ModalOverlay
         isOpen={isLinkNoteModalOpen}
-        onClose={() => setIsLinkNoteModalOpen(false)}
+        onClose={() => {
+          setIsLinkNoteModalOpen(false);
+          setLinkNoteTargetProjectId(null);
+          setSelectedLinkNoteIds([]);
+        }}
         backdropBorderRadius="inherit"
         disablePortal
         manageWindowChrome={false}
@@ -5272,7 +6128,11 @@ export const ProjectsWindow = () => {
             </p>
           </div>
           <ModalCloseButton
-            onClick={() => setIsLinkNoteModalOpen(false)}
+            onClick={() => {
+              setIsLinkNoteModalOpen(false);
+              setLinkNoteTargetProjectId(null);
+              setSelectedLinkNoteIds([]);
+            }}
             ariaLabel="Close link note modal"
             className="shrink-0"
           />
@@ -5285,6 +6145,9 @@ export const ProjectsWindow = () => {
             placeholder="Search notes"
             className="w-full rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 py-2 text-sm text-[var(--ledger-text-primary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60"
           />
+          <p className="text-xs text-[var(--ledger-text-muted)]">
+            Select one or more notes, then import them into this project.
+          </p>
           <div className="max-h-80 overflow-auto rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)]">
             {isLoadingLinkableNotes ? (
               <p className="p-3 text-sm text-[var(--ledger-text-muted)]">Loading notes…</p>
@@ -5296,26 +6159,66 @@ export const ProjectsWindow = () => {
                   key={note.id}
                   type="button"
                   disabled={isLinkingNote}
-                  onClick={() => void linkNoteToProject(note.id)}
-                  className="w-full border-b border-[color:var(--ledger-border-subtle)] px-3 py-2 text-left transition last:border-b-0 hover:bg-[var(--ledger-surface-hover)] disabled:opacity-50"
+                  onClick={() => {
+                    setSelectedLinkNoteIds((current) =>
+                      current.includes(note.id)
+                        ? current.filter((id) => id !== note.id)
+                        : [...current, note.id]
+                    );
+                  }}
+                  className="flex w-full items-start gap-3 border-b border-[color:var(--ledger-border-subtle)] px-3 py-2 text-left transition last:border-b-0 hover:bg-[var(--ledger-surface-hover)] disabled:opacity-50"
                 >
-                  <p className="truncate text-sm font-medium text-[var(--ledger-text-primary)]">{note.title}</p>
-                  <p className="truncate text-xs text-[var(--ledger-text-muted)]">
-                    {note.preview || 'No content'}
-                  </p>
+                  <span
+                    className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border ${
+                      selectedLinkNoteIds.includes(note.id)
+                        ? 'border-[color:var(--ledger-accent)] bg-[color:rgba(255,95,64,0.12)]'
+                        : 'border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)]'
+                    }`}
+                    aria-hidden="true"
+                  >
+                    {selectedLinkNoteIds.includes(note.id) && (
+                      <Check size={11} className="text-[var(--ledger-accent)]" />
+                    )}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium text-[var(--ledger-text-primary)]">{note.title}</p>
+                    <p className="truncate text-xs text-[var(--ledger-text-muted)]">
+                      {note.preview || 'No content'}
+                    </p>
+                  </span>
                 </button>
               ))
             )}
           </div>
         </div>
-        <div className="flex items-center justify-end border-t border-[color:var(--ledger-border-subtle)] px-5 py-3">
-          <button
-            type="button"
-            onClick={() => setIsLinkNoteModalOpen(false)}
-            className="rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 py-1.5 text-sm font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
-          >
-            Cancel
-          </button>
+        <div className="flex items-center justify-between gap-3 border-t border-[color:var(--ledger-border-subtle)] px-5 py-3">
+          <p className="text-xs text-[var(--ledger-text-muted)]">
+            {selectedLinkNoteIds.length} selected
+          </p>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setIsLinkNoteModalOpen(false);
+                setLinkNoteTargetProjectId(null);
+                setSelectedLinkNoteIds([]);
+              }}
+              className="rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 py-1.5 text-sm font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => void linkSelectedNotesToProject()}
+              disabled={isLinkingNote || selectedLinkNoteIds.length === 0}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-[var(--ledger-accent)] px-3 py-1.5 text-sm font-medium text-white transition hover:bg-[var(--ledger-accent-hover)] disabled:opacity-50"
+            >
+              {isLinkingNote && <Loader2 size={14} className="animate-spin" />}
+              {isLinkingNote
+                ? 'Importing…'
+                : `Import ${selectedLinkNoteIds.length} note${selectedLinkNoteIds.length === 1 ? '' : 's'}`}
+            </button>
+          </div>
         </div>
       </ModalOverlay>
 
@@ -5644,7 +6547,7 @@ export const ProjectsWindow = () => {
                 type="button"
                 onClick={() => {
                   if (timelineContextMenu.projectId) {
-                    void handleLinkNote(timelineContextMenu.projectId);
+                    void openLinkNoteModal(timelineContextMenu.projectId);
                   } else {
                     console.debug('[projects timeline] TODO: link note to marker', timelineContextMenu);
                   }
@@ -5730,7 +6633,7 @@ export const ProjectsWindow = () => {
               <button
                 type="button"
                 onClick={() => {
-                  void handleLinkNote(timelineContextProject.id);
+                  void openLinkNoteModal(timelineContextProject.id);
                   setTimelineContextMenu(null);
                 }}
                 className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
@@ -5804,7 +6707,7 @@ export const ProjectsWindow = () => {
                 <button
                   type="button"
                   onClick={() => {
-                    void handleLinkNote(timelineContextProject.id);
+                    void openLinkNoteModal(timelineContextProject.id);
                     setTimelineContextMenu(null);
                   }}
                   className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
@@ -5914,10 +6817,33 @@ export const ProjectsWindow = () => {
       {taskContextMenu && taskMenuPosition && (
         <div
           ref={taskContextRef}
-          className="fixed z-50 min-w-44 overflow-hidden rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] py-1 shadow-[var(--ledger-shadow)]"
+          className="fixed z-50 min-w-56 overflow-hidden rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] py-1 shadow-[var(--ledger-shadow)]"
           style={{ left: `${taskMenuPosition.x}px`, top: `${taskMenuPosition.y}px` }}
           onClick={(e) => e.stopPropagation()}
         >
+          <button
+            onClick={() => {
+              const task = tasks.find((item) => item.id === taskContextMenu.taskId);
+              if (task) openActionInlineEditor(task);
+              setTaskContextMenu(null);
+            }}
+            className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+          >
+            <Folder size={14} />
+            Open action
+          </button>
+          <button
+            onClick={() => {
+              const task = tasks.find((item) => item.id === taskContextMenu.taskId);
+              if (task) openActionInlineEditor(task);
+              setTaskContextMenu(null);
+            }}
+            className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+          >
+            <FileText size={14} />
+            Edit action
+          </button>
+          <div className="my-1 h-px bg-[var(--ledger-border-subtle)]" />
           <button
             onClick={() => {
               const task = tasks.find((item) => item.id === taskContextMenu.taskId);
@@ -5951,6 +6877,29 @@ export const ProjectsWindow = () => {
             <CheckCircle2 size={14} />
             Mark complete
           </button>
+          {selectedProjectMilestones.length > 0 && (
+            <div className="px-4 py-2">
+              <p className="mb-1 text-[11px] font-medium text-[var(--ledger-text-muted)]">
+                Attach to milestone
+              </p>
+              <div className="space-y-0.5">
+                {selectedProjectMilestones.slice(0, 5).map((milestone) => (
+                  <button
+                    key={milestone.id}
+                    type="button"
+                    onClick={() => {
+                      const task = tasks.find((item) => item.id === taskContextMenu.taskId);
+                      if (task) void attachTaskToMilestone(task, milestone.id);
+                      setTaskContextMenu(null);
+                    }}
+                    className="block w-full truncate rounded-md px-1 py-1 text-left text-xs text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+                  >
+                    {milestone.title}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
           <button
             onClick={() => {
               const task = tasks.find((item) => item.id === taskContextMenu.taskId);
@@ -5960,8 +6909,20 @@ export const ProjectsWindow = () => {
             className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
           >
             <FileText size={14} />
-            Task notes
+            Link note
           </button>
+          <button
+            onClick={() => {
+              const task = tasks.find((item) => item.id === taskContextMenu.taskId);
+              if (task) void duplicateTask(task);
+              setTaskContextMenu(null);
+            }}
+            className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+          >
+            <Plus size={14} />
+            Duplicate
+          </button>
+          <div className="my-1 h-px bg-[var(--ledger-border-subtle)]" />
           <button
             onClick={() => {
               void deleteTask(taskContextMenu.taskId);
