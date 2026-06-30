@@ -1242,16 +1242,13 @@ export const ProjectsWindow = () => {
       if (!rect.width) return null;
       const clampedX = Math.max(0, Math.min(rect.width, clientX - rect.left));
       const placementColumns = Math.max(1, timelineMonths.length * timelinePlacementSubdivisions);
-      const columnWidth = rect.width / placementColumns;
-      const columnIndex = Math.max(0, Math.min(placementColumns - 1, Math.round(clampedX / columnWidth)));
-      const monthIndex = Math.max(0, Math.min(timelineMonths.length - 1, Math.floor(columnIndex / timelinePlacementSubdivisions)));
-      const localColumn = columnIndex % timelinePlacementSubdivisions;
-      const month = timelineMonths[monthIndex] ?? timelineRange.start;
-      const daysInMonth = new Date(month.getFullYear(), month.getMonth() + 1, 0).getDate();
-      const dayRatio =
-        timelinePlacementSubdivisions > 1 ? localColumn / (timelinePlacementSubdivisions - 1) : 0;
-      const day = Math.max(1, Math.min(daysInMonth, Math.round(dayRatio * (daysInMonth - 1)) + 1));
-      const snappedDate = new Date(month.getFullYear(), month.getMonth(), day);
+      const columnIndex = Math.max(
+        0,
+        Math.min(placementColumns - 1, Math.round((clampedX / rect.width) * (placementColumns - 1)))
+      );
+      const timelineRatio = placementColumns > 1 ? columnIndex / (placementColumns - 1) : 0;
+      const dayOffset = Math.round(timelineRatio * Math.max(0, timelineDays - 1));
+      const snappedDate = addDays(timelineRange.start, dayOffset);
       return formatDateKey(snappedDate);
     },
     [
@@ -3107,24 +3104,8 @@ export const ProjectsWindow = () => {
     };
     const getMarkerLeft = (date: string) => {
       const parsed = parseTimelineDate(date);
-      if (!parsed || timelineMonths.length === 0) return 0;
-      const monthIndex = Math.max(
-        0,
-        Math.min(
-          timelineMonths.length - 1,
-          timelineMonths.findIndex(
-            (month) =>
-              month.getFullYear() === parsed.getFullYear() && month.getMonth() === parsed.getMonth()
-          )
-        )
-      );
-      const month = timelineMonths[monthIndex] ?? timelineRange.start;
-      const daysInMonth = new Date(month.getFullYear(), month.getMonth() + 1, 0).getDate();
-      const dayRatio = daysInMonth > 1 ? (parsed.getDate() - 1) / (daysInMonth - 1) : 0;
-      const localColumn = Math.round(dayRatio * (timelinePlacementSubdivisions - 1));
-      const totalColumns = Math.max(1, timelineMonths.length * timelinePlacementSubdivisions);
-      const columnIndex = monthIndex * timelinePlacementSubdivisions + localColumn;
-      return Math.max(0, Math.min(100, totalColumns > 1 ? (columnIndex / (totalColumns - 1)) * 100 : 0));
+      if (!parsed || timelineDays <= 0) return 0;
+      return timelineOffsetPercent(timelineRange.start, parsed, timelineDays);
     };
     const needsAttention = [
       ...datelessProjects.slice(0, 1).map((project) => ({
