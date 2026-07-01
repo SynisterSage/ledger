@@ -3323,6 +3323,7 @@ export const NotesWindow = () => {
             setIsRightPaneCollapsed(true);
           }
         }}
+        compact
         globalActions={
           <>
             <ModuleHeaderStripAction

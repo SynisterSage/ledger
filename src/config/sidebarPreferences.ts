@@ -25,13 +25,8 @@ export type SidebarPreferences = {
 };
 
 export const SIDEBAR_PREFERENCES_STORAGE_KEY = 'ledger:sidebar:v1';
-const clampSidebarOpacity = (value: number) => Math.max(0.7, Math.min(0.95, value));
-const getDefaultSidebarOpacity = () => {
-  if (typeof navigator !== 'undefined' && navigator.platform.toUpperCase().includes('MAC')) {
-    return 0.88;
-  }
-  return 0.82;
-};
+const clampSidebarOpacity = (value: number) => Math.max(0.7, Math.min(1, value));
+const getDefaultSidebarOpacity = () => 0.95;
 
 export const defaultSidebarPreferences: SidebarPreferences = {
   position: 'right',
@@ -77,7 +72,7 @@ export const loadSidebarPreferences = (): SidebarPreferences => {
         typeof parsed?.opacity === 'number'
           ? clampSidebarOpacity(parsed.opacity)
           : defaultSidebarPreferences.opacity,
-      blur: true,
+      blur: parsed?.blur ?? defaultSidebarPreferences.blur,
       defaultState: parsed?.defaultState ?? defaultSidebarPreferences.defaultState,
       alwaysOnTop: parsed?.alwaysOnTop ?? defaultSidebarPreferences.alwaysOnTop,
       autoHide: parsed?.autoHide ?? defaultSidebarPreferences.autoHide,

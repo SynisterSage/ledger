@@ -5024,6 +5024,7 @@ export const ProjectsWindow = () => {
             setIsRightPaneCollapsed(true);
           }
         }}
+        compact
         globalActions={
           <>
             <ModuleHeaderStripAction

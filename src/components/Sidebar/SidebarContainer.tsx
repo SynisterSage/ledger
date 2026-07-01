@@ -396,7 +396,7 @@ export const SidebarContainer = () => {
     backgroundColor:
       isGlassShell
         ? undefined
-        : `rgba(255, 251, 247, ${Math.max(0.7, Math.min(0.95, opacity))})`,
+        : `rgba(255, 251, 247, ${Math.max(0.7, Math.min(1, opacity))})`,
     ['--sidebar-glass-white-alpha' as string]: Math.min(0.98, Math.max(0.92, opacity + 0.08)),
     ['--sidebar-glass-cream-alpha' as string]: Math.min(0.94, Math.max(0.86, opacity + 0.02)),
     ['--sidebar-glass-icon-alpha' as string]: Math.min(0.84, Math.max(0.74, opacity - 0.06)),

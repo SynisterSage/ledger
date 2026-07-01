@@ -79,7 +79,7 @@ export const MinimizedSidebar = ({
             <Search size={18} />
           </button>
           <button
-            aria-label="Open dashboard"
+            aria-label="Open overview"
             onClick={() => {
               window.desktopWindow?.toggleModule('dashboard');
             }}

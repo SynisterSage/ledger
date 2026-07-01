@@ -1931,7 +1931,7 @@ export const ExpandedSidebar = ({
             {[
               { label: 'Inbox', icon: Inbox, action: () => window.desktopWindow?.toggleModule('inbox') },
               { label: 'Notifications', icon: Bell, action: () => window.desktopWindow?.openModule('notifications') },
-              { label: 'Dashboard', icon: BarChart3, action: () => window.desktopWindow?.toggleModule('dashboard') },
+              { label: 'Overview', icon: BarChart3, action: () => window.desktopWindow?.toggleModule('dashboard') },
               { label: 'Projects', icon: Folder, action: () => window.desktopWindow?.toggleModule('projects') },
               { label: 'Notes', icon: StickyNote, action: () => window.desktopWindow?.toggleModule('notes') },
               { label: 'Calendar', icon: CalendarDays, action: () => window.desktopWindow?.openModule('calendar') },
@@ -2055,7 +2055,7 @@ export const ExpandedSidebar = ({
               onClick={() => window.desktopWindow?.toggleModule('dashboard')}
               className="inline-flex items-center rounded-full border border-[color:var(--ledger-accent)] bg-[var(--ledger-accent)] px-3.5 py-1.5 text-[13px] font-semibold text-white transition hover:bg-[var(--ledger-accent-hover)]"
             >
-              Open Dashboard
+              Open Overview
             </button>
           </div>
         </div>
@@ -2241,7 +2241,7 @@ export const ExpandedSidebar = ({
           <p className={sidebarTheme.sectionLabel}>Navigation</p>
           <div className="space-y-1">
             {[
-              { label: 'Dashboard', icon: BarChart3, action: () => window.desktopWindow?.toggleModule('dashboard') },
+              { label: 'Overview', icon: BarChart3, action: () => window.desktopWindow?.toggleModule('dashboard') },
               { label: 'Projects', icon: Folder, action: () => window.desktopWindow?.toggleModule('projects') },
               { label: 'Notes', icon: StickyNote, action: () => window.desktopWindow?.toggleModule('notes') },
               { label: 'Calendar', icon: CalendarDays, action: () => window.desktopWindow?.openModule('calendar') },
@@ -2460,7 +2460,7 @@ export const ExpandedSidebar = ({
             </button>
             {quickCaptureMode === 'note' && (
               <div className="pl-3">
-                <div className={quickCaptureShellClass}>
+                <div className="flex w-full items-center gap-2 rounded-lg px-2 py-2.5 transition hover:bg-[var(--ledger-surface-muted)]">
                   <textarea
                     ref={noteCaptureRef}
                     value={noteDraft}
@@ -2475,29 +2475,19 @@ export const ExpandedSidebar = ({
                       }
                     }}
                     placeholder="Write a quick note..."
-                    rows={3}
-                    className={`w-full min-h-20 max-h-28 resize-none py-1.5 ${quickCaptureControlClass}`}
+                    rows={2}
+                    className="min-w-0 flex-1 resize-none bg-transparent px-0 py-0.5 text-[12px] leading-5 text-[var(--ledger-text-primary)] placeholder:text-[var(--ledger-placeholder)] focus:outline-none"
                   />
-                  <div className="mt-2 flex items-center justify-end gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setNoteDraft('');
-                        setQuickCaptureMode('none');
-                      }}
-                      className={`h-7 rounded-full px-3 text-[11px] font-medium ${sidebarTheme.buttonSecondary}`}
-                    >
-                      Clear
-                    </button>
-                    <button
-                      type="button"
-                      onClick={saveQuickNote}
-                      disabled={!noteDraft.trim()}
-                      className={`h-7 rounded-full px-3 text-[11px] font-medium disabled:opacity-60 ${sidebarTheme.buttonPrimary}`}
-                    >
-                      Save
-                    </button>
-                  </div>
+                  <button
+                    type="button"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => void saveQuickNote()}
+                    disabled={!noteDraft.trim()}
+                    className="inline-flex h-6 shrink-0 items-center justify-center rounded-full px-2 text-[11px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] disabled:opacity-60"
+                    aria-label="Save note"
+                  >
+                    +
+                  </button>
                 </div>
               </div>
             )}

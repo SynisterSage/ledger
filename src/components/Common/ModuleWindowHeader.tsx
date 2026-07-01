@@ -43,6 +43,7 @@ type ModuleWindowHeaderProps = {
   globalActions?: ReactNode;
   stripActions?: ReactNode;
   actions?: ReactNode;
+  compact?: boolean;
 };
 
 type ModuleHeaderActionButtonProps = {
@@ -457,6 +458,7 @@ export const ModuleWindowHeader = ({
   globalActions,
   stripActions,
   actions,
+  compact = false,
 }: ModuleWindowHeaderProps) => {
   void icon;
   const controlClassName =
@@ -608,15 +610,25 @@ export const ModuleWindowHeader = ({
       </div>
 
       <div
-        className="flex min-h-12 w-full items-center justify-between gap-4 px-6 py-3"
+        className={`flex w-full items-center justify-between gap-4 px-6 ${
+          compact ? 'min-h-10 py-2' : 'min-h-12 py-3'
+        }`}
         onDoubleClickCapture={handleStripDoubleClick}
       >
         <div className="min-w-0 space-y-0.5" style={dragRegionStyle}>
           {eyebrow && <p className={`text-[11px] font-medium leading-none ${sidebarTheme.textMuted}`}>{eyebrow}</p>}
-          <h1 className={`truncate text-[22px] font-semibold leading-[1.15] tracking-tight ${sidebarTheme.textPrimary}`}>
+          <h1
+            className={`truncate font-semibold leading-[1.15] tracking-tight ${sidebarTheme.textPrimary} ${
+              compact ? 'text-[18px]' : 'text-[22px]'
+            }`}
+          >
             {title}
           </h1>
-          {subtitle && <p className={`truncate text-[13px] leading-tight ${sidebarTheme.textMuted}`}>{subtitle}</p>}
+          {subtitle && (
+            <p className={`truncate leading-tight ${sidebarTheme.textMuted} ${compact ? 'text-[12px]' : 'text-[13px]'}`}>
+              {subtitle}
+            </p>
+          )}
         </div>
 
         {(showPanelToggle || rightActions || secondaryActions || viewControls || syncStatus) && (

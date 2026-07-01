@@ -298,7 +298,7 @@ const shortcutSections: Array<{
     id: 'navigation',
     title: 'Navigation',
     shortcuts: [
-      { keys: '⌘ + 1', description: 'dashboard' },
+      { keys: '⌘ + 1', description: 'overview' },
       { keys: '⌘ + 2', description: 'calendar' },
       { keys: '⌘ + 3', description: 'notes' },
       { keys: '⌘ + 4', description: 'projects' },
@@ -404,7 +404,7 @@ const selectChevronStyle: CSSProperties = {
 
 const getSidebarOpacitySliderStyle = (value: number): CSSProperties => {
   const min = 0.7;
-  const max = 0.95;
+  const max = 1;
   const fillPercent = Math.max(0, Math.min(100, ((value - min) / (max - min)) * 100));
 
   return {
@@ -558,12 +558,13 @@ export const SettingsWindow = () => {
     sidebarPreferences,
     position,
     opacity,
+    blur,
     defaultState,
     alwaysOnTop,
     autoHide,
-    setFloatingDockEnabled,
     setPosition,
     setOpacity,
+    setBlur,
     setDefaultState,
     setAlwaysOnTop,
     setAutoHide,
@@ -919,10 +920,10 @@ export const SettingsWindow = () => {
   const handleResetSidebarSettings = () => {
     setPosition(defaultSidebarPreferences.position);
     setOpacity(defaultSidebarPreferences.opacity);
+    setBlur(defaultSidebarPreferences.blur);
     setDefaultState(defaultSidebarPreferences.defaultState);
     setAlwaysOnTop(defaultSidebarPreferences.alwaysOnTop);
     setAutoHide(defaultSidebarPreferences.autoHide);
-    setFloatingDockEnabled(defaultSidebarPreferences.floatingDockEnabled);
     setSaveStatus('Sidebar settings reset to defaults.');
   };
 
@@ -1850,6 +1851,7 @@ export const SettingsWindow = () => {
           void window.desktopWindow?.toggleModuleFullscreen('settings');
         }}
         onClose={attemptCloseSettings}
+        compact
         actions={
           <button
             onClick={() => {
@@ -3542,7 +3544,7 @@ export const SettingsWindow = () => {
                       <div className={settingsTheme.sectionRows}>
                         <PreferenceRow
                           label="Keep overdue items visible"
-                          help="Keep overdue items surfaced in Today and Dashboard."
+                          help="Keep overdue items surfaced in Today and Overview."
                         >
                           <InlineSwitch
                             checked={notificationPreferences.keepOverdueVisible}
@@ -3769,217 +3771,48 @@ export const SettingsWindow = () => {
                     {saveStatus ?? 'Changes save automatically.'}
                   </p>
 
-                  <section className="mt-6 pt-6" aria-labelledby="sidebar-position">
-                    <h3 id="sidebar-position" className={settingsTheme.sectionTitle}>
-                      Position
-                    </h3>
-                    <p className={settingsTheme.sectionStatus}>Choose where Ledger lives.</p>
-                    <div className={settingsTheme.sectionCard}>
-                      {sidebarPositionOptions
-                        .filter((option) => option.value !== 'floating')
-                        .map((option) => (
-                          <label
-                            key={option.value}
-                            className={settingsTheme.radioRow}
-                          >
-                            <input
-                              type="radio"
-                              name="sidebar-position"
-                              value={option.value}
-                              checked={position === option.value}
-                              onChange={() => setPosition(option.value)}
-                              className={settingsTheme.radioInput}
-                              style={{ accentColor: 'var(--ledger-accent)' }}
-                            />
-                            <span className="min-w-0">
-                              <span className={settingsTheme.label}>
-                                {option.label}
-                              </span>
-                              <span className={settingsTheme.help}>
-                                {option.description}
-                              </span>
-                            </span>
-                          </label>
-                        ))}
-                    </div>
-                  </section>
-
-                  <section className={settingsTheme.sectionShell} aria-labelledby="sidebar-behavior">
-                    <h3 id="sidebar-behavior" className={settingsTheme.sectionTitle}>
-                      Behavior
+                  <section className="mt-6 pt-6" aria-labelledby="sidebar-settings">
+                    <h3 id="sidebar-settings" className={settingsTheme.sectionTitle}>
+                      Sidebar
                     </h3>
                     <p className={settingsTheme.sectionStatus}>
-                      Keep Ledger attached, detached, or following the app you dock to.
+                      Control where Ledger lives and how it behaves.
                     </p>
-                    <div className={settingsTheme.sectionCard}>
-                      <label
-                        className={settingsTheme.radioRow}
-                      >
-                        <input
-                          type="radio"
-                          name="sidebar-position"
-                          value="floating"
-                          checked={position === 'floating'}
-                          onChange={() => setPosition('floating')}
-                          className={settingsTheme.radioInput}
-                          style={{ accentColor: 'var(--ledger-accent)' }}
-                        />
-                        <span className="min-w-0 flex-1">
-                          <span className={settingsTheme.label}>Floating</span>
-                          <span className={settingsTheme.help}>
-                            Detach Ledger as a movable panel.
-                          </span>
-                        </span>
-                      </label>
-                      <div className="flex items-start justify-between gap-4 px-4 py-3">
-                        <span className="min-w-0">
-                          <span className={settingsTheme.label}>
-                            Always on top
-                          </span>
-                          <span className={settingsTheme.help}>
-                            Keep Ledger above other windows.
-                          </span>
-                        </span>
-                        <InlineSwitch
-                          checked={alwaysOnTop}
-                          onToggle={() => setAlwaysOnTop(!alwaysOnTop)}
-                          label="Always on top"
-                        />
-                      </div>
-                      <div className="flex items-start justify-between gap-4 px-4 py-3">
-                        <span className="min-w-0">
-                          <span className={settingsTheme.label}>Auto hide</span>
-                          <span className={settingsTheme.help}>
-                            Collapse when your pointer leaves the panel.
-                          </span>
-                        </span>
-                        <InlineSwitch
-                          checked={autoHide}
-                          onToggle={() => setAutoHide(!autoHide)}
-                          label="Auto hide"
-                        />
-                      </div>
-                      <div className="flex items-start justify-between gap-4 px-4 py-3">
-                        <span className="min-w-0">
-                          <span className={settingsTheme.label}>
-                            Dock to app windows
-                          </span>
-                          <span className={settingsTheme.help}>
-                            Follow the app you attach Ledger to.
-                          </span>
-                        </span>
-                        <InlineSwitch
-                          checked={sidebarPreferences.floatingDockEnabled}
-                          onToggle={() => setFloatingDockEnabled(!sidebarPreferences.floatingDockEnabled)}
-                          label="Dock to app windows"
-                        />
-                      </div>
-                    </div>
-                  </section>
+                    <div className={settingsTheme.sectionRows}>
+                      <PreferenceRow label="Position" help="Choose where the sidebar docks.">
+                        <div className="flex w-full flex-wrap justify-end gap-1">
+                          {sidebarPositionOptions.map((option) => {
+                            const Icon = option.icon;
+                            const isActive = position === option.value;
 
-                  <section className={settingsTheme.sectionShell} aria-labelledby="sidebar-desktop-utility">
-                    <h3 id="sidebar-desktop-utility" className={settingsTheme.sectionTitle}>
-                      Desktop utility
-                    </h3>
-                    <p className={settingsTheme.sectionStatus}>
-                      Keep Ledger available from the menu bar or system tray.
-                    </p>
-                    <div className={settingsTheme.sectionCard}>
-                      <div className="flex items-start justify-between gap-4 px-4 py-3">
-                        <span className="min-w-0">
-                          <span className={settingsTheme.label}>
-                            Show tray icon
-                          </span>
-                          <span className={settingsTheme.help}>
-                            Keep a Ledger icon visible in the menu bar or system tray.
-                          </span>
-                        </span>
-                        <InlineSwitch
-                          checked={Boolean(preferences.showTrayIcon)}
-                          onToggle={() =>
-                            setPreferences((current) => ({
-                              ...current,
-                              showTrayIcon: !current.showTrayIcon,
-                            }))
-                          }
-                          label="Show tray icon"
-                        />
-                      </div>
-                      <div className="flex items-start justify-between gap-4 px-4 py-3">
-                        <span className="min-w-0">
-                          <span className={settingsTheme.label}>
-                            Run in background
-                          </span>
-                          <span className={settingsTheme.help}>
-                            Keep Ledger running after closing the window so reminders can still notify you.
-                          </span>
-                        </span>
-                        <InlineSwitch
-                          checked={Boolean(preferences.runInBackground)}
-                          onToggle={() =>
-                            setPreferences((current) => ({
-                              ...current,
-                              runInBackground: !current.runInBackground,
-                            }))
-                          }
-                          label="Run in background"
-                        />
-                      </div>
-                    </div>
-                  </section>
-
-                  <section className={settingsTheme.sectionShell} aria-labelledby="sidebar-default-state">
-                    <h3 id="sidebar-default-state" className={settingsTheme.sectionTitle}>
-                      Default state
-                    </h3>
-                    <p className={settingsTheme.sectionStatus}>Choose how Ledger opens.</p>
-                    <div className={settingsTheme.sectionCard}>
-                      {sidebarDefaultStateOptions.map((option) => (
-                        <label
-                          key={option.value}
-                          className={settingsTheme.radioRow}
-                        >
-                            <input
-                              type="radio"
-                              name="sidebar-default-state"
-                              value={option.value}
-                              checked={defaultState === option.value}
-                              onChange={() => setDefaultState(option.value)}
-                              className={settingsTheme.radioInput}
-                              style={{ accentColor: 'var(--ledger-accent)' }}
-                            />
-                          <span className="min-w-0">
-                            <span className={settingsTheme.label}>
-                              {option.label}
-                            </span>
-                            <span className={settingsTheme.help}>
-                              {option.description}
-                            </span>
-                          </span>
-                        </label>
-                      ))}
-                    </div>
-                  </section>
-
-                  <section className={settingsTheme.sectionShell} aria-labelledby="sidebar-appearance">
-                    <h3 id="sidebar-appearance" className={settingsTheme.sectionTitle}>
-                      Appearance
-                    </h3>
-                    <p className={settingsTheme.sectionStatus}>
-                      Tune the sidebar look and feel.
-                    </p>
-                    <div className={settingsTheme.sectionCard}>
-                      <PreferenceRow label="Opacity" help={`${Math.round(opacity * 100)}% to 95%.`}>
-                        <div className="w-full sm:w-70">
-                          <div className="flex items-center justify-between gap-4">
-                            <span className={settingsTheme.label}>
-                              {Math.round(opacity * 100)}%
-                            </span>
+                            return (
+                              <button
+                                key={option.value}
+                                type="button"
+                                onClick={() => setPosition(option.value)}
+                                className={`inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-xs font-medium transition ${
+                                  isActive
+                                    ? 'border-[color:var(--ledger-border-strong)] bg-[var(--ledger-surface-card)] text-[var(--ledger-text-primary)] shadow-[0_1px_2px_rgba(15,23,42,0.04)]'
+                                    : 'border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]'
+                                }`}
+                              >
+                                <Icon className="h-3.5 w-3.5" />
+                                <span>{option.label}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </PreferenceRow>
+                      <PreferenceRow label="Opacity" help="Set how much of the sidebar background shows through.">
+                        <div className="w-full sm:w-72">
+                          <div className="flex items-center justify-between gap-3">
+                            <span className={settingsTheme.label}>{Math.round(opacity * 100)}%</span>
+                            <span className={settingsTheme.rowMuted}>70% to 100%</span>
                           </div>
                           <input
                             type="range"
                             min="0.7"
-                            max="0.95"
+                            max="1"
                             step="0.01"
                             value={opacity}
                             onChange={(event) => setOpacity(Number(event.target.value))}
@@ -3987,6 +3820,52 @@ export const SettingsWindow = () => {
                             style={getSidebarOpacitySliderStyle(opacity)}
                           />
                         </div>
+                      </PreferenceRow>
+                      <PreferenceRow label="Blur" help="Apply a soft glass blur behind the sidebar.">
+                        <InlineSwitch
+                          checked={blur}
+                          onToggle={() => setBlur(!blur)}
+                          label="Blur sidebar background"
+                        />
+                      </PreferenceRow>
+                      <PreferenceRow
+                        label="Default state"
+                        help="Choose how the sidebar opens when Ledger launches."
+                      >
+                        <select
+                          value={defaultState}
+                          onChange={(event) =>
+                            setDefaultState(event.target.value as SidebarDefaultState)
+                          }
+                          className={preferenceSelectClassName}
+                          style={selectChevronStyle}
+                        >
+                          {sidebarDefaultStateOptions.map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                      </PreferenceRow>
+                      <PreferenceRow
+                        label="Always on top"
+                        help="Keep Ledger above other windows."
+                      >
+                        <InlineSwitch
+                          checked={alwaysOnTop}
+                          onToggle={() => setAlwaysOnTop(!alwaysOnTop)}
+                          label="Always on top"
+                        />
+                      </PreferenceRow>
+                      <PreferenceRow
+                        label="Auto hide"
+                        help="Hide the sidebar when your pointer leaves it."
+                      >
+                        <InlineSwitch
+                          checked={autoHide}
+                          onToggle={() => setAutoHide(!autoHide)}
+                          label="Auto hide"
+                        />
                       </PreferenceRow>
                     </div>
                   </section>
@@ -4082,10 +3961,10 @@ export const SettingsWindow = () => {
                       <div className="flex items-start justify-between gap-4 px-4 py-3">
                         <span className="min-w-0">
                           <span className={settingsTheme.label}>
-                            Open dashboard by default
+                            Open overview by default
                           </span>
                           <span className={settingsTheme.help}>
-                            Open Dashboard when Ledger starts.
+                            Open Overview when Ledger starts.
                           </span>
                         </span>
                         <InlineSwitch
@@ -4096,7 +3975,7 @@ export const SettingsWindow = () => {
                               openDashboardByDefault: !prev.openDashboardByDefault,
                             }))
                           }
-                          label="Open dashboard by default"
+                          label="Open overview by default"
                         />
                       </div>
                     </div>

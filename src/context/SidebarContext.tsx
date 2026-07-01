@@ -284,7 +284,7 @@ export const SidebarProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const setOpacity = (opacity: number) => {
-    const clampedOpacity = Math.max(0.7, Math.min(0.95, opacity));
+    const clampedOpacity = Math.max(0.7, Math.min(1, opacity));
     setSidebarPreferences((current) => ({
       ...current,
       opacity: clampedOpacity,

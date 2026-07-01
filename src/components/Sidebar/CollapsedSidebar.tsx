@@ -67,7 +67,7 @@ export const CollapsedSidebar = ({
 
           <div className="flex items-center gap-2">
             <button
-              aria-label="Open dashboard"
+              aria-label="Open overview"
               onClick={() => window.desktopWindow?.toggleModule('dashboard')}
               onMouseDown={(e) => e.stopPropagation()}
               className={iconButtonClass}

@@ -3326,6 +3326,7 @@ export const CalendarWindow = () => {
             setIsRightPaneCollapsed(true);
           }
         }}
+        compact
         globalActions={
           <>
             <ModuleHeaderStripAction

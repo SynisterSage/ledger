@@ -2,22 +2,27 @@ import {
   ArrowRight,
   Bell,
   CalendarDays,
+  CircleAlert,
   ChevronDown,
+  ChevronRight,
   ChevronUp,
   CheckCircle2,
   Circle,
   Folder,
+  FolderKanban,
   Inbox,
+  LayoutList,
   Loader2,
   MoreHorizontal,
   Plus,
+  SlidersHorizontal,
   StickyNote,
   Trash2,
   X,
 } from 'lucide-react';
 import { ToastProvider } from './components/Common/ToastProvider';
 import { NotificationMonitor } from './components/Common/NotificationMonitor';
-import { type CSSProperties, useCallback, useEffect, useRef, useState } from 'react';
+import { type CSSProperties, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useAuthContext } from './context/AuthContext';
 import { useWorkspaceContext } from './context/WorkspaceContext';
@@ -211,62 +216,6 @@ const DashboardSkeletonTaskItem = () => (
     </div>
     <div
       className="mt-0.5 h-5 w-5 shrink-0 rounded"
-      style={{ backgroundColor: dashboardSkeletonFill }}
-    />
-  </div>
-);
-
-const DashboardSkeletonNoteCard = () => (
-  <div
-    className="rounded-2xl border px-4 py-3 animate-pulse"
-    style={{ backgroundColor: dashboardSkeletonSurface, borderColor: dashboardSkeletonBorder }}
-  >
-    <div className="flex items-start justify-between gap-3">
-      <div className="min-w-0 flex-1 space-y-1.5">
-        <div
-          className="h-4 rounded w-2/3"
-          style={{ backgroundColor: dashboardSkeletonFill }}
-        />
-        <div
-          className="h-3 rounded w-full"
-          style={{ backgroundColor: dashboardSkeletonFill }}
-        />
-        <div
-          className="h-3 rounded w-3/4"
-          style={{ backgroundColor: dashboardSkeletonFill }}
-        />
-      </div>
-      <div
-        className="h-3 rounded w-12 shrink-0"
-        style={{ backgroundColor: dashboardSkeletonFill }}
-      />
-    </div>
-  </div>
-);
-
-const DashboardSkeletonProjectCard = () => (
-  <div
-    className="w-full rounded-2xl border px-4 py-4 animate-pulse"
-    style={{ backgroundColor: dashboardSkeletonSurface, borderColor: dashboardSkeletonBorder }}
-  >
-    <div className="flex items-start justify-between gap-3">
-      <div className="min-w-0 flex-1 space-y-1.5">
-        <div
-          className="h-4 rounded w-3/4"
-          style={{ backgroundColor: dashboardSkeletonFill }}
-        />
-        <div
-          className="h-3 rounded w-20"
-          style={{ backgroundColor: dashboardSkeletonFill }}
-        />
-      </div>
-      <div
-        className="h-4 rounded w-12 shrink-0"
-        style={{ backgroundColor: dashboardSkeletonFill }}
-      />
-    </div>
-    <div
-      className="mt-3 h-2 rounded-full"
       style={{ backgroundColor: dashboardSkeletonFill }}
     />
   </div>
@@ -713,11 +662,6 @@ function DashboardContent() {
   const { activeWorkspace, activeWorkspaceId } = useWorkspaceContext();
   const api = useApi();
   const { setState } = useSidebar();
-  const todayTasksRef = useRef<HTMLElement | null>(null);
-  const nextActionsRef = useRef<HTMLElement | null>(null);
-  const recentNotesRef = useRef<HTMLElement | null>(null);
-  const upcomingRef = useRef<HTMLDivElement | null>(null);
-  const projectsRef = useRef<HTMLDivElement | null>(null);
 
   const [isLoadingDashboard, setIsLoadingDashboard] = useState(true);
   const [dashboardError, setDashboardError] = useState<string | null>(null);
@@ -780,6 +724,9 @@ function DashboardContent() {
   const [notes, setNotes] = useState<
     Array<{ id: string; title: string; content: string; updated_at: string }>
   >([]);
+  const [workspaceMembers, setWorkspaceMembers] = useState<
+    Array<{ user_id: string; full_name: string | null; email: string | null }>
+  >([]);
   const [followUpTasks, setFollowUpTasks] = useState<
     Array<{
       id: string;
@@ -802,28 +749,83 @@ function DashboardContent() {
   const [completedFocusTasks, setCompletedFocusTasks] = useState<CompletedFocusTask[]>(() =>
     loadCompletedFocusTasks()
   );
-  const [completedFocusExpanded, setCompletedFocusExpanded] = useState<boolean>(false);
   const [isFocusPickerOpen, setIsFocusPickerOpen] = useState(false);
   const [isNewFocusModalOpen, setIsNewFocusModalOpen] = useState(false);
-  const [expandedTimelineIds, setExpandedTimelineIds] = useState<Set<string>>(new Set());
   const [expandedNoteIds, setExpandedNoteIds] = useState<Set<string>>(new Set());
   const [calendarScope, setCalendarScope] = useState<'current_workspace' | 'all_accessible_workspaces'>(
     'current_workspace'
   );
   const autoExpireTodayTaskIdsRef = useRef<Set<string>>(new Set());
+  const workspaceMemberById = useMemo(
+    () => new Map(workspaceMembers.map((member) => [member.user_id, member])),
+    [workspaceMembers]
+  );
   const getWorkspaceTaskMetadata = () => ({
     workspace_id: activeWorkspaceId ?? null,
     workspace_name: activeWorkspace?.name?.trim() || null,
     workspace_color: activeWorkspace?.color ?? null,
   });
+
+  useEffect(() => {
+    if (!activeWorkspaceId) {
+      setWorkspaceMembers([]);
+      return;
+    }
+
+    let cancelled = false;
+    const loadWorkspaceMembers = async () => {
+      try {
+        const payload = (await api.getWorkspaceMembers(activeWorkspaceId)) as {
+          members?: Array<{ user_id: string; full_name?: string | null; email?: string | null }>;
+        };
+        if (cancelled) return;
+        const members = Array.isArray(payload?.members)
+          ? payload.members.map((member) => ({
+              user_id: member.user_id,
+              full_name: member.full_name ?? null,
+              email: member.email ?? null,
+            }))
+          : [];
+        setWorkspaceMembers(members);
+      } catch {
+        if (!cancelled) setWorkspaceMembers([]);
+      }
+    };
+
+    void loadWorkspaceMembers();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeWorkspaceId, api]);
   const [dashboardContextMenu, setDashboardContextMenu] = useState<
     | { x: number; y: number; type: 'followup'; taskId: string }
     | { x: number; y: number; type: 'timeline'; eventId: string }
     | { x: number; y: number; type: 'project'; projectId: string }
     | { x: number; y: number; type: 'note'; noteId: string }
     | { x: number; y: number; type: 'checkin' }
+    | {
+        x: number;
+        y: number;
+        type: 'overview-row';
+        rowId: string;
+        rowKind: 'task' | 'reminder' | 'project' | 'note' | 'event' | 'milestone' | 'capture';
+        sourceId: string;
+      }
     | null
   >(null);
+  const [overviewTab, setOverviewTab] = useState<'all' | 'assigned' | 'today' | 'projects' | 'notes'>('all');
+  const [overviewLayout, setOverviewLayout] = useState<'list' | 'compact'>('list');
+  const [isOverviewFilterOpen, setIsOverviewFilterOpen] = useState(false);
+  const [isOverviewDisplayOpen, setIsOverviewDisplayOpen] = useState(false);
+  const [selectedOverviewRowId, setSelectedOverviewRowId] = useState<string | null>(null);
+  const [collapsedOverviewGroups, setCollapsedOverviewGroups] = useState<Set<string>>(() => {
+    try {
+      const stored = window.localStorage.getItem('ledger:overview:collapsed-groups:v1');
+      return new Set(Array.isArray(JSON.parse(stored || '[]')) ? JSON.parse(stored || '[]') : []);
+    } catch {
+      return new Set();
+    }
+  });
   const hasLoadedDashboardRef = useRef(false);
   const dashboardDayRef = useRef(todayKey());
   const handleDashboardWorkspaceRefresh = useCallback(() => {
@@ -959,7 +961,6 @@ function DashboardContent() {
 
       dashboardDayRef.current = currentDay;
       setCompletedFocusTasks([]);
-      setCompletedFocusExpanded(false);
       try {
         window.localStorage.removeItem(DASHBOARD_COMPLETED_FOCUS_STORAGE_KEY);
       } catch {
@@ -1168,12 +1169,12 @@ function DashboardContent() {
         ].filter(Boolean);
 
         if (failedSections.length > 0 && isInitialLoad) {
-          setDashboardError(`Some dashboard sections could not load: ${failedSections.join(', ')}.`);
+          setDashboardError(`Some overview sections could not load: ${failedSections.join(', ')}.`);
         }
       } catch (error) {
         if (!cancelled) {
           if (isInitialLoad) {
-            setDashboardError(error instanceof Error ? error.message : 'Could not load dashboard.');
+            setDashboardError(error instanceof Error ? error.message : 'Could not load overview.');
             setDaily({
               focusItems: [],
               finished: '',
@@ -1295,6 +1296,17 @@ function DashboardContent() {
     };
   }, [dashboardContextMenu]);
 
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        'ledger:overview:collapsed-groups:v1',
+        JSON.stringify(Array.from(collapsedOverviewGroups))
+      );
+    } catch {
+      // Keep group collapse state as a personal preference when storage is available.
+    }
+  }, [collapsedOverviewGroups]);
+
   const saveDailyAccountability = async (next: {
     focusItems?: Array<{ id: string; text: string; done: boolean }>;
     finished?: string;
@@ -1334,44 +1346,11 @@ function DashboardContent() {
   );
   const focusTasksForDisplay = focusTasks.length > 0 ? focusTasks : reminderFocusTasks.slice(0, 1);
   const recentNotes = notes;
-  const firstName =
-    (user?.user_metadata?.full_name as string | undefined)?.trim()?.split(' ')[0] ||
-    user?.email?.split('@')[0] ||
-    'User';
   const todayLabel = new Date().toLocaleDateString([], {
     weekday: 'long',
     month: 'long',
     day: 'numeric',
   });
-
-  const summaryItems = [
-    {
-      label: 'Focus',
-      value: focusTasksForDisplay.length,
-      accent: true,
-      onClick: () => todayTasksRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }),
-    },
-    {
-      label: 'Tasks',
-      value: activeTodayTasks.length,
-      onClick: () => nextActionsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }),
-    },
-    {
-      label: 'Notifications',
-      value: notificationCount,
-      onClick: () => window.desktopWindow?.openModule('notifications'),
-    },
-    {
-      label: 'Upcoming',
-      value: upcoming.length,
-      onClick: () => upcomingRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }),
-    },
-    {
-      label: recentNotes.length === 1 ? 'Note' : 'Notes',
-      value: recentNotes.length,
-      onClick: () => recentNotesRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }),
-    },
-  ];
   const refreshTodayTasks = async () => {
     const data = await api.getToday();
     const active = Array.isArray((data as { active?: unknown[] } | null)?.active)
@@ -1651,21 +1630,6 @@ function DashboardContent() {
     }
   };
 
-  const removeTaskFromFocus = async (taskId: string) => {
-    const task = todayTasks.find((item) => item.id === taskId);
-    if (!task) return;
-
-    setFocusActionId(taskId);
-    try {
-      await api.updateTaskInWorkspace(taskId, task.workspace_id ?? activeWorkspaceId ?? '', {
-        is_today_focus: false,
-      });
-      await refreshTodayTasks();
-    } finally {
-      setFocusActionId(null);
-    }
-  };
-
   const toggleFocusDone = async (taskId: string) => {
     const task = todayTasks.find((item) => item.id === taskId);
     if (!task) return;
@@ -1686,7 +1650,6 @@ function DashboardContent() {
     setTodayTasks((prev) => prev.filter((item) => item.id !== taskId));
     setCompletedFocusTasks((prev) => {
       const next = [completedItem, ...prev.filter((item) => item.id !== taskId)];
-      setCompletedFocusExpanded(false);
       return next;
     });
     setFocusActionId(taskId);
@@ -1699,7 +1662,6 @@ function DashboardContent() {
       console.error('Failed to complete focus task:', error);
       setTodayTasks(previousTodayTasks);
       setCompletedFocusTasks(previousCompletedFocusTasks);
-      setCompletedFocusExpanded(false);
     } finally {
       setFocusActionId(null);
     }
@@ -1720,6 +1682,12 @@ function DashboardContent() {
       | { type: 'project'; projectId: string }
       | { type: 'note'; noteId: string }
       | { type: 'checkin' }
+      | {
+          type: 'overview-row';
+          rowId: string;
+          rowKind: 'task' | 'reminder' | 'project' | 'note' | 'event' | 'milestone' | 'capture';
+          sourceId: string;
+        }
   ) => {
     event.preventDefault();
     setDashboardContextMenu({
@@ -1833,11 +1801,6 @@ function DashboardContent() {
   const deleteTimelineEvent = async (eventId: string) => {
     const previous = upcoming;
     setUpcoming((prev) => prev.filter((item) => item.id !== eventId));
-    setExpandedTimelineIds((prev) => {
-      const next = new Set(prev);
-      next.delete(eventId);
-      return next;
-    });
     setDashboardContextMenu(null);
     try {
       await api.deleteEvent(eventId);
@@ -1869,6 +1832,426 @@ function DashboardContent() {
   const attentionProjects = [...projects]
     .sort((a, b) => getProjectAttentionScore(b as any) - getProjectAttentionScore(a as any))
     .slice(0, 4);
+
+  type OverviewRow = {
+    id: string;
+    sourceId: string;
+    kind: 'task' | 'reminder' | 'project' | 'note' | 'event' | 'milestone' | 'capture';
+    title: string;
+    meta: string;
+    chips: string[];
+    dateLabel?: string;
+    group: string;
+    icon: ReactNode;
+    accent?: string;
+    progress?: number;
+    assignee?: {
+      initials: string;
+      name: string;
+    };
+    open: () => void;
+  };
+
+  const formatShortDate = (value?: string | null) => {
+    if (!value) return null;
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return null;
+    return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+  };
+
+  const formatTime = (value?: string | null) => {
+    if (!value) return null;
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return null;
+    return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  };
+
+  const projectStatusLabel = (statusValue: string) => {
+    const status = String(statusValue ?? '').toLowerCase();
+    if (status.includes('complete')) return 'Completed';
+    if (status.includes('pause')) return 'Paused';
+    if (status.includes('progress')) return 'In progress';
+    return 'Not started';
+  };
+
+  const getMemberInitials = (name: string) => {
+    const parts = name
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean);
+    if (parts.length === 0) return '?';
+    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+    return `${parts[0][0] ?? ''}${parts[1][0] ?? ''}`.toUpperCase();
+  };
+
+  const buildTaskRow = (
+    task: (typeof todayTasks)[number],
+    group: string,
+    chips: string[] = []
+  ): OverviewRow => {
+    const dueLabel = formatShortDate(task.due_date);
+    const timeLabel = task.due_time || formatTime(task.remind_at);
+    const isReminder = task.kind === 'reminder';
+    const assignedMember = task.assigned_to ? workspaceMemberById.get(task.assigned_to) ?? null : null;
+    const assigneeName = assignedMember?.full_name?.trim() || assignedMember?.email?.trim() || '';
+    return {
+      id: `${group}:${task.id}`,
+      sourceId: task.id,
+      kind: isReminder ? 'reminder' : 'task',
+      title: task.title,
+      meta: [
+        task.project_name || task.workspace_name || activeWorkspace?.name || 'Workspace',
+        isReminder ? 'Reminder' : task.task_horizon === 'long_term' ? 'Long-term task' : 'Action',
+        dueLabel ? `Due ${dueLabel}` : timeLabel,
+      ]
+        .filter(Boolean)
+        .join(' · '),
+      chips: chips.length > 0 ? chips : [isReminder ? 'Reminder' : task.is_today_focus ? 'Focus' : 'Today'],
+      dateLabel: timeLabel || dueLabel || undefined,
+      group,
+      icon: isReminder ? <Bell size={13} /> : <Circle size={13} />,
+      accent: isReminder ? 'var(--ledger-accent)' : undefined,
+      assignee: assigneeName
+        ? {
+            initials: getMemberInitials(assigneeName),
+            name: assigneeName,
+          }
+        : undefined,
+      open: () => {
+        if (isReminder) openModule('calendar');
+        else void addTodayTaskToFocus(task.id);
+      },
+    };
+  };
+
+  const projectRows = attentionProjects.map<OverviewRow>((project) => {
+    const dueLabel = formatShortDate(project.end_date);
+    const progress = Math.max(0, Math.min(100, Number(project.completeness ?? 0)));
+    return {
+      id: `Active projects:${project.id}`,
+      sourceId: project.id,
+      kind: 'project',
+      title: project.name,
+      meta: [
+        projectStatusLabel(project.status),
+        `${progress}%`,
+        dueLabel ? `Due ${dueLabel}` : 'No due date',
+      ].join(' · '),
+      chips: progress >= 90 ? ['Near done'] : ['Project'],
+      dateLabel: dueLabel ? `Due ${dueLabel}` : undefined,
+      group: 'Active projects',
+      icon: <FolderKanban size={13} />,
+      accent: 'var(--ledger-accent)',
+      progress,
+      open: () =>
+        openModule('projects', {
+          kind: 'projects',
+          focusProjectId: project.id,
+        }),
+    };
+  });
+
+  const noteRows = recentNotes.slice(0, 6).map<OverviewRow>((note) => ({
+    id: `Recent notes:${note.id}`,
+    sourceId: note.id,
+    kind: 'note',
+    title: note.title || 'Untitled note',
+    meta: ['Regular note', activeWorkspace?.name || 'Workspace', `${formatShortDate(note.updated_at) ?? 'Recently'}`]
+      .filter(Boolean)
+      .join(' · '),
+    chips: htmlToPlainText(note.content).length > 0 ? ['Linked'] : ['Draft'],
+    dateLabel: formatShortDate(note.updated_at) ?? undefined,
+    group: 'Recent notes',
+    icon: <StickyNote size={13} />,
+    open: () => openModule('notes', { kind: 'notes', focusNoteId: note.id }),
+  }));
+
+  const eventRows = upcoming.slice(0, 6).map<OverviewRow>((event) => {
+    const start = new Date(event.start_at);
+    const isToday = start.toDateString() === new Date().toDateString();
+    const dayLabel = isToday ? 'Today' : formatShortDate(event.start_at);
+    const timeLabel = formatTime(event.start_at);
+    return {
+      id: `${isToday ? 'Today' : 'Upcoming'}:${event.id}`,
+      sourceId: event.id,
+      kind: 'event',
+      title: event.title,
+      meta: ['Event', timeLabel, calendarScope === 'all_accessible_workspaces' ? event.workspace_name : null]
+        .filter(Boolean)
+        .join(' · '),
+      chips: isToday ? ['Meeting'] : ['Event'],
+      dateLabel: dayLabel ?? undefined,
+      group: isToday ? 'Today' : 'Upcoming',
+      icon: <CalendarDays size={13} />,
+      open: () =>
+        openModule('calendar', {
+          kind: 'calendar',
+          focusContext: `focus-event:${event.id}`,
+        }),
+    };
+  });
+
+  const followUpRows = followUpTasks
+    .filter((task) => task.status !== 'done')
+    .slice(0, 4)
+    .map<OverviewRow>((task) => ({
+      id: `Needs attention:${task.id}`,
+      sourceId: task.id,
+      kind: 'task',
+      title: task.title,
+      meta: [task.eventTitle || 'Meeting follow-up', 'Action', formatShortDate(task.updated_at) ?? 'Recent']
+        .filter(Boolean)
+        .join(' · '),
+      chips: ['Follow-up'],
+      dateLabel: formatShortDate(task.updated_at) ?? undefined,
+      group: 'Needs attention',
+      icon: <CircleAlert size={13} />,
+      open: () => openFollowUpEvent(task.id),
+    }));
+
+  const overviewRows: OverviewRow[] = [
+    ...focusTasksForDisplay.map((task) => buildTaskRow(task, 'Needs attention', ['Focus'])),
+    ...followUpRows,
+    ...activeTodayTasks.slice(0, 6).map((task) => buildTaskRow(task, 'Today', ['Today'])),
+    ...todayTasks
+      .filter((task) => task.assigned_to || task.project_name)
+      .slice(0, 4)
+      .map((task) => buildTaskRow(task, 'Assigned to me', ['Assigned'])),
+    ...projectRows,
+    ...noteRows,
+    ...eventRows.filter((row) => row.group === 'Upcoming'),
+  ];
+
+  const visibleOverviewRows = overviewRows.filter((row) => {
+    if (overviewTab === 'projects') return row.kind === 'project';
+    if (overviewTab === 'notes') return row.kind === 'note';
+    if (overviewTab === 'today') return row.group === 'Today';
+    if (overviewTab === 'assigned') return row.group === 'Assigned to me';
+    return true;
+  });
+
+  const overviewGroups = ['Needs attention', 'Today', 'Assigned to me', 'Active projects', 'Recent notes', 'Upcoming']
+    .map((group) => ({
+      id: group,
+      label: group,
+      rows: visibleOverviewRows.filter((row) => row.group === group),
+    }))
+    .filter((group) => group.rows.length > 0);
+
+  const selectedOverviewRow =
+    visibleOverviewRows.find((row) => row.id === selectedOverviewRowId) ?? null;
+
+  const overviewEmptyState = (() => {
+    if (overviewTab === 'today') {
+      return {
+        icon: <CalendarDays size={15} />,
+        title: 'No today items',
+        body: 'Today will show tasks, reminders, and events scheduled for today.',
+      };
+    }
+    if (overviewTab === 'assigned') {
+      return {
+        icon: <Circle size={15} />,
+        title: 'Nothing assigned',
+        body: 'Assigned work will appear here once it is linked to this workspace.',
+      };
+    }
+    if (overviewTab === 'projects') {
+      return {
+        icon: <FolderKanban size={15} />,
+        title: 'No projects yet',
+        body: 'Projects will show up here once they have activity or due dates.',
+      };
+    }
+    if (overviewTab === 'notes') {
+      return {
+        icon: <StickyNote size={15} />,
+        title: 'No notes yet',
+        body: 'Recent notes and meeting notes will appear here when they are created.',
+      };
+    }
+    return {
+      icon: <CircleAlert size={15} />,
+      title: 'Nothing to show yet',
+      body: 'Create a task, note, project, event, or reminder to populate the overview.',
+    };
+  })();
+
+  const selectedOverviewTypeLabel = selectedOverviewRow
+    ? selectedOverviewRow.kind === 'task'
+      ? 'Action'
+      : selectedOverviewRow.kind === 'project'
+        ? 'Project'
+        : selectedOverviewRow.kind === 'note'
+          ? 'Note'
+          : selectedOverviewRow.kind === 'event'
+            ? 'Event'
+            : selectedOverviewRow.kind === 'reminder'
+              ? 'Reminder'
+              : selectedOverviewRow.kind
+    : '';
+
+  const overviewDetailSections = selectedOverviewRow
+    ? [
+        {
+          title: 'Details',
+          rows: [
+            ['Type', selectedOverviewTypeLabel],
+            ['Status', selectedOverviewRow.kind === 'note' ? 'Recent note' : selectedOverviewRow.group],
+            ['Workspace', activeWorkspace?.name ?? 'Workspace'],
+            ['Date', selectedOverviewRow.dateLabel ?? 'Not set'],
+          ],
+        },
+        {
+          title: selectedOverviewRow.kind === 'project' ? 'Project context' : 'Linked context',
+          rows:
+            selectedOverviewRow.kind === 'project'
+              ? [
+                  ['Progress', typeof selectedOverviewRow.progress === 'number' ? `${selectedOverviewRow.progress}%` : 'Not set'],
+                  ['Active actions', selectedOverviewRow.chips.includes('Near done') ? '2' : '0'],
+                  ['Milestones', '0'],
+                  ['Recent notes', '0'],
+                ]
+              : selectedOverviewRow.kind === 'task' || selectedOverviewRow.kind === 'reminder'
+                ? [
+                    ['Project', selectedOverviewRow.meta.split(' · ')[0] || 'None'],
+                    ['Priority', selectedOverviewRow.chips.includes('Focus') ? 'Focus' : 'None'],
+                    ['Assignee', 'Lex'],
+                  ]
+                : [
+                    ['Project', 'None'],
+                    ['Actions', '0'],
+                    ['Milestones', '0'],
+                  ],
+        },
+      ]
+    : [];
+
+  const openSelectedOverviewRow = () => {
+    selectedOverviewRow?.open();
+  };
+
+  const selectedOverviewQuickActions = selectedOverviewRow
+    ? [
+        {
+          label: selectedOverviewRow.kind === 'project' ? 'Open project' : selectedOverviewRow.kind === 'note' ? 'Open note' : 'Open',
+          icon: <ArrowRight size={13} />,
+          action: openSelectedOverviewRow,
+          disabled: false,
+        },
+        ...(selectedOverviewRow.kind === 'task' || selectedOverviewRow.kind === 'reminder'
+          ? [
+              {
+                label: 'Mark done',
+                icon: <CheckCircle2 size={13} />,
+                action: () => void toggleFocusDone(selectedOverviewRow.sourceId),
+                disabled: selectedOverviewRow.kind === 'reminder',
+              },
+              {
+                label: 'Move to today',
+                icon: <CalendarDays size={13} />,
+                action: () => void addTodayTaskToFocus(selectedOverviewRow.sourceId),
+                disabled: selectedOverviewRow.kind === 'reminder',
+              },
+              {
+                label: 'Change due date',
+                icon: <CalendarDays size={13} />,
+                action: () => undefined,
+                disabled: true,
+              },
+            ]
+          : selectedOverviewRow.kind === 'project'
+            ? [
+                {
+                  label: 'Add action',
+                  icon: <Plus size={13} />,
+                  action: () => window.desktopWindow?.toggleModule('quick-task' as any),
+                  disabled: false,
+                },
+                {
+                  label: 'Add milestone',
+                  icon: <Plus size={13} />,
+                  action: () => undefined,
+                  disabled: true,
+                },
+              ]
+            : selectedOverviewRow.kind === 'note'
+              ? [
+                  {
+                    label: 'Create action',
+                    icon: <Plus size={13} />,
+                    action: () => window.desktopWindow?.toggleModule('quick-task' as any),
+                    disabled: false,
+                  },
+                  {
+                    label: 'Link to project',
+                    icon: <Folder size={13} />,
+                    action: () => undefined,
+                    disabled: true,
+                  },
+                ]
+              : []),
+        {
+          label: 'Clear selection',
+          icon: <X size={13} />,
+          action: () => setSelectedOverviewRowId(null),
+          disabled: false,
+        },
+      ]
+    : [];
+
+  const toggleOverviewGroup = (groupId: string) => {
+    setCollapsedOverviewGroups((previous) => {
+      const next = new Set(previous);
+      if (next.has(groupId)) next.delete(groupId);
+      else next.add(groupId);
+      return next;
+    });
+  };
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (isOverviewFilterOpen || isOverviewDisplayOpen || isFocusPickerOpen || isNewFocusModalOpen) {
+        if (event.key === 'Escape') {
+          setIsOverviewFilterOpen(false);
+          setIsOverviewDisplayOpen(false);
+        }
+        return;
+      }
+      if (event.key === 'Escape') {
+        setSelectedOverviewRowId(null);
+        return;
+      }
+      if (event.key === 'Enter' && selectedOverviewRow) {
+        event.preventDefault();
+        selectedOverviewRow.open();
+        return;
+      }
+      if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
+      event.preventDefault();
+      const rows = visibleOverviewRows;
+      if (rows.length === 0) return;
+      const currentIndex = rows.findIndex((row) => row.id === selectedOverviewRowId);
+      const nextIndex =
+        event.key === 'ArrowDown'
+          ? Math.min(rows.length - 1, currentIndex + 1)
+          : currentIndex < 0
+            ? rows.length - 1
+            : Math.max(0, currentIndex - 1);
+      setSelectedOverviewRowId(rows[nextIndex]?.id ?? null);
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [
+    isFocusPickerOpen,
+    isNewFocusModalOpen,
+    isOverviewDisplayOpen,
+    isOverviewFilterOpen,
+    selectedOverviewRow,
+    selectedOverviewRowId,
+    visibleOverviewRows,
+  ]);
 
   const attemptCloseDashboard = () => {
     const hasUnsaved = focusDraftTitle.trim().length > 0;
@@ -1905,14 +2288,13 @@ function DashboardContent() {
         }}
       />
       <ModuleWindowHeader
-        eyebrow="Workspace"
         title={activeWorkspace?.name ?? 'My Work'}
         subtitle={
           activeWorkspace
             ? activeWorkspace.is_personal
               ? 'Personal workspace'
               : activeWorkspace.role
-            : 'Dashboard overview'
+            : 'Workspace overview'
         }
         icon={<img src="./logo-color.svg" alt="" className="h-5 w-5" />}
         globalActions={
@@ -1968,503 +2350,436 @@ function DashboardContent() {
             ))}
           </>
         }
-        closeLabel="Close dashboard"
-        minimizeLabel="Minimize dashboard"
+        closeLabel="Close overview"
+        minimizeLabel="Minimize overview"
         onMinimize={() => {
           void window.desktopWindow?.minimizeModule('dashboard');
         }}
-        fullscreenLabel="Fullscreen dashboard"
+        fullscreenLabel="Fullscreen overview"
         onToggleFullscreen={() => {
           void window.desktopWindow?.toggleModuleFullscreen('dashboard');
         }}
         onClose={attemptCloseDashboard}
+        compact
       />
 
       <div
         className={`flex-1 min-h-0 overflow-auto ${dashboardTheme.content} px-6 py-8`}
         style={{ scrollbarGutter: isDashboardModalOpen ? 'auto' : 'stable' }}
       >
-        <div className={dashboardTheme.page}>
-          <header className={dashboardTheme.hero}>
-            <div className="space-y-1.5">
-              <h2 className={dashboardTheme.title}>Good to see you, {firstName}</h2>
-              <p className={dashboardTheme.subtitle}>What needs your attention today?</p>
+        <div className="flex h-full min-h-[720px] w-full flex-col rounded-[18px] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-[0_18px_44px_rgba(66,42,24,0.06)]">
+          <header className="flex flex-col gap-3 border-b border-[color:var(--ledger-border-subtle)] px-5 py-3.5 lg:flex-row lg:items-end lg:justify-between">
+            <div className="min-w-0 space-y-1">
+              <p className="text-[12px] font-medium text-[var(--ledger-text-muted)]">
+                {activeWorkspace?.name ?? 'Workspace'} › Overview
+              </p>
+              <h2 className="text-[24px] font-semibold text-[var(--ledger-text-primary)]">
+                Workspace overview
+              </h2>
+              <p className="text-[13px] text-[var(--ledger-text-muted)]">
+                Everything happening across {activeWorkspace?.name ?? 'this workspace'}.
+              </p>
             </div>
 
-            <div className="flex flex-col gap-5 border-b border-[color:var(--ledger-border-subtle)] pb-6 sm:flex-row sm:items-end sm:justify-between">
-              <div className="space-y-2">
-                <p className={dashboardTheme.sectionLabel}>{todayLabel}</p>
-                {!isLoadingDashboard && (
-                  <div className="flex flex-wrap items-center gap-2">
-                    {summaryItems.map((item) => (
-                      <button
-                        key={item.label}
-                        type="button"
-                        onClick={() => item.onClick?.()}
-                        className={dashboardTheme.summaryPill}
-                        title={`Open ${item.label.toLowerCase()}`}
-                      >
-                        <span className={item.accent ? dashboardTheme.summaryValueAccent : dashboardTheme.summaryValue}>
-                          {item.value}
-                        </span>
-                        <span>{item.label}</span>
-                      </button>
-                    ))}
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="flex rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] p-0.5">
+                {[
+                  ['all', 'All'],
+                  ['assigned', 'Assigned'],
+                  ['today', 'Today'],
+                  ['projects', 'Projects'],
+                  ['notes', 'Notes'],
+                ].map(([id, label]) => (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => setOverviewTab(id as typeof overviewTab)}
+                    className={`rounded-full px-2.5 py-1 text-[12px] font-medium transition ${
+                      overviewTab === id
+                        ? 'bg-[var(--ledger-surface-card)] text-[var(--ledger-text-primary)] shadow-sm'
+                        : 'text-[var(--ledger-text-muted)] hover:text-[var(--ledger-text-primary)]'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsOverviewFilterOpen((current) => !current);
+                    setIsOverviewDisplayOpen(false);
+                  }}
+                  className="inline-flex h-7 items-center gap-1.5 rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-2.5 text-[12px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+                >
+                  <SlidersHorizontal size={13} />
+                  Filter
+                </button>
+                {isOverviewFilterOpen && (
+                  <div className="absolute right-0 z-30 mt-2 w-56 rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-2 shadow-[var(--ledger-shadow)]">
+                    {['Type', 'Status', 'Project', 'Due date', 'Assignee', 'Priority', 'Workspace', 'Completed'].map(
+                      (item) => (
+                        <button
+                          key={item}
+                          type="button"
+                          className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-[13px] text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+                        >
+                          {item}
+                          <ChevronRight size={13} className="text-[var(--ledger-text-muted)]" />
+                        </button>
+                      )
+                    )}
                   </div>
                 )}
               </div>
+
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsOverviewDisplayOpen((current) => !current);
+                    setIsOverviewFilterOpen(false);
+                  }}
+                  className="inline-flex h-7 items-center gap-1.5 rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-2.5 text-[12px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+                >
+                  <LayoutList size={13} />
+                  Display
+                </button>
+                {isOverviewDisplayOpen && (
+                  <div className="absolute right-0 z-30 mt-2 w-72 rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-2 shadow-[var(--ledger-shadow)]">
+                    <p className="px-3 py-1.5 text-[11px] font-medium text-[var(--ledger-text-muted)]">Layout</p>
+                    {['List', 'Compact list'].map((item) => (
+                      <button
+                        key={item}
+                        type="button"
+                        onClick={() => setOverviewLayout(item === 'List' ? 'list' : 'compact')}
+                        className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-[13px] text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+                      >
+                        {item}
+                        {overviewLayout === (item === 'List' ? 'list' : 'compact') && <CheckCircle2 size={13} />}
+                      </button>
+                    ))}
+                    <div className="my-1 h-px bg-[var(--ledger-border-subtle)]" />
+                    <p className="px-3 py-1.5 text-[11px] font-medium text-[var(--ledger-text-muted)]">Group by</p>
+                    {['None', 'Status', 'Type', 'Project', 'Due date', 'Assignee'].map((item) => (
+                      <button
+                        key={item}
+                        type="button"
+                        className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-[13px] text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+                      >
+                        {item}
+                        <ChevronRight size={13} className="text-[var(--ledger-text-muted)]" />
+                      </button>
+                    ))}
+                    <div className="my-1 h-px bg-[var(--ledger-border-subtle)]" />
+                    <p className="px-3 py-1.5 text-[11px] font-medium text-[var(--ledger-text-muted)]">Properties</p>
+                    <div className="grid grid-cols-2 gap-1 px-1 pb-1">
+                      {['Priority', 'Project', 'Due date', 'Assignee', 'Members', 'Progress', 'Linked notes', 'Updated'].map(
+                        (item) => (
+                          <span
+                            key={item}
+                            className="rounded-lg px-2 py-1 text-[12px] text-[var(--ledger-text-muted)]"
+                          >
+                            {item}
+                          </span>
+                        )
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setIsNewFocusModalOpen(true)}
+                className="inline-flex h-7 items-center gap-1.5 rounded-full bg-[var(--ledger-accent)] px-3 text-[12px] font-semibold text-white transition hover:bg-[var(--ledger-accent-hover)]"
+              >
+                <Plus size={13} />
+                New
+              </button>
             </div>
           </header>
 
           {dashboardError && (
-            <div className="rounded-2xl border border-[color:rgba(217,45,32,0.18)] bg-[color:rgba(217,45,32,0.08)] px-4 py-3 text-sm text-[var(--ledger-danger)]">
+            <div className="mx-5 mt-4 rounded-2xl border border-[color:rgba(217,45,32,0.18)] bg-[color:rgba(217,45,32,0.08)] px-4 py-3 text-sm text-[var(--ledger-danger)]">
               {dashboardError}
             </div>
           )}
 
-          <div className="grid gap-10 lg:grid-cols-[minmax(0,1fr)_320px]">
-            <main className="space-y-12">
-              <section ref={todayTasksRef} className={dashboardTheme.panel}>
-                <div className="flex items-baseline justify-between gap-4">
-                  <p className={dashboardTheme.sectionLabel}>Focus</p>
-                  <div className="flex gap-4">
-                    {activeTodayTasks.length > 0 ? (
-                      <button
-                        type="button"
-                        onClick={() => setIsFocusPickerOpen(true)}
-                        disabled={focusTasks.length >= 3}
-                        className={
-                          focusTasks.length >= 3 ? dashboardTheme.actionLinkMuted : dashboardTheme.actionLink
-                        }
-                      >
-                        + Add from Today
-                      </button>
-                    ) : null}
-                    <button
-                      type="button"
-                      onClick={() => setIsNewFocusModalOpen(true)}
-                      disabled={focusTasks.length >= 3}
-                      className={
-                        focusTasks.length >= 3 ? dashboardTheme.actionLinkMuted : dashboardTheme.actionLink
-                      }
-                    >
-                      + New focus
-                    </button>
+          <div className="grid min-h-0 flex-1 lg:grid-cols-[minmax(0,1fr)_360px]">
+            <main className="flex min-h-0 min-w-0 flex-col overflow-auto px-3 py-3">
+              {isLoadingDashboard ? (
+                <div className="space-y-2 p-3">
+                  {Array.from({ length: 8 }).map((_, i) => (
+                    <DashboardSkeletonTaskItem key={i} />
+                  ))}
+                </div>
+              ) : visibleOverviewRows.length === 0 ? (
+                <div className="flex flex-1 items-center justify-center p-6">
+                  <div className="max-w-sm rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-5 py-4 text-center shadow-sm">
+                    <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)]">
+                      {overviewEmptyState.icon}
+                    </div>
+                    <p className="mt-3 text-sm font-medium text-[var(--ledger-text-primary)]">
+                      {overviewEmptyState.title}
+                    </p>
+                    <p className="mt-1 text-xs leading-5 text-[var(--ledger-text-muted)]">
+                      {overviewEmptyState.body}
+                    </p>
                   </div>
                 </div>
-
-                {isLoadingDashboard ? (
-                  <div className="space-y-3 border-y border-[color:var(--ledger-border-subtle)] py-8">
-                    {Array.from({ length: 3 }).map((_, i) => (
-                      <DashboardSkeletonTaskItem key={i} />
-                    ))}
-                  </div>
-                ) : (
-                  <>
-                    <div className="border-y border-[color:var(--ledger-border-subtle)] py-8">
-                      {focusTasksForDisplay.length === 0 ? (
-                        <p className={dashboardTheme.emptyText}>No focus set yet. Choose what matters most today.</p>
-                      ) : (
-                        <div className="space-y-4">
-                          {focusTasksForDisplay.map((task, index) => {
-                            if (task.kind === 'reminder') {
-                              const reminderTime = task.remind_at
-                                ? new Date(task.remind_at).toLocaleTimeString([], {
-                                    hour: 'numeric',
-                                    minute: '2-digit',
-                                  })
-                                : 'Today';
-
+              ) : (
+                <div className="space-y-1.5">
+                  {overviewGroups.map((group) => {
+                    const isCollapsed = collapsedOverviewGroups.has(group.id);
+                    return (
+                      <section key={group.id} className="overflow-hidden">
+                        <div className="flex h-8 items-center justify-between rounded-lg bg-[var(--ledger-surface-muted)] px-3">
+                          <button
+                            type="button"
+                            onClick={() => toggleOverviewGroup(group.id)}
+                            className="flex min-w-0 items-center gap-2 text-left"
+                          >
+                            <ChevronDown
+                              size={14}
+                              className={`shrink-0 text-[var(--ledger-text-muted)] transition ${
+                                isCollapsed ? '-rotate-90' : 'rotate-0'
+                              }`}
+                            />
+                            <span className="truncate text-[12px] font-medium text-[var(--ledger-text-secondary)]">
+                              {group.label}
+                            </span>
+                            <span className="rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-1.5 py-0.5 text-[10px] leading-none text-[var(--ledger-text-muted)]">
+                              {group.rows.length}
+                            </span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              group.id === 'Active projects'
+                                ? openModule('projects', { kind: 'projects', focusProjectId: '__new__' })
+                                : setIsNewFocusModalOpen(true)
+                            }
+                            className="flex h-6 w-6 items-center justify-center rounded-md text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-card)] hover:text-[var(--ledger-text-primary)]"
+                            title={`Create item in ${group.label}`}
+                          >
+                            <Plus size={13} />
+                          </button>
+                        </div>
+                        {!isCollapsed && (
+                        <div className="space-y-1 pb-1 pt-1">
+                            {group.rows.map((row) => {
+                              const isSelected = selectedOverviewRow?.id === row.id;
                               return (
-                                <div key={task.id} className="group flex items-start gap-3">
-                                  <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-[color:rgba(18,183,106,0.18)] bg-[color:rgba(18,183,106,0.08)] text-[var(--ledger-success)]">
-                                    <Bell size={12} />
-                                  </div>
-                                  <div className="min-w-0 flex-1">
-                                    <p className={dashboardTheme.rowTitle}>{task.title}</p>
-                                    <p className={dashboardTheme.rowMeta}>
-                                      Reminder{task.calendar_name ? ` · ${task.calendar_name}` : ''}
-                                      {task.project_name ? ` · ${task.project_name}` : ''}
-                                      {reminderTime ? ` · ${reminderTime}` : ''}
-                                    </p>
-                                  </div>
-                                  <div className="flex items-center gap-2 opacity-100 transition sm:opacity-0 sm:group-hover:opacity-100">
+                                <button
+                                  key={row.id}
+                                  type="button"
+                                  onClick={() => setSelectedOverviewRowId(row.id)}
+                                  onDoubleClick={() => row.open()}
+                                  onContextMenu={(event) =>
+                                    openContextMenu(event, {
+                                      type: 'overview-row',
+                                      rowId: row.id,
+                                      rowKind: row.kind,
+                                      sourceId: row.sourceId,
+                                    })
+                                  }
+                                  className={`group grid w-full grid-cols-[28px_minmax(0,1fr)_auto] items-center gap-2 px-3 text-left transition ${
+                                    overviewLayout === 'compact' ? 'min-h-9 py-1' : 'min-h-10 py-1.5'
+                                  } ${
+                                    isSelected
+                                      ? 'rounded-lg bg-[var(--ledger-surface-muted)]'
+                                      : 'hover:rounded-lg hover:bg-[var(--ledger-surface-muted)]'
+                                  }`}
+                                >
+                                  <span
+                                    className="flex h-6 w-6 items-center justify-center rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] text-[13px] text-[var(--ledger-text-secondary)]"
+                                  >
+                                    {row.icon}
+                                  </span>
+                                  <span className="min-w-0">
+                                    <span className="block truncate text-[13px] font-medium text-[var(--ledger-text-primary)]">
+                                      {row.title}
+                                    </span>
+                                  </span>
+                                  <span className="flex items-center gap-2">
+                                    <span className="hidden min-w-0 items-center gap-1.5 sm:flex">
+                                      {row.chips.slice(0, 2).map((chip) => (
+                                        <span
+                                          key={chip}
+                                          className="rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-2 py-0.5 text-[10px] leading-none text-[var(--ledger-text-muted)]"
+                                        >
+                                          {chip}
+                                        </span>
+                                      ))}
+                                    </span>
+                                    <span className="hidden max-w-80 truncate text-[11px] leading-4 text-[var(--ledger-text-muted)] md:inline">
+                                      {row.meta}
+                                    </span>
+                                    {typeof row.progress === 'number' && (
+                                      <span className="hidden h-1 w-20 overflow-hidden rounded-full bg-[var(--ledger-border-subtle)] lg:block">
+                                        <span
+                                          className="block h-full rounded-full bg-[var(--ledger-accent)]"
+                                          style={{ width: `${row.progress}%` }}
+                                        />
+                                      </span>
+                                    )}
+                                    {row.assignee && (
+                                      <span
+                                        className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] text-[9px] font-semibold tracking-normal text-[var(--ledger-text-secondary)]"
+                                        title={row.assignee.name}
+                                        aria-label={row.assignee.name}
+                                      >
+                                        {row.assignee.initials}
+                                      </span>
+                                    )}
+                                    {row.dateLabel && (
+                                      <span className="hidden text-[11px] text-[var(--ledger-text-muted)] md:inline">
+                                        {row.dateLabel}
+                                      </span>
+                                    )}
                                     <button
                                       type="button"
-                                      onClick={() => openModule('calendar')}
-                                      className={dashboardTheme.actionLinkMuted}
-                                      title="Open calendar"
+                                      onClick={(event) => {
+                                        event.preventDefault();
+                                        event.stopPropagation();
+                                        const rect = (event.currentTarget as HTMLButtonElement).getBoundingClientRect();
+                                        setDashboardContextMenu({
+                                          x: rect.right,
+                                          y: rect.bottom,
+                                          type: 'overview-row',
+                                          rowId: row.id,
+                                          rowKind: row.kind,
+                                          sourceId: row.sourceId,
+                                        });
+                                      }}
+                                      className="flex h-6 w-6 items-center justify-center rounded-md text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-card)] hover:text-[var(--ledger-text-primary)]"
+                                      aria-label={`Open actions for ${row.title}`}
                                     >
-                                      <CalendarDays size={14} />
+                                      <MoreHorizontal size={14} />
                                     </button>
-                                  </div>
-                                </div>
-                              );
-                            }
-
-                            const expiryLabel = formatExpiryCounter(task);
-                            return (
-                              <div key={task.id} className="group flex items-start gap-3">
-                                <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] text-[11px] font-medium text-[var(--ledger-text-muted)]">
-                                  {index + 1}
-                                </div>
-                                <div className="min-w-0 flex-1">
-                                  <p className={dashboardTheme.rowTitle}>{task.title}</p>
-                                  <p className={dashboardTheme.rowMeta}>
-                                    {task.project_name || task.workspace_name || 'Workspace task'}
-                                    {expiryLabel ? ` · ${expiryLabel}` : ''}
-                                  </p>
-                                </div>
-                                <div className="flex items-center gap-2 opacity-100 transition sm:opacity-0 sm:group-hover:opacity-100">
-                                  <button
-                                    type="button"
-                                    onClick={() => void toggleFocusDone(task.id)}
-                                    disabled={focusActionId === task.id}
-                                    className={dashboardTheme.actionLinkMuted}
-                                    title="Mark complete"
-                                  >
-                                    <CheckCircle2 size={14} />
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => void removeTaskFromFocus(task.id)}
-                                    disabled={focusActionId === task.id}
-                                    className={dashboardTheme.actionLinkMuted}
-                                    title="Remove from focus"
-                                  >
-                                    <Trash2 size={14} />
-                                  </button>
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
-
-                    {completedFocusTasks.length > 0 && (
-                      <div className="space-y-3">
-                        <button
-                          type="button"
-                          onClick={() => setCompletedFocusExpanded((current) => !current)}
-                          className="flex w-full items-center justify-between rounded-2xl px-0 py-1 text-left"
-                        >
-                          <span className={dashboardTheme.sectionLabel}>Completed · {completedFocusTasks.length}</span>
-                          <ChevronDown
-                            size={14}
-                            className={`text-[var(--ledger-text-muted)] transition-transform ${
-                              completedFocusExpanded ? 'rotate-180' : 'rotate-0'
-                            }`}
-                          />
-                        </button>
-
-                        {completedFocusExpanded && (
-                          <div className="space-y-2">
-                            {completedFocusTasks.map((task) => {
-                              const expiryLabel = formatExpiryCounter(task);
-                              return (
-                                <div
-                                  key={task.id}
-                                  className="flex items-start gap-3 rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3 py-2"
-                                >
-                                  <div className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] text-[11px] text-[var(--ledger-text-muted)]">
-                                    ✓
-                                  </div>
-                                  <div className="min-w-0 flex-1">
-                                    <p className="text-[13px] font-medium leading-5 text-[var(--ledger-text-muted)] line-through decoration-[color:var(--ledger-border-strong)]">
-                                      {task.title}
-                                    </p>
-                                    <p className="mt-0.5 text-[11px] leading-4 text-[var(--ledger-text-muted)]">
-                                      {task.project_name || task.workspace_name || 'Workspace task'}
-                                      {expiryLabel ? ` · ${expiryLabel}` : ''}
-                                    </p>
-                                  </div>
-                                </div>
+                                  </span>
+                                </button>
                               );
                             })}
                           </div>
                         )}
-                      </div>
-                    )}
-                  </>
-                )}
-              </section>
-
-              <section ref={nextActionsRef} className="space-y-5">
-                <div className="flex items-center justify-between gap-4">
-                  <p className={dashboardTheme.sectionLabel}>Next Actions</p>
-                  <button
-                    type="button"
-                    onClick={() => nextActionsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
-                    className={dashboardTheme.sectionAction}
-                  >
-                    Open tasks
-                  </button>
+                      </section>
+                    );
+                  })}
                 </div>
-                {isLoadingDashboard ? (
-                  <div className="space-y-2 border-y border-[color:var(--ledger-border-subtle)] py-6">
-                    {Array.from({ length: 2 }).map((_, i) => (
-                      <DashboardSkeletonTaskItem key={i} />
-                    ))}
-                  </div>
-                ) : activeTodayTasks.length === 0 ? (
-                  <p className={dashboardTheme.emptyBody}>No actions for today.</p>
-                ) : (
-                  <div className="space-y-1">
-                    {activeTodayTasks.map((task) => {
-                      const expiryLabel = formatExpiryCounter(task);
-                      return (
-                        <button
-                          key={task.id}
-                          type="button"
-                          onContextMenu={(event) =>
-                            openContextMenu(event, { type: 'followup', taskId: task.id })
-                          }
-                          onClick={() => void toggleFocusDone(task.id)}
-                          className={dashboardTheme.sectionRow}
-                        >
-                          <div className="min-w-0 flex-1">
-                            <p className={dashboardTheme.rowTitle}>{task.title}</p>
-                            <p className={dashboardTheme.rowMeta}>
-                              {task.project_name || task.workspace_name || 'Workspace task'}
-                              {expiryLabel ? ` · ${expiryLabel}` : ''}
-                            </p>
-                          </div>
-                          <span className={dashboardTheme.rowMetaStrong}>
-                            {task.kind === 'reminder' ? 'Reminder' : task.status === 'completed' ? 'Done' : 'Task'}
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-              </section>
-
-              <section ref={recentNotesRef} className="space-y-5">
-                <div className="flex items-center justify-between">
-                  <p className={dashboardTheme.sectionLabel}>Recent Notes</p>
-                  <button
-                    onClick={() => openModule('notes')}
-                    className={dashboardTheme.sectionAction}
-                  >
-                    Open notes
-                  </button>
-                </div>
-                {isLoadingDashboard ? (
-                  <div className="space-y-2">
-                    {Array.from({ length: 2 }).map((_, i) => (
-                      <DashboardSkeletonNoteCard key={i} />
-                    ))}
-                  </div>
-                ) : recentNotes.length === 0 ? (
-                  <p className={dashboardTheme.emptyText}>No recent notes.</p>
-                ) : (
-                  <div className="space-y-1">
-                    {recentNotes.map((note) => (
-                      <button
-                        key={note.id}
-                        ref={expandedNoteIds.has(note.id) ? undefined : undefined}
-                        onContextMenu={(event) =>
-                          openContextMenu(event, { type: 'note', noteId: note.id })
-                        }
-                        onClick={() => openModule('notes', { kind: 'notes', focusNoteId: note.id })}
-                        className={dashboardTheme.sectionRow}
-                      >
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-start justify-between gap-4">
-                            <span className="truncate text-sm font-medium text-[var(--ledger-text-primary)]">
-                              {note.title}
-                            </span>
-                            <span className="shrink-0 text-xs text-[var(--ledger-text-muted)]">
-                              {new Date(note.updated_at).toLocaleDateString([], {
-                                month: 'short',
-                                day: 'numeric',
-                              })}
-                            </span>
-                          </div>
-                          <p className="mt-1 line-clamp-1 text-xs font-light text-[var(--ledger-text-muted)]">
-                            {htmlToPlainText(note.content) || 'No content yet'}
-                          </p>
-                          {expandedNoteIds.has(note.id) && (
-                            <p className="mt-1 whitespace-pre-wrap wrap-break-word text-sm text-[var(--ledger-text-secondary)]">
-                              {htmlToPlainText(note.content) || 'No content yet'}
-                            </p>
-                          )}
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </section>
-
-              <section
-                className="space-y-5"
-                onContextMenu={(event) => openContextMenu(event, { type: 'checkin' })}
-              >
-                <div className="flex items-center justify-between gap-4">
-                  <p className={dashboardTheme.sectionLabel}>Review</p>
-                  <button
-                    onClick={() => {
-                      void window.desktopWindow?.openCheckin();
-                      setState('expanded');
-                    }}
-                    className={dashboardTheme.sectionAction}
-                  >
-                    Open check-in
-                  </button>
-                </div>
-                <div className="space-y-8 border-t border-[color:var(--ledger-border-subtle)] pt-6">
-                  {[
-                    { label: 'Finished', value: daily.finished || 'Nothing yet' },
-                    { label: 'Blocked', value: daily.blocked || 'No blockers' },
-                    {
-                      label: 'First task tomorrow',
-                      value: daily.firstTaskTomorrow || 'Not set yet',
-                    },
-                  ].map((item) => (
-                    <div key={item.label} className="space-y-2">
-                      <p className={dashboardTheme.sectionLabel}>{item.label}</p>
-                      <p className={dashboardTheme.body}>{item.value}</p>
-                    </div>
-                  ))}
-                </div>
-              </section>
+              )}
             </main>
 
-            <aside className={dashboardTheme.rightPanel}>
-              <div className={dashboardTheme.subtleRule} />
-
-                <div ref={upcomingRef} className="space-y-5">
-                  <div className="flex items-center justify-between gap-3">
-                    <p className={dashboardTheme.sectionLabel}>Upcoming</p>
-                    <button
-                      type="button"
-                      onClick={() => openModule('calendar')}
-                      className={dashboardTheme.sectionAction}
-                    >
-                      Calendar
-                    </button>
-                  </div>
-                  <div className="space-y-2">
-                    {isLoadingDashboard ? (
-                      Array.from({ length: 3 }).map((_, i) => (
-                        <DashboardSkeletonNoteCard key={i} />
-                      ))
-                    ) : upcoming.length === 0 ? (
-                      <p className={dashboardTheme.emptyBody}>No upcoming events today.</p>
-                    ) : (
-                      upcoming.map((item) => {
-                        const start = new Date(item.start_at);
-                        const isExpanded = expandedTimelineIds.has(item.id);
-                        const showWorkspace = calendarScope === 'all_accessible_workspaces';
-                        const timeLabel = start.toLocaleTimeString([], {
-                          hour: 'numeric',
-                          minute: '2-digit',
-                        });
-                        const dayLabel =
-                          start.toDateString() === new Date().toDateString()
-                            ? 'Today'
-                            : start.toLocaleDateString([], { month: 'short', day: 'numeric' });
-                        return (
-                          <button
-                            key={item.id}
-                            onContextMenu={(event) =>
-                              openContextMenu(event, { type: 'timeline', eventId: item.id })
-                            }
-                            onClick={() => openModule('calendar')}
-                            className={dashboardTheme.sectionRowCompact}
-                          >
-                            <div className="min-w-0 flex-1">
-                              <div className="flex items-start justify-between gap-3">
-                                <p className={`${isExpanded ? '' : 'truncate'} text-sm font-medium text-[var(--ledger-text-primary)]`}>
-                                  {item.title}
-                                </p>
-                                <p className="shrink-0 text-xs text-[var(--ledger-text-muted)]">{dayLabel}</p>
-                              </div>
-                              <p className="mt-1 text-xs text-[var(--ledger-text-muted)]">{timeLabel}</p>
-                              {showWorkspace && item.workspace_name && (
-                                <p className="mt-0.5 text-[11px] text-[var(--ledger-text-muted)]">
-                                  Workspace · {item.workspace_name}
-                                </p>
-                              )}
-                            </div>
-                          </button>
-                        );
-                      })
+            <aside className="min-h-0 border-t border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)]/35 p-5 lg:border-l lg:border-t-0">
+              <div className="sticky top-0 space-y-5">
+                {!selectedOverviewRow ? (
+                  <>
+                    <div>
+                      <p className="text-[12px] font-medium text-[var(--ledger-text-muted)]">{todayLabel}</p>
+                      <h3 className="mt-1 text-lg font-semibold text-[var(--ledger-text-primary)]">
+                        {activeWorkspace?.name ?? 'Workspace'}
+                      </h3>
+                    </div>
+                    <div className="space-y-2">
+                      {[
+                        ['Today', `${Math.max(0, completedFocusTasks.length)}/${Math.max(1, todayTasks.length)} complete`],
+                        ['Assigned to me', `${todayTasks.filter((task) => task.assigned_to || task.project_name).length} tasks`],
+                        ['Active projects', `${attentionProjects.length} active`],
+                        ['Upcoming', `${upcoming.length} events`],
+                      ].map(([label, value]) => (
+                        <div
+                          key={label}
+                          className="flex items-center justify-between border-b border-[color:var(--ledger-border-subtle)] py-2"
+                        >
+                          <span className="text-[12px] text-[var(--ledger-text-muted)]">{label}</span>
+                          <span className="text-[13px] font-medium text-[var(--ledger-text-primary)]">{value}</span>
+                        </div>
+                      ))}
+                    </div>
+                    {recentNotes[0] && (
+                      <div className="border-t border-[color:var(--ledger-border-subtle)] pt-4">
+                        <p className="text-[11px] font-medium text-[var(--ledger-text-muted)]">Recent note</p>
+                        <p className="mt-1 truncate text-[13px] font-medium text-[var(--ledger-text-primary)]">
+                          {recentNotes[0].title}
+                        </p>
+                        <p className="mt-1 text-[12px] text-[var(--ledger-text-muted)]">2 actions created</p>
+                      </div>
                     )}
-                  </div>
-                </div>
+                    <div className="pt-4">
+                      <p className="text-[11px] font-medium text-[var(--ledger-text-muted)]">Try next</p>
+                      <p className="mt-1 text-[13px] font-medium text-[var(--ledger-text-primary)]">Connect calendar</p>
+                      <p className="mt-1 text-[12px] leading-5 text-[var(--ledger-text-muted)]">
+                        Turn meetings into notes and actions.
+                      </p>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="border-b border-[color:var(--ledger-border-subtle)] pb-4">
+                      <p className="text-[11px] font-medium text-[var(--ledger-text-muted)]">
+                        {selectedOverviewTypeLabel}
+                      </p>
+                      <h3 className="mt-2 text-lg font-semibold leading-6 text-[var(--ledger-text-primary)]">
+                        {selectedOverviewRow.title}
+                      </h3>
+                      <p className="mt-1 text-[12px] leading-5 text-[var(--ledger-text-muted)]">
+                        {selectedOverviewRow.meta}
+                      </p>
+                    </div>
 
-                <div className={dashboardTheme.subtleRule} />
+                    <div className="flex flex-wrap gap-1.5">
+                      {selectedOverviewRow.chips.map((chip) => (
+                        <span
+                          key={chip}
+                          className="rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-2 py-0.5 text-[11px] text-[var(--ledger-text-secondary)]"
+                        >
+                          {chip}
+                        </span>
+                      ))}
+                    </div>
 
-                <div ref={projectsRef} className="space-y-5">
-                  <div className="flex items-center justify-between gap-3">
-                    <p className={dashboardTheme.sectionLabel}>Projects</p>
-                    <button
-                      type="button"
-                      onClick={() => openModule('projects')}
-                      className={dashboardTheme.sectionAction}
-                    >
-                      Projects
-                    </button>
-                  </div>
-                  <div className="space-y-2">
-                    {isLoadingDashboard ? (
-                      Array.from({ length: 3 }).map((_, i) => (
-                        <DashboardSkeletonProjectCard key={i} />
-                      ))
-                    ) : attentionProjects.length === 0 ? (
-                      <p className={dashboardTheme.emptyBody}>No projects need attention.</p>
-                    ) : (
-                      attentionProjects.map((project) => {
-                        const status = String(project.status).toLowerCase();
-                        const label = status.includes('complete')
-                          ? 'Completed'
-                          : status.includes('progress')
-                            ? 'In progress'
-                            : status.includes('pause')
-                              ? 'Paused'
-                              : 'Not started';
-                        const due = (project as { end_date?: string | null }).end_date;
-                        const dueLabel = due
-                          ? `Due ${new Date(due).toLocaleDateString([], {
-                              month: 'short',
-                              day: 'numeric',
-                            })}`
-                          : 'No due date';
-
-                        return (
-                          <button
-                            key={project.id}
-                            onContextMenu={(event) =>
-                              openContextMenu(event, { type: 'project', projectId: project.id })
-                            }
-                            onClick={() =>
-                              openModule('projects', {
-                                kind: 'projects',
-                                focusProjectId: project.id,
-                              })
-                            }
-                            className={dashboardTheme.sectionRowCompact}
-                          >
-                            <div className="min-w-0 flex-1">
-                              <p className="truncate text-sm font-medium text-[var(--ledger-text-primary)]">
-                                {project.name}
-                              </p>
-                              <p className="mt-1 flex items-center gap-2 text-xs text-[var(--ledger-text-muted)]">
-                                <Circle size={8} className="fill-current text-[var(--ledger-accent)]" />
-                                <span>{label}</span>
-                                <span>·</span>
-                                <span>{Math.max(0, Math.min(100, project.completeness))}%</span>
-                              </p>
-                              <p className="mt-1 text-xs text-[var(--ledger-text-muted)]">{dueLabel}</p>
+                    {overviewDetailSections.map((section) => (
+                      <section key={section.title} className="space-y-2 border-t border-[color:var(--ledger-border-subtle)] pt-4">
+                        <p className="text-[11px] font-medium text-[var(--ledger-text-muted)]">{section.title}</p>
+                        <div className="space-y-1">
+                          {section.rows.map(([label, value]) => (
+                            <div
+                              key={label}
+                              className="flex items-center justify-between gap-4 rounded-lg px-1 py-1.5"
+                            >
+                              <span className="text-[12px] text-[var(--ledger-text-muted)]">{label}</span>
+                              <span className="max-w-44 truncate text-right text-[13px] font-medium capitalize text-[var(--ledger-text-primary)]">
+                                {value}
+                              </span>
                             </div>
+                          ))}
+                        </div>
+                      </section>
+                    ))}
+
+                    <section className="space-y-2 border-t border-[color:var(--ledger-border-subtle)] pt-4">
+                      <p className="text-[11px] font-medium text-[var(--ledger-text-muted)]">Quick actions</p>
+                      <div className="space-y-1">
+                        {selectedOverviewQuickActions.map((action) => (
+                          <button
+                            key={action.label}
+                            type="button"
+                            onClick={() => action.action()}
+                            disabled={action.disabled}
+                            className="flex h-8 w-full items-center justify-between rounded-lg px-2 text-left text-[13px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-card)] hover:text-[var(--ledger-text-primary)] disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            <span>{action.label}</span>
+                            {action.icon}
                           </button>
-                        );
-                      })
-                    )}
-                  </div>
-                </div>
+                        ))}
+                      </div>
+                    </section>
+                  </>
+                )}
+              </div>
             </aside>
           </div>
         </div>
@@ -2604,6 +2919,113 @@ function DashboardContent() {
             onClick={(event) => event.stopPropagation()}
             onMouseDown={(event) => event.stopPropagation()}
           >
+            {dashboardContextMenu.type === 'overview-row' && (() => {
+              const row = overviewRows.find((item) => item.id === dashboardContextMenu.rowId);
+              if (!row) return null;
+              const isTodayTask = todayTasks.some((task) => task.id === row.sourceId);
+              const isFollowUpTask = followUpTasks.some((task) => task.id === row.sourceId);
+              const deleteRow = () => {
+                if (row.kind === 'project') void deleteDashboardProject(row.sourceId);
+                else if (row.kind === 'note') void deleteDashboardNote(row.sourceId);
+                else if (row.kind === 'event') void deleteTimelineEvent(row.sourceId);
+                else if (isFollowUpTask) void deleteFollowUp(row.sourceId);
+                else setDashboardContextMenu(null);
+              };
+              const markDone = () => {
+                if (isTodayTask) void toggleFocusDone(row.sourceId);
+                else if (isFollowUpTask) void markFollowUpDone(row.sourceId);
+                setDashboardContextMenu(null);
+              };
+              return (
+                <>
+                  <button
+                    onClick={() => {
+                      row.open();
+                      setDashboardContextMenu(null);
+                    }}
+                    className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-accent)] hover:bg-[var(--ledger-surface-hover)]"
+                  >
+                    <ArrowRight size={14} />
+                    Open
+                  </button>
+                  <button
+                    onClick={() => {
+                      row.open();
+                      setDashboardContextMenu(null);
+                    }}
+                    className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]"
+                  >
+                    <Folder size={14} />
+                    Open in new panel
+                  </button>
+                  {(row.kind === 'task' || row.kind === 'reminder') && (
+                    <>
+                      <button
+                        onClick={markDone}
+                        className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]"
+                      >
+                        <CheckCircle2 size={14} />
+                        Mark complete
+                      </button>
+                      <button
+                        onClick={() => {
+                          if (isTodayTask) void addTodayTaskToFocus(row.sourceId);
+                          setDashboardContextMenu(null);
+                        }}
+                        className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]"
+                      >
+                        <Circle size={14} />
+                        Move to Today
+                      </button>
+                    </>
+                  )}
+                  {row.kind === 'project' && (
+                    <button
+                      onClick={() => {
+                        void updateProjectStatus(row.sourceId, 'in_progress');
+                      }}
+                      className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]"
+                    >
+                      <MoreHorizontal size={14} />
+                      Mark in progress
+                    </button>
+                  )}
+                  {row.kind === 'note' && (
+                    <button
+                      disabled
+                      className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-muted)] opacity-60"
+                    >
+                      <Folder size={14} />
+                      Link to project
+                    </button>
+                  )}
+                  <button
+                    onClick={() => {
+                      void navigator.clipboard?.writeText(`ledger://${row.kind}/${row.sourceId}`);
+                      setDashboardContextMenu(null);
+                    }}
+                    className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]"
+                  >
+                    <StickyNote size={14} />
+                    Copy link
+                  </button>
+                  <button
+                    disabled
+                    className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-muted)] opacity-60"
+                  >
+                    <Plus size={14} />
+                    Duplicate
+                  </button>
+                  <button
+                    onClick={deleteRow}
+                    className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-danger)] hover:bg-[color:rgba(217,45,32,0.08)]"
+                  >
+                    <Trash2 size={14} />
+                    {row.kind === 'note' || row.kind === 'project' || row.kind === 'event' ? 'Archive' : 'Delete'}
+                  </button>
+                </>
+              );
+            })()}
             {dashboardContextMenu.type === 'followup' && (
               <>
                 <button
