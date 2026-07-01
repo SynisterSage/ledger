@@ -17,6 +17,15 @@ import {
   Search,
   Inbox,
   Circle,
+  CheckSquare2,
+  FileText,
+  FolderKanban,
+  Keyboard,
+  Link2,
+  Milestone,
+  Plug2,
+  UserPlus,
+  Users,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
@@ -1889,6 +1898,64 @@ export const ExpandedSidebar = ({
   ).length;
   const horizontalTodaySummary =
     todayTotalCount > 0 ? `${completedToday.length}/${todayTotalCount} complete` : 'Nothing yet';
+  const openSettingsSection = (focusContext: 'workspace' | 'integrations' | 'shortcuts') => {
+    void window.desktopWindow?.openModule('settings', {
+      kind: 'settings',
+      focusContext,
+    });
+  };
+  const trySectionItems = [
+    {
+      title: 'Connect calendar',
+      icon: CalendarDays,
+      action: () => openSettingsSection('integrations'),
+    },
+    {
+      title: 'Try project roadmap',
+      icon: FolderKanban,
+      action: () => window.desktopWindow?.toggleModule('projects'),
+    },
+    {
+      title: 'Invite a member',
+      icon: UserPlus,
+      action: () => openSettingsSection('workspace'),
+    },
+    {
+      title: 'Add a milestone',
+      icon: Milestone,
+      action: () => window.desktopWindow?.toggleModule('projects'),
+    },
+    {
+      title: 'Review unfinished',
+      icon: CheckSquare2,
+      action: () => window.desktopWindow?.toggleModule('dashboard'),
+    },
+    {
+      title: 'Install browser extension',
+      icon: Plug2,
+      action: () => openSettingsSection('integrations'),
+    },
+    {
+      title: 'Create a meeting note',
+      icon: FileText,
+      action: () => window.desktopWindow?.toggleModule('quick-note' as any),
+    },
+    {
+      title: 'Link a note to a project',
+      icon: Link2,
+      action: () => window.desktopWindow?.toggleModule('projects'),
+    },
+    {
+      title: 'Try long-term tasks',
+      icon: Check,
+      action: () => window.desktopWindow?.toggleModule('quick-task' as any),
+    },
+    {
+      title: 'Set up shortcuts',
+      icon: Keyboard,
+      action: () => openSettingsSection('shortcuts'),
+    },
+  ];
 
   if (isHorizontal) {
     const isTopDock = position === 'top';
@@ -1935,6 +2002,7 @@ export const ExpandedSidebar = ({
               { label: 'Projects', icon: Folder, action: () => window.desktopWindow?.toggleModule('projects') },
               { label: 'Notes', icon: StickyNote, action: () => window.desktopWindow?.toggleModule('notes') },
               { label: 'Calendar', icon: CalendarDays, action: () => window.desktopWindow?.openModule('calendar') },
+              { label: 'Teams', icon: Users, action: () => window.desktopWindow?.toggleModule('teams') },
             ].map((item) => (
               <button
                 key={item.label}
@@ -3156,11 +3224,37 @@ export const ExpandedSidebar = ({
                       <Plus size={13} className="shrink-0" />
                       <span className="truncate">Add Project</span>
                     </button>
-                  )}
-                </>
-              )}
-            </div>
-          )}
+                    )}
+                  </>
+                )}
+              </div>
+            )}
+
+            <button
+              type="button"
+              onClick={() => window.desktopWindow?.toggleModule('teams')}
+              className="flex h-9 w-full items-center gap-2.5 rounded-xl px-2.5 text-left text-[13px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]"
+            >
+              <Users size={15} className="shrink-0 text-[var(--ledger-text-muted)]" />
+              <span>Teams</span>
+            </button>
+          </section>
+
+        <section className="space-y-2">
+          <p className={sidebarTheme.sectionLabel}>Try</p>
+          <div className="space-y-1">
+            {trySectionItems.map((item) => (
+              <button
+                key={item.title}
+                type="button"
+                onClick={item.action}
+                className="flex h-9 w-full items-center gap-2.5 rounded-xl px-2.5 text-left text-[13px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]"
+              >
+                <item.icon size={15} className="shrink-0 text-[var(--ledger-text-muted)]" />
+                <span className="truncate">{item.title}</span>
+              </button>
+            ))}
+          </div>
         </section>
 
         {saveError && <p className="text-[11px] text-[var(--ledger-danger)]">{saveError}</p>}

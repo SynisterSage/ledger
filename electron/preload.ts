@@ -28,9 +28,12 @@ type ModuleWindowKind =
   | 'calendar'
   | 'notes'
   | 'projects'
+  | 'teams'
   | 'dashboard'
   | 'notifications'
   | 'settings'
+  | 'inbox'
+  | 'quick-follow-up'
   | 'quick-task'
   | 'quick-note'
   | 'quick-event';

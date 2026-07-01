@@ -5,6 +5,7 @@ type ModuleWindowKind =
   | 'calendar'
   | 'notes'
   | 'projects'
+  | 'teams'
   | 'dashboard'
   | 'notifications'
   | 'settings'

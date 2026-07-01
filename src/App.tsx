@@ -43,6 +43,7 @@ import LoginForm from './components/Common/LoginForm';
 import CalendarWindow from './components/Calendar/CalendarWindow';
 import NotesWindow from './components/Notes/NotesWindow';
 import ProjectsWindow from './components/Projects/ProjectsWindow';
+import TeamsWindow from './components/Teams/TeamsWindow';
 import InboxWindow from './components/Inbox/InboxWindow';
 import { NotificationCenterWindow } from './components/Notifications/NotificationCenterWindow';
 import SettingsWindow from './components/Settings/SettingsWindow';
@@ -63,6 +64,7 @@ type ModuleKind =
   | 'calendar'
   | 'notes'
   | 'projects'
+  | 'teams'
   | 'dashboard'
   | 'notifications'
   | 'settings'
@@ -690,6 +692,26 @@ function DashboardContent() {
       updated_at?: string | null;
     }>
   >([]);
+  const [workspaceTasks, setWorkspaceTasks] = useState<
+    Array<{
+      id: string;
+      title: string;
+      status?: string | null;
+      due_date?: string | null;
+      due_time?: string | null;
+      project_id?: string | null;
+      milestone_id?: string | null;
+      assigned_to?: string | null;
+      task_horizon?: 'today' | 'long_term' | null;
+      show_in_today?: boolean;
+      is_today_focus?: boolean;
+      workspace_id?: string | null;
+      workspace_name?: string | null;
+      workspace_color?: string | null;
+      created_at?: string | null;
+      updated_at?: string | null;
+    }>
+  >([]);
   const [daily, setDaily] = useState<{
     focusItems: Array<{ id: string; text: string; done: boolean }>;
     finished: string;
@@ -984,12 +1006,13 @@ function DashboardContent() {
         blocked: '',
         firstTaskTomorrow: '',
       });
-      setProjects([]);
-      setUpcoming([]);
-      setNotes([]);
-      setFollowUpTasks([]);
-      return;
-    }
+        setProjects([]);
+        setUpcoming([]);
+        setNotes([]);
+        setFollowUpTasks([]);
+        setWorkspaceTasks([]);
+        return;
+      }
 
     let cancelled = false;
 
@@ -1125,9 +1148,24 @@ function DashboardContent() {
                 status?: string | null;
                 description?: string | null;
                 notes?: string | null;
+                due_date?: string | null;
+                due_time?: string | null;
+                project_id?: string | null;
+                milestone_id?: string | null;
+                assigned_to?: string | null;
+                task_horizon?: 'today' | 'long_term' | null;
+                show_in_today?: boolean;
+                is_today_focus?: boolean;
+                workspace_id?: string | null;
+                workspace_name?: string | null;
+                workspace_color?: string | null;
                 updated_at?: string;
+                created_at?: string | null;
               }>)
             : [];
+        setWorkspaceTasks(
+          rawTasks.filter((task) => String(task.status ?? '').toLowerCase() !== 'completed')
+        );
         const calendarFollowUps = rawTasks
           .filter((task) => String(task.description ?? '').startsWith('calendar_followup:'))
           .map((task) => {
@@ -1630,40 +1668,207 @@ function DashboardContent() {
     }
   };
 
-  const toggleFocusDone = async (taskId: string) => {
-    const task = todayTasks.find((item) => item.id === taskId);
-    if (!task) return;
+  type OverviewTaskTarget = {
+    id: string;
+    title: string;
+    status?: string | null;
+    kind?: 'task' | 'reminder';
+    workspace_id?: string | null;
+    workspace_name?: string | null;
+    workspace_color?: string | null;
+    due_date?: string | null;
+    due_time?: string | null;
+    project_id?: string | null;
+    project_name?: string | null;
+    assigned_to?: string | null;
+    show_in_today?: boolean;
+    is_today_focus?: boolean;
+    task_horizon?: 'today' | 'long_term' | null;
+    remind_at?: string | null;
+  };
+
+  type OverviewActionRowKind = 'task' | 'reminder' | 'project' | 'note' | 'event' | 'milestone' | 'capture';
+
+  const findOverviewTaskTarget = (taskId: string): OverviewTaskTarget | null => {
+    const todayTask = todayTasks.find((task) => task.id === taskId);
+    if (todayTask) return todayTask;
+
+    const workspaceTask = workspaceTasks.find((task) => task.id === taskId);
+    if (workspaceTask) {
+      return {
+        ...workspaceTask,
+        kind: 'task' as const,
+      };
+    }
+
+    const followUpTask = followUpTasks.find((task) => task.id === taskId);
+    if (followUpTask) {
+      return {
+        ...followUpTask,
+        kind: 'task' as const,
+      };
+    }
+
+    return null;
+  };
+
+  const copyOverviewRowLink = async (row: { kind: string; sourceId: string }) => {
+    try {
+      await navigator.clipboard.writeText(`ledger://${row.kind}/${row.sourceId}`);
+    } catch (error) {
+      console.error('Failed to copy overview link:', error);
+    } finally {
+      setDashboardContextMenu(null);
+    }
+  };
+
+  const completeOverviewRow = async (row: { kind: OverviewActionRowKind; sourceId: string }) => {
+    if (row.kind !== 'task' && row.kind !== 'reminder') return;
+    const target = findOverviewTaskTarget(row.sourceId);
+    if (!target) return;
 
     const previousTodayTasks = todayTasks;
-    const previousCompletedFocusTasks = completedFocusTasks;
-    const completedAt = new Date().toISOString();
-    const completedItem: CompletedFocusTask = {
-      id: task.id,
-      title: task.title,
-      workspace_name: task.workspace_name ?? null,
-      project_name: task.project_name ?? null,
-      due_date: task.due_date ?? null,
-      due_time: task.due_time ?? null,
-      completed_at: completedAt,
-    };
+    const previousWorkspaceTasks = workspaceTasks;
+    const previousFollowUpTasks = followUpTasks;
 
-    setTodayTasks((prev) => prev.filter((item) => item.id !== taskId));
-    setCompletedFocusTasks((prev) => {
-      const next = [completedItem, ...prev.filter((item) => item.id !== taskId)];
-      return next;
-    });
-    setFocusActionId(taskId);
+    if (row.kind === 'reminder') {
+      setTodayTasks((prev) => prev.filter((item) => item.id !== row.sourceId));
+    } else {
+      setTodayTasks((prev) => prev.filter((item) => item.id !== row.sourceId));
+      setWorkspaceTasks((prev) => prev.filter((item) => item.id !== row.sourceId));
+      setFollowUpTasks((prev) => prev.filter((item) => item.id !== row.sourceId));
+    }
+
+    setDashboardContextMenu(null);
+
     try {
-      await api.updateTaskInWorkspace(taskId, task.workspace_id ?? activeWorkspaceId ?? '', {
-        status: 'completed',
-      });
-      await refreshTodayTasks();
+      if (row.kind === 'reminder') {
+        await api.updateReminder(row.sourceId, { is_done: true });
+      } else if (target.workspace_id) {
+        await api.updateTaskInWorkspace(row.sourceId, target.workspace_id, { status: 'completed' });
+      } else {
+        await api.updateTask(row.sourceId, { status: 'completed' });
+      }
+      handleDashboardWorkspaceRefresh();
+      void refreshTodayTasks();
     } catch (error) {
-      console.error('Failed to complete focus task:', error);
+      console.error('Failed to complete overview row:', error);
       setTodayTasks(previousTodayTasks);
-      setCompletedFocusTasks(previousCompletedFocusTasks);
-    } finally {
-      setFocusActionId(null);
+      setWorkspaceTasks(previousWorkspaceTasks);
+      setFollowUpTasks(previousFollowUpTasks);
+    }
+  };
+
+  const moveOverviewRowToToday = async (row: { kind: OverviewActionRowKind; sourceId: string }) => {
+    if (row.kind !== 'task') return;
+
+    const target = findOverviewTaskTarget(row.sourceId);
+    if (!target || target.kind !== 'task') return;
+
+    const previousTodayTasks = todayTasks;
+    const previousWorkspaceTasks = workspaceTasks;
+
+    const optimisticTask = {
+      ...target,
+      kind: 'task' as const,
+      status: target.status ?? 'todo',
+      show_in_today: true,
+      is_today_focus: false,
+      task_horizon: 'today' as const,
+      workspace_id: target.workspace_id ?? null,
+      workspace_name: target.workspace_name ?? null,
+      workspace_color: target.workspace_color ?? null,
+    } as (typeof todayTasks)[number];
+
+    setTodayTasks((prev) => [optimisticTask, ...prev.filter((item) => item.id !== row.sourceId)]);
+    setWorkspaceTasks((prev) =>
+      prev.map((task) =>
+        task.id === row.sourceId
+          ? {
+              ...task,
+              status: task.status ?? 'todo',
+              show_in_today: true,
+              is_today_focus: false,
+              task_horizon: 'today' as const,
+            }
+          : task
+      )
+    );
+
+    setDashboardContextMenu(null);
+
+    try {
+      if (target.workspace_id) {
+        await api.updateTaskInWorkspace(row.sourceId, target.workspace_id, {
+          status: 'todo',
+          show_in_today: true,
+          is_today_focus: false,
+          task_horizon: 'today',
+        });
+      } else {
+        await api.updateTask(row.sourceId, {
+          status: 'todo',
+          show_in_today: true,
+          is_today_focus: false,
+          task_horizon: 'today',
+        });
+      }
+      handleDashboardWorkspaceRefresh();
+      void refreshTodayTasks();
+    } catch (error) {
+      console.error('Failed to move overview row to today:', error);
+      setTodayTasks(previousTodayTasks);
+      setWorkspaceTasks(previousWorkspaceTasks);
+    }
+  };
+
+  const deleteOverviewRow = async (row: { kind: OverviewActionRowKind; sourceId: string }) => {
+    if (row.kind === 'project') {
+      await deleteDashboardProject(row.sourceId);
+      handleDashboardWorkspaceRefresh();
+      return;
+    }
+
+    if (row.kind === 'note') {
+      await deleteDashboardNote(row.sourceId);
+      handleDashboardWorkspaceRefresh();
+      return;
+    }
+
+    if (row.kind === 'event') {
+      await deleteTimelineEvent(row.sourceId);
+      handleDashboardWorkspaceRefresh();
+      return;
+    }
+
+    const target = findOverviewTaskTarget(row.sourceId);
+    if (!target) return;
+
+    const previousTodayTasks = todayTasks;
+    const previousWorkspaceTasks = workspaceTasks;
+    const previousFollowUpTasks = followUpTasks;
+
+    setTodayTasks((prev) => prev.filter((item) => item.id !== row.sourceId));
+    setWorkspaceTasks((prev) => prev.filter((item) => item.id !== row.sourceId));
+    setFollowUpTasks((prev) => prev.filter((item) => item.id !== row.sourceId));
+
+    setDashboardContextMenu(null);
+
+    try {
+      if (target.kind === 'reminder') {
+        await api.deleteReminder(row.sourceId);
+      } else if (target.workspace_id) {
+        await api.deleteTaskInWorkspace(row.sourceId, target.workspace_id);
+      } else {
+        await api.deleteTask(row.sourceId);
+      }
+      handleDashboardWorkspaceRefresh();
+      void refreshTodayTasks();
+    } catch (error) {
+      console.error('Failed to delete overview row:', error);
+      setTodayTasks(previousTodayTasks);
+      setWorkspaceTasks(previousWorkspaceTasks);
+      setFollowUpTasks(previousFollowUpTasks);
     }
   };
 
@@ -1899,14 +2104,21 @@ function DashboardContent() {
       sourceId: task.id,
       kind: isReminder ? 'reminder' : 'task',
       title: task.title,
-      meta: [
-        task.project_name || task.workspace_name || activeWorkspace?.name || 'Workspace',
-        isReminder ? 'Reminder' : task.task_horizon === 'long_term' ? 'Long-term task' : 'Action',
-        dueLabel ? `Due ${dueLabel}` : timeLabel,
-      ]
+      meta: [task.project_name || task.workspace_name || activeWorkspace?.name || 'Workspace', dueLabel ? `Due ${dueLabel}` : timeLabel]
         .filter(Boolean)
         .join(' · '),
-      chips: chips.length > 0 ? chips : [isReminder ? 'Reminder' : task.is_today_focus ? 'Focus' : 'Today'],
+      chips:
+        chips.length > 0
+          ? chips
+          : [
+              isReminder
+                ? 'Reminder'
+                : task.is_today_focus
+                  ? 'Focus'
+                  : task.task_horizon === 'long_term'
+                    ? 'Long-term'
+                    : 'Short-term',
+            ],
       dateLabel: timeLabel || dueLabel || undefined,
       group,
       icon: isReminder ? <Bell size={13} /> : <Circle size={13} />,
@@ -1951,6 +2163,11 @@ function DashboardContent() {
     };
   });
 
+  const longTermTaskRows = workspaceTasks
+    .filter((task) => task.task_horizon === 'long_term')
+    .slice(0, 8)
+    .map<OverviewRow>((task) => buildTaskRow(task as (typeof todayTasks)[number], 'Long-term tasks', ['Long-term']));
+
   const noteRows = recentNotes.slice(0, 6).map<OverviewRow>((note) => ({
     id: `Recent notes:${note.id}`,
     sourceId: note.id,
@@ -1979,7 +2196,7 @@ function DashboardContent() {
       meta: ['Event', timeLabel, calendarScope === 'all_accessible_workspaces' ? event.workspace_name : null]
         .filter(Boolean)
         .join(' · '),
-      chips: isToday ? ['Meeting'] : ['Event'],
+      chips: [isToday ? 'Today' : 'Upcoming', isToday ? 'Meeting' : 'Event'],
       dateLabel: dayLabel ?? undefined,
       group: isToday ? 'Today' : 'Upcoming',
       icon: <CalendarDays size={13} />,
@@ -2012,7 +2229,8 @@ function DashboardContent() {
   const overviewRows: OverviewRow[] = [
     ...focusTasksForDisplay.map((task) => buildTaskRow(task, 'Needs attention', ['Focus'])),
     ...followUpRows,
-    ...activeTodayTasks.slice(0, 6).map((task) => buildTaskRow(task, 'Today', ['Today'])),
+    ...activeTodayTasks.slice(0, 6).map((task) => buildTaskRow(task, 'Today')),
+    ...longTermTaskRows,
     ...todayTasks
       .filter((task) => task.assigned_to || task.project_name)
       .slice(0, 4)
@@ -2030,7 +2248,15 @@ function DashboardContent() {
     return true;
   });
 
-  const overviewGroups = ['Needs attention', 'Today', 'Assigned to me', 'Active projects', 'Recent notes', 'Upcoming']
+  const overviewGroups = [
+    'Needs attention',
+    'Today',
+    'Long-term tasks',
+    'Assigned to me',
+    'Active projects',
+    'Recent notes',
+    'Upcoming',
+  ]
     .map((group) => ({
       id: group,
       label: group,
@@ -2144,13 +2370,21 @@ function DashboardContent() {
               {
                 label: 'Mark done',
                 icon: <CheckCircle2 size={13} />,
-                action: () => void toggleFocusDone(selectedOverviewRow.sourceId),
-                disabled: selectedOverviewRow.kind === 'reminder',
+                action: () =>
+                  void completeOverviewRow({
+                    kind: selectedOverviewRow.kind,
+                    sourceId: selectedOverviewRow.sourceId,
+                  }),
+                disabled: false,
               },
               {
                 label: 'Move to today',
                 icon: <CalendarDays size={13} />,
-                action: () => void addTodayTaskToFocus(selectedOverviewRow.sourceId),
+                action: () =>
+                  void moveOverviewRowToToday({
+                    kind: selectedOverviewRow.kind,
+                    sourceId: selectedOverviewRow.sourceId,
+                  }),
                 disabled: selectedOverviewRow.kind === 'reminder',
               },
               {
@@ -2536,12 +2770,18 @@ function DashboardContent() {
                     const isCollapsed = collapsedOverviewGroups.has(group.id);
                     return (
                       <section key={group.id} className="overflow-hidden">
-                        <div className="flex h-8 items-center justify-between rounded-lg bg-[var(--ledger-surface-muted)] px-3">
-                          <button
-                            type="button"
-                            onClick={() => toggleOverviewGroup(group.id)}
-                            className="flex min-w-0 items-center gap-2 text-left"
-                          >
+                        <div
+                          role="button"
+                          tabIndex={0}
+                          onClick={() => toggleOverviewGroup(group.id)}
+                          onKeyDown={(event) => {
+                            if (event.key !== 'Enter' && event.key !== ' ') return;
+                            event.preventDefault();
+                            toggleOverviewGroup(group.id);
+                          }}
+                          className="flex h-8 cursor-pointer select-none items-center justify-between rounded-lg bg-[var(--ledger-surface-muted)] px-3"
+                        >
+                          <div className="flex min-w-0 items-center gap-2 text-left select-none">
                             <ChevronDown
                               size={14}
                               className={`shrink-0 text-[var(--ledger-text-muted)] transition ${
@@ -2554,15 +2794,19 @@ function DashboardContent() {
                             <span className="rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-1.5 py-0.5 text-[10px] leading-none text-[var(--ledger-text-muted)]">
                               {group.rows.length}
                             </span>
-                          </button>
+                          </div>
                           <button
                             type="button"
-                            onClick={() =>
-                              group.id === 'Active projects'
-                                ? openModule('projects', { kind: 'projects', focusProjectId: '__new__' })
-                                : setIsNewFocusModalOpen(true)
-                            }
-                            className="flex h-6 w-6 items-center justify-center rounded-md text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-card)] hover:text-[var(--ledger-text-primary)]"
+                            onMouseDown={(event) => event.stopPropagation()}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              if (group.id === 'Active projects') {
+                                openModule('projects', { kind: 'projects', focusProjectId: '__new__' });
+                              } else {
+                                setIsNewFocusModalOpen(true);
+                              }
+                            }}
+                            className="flex h-6 w-6 items-center justify-center rounded-md text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-card)] hover:text-[var(--ledger-text-primary)] select-none"
                             title={`Create item in ${group.label}`}
                           >
                             <Plus size={13} />
@@ -2674,7 +2918,7 @@ function DashboardContent() {
             </main>
 
             <aside className="min-h-0 border-t border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)]/35 p-5 lg:border-l lg:border-t-0">
-              <div className="sticky top-0 space-y-5">
+              <div className="flex h-full min-h-0 flex-col space-y-5 overflow-y-auto pr-1">
                 {!selectedOverviewRow ? (
                   <>
                     <div>
@@ -2686,6 +2930,7 @@ function DashboardContent() {
                     <div className="space-y-2">
                       {[
                         ['Today', `${Math.max(0, completedFocusTasks.length)}/${Math.max(1, todayTasks.length)} complete`],
+                        ['Long-term', `${workspaceTasks.filter((task) => task.task_horizon === 'long_term').length} tasks`],
                         ['Assigned to me', `${todayTasks.filter((task) => task.assigned_to || task.project_name).length} tasks`],
                         ['Active projects', `${attentionProjects.length} active`],
                         ['Upcoming', `${upcoming.length} events`],
@@ -2922,19 +3167,29 @@ function DashboardContent() {
             {dashboardContextMenu.type === 'overview-row' && (() => {
               const row = overviewRows.find((item) => item.id === dashboardContextMenu.rowId);
               if (!row) return null;
-              const isTodayTask = todayTasks.some((task) => task.id === row.sourceId);
               const isFollowUpTask = followUpTasks.some((task) => task.id === row.sourceId);
               const deleteRow = () => {
                 if (row.kind === 'project') void deleteDashboardProject(row.sourceId);
                 else if (row.kind === 'note') void deleteDashboardNote(row.sourceId);
                 else if (row.kind === 'event') void deleteTimelineEvent(row.sourceId);
                 else if (isFollowUpTask) void deleteFollowUp(row.sourceId);
-                else setDashboardContextMenu(null);
+                else void deleteOverviewRow({ kind: row.kind, sourceId: row.sourceId });
               };
               const markDone = () => {
-                if (isTodayTask) void toggleFocusDone(row.sourceId);
-                else if (isFollowUpTask) void markFollowUpDone(row.sourceId);
-                setDashboardContextMenu(null);
+                if (row.kind === 'task' || row.kind === 'reminder') {
+                  void completeOverviewRow({ kind: row.kind, sourceId: row.sourceId });
+                } else if (isFollowUpTask) {
+                  void markFollowUpDone(row.sourceId);
+                } else {
+                  setDashboardContextMenu(null);
+                }
+              };
+              const moveToToday = () => {
+                if (row.kind === 'task' || row.kind === 'reminder') {
+                  void moveOverviewRowToToday({ kind: row.kind, sourceId: row.sourceId });
+                } else {
+                  setDashboardContextMenu(null);
+                }
               };
               return (
                 <>
@@ -2968,10 +3223,8 @@ function DashboardContent() {
                         Mark complete
                       </button>
                       <button
-                        onClick={() => {
-                          if (isTodayTask) void addTodayTaskToFocus(row.sourceId);
-                          setDashboardContextMenu(null);
-                        }}
+                        onClick={moveToToday}
+                        disabled={row.kind === 'reminder'}
                         className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]"
                       >
                         <Circle size={14} />
@@ -3000,21 +3253,11 @@ function DashboardContent() {
                     </button>
                   )}
                   <button
-                    onClick={() => {
-                      void navigator.clipboard?.writeText(`ledger://${row.kind}/${row.sourceId}`);
-                      setDashboardContextMenu(null);
-                    }}
+                    onClick={() => void copyOverviewRowLink(row)}
                     className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]"
                   >
                     <StickyNote size={14} />
                     Copy link
-                  </button>
-                  <button
-                    disabled
-                    className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-muted)] opacity-60"
-                  >
-                    <Plus size={14} />
-                    Duplicate
                   </button>
                   <button
                     onClick={deleteRow}
@@ -3574,6 +3817,10 @@ function AppShell() {
 
     if (moduleKind === 'projects') {
       return <ProjectsWindow />;
+    }
+
+    if (moduleKind === 'teams') {
+      return <TeamsWindow />;
     }
 
     if (moduleKind === 'dashboard') {
