@@ -311,6 +311,7 @@ export const useApi = () => {
           color?: string | null;
           status?: string | null;
           tags?: string[];
+          task_horizon?: 'today' | 'long_term';
           show_in_today?: boolean;
           is_today_focus?: boolean;
           recurrence_rule?: string | null;
@@ -462,6 +463,7 @@ export const useApi = () => {
         priority?: string;
         assigned_to?: string | null;
         tags?: string[];
+        task_horizon?: 'today' | 'long_term';
         project_id?: string | null;
         milestone_id?: string | null;
         show_in_today?: boolean;

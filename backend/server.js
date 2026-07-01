@@ -336,6 +336,7 @@ const projectMilestoneSelectColumns =
   'id, workspace_id, project_id, title, milestone_date, type, note, completed, linked_note_id, linked_reminder_id, linked_event_id, created_by, updated_by, created_at, updated_at';
 const taskSelectColumns =
   'id, workspace_id, project_id, milestone_id, title, description, notes, due_date, due_time, status, priority, assigned_to, tags, completed_at, source, source_platform, created_at, updated_at';
+const taskSelectWithHorizonColumns = `${taskSelectColumns}, task_horizon`;
 const reminderSelectColumns =
   'id, workspace_id, user_id, title, body, remind_at, status, linked_type, linked_id, completed_at, dismissed_at, snoozed_until, source, source_platform, created_at, updated_at, calendar_id, project_id, note_id, notes, color, is_done, created_by, series_id, series_type, recurrence_rule';
 const reminderDashboardSelectColumns =
@@ -2365,15 +2366,39 @@ const isMissingRelationError = (error, relationName) => {
 };
 
 const isMissingTaskTodayColumnError = (error) =>
-  isMissingColumnError(error, 'show_in_today') || isMissingColumnError(error, 'is_today_focus');
+  isMissingColumnError(error, 'show_in_today') ||
+  isMissingColumnError(error, 'is_today_focus') ||
+  isMissingColumnError(error, 'task_horizon');
 
 const taskTodaySelectAttempts = [
+  {
+    columns: `${taskSelectWithHorizonColumns}, show_in_today, is_today_focus`,
+    filter: 'show_in_today',
+  },
   { columns: `${taskSelectColumns}, show_in_today, is_today_focus`, filter: 'show_in_today' },
+  { columns: `${taskSelectWithHorizonColumns}, show_in_today`, filter: 'show_in_today' },
   { columns: `${taskSelectColumns}, show_in_today`, filter: 'show_in_today' },
+  { columns: `${taskSelectWithHorizonColumns}, is_today_focus`, filter: 'is_today_focus' },
   { columns: `${taskSelectColumns}, is_today_focus`, filter: 'is_today_focus' },
+  { columns: taskSelectWithHorizonColumns, filter: 'task_horizon' },
+  { columns: taskSelectColumns, filter: 'show_in_today' },
 ];
 
 const taskDueSelectAttempts = [...taskTodaySelectAttempts, { columns: taskSelectColumns, filter: null }];
+
+const buildTaskSelectColumns = ({
+  includeTaskHorizon = false,
+  includeShowInToday = false,
+  includeIsTodayFocus = false,
+} = {}) =>
+  [
+    taskSelectColumns,
+    includeTaskHorizon ? 'task_horizon' : null,
+    includeShowInToday ? 'show_in_today' : null,
+    includeIsTodayFocus ? 'is_today_focus' : null,
+  ]
+    .filter(Boolean)
+    .join(', ');
 
 const getRequestedWorkspaceId = (req) => {
   const headerWorkspace = req.headers['x-workspace-id'];
@@ -2893,20 +2918,36 @@ const loadMobileTodayData = async ({ userId, scope, dateKey }) => {
   }
 
   const explicitTaskPromise = (async () => {
-    const result = await supabase
-      .from('tasks')
-      .select(`${MOBILE_TODAY_TASK_SELECT_COLUMNS}, show_in_today, is_today_focus`)
-      .in('workspace_id', workspaceIds)
-      .neq('status', 'completed')
-      .or('show_in_today.eq.true,is_today_focus.eq.true')
-      .order('updated_at', { ascending: false })
-      .limit(200);
+    const attempts = [
+      {
+        columns: `${MOBILE_TODAY_TASK_SELECT_COLUMNS}, show_in_today, is_today_focus, task_horizon`,
+        filter: 'show_in_today.eq.true,is_today_focus.eq.true,task_horizon.eq.today',
+      },
+      {
+        columns: `${MOBILE_TODAY_TASK_SELECT_COLUMNS}, show_in_today, is_today_focus`,
+        filter: 'show_in_today.eq.true,is_today_focus.eq.true',
+      },
+      {
+        columns: `${MOBILE_TODAY_TASK_SELECT_COLUMNS}, task_horizon`,
+        filter: 'task_horizon.eq.today',
+      },
+    ];
 
-    if (result.error && isMissingTaskTodayColumnError(result.error)) {
-      return { data: [], error: null };
+    for (const attempt of attempts) {
+      const result = await supabase
+        .from('tasks')
+        .select(attempt.columns)
+        .in('workspace_id', workspaceIds)
+        .neq('status', 'completed')
+        .or(attempt.filter)
+        .order('updated_at', { ascending: false })
+        .limit(200);
+
+      if (!result.error) return result;
+      if (!isMissingTaskTodayColumnError(result.error)) return result;
     }
 
-    return result;
+    return { data: [], error: null };
   })();
 
   const upcomingTaskPromise = (async () => {
@@ -5028,27 +5069,20 @@ app.post('/api/inbox/:id/convert', authMiddleware, rateLimit('write'), async (re
     let createdId = null;
 
     if (type === 'task') {
-      const taskPayload = {
-        workspace_id: workspaceId,
-        project_id: req.body?.project_id ? String(req.body.project_id) : null,
-        title: rawTitle,
-        description: inboxNotes ? `inbox:${inboxItem.id}` : `inbox:${inboxItem.id}`,
-        notes: inboxNotes || null,
-        due_date: req.body?.due_date ? normalizeNullableDate(req.body.due_date, 'due date') : null,
-        due_time: req.body?.due_time ? normalizeNullableText(req.body.due_time) : null,
-        status: req.body?.status ? String(req.body.status) : 'todo',
-        priority: req.body?.priority ? String(req.body.priority) : 'medium',
-        tags: Array.isArray(req.body?.tags)
-          ? req.body.tags.map((tag) => String(tag).trim()).filter(Boolean)
-          : [],
-        show_in_today: Boolean(req.body?.show_in_today ?? false),
-        is_today_focus: Boolean(req.body?.is_today_focus ?? false),
-      };
+      const showInToday = Boolean(req.body?.show_in_today ?? false);
+      const isTodayFocus = Boolean(req.body?.is_today_focus ?? false);
+      const requestedTaskHorizon = req.body?.task_horizon;
+      const taskHorizon = String(
+        requestedTaskHorizon ?? (showInToday || isTodayFocus ? 'today' : 'long_term')
+      )
+        .trim()
+        .toLowerCase();
+      const projectId = req.body?.project_id ? String(req.body.project_id) : null;
 
-      if (taskPayload.project_id) {
+      if (projectId) {
         const projectAllowed = await ensureWorkspaceResource(
           'projects',
-          String(taskPayload.project_id),
+          projectId,
           workspaceId
         );
         if (!projectAllowed) {
@@ -5057,11 +5091,40 @@ app.post('/api/inbox/:id/convert', authMiddleware, rateLimit('write'), async (re
       }
 
       let createdTask = null;
-      for (const attempt of taskTodaySelectAttempts) {
+      const insertAttempts = [
+        { includeTaskHorizon: true, includeShowInToday: true, includeIsTodayFocus: true },
+        { includeTaskHorizon: true, includeShowInToday: true, includeIsTodayFocus: false },
+        { includeTaskHorizon: true, includeShowInToday: false, includeIsTodayFocus: true },
+        { includeTaskHorizon: true, includeShowInToday: false, includeIsTodayFocus: false },
+        { includeTaskHorizon: false, includeShowInToday: true, includeIsTodayFocus: true },
+        { includeTaskHorizon: false, includeShowInToday: true, includeIsTodayFocus: false },
+        { includeTaskHorizon: false, includeShowInToday: false, includeIsTodayFocus: true },
+        { includeTaskHorizon: false, includeShowInToday: false, includeIsTodayFocus: false },
+      ];
+
+      for (const attempt of insertAttempts) {
+        const taskPayload = {
+          workspace_id: workspaceId,
+          project_id: projectId,
+          title: rawTitle,
+          description: inboxNotes ? `inbox:${inboxItem.id}` : `inbox:${inboxItem.id}`,
+          notes: inboxNotes || null,
+          due_date: req.body?.due_date ? normalizeNullableDate(req.body.due_date, 'due date') : null,
+          due_time: req.body?.due_time ? normalizeNullableText(req.body.due_time) : null,
+          status: req.body?.status ? String(req.body.status) : 'todo',
+          priority: req.body?.priority ? String(req.body.priority) : 'medium',
+          tags: Array.isArray(req.body?.tags)
+            ? req.body.tags.map((tag) => String(tag).trim()).filter(Boolean)
+            : [],
+          ...(attempt.includeShowInToday ? { show_in_today: showInToday } : {}),
+          ...(attempt.includeIsTodayFocus ? { is_today_focus: isTodayFocus } : {}),
+          ...(attempt.includeTaskHorizon ? { task_horizon: taskHorizon === 'today' ? 'today' : 'long_term' } : {}),
+        };
+
         const { data, error } = await supabase
           .from('tasks')
           .insert(taskPayload)
-          .select(attempt.columns)
+          .select(buildTaskSelectColumns(attempt))
           .single();
 
         if (!error) {
@@ -7329,15 +7392,28 @@ app.delete('/api/project-milestones/:id', authMiddleware, rateLimit('write'), as
 app.get('/api/tasks', authMiddleware, rateLimit('read'), async (req, res) => {
   try {
     const workspaceId = await resolveWorkspaceIdForRequest(req);
-    let query = supabase.from('tasks').select(taskSelectColumns).eq('workspace_id', workspaceId);
+    const selectAttempts = [taskSelectWithHorizonColumns, taskSelectColumns];
+    let lastError = null;
 
-    if (req.query?.projectId) {
-      query = query.eq('project_id', String(req.query.projectId));
+    for (const columns of selectAttempts) {
+      let query = supabase.from('tasks').select(columns).eq('workspace_id', workspaceId);
+      if (req.query?.projectId) {
+        query = query.eq('project_id', String(req.query.projectId));
+      }
+
+      const { data, error } = await query.order('created_at', { ascending: false }).limit(500);
+      if (!error) {
+        res.json(data ?? []);
+        return;
+      }
+
+      lastError = error;
+      if (!isMissingTaskTodayColumnError(error)) {
+        throw error;
+      }
     }
 
-    const { data, error } = await query.order('created_at', { ascending: false }).limit(500);
-    if (error) throw error;
-    res.json(data ?? []);
+    throw lastError ?? new Error('Could not load tasks.');
   } catch (error) {
     return respondWithError(res, error);
   }
@@ -7700,26 +7776,25 @@ app.post(
       const assignedTo = req.body?.assigned_to ? String(req.body.assigned_to) : null;
       const showInToday = Boolean(req.body?.show_in_today ?? false);
       const isTodayFocus = Boolean(req.body?.is_today_focus ?? false);
+      const requestedTaskHorizon = req.body?.task_horizon;
+      const taskHorizon =
+        requestedTaskHorizon === undefined
+          ? undefined
+          : String(requestedTaskHorizon).trim().toLowerCase() === 'today'
+          ? 'today'
+          : 'long_term';
       const source = normalizeCaptureSource(req.body?.source);
       const sourcePlatform = normalizeCaptureSourcePlatform(req.body?.source_platform);
 
       const insertAttempts = [
-        {
-          includeShowInToday: true,
-          includeIsTodayFocus: true,
-        },
-        {
-          includeShowInToday: true,
-          includeIsTodayFocus: false,
-        },
-        {
-          includeShowInToday: false,
-          includeIsTodayFocus: true,
-        },
-        {
-          includeShowInToday: false,
-          includeIsTodayFocus: false,
-        },
+        { includeTaskHorizon: true, includeShowInToday: true, includeIsTodayFocus: true },
+        { includeTaskHorizon: true, includeShowInToday: true, includeIsTodayFocus: false },
+        { includeTaskHorizon: true, includeShowInToday: false, includeIsTodayFocus: true },
+        { includeTaskHorizon: true, includeShowInToday: false, includeIsTodayFocus: false },
+        { includeTaskHorizon: false, includeShowInToday: true, includeIsTodayFocus: true },
+        { includeTaskHorizon: false, includeShowInToday: true, includeIsTodayFocus: false },
+        { includeTaskHorizon: false, includeShowInToday: false, includeIsTodayFocus: true },
+        { includeTaskHorizon: false, includeShowInToday: false, includeIsTodayFocus: false },
       ];
 
       for (const attempt of insertAttempts) {
@@ -7738,6 +7813,9 @@ app.post(
           tags,
           source,
           source_platform: sourcePlatform,
+          ...(attempt.includeTaskHorizon && taskHorizon !== undefined
+            ? { task_horizon: taskHorizon }
+            : {}),
         };
 
         if (attempt.includeShowInToday) {
@@ -7747,15 +7825,11 @@ app.post(
           payload.is_today_focus = isTodayFocus;
         }
 
-        const selectColumns = [
-          taskSelectColumns,
-          attempt.includeShowInToday ? 'show_in_today' : null,
-          attempt.includeIsTodayFocus ? 'is_today_focus' : null,
-        ]
-          .filter(Boolean)
-          .join(', ');
-
-        const { data, error } = await supabase.from('tasks').insert(payload).select(selectColumns).single();
+        const { data, error } = await supabase
+          .from('tasks')
+          .insert(payload)
+          .select(buildTaskSelectColumns(attempt))
+          .single();
 
         if (!error) {
           return res.json(data);
@@ -7855,6 +7929,10 @@ app.patch('/api/tasks/:id', authMiddleware, rateLimit('write'), async (req, res)
       }
       update.milestone_id = nextMilestoneId;
     }
+    if (req.body?.task_horizon !== undefined) {
+      const normalizedTaskHorizon = String(req.body.task_horizon).trim().toLowerCase();
+      update.task_horizon = normalizedTaskHorizon === 'today' ? 'today' : 'long_term';
+    }
     const nowIso = new Date().toISOString();
     update.updated_at = nowIso;
 
@@ -7870,22 +7948,14 @@ app.patch('/api/tasks/:id', authMiddleware, rateLimit('write'), async (req, res)
     }
 
     const updateAttempts = [
-      {
-        includeShowInToday: true,
-        includeIsTodayFocus: true,
-      },
-      {
-        includeShowInToday: true,
-        includeIsTodayFocus: false,
-      },
-      {
-        includeShowInToday: false,
-        includeIsTodayFocus: true,
-      },
-      {
-        includeShowInToday: false,
-        includeIsTodayFocus: false,
-      },
+      { includeTaskHorizon: true, includeShowInToday: true, includeIsTodayFocus: true },
+      { includeTaskHorizon: true, includeShowInToday: true, includeIsTodayFocus: false },
+      { includeTaskHorizon: true, includeShowInToday: false, includeIsTodayFocus: true },
+      { includeTaskHorizon: true, includeShowInToday: false, includeIsTodayFocus: false },
+      { includeTaskHorizon: false, includeShowInToday: true, includeIsTodayFocus: true },
+      { includeTaskHorizon: false, includeShowInToday: true, includeIsTodayFocus: false },
+      { includeTaskHorizon: false, includeShowInToday: false, includeIsTodayFocus: true },
+      { includeTaskHorizon: false, includeShowInToday: false, includeIsTodayFocus: false },
     ];
 
     for (const attempt of updateAttempts) {
@@ -7898,20 +7968,12 @@ app.patch('/api/tasks/:id', authMiddleware, rateLimit('write'), async (req, res)
         nextUpdate.is_today_focus = requestedTodayFields.is_today_focus;
       }
 
-      const selectColumns = [
-        taskSelectColumns,
-        attempt.includeShowInToday ? 'show_in_today' : null,
-        attempt.includeIsTodayFocus ? 'is_today_focus' : null,
-      ]
-        .filter(Boolean)
-        .join(', ');
-
       const { data, error } = await supabase
         .from('tasks')
         .update(nextUpdate)
         .eq('id', req.params.id)
         .eq('workspace_id', workspaceId)
-        .select(selectColumns)
+        .select(buildTaskSelectColumns(attempt))
         .single();
 
       if (!error) {

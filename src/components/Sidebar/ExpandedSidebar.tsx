@@ -6,7 +6,6 @@ import {
   ChevronDown,
   ChevronUp,
   ClipboardCheck,
-  Clock3,
   Bell,
   Folder,
   LogOut,
@@ -42,7 +41,7 @@ type QuickNote = {
   body: string;
   createdAt: string;
 };
-type QuickCaptureMode = 'none' | 'task' | 'note' | 'event';
+type QuickCaptureMode = 'none' | 'note' | 'event';
 type TodayTask = {
   kind: 'task' | 'reminder';
   id: string;
@@ -63,6 +62,7 @@ type TodayTask = {
   created_by?: string | null;
   created_by_name?: string | null;
   assigned_to?: string | null;
+  task_horizon?: 'today' | 'long_term' | null;
   is_today_focus?: boolean;
   show_in_today?: boolean;
   is_done?: boolean;
@@ -113,27 +113,6 @@ const normalizeProjectNameKey = (value: unknown) =>
     .trim()
     .toLowerCase();
 type ProjectSemanticStatus = 'not_started' | 'in_progress' | 'paused' | 'completed';
-
-const EVENT_TIME_OPTIONS = Array.from({ length: 48 }, (_, index) => {
-  const totalMinutes = index * 30;
-  const hours24 = Math.floor(totalMinutes / 60);
-  const minutes = totalMinutes % 60;
-  const period = hours24 >= 12 ? 'PM' : 'AM';
-  const hours12 = hours24 % 12 || 12;
-  const value = `${String(hours24).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
-  const label = `${hours12}:${String(minutes).padStart(2, '0')} ${period}`;
-  return { value, label };
-});
-
-const formatEventTimeLabel = (value: string) => {
-  const match = /^(\d{2}):(\d{2})$/.exec(value.trim());
-  if (!match) return value || 'Select time';
-  const hours24 = Number(match[1]);
-  const minutes = Number(match[2]);
-  const period = hours24 >= 12 ? 'PM' : 'AM';
-  const hours12 = hours24 % 12 || 12;
-  return `${hours12}:${String(minutes).padStart(2, '0')} ${period}`;
-};
 
 const htmlToPlainText = (value: string) =>
   String(value ?? '')
@@ -238,38 +217,44 @@ const addDays = (date: Date, amount: number) => {
   return next;
 };
 
-const parseDateKey = (value: string) => {
-  const [yearRaw, monthRaw, dayRaw] = String(value ?? '').split('-');
-  const year = Number(yearRaw);
-  const month = Number(monthRaw);
-  const day = Number(dayRaw);
-  return {
-    year: Number.isFinite(year) ? year : new Date().getFullYear(),
-    month: Number.isFinite(month) ? month : 1,
-    day: Number.isFinite(day) ? day : 1,
-  };
+const formatOrdinalDay = (day: number) => {
+  const mod10 = day % 10;
+  const mod100 = day % 100;
+  if (mod10 === 1 && mod100 !== 11) return `${day}st`;
+  if (mod10 === 2 && mod100 !== 12) return `${day}nd`;
+  if (mod10 === 3 && mod100 !== 13) return `${day}rd`;
+  return `${day}th`;
 };
 
-const toDateKey = (year: number, month: number, day: number) =>
-  `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(day).padStart(
-    2,
-    '0'
-  )}`;
+const formatTaskDueDateLabel = (value?: string | null) => {
+  if (!value) return null;
 
-const monthOptions = [
-  { value: 1, label: 'Jan' },
-  { value: 2, label: 'Feb' },
-  { value: 3, label: 'Mar' },
-  { value: 4, label: 'Apr' },
-  { value: 5, label: 'May' },
-  { value: 6, label: 'Jun' },
-  { value: 7, label: 'Jul' },
-  { value: 8, label: 'Aug' },
-  { value: 9, label: 'Sep' },
-  { value: 10, label: 'Oct' },
-  { value: 11, label: 'Nov' },
-  { value: 12, label: 'Dec' },
-];
+  const dueDate = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(dueDate.getTime())) return value;
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const dueDay = new Date(dueDate);
+  dueDay.setHours(0, 0, 0, 0);
+  const diffDays = Math.round((dueDay.getTime() - today.getTime()) / 86_400_000);
+
+  if (diffDays < 0) {
+    const overdueDays = Math.abs(diffDays);
+    return overdueDays === 1 ? 'Overdue by 1 day' : `Overdue by ${overdueDays} days`;
+  }
+  if (diffDays === 0) return 'Today';
+  if (diffDays === 1) return 'Tomorrow';
+  if (diffDays <= 7) {
+    return dueDate.toLocaleDateString([], { weekday: 'short' });
+  }
+  if (diffDays <= 30) {
+    return dueDate.toLocaleDateString([], { month: 'short', day: 'numeric' });
+  }
+
+  const month = dueDate.toLocaleDateString([], { month: 'long' });
+  const year = dueDate.getFullYear();
+  return `${month} ${formatOrdinalDay(dueDate.getDate())}, ${year}`;
+};
 
 export const ExpandedSidebar = ({
   onDragHandleMouseDown,
@@ -289,48 +274,6 @@ export const ExpandedSidebar = ({
     workspace_name: activeWorkspace?.name?.trim() || null,
     workspace_color: activeWorkspace?.color ?? null,
   });
-  const getTaskExpiryMetadata = (hoursAhead = 24) => {
-    const expiresAt = new Date(Date.now() + hoursAhead * 60 * 60 * 1000);
-    const year = expiresAt.getFullYear();
-    const month = String(expiresAt.getMonth() + 1).padStart(2, '0');
-    const day = String(expiresAt.getDate()).padStart(2, '0');
-    const hour = String(expiresAt.getHours()).padStart(2, '0');
-    const minute = String(expiresAt.getMinutes()).padStart(2, '0');
-
-    return {
-      due_date: `${year}-${month}-${day}`,
-      due_time: `${hour}:${minute}`,
-    };
-  };
-
-  const getTaskExpiryDate = (task: {
-    due_date?: string | null;
-    due_time?: string | null;
-  }) => {
-    if (!task.due_date) return null;
-
-    const dueAt = task.due_time
-      ? new Date(
-          `${task.due_date}T${task.due_time.length === 5 ? `${task.due_time}:00` : task.due_time}`
-        )
-      : new Date(`${task.due_date}T23:59:59`);
-
-    return Number.isNaN(dueAt.getTime()) ? null : dueAt;
-  };
-
-  const shouldAutoExpireTodayTask = (task: {
-    due_date?: string | null;
-    due_time?: string | null;
-    show_in_today?: boolean | null;
-    is_today_focus?: boolean | null;
-    status?: string | null;
-  }) => {
-    if (String(task.status ?? '') === 'completed') return false;
-    if (!task.show_in_today && !task.is_today_focus) return false;
-
-    const dueAt = getTaskExpiryDate(task);
-    return dueAt !== null && dueAt.getTime() <= Date.now();
-  };
 
   const [focusItems, setFocusItems] = useState<FocusItem[]>([]);
   const [checkin, setCheckin] = useState({
@@ -344,9 +287,6 @@ export const ExpandedSidebar = ({
   const [isLoadingDaily, setIsLoadingDaily] = useState(true);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [quickCaptureMode, setQuickCaptureMode] = useState<QuickCaptureMode>('none');
-  const [taskDraft, setTaskDraft] = useState('');
-  const [taskPriority, setTaskPriority] = useState<'none' | 'high' | 'medium' | 'low'>('none');
-  const [taskTag, setTaskTag] = useState('');
   const [todayQuickDraft, setTodayQuickDraft] = useState('');
   const [todayQuickSaving, setTodayQuickSaving] = useState(false);
   const [noteDraft, setNoteDraft] = useState('');
@@ -355,12 +295,7 @@ export const ExpandedSidebar = ({
   const [eventDate, setEventDate] = useState(todayKey());
   const [eventStartTime, setEventStartTime] = useState('09:00');
   const [eventEndTime, setEventEndTime] = useState('10:00');
-  const [eventStartPickerOpen, setEventStartPickerOpen] = useState(false);
-  const [eventEndPickerOpen, setEventEndPickerOpen] = useState(false);
-  const [eventStartPickerStyle, setEventStartPickerStyle] = useState<React.CSSProperties | null>(
-    null
-  );
-  const [eventEndPickerStyle, setEventEndPickerStyle] = useState<React.CSSProperties | null>(null);
+  const [quickCaptureNotice, setQuickCaptureNotice] = useState<string | null>(null);
   const todayBucketRef = useRef(todayKey());
   const [projects, setProjects] = useState<
     Array<{
@@ -413,6 +348,19 @@ export const ExpandedSidebar = ({
   );
   const [todayAddRowOpen, setTodayAddRowOpen] = useState(false);
   const todayAddInputRef = useRef<HTMLInputElement | null>(null);
+  const [tasksCollapsed, setTasksCollapsed] = useState(true);
+  const [taskDraft, setTaskDraft] = useState('');
+  const [taskScope, setTaskScope] = useState<'today' | 'long_term'>('long_term');
+  const [workspaceTasks, setWorkspaceTasks] = useState<
+    Array<
+      TodayTask & {
+        task_horizon?: 'today' | 'long_term' | null;
+      }
+    >
+  >([]);
+  const [isLoadingWorkspaceTasks, setIsLoadingWorkspaceTasks] = useState(true);
+  const [isSavingWorkspaceTask, setIsSavingWorkspaceTask] = useState(false);
+  const taskCaptureRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     setIsCheckinExpanded(!loadCollapsedPreference(CHECKIN_COLLAPSE_STORAGE_KEY, true));
@@ -425,9 +373,10 @@ export const ExpandedSidebar = ({
     x: number;
     y: number;
   } | null>(null);
-  const taskCaptureRef = useRef<HTMLInputElement | null>(null);
   const noteCaptureRef = useRef<HTMLTextAreaElement | null>(null);
   const checkinFinishedInputRef = useRef<HTMLInputElement | null>(null);
+  const quickCaptureNoticeTimerRef = useRef<number | null>(null);
+  const workspaceCaptureRef = useRef<HTMLDivElement | null>(null);
 
   const handleSidebarWorkspaceRefresh = useCallback(() => {
     setSidebarRefreshToken((current) => current + 1);
@@ -469,10 +418,6 @@ export const ExpandedSidebar = ({
     };
   }, [api, user]);
   const eventCaptureRef = useRef<HTMLInputElement | null>(null);
-  const eventStartButtonRef = useRef<HTMLButtonElement | null>(null);
-  const eventEndButtonRef = useRef<HTMLButtonElement | null>(null);
-  const eventStartPickerRef = useRef<HTMLDivElement | null>(null);
-  const eventEndPickerRef = useRef<HTMLDivElement | null>(null);
   const todayDockButtonRef = useRef<HTMLButtonElement | null>(null);
   const todayDockPopoverRef = useRef<HTMLDivElement | null>(null);
   const checkinSectionRef = useRef<HTMLElement | null>(null);
@@ -754,52 +699,8 @@ export const ExpandedSidebar = ({
       autoExpireTodayTaskIdsRef.current.clear();
       return;
     }
-
-    const expiredTasks = todayItems.filter((task) => shouldAutoExpireTodayTask(task));
-    if (expiredTasks.length === 0) return;
-
-    expiredTasks.forEach((task) => {
-      if (autoExpireTodayTaskIdsRef.current.has(task.id)) return;
-      autoExpireTodayTaskIdsRef.current.add(task.id);
-      setTodayItems((prev) => prev.filter((item) => item.id !== task.id));
-
-      void (async () => {
-        let succeeded = false;
-        try {
-          const workspaceId = task.workspace_id ?? activeWorkspaceId;
-          if (!workspaceId) return;
-
-          await api.updateTaskInWorkspace(task.id, workspaceId, {
-            due_date: null,
-            due_time: null,
-            show_in_today: false,
-            is_today_focus: false,
-          });
-          succeeded = true;
-
-          window.ipcRenderer?.send('dashboard:today-task-deleted', {
-            source: 'sidebar',
-            optimistic: true,
-            task: {
-              ...task,
-              due_date: null,
-              due_time: null,
-              show_in_today: false,
-              is_today_focus: false,
-            },
-          });
-        } catch (error) {
-          console.error('Failed to expire today task:', error);
-          setTodayItems((prev) => [task, ...prev.filter((item) => item.id !== task.id)]);
-          autoExpireTodayTaskIdsRef.current.delete(task.id);
-        } finally {
-          if (succeeded) {
-            autoExpireTodayTaskIdsRef.current.delete(task.id);
-          }
-        }
-      })();
-    });
-  }, [activeWorkspaceId, api, todayItems, user]);
+    autoExpireTodayTaskIdsRef.current.clear();
+  }, [activeWorkspaceId, user]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1123,11 +1024,36 @@ export const ExpandedSidebar = ({
   useEffect(() => {
     if (quickCaptureMode === 'none') return;
     const t = window.setTimeout(() => {
-      if (quickCaptureMode === 'task') taskCaptureRef.current?.focus();
       if (quickCaptureMode === 'note') noteCaptureRef.current?.focus();
+      if (quickCaptureMode === 'event') eventCaptureRef.current?.focus();
     }, 120);
     return () => window.clearTimeout(t);
   }, [quickCaptureMode]);
+
+  useEffect(() => {
+    if (quickCaptureMode === 'none') return;
+
+    const handleOutsidePointerDown = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (workspaceCaptureRef.current?.contains(target)) return;
+      const hasContent =
+        (quickCaptureMode === 'note' && Boolean(noteDraft.trim())) ||
+        (quickCaptureMode === 'event' && Boolean(eventDraft.trim()));
+      if (hasContent) return;
+      setQuickCaptureMode('none');
+    };
+
+    document.addEventListener('mousedown', handleOutsidePointerDown);
+    return () => document.removeEventListener('mousedown', handleOutsidePointerDown);
+  }, [eventDraft, noteDraft, quickCaptureMode]);
+
+  useEffect(() => {
+    if (tasksCollapsed) return;
+    const t = window.setTimeout(() => {
+      taskCaptureRef.current?.focus();
+    }, 120);
+    return () => window.clearTimeout(t);
+  }, [tasksCollapsed]);
 
   useEffect(() => {
     const handleOpenCheckin = () => {
@@ -1454,6 +1380,59 @@ export const ExpandedSidebar = ({
     };
   }, []);
 
+  useEffect(() => {
+    if (!quickCaptureNotice) return;
+
+    if (quickCaptureNoticeTimerRef.current !== null) {
+      window.clearTimeout(quickCaptureNoticeTimerRef.current);
+    }
+
+    quickCaptureNoticeTimerRef.current = window.setTimeout(() => {
+      setQuickCaptureNotice(null);
+      quickCaptureNoticeTimerRef.current = null;
+    }, 1800);
+
+    return () => {
+      if (quickCaptureNoticeTimerRef.current !== null) {
+        window.clearTimeout(quickCaptureNoticeTimerRef.current);
+        quickCaptureNoticeTimerRef.current = null;
+      }
+    };
+  }, [quickCaptureNotice]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadWorkspaceTasks = async () => {
+      if (!user || !activeWorkspaceId) {
+        setWorkspaceTasks([]);
+        setIsLoadingWorkspaceTasks(false);
+        return;
+      }
+
+      setIsLoadingWorkspaceTasks(true);
+      try {
+        const data = await api.getTasks();
+        if (cancelled) return;
+        const rows = Array.isArray(data) ? (data as Array<TodayTask & { task_horizon?: string | null }>) : [];
+        setWorkspaceTasks(rows);
+      } catch (error) {
+        if (!cancelled) {
+          console.error('Failed to load workspace tasks:', error);
+          setWorkspaceTasks([]);
+        }
+      } finally {
+        if (!cancelled) setIsLoadingWorkspaceTasks(false);
+      }
+    };
+
+    void loadWorkspaceTasks();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeWorkspaceId, api, sidebarRefreshToken, user]);
+
   const saveQuickNote = async () => {
     const text = noteDraft.trim();
     if (!text || !user || !activeWorkspaceId) return;
@@ -1483,84 +1462,7 @@ export const ExpandedSidebar = ({
     setQuickNotes((prev) => [note, ...prev].slice(0, 24));
     setNoteDraft('');
     setQuickCaptureMode('none');
-  };
-
-  const saveQuickTask = async () => {
-    const base = taskDraft.trim();
-    if (!base) return;
-
-    const priorityLabel =
-      taskPriority === 'high'
-        ? '[High]'
-        : taskPriority === 'medium'
-        ? '[Medium]'
-        : taskPriority === 'low'
-        ? '[Low]'
-        : '';
-
-    const tagLabel = taskTag.trim() ? `#${taskTag.trim().replace(/^#/, '')}` : '';
-    const text = [priorityLabel, tagLabel, base].filter(Boolean).join(' ');
-    const tempId = `task-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    const dueAt = getTaskExpiryMetadata(24);
-    const optimisticTask: TodayTask = {
-      id: tempId,
-      kind: 'task',
-      title: text,
-      status: 'todo',
-      ...dueAt,
-      show_in_today: true,
-      created_at: new Date().toISOString(),
-      ...getWorkspaceTaskMetadata(),
-    };
-    setTodayItems((prev) => [optimisticTask, ...prev]);
-    setTaskDraft('');
-    setTaskPriority('none');
-    setTaskTag('');
-    setQuickCaptureMode('none');
-
-    try {
-      const created = await api.createTask({
-        title: text,
-        status: 'todo',
-        priority: taskPriority === 'none' ? 'medium' : taskPriority,
-        ...dueAt,
-        show_in_today: true,
-        is_today_focus: false,
-      });
-
-      if (created && typeof created === 'object') {
-        const createdTask = created as Partial<TodayTask> & { id?: string };
-        const createdId = createdTask.id ?? tempId;
-        setTodayItems((prev) => [
-          {
-            ...optimisticTask,
-            ...createdTask,
-            id: createdId,
-            kind: 'task' as const,
-            ...getWorkspaceTaskMetadata(),
-          },
-          ...prev.filter((item) => item.id !== tempId && item.id !== createdId),
-        ]);
-        window.dispatchEvent(
-          new CustomEvent('ledger:task-created', {
-            detail: {
-              source: 'sidebar',
-              task: {
-                ...optimisticTask,
-                ...createdTask,
-                id: createdId,
-                kind: 'task' as const,
-                is_today_focus: false,
-                ...getWorkspaceTaskMetadata(),
-              },
-            },
-          })
-        );
-      }
-    } catch (error) {
-      setTodayItems((prev) => prev.filter((item) => item.id !== tempId));
-      setSaveError(error instanceof Error ? error.message : 'Could not save task.');
-    }
+    setQuickCaptureNotice(`Saved note to ${activeWorkspace?.name?.trim() || 'workspace'}`);
   };
 
   const saveTodayQuickTask = async () => {
@@ -1570,37 +1472,41 @@ export const ExpandedSidebar = ({
     setTodayQuickSaving(true);
     setTodayQuickDraft('');
     const tempId = `today-task-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    const dueAt = getTaskExpiryMetadata(24);
+    const dueDate = todayKey();
     const optimisticTask: TodayTask = {
       id: tempId,
       kind: 'task',
       title: base,
       status: 'todo',
-      ...dueAt,
+      due_date: dueDate,
       show_in_today: true,
+      is_today_focus: false,
+      task_horizon: 'today',
       created_at: new Date().toISOString(),
       ...getWorkspaceTaskMetadata(),
     };
     setTodayItems((prev) => [optimisticTask, ...prev]);
     window.ipcRenderer?.send('dashboard:today-task-created', {
       source: 'sidebar',
-      optimistic: true,
-      client_id: tempId,
-      task: {
-        ...optimisticTask,
-        id: tempId,
-        kind: 'task' as const,
-        is_today_focus: true,
-        ...getWorkspaceTaskMetadata(),
-      },
-    });
+        optimistic: true,
+        client_id: tempId,
+        task: {
+          ...optimisticTask,
+          id: tempId,
+          kind: 'task' as const,
+          is_today_focus: false,
+          task_horizon: 'today',
+          ...getWorkspaceTaskMetadata(),
+        },
+      });
     try {
       const created = await api.createTask({
         title: base,
         status: 'todo',
-        ...dueAt,
+        due_date: dueDate,
         show_in_today: true,
-        is_today_focus: true,
+        is_today_focus: false,
+        task_horizon: 'today',
       });
 
       if (created && typeof created === 'object') {
@@ -1625,7 +1531,8 @@ export const ExpandedSidebar = ({
             ...createdTask,
             id: createdId,
             kind: 'task' as const,
-            is_today_focus: true,
+            is_today_focus: false,
+            task_horizon: 'today',
             ...getWorkspaceTaskMetadata(),
           },
         });
@@ -1642,7 +1549,7 @@ export const ExpandedSidebar = ({
           id: tempId,
           title: base,
           kind: 'task' as const,
-          is_today_focus: true,
+          is_today_focus: false,
           ...getWorkspaceTaskMetadata(),
         },
       });
@@ -1652,15 +1559,76 @@ export const ExpandedSidebar = ({
     }
   };
 
+  const saveWorkspaceTask = async () => {
+    const title = taskDraft.trim();
+    if (!title || isSavingWorkspaceTask || !user || !activeWorkspaceId) return;
+
+    setIsSavingWorkspaceTask(true);
+    try {
+      const payload = {
+        title,
+        status: 'todo',
+        priority: 'medium',
+        task_horizon: taskScope,
+        show_in_today: taskScope === 'today',
+        is_today_focus: false,
+        ...(taskScope === 'today' ? { due_date: todayKey() } : {}),
+      };
+
+      await api.createTask(payload);
+      setTaskDraft('');
+      setTaskScope('long_term');
+      setTasksCollapsed(true);
+      setQuickCaptureNotice(
+        taskScope === 'today'
+          ? `Saved task to Today`
+          : `Saved task to ${activeWorkspace?.name?.trim() || 'workspace'}`
+      );
+      handleSidebarWorkspaceRefresh();
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : 'Could not save task.');
+    } finally {
+      setIsSavingWorkspaceTask(false);
+    }
+  };
+
   const sortedTodayItems = useMemo(() => sortTodayTasks(todayItems), [todayItems]);
   const sortedCompletedToday = useMemo(() => sortTodayTasks(completedToday), [completedToday]);
   const visibleTodayItems = sortedTodayItems.slice(0, 3);
   const visibleCompletedToday = sortedCompletedToday.slice(0, 4);
+  const longTermWorkspaceTasks = useMemo(
+    () =>
+      workspaceTasks.filter((task) => {
+        if (String(task.status ?? '') === 'completed') return false;
+        if (String(task.task_horizon ?? '') === 'today') return false;
+        if (task.show_in_today || task.is_today_focus) return false;
+        return true;
+      }),
+    [workspaceTasks]
+  );
+  const visibleWorkspaceTasks = longTermWorkspaceTasks.slice(0, 3);
+  const workspaceAssignedTasks = longTermWorkspaceTasks.filter(
+    (task) => task.assigned_to && task.assigned_to === user?.id
+  );
+  const workspaceUpcomingTasks = longTermWorkspaceTasks.filter((task) => {
+    if (!task.due_date) return false;
+    const dueAt = new Date(task.due_date);
+    if (Number.isNaN(dueAt.getTime())) return false;
+    const now = new Date();
+    const inSevenDays = new Date(now);
+    inSevenDays.setDate(inSevenDays.getDate() + 7);
+    return dueAt.getTime() >= now.getTime() && dueAt.getTime() <= inSevenDays.getTime();
+  });
   const todayTotalCount = todayItems.length + completedToday.length;
+  const workspaceTaskCount = longTermWorkspaceTasks.length;
   const hasCheckinContent = Boolean(
     checkin.finished.trim() || checkin.blocked.trim() || checkin.firstTaskTomorrow.trim()
   );
   const checkinStatusLabel = hasCheckinContent ? 'Done' : 'Not started';
+  const quickCaptureShellClass =
+    'rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] p-2.5';
+  const quickCaptureControlClass =
+    'h-8 rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] px-2 text-xs text-[var(--ledger-text-primary)] placeholder:text-[var(--ledger-placeholder)] focus:border-[color:var(--ledger-border-strong)] focus:outline-none focus:ring-1 focus:ring-[color:var(--ledger-accent)]/10';
 
   const toggleTodayCollapsed = () => {
     setTodayCollapsed((current) => {
@@ -1853,6 +1821,7 @@ export const ExpandedSidebar = ({
       setEventStartTime('09:00');
       setEventEndTime('10:00');
       setQuickCaptureMode('none');
+      setQuickCaptureNotice(`Event added to ${activeWorkspace?.name?.trim() || 'workspace'}`);
     } catch (error) {
       console.error('Failed to create event from sidebar:', error);
       setSaveError(error instanceof Error ? error.message : 'Could not save event.');
@@ -1896,138 +1865,6 @@ export const ExpandedSidebar = ({
       setIsCreatingProject(false);
     }
   };
-
-  const eventDateParts = parseDateKey(eventDate);
-  const daysInSelectedMonth = new Date(eventDateParts.year, eventDateParts.month, 0).getDate();
-  const currentYear = new Date().getFullYear();
-  const eventYearOptions = Array.from({ length: 6 }).map((_, index) => currentYear - 1 + index);
-
-  const closeEventTimePickers = useCallback(() => {
-    setEventStartPickerOpen(false);
-    setEventEndPickerOpen(false);
-  }, []);
-
-  useEffect(() => {
-    if (!eventStartPickerOpen || !eventStartButtonRef.current) {
-      setEventStartPickerStyle(null);
-      return;
-    }
-
-    const rect = eventStartButtonRef.current.getBoundingClientRect();
-    const menuHeight = 240;
-    const openAbove = rect.bottom + menuHeight + 8 > window.innerHeight;
-    const top = openAbove ? Math.max(8, rect.top - menuHeight - 8) : rect.bottom + 8;
-    const left = Math.max(8, Math.min(rect.left, window.innerWidth - 208));
-    setEventStartPickerStyle({
-      position: 'fixed',
-      left: `${left}px`,
-      top: `${top}px`,
-      width: `${Math.max(160, rect.width)}px`,
-      zIndex: 9999,
-    });
-  }, [eventStartPickerOpen]);
-
-  useEffect(() => {
-    if (!eventEndPickerOpen || !eventEndButtonRef.current) {
-      setEventEndPickerStyle(null);
-      return;
-    }
-
-    const rect = eventEndButtonRef.current.getBoundingClientRect();
-    const menuHeight = 240;
-    const openAbove = rect.bottom + menuHeight + 8 > window.innerHeight;
-    const top = openAbove ? Math.max(8, rect.top - menuHeight - 8) : rect.bottom + 8;
-    const left = Math.max(8, Math.min(rect.left, window.innerWidth - 208));
-    setEventEndPickerStyle({
-      position: 'fixed',
-      left: `${left}px`,
-      top: `${top}px`,
-      width: `${Math.max(160, rect.width)}px`,
-      zIndex: 9999,
-    });
-  }, [eventEndPickerOpen]);
-
-  useEffect(() => {
-    if (!eventStartPickerOpen && !eventEndPickerOpen) return;
-
-    const handleDismiss = (event: MouseEvent) => {
-      const target = event.target as Node;
-      if (eventStartButtonRef.current?.contains(target)) return;
-      if (eventEndButtonRef.current?.contains(target)) return;
-      if (eventStartPickerRef.current?.contains(target)) return;
-      if (eventEndPickerRef.current?.contains(target)) return;
-      closeEventTimePickers();
-    };
-
-    const handleScroll = (event: Event) => {
-      const target = event.target;
-      if (target instanceof Node) {
-        if (eventStartButtonRef.current?.contains(target)) return;
-        if (eventEndButtonRef.current?.contains(target)) return;
-        if (eventStartPickerRef.current?.contains(target)) return;
-        if (eventEndPickerRef.current?.contains(target)) return;
-      }
-      closeEventTimePickers();
-    };
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') closeEventTimePickers();
-    };
-
-    window.addEventListener('mousedown', handleDismiss);
-    window.addEventListener('scroll', handleScroll, true);
-    window.addEventListener('resize', closeEventTimePickers);
-    window.addEventListener('keydown', handleKeyDown);
-
-    return () => {
-      window.removeEventListener('mousedown', handleDismiss);
-      window.removeEventListener('scroll', handleScroll, true);
-      window.removeEventListener('resize', closeEventTimePickers);
-      window.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [closeEventTimePickers, eventEndPickerOpen, eventStartPickerOpen]);
-
-  const renderTimePicker = (
-    open: boolean,
-    setOpen: (value: boolean) => void,
-    value: string,
-    menuRef: React.RefObject<HTMLDivElement>,
-    menuStyle: React.CSSProperties | null,
-    onChange: (next: string) => void
-  ) =>
-    open && typeof document !== 'undefined'
-      ? createPortal(
-          <div
-            ref={menuRef}
-            style={menuStyle ?? undefined}
-            className={`${sidebarTheme.popover} max-h-60 overflow-auto p-1 shadow-[0_16px_40px_rgba(15,23,42,0.14)]`}
-          >
-            {EVENT_TIME_OPTIONS.map((option) => {
-              const selected = option.value === value;
-              return (
-                <button
-                  key={option.value}
-                  type="button"
-                  onMouseDown={(event) => event.stopPropagation()}
-                  onClick={() => {
-                    onChange(option.value);
-                    setOpen(false);
-                  }}
-                  className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm transition ${
-                    selected
-                      ? 'bg-[var(--ledger-surface-hover)] text-[var(--ledger-text-primary)]'
-                      : 'text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]'
-                  }`}
-                >
-                  <span>{option.label}</span>
-                  {selected ? <Check size={14} className="text-[var(--ledger-accent)]" /> : <span className="w-4" />}
-                </button>
-              );
-            })}
-          </div>,
-          document.body
-        )
-      : null;
 
   const deleteProject = async (projectId: string) => {
     try {
@@ -2401,346 +2238,6 @@ export const ExpandedSidebar = ({
 
       <div className="flex-1 min-h-0 overflow-y-auto px-3.5 py-3 space-y-3">
         <section className="space-y-2">
-          <p className={sidebarTheme.sectionLabel}>Quick capture</p>
-          <div className="grid grid-cols-3 gap-1.5 rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] p-1">
-            <button
-              onClick={() => setQuickCaptureMode((prev) => (prev === 'task' ? 'none' : 'task'))}
-              className={`h-7 rounded-lg px-2 text-[11px] font-medium transition flex items-center justify-center gap-1.5 ${
-                quickCaptureMode === 'task'
-                  ? 'text-[var(--ledger-text-primary)] bg-[var(--ledger-surface)] shadow-sm'
-                  : 'text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]'
-              }`}
-            >
-              <Plus size={12} />
-              Task
-            </button>
-            <button
-              onClick={() => setQuickCaptureMode((prev) => (prev === 'note' ? 'none' : 'note'))}
-              className={`h-7 rounded-lg px-2 text-[11px] font-medium transition flex items-center justify-center gap-1.5 ${
-                quickCaptureMode === 'note'
-                  ? 'text-[var(--ledger-text-primary)] bg-[var(--ledger-surface)] shadow-sm'
-                  : 'text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]'
-              }`}
-            >
-              <StickyNote size={12} />
-              Note
-            </button>
-            <button
-              onClick={() => setQuickCaptureMode((prev) => (prev === 'event' ? 'none' : 'event'))}
-              className={`h-7 rounded-lg px-2 text-[11px] font-medium transition flex items-center justify-center gap-1.5 ${
-                quickCaptureMode === 'event'
-                  ? 'text-[var(--ledger-text-primary)] bg-[var(--ledger-surface)] shadow-sm'
-                  : 'text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]'
-              }`}
-            >
-              <CalendarDays size={12} />
-              Event
-            </button>
-          </div>
-          <div
-            className={`overflow-hidden transition-all duration-200 ease-out ${
-              quickCaptureMode === 'task' ? 'max-h-56 opacity-100 mt-2.5' : 'max-h-0 opacity-0 mt-0'
-            }`}
-          >
-            <div className={`p-2.5 ${sidebarTheme.surfaceSoft}`}>
-              <input
-                ref={taskCaptureRef}
-                value={taskDraft}
-                onChange={(e) => setTaskDraft(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    void saveQuickTask();
-                  } else if (e.key === 'Escape') {
-                    e.preventDefault();
-                    if (!taskDraft.trim()) setQuickCaptureMode('none');
-                  }
-                }}
-                placeholder="Add a task..."
-                className={`w-full h-8 px-2 text-xs rounded-md ${sidebarTheme.fieldMuted}`}
-              />
-              <div className="mt-2 grid grid-cols-2 gap-2">
-                <select
-                  value={taskPriority}
-                  onChange={(e) =>
-                    setTaskPriority(e.target.value as 'none' | 'high' | 'medium' | 'low')
-                  }
-                  className={`h-8 px-2 text-xs rounded-md ${sidebarTheme.fieldMuted}`}
-                >
-                  <option value="none">No priority</option>
-                  <option value="high">High priority</option>
-                  <option value="medium">Medium priority</option>
-                  <option value="low">Low priority</option>
-                </select>
-                <input
-                  value={taskTag}
-                  onChange={(e) => setTaskTag(e.target.value)}
-                  placeholder="Tag (optional)"
-                  className={`h-8 px-2 text-xs rounded-md ${sidebarTheme.fieldMuted}`}
-                />
-              </div>
-              <div className="mt-2 flex items-center justify-between">
-                <div className="text-xs font-medium text-[var(--ledger-text-muted)]">
-                  <p>Press Enter to save quickly</p>
-                </div>
-                <button
-                  onClick={() => void saveQuickTask()}
-                  disabled={!taskDraft.trim()}
-                  className={`px-2 py-1 text-[11px] font-medium rounded-md disabled:opacity-60 ${sidebarTheme.buttonPrimary}`}
-                >
-                  Add Task
-                </button>
-              </div>
-            </div>
-          </div>
-
-          <div
-            className={`overflow-hidden transition-all duration-200 ease-out ${
-              quickCaptureMode === 'note' ? 'max-h-48 opacity-100 mt-2.5' : 'max-h-0 opacity-0 mt-0'
-            }`}
-          >
-            <div className={`p-2.5 translate-y-0 ${sidebarTheme.surfaceSoft}`}>
-              <textarea
-                ref={noteCaptureRef}
-                value={noteDraft}
-                onChange={(e) => setNoteDraft(e.target.value)}
-                onKeyDown={(e) => {
-                  if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
-                    e.preventDefault();
-                    saveQuickNote();
-                  } else if (e.key === 'Escape') {
-                    e.preventDefault();
-                    if (!noteDraft.trim()) setQuickCaptureMode('none');
-                  }
-                }}
-                placeholder="Write a quick note... (Cmd/Ctrl+Enter to save)"
-                className="w-full h-24 resize-none text-xs leading-5 text-[var(--ledger-text-primary)] placeholder:text-[var(--ledger-placeholder)] bg-transparent focus:outline-none"
-              />
-              <div className="mt-2 flex items-center justify-between">
-                <span className="text-xs font-medium text-[var(--ledger-text-muted)]">Esc to close</span>
-                <div className="flex items-center gap-1.5">
-                  <button
-                    onClick={() => {
-                      setNoteDraft('');
-                      setQuickCaptureMode('none');
-                    }}
-                    className={`px-2 py-1 text-[11px] font-medium rounded-md ${sidebarTheme.buttonSecondary}`}
-                  >
-                    Clear
-                  </button>
-                  <button
-                    onClick={saveQuickNote}
-                    disabled={!noteDraft.trim()}
-                    className={`px-2 py-1 text-[11px] font-medium rounded-md disabled:opacity-60 ${sidebarTheme.buttonPrimary}`}
-                  >
-                    Save
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div
-            className={`overflow-hidden transition-all duration-200 ease-out ${
-              quickCaptureMode === 'event'
-                ? 'max-h-80 opacity-100 mt-2.5 overflow-visible'
-                : 'max-h-0 opacity-0 mt-0 overflow-hidden'
-            }`}
-          >
-            <div className={`relative z-20 space-y-2 p-2.5 ${sidebarTheme.surfaceSoft}`}>
-              <input
-                ref={eventCaptureRef}
-                value={eventDraft}
-                onChange={(e) => setEventDraft(e.target.value)}
-                onKeyDown={(e) => {
-                  if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
-                    e.preventDefault();
-                    void saveQuickEvent();
-                  }
-                }}
-                placeholder="Event title"
-                className={`w-full h-8 px-2 text-xs rounded-md ${sidebarTheme.fieldMuted}`}
-              />
-              <div className="space-y-1.5">
-                <div className="grid grid-cols-3 gap-2">
-                  <select
-                    value={eventDateParts.month}
-                    onChange={(e) => {
-                      const nextMonth = Number(e.target.value);
-                      const nextDay = Math.min(
-                        eventDateParts.day,
-                        new Date(eventDateParts.year, nextMonth, 0).getDate()
-                      );
-                      setEventDate(toDateKey(eventDateParts.year, nextMonth, nextDay));
-                    }}
-                    className={`h-8 px-2 text-xs rounded-md ${sidebarTheme.fieldMuted}`}
-                  >
-                    {monthOptions.map((month) => (
-                      <option key={month.value} value={month.value}>
-                        {month.label}
-                      </option>
-                    ))}
-                  </select>
-                  <select
-                    value={eventDateParts.day}
-                    onChange={(e) => {
-                      const nextDay = Number(e.target.value);
-                      setEventDate(toDateKey(eventDateParts.year, eventDateParts.month, nextDay));
-                    }}
-                    className={`h-8 px-2 text-xs rounded-md ${sidebarTheme.fieldMuted}`}
-                  >
-                    {Array.from({ length: daysInSelectedMonth }).map((_, index) => {
-                      const day = index + 1;
-                      return (
-                        <option key={day} value={day}>
-                          {day}
-                        </option>
-                      );
-                    })}
-                  </select>
-                  <select
-                    value={eventDateParts.year}
-                    onChange={(e) => {
-                      const nextYear = Number(e.target.value);
-                      const nextDay = Math.min(
-                        eventDateParts.day,
-                        new Date(nextYear, eventDateParts.month, 0).getDate()
-                      );
-                      setEventDate(toDateKey(nextYear, eventDateParts.month, nextDay));
-                    }}
-                    className={`h-8 px-2 text-xs rounded-md ${sidebarTheme.fieldMuted}`}
-                  >
-                    {eventYearOptions.map((year) => (
-                      <option key={year} value={year}>
-                        {year}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <div className="flex flex-col gap-1">
-                  <label className="text-xs font-medium text-[var(--ledger-text-muted)]">Start</label>
-                  <button
-                    ref={eventStartButtonRef}
-                    type="button"
-                    onClick={() => {
-                      setEventEndPickerOpen(false);
-                      setEventStartPickerOpen((current) => !current);
-                    }}
-                    className={`flex h-7 items-center justify-between gap-2 rounded-2xl px-2 text-xs ${sidebarTheme.fieldMuted}`}
-                  >
-                    <span className="tabular-nums">{formatEventTimeLabel(eventStartTime)}</span>
-                    <Clock3 size={12} className="text-[var(--ledger-text-muted)]" />
-                  </button>
-                </div>
-                <div className="flex flex-col gap-1">
-                  <label className="text-xs font-medium text-[var(--ledger-text-muted)]">End</label>
-                  <button
-                    ref={eventEndButtonRef}
-                    type="button"
-                    onClick={() => {
-                      setEventStartPickerOpen(false);
-                      setEventEndPickerOpen((current) => !current);
-                    }}
-                    className={`flex h-7 items-center justify-between gap-2 rounded-2xl px-2 text-xs ${sidebarTheme.fieldMuted}`}
-                  >
-                    <span className="tabular-nums">{formatEventTimeLabel(eventEndTime)}</span>
-                    <Clock3 size={12} className="text-[var(--ledger-text-muted)]" />
-                  </button>
-                </div>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <button
-                  onClick={() => {
-                    setEventDraft('');
-                    setEventDate(todayKey());
-                    setEventStartTime('09:00');
-                    setEventEndTime('10:00');
-                    setQuickCaptureMode('none');
-                  }}
-                  className={`flex-1 h-7 px-2 text-[11px] font-medium rounded-md ${sidebarTheme.buttonSecondary}`}
-                >
-                  Clear
-                </button>
-                <button
-                  onClick={() => void saveQuickEvent()}
-                  disabled={!eventDraft.trim()}
-                  className={`flex-1 h-7 px-2 text-[11px] font-medium rounded-md disabled:opacity-60 ${sidebarTheme.buttonPrimary}`}
-                >
-                  Save
-                </button>
-              </div>
-            </div>
-          </div>
-
-          {renderTimePicker(
-            eventStartPickerOpen,
-            setEventStartPickerOpen,
-            eventStartTime,
-            eventStartPickerRef,
-            eventStartPickerStyle,
-            setEventStartTime
-          )}
-          {renderTimePicker(
-            eventEndPickerOpen,
-            setEventEndPickerOpen,
-            eventEndTime,
-            eventEndPickerRef,
-            eventEndPickerStyle,
-            setEventEndTime
-          )}
-
-          {quickNotes.length > 0 && (
-            <div className="mt-2 space-y-1.5 max-h-40 overflow-auto pr-0.5">
-              {quickNotes.slice(0, 6).map((note) => (
-                <div
-                  key={note.id}
-                  className={`w-full rounded-md border px-2 py-1.5 ${sidebarTheme.surface}`}
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <button
-                      onClick={() => {
-                        setNoteDraft(note.body);
-                        setQuickCaptureMode('note');
-                      }}
-                      className="min-w-0 text-left flex-1"
-                    >
-                      <p className="text-[11px] font-medium text-[var(--ledger-text-primary)] truncate">{note.title}</p>
-                      <p className="text-[10px] text-[var(--ledger-text-muted)] mt-0.5">
-                        {new Date(note.createdAt).toLocaleString([], {
-                          month: 'short',
-                          day: 'numeric',
-                          hour: 'numeric',
-                          minute: '2-digit',
-                        })}
-                      </p>
-                    </button>
-                    <button
-                      onClick={async (e) => {
-                        e.stopPropagation();
-                        try {
-                          await api.deleteNote(note.id);
-                        } catch (error) {
-                          setSaveError('Could not delete note.');
-                          return;
-                        }
-                        setQuickNotes((prev) => prev.filter((item) => item.id !== note.id));
-                      }}
-                      className="mt-0.5 p-1 rounded text-[var(--ledger-text-muted)] hover:text-[var(--ledger-danger)] hover:bg-[color:rgba(217,45,32,0.08)] transition"
-                      title="Delete note"
-                      aria-label="Delete note"
-                    >
-                      <Trash2 size={12} />
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
-
-        <section className="space-y-2">
           <p className={sidebarTheme.sectionLabel}>Navigation</p>
           <div className="space-y-1">
             {[
@@ -2762,8 +2259,393 @@ export const ExpandedSidebar = ({
           </div>
         </section>
 
-        <section className="space-y-3">
+        <section ref={workspaceCaptureRef} className="space-y-3">
           <p className={sidebarTheme.sectionLabel}>Workspace</p>
+          <div className="space-y-1.5">
+            <button
+              type="button"
+              onClick={() => {
+                setTasksCollapsed((prev) => !prev);
+                setQuickCaptureMode('none');
+              }}
+              className={`relative z-20 flex h-9 w-full items-center justify-between gap-3 rounded-xl px-2.5 text-left text-[13px] font-medium transition ${
+                tasksCollapsed
+                  ? 'text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]'
+                  : 'bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-primary)]'
+              }`}
+            >
+              <span className="flex min-w-0 items-center gap-2.5">
+                <Check size={15} className="shrink-0 text-[var(--ledger-text-muted)]" />
+                <span className="truncate">Tasks</span>
+              </span>
+              <span className="flex shrink-0 items-center gap-2 text-[11px] text-[var(--ledger-text-muted)]">
+                <span>{workspaceTaskCount}</span>
+                {tasksCollapsed ? (
+                  <ChevronDown size={14} className="text-[var(--ledger-text-muted)]" />
+                ) : (
+                  <ChevronUp size={14} className="text-[var(--ledger-text-muted)]" />
+                )}
+              </span>
+            </button>
+            {!tasksCollapsed && (
+              <div className="relative z-10 mt-1.5 space-y-2 pl-3">
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-[var(--ledger-text-muted)]">
+                  <span>Assigned to me · {workspaceAssignedTasks.length}</span>
+                  <span>Long-term · {workspaceTaskCount}</span>
+                  <span>Upcoming · {workspaceUpcomingTasks.length}</span>
+                </div>
+                <div className="space-y-0.5">
+                  {isLoadingWorkspaceTasks && visibleWorkspaceTasks.length === 0 ? (
+                    <SkeletonList />
+                  ) : visibleWorkspaceTasks.length > 0 ? (
+                    <>
+                      {visibleWorkspaceTasks.map((task) => (
+                        <button
+                          key={task.id}
+                          type="button"
+                          onClick={() =>
+                            void window.desktopWindow?.toggleModule('dashboard', {
+                              focusTaskId: task.id,
+                            })
+                          }
+                          className="group flex w-full items-start gap-2 rounded-lg px-2 py-1.5 text-left transition hover:bg-[var(--ledger-surface-muted)]"
+                        >
+                          <span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center text-[var(--ledger-text-muted)]">
+                            <Circle size={13} className="shrink-0" />
+                          </span>
+                          <div className="min-w-0 flex-1">
+                            <div className="truncate text-[12px] leading-4 text-[var(--ledger-text-primary)]">
+                              {task.title}
+                            </div>
+                            <div className="mt-0.5 flex min-w-0 items-center gap-1.5 truncate text-[10px] text-[var(--ledger-text-muted)]">
+                              <span className="truncate">
+                                {task.due_date ? `Due ${formatTaskDueDateLabel(task.due_date)}` : 'Long-term'}
+                              </span>
+                            </div>
+                          </div>
+                        </button>
+                      ))}
+                      {workspaceTaskCount > visibleWorkspaceTasks.length && (
+                        <button
+                          type="button"
+                          onClick={() => void window.desktopWindow?.toggleModule('dashboard')}
+                          className="w-full rounded-lg px-2 py-1 text-left text-[11px] font-medium text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]"
+                        >
+                          View all tasks
+                        </button>
+                      )}
+                    </>
+                  ) : (
+                    <p className="px-2 py-1 text-[11px] text-[var(--ledger-text-muted)]">
+                      Nothing long-term yet.
+                    </p>
+                  )}
+                </div>
+
+                <div className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 transition hover:bg-[var(--ledger-surface-muted)]">
+                  <input
+                    ref={taskCaptureRef}
+                    value={taskDraft}
+                    onChange={(e) => setTaskDraft(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === '+') {
+                        e.preventDefault();
+                        void saveWorkspaceTask();
+                      }
+                      if (e.key === 'Escape' && !taskDraft.trim()) {
+                        e.preventDefault();
+                        setTaskDraft('');
+                        setTaskScope('long_term');
+                        setTasksCollapsed(true);
+                      }
+                    }}
+                    onBlur={(e) => {
+                      const nextFocus = e.relatedTarget;
+                      if (!taskDraft.trim() && !workspaceCaptureRef.current?.contains(nextFocus)) {
+                        setTaskDraft('');
+                        setTaskScope('long_term');
+                        setTasksCollapsed(true);
+                      }
+                    }}
+                    placeholder="Add a task..."
+                    className="min-w-0 flex-1 bg-transparent px-0 py-0.5 text-[12px] leading-4 text-[var(--ledger-text-primary)] placeholder:text-[var(--ledger-placeholder)] focus:outline-none"
+                    disabled={isSavingWorkspaceTask}
+                  />
+                  <button
+                    type="button"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => void saveWorkspaceTask()}
+                    disabled={isSavingWorkspaceTask || !taskDraft.trim()}
+                    className="inline-flex h-6 items-center justify-center rounded-full px-2 text-[11px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] disabled:opacity-60"
+                    aria-label="Add task"
+                  >
+                    +
+                  </button>
+                </div>
+
+                <div className="flex items-center justify-between gap-2 pl-1">
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setTaskScope('today')}
+                      className={`h-7 rounded-full px-2.5 text-[11px] font-medium transition ${
+                        taskScope === 'today'
+                          ? 'bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-primary)]'
+                          : 'text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]'
+                      }`}
+                    >
+                      Today
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setTaskScope('long_term')}
+                      className={`h-7 rounded-full px-2.5 text-[11px] font-medium transition ${
+                        taskScope === 'long_term'
+                          ? 'bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-primary)]'
+                          : 'text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]'
+                      }`}
+                    >
+                      Long-term
+                    </button>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setTaskDraft('');
+                        setTaskScope('long_term');
+                        setTasksCollapsed(true);
+                      }}
+                      className={`h-7 rounded-lg px-3 text-xs font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]`}
+                      disabled={isSavingWorkspaceTask && !taskDraft.trim()}
+                    >
+                      Clear
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void saveWorkspaceTask()}
+                      disabled={isSavingWorkspaceTask || !taskDraft.trim()}
+                      className={`h-7 rounded-lg px-3 text-xs font-medium transition disabled:opacity-60 ${sidebarTheme.buttonPrimary}`}
+                    >
+                      Add
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <button
+              type="button"
+              onClick={() => {
+                setTasksCollapsed(true);
+                setQuickCaptureMode((prev) => (prev === 'note' ? 'none' : 'note'));
+              }}
+              className={`flex h-9 w-full items-center justify-between gap-3 rounded-xl px-2.5 text-left text-[13px] font-medium transition ${
+                quickCaptureMode === 'note'
+                  ? 'bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-primary)]'
+                  : 'text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]'
+              }`}
+            >
+              <span className="flex min-w-0 items-center gap-2.5">
+                <StickyNote size={15} className="shrink-0 text-[var(--ledger-text-muted)]" />
+                <span className="truncate">Note</span>
+              </span>
+              <span className="flex shrink-0 items-center gap-2 text-[11px] text-[var(--ledger-text-muted)]">
+                <span>+</span>
+                <ChevronDown
+                  size={14}
+                  className={`transition-transform ${quickCaptureMode === 'note' ? 'rotate-180' : ''}`}
+                />
+              </span>
+            </button>
+            {quickCaptureMode === 'note' && (
+              <div className="pl-3">
+                <div className={quickCaptureShellClass}>
+                  <textarea
+                    ref={noteCaptureRef}
+                    value={noteDraft}
+                    onChange={(e) => setNoteDraft(e.target.value)}
+                    onKeyDown={(e) => {
+                      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+                        e.preventDefault();
+                        void saveQuickNote();
+                      } else if (e.key === 'Escape') {
+                        e.preventDefault();
+                        if (!noteDraft.trim()) setQuickCaptureMode('none');
+                      }
+                    }}
+                    placeholder="Write a quick note..."
+                    rows={3}
+                    className={`w-full min-h-20 max-h-28 resize-none py-1.5 ${quickCaptureControlClass}`}
+                  />
+                  <div className="mt-2 flex items-center justify-end gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setNoteDraft('');
+                        setQuickCaptureMode('none');
+                      }}
+                      className={`h-7 rounded-full px-3 text-[11px] font-medium ${sidebarTheme.buttonSecondary}`}
+                    >
+                      Clear
+                    </button>
+                    <button
+                      type="button"
+                      onClick={saveQuickNote}
+                      disabled={!noteDraft.trim()}
+                      className={`h-7 rounded-full px-3 text-[11px] font-medium disabled:opacity-60 ${sidebarTheme.buttonPrimary}`}
+                    >
+                      Save
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <button
+              type="button"
+              onClick={() => {
+                setTasksCollapsed(true);
+                setQuickCaptureMode((prev) => (prev === 'event' ? 'none' : 'event'));
+              }}
+              className={`flex h-9 w-full items-center justify-between gap-3 rounded-xl px-2.5 text-left text-[13px] font-medium transition ${
+                quickCaptureMode === 'event'
+                  ? 'bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-primary)]'
+                  : 'text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]'
+              }`}
+            >
+              <span className="flex min-w-0 items-center gap-2.5">
+                <CalendarDays size={15} className="shrink-0 text-[var(--ledger-text-muted)]" />
+                <span className="truncate">Event</span>
+              </span>
+              <span className="flex shrink-0 items-center gap-2 text-[11px] text-[var(--ledger-text-muted)]">
+                <span>+</span>
+                <ChevronDown
+                  size={14}
+                  className={`transition-transform ${quickCaptureMode === 'event' ? 'rotate-180' : ''}`}
+                />
+              </span>
+            </button>
+            {quickCaptureMode === 'event' && (
+              <div className="pl-3">
+                <div className={quickCaptureShellClass}>
+                  <input
+                    ref={eventCaptureRef}
+                    value={eventDraft}
+                    onChange={(e) => setEventDraft(e.target.value)}
+                    onKeyDown={(e) => {
+                      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+                        e.preventDefault();
+                        void saveQuickEvent();
+                      } else if (e.key === 'Escape') {
+                        e.preventDefault();
+                        if (!eventDraft.trim()) setQuickCaptureMode('none');
+                      }
+                    }}
+                    placeholder="Event title..."
+                    className={`w-full ${quickCaptureControlClass}`}
+                  />
+                  <div className="mt-2 grid grid-cols-2 gap-2">
+                    <input
+                      type="date"
+                      value={eventDate}
+                      onChange={(e) => setEventDate(e.target.value)}
+                      className={`w-full ${quickCaptureControlClass}`}
+                    />
+                    <input
+                      type="time"
+                      value={eventStartTime}
+                      onChange={(e) => setEventStartTime(e.target.value)}
+                      className={`w-full ${quickCaptureControlClass}`}
+                    />
+                    <input
+                      type="time"
+                      value={eventEndTime}
+                      onChange={(e) => setEventEndTime(e.target.value)}
+                      className={`w-full ${quickCaptureControlClass}`}
+                    />
+                    <div className="flex items-center justify-end gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEventDraft('');
+                          setEventDate(todayKey());
+                          setEventStartTime('09:00');
+                          setEventEndTime('10:00');
+                          setQuickCaptureMode('none');
+                        }}
+                        className={`h-7 rounded-full px-3 text-[11px] font-medium ${sidebarTheme.buttonSecondary}`}
+                      >
+                        Clear
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void saveQuickEvent()}
+                        disabled={!eventDraft.trim()}
+                        className={`h-7 rounded-full px-3 text-[11px] font-medium disabled:opacity-60 ${sidebarTheme.buttonPrimary}`}
+                      >
+                        Save
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {quickCaptureNotice && (
+            <p className="px-1 text-[11px] text-[var(--ledger-text-muted)]">{quickCaptureNotice}</p>
+          )}
+
+          {quickNotes.length > 0 && (
+            <div className="space-y-1.5 max-h-40 overflow-auto pr-0.5">
+              {quickNotes.slice(0, 6).map((note) => (
+                <div
+                  key={note.id}
+                  className={`w-full rounded-md border px-2 py-1.5 ${sidebarTheme.surface}`}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <button
+                      onClick={() => {
+                        setNoteDraft(note.body);
+                        setQuickCaptureMode('note');
+                      }}
+                      className="min-w-0 text-left flex-1"
+                    >
+                      <p className="truncate text-[11px] font-medium text-[var(--ledger-text-primary)]">
+                        {note.title}
+                      </p>
+                      <p className="mt-0.5 text-[10px] text-[var(--ledger-text-muted)]">
+                        {new Date(note.createdAt).toLocaleString([], {
+                          month: 'short',
+                          day: 'numeric',
+                          hour: 'numeric',
+                          minute: '2-digit',
+                        })}
+                      </p>
+                    </button>
+                    <button
+                      onClick={async (e) => {
+                        e.stopPropagation();
+                        try {
+                          await api.deleteNote(note.id);
+                        } catch (error) {
+                          setSaveError('Could not delete note.');
+                          return;
+                        }
+                        setQuickNotes((prev) => prev.filter((item) => item.id !== note.id));
+                      }}
+                      className="mt-0.5 rounded p-1 text-[var(--ledger-text-muted)] transition hover:bg-[color:rgba(217,45,32,0.08)] hover:text-[var(--ledger-danger)]"
+                      title="Delete note"
+                      aria-label="Delete note"
+                    >
+                      <Trash2 size={12} />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
 
         <section ref={checkinSectionRef} className="space-y-1.5">
           <button

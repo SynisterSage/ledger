@@ -107,6 +107,7 @@ export type Database = {
           priority: 'low' | 'medium' | 'high' | 'urgent';
           assigned_to: string | null;
           tags: string[];
+          task_horizon: 'today' | 'long_term';
           show_in_today: boolean;
           is_today_focus: boolean;
           completed_at: string | null;

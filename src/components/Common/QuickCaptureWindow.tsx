@@ -283,6 +283,7 @@ export const QuickCaptureWindow = ({
         description: followUpContext ? `calendar_followup:${followUpContext.eventId}` : '',
         status: 'todo',
         priority: 'medium',
+        task_horizon: 'long_term',
         project_id: followUpContext?.projectId ?? null,
         notes: followUpContext?.eventTitle
           ? `Follow-up from calendar: ${followUpContext.eventTitle}`

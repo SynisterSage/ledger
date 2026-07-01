@@ -282,20 +282,6 @@ const isUpcomingEventActive = (event: {
   return Number.isFinite(endAt) && endAt > Date.now();
 };
 
-const getExpiryMetadata = (hoursAhead = 24) => {
-  const expiresAt = new Date(Date.now() + hoursAhead * 60 * 60 * 1000);
-  const year = expiresAt.getFullYear();
-  const month = String(expiresAt.getMonth() + 1).padStart(2, '0');
-  const day = String(expiresAt.getDate()).padStart(2, '0');
-  const hour = String(expiresAt.getHours()).padStart(2, '0');
-  const minute = String(expiresAt.getMinutes()).padStart(2, '0');
-
-  return {
-    due_date: `${year}-${month}-${day}`,
-    due_time: `${hour}:${minute}`,
-  };
-};
-
 const formatExpiryCounter = (task: {
   due_date?: string | null;
   due_time?: string | null;
@@ -319,35 +305,6 @@ const formatExpiryCounter = (task: {
 
   const days = Math.max(1, Math.round(diffMs / 86400000));
   return `Expires in ${days}d`;
-};
-
-const getTaskExpiryDate = (task: {
-  due_date?: string | null;
-  due_time?: string | null;
-}) => {
-  if (!task.due_date) return null;
-
-  const dueAt = task.due_time
-    ? new Date(
-        `${task.due_date}T${task.due_time.length === 5 ? `${task.due_time}:00` : task.due_time}`
-      )
-    : new Date(`${task.due_date}T23:59:59`);
-
-  return Number.isNaN(dueAt.getTime()) ? null : dueAt;
-};
-
-const shouldAutoExpireTodayTask = (task: {
-  due_date?: string | null;
-  due_time?: string | null;
-  show_in_today?: boolean | null;
-  is_today_focus?: boolean | null;
-  status?: string | null;
-}) => {
-  if (String(task.status ?? '') === 'completed') return false;
-  if (!task.show_in_today && !task.is_today_focus) return false;
-
-  const dueAt = getTaskExpiryDate(task);
-  return dueAt !== null && dueAt.getTime() <= Date.now();
 };
 
 type CompletedFocusTask = {
@@ -781,6 +738,7 @@ function DashboardContent() {
       workspace_color?: string | null;
       calendar_name?: string | null;
       assigned_to?: string | null;
+      task_horizon?: 'today' | 'long_term' | null;
       is_today_focus?: boolean;
       show_in_today?: boolean;
       completed_at?: string | null;
@@ -1480,66 +1438,23 @@ function DashboardContent() {
       autoExpireTodayTaskIdsRef.current.clear();
       return;
     }
-
-    const expiredTasks = todayTasks.filter((task) => shouldAutoExpireTodayTask(task));
-    if (expiredTasks.length === 0) return;
-
-    expiredTasks.forEach((task) => {
-      if (autoExpireTodayTaskIdsRef.current.has(task.id)) return;
-      autoExpireTodayTaskIdsRef.current.add(task.id);
-      setTodayTasks((prev) => prev.filter((item) => item.id !== task.id));
-
-      void (async () => {
-        let succeeded = false;
-        try {
-          const workspaceId = task.workspace_id ?? activeWorkspaceId;
-          if (!workspaceId) return;
-
-          await api.updateTaskInWorkspace(task.id, workspaceId, {
-            due_date: null,
-            due_time: null,
-            show_in_today: false,
-            is_today_focus: false,
-          });
-          succeeded = true;
-
-          window.ipcRenderer?.send('dashboard:today-task-deleted', {
-            source: 'sidebar',
-            optimistic: true,
-            task: {
-              ...task,
-              due_date: null,
-              due_time: null,
-              show_in_today: false,
-              is_today_focus: false,
-            },
-          });
-        } catch (error) {
-          console.error('Failed to expire today task:', error);
-          setTodayTasks((prev) => [task, ...prev.filter((item) => item.id !== task.id)]);
-          autoExpireTodayTaskIdsRef.current.delete(task.id);
-        } finally {
-          if (succeeded) {
-            autoExpireTodayTaskIdsRef.current.delete(task.id);
-          }
-        }
-      })();
-    });
-  }, [activeWorkspaceId, api, todayTasks, user]);
+    autoExpireTodayTaskIdsRef.current.clear();
+  }, [activeWorkspaceId, user]);
 
   const createNewFocusTask = async () => {
     const title = focusDraftTitle.trim();
     if (!title || isSavingFocusTask || focusTasks.length >= 3) return;
 
     const tempId = `focus-task-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    const dueAt = getExpiryMetadata(24);
+    const dueDate = todayKey();
     const optimisticTask = {
       id: tempId,
       title,
       status: 'todo',
-      ...dueAt,
+      due_date: dueDate,
       show_in_today: true,
       is_today_focus: true,
+      task_horizon: 'today' as const,
       created_at: new Date().toISOString(),
       ...getWorkspaceTaskMetadata(),
     };
@@ -1551,7 +1466,8 @@ function DashboardContent() {
         status: 'todo',
         show_in_today: true,
         is_today_focus: true,
-        ...dueAt,
+        due_date: dueDate,
+        task_horizon: 'today',
       });
       if (created && typeof created === 'object') {
         const createdTask = created as { id?: string; workspace_id?: string | null; workspace_name?: string | null; workspace_color?: string | null };
@@ -1591,6 +1507,7 @@ function DashboardContent() {
           workspace_id?: string | null;
           workspace_name?: string | null;
           workspace_color?: string | null;
+          task_horizon?: 'today' | 'long_term' | null;
           is_today_focus?: boolean;
           show_in_today?: boolean;
           due_date?: string | null;
@@ -1609,7 +1526,11 @@ function DashboardContent() {
         );
         return;
       }
-      if (!detail.task.is_today_focus) return;
+      const isTodayTask =
+        Boolean(detail.task.is_today_focus) ||
+        Boolean(detail.task.show_in_today) ||
+        String(detail.task.task_horizon ?? '') === 'today';
+      if (!isTodayTask) return;
       if (detail.task.workspace_id && detail.task.workspace_id !== activeWorkspaceId) return;
       const taskId = detail.task.id;
 
@@ -1625,8 +1546,11 @@ function DashboardContent() {
         workspace_id: detail.task.workspace_id ?? activeWorkspaceId ?? null,
         workspace_name: detail.task.workspace_name ?? activeWorkspace?.name?.trim() ?? null,
         workspace_color: detail.task.workspace_color ?? activeWorkspace?.color ?? null,
-        is_today_focus: true,
-        show_in_today: true,
+        is_today_focus: Boolean(detail.task.is_today_focus),
+        show_in_today: Boolean(detail.task.show_in_today ?? isTodayTask),
+        task_horizon: String(detail.task.task_horizon ?? (isTodayTask ? 'today' : 'long_term')) as
+          | 'today'
+          | 'long_term',
         created_at: detail.task.created_at ?? new Date().toISOString(),
       };
 
@@ -1658,6 +1582,7 @@ function DashboardContent() {
           workspace_id?: string | null;
           workspace_name?: string | null;
           workspace_color?: string | null;
+          task_horizon?: 'today' | 'long_term' | null;
           is_today_focus?: boolean;
           show_in_today?: boolean;
           due_date?: string | null;
@@ -1683,8 +1608,9 @@ function DashboardContent() {
           workspace_id: detail.task.workspace_id ?? activeWorkspaceId ?? null,
           workspace_name: detail.task.workspace_name ?? activeWorkspace?.name?.trim() ?? null,
           workspace_color: detail.task.workspace_color ?? activeWorkspace?.color ?? null,
-          is_today_focus: true,
-          show_in_today: true,
+          is_today_focus: Boolean(detail.task.is_today_focus),
+          show_in_today: Boolean(detail.task.show_in_today ?? true),
+          task_horizon: String(detail.task.task_horizon ?? 'today') as 'today' | 'long_term',
           created_at: detail.task.created_at ?? new Date().toISOString(),
         };
 

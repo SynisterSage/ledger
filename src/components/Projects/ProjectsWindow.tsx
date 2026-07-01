@@ -342,6 +342,40 @@ const formatShortDateLong = (value: string | null | undefined) => {
   return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
 };
 
+const formatOrdinalDay = (day: number) => {
+  const mod10 = day % 10;
+  const mod100 = day % 100;
+  if (mod10 === 1 && mod100 !== 11) return `${day}st`;
+  if (mod10 === 2 && mod100 !== 12) return `${day}nd`;
+  if (mod10 === 3 && mod100 !== 13) return `${day}rd`;
+  return `${day}th`;
+};
+
+const formatTaskDueDateLabel = (value: string | null) => {
+  if (!value) return 'No due date';
+  const date = parseDateValue(value);
+  if (!date) return 'No due date';
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const due = new Date(date);
+  due.setHours(0, 0, 0, 0);
+  const diffDays = Math.round((due.getTime() - today.getTime()) / 86_400_000);
+
+  if (diffDays < 0) {
+    const overdueDays = Math.abs(diffDays);
+    return overdueDays === 1 ? 'Overdue by 1 day' : `Overdue by ${overdueDays} days`;
+  }
+  if (diffDays === 0) return 'Today';
+  if (diffDays === 1) return 'Tomorrow';
+  if (diffDays <= 7) return date.toLocaleDateString([], { weekday: 'short' });
+  if (diffDays <= 30) return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+
+  return `${date.toLocaleDateString([], { month: 'long' })} ${formatOrdinalDay(
+    date.getDate()
+  )}, ${date.getFullYear()}`;
+};
+
 const formatDateKey = (date: Date) => {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -1081,8 +1115,8 @@ export const ProjectsWindow = () => {
         id: `task-${task.id}`,
         title: task.title,
         meta: task.due_time
-          ? `${formatShortDate(task.due_date)} · ${task.due_time}`
-          : formatShortDate(task.due_date),
+          ? `${formatTaskDueDateLabel(task.due_date)} · ${task.due_time}`
+          : formatTaskDueDateLabel(task.due_date),
         kind: 'Action',
       });
     }
@@ -1716,6 +1750,7 @@ export const ProjectsWindow = () => {
         assigned_to: newTaskAssignee || null,
         milestone_id: newTaskMilestoneId || null,
         status: 'todo',
+        task_horizon: 'long_term',
       });
       const created = data as TaskRow;
       setTasks((prev) => [created, ...prev]);
@@ -1870,6 +1905,7 @@ export const ProjectsWindow = () => {
           milestone_id: task.milestone_id ?? null,
           status: 'todo',
           tags: task.tags,
+          task_horizon: 'long_term',
         })) as TaskRow;
         setTasks((prev) => [created, ...prev]);
       } catch (createError) {
@@ -3118,7 +3154,7 @@ export const ProjectsWindow = () => {
               {task.title}
             </p>
             <p className="mt-0.5 truncate text-xs text-[var(--ledger-text-muted)]">
-              {task.due_date ? `Due ${formatShortDate(task.due_date)}` : 'No due date'}
+              {task.due_date ? `Due ${formatTaskDueDateLabel(task.due_date)}` : 'No due date'}
               {' · '}
               {getAssigneeLabel(task.assigned_to)}
               {linkedMilestone ? ` · ${linkedMilestone.title}` : ''}

@@ -524,6 +524,7 @@ export default function InboxWindow() {
           type: 'task',
           notes: body,
           show_in_today: showInToday,
+          task_horizon: showInToday ? 'today' : 'long_term',
         });
       } else if (conversionType === 'note') {
         await api.convertInboxItem(selectedItem.id, {
