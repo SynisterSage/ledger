@@ -1,12 +1,22 @@
 import {
+  Accessibility,
+  Bell,
+  BriefcaseBusiness,
   ChevronLeft,
   ChevronRight,
   ChevronsDown,
   ChevronsUp,
   CircleAlert,
   Copy,
+  CalendarDays,
   Loader2,
+  PanelLeft,
+  Plug2,
   Settings,
+  Shield,
+  UserRound,
+  Keyboard,
+  ListTree,
   Wind,
 } from 'lucide-react';
 import { type CSSProperties, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
@@ -172,16 +182,61 @@ type SettingsSectionId =
   | 'sidebar'
   | 'shortcuts'
   | 'accessibility';
-const sectionOrder: Array<{ id: SettingsSectionId; label: string; description: string }> = [
-  { id: 'account', label: 'Account', description: 'Identity and security' },
-  { id: 'sessions', label: 'Sessions', description: 'Signed-in devices and access' },
-  { id: 'workspace', label: 'Workspace', description: 'Display and behavior defaults' },
-  { id: 'calendar', label: 'Calendar', description: 'Event and reminder defaults' },
-  { id: 'notifications', label: 'Notifications', description: 'Alerts and delivery' },
-  { id: 'integrations', label: 'Integrations', description: 'Connect external signals' },
-  { id: 'sidebar', label: 'Sidebar', description: 'Docking, visibility, and placement' },
-  { id: 'shortcuts', label: 'Keyboard Shortcuts', description: 'Quick reference for actions' },
-  { id: 'accessibility', label: 'Accessibility', description: 'Comfort and readability options' },
+type SettingsNavGroupId = 'account' | 'features' | 'administration';
+
+type SettingsNavSection = {
+  id: SettingsSectionId;
+  label: string;
+  description: string;
+  icon: typeof UserRound;
+};
+
+const settingsNavGroups: Array<{
+  id: SettingsNavGroupId;
+  label: string;
+  icon: typeof UserRound;
+  sections: SettingsNavSection[];
+}> = [
+  {
+    id: 'account',
+    label: 'Account',
+    icon: UserRound,
+    sections: [
+      { id: 'account', label: 'Account', description: 'Identity and security', icon: UserRound },
+      { id: 'sessions', label: 'Sessions', description: 'Signed-in devices and access', icon: Shield },
+    ],
+  },
+  {
+    id: 'features',
+    label: 'Features',
+    icon: BriefcaseBusiness,
+    sections: [
+      {
+        id: 'workspace',
+        label: 'Workspace',
+        description: 'Display and behavior defaults',
+        icon: BriefcaseBusiness,
+      },
+      { id: 'calendar', label: 'Calendar', description: 'Event and reminder defaults', icon: CalendarDays },
+      { id: 'notifications', label: 'Notifications', description: 'Alerts and delivery', icon: Bell },
+      { id: 'integrations', label: 'Integrations', description: 'Connect external signals', icon: Plug2 },
+      { id: 'sidebar', label: 'Sidebar', description: 'Docking, visibility, and placement', icon: PanelLeft },
+      { id: 'shortcuts', label: 'Keyboard shortcuts', description: 'Quick reference for actions', icon: Keyboard },
+    ],
+  },
+  {
+    id: 'administration',
+    label: 'Administration',
+    icon: ListTree,
+    sections: [
+      {
+        id: 'accessibility',
+        label: 'Accessibility',
+        description: 'Comfort and readability options',
+        icon: Accessibility,
+      },
+    ],
+  },
 ];
 
 const isSettingsSection = (value: string | null | undefined): value is SettingsSectionId => {
@@ -377,11 +432,7 @@ const settingsTheme = {
     'relative flex h-screen flex-col overflow-hidden rounded-3xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] text-[var(--ledger-text-primary)] shadow-[0_24px_80px_rgba(15,23,42,0.08)]',
   root: 'flex-1 overflow-hidden bg-[var(--ledger-background)]',
   aside:
-    'overflow-auto border-r border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] p-4',
-  sideHeader: 'mb-4 border-b border-[color:var(--ledger-border-subtle)] pb-4',
-  sideLabel: 'text-xs font-medium text-[var(--ledger-text-muted)]',
-  sideTitle: 'mt-1 text-sm font-semibold text-[var(--ledger-text-primary)]',
-  sideMeta: 'text-xs text-[var(--ledger-text-secondary)] truncate',
+    'overflow-auto border-r border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] p-3',
   main: 'overflow-auto bg-[var(--ledger-background)] p-6',
   sectionTitle: 'text-sm font-semibold text-[var(--ledger-text-primary)]',
   sectionSubtitle: 'text-sm text-[var(--ledger-text-secondary)]',
@@ -427,9 +478,9 @@ const settingsTheme = {
   headerButton:
     'h-9 rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3 text-xs font-semibold text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]',
   navButton:
-    'w-full rounded-2xl border px-3 py-2.5 text-left transition outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-accent)]/20 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--ledger-surface)]',
+    'group flex w-full items-center gap-2 rounded-lg border px-2.5 py-1.5 text-left transition outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-accent)]/20 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--ledger-surface)]',
   navButtonActive:
-    'border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-hover)] text-[var(--ledger-text-primary)]',
+    'border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-hover)] text-[var(--ledger-text-primary)] shadow-none',
   navButtonIdle:
     'border-transparent text-[var(--ledger-text-secondary)] hover:border-[color:var(--ledger-border-subtle)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]',
   input:
@@ -850,12 +901,6 @@ export const SettingsWindow = () => {
       window.ipcRenderer?.off('settings:focus-section', handleFocusSection);
     };
   }, []);
-
-  const firstName = useMemo(() => {
-    const candidate = fullName.trim();
-    if (!candidate) return 'there';
-    return candidate.split(' ')[0];
-  }, [fullName]);
 
   const currentAccountSession = useMemo(
     () => accountSessions.find((session) => session.is_current) ?? null,
@@ -1823,29 +1868,44 @@ export const SettingsWindow = () => {
             className={settingsTheme.aside}
             aria-label="Settings sections"
           >
-            <div className={settingsTheme.sideHeader}>
-              <p className={settingsTheme.sideLabel}>Account</p>
-              <p className={settingsTheme.sideTitle}>Hi {firstName}</p>
-              <p className={settingsTheme.sideMeta}>
-                {user?.email ?? 'No email available'}
-              </p>
-            </div>
-
-            <nav className="space-y-1.5" aria-label="Settings navigation">
-              {sectionOrder.map((section) => (
-                <button
-                  key={section.id}
-                  onClick={() => setActiveSection(section.id)}
-                  className={`${settingsTheme.navButton} ${
-                    activeSection === section.id
-                      ? settingsTheme.navButtonActive
-                      : settingsTheme.navButtonIdle
-                  }`}
-                  aria-current={activeSection === section.id ? 'page' : undefined}
-                >
-                  <p className="text-sm font-semibold">{section.label}</p>
-                  <p className="mt-0.5 text-xs text-[var(--ledger-text-muted)]">{section.description}</p>
-                </button>
+            <nav className="space-y-3" aria-label="Settings navigation">
+              {settingsNavGroups.map((group) => (
+                <section key={group.id} className="space-y-1.5">
+                  <div className="px-1 text-xs font-medium text-[var(--ledger-text-muted)]">
+                    {group.label}
+                  </div>
+                  <div className="space-y-1">
+                    {group.sections.map((section) => {
+                      const SectionIcon = section.icon;
+                      const isActive = activeSection === section.id;
+                      return (
+                        <button
+                          key={section.id}
+                          onClick={() => setActiveSection(section.id)}
+                          title={section.description}
+                          className={`${settingsTheme.navButton} ${
+                            isActive ? settingsTheme.navButtonActive : settingsTheme.navButtonIdle
+                          }`}
+                          aria-current={isActive ? 'page' : undefined}
+                        >
+                          <span
+                            className={`flex h-4 w-4 shrink-0 items-center justify-center ${
+                              isActive
+                                ? 'text-[var(--ledger-accent)]'
+                                : 'text-[var(--ledger-text-muted)]'
+                            }`}
+                            aria-hidden="true"
+                          >
+                            <SectionIcon size={12} />
+                          </span>
+                          <span className="min-w-0 flex-1">
+                            <p className="truncate text-sm font-medium">{section.label}</p>
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </section>
               ))}
             </nav>
           </aside>

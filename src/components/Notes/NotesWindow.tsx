@@ -3350,8 +3350,8 @@ export const NotesWindow = () => {
               }}
               title="Create a new note"
               disabled={isCreating}
+              icon={<Plus size={12} />}
             >
-              <Plus size={12} />
               {isCreating ? 'Creating...' : 'New note'}
             </ModuleHeaderActionButton>
             <ModuleHeaderActionButton
@@ -3361,8 +3361,8 @@ export const NotesWindow = () => {
               }}
               title="Export notes or mind maps"
               disabled={notes.length === 0}
+              icon={<Download size={12} />}
             >
-              <Download size={12} />
               Export
             </ModuleHeaderActionButton>
           </div>

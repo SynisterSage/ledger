@@ -35,7 +35,7 @@ export const sidebarTheme = {
   fieldMuted:
     'rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-primary)] placeholder:text-[var(--ledger-placeholder)] focus:border-[color:var(--ledger-border-strong)] focus:outline-none focus:ring-1 focus:ring-[color:var(--ledger-accent)]/10',
   sectionLabel:
-    'text-xs font-semibold uppercase tracking-[0.16em] text-[var(--ledger-text-muted)]',
+    'text-[11px] font-semibold text-[var(--ledger-text-muted)]',
   textPrimary: 'text-[var(--ledger-text-primary)]',
   textSecondary: 'text-[var(--ledger-text-secondary)]',
   textMuted: 'text-[var(--ledger-text-muted)]',

@@ -319,14 +319,19 @@ const projectMilestoneTypes = [
   'Handoff',
   'Custom',
 ];
+const projectTypes = ['code', 'design', 'personal', 'ops', 'writing', 'other'];
 
 const normalizeProjectMilestoneType = (value) => {
   const raw = String(value ?? 'Custom').trim().toLowerCase();
   return projectMilestoneTypes.find((type) => type.toLowerCase() === raw) ?? 'Custom';
 };
+const normalizeProjectType = (value) => {
+  const raw = String(value ?? 'other').trim().toLowerCase();
+  return projectTypes.includes(raw) ? raw : 'other';
+};
 
 const projectSelectColumns =
-  'id, name, description, status, completeness, color, start_date, end_date, created_by, created_at, updated_at';
+  'id, name, description, status, completeness, color, start_date, end_date, project_type, lead_id, created_by, created_at, updated_at';
 const projectMilestoneSelectColumns =
   'id, workspace_id, project_id, title, milestone_date, type, note, completed, linked_note_id, linked_reminder_id, linked_event_id, created_by, updated_by, created_at, updated_at';
 const taskSelectColumns =
@@ -6865,6 +6870,8 @@ app.post(
       const startDate = normalizeNullableDate(req.body?.start_date, 'start date');
       const endDate = normalizeNullableDate(req.body?.end_date, 'end date');
       const color = normalizeNullableText(req.body?.color);
+      const projectType = normalizeProjectType(req.body?.project_type);
+      const leadId = normalizeNullableText(req.body?.lead_id);
       const status = req.body?.status
         ? projectStatusAliases[normalizeProjectSemanticStatus(req.body.status)][0]
         : 'NotStarted';
@@ -6893,6 +6900,8 @@ app.post(
           color: color || '#007AFF',
           start_date: startDate,
           end_date: endDate,
+          project_type: projectType,
+          lead_id: leadId,
         })
         .select(projectSelectColumns)
         .single();
@@ -6950,6 +6959,10 @@ app.patch('/api/projects/:id', authMiddleware, rateLimit('write'), async (req, r
       update.start_date = normalizeNullableDate(req.body.start_date, 'start date');
     if (req.body?.end_date !== undefined)
       update.end_date = normalizeNullableDate(req.body.end_date, 'end date');
+    if (req.body?.project_type !== undefined)
+      update.project_type = normalizeProjectType(req.body.project_type);
+    if (req.body?.lead_id !== undefined)
+      update.lead_id = normalizeNullableText(req.body.lead_id);
     update.updated_at = new Date().toISOString();
 
     const { data, error } = await supabase

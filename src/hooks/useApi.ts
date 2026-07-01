@@ -346,6 +346,8 @@ export const useApi = () => {
               start_date?: string | null;
               end_date?: string | null;
               status?: string;
+              project_type?: string | null;
+              lead_id?: string | null;
             }
       ) => {
         const payload = typeof input === 'string' ? { name: input } : input;
@@ -364,6 +366,8 @@ export const useApi = () => {
           color?: string;
           start_date?: string | null;
           end_date?: string | null;
+          project_type?: string | null;
+          lead_id?: string | null;
         }
       ) =>
         request(`/api/projects/${id}`, {

@@ -1,4 +1,5 @@
 import {
+  BriefcaseBusiness,
   Bell,
   CalendarDays,
   Check,
@@ -7,6 +8,7 @@ import {
   ChevronRight,
   Clock3,
   CircleDot,
+  Code2,
   FileText,
   Flag,
   Folder,
@@ -16,10 +18,14 @@ import {
   Pause,
   Plus,
   Play,
+  Palette,
   Search,
   CheckCircle2,
+  Sparkles,
   Loader2,
   Trash2,
+  X,
+  UserRound,
 } from 'lucide-react';
 import {
   useCallback,
@@ -40,6 +46,7 @@ import {
 import { useApi } from '../../hooks/useApi';
 import { useWorkspaceContext } from '../../context/WorkspaceContext';
 import { useWorkspaceRealtimeRefresh } from '../../hooks/useWorkspaceRealtimeRefresh';
+import { useViewportHeight } from '../../hooks/useViewportHeight';
 import {
   ModuleHeaderActionButton,
   ModuleHeaderStatus,
@@ -60,6 +67,8 @@ type ProjectRow = {
   color: string;
   start_date: string | null;
   end_date: string | null;
+  project_type?: string | null;
+  lead_id?: string | null;
   created_by?: string | null;
   created_at: string;
   updated_at: string;
@@ -433,6 +442,20 @@ const buildProjectUpdate = (draft: ProjectDraft) => ({
   color: draft.color,
   start_date: draft.startDate || null,
   end_date: draft.endDate || null,
+  project_type: draft.projectType,
+  lead_id: draft.leadId || null,
+});
+
+const makeEmptyProjectDraft = (): ProjectDraft => ({
+  name: '',
+  description: '',
+  status: 'not_started',
+  completeness: 0,
+  color: '#007AFF',
+  startDate: '',
+  endDate: '',
+  projectType: 'other',
+  leadId: '',
 });
 
 type ProjectDraft = {
@@ -443,7 +466,67 @@ type ProjectDraft = {
   color: string;
   startDate: string;
   endDate: string;
+  projectType: ProjectTypeKind;
+  leadId: string;
 };
+
+type ProjectTypeKind = 'code' | 'design' | 'personal' | 'ops' | 'writing' | 'other';
+
+type ProjectTypeOption = {
+  id: ProjectTypeKind;
+  label: string;
+  description: string;
+  color: string;
+  icon: typeof Code2;
+};
+
+const projectTypeOptions: ProjectTypeOption[] = [
+  {
+    id: 'code',
+    label: 'Code',
+    description: 'Engineering and product work',
+    color: '#3B82F6',
+    icon: Code2,
+  },
+  {
+    id: 'design',
+    label: 'Design',
+    description: 'Graphic and visual work',
+    color: '#FF5F40',
+    icon: Palette,
+  },
+  {
+    id: 'personal',
+    label: 'Personal',
+    description: 'Life admin and personal goals',
+    color: '#22C55E',
+    icon: UserRound,
+  },
+  {
+    id: 'ops',
+    label: 'Ops',
+    description: 'Execution and coordination',
+    color: '#F59E0B',
+    icon: BriefcaseBusiness,
+  },
+  {
+    id: 'writing',
+    label: 'Writing',
+    description: 'Docs, copy, and content',
+    color: '#14B8A6',
+    icon: FileText,
+  },
+  {
+    id: 'other',
+    label: 'Other',
+    description: 'General project work',
+    color: '#6B7280',
+    icon: Sparkles,
+  },
+];
+
+const getProjectTypeOption = (value: string | null | undefined) =>
+  projectTypeOptions.find((option) => option.id === value) ?? projectTypeOptions[5];
 
 export const ProjectsWindow = () => {
   const { user } = useAuthContext();
@@ -452,6 +535,7 @@ export const ProjectsWindow = () => {
   const isWindowsPlatform =
     typeof navigator !== 'undefined' && navigator.platform.toLowerCase().includes('win');
   const viewportWidth = useViewportWidth();
+  const viewportHeight = useViewportHeight();
   const initialFocusProjectId = new URLSearchParams(window.location.search).get('focusProjectId');
   const initialFocusHandledRef = useRef(false);
   const initialFocusTaskId = new URLSearchParams(window.location.search).get('focusTaskId');
@@ -469,7 +553,6 @@ export const ProjectsWindow = () => {
   const milestoneEditorRef = useRef<HTMLDivElement | null>(null);
   const milestoneDetailRef = useRef<HTMLDivElement | null>(null);
   const milestoneNameInputRef = useRef<HTMLInputElement | null>(null);
-  const createProjectComposerRef = useRef<HTMLDivElement | null>(null);
   const createProjectInputRef = useRef<HTMLInputElement | null>(null);
 
   const [projects, setProjects] = useState<ProjectRow[]>([]);
@@ -537,16 +620,16 @@ export const ProjectsWindow = () => {
   } | null>(null);
   const [isCreatingProject, setIsCreatingProject] = useState(false);
   const [newProjectName, setNewProjectName] = useState('');
+  const [newProjectDescription, setNewProjectDescription] = useState('');
+  const [newProjectType, setNewProjectType] = useState<ProjectTypeKind>('code');
+  const [newProjectLeadId, setNewProjectLeadId] = useState('');
+  const [newProjectNoteIds, setNewProjectNoteIds] = useState<string[]>([]);
+  const [newProjectNotes, setNewProjectNotes] = useState<NoteOption[]>([]);
+  const [isLoadingNewProjectNotes, setIsLoadingNewProjectNotes] = useState(false);
+  const [newProjectNotesSearch, setNewProjectNotesSearch] = useState('');
+  const [isNewProjectNotesExpanded, setIsNewProjectNotesExpanded] = useState(false);
   const [isCreatingProjectNow, setIsCreatingProjectNow] = useState(false);
-  const [projectDraft, setProjectDraft] = useState<ProjectDraft>({
-    name: '',
-    description: '',
-    status: 'not_started',
-    completeness: 0,
-    color: '#007AFF',
-    startDate: '',
-    endDate: '',
-  });
+  const [projectDraft, setProjectDraft] = useState<ProjectDraft>(makeEmptyProjectDraft());
   const [isSavingProject, setIsSavingProject] = useState(false);
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [newTaskPriority, setNewTaskPriority] = useState<'low' | 'medium' | 'high' | 'urgent'>(
@@ -1020,6 +1103,17 @@ export const ProjectsWindow = () => {
     captures: 0,
   };
 
+  const filteredNewProjectNotes = useMemo(() => {
+    const term = newProjectNotesSearch.trim().toLowerCase();
+    if (!term) return newProjectNotes;
+    return newProjectNotes.filter((note) =>
+      [note.title, note.preview, note.updated_at ? formatShortDate(note.updated_at) : '']
+        .join(' ')
+        .toLowerCase()
+        .includes(term)
+    );
+  }, [newProjectNotes, newProjectNotesSearch]);
+
   const projectMenuPosition = useMemo(() => {
     if (!projectContextMenu) return null;
     return getClampedMenuPosition(projectContextMenu.x, projectContextMenu.y, 208, 304);
@@ -1137,6 +1231,10 @@ export const ProjectsWindow = () => {
       color: project.color || '#007AFF',
       startDate: project.start_date ?? '',
       endDate: project.end_date ?? '',
+      projectType: projectTypeOptions.some((option) => option.id === project.project_type)
+        ? (project.project_type as ProjectTypeKind)
+        : 'other',
+      leadId: project.lead_id ?? '',
     });
     isDirtyRef.current = false;
   }, []);
@@ -1145,15 +1243,7 @@ export const ProjectsWindow = () => {
     if (!user || !activeWorkspaceId) {
       setProjects([]);
       setSelectedProjectId(null);
-      setProjectDraft({
-        name: '',
-        description: '',
-        status: 'not_started',
-        completeness: 0,
-        color: '#007AFF',
-        startDate: '',
-        endDate: '',
-      });
+      setProjectDraft(makeEmptyProjectDraft());
       setIsLoadingProjects(false);
       setError(null);
       return;
@@ -1172,15 +1262,7 @@ export const ProjectsWindow = () => {
         }
 
         isDirtyRef.current = false;
-        setProjectDraft({
-          name: '',
-          description: '',
-          status: 'not_started',
-          completeness: 0,
-          color: '#007AFF',
-          startDate: '',
-          endDate: '',
-        });
+        setProjectDraft(makeEmptyProjectDraft());
         return null;
       });
     } catch (fetchError) {
@@ -1290,15 +1372,7 @@ export const ProjectsWindow = () => {
     setIsTaskComposerOpen(false);
     resetTaskComposer();
     isDirtyRef.current = false;
-    setProjectDraft({
-      name: '',
-      description: '',
-      status: 'not_started',
-      completeness: 0,
-      color: '#007AFF',
-      startDate: '',
-      endDate: '',
-    });
+    setProjectDraft(makeEmptyProjectDraft());
   }, [flushProjectDraft, resetTaskComposer, selectedProjectId]);
 
   const getProjectById = useCallback(
@@ -1446,12 +1520,16 @@ export const ProjectsWindow = () => {
     try {
       const data = await api.createProject({
         name,
-        description: '',
-        color: '#007AFF',
+        description: newProjectDescription.trim() || null,
+        color: getProjectTypeOption(newProjectType).color,
         start_date: null,
         end_date: null,
+        status: 'NotStarted',
+        project_type: newProjectType,
+        lead_id: newProjectLeadId || null,
       });
       const created = data as ProjectRow;
+      let linkNoteError: string | null = null;
       setProjects((prev) => {
         const next = prev.filter(
           (project) =>
@@ -1459,29 +1537,101 @@ export const ProjectsWindow = () => {
         );
         return [created, ...next];
       });
+      if (newProjectNoteIds.length > 0) {
+        try {
+          for (const noteId of newProjectNoteIds) {
+            await api.linkProjectNote(created.id, noteId);
+          }
+        } catch (linkError) {
+          linkNoteError =
+            linkError instanceof Error ? linkError.message : 'Could not link one or more notes.';
+        }
+      }
       setSelectedProjectId(created.id);
       syncDraftFromProject(created);
       setNewProjectName('');
+      setNewProjectDescription('');
+      setNewProjectType('code');
+      setNewProjectLeadId('');
+      setNewProjectNoteIds([]);
+      setNewProjectNotesSearch('');
+      setIsNewProjectNotesExpanded(false);
       setIsCreatingProject(false);
+      if (linkNoteError) {
+        setError(linkNoteError);
+      }
     } catch (createError) {
       setError(createError instanceof Error ? createError.message : 'Could not create project.');
     } finally {
       setIsCreatingProjectNow(false);
     }
-  }, [api, newProjectName, syncDraftFromProject]);
+  }, [
+    api,
+    newProjectDescription,
+    newProjectLeadId,
+    newProjectName,
+    newProjectNoteIds,
+    newProjectType,
+    syncDraftFromProject,
+  ]);
 
   const openCreateProjectComposer = useCallback(() => {
     setIsCreatingProject(true);
+    setNewProjectName('');
+    setNewProjectDescription('');
+    setNewProjectType('code');
+    setNewProjectLeadId(user?.id ?? '');
+    setNewProjectNoteIds([]);
+    setNewProjectNotesSearch('');
+    setError(null);
+    void (async () => {
+      setIsLoadingNewProjectNotes(true);
+      try {
+        const payload = await api.getNotes();
+        const rows = Array.isArray((payload as { notes?: unknown[] } | null)?.notes)
+          ? ((payload as { notes?: unknown[] } | null)?.notes ?? [])
+          : Array.isArray(payload)
+          ? payload
+          : [];
+        const options = rows
+          .filter((row): row is { id: string; title?: string; content?: string; content_html?: string; updated_at?: string | null } =>
+            Boolean(row && typeof row === 'object' && 'id' in row)
+          )
+          .map((row) => ({
+            id: String(row.id),
+            title: String(row.title ?? 'Untitled note').trim(),
+            preview: String(row.content ?? row.content_html ?? '')
+              .replace(/<[^>]*>/g, ' ')
+              .replace(/\s+/g, ' ')
+              .trim()
+              .slice(0, 120),
+            updated_at: row.updated_at ?? null,
+          }));
+        setNewProjectNotes(options);
+      } catch (error) {
+        setNewProjectNotes([]);
+        setError(error instanceof Error ? error.message : 'Could not load notes.');
+      } finally {
+        setIsLoadingNewProjectNotes(false);
+      }
+    })();
     window.setTimeout(() => {
       createProjectInputRef.current?.focus();
       createProjectInputRef.current?.select();
     }, 60);
-  }, []);
+  }, [api, user?.id]);
 
   const closeCreateProjectComposer = useCallback(() => {
     if (isCreatingProjectNow) return;
     setIsCreatingProject(false);
     setNewProjectName('');
+    setNewProjectDescription('');
+    setNewProjectType('code');
+    setNewProjectLeadId('');
+    setNewProjectNoteIds([]);
+    setNewProjectNotes([]);
+    setNewProjectNotesSearch('');
+    setIsNewProjectNotesExpanded(false);
   }, [isCreatingProjectNow]);
 
   const deleteProject = useCallback(
@@ -1494,15 +1644,7 @@ export const ProjectsWindow = () => {
           setTasks([]);
           setSelectedTaskId(null);
           isDirtyRef.current = false;
-          setProjectDraft({
-            name: '',
-            description: '',
-            status: 'not_started',
-            completeness: 0,
-            color: '#007AFF',
-            startDate: '',
-            endDate: '',
-          });
+          setProjectDraft(makeEmptyProjectDraft());
         }
       } catch (deleteError) {
         setError(deleteError instanceof Error ? deleteError.message : 'Could not delete project.');
@@ -2695,28 +2837,6 @@ export const ProjectsWindow = () => {
       window.removeEventListener('mouseup', handleUp);
     };
   }, [isResizingRightPane]);
-
-  useEffect(() => {
-    if (!isCreatingProject || isCreatingProjectNow) return;
-
-    const onPointerDown = (event: MouseEvent) => {
-      if (createProjectComposerRef.current?.contains(event.target as Node)) return;
-      closeCreateProjectComposer();
-    };
-
-    const onEscape = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return;
-      closeCreateProjectComposer();
-    };
-
-    window.addEventListener('mousedown', onPointerDown);
-    window.addEventListener('keydown', onEscape);
-
-    return () => {
-      window.removeEventListener('mousedown', onPointerDown);
-      window.removeEventListener('keydown', onEscape);
-    };
-  }, [closeCreateProjectComposer, isCreatingProject, isCreatingProjectNow]);
 
   useEffect(() => {
     if (!projectContextMenu) return;
@@ -3919,10 +4039,17 @@ export const ProjectsWindow = () => {
   );
 
   const renderProjectsTimelineOverview = () => {
-    const timelineRailWidth = 280;
-    const timelineWidth = Math.max(980, timelineMonths.length * 172);
-    const timelineCanvasHeight = Math.max(640, 220 + visibleDatedProjects.length * 104);
-    const timelineBodyHeight = Math.max(520, timelineCanvasHeight - 72);
+    const timelineRailWidth = 300;
+    const timelineMonthWidth = 220;
+    const timelineRowPitch = 126;
+    const timelineBarHeight = 42;
+    const timelineWidth = Math.max(1180, timelineMonths.length * timelineMonthWidth);
+    const timelineCanvasHeight = Math.max(
+      720,
+      viewportHeight - 324,
+      240 + visibleDatedProjects.length * timelineRowPitch
+    );
+    const timelineBodyHeight = Math.max(600, timelineCanvasHeight - 72);
     const timelineSubdivisions = 4;
     const todayLeft = getTimelinePositionFromDate(todayKey());
     const showTodayMarker = todayLeft > 0 && todayLeft < 100;
@@ -3991,7 +4118,7 @@ export const ProjectsWindow = () => {
         ? [...datedProjects, ...datelessProjects]
         : [...visibleDatedProjects, ...datelessProjects];
     const viewOptions: Array<{ id: ProjectsOverviewView; label: string }> = [
-      { id: 'timeline', label: 'Timeline' },
+      { id: 'timeline', label: 'Roadmap' },
       { id: 'list', label: 'List' },
     ];
     const rangeOptions: Array<{ id: ProjectsOverviewRange; label: string }> = [
@@ -4016,7 +4143,7 @@ export const ProjectsWindow = () => {
               )}
             </div>
             <h2 className="mt-2 text-3xl font-semibold tracking-tight text-[var(--ledger-text-primary)]">
-              Projects timeline
+              Projects roadmap
             </h2>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-[var(--ledger-text-secondary)]">
               See how outcomes, notes, and next actions unfold across this workspace.
@@ -4085,8 +4212,7 @@ export const ProjectsWindow = () => {
                   : 'border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]'
               }`}
             >
-              <Flag size={12} />
-              {isMilestonePlacementActive || pendingMilestone ? 'Cancel placement' : 'Add milestone'}
+              {isMilestonePlacementActive || pendingMilestone ? <X size={12} /> : <Flag size={12} />}
             </button>
           </div>
         </section>
@@ -4424,7 +4550,7 @@ export const ProjectsWindow = () => {
                                 <div
                                   className="grid h-[58px]"
                                   style={{
-                                    gridTemplateColumns: `repeat(${timelineMonths.length}, minmax(172px, 1fr))`,
+                                    gridTemplateColumns: `repeat(${timelineMonths.length}, minmax(${timelineMonthWidth}px, 1fr))`,
                                     backgroundImage:
                                       'linear-gradient(to right, color-mix(in srgb, var(--ledger-border-subtle) 40%, transparent) 1px, transparent 1px)',
                                     backgroundSize: `${timelineWidth / Math.max(1, timelineMonths.length * timelineSubdivisions)}px 100%`,
@@ -4483,8 +4609,8 @@ export const ProjectsWindow = () => {
                           const semantic = parseProjectStatus(String(project.status));
                           const lane = getProjectLane(project);
                           const completeness = Math.max(0, Math.min(100, Number(project.completeness) || 0));
-                          const barTop = 70 + index * 104 + (index % 2 === 0 ? 0 : 22);
-                          const labelTop = Math.max(18, barTop - 32);
+                          const barTop = 82 + index * timelineRowPitch + (index % 2 === 0 ? 0 : 24);
+                          const labelTop = Math.max(20, barTop - 36);
                           const stats = projectTaskStats.get(project.id) ?? {
                             active: 0,
                             completed: 0,
@@ -4502,24 +4628,67 @@ export const ProjectsWindow = () => {
                                     milestoneDate < timelineRange.end
                                   );
                                 });
-                          const projectMarkers = [
-                            ...projectEvents
-                              .filter((event) => event.project_id === project.id)
-                              .slice(0, 1)
-                              .map((event) => ({
-                                id: `event-${event.id}`,
-                                label: event.title,
-                                markerType: 'event' as const,
-                              })),
-                            ...projectReminders
-                              .filter((reminder) => reminder.project_id === project.id)
-                              .slice(0, 1)
-                              .map((reminder) => ({
-                                id: `reminder-${reminder.id}`,
-                                label: reminder.title,
-                                markerType: 'reminder' as const,
-                              })),
-                          ];
+                          const todayDate = parseTimelineDate(todayKey());
+                          const todayX = dateToX(todayKey());
+                          const sortedMilestoneLayouts = visibleProjectMilestones
+                            .map((milestone) => {
+                              const milestoneDate = parseTimelineDate(milestone.milestone_date);
+                              const markerLeft = dateToX(milestone.milestone_date);
+                              const markerX = (markerLeft / 100) * timelineWidth;
+                              const daysFromToday =
+                                milestoneDate && todayDate
+                                  ? Math.round(
+                                      (milestoneDate.getTime() - todayDate.getTime()) / (24 * 60 * 60 * 1000)
+                                    )
+                                  : 999;
+                              const isActive = daysFromToday === 0;
+                              const isUpcomingSoon = daysFromToday > 0 && daysFromToday <= 21;
+                              const isDeadline = milestone.type.toLowerCase() === 'deadline';
+                              const isOverdue = !milestone.completed && daysFromToday < 0;
+                              const priority =
+                                (isActive ? 100 : 0) +
+                                (isUpcomingSoon ? 70 : 0) +
+                                (isDeadline ? 35 : 0) +
+                                (milestone.completed ? -45 : 0) +
+                                (isOverdue ? 25 : 0);
+                              const labelWidth = Math.min(144, Math.max(76, milestone.title.length * 6.3));
+                              const tooCloseToToday =
+                                !isActive &&
+                                showTodayMarker &&
+                                Math.abs(markerLeft - todayX) < (30 / Math.max(timelineWidth, 1)) * 100;
+
+                              return {
+                                milestone,
+                                markerLeft,
+                                markerX,
+                                labelWidth,
+                                priority,
+                                isActive,
+                                isOverdue,
+                                labelVisible: !tooCloseToToday,
+                                labelLane: 0,
+                              };
+                            })
+                            .sort((left, right) => right.priority - left.priority);
+                          const labelOccupancy: Array<Array<[number, number]>> = [[], [], []];
+                          const milestoneLayouts = sortedMilestoneLayouts
+                            .map((layout) => {
+                              if (!layout.labelVisible) return layout;
+                              const halfWidth = layout.labelWidth / 2;
+                              const nextInterval: [number, number] = [
+                                layout.markerX - halfWidth - 10,
+                                layout.markerX + halfWidth + 10,
+                              ];
+                              const lane = labelOccupancy.findIndex((intervals) =>
+                                intervals.every(
+                                  ([start, end]) => nextInterval[1] < start || nextInterval[0] > end
+                                )
+                              );
+                              if (lane === -1) return { ...layout, labelVisible: false };
+                              labelOccupancy[lane].push(nextInterval);
+                              return { ...layout, labelLane: lane };
+                            })
+                            .sort((left, right) => left.markerX - right.markerX);
                           return (
                             <div
                               key={project.id}
@@ -4562,10 +4731,10 @@ export const ProjectsWindow = () => {
                                 handleTimelineProjectRowContextMenu(event, project.id)
                               }
                               title={`${project.name} · ${formatDateRange(project.start_date, project.end_date)} · ${stats.active} active actions · ${overviewNoteLinkCounts[project.id] ?? 0} notes`}
-                              className={`absolute left-0 block h-24 w-full text-left ${
+                              className={`absolute left-0 block h-28 w-full text-left ${
                                 isMilestonePlacementActive ? 'cursor-crosshair' : 'cursor-default'
                               }`}
-                              style={{ top: `${barTop - 46}px` }}
+                              style={{ top: `${barTop - 52}px` }}
                             >
                               {isMilestonePlacementActive &&
                                 milestoneHover?.projectId === project.id &&
@@ -4597,11 +4766,12 @@ export const ProjectsWindow = () => {
                                 onContextMenu={(event) =>
                                   handleTimelineProjectRowContextMenu(event, project.id)
                                 }
-                                className="absolute h-9 rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] shadow-[0_10px_28px_rgba(17,24,39,0.05)] transition hover:border-[color:var(--ledger-border-strong)] hover:shadow-[0_14px_34px_rgba(17,24,39,0.08)]"
+                                className="absolute rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] shadow-[0_10px_28px_rgba(17,24,39,0.05)] transition hover:border-[color:var(--ledger-border-strong)] hover:shadow-[0_14px_34px_rgba(17,24,39,0.08)]"
                                 style={{
                                   left: `${lane.left}%`,
-                                  top: '46px',
+                                  top: '52px',
                                   width: `${Math.max(5, lane.width)}%`,
+                                  height: `${timelineBarHeight}px`,
                                 }}
                               >
                                   <div
@@ -4611,51 +4781,13 @@ export const ProjectsWindow = () => {
                                       backgroundColor: project.color || '#FF5F40',
                                     }}
                                   />
-                                  <div className="absolute inset-0 flex items-center justify-end px-3">
-                                    <span className="shrink-0 text-[11px] font-medium text-[var(--ledger-text-muted)]">
-                                      {completeness}%
-                                    </span>
-                                  </div>
-                                  {projectMarkers.length > 0 && (
-                                    <div className="absolute -top-2 right-2 flex items-center gap-1">
-                                      {projectMarkers.map((marker, index) => (
-                                        <span
-                                          key={marker.id}
-                                          title={marker.label}
-                                          onContextMenu={(event) =>
-                                            handleTimelineMarkerContextMenu(
-                                              event,
-                                              marker.id,
-                                              project.id,
-                                              marker.label,
-                                              marker.markerType
-                                            )
-                                          }
-                                          onClick={(event) => event.stopPropagation()}
-                                          className="flex h-4 w-4 items-center justify-center rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] text-[var(--ledger-accent)] shadow-none transition hover:bg-[var(--ledger-surface-hover)]"
-                                          style={{
-                                            opacity: index === 0 ? 1 : 0.92,
-                                          }}
-                                        >
-                                          <CircleDot size={10} />
-                                        </span>
-                                      ))}
-                                    </div>
-                                  )}
                                 </button>
-                                {visibleProjectMilestones.map((milestone, milestoneIndex) => {
-                                  const markerLeft = dateToX(milestone.milestone_date);
-                                  const labelLane = milestoneIndex % 3;
-                                  const isOverdue =
-                                    !milestone.completed &&
-                                    parseTimelineDate(milestone.milestone_date) !== null &&
-                                    parseTimelineDate(milestone.milestone_date)!.getTime() <
-                                      new Date(todayKey()).getTime();
+                                {milestoneLayouts.map(({ milestone, markerLeft, labelVisible, labelLane, isActive, isOverdue }) => {
                                   return (
                                     <div
                                       key={milestone.id}
-                                      className="absolute z-[3] -translate-x-1/2"
-                                      style={{ left: `${markerLeft}%`, top: '56px' }}
+                                      className="group absolute z-[3] -translate-x-1/2"
+                                      style={{ left: `${markerLeft}%`, top: '64px' }}
                                     >
                                       <span
                                         title={`${milestone.title}\n${milestone.type} · ${formatShortDate(
@@ -4675,36 +4807,45 @@ export const ProjectsWindow = () => {
                                             'milestone'
                                           )
                                         }
-                                        className={`mx-auto flex h-4 w-4 rotate-45 items-center justify-center rounded-[3px] border transition hover:scale-110 ${
-                                          milestone.completed
-                                            ? 'border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-text-muted)]'
+                                        className={`mx-auto flex h-[18px] w-[18px] rotate-45 items-center justify-center rounded-[4px] border shadow-[0_8px_18px_rgba(17,24,39,0.05)] transition ${
+                                          isActive
+                                            ? 'border-[color:var(--ledger-accent)] bg-[var(--ledger-accent)]'
+                                            : milestone.completed
+                                            ? 'border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-text-muted)]/70'
                                             : isOverdue
-                                            ? 'border-[color:rgba(217,45,32,0.32)] bg-[color:rgba(217,45,32,0.12)]'
+                                            ? 'border-[color:rgba(217,45,32,0.46)] bg-[var(--ledger-surface-card)]'
                                             : 'border-[color:var(--ledger-accent)] bg-[var(--ledger-surface-card)]'
                                         }`}
                                       >
                                         {milestone.completed && (
                                           <CheckCircle2
-                                            size={10}
-                                            className="-rotate-45 text-[var(--ledger-surface-card)]"
+                                            size={11}
+                                            className="-rotate-45 text-[var(--ledger-surface-card)] opacity-0 transition group-hover:opacity-100"
                                           />
                                         )}
+                                        {isActive && (
+                                          <span className="h-1.5 w-1.5 rounded-full bg-white" aria-hidden="true" />
+                                        )}
                                       </span>
-                                      <span
-                                        className="absolute left-1/2 w-28 -translate-x-1/2 truncate text-center text-[10px] font-medium leading-tight text-[var(--ledger-text-muted)] opacity-80"
-                                        style={{
-                                          top: `${18 + labelLane * 14}px`,
-                                        }}
-                                      >
-                                        {milestone.title}
-                                      </span>
+                                      {labelVisible && (
+                                        <span
+                                          className={`absolute left-1/2 w-36 -translate-x-1/2 truncate text-center text-[11px] font-medium leading-tight text-[var(--ledger-text-muted)] ${
+                                            milestone.completed ? 'opacity-55' : 'opacity-[0.82]'
+                                          }`}
+                                          style={{
+                                            top: `${22 + labelLane * 16}px`,
+                                          }}
+                                        >
+                                          {milestone.title}
+                                        </span>
+                                      )}
                                     </div>
                                   );
                                 })}
                                 {pendingMilestone?.projectId === project.id && (
                                   <span
-                                    className="pointer-events-none absolute z-[4] flex h-4 w-4 -translate-x-1/2 rotate-45 items-center justify-center rounded-[3px] border border-[color:var(--ledger-accent)] bg-[var(--ledger-accent)]/20"
-                                    style={{ left: `${dateToX(pendingMilestone.date)}%`, top: '56px' }}
+                                    className="pointer-events-none absolute z-[4] flex h-[18px] w-[18px] -translate-x-1/2 rotate-45 items-center justify-center rounded-[4px] border border-[color:var(--ledger-accent)] bg-[var(--ledger-accent)]/20"
+                                    style={{ left: `${dateToX(pendingMilestone.date)}%`, top: '64px' }}
                                   />
                                 )}
                                 {isMilestonePlacementActive &&
@@ -4737,27 +4878,19 @@ export const ProjectsWindow = () => {
                                   }
                                   style={{
                                     left: `${Math.max(0, Math.min(94, lane.left))}%`,
-                                    top: `${labelTop - (barTop - 46)}px`,
+                                    top: `${labelTop - (barTop - 52)}px`,
                                   }}
                                 >
                                   <span
                                     className="h-1.5 w-1.5 rounded-full"
                                     style={{ backgroundColor: project.color || '#FF5F40' }}
                                   />
-                                  <span className="truncate text-xs font-semibold text-[var(--ledger-text-secondary)]">
+                                  <span className="truncate text-[13px] font-semibold text-[var(--ledger-text-secondary)]">
                                     {project.name}
                                   </span>
-                                  <span className="shrink-0 text-xs font-medium text-[var(--ledger-text-muted)]">
-                                    {projectStatusLabels[semantic]} · {formatDateRange(project.start_date, project.end_date)}
+                                  <span className="shrink-0 text-[13px] font-medium text-[var(--ledger-text-muted)]">
+                                    {projectStatusLabels[semantic]}
                                   </span>
-                                  {renderCreatorBubble(
-                                    project.created_by
-                                      ? displayMemberName(
-                                          workspaceMemberById.get(project.created_by) ?? null
-                                        )
-                                      : 'Unknown user',
-                                    'h-4 w-4'
-                                  )}
                                 </button>
                             </div>
                             );
@@ -4877,9 +5010,9 @@ export const ProjectsWindow = () => {
           <div className="flex items-center gap-2">
             <ModuleHeaderActionButton
               onClick={() => void selectProjectsOverview()}
-              title="Show projects overview"
+              title="Show projects roadmap"
             >
-              Overview
+              Roadmap
             </ModuleHeaderActionButton>
             <ModuleHeaderActionButton
               onClick={() => {
@@ -4891,7 +5024,6 @@ export const ProjectsWindow = () => {
               }}
               title={isCreatingProject ? 'Cancel new project' : 'Create a new project'}
             >
-              <Plus size={12} />
               {isCreatingProject ? 'Cancel' : 'New project'}
             </ModuleHeaderActionButton>
           </div>
@@ -4912,6 +5044,207 @@ export const ProjectsWindow = () => {
           {error}
         </div>
       )}
+
+      <ModalOverlay
+        isOpen={isCreatingProject}
+        onClose={closeCreateProjectComposer}
+        backdropBorderRadius="inherit"
+        disablePortal
+        manageWindowChrome={false}
+        classNameContainer="w-full max-w-[620px] overflow-hidden rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-[var(--ledger-shadow)]"
+      >
+        <div className="flex items-start justify-between gap-4 border-b border-[color:var(--ledger-border-subtle)] px-5 py-4">
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-[var(--ledger-text-primary)]">New project</p>
+            <p className="mt-1 text-sm text-[var(--ledger-text-secondary)]">
+              Add a brief, choose a type, assign the lead, and attach context.
+            </p>
+          </div>
+          <ModalCloseButton
+            onClick={closeCreateProjectComposer}
+            ariaLabel="Close new project modal"
+            className="shrink-0"
+          />
+        </div>
+
+        <div className="space-y-4 px-5 py-5">
+          <input
+            ref={createProjectInputRef}
+            value={newProjectName}
+            onChange={(e) => setNewProjectName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                void createProject();
+              } else if (e.key === 'Escape') {
+                e.preventDefault();
+                closeCreateProjectComposer();
+              }
+            }}
+            placeholder="Project name"
+            className="h-10 w-full rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 text-sm text-[var(--ledger-text-primary)] outline-none transition placeholder:text-[var(--ledger-placeholder)] focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60"
+          />
+
+          <textarea
+            value={newProjectDescription}
+            onChange={(e) => setNewProjectDescription(e.target.value)}
+            placeholder="Brief description"
+            rows={3}
+            className="w-full resize-none rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 py-2 text-sm text-[var(--ledger-text-primary)] outline-none transition placeholder:text-[var(--ledger-placeholder)] focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60"
+          />
+
+          <div className="flex flex-wrap items-center gap-2">
+            {projectTypeOptions.map((option) => {
+              const active = newProjectType === option.id;
+              return (
+                <button
+                  key={option.id}
+                  type="button"
+                  onClick={() => setNewProjectType(option.id)}
+                  className={`inline-flex h-8 items-center gap-1.5 rounded-full border px-2.5 text-xs font-medium transition ${
+                    active
+                      ? 'border-[color:var(--ledger-border-strong)] bg-[var(--ledger-surface-hover)] text-[var(--ledger-text-primary)]'
+                      : 'border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]'
+                  }`}
+                >
+                  {(() => {
+                    const TypeIcon = option.icon;
+                    return <TypeIcon size={12} />;
+                  })()}
+                  {option.label}
+                </button>
+              );
+            })}
+
+            <select
+              value={newProjectLeadId}
+              onChange={(e) => setNewProjectLeadId(e.target.value)}
+              className="inline-flex h-8 min-w-[144px] items-center rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2.5 text-xs font-medium text-[var(--ledger-text-secondary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60"
+            >
+              <option value="">Working on it</option>
+              {user && (
+                <option value={user.id}>{user.user_metadata?.full_name?.trim() || user.email || 'You'}</option>
+              )}
+              {workspaceMembers
+                .filter((member) => member.user_id !== user?.id)
+                .map((member) => (
+                  <option key={member.user_id} value={member.user_id}>
+                    {displayMemberName(member)}
+                  </option>
+                ))}
+            </select>
+
+            <button
+              type="button"
+              onClick={() => setIsNewProjectNotesExpanded((current) => !current)}
+              className={`inline-flex h-8 items-center gap-1.5 rounded-full border px-2.5 text-xs font-medium transition ${
+                isNewProjectNotesExpanded || newProjectNoteIds.length > 0
+                  ? 'border-[color:var(--ledger-border-strong)] bg-[var(--ledger-surface-hover)] text-[var(--ledger-text-primary)]'
+                  : 'border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]'
+              }`}
+            >
+              <Link2 size={12} />
+              {newProjectNoteIds.length > 0 ? `${newProjectNoteIds.length} notes` : 'Link notes'}
+            </button>
+          </div>
+
+          {isNewProjectNotesExpanded && (
+            <div className="space-y-3 rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] p-3">
+              <input
+                value={newProjectNotesSearch}
+                onChange={(e) => setNewProjectNotesSearch(e.target.value)}
+                placeholder="Search notes"
+                className="h-9 w-full rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3 text-sm text-[var(--ledger-text-primary)] outline-none transition placeholder:text-[var(--ledger-placeholder)] focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60"
+              />
+              <div className="max-h-[220px] overflow-auto rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)]">
+                {isLoadingNewProjectNotes ? (
+                  <p className="p-3 text-sm text-[var(--ledger-text-muted)]">Loading notes…</p>
+                ) : filteredNewProjectNotes.length === 0 ? (
+                  <p className="p-3 text-sm text-[var(--ledger-text-muted)]">No notes found.</p>
+                ) : (
+                  filteredNewProjectNotes.map((note) => {
+                    const selected = newProjectNoteIds.includes(note.id);
+                    return (
+                      <button
+                        key={note.id}
+                        type="button"
+                        onClick={() => {
+                          setNewProjectNoteIds((current) =>
+                            current.includes(note.id)
+                              ? current.filter((id) => id !== note.id)
+                              : [...current, note.id]
+                          );
+                        }}
+                        className="flex w-full items-start gap-3 border-b border-[color:var(--ledger-border-subtle)] px-3 py-2 text-left transition last:border-b-0 hover:bg-[var(--ledger-surface-hover)]"
+                      >
+                        <span
+                          className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border ${
+                            selected
+                              ? 'border-[color:var(--ledger-accent)] bg-[color:rgba(255,95,64,0.12)]'
+                              : 'border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)]'
+                          }`}
+                          aria-hidden="true"
+                        >
+                          {selected && <Check size={11} className="text-[var(--ledger-accent)]" />}
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-medium text-[var(--ledger-text-primary)]">
+                            {note.title}
+                          </p>
+                          <p className="truncate text-xs text-[var(--ledger-text-muted)]">
+                            {note.preview || 'No content'}
+                          </p>
+                        </span>
+                      </button>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+          )}
+
+          {newProjectNoteIds.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {newProjectNoteIds.map((noteId) => {
+                const note = newProjectNotes.find((item) => item.id === noteId);
+                return (
+                  <button
+                    key={noteId}
+                    type="button"
+                    onClick={() =>
+                      setNewProjectNoteIds((current) => current.filter((id) => id !== noteId))
+                    }
+                    className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2.5 py-1 text-xs font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+                    title={note?.title ?? 'Linked note'}
+                  >
+                    <FileText size={11} />
+                    <span className="max-w-[160px] truncate">{note?.title ?? 'Linked note'}</span>
+                    <X size={10} />
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          <div className="flex items-center justify-end gap-2 border-t border-[color:var(--ledger-border-subtle)] pt-4">
+            <button
+              type="button"
+              onClick={closeCreateProjectComposer}
+              className="rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 py-1.5 text-xs font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => void createProject()}
+              disabled={!newProjectName.trim() || isCreatingProjectNow}
+              className="inline-flex items-center gap-1.5 rounded-md bg-[var(--ledger-accent)] px-3 py-1.5 text-xs font-medium text-white transition hover:bg-[var(--ledger-accent-hover)] disabled:opacity-60"
+            >
+              {isCreatingProjectNow ? 'Creating...' : 'Create project'}
+            </button>
+          </div>
+        </div>
+      </ModalOverlay>
 
       <div className="flex-1 flex overflow-hidden">
         {!isLeftPaneCollapsed ? (
@@ -4985,36 +5318,6 @@ export const ProjectsWindow = () => {
                   <div className="pointer-events-none absolute right-0 top-0 h-7 w-7 bg-linear-to-l from-[var(--ledger-surface-muted)] to-transparent" />
                 </div>
 
-                {isCreatingProject && (
-                  <div
-                    ref={createProjectComposerRef}
-                    className="mt-3 space-y-2 rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-3"
-                  >
-                    <input
-                      ref={createProjectInputRef}
-                      value={newProjectName}
-                      onChange={(e) => setNewProjectName(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          e.preventDefault();
-                          void createProject();
-                        } else if (e.key === 'Escape') {
-                          e.preventDefault();
-                          closeCreateProjectComposer();
-                        }
-                      }}
-                      placeholder="Project name"
-                      className="h-9 w-full rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 text-sm text-[var(--ledger-text-primary)] outline-none transition placeholder:text-[var(--ledger-placeholder)] focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60"
-                    />
-                    <button
-                      onClick={() => void createProject()}
-                      disabled={!newProjectName.trim() || isCreatingProjectNow}
-                      className="h-9 w-full rounded-lg bg-[var(--ledger-accent)] text-sm font-medium text-white transition hover:bg-[var(--ledger-accent-hover)] disabled:opacity-60"
-                    >
-                      {isCreatingProjectNow ? 'Creating...' : 'Create project'}
-                    </button>
-                  </div>
-                )}
               </div>
 
               <div

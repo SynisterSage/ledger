@@ -85,6 +85,8 @@ export type Database = {
           status: 'NotStarted' | 'InProgress' | 'Paused' | 'Completed';
           start_date: string | null;
           end_date: string | null;
+          project_type: string | null;
+          lead_id: string | null;
           color: string;
           created_at: string;
           updated_at: string;

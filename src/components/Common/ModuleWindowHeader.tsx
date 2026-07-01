@@ -9,7 +9,16 @@ import {
   useState,
 } from 'react';
 import { createPortal } from 'react-dom';
-import { ChevronDown, Loader2, Maximize2, Minus, RefreshCw, X } from 'lucide-react';
+import {
+  ChevronDown,
+  Loader2,
+  Maximize2,
+  Minus,
+  RefreshCw,
+  SidebarClose,
+  SidebarOpen,
+  X,
+} from 'lucide-react';
 import { useWorkspaceContext } from '../../context/WorkspaceContext';
 import { sidebarTheme } from '../Sidebar/sidebarTheme';
 
@@ -41,6 +50,7 @@ type ModuleHeaderActionButtonProps = {
   onClick: () => void;
   title: string;
   ariaLabel?: string;
+  icon?: ReactNode;
   iconOnly?: boolean;
   active?: boolean;
   disabled?: boolean;
@@ -263,6 +273,7 @@ export const ModuleHeaderActionButton = ({
   onClick,
   title,
   ariaLabel,
+  icon,
   iconOnly = false,
   active = false,
   disabled = false,
@@ -281,6 +292,7 @@ export const ModuleHeaderActionButton = ({
           : ''
       }`}
     >
+      {icon}
       {children}
       {!iconOnly && active && (
         <span className="ml-1 inline-flex h-1.5 w-1.5 rounded-full bg-[var(--ledger-accent)]" />
@@ -453,6 +465,11 @@ export const ModuleWindowHeader = ({
   const topRightActions = globalActions ?? stripActions;
   const rightActions = primaryActions ?? actions;
   const panelToggleText = panelToggleLabel ?? 'Hide panels';
+  const panelToggleIcon = panelToggleText.toLowerCase().includes('show') ? (
+    <SidebarOpen size={12} />
+  ) : (
+    <SidebarClose size={12} />
+  );
   const headerDragRef = useRef<{
     pointerId: number;
     startX: number;
@@ -609,8 +626,10 @@ export const ModuleWindowHeader = ({
                 onClick={onTogglePanels}
                 title={panelToggleText}
                 ariaLabel={panelToggleText}
+                icon={panelToggleIcon}
+                iconOnly
               >
-                {panelToggleText}
+                <span className="sr-only">{panelToggleText}</span>
               </ModuleHeaderActionButton>
             )}
             {rightActions}

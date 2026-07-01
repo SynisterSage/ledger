@@ -2,7 +2,6 @@ import {
   BarChart3,
   CalendarDays,
   Check,
-  CheckCircle2,
   ChevronLeft,
   ChevronDown,
   ChevronUp,
@@ -18,8 +17,9 @@ import {
   Trash2,
   Search,
   Inbox,
+  Circle,
 } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useAuthContext } from '../../context/AuthContext';
 import { useWorkspaceContext } from '../../context/WorkspaceContext';
@@ -43,7 +43,6 @@ type QuickNote = {
   createdAt: string;
 };
 type QuickCaptureMode = 'none' | 'task' | 'note' | 'event';
-type ProjectStatus = 'NotStarted' | 'InProgress' | 'Paused' | 'Completed';
 type TodayTask = {
   kind: 'task' | 'reminder';
   id: string;
@@ -218,43 +217,6 @@ const isUpcomingEventActive = (event: {
   return Number.isFinite(endAt) && endAt > Date.now();
 };
 
-const truncateSidebarText = (value: string, maxLength = 140) => {
-  const normalized = String(value ?? '').trim();
-  if (!normalized) return '';
-  if (normalized.length <= maxLength) return normalized;
-  return `${normalized.slice(0, Math.max(0, maxLength - 1)).trimEnd()}…`;
-};
-
-const formatSidebarDateTime = (value?: string | null) => {
-  if (!value) return null;
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return null;
-  return parsed.toLocaleString([], {
-    weekday: 'short',
-    month: 'short',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  });
-};
-
-const getUpcomingEventDetails = (item: UpcomingItem) => {
-  const details: Array<{ label: string; value: string }> = [];
-
-  const startsAt = formatSidebarDateTime(item.start_at);
-  const endsAt = formatSidebarDateTime(item.end_at);
-  if (startsAt) details.push({ label: 'Starts', value: startsAt });
-  if (endsAt) details.push({ label: 'Ends', value: endsAt });
-  if (item.calendar_name) details.push({ label: 'Calendar', value: item.calendar_name });
-  if (item.project_name) details.push({ label: 'Project', value: item.project_name });
-  if (item.note_title) details.push({ label: 'Linked note', value: item.note_title });
-
-  const notes = truncateSidebarText(htmlToPlainText(item.notes ?? ''), 220);
-  if (notes) details.push({ label: 'Notes', value: notes });
-
-  return details;
-};
-
 const todayKey = () => {
   const now = new Date();
   const year = now.getFullYear();
@@ -309,13 +271,6 @@ const monthOptions = [
   { value: 12, label: 'Dec' },
 ];
 
-const getProgressStateColor = (value: number) => {
-  const percent = Math.max(0, Math.min(100, value));
-  if (percent < 35) return 'var(--ledger-accent)';
-  if (percent < 70) return 'var(--ledger-warning)';
-  return 'var(--ledger-success)';
-};
-
 export const ExpandedSidebar = ({
   onDragHandleMouseDown,
   onCollapseRequest,
@@ -329,10 +284,6 @@ export const ExpandedSidebar = ({
   const { openSearch } = useSearch();
   const api = useApi();
   const isHorizontal = position === 'top' || position === 'bottom';
-  const isWindowsPlatform =
-    typeof navigator !== 'undefined' && navigator.platform.toLowerCase().includes('win');
-  const fullName = (user?.user_metadata?.full_name as string | undefined)?.trim() ?? '';
-  const firstName = fullName ? fullName.split(' ')[0] : user?.email?.split('@')[0] ?? 'User';
   const getWorkspaceTaskMetadata = () => ({
     workspace_id: activeWorkspaceId ?? null,
     workspace_name: activeWorkspace?.name?.trim() || null,
@@ -389,13 +340,13 @@ export const ExpandedSidebar = ({
   });
   const [checkinSaved, setCheckinSaved] = useState(false);
   const [isCheckinExpanded, setIsCheckinExpanded] = useState(false);
+  const [isCheckinEditing, setIsCheckinEditing] = useState(false);
   const [isLoadingDaily, setIsLoadingDaily] = useState(true);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [quickCaptureMode, setQuickCaptureMode] = useState<QuickCaptureMode>('none');
   const [taskDraft, setTaskDraft] = useState('');
   const [taskPriority, setTaskPriority] = useState<'none' | 'high' | 'medium' | 'low'>('none');
   const [taskTag, setTaskTag] = useState('');
-  const [taskCaptureSaved, setTaskCaptureSaved] = useState(false);
   const [todayQuickDraft, setTodayQuickDraft] = useState('');
   const [todayQuickSaving, setTodayQuickSaving] = useState(false);
   const [noteDraft, setNoteDraft] = useState('');
@@ -415,7 +366,7 @@ export const ExpandedSidebar = ({
     Array<{
       id: string;
       name: string;
-      status: ProjectStatus | string;
+      status: string;
       completeness: number;
       color?: string;
       start_date?: string | null;
@@ -425,48 +376,50 @@ export const ExpandedSidebar = ({
   const [inboxCount, setInboxCount] = useState(0);
   const [notificationCount, setNotificationCount] = useState(0);
   const [isLoadingProjects, setIsLoadingProjects] = useState(true);
-  const [expandedProjectId, setExpandedProjectId] = useState<string | null>(null);
-  const [projectUpdating, setProjectUpdating] = useState<string | null>(null);
   const [newProjectName, setNewProjectName] = useState('');
   const [isCreatingProject, setIsCreatingProject] = useState(false);
   const [calendarScope, setCalendarScope] = useState<'current_workspace' | 'all_accessible_workspaces'>(
     'current_workspace'
   );
   const [upcomingItems, setUpcomingItems] = useState<UpcomingItem[]>([]);
-  const [isLoadingUpcoming, setIsLoadingUpcoming] = useState(true);
   const [todayItems, setTodayItems] = useState<TodayTask[]>([]);
   const [isLoadingToday, setIsLoadingToday] = useState(true);
   const [completedToday, setCompletedToday] = useState<CompletedTodayTask[]>([]);
   const [sidebarRefreshToken, setSidebarRefreshToken] = useState(0);
   const autoExpireTodayTaskIdsRef = useRef<Set<string>>(new Set());
   const TODAY_COLLAPSE_STORAGE_KEY = 'ledger:sidebar:today-collapsed:v1';
-  const TODAY_HELP_TEXT = 'Your working list for today: what to do now, and what got done.';
-
-  const loadTodayCollapsedPreference = () => {
+  const CHECKIN_COLLAPSE_STORAGE_KEY = 'ledger:sidebar:checkin-collapsed:v1';
+  const PROJECTS_COLLAPSE_STORAGE_KEY = 'ledger:sidebar:projects-collapsed:v1';
+  const loadCollapsedPreference = (key: string, fallback = true) => {
     try {
-      const saved = window.localStorage.getItem(TODAY_COLLAPSE_STORAGE_KEY);
-      if (saved === null) return true;
+      const saved = window.localStorage.getItem(key);
+      if (saved === null) return fallback;
       return saved === '1';
     } catch {
-      return true;
+      return fallback;
     }
   };
 
-  const [todayCollapsed, setTodayCollapsed] = useState<boolean>(() => loadTodayCollapsedPreference());
-  const [completedTodayExpanded, setCompletedTodayExpanded] = useState(false);
-  const [todayHelpOpen, setTodayHelpOpen] = useState(false);
-  const [todayHelpPopoverStyle, setTodayHelpPopoverStyle] = useState<React.CSSProperties | null>(
-    null
+  const [todayCollapsed, setTodayCollapsed] = useState<boolean>(() =>
+    loadCollapsedPreference(TODAY_COLLAPSE_STORAGE_KEY)
   );
+  const [projectsCollapsed, setProjectsCollapsed] = useState<boolean>(() =>
+    loadCollapsedPreference(PROJECTS_COLLAPSE_STORAGE_KEY, false)
+  );
+  const [completedTodayExpanded, setCompletedTodayExpanded] = useState(false);
   const [todayDockPopoverOpen, setTodayDockPopoverOpen] = useState(false);
   const [todayDockPopoverStyle, setTodayDockPopoverStyle] = useState<React.CSSProperties | null>(
     null
   );
+  const [todayAddRowOpen, setTodayAddRowOpen] = useState(false);
+  const todayAddInputRef = useRef<HTMLInputElement | null>(null);
 
-  const [expandedUpcomingId, setExpandedUpcomingId] = useState<string | null>(null);
-  const [draggingProjectId, setDraggingProjectId] = useState<string | null>(null);
+  useEffect(() => {
+    setIsCheckinExpanded(!loadCollapsedPreference(CHECKIN_COLLAPSE_STORAGE_KEY, true));
+  }, []);
+
   const [contextMenu, setContextMenu] = useState<{
-    type: 'project' | 'upcoming' | 'today-active' | 'today-completed';
+    type: 'project' | 'today-active' | 'today-completed';
     id: string;
     kind?: 'task' | 'reminder';
     x: number;
@@ -474,6 +427,7 @@ export const ExpandedSidebar = ({
   } | null>(null);
   const taskCaptureRef = useRef<HTMLInputElement | null>(null);
   const noteCaptureRef = useRef<HTMLTextAreaElement | null>(null);
+  const checkinFinishedInputRef = useRef<HTMLInputElement | null>(null);
 
   const handleSidebarWorkspaceRefresh = useCallback(() => {
     setSidebarRefreshToken((current) => current + 1);
@@ -519,20 +473,10 @@ export const ExpandedSidebar = ({
   const eventEndButtonRef = useRef<HTMLButtonElement | null>(null);
   const eventStartPickerRef = useRef<HTMLDivElement | null>(null);
   const eventEndPickerRef = useRef<HTMLDivElement | null>(null);
-  const todayHelpButtonRef = useRef<HTMLButtonElement | null>(null);
-  const todayHelpPopoverRef = useRef<HTMLDivElement | null>(null);
   const todayDockButtonRef = useRef<HTMLButtonElement | null>(null);
   const todayDockPopoverRef = useRef<HTMLDivElement | null>(null);
-  
-  const todayHelpCloseTimerRef = useRef<number | null>(null);
   const checkinSectionRef = useRef<HTMLElement | null>(null);
   const checkinSavedTimerRef = useRef<number | null>(null);
-  const projectDragRef = useRef<{
-    projectId: string;
-    rectLeft: number;
-    rectWidth: number;
-    pointerId: number;
-  } | null>(null);
   const sidebarContextMenuWidth = 196;
   const sidebarContextMenuHeight = 176;
 
@@ -646,7 +590,7 @@ export const ExpandedSidebar = ({
     );
 
     return (
-      <div className={compact ? 'relative inline-block' : 'relative inline-block w-full'}>
+      <div className={compact ? 'relative inline-block' : 'relative inline-block min-w-0'}>
         <button
           ref={buttonRef}
           type="button"
@@ -658,14 +602,14 @@ export const ExpandedSidebar = ({
           }}
           className={
             compact
-              ? 'inline-flex h-9 max-w-45 items-center gap-1.5 rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] px-3 text-left shadow-sm transition hover:border-[color:var(--ledger-border-strong)] hover:bg-[var(--ledger-surface-muted)]'
-              : 'flex w-full items-center justify-between gap-2 truncate text-left text-[11px] font-medium text-[var(--ledger-text-secondary)]'
+              ? 'inline-flex h-7 max-w-45 items-center gap-1.5 rounded-none border-0 bg-transparent px-0 text-left text-[12px] font-medium text-[var(--ledger-text-secondary)]'
+              : 'inline-flex max-w-34 items-center gap-1.5 truncate text-left text-[11px] font-medium text-[var(--ledger-text-secondary)] transition hover:text-[var(--ledger-text-primary)]'
           }
         >
-          <span className={compact ? 'truncate text-[12px] font-medium text-[var(--ledger-text-secondary)]' : 'truncate'}>
+          <span className="truncate" title={resolvedActiveWorkspaceLabel}>
             {resolvedActiveWorkspaceLabel}
           </span>
-          <ChevronDown size={compact ? 13 : 14} className="shrink-0 text-[var(--ledger-text-muted)]" />
+          <ChevronDown size={12} className="shrink-0 text-[var(--ledger-text-muted)]" />
         </button>
 
         {open && typeof document !== 'undefined'
@@ -675,50 +619,9 @@ export const ExpandedSidebar = ({
     );
   };
 
-  const projectStatusLabels: Record<ProjectSemanticStatus, string> = {
-    not_started: 'Not Started',
-    in_progress: 'In Progress',
-    paused: 'Paused',
-    completed: 'Completed',
-  };
-
-  const projectStatusStyles: Record<ProjectSemanticStatus, string> = {
-    not_started: 'text-[var(--ledger-accent)]',
-    in_progress: 'text-[var(--ledger-accent-hover)]',
-    paused: 'text-[var(--ledger-text-secondary)]',
-    completed: 'text-[var(--ledger-success)]',
-  };
-
-  const projectStatusCandidates: Record<ProjectSemanticStatus, string[]> = {
-    not_started: ['NotStarted', 'not_started'],
-    in_progress: ['InProgress', 'in_progress'],
-    paused: ['Paused', 'paused', 'archived'],
-    completed: ['Completed', 'completed'],
-  };
-
-  const updateProjectStatusWithFallback = async (
-    projectId: string,
-    semantic: ProjectSemanticStatus
-  ) => {
-    const candidates = projectStatusCandidates[semantic];
-    let lastError: unknown = null;
-
-    for (const candidate of candidates) {
-      try {
-        await api.updateProject(projectId, { status: candidate });
-        return candidate;
-      } catch (error) {
-        lastError = error;
-      }
-    }
-
-    throw lastError instanceof Error ? lastError : new Error('Could not update project status.');
-  };
-
   useEffect(() => {
     if (!activeWorkspaceId) {
       setIsLoadingProjects(false);
-      setIsLoadingUpcoming(false);
       setQuickNotes([]);
       setProjects([]);
       setUpcomingItems([]);
@@ -1121,20 +1024,16 @@ export const ExpandedSidebar = ({
 
   useEffect(() => {
     if (!user) {
-      setIsLoadingUpcoming(false);
       setUpcomingItems([]);
       return;
     }
 
     if (!activeWorkspaceId) {
       setUpcomingItems([]);
-      setIsLoadingUpcoming(false);
       return;
     }
 
     let cancelled = false;
-
-    setIsLoadingUpcoming(true);
 
     const loadUpcoming = async () => {
       try {
@@ -1199,8 +1098,6 @@ export const ExpandedSidebar = ({
         }
       } catch (error) {
         console.error('Failed to load upcoming:', error);
-      } finally {
-        if (!cancelled) setIsLoadingUpcoming(false);
       }
     };
 
@@ -1245,51 +1142,6 @@ export const ExpandedSidebar = ({
       window.ipcRenderer?.off('sidebar:open-checkin', handleOpenCheckin);
     };
   }, []);
-
-  useEffect(() => {
-    if (!todayHelpOpen || !todayHelpButtonRef.current) {
-      setTodayHelpPopoverStyle(null);
-      return;
-    }
-
-    const updateTodayHelpPosition = () => {
-      const rect = todayHelpButtonRef.current?.getBoundingClientRect();
-      if (!rect) return;
-
-      const preferredWidth = 196;
-      const topGap = 6;
-      const centerX = rect.left + rect.width / 2;
-      const left = Math.max(
-        12,
-        Math.min(window.innerWidth - preferredWidth - 12, centerX - preferredWidth / 2)
-      );
-      const top = Math.max(12, rect.top - topGap);
-
-      setTodayHelpPopoverStyle({
-        position: 'fixed',
-        left: `${left}px`,
-        top: `${top}px`,
-        transform: 'translateY(-100%)',
-        width: `${preferredWidth}px`,
-        zIndex: 30000,
-      });
-    };
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setTodayHelpOpen(false);
-    };
-
-    updateTodayHelpPosition();
-    window.addEventListener('resize', updateTodayHelpPosition);
-    window.addEventListener('scroll', updateTodayHelpPosition, true);
-    document.addEventListener('keydown', handleKeyDown);
-
-    return () => {
-      window.removeEventListener('resize', updateTodayHelpPosition);
-      window.removeEventListener('scroll', updateTodayHelpPosition, true);
-      document.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [todayHelpOpen]);
 
   useEffect(() => {
     if (!todayDockPopoverOpen || !todayDockButtonRef.current) {
@@ -1350,15 +1202,6 @@ export const ExpandedSidebar = ({
   }, [todayDockPopoverOpen]);
 
   
-
-  useEffect(() => {
-    return () => {
-      if (todayHelpCloseTimerRef.current !== null) {
-        window.clearTimeout(todayHelpCloseTimerRef.current);
-        todayHelpCloseTimerRef.current = null;
-      }
-    };
-  }, []);
 
   useEffect(() => {
     const syncToNextDay = () => {
@@ -1579,6 +1422,7 @@ export const ExpandedSidebar = ({
     const success = await saveDaily({ checkin });
     if (success) {
       setCheckinSaved(true);
+      setIsCheckinEditing(false);
       if (checkinSavedTimerRef.current !== null) {
         window.clearTimeout(checkinSavedTimerRef.current);
       }
@@ -1592,6 +1436,7 @@ export const ExpandedSidebar = ({
   const clearCheckin = async () => {
     const empty = { finished: '', blocked: '', firstTaskTomorrow: '' };
     setCheckin(empty);
+    setIsCheckinEditing(true);
     window.ipcRenderer?.send('daily:checkin-updated', empty);
     const success = await saveDaily({ checkin: empty });
     if (checkinSavedTimerRef.current !== null) {
@@ -1712,8 +1557,6 @@ export const ExpandedSidebar = ({
           })
         );
       }
-      setTaskCaptureSaved(true);
-      window.setTimeout(() => setTaskCaptureSaved(false), 1500);
     } catch (error) {
       setTodayItems((prev) => prev.filter((item) => item.id !== tempId));
       setSaveError(error instanceof Error ? error.message : 'Could not save task.');
@@ -1787,6 +1630,7 @@ export const ExpandedSidebar = ({
           },
         });
       }
+      setTodayAddRowOpen(false);
     } catch (error) {
       setTodayItems((prev) => prev.filter((item) => item.id !== tempId));
       setTodayQuickDraft(base);
@@ -1808,13 +1652,58 @@ export const ExpandedSidebar = ({
     }
   };
 
+  const sortedTodayItems = useMemo(() => sortTodayTasks(todayItems), [todayItems]);
+  const sortedCompletedToday = useMemo(() => sortTodayTasks(completedToday), [completedToday]);
+  const visibleTodayItems = sortedTodayItems.slice(0, 3);
+  const visibleCompletedToday = sortedCompletedToday.slice(0, 4);
   const todayTotalCount = todayItems.length + completedToday.length;
+  const hasCheckinContent = Boolean(
+    checkin.finished.trim() || checkin.blocked.trim() || checkin.firstTaskTomorrow.trim()
+  );
+  const checkinStatusLabel = hasCheckinContent ? 'Done' : 'Not started';
 
   const toggleTodayCollapsed = () => {
     setTodayCollapsed((current) => {
       const next = !current;
       try {
         window.localStorage.setItem(TODAY_COLLAPSE_STORAGE_KEY, next ? '1' : '0');
+      } catch {
+        // No-op when storage is unavailable.
+      }
+      return next;
+    });
+  };
+
+  const toggleProjectsCollapsed = () => {
+    setProjectsCollapsed((current) => {
+      const next = !current;
+      try {
+        window.localStorage.setItem(PROJECTS_COLLAPSE_STORAGE_KEY, next ? '1' : '0');
+      } catch {
+        // No-op when storage is unavailable.
+      }
+      return next;
+    });
+  };
+
+  useEffect(() => {
+    if (!todayAddRowOpen) return;
+    todayAddInputRef.current?.focus();
+  }, [todayAddRowOpen]);
+
+  useEffect(() => {
+    if (!isCheckinExpanded || !isCheckinEditing) return;
+    const timer = window.setTimeout(() => {
+      checkinFinishedInputRef.current?.focus();
+    }, 120);
+    return () => window.clearTimeout(timer);
+  }, [isCheckinEditing, isCheckinExpanded]);
+
+  const toggleCheckinExpanded = () => {
+    setIsCheckinExpanded((current) => {
+      const next = !current;
+      try {
+        window.localStorage.setItem(CHECKIN_COLLAPSE_STORAGE_KEY, next ? '0' : '1');
       } catch {
         // No-op when storage is unavailable.
       }
@@ -1967,48 +1856,6 @@ export const ExpandedSidebar = ({
     } catch (error) {
       console.error('Failed to create event from sidebar:', error);
       setSaveError(error instanceof Error ? error.message : 'Could not save event.');
-    }
-  };
-
-  const updateProjectStatus = async (projectId: string, newStatus: ProjectStatus) => {
-    setProjectUpdating(projectId);
-    const semantic = normalizeProjectStatus(newStatus);
-    const previousProject = projects.find((p) => p.id === projectId);
-    const previousStatus = previousProject
-      ? normalizeProjectStatus(String(previousProject.status))
-      : null;
-
-    // Optimistic UI: reflect status immediately.
-    setProjects((prev) => prev.map((p) => (p.id === projectId ? { ...p, status: semantic } : p)));
-    try {
-      const resolvedStatus = await updateProjectStatusWithFallback(projectId, semantic);
-      setProjects((prev) =>
-        prev.map((p) =>
-          p.id === projectId ? { ...p, status: normalizeProjectStatus(resolvedStatus) } : p
-        )
-      );
-    } catch (error) {
-      console.error('Project status update error:', error);
-      setSaveError('Could not update project status.');
-      if (previousStatus) {
-        setProjects((prev) =>
-          prev.map((p) => (p.id === projectId ? { ...p, status: previousStatus } : p))
-        );
-      }
-    }
-    setProjectUpdating(null);
-  };
-
-  const setProjectCompletenessLocal = (projectId: string, completeness: number) => {
-    completeness = Math.max(0, Math.min(100, completeness));
-    setProjects((prev) => prev.map((p) => (p.id === projectId ? { ...p, completeness } : p)));
-  };
-
-  const saveProjectCompleteness = async (projectId: string, completeness: number) => {
-    try {
-      await api.updateProject(projectId, { completeness });
-    } catch (error) {
-      setSaveError('Could not update progress.');
     }
   };
 
@@ -2199,43 +2046,6 @@ export const ExpandedSidebar = ({
     document.addEventListener('click', handleClickOutside);
     return () => document.removeEventListener('click', handleClickOutside);
   }, [contextMenu]);
-
-  useEffect(() => {
-    if (!draggingProjectId) return;
-
-    const handleMove = (event: PointerEvent) => {
-      const drag = projectDragRef.current;
-      if (!drag || drag.projectId !== draggingProjectId) return;
-
-      const percent = Math.round(((event.clientX - drag.rectLeft) / drag.rectWidth) * 100);
-      setProjectCompletenessLocal(drag.projectId, percent);
-    };
-
-    const handleUp = () => {
-      const drag = projectDragRef.current;
-      if (!drag || drag.projectId !== draggingProjectId) {
-        setDraggingProjectId(null);
-        projectDragRef.current = null;
-        return;
-      }
-
-      const project = projects.find((item) => item.id === drag.projectId);
-      const finalPercent = project?.completeness ?? 0;
-      projectDragRef.current = null;
-      setDraggingProjectId(null);
-      void saveProjectCompleteness(drag.projectId, finalPercent);
-    };
-
-    window.addEventListener('pointermove', handleMove);
-    window.addEventListener('pointerup', handleUp);
-    window.addEventListener('pointercancel', handleUp);
-
-    return () => {
-      window.removeEventListener('pointermove', handleMove);
-      window.removeEventListener('pointerup', handleUp);
-      window.removeEventListener('pointercancel', handleUp);
-    };
-  }, [draggingProjectId, projects]);
 
   const activeProjectCount = projects.filter(
     (project) => normalizeProjectStatus(String(project.status)) !== 'completed'
@@ -2501,7 +2311,7 @@ export const ExpandedSidebar = ({
       }`}
     >
       <div
-        className="relative z-10 px-5 pb-2 bg-transparent"
+        className="relative z-10 px-3.5 pt-1 pb-1.5 bg-transparent"
         onMouseDown={(e) => {
           if (!onDragHandleMouseDown) return;
           if (
@@ -2512,12 +2322,9 @@ export const ExpandedSidebar = ({
         }}
         style={{ cursor: onDragHandleMouseDown ? 'grab' : 'auto' }}
       >
-        <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-3 bg-transparent text-left">
-            <img src="./logo-color.svg" alt="Ledger" className="h-8 w-8" />
-            <h1 className={`text-2xl tracking-tight text-[var(--ledger-text-primary)] ${isWindowsPlatform ? 'font-normal' : 'font-light'}`}>
-              Ledger
-            </h1>
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-2.5 bg-transparent text-left">
+            <img src="./logo-color.svg" alt="Ledger" className="h-7 w-7 shrink-0" />
           </div>
           <button
             type="button"
@@ -2526,32 +2333,29 @@ export const ExpandedSidebar = ({
               onCollapseRequest?.();
               collapseToRail();
             }}
-            className="p-1 hover:bg-[var(--ledger-surface-muted)] rounded-lg transition"
+            className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]"
             title="Collapse sidebar"
+            aria-label="Collapse sidebar"
           >
-            <ChevronLeft size={20} className="text-[var(--ledger-text-secondary)]" />
+            <ChevronLeft size={16} />
           </button>
         </div>
 
-        <div className={`p-3 flex items-start justify-between opacity-100 ${sidebarTheme.surfaceSoft}`}>
-          <div>
-            <p className="text-sm font-semibold text-[var(--ledger-text-primary)] opacity-100">{firstName}</p>
-            <div className="mt-0.5">
-              <WorkspaceSwitcher />
-            </div>
-            <p className="text-xs text-[var(--ledger-text-secondary)] truncate">{user?.email}</p>
+        <div className="mt-0 flex items-center justify-between gap-2">
+          <div className="min-w-0">
+            <WorkspaceSwitcher compact />
           </div>
           <div className="flex shrink-0 items-center gap-1">
             <button
               onClick={() => window.desktopWindow?.toggleModule('inbox')}
               onMouseDown={(e) => e.stopPropagation()}
-              className="relative inline-flex h-7 w-7 items-center justify-center text-[var(--ledger-text-secondary)] transition hover:text-[var(--ledger-text-primary)]"
+              className="relative inline-flex h-7 w-7 items-center justify-center rounded-lg text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]"
               title="Inbox"
               aria-label="Open inbox"
             >
               <Inbox size={14} />
               {inboxCount > 0 && (
-                <span className="absolute -right-1 -top-1 inline-flex min-w-4 items-center justify-center rounded-full bg-[var(--ledger-accent)] px-1 py-0.5 text-[9px] font-semibold leading-none text-white">
+                <span className="absolute -right-1 -top-1 inline-flex min-w-4 items-center justify-center rounded-full border border-[color:var(--ledger-surface)] bg-[var(--ledger-accent)] px-1 py-0.5 text-[9px] font-semibold leading-none text-white shadow-sm">
                   {inboxCount > 99 ? '99+' : inboxCount}
                 </span>
               )}
@@ -2559,13 +2363,13 @@ export const ExpandedSidebar = ({
             <button
               onClick={() => window.desktopWindow?.openModule('notifications')}
               onMouseDown={(e) => e.stopPropagation()}
-              className="relative inline-flex h-7 w-7 items-center justify-center text-[var(--ledger-text-secondary)] transition hover:text-[var(--ledger-text-primary)]"
+              className="relative inline-flex h-7 w-7 items-center justify-center rounded-lg text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]"
               title="Notifications"
               aria-label="Open notifications center"
             >
               <Bell size={14} />
               {notificationCount > 0 && (
-                <span className="absolute -right-1 -top-1 inline-flex min-w-4 items-center justify-center rounded-full bg-[var(--ledger-accent)] px-1 py-0.5 text-[9px] font-semibold leading-none text-white">
+                <span className="absolute -right-1 -top-1 inline-flex min-w-4 items-center justify-center rounded-full border border-[color:var(--ledger-surface)] bg-[var(--ledger-accent)] px-1 py-0.5 text-[9px] font-semibold leading-none text-white shadow-sm">
                   {notificationCount > 99 ? '99+' : notificationCount}
                 </span>
               )}
@@ -2573,7 +2377,7 @@ export const ExpandedSidebar = ({
             <button
               onClick={() => window.desktopWindow?.toggleModule('settings')}
               onMouseDown={(e) => e.stopPropagation()}
-              className="inline-flex h-7 w-7 items-center justify-center text-[var(--ledger-text-secondary)] transition hover:text-[var(--ledger-text-primary)] shrink-0"
+              className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]"
               title="Settings"
               aria-label="Open settings"
             >
@@ -2583,344 +2387,56 @@ export const ExpandedSidebar = ({
         </div>
       </div>
 
-      <div className="px-5 pt-2 pb-4 border-b border-[color:var(--ledger-border-subtle)]">
-        <button
-          type="button"
-          onClick={openSearch}
-          className="mb-3 flex h-10 w-full items-center justify-between gap-3 rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 text-left transition hover:border-[color:var(--ledger-border-strong)] hover:bg-[var(--ledger-surface-hover)]"
-        >
-          <span className="flex min-w-0 items-center gap-2 text-[13px] text-[var(--ledger-text-muted)]">
+      <div className="px-3.5 pt-2 pb-3 border-b border-[color:var(--ledger-border-subtle)]">
+        <div className="mb-2.5 flex h-9 w-full items-center justify-between gap-3 rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 text-left transition hover:border-[color:var(--ledger-border-strong)] hover:bg-[var(--ledger-surface-hover)]">
+          <span className="flex min-w-0 items-center gap-2 text-[12px] text-[var(--ledger-text-muted)]">
             <Search size={14} className="shrink-0 text-[var(--ledger-text-muted)]" />
             <span className="truncate">Search everything...</span>
           </span>
           <span className="shrink-0 rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.16em] text-[var(--ledger-text-muted)]">
             ⌘K
           </span>
-        </button>
-
-        <div className="grid grid-cols-2 gap-2">
-          <button
-            onClick={() => window.desktopWindow?.toggleModule('dashboard')}
-            className="h-10 rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-xs font-medium text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] transition flex items-center justify-center gap-1.5"
-          >
-            <BarChart3 size={13} />
-            Dashboard
-          </button>
-          <button
-            onClick={() => window.desktopWindow?.toggleModule('projects')}
-            className="h-10 rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-xs font-medium text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] transition flex items-center justify-center gap-1.5"
-          >
-            <Folder size={13} />
-            Projects
-          </button>
-          <button
-            onClick={() => window.desktopWindow?.toggleModule('notes')}
-            className="h-10 rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-xs font-medium text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] transition flex items-center justify-center gap-1.5"
-          >
-            <StickyNote size={13} />
-            Notes
-          </button>
-          <button
-            onClick={() => window.desktopWindow?.openModule('calendar')}
-            className="h-10 rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-xs font-medium text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] transition flex items-center justify-center gap-1.5"
-          >
-            <CalendarDays size={13} />
-            Calendar
-          </button>
         </div>
       </div>
 
-      <div className="flex-1 min-h-0 overflow-y-auto px-5 py-4 space-y-4">
-        {/* Today unified feed (workspace-aware) */}
-        <section className={`space-y-3 p-3 ${sidebarTheme.surfaceSoft}`}>
-          <div
-            role="button"
-            tabIndex={0}
-            onClick={toggleTodayCollapsed}
-            onKeyDown={(event) => {
-              if (event.key !== 'Enter' && event.key !== ' ') return;
-              event.preventDefault();
-              toggleTodayCollapsed();
-            }}
-            className="flex w-full items-start justify-between gap-3 text-left outline-none"
-          >
-            <div className="min-w-0 flex-1 space-y-0.5">
-              <div className="flex items-center gap-2">
-                <p className="text-sm font-semibold tracking-tight text-[var(--ledger-text-primary)]">Today</p>
-                <button
-                  ref={todayHelpButtonRef}
-                  type="button"
-                  onMouseEnter={() => {
-                    if (todayHelpCloseTimerRef.current !== null) {
-                      window.clearTimeout(todayHelpCloseTimerRef.current);
-                      todayHelpCloseTimerRef.current = null;
-                    }
-                    setTodayHelpOpen(true);
-                  }}
-                  onMouseLeave={() => {
-                    if (todayHelpCloseTimerRef.current !== null) {
-                      window.clearTimeout(todayHelpCloseTimerRef.current);
-                    }
-                    todayHelpCloseTimerRef.current = window.setTimeout(() => {
-                      setTodayHelpOpen(false);
-                      todayHelpCloseTimerRef.current = null;
-                    }, 120);
-                  }}
-                  onFocus={() => setTodayHelpOpen(true)}
-                  onBlur={() => setTodayHelpOpen(false)}
-                  className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-[color:var(--ledger-border-subtle)] text-[10px] font-semibold text-[var(--ledger-text-muted)] transition hover:border-[color:var(--ledger-border-strong)] hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-secondary)]"
-                  aria-label="What is Today?"
-                  title="What is Today?"
-                >
-                  ?
-                </button>
-              </div>
-              <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-[var(--ledger-text-muted)]">
-                <span className="shrink-0">
-                  {todayTotalCount > 0 ? `${completedToday.length}/${todayTotalCount} complete` : 'Nothing yet'}
-                </span>
-              </div>
-              {!todayCollapsed && (
-                <p className="text-[11px] text-[var(--ledger-text-muted)]">Operational queue for today.</p>
-              )}
-            </div>
-            <ChevronDown
-              size={14}
-              className={`mt-0.5 shrink-0 text-[var(--ledger-text-muted)] transition-transform ${
-                todayCollapsed ? 'rotate-180' : ''
-              }`}
-            />
-          </div>
-
-          {!todayCollapsed && (
-            <>
-              <div className="flex items-center gap-2 rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2.5 py-1.5">
-                <input
-                  value={todayQuickDraft}
-                  onChange={(e) => setTodayQuickDraft(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault();
-                      void saveTodayQuickTask();
-                    }
-                  }}
-                  placeholder="Add task for today..."
-                  className="flex-1 bg-transparent px-0.5 py-0.5 text-[11px] leading-5 text-[var(--ledger-text-primary)] placeholder:text-[var(--ledger-placeholder)] focus:outline-none"
-                  disabled={todayQuickSaving || isLoadingToday}
-                />
-                <button
-                  onClick={() => void saveTodayQuickTask()}
-                  className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-muted)] disabled:opacity-60"
-                  title="Add to Today"
-                  disabled={todayQuickSaving || isLoadingToday || !todayQuickDraft.trim()}
-                >
-                  <Plus size={11} />
-                </button>
-              </div>
-
-              <div className="flex items-center justify-between px-0.5">
-                <p className="mt-2 text-[12px] text-[var(--ledger-text-muted)]">Press Enter or + to add</p> 
-                <p
-                  className={`text-[10px] text-[var(--ledger-success)] transition-opacity duration-200 ${
-                    taskCaptureSaved ? 'opacity-100' : 'opacity-0'
-                  }`}
-                >
-                  Added
-                </p>
-              </div>
-
-              {isLoadingToday && todayItems.length === 0 && completedToday.length === 0 ? (
-                <SkeletonList />
-              ) : (
-                <>
-                  {todayItems.length > 0 && (
-                    <div className="space-y-0.5">
-                      {todayItems.map((item) => (
-                        <div
-                          key={item.id}
-                          onContextMenu={(e) => {
-                            e.preventDefault();
-                            setContextMenu({
-                              type: 'today-active',
-                              id: item.id,
-                              kind: item.kind,
-                              x: e.clientX,
-                              y: e.clientY,
-                            });
-                          }}
-                          className="flex items-start gap-1.5 rounded-lg px-1 py-1 transition hover:bg-[var(--ledger-surface-muted)]"
-                        >
-                          <button
-                            type="button"
-                            onClick={() => void toggleCompleteTodayItem(item.id)}
-                            className="mt-px flex h-5 w-5 shrink-0 items-center justify-center"
-                            title="Mark complete"
-                          >
-                            <div className="flex h-4.5 w-4.5 items-center justify-center rounded-full border border-[color:var(--ledger-border-strong)] text-[var(--ledger-text-secondary)]">
-                              <span className="sr-only">Mark complete</span>
-                            </div>
-                          </button>
-                          <div className="min-w-0 flex-1">
-                            <div className="truncate text-[11px] leading-4 text-[var(--ledger-text-primary)]">
-                              {item.title}
-                            </div>
-                            <div className="flex min-w-0 items-center gap-1.5 truncate text-[9px] text-[var(--ledger-text-muted)]">
-                              <span
-                                className="h-1.5 w-1.5 shrink-0 rounded-full"
-                                style={{
-                                  backgroundColor: item.workspace_color || 'var(--ledger-border-subtle)',
-                                }}
-                              />
-                              <span className="truncate">
-                                {formatTodayTaskWorkspace(item) || item.workspace_name || 'Workspace'}
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  {completedToday.length > 0 && (
-                    <div className="pt-0">
-                      <button
-                        type="button"
-                        onClick={() => setCompletedTodayExpanded((prev) => !prev)}
-                        className="flex w-full items-center justify-between rounded-lg px-1.5 py-1 text-left hover:bg-[var(--ledger-surface-muted)] transition"
-                      >
-                        <span className="text-[11px] font-medium text-[var(--ledger-text-muted)]">
-                          Completed · {completedToday.length}
-                        </span>
-                        <ChevronDown
-                          size={14}
-                          className={`text-[var(--ledger-text-muted)] transition-transform ${
-                            completedTodayExpanded ? 'rotate-180' : ''
-                          }`}
-                        />
-                      </button>
-                      {completedTodayExpanded && (
-                        <div className="mt-1 space-y-1">
-                          {sortTodayTasks(completedToday).map((item) => (
-                            <div
-                              key={item.id}
-                              onContextMenu={(e) => {
-                                e.preventDefault();
-                                setContextMenu({
-                                  type: 'today-completed',
-                                  id: item.id,
-                                  kind: item.kind,
-                                  x: e.clientX,
-                                  y: e.clientY,
-                                });
-                              }}
-                                className="flex items-start gap-1.5 rounded-lg px-1 py-1 transition hover:bg-[var(--ledger-surface-muted)]"
-                            >
-                              <button
-                                type="button"
-                                onClick={() => void toggleCompleteTodayItem(item.id)}
-                                className="mt-px flex h-5 w-5 shrink-0 items-center justify-center"
-                                title="Mark incomplete"
-                              >
-                                <div className="flex h-4.5 w-4.5 items-center justify-center rounded-full border border-[color:rgba(18,183,106,0.16)] bg-[color:rgba(18,183,106,0.08)] text-[var(--ledger-success)]">
-                                  <Check size={12} />
-                                </div>
-                              </button>
-                              <div className="min-w-0 flex-1">
-                                  <div className="truncate text-[11px] leading-4 text-[var(--ledger-text-secondary)] line-through">
-                                  {item.title}
-                                </div>
-                                  <div className="flex min-w-0 items-center gap-1.5 truncate text-[9px] text-[var(--ledger-text-muted)]">
-                                  <span
-                                    className="h-1.5 w-1.5 shrink-0 rounded-full"
-                                    style={{
-                                      backgroundColor: item.workspace_color || 'var(--ledger-border-subtle)',
-                                    }}
-                                  />
-                                  <span className="truncate">
-                                    {formatTodayTaskWorkspace(item) || item.workspace_name || 'Workspace'}
-                                  </span>
-                                </div>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </>
-              )}
-            </>
-          )}
-        </section>
-
-        {todayHelpOpen && typeof document !== 'undefined'
-          ? createPortal(
-              <div
-                ref={todayHelpPopoverRef}
-                style={todayHelpPopoverStyle ?? undefined}
-                onMouseEnter={() => {
-                  if (todayHelpCloseTimerRef.current !== null) {
-                    window.clearTimeout(todayHelpCloseTimerRef.current);
-                    todayHelpCloseTimerRef.current = null;
-                  }
-                }}
-                onMouseLeave={() => {
-                  if (todayHelpCloseTimerRef.current !== null) {
-                    window.clearTimeout(todayHelpCloseTimerRef.current);
-                  }
-                  todayHelpCloseTimerRef.current = window.setTimeout(() => {
-                    setTodayHelpOpen(false);
-                    todayHelpCloseTimerRef.current = null;
-                  }, 120);
-                }}
-                className={`${sidebarTheme.popover} px-2.5 py-2`}
-              >
-                <p className="text-[11px] leading-4 text-[var(--ledger-text-secondary)]">{TODAY_HELP_TEXT}</p>
-              </div>,
-              document.body
-            )
-          : null}
-
-        <section>
-          <h2 className="mb-2 text-xs font-medium text-[var(--ledger-text-muted)]">
-            Quick Capture
-          </h2>
-          <div className="grid grid-cols-3 gap-2">
+      <div className="flex-1 min-h-0 overflow-y-auto px-3.5 py-3 space-y-3">
+        <section className="space-y-2">
+          <p className={sidebarTheme.sectionLabel}>Quick capture</p>
+          <div className="grid grid-cols-3 gap-1.5 rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] p-1">
             <button
               onClick={() => setQuickCaptureMode((prev) => (prev === 'task' ? 'none' : 'task'))}
-              className={`px-2.5 py-2 text-xs font-medium rounded-2xl border shadow-sm transition flex items-center justify-center gap-1.5 ${
+              className={`h-7 rounded-lg px-2 text-[11px] font-medium transition flex items-center justify-center gap-1.5 ${
                 quickCaptureMode === 'task'
-                  ? 'text-[var(--ledger-text-primary)] bg-[var(--ledger-surface-muted)] border-[color:var(--ledger-border-strong)]'
-                  : 'text-[var(--ledger-text-secondary)] bg-[var(--ledger-surface-muted)] border-[color:var(--ledger-border-subtle)] hover:bg-[var(--ledger-surface-hover)] hover:border-[color:var(--ledger-border-strong)]'
+                  ? 'text-[var(--ledger-text-primary)] bg-[var(--ledger-surface)] shadow-sm'
+                  : 'text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]'
               }`}
             >
-              <Plus size={13} />
+              <Plus size={12} />
               Task
             </button>
             <button
               onClick={() => setQuickCaptureMode((prev) => (prev === 'note' ? 'none' : 'note'))}
-              className={`px-2.5 py-2 text-xs font-medium rounded-2xl border shadow-sm transition flex items-center justify-center gap-1.5 ${
+              className={`h-7 rounded-lg px-2 text-[11px] font-medium transition flex items-center justify-center gap-1.5 ${
                 quickCaptureMode === 'note'
-                  ? 'text-[var(--ledger-text-primary)] bg-[var(--ledger-surface-muted)] border-[color:var(--ledger-border-strong)]'
-                  : 'text-[var(--ledger-text-secondary)] bg-[var(--ledger-surface-muted)] border-[color:var(--ledger-border-subtle)] hover:bg-[var(--ledger-surface-hover)] hover:border-[color:var(--ledger-border-strong)]'
+                  ? 'text-[var(--ledger-text-primary)] bg-[var(--ledger-surface)] shadow-sm'
+                  : 'text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]'
               }`}
             >
-              <StickyNote size={13} />
+              <StickyNote size={12} />
               Note
             </button>
             <button
               onClick={() => setQuickCaptureMode((prev) => (prev === 'event' ? 'none' : 'event'))}
-              className={`px-2.5 py-2 text-xs font-medium rounded-2xl border shadow-sm transition flex items-center justify-center gap-1.5 ${
+              className={`h-7 rounded-lg px-2 text-[11px] font-medium transition flex items-center justify-center gap-1.5 ${
                 quickCaptureMode === 'event'
-                  ? 'text-[var(--ledger-text-primary)] bg-[var(--ledger-surface-muted)] border-[color:var(--ledger-border-strong)]'
-                  : 'text-[var(--ledger-text-secondary)] bg-[var(--ledger-surface-muted)] border-[color:var(--ledger-border-subtle)] hover:bg-[var(--ledger-surface-hover)] hover:border-[color:var(--ledger-border-strong)]'
+                  ? 'text-[var(--ledger-text-primary)] bg-[var(--ledger-surface)] shadow-sm'
+                  : 'text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]'
               }`}
             >
-              <CalendarDays size={13} />
+              <CalendarDays size={12} />
               Event
             </button>
           </div>
-
           <div
             className={`overflow-hidden transition-all duration-200 ease-out ${
               quickCaptureMode === 'task' ? 'max-h-56 opacity-100 mt-2.5' : 'max-h-0 opacity-0 mt-0'
@@ -3224,371 +2740,559 @@ export const ExpandedSidebar = ({
           )}
         </section>
 
-        <section
-          ref={checkinSectionRef}
-          className={`rounded-xl p-3.5 ${sidebarTheme.surfaceSoft}`}
-        >
+        <section className="space-y-2">
+          <p className={sidebarTheme.sectionLabel}>Navigation</p>
+          <div className="space-y-1">
+            {[
+              { label: 'Dashboard', icon: BarChart3, action: () => window.desktopWindow?.toggleModule('dashboard') },
+              { label: 'Projects', icon: Folder, action: () => window.desktopWindow?.toggleModule('projects') },
+              { label: 'Notes', icon: StickyNote, action: () => window.desktopWindow?.toggleModule('notes') },
+              { label: 'Calendar', icon: CalendarDays, action: () => window.desktopWindow?.openModule('calendar') },
+            ].map((item) => (
+              <button
+                key={item.label}
+                type="button"
+                onClick={item.action}
+                className="flex h-9 w-full items-center gap-2.5 rounded-xl px-2.5 text-left text-[13px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]"
+              >
+                <item.icon size={15} className="shrink-0 text-[var(--ledger-text-muted)]" />
+                <span>{item.label}</span>
+              </button>
+            ))}
+          </div>
+        </section>
+
+        <section className="space-y-3">
+          <p className={sidebarTheme.sectionLabel}>Workspace</p>
+
+        <section ref={checkinSectionRef} className="space-y-1.5">
           <button
-            onClick={() => setIsCheckinExpanded((prev) => !prev)}
-            className="w-full flex items-center justify-between"
+            type="button"
+            onClick={toggleCheckinExpanded}
+            className={`flex h-9 w-full items-center justify-between gap-3 rounded-xl px-2.5 text-left text-[13px] font-medium transition ${
+              isCheckinExpanded
+                ? 'bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-primary)]'
+                : 'text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]'
+            }`}
           >
-            <div className="flex items-center gap-1.5">
-              <ClipboardCheck size={14} className="text-[var(--ledger-text-secondary)]" />
-              <p className="text-xs font-semibold text-[var(--ledger-text-primary)]">Daily Check-in</p>
-            </div>
-            <div className="flex items-center gap-2">
-              {checkinSaved && (
-                <span className="text-[10px] text-[var(--ledger-success)] font-medium">Saved</span>
-              )}
+            <span className="flex min-w-0 items-center gap-2.5">
+              <ClipboardCheck size={15} className="shrink-0 text-[var(--ledger-text-muted)]" />
+              <span className="truncate">Daily Check-in</span>
+            </span>
+            <span className="flex shrink-0 items-center gap-2 text-[11px] text-[var(--ledger-text-muted)]">
+              <span>{checkinStatusLabel}</span>
               {isCheckinExpanded ? (
                 <ChevronUp size={14} className="text-[var(--ledger-text-muted)]" />
               ) : (
                 <ChevronDown size={14} className="text-[var(--ledger-text-muted)]" />
               )}
-            </div>
+            </span>
           </button>
 
-          {!isCheckinExpanded && (
-            <p className="mt-2 text-[11px] text-[var(--ledger-text-muted)]">
-              {checkinSaved
-                ? 'Saved for today. Click to edit.'
-                : 'Click to add your daily check-in.'}
-            </p>
-          )}
-
           {isCheckinExpanded && (
-            <>
-              <div className="mt-2.5 space-y-2">
-                <div>
-                  <label className="block text-[10px] font-medium text-[var(--ledger-text-muted)] mb-1">
-                    Finished
-                  </label>
-                  <input
-                    value={checkin.finished}
-                    onChange={(e) => {
-                      setCheckin((prev) => ({ ...prev, finished: e.target.value }));
-                      setCheckinSaved(false);
-                    }}
-                    placeholder="What did you finish?"
-                    className={`w-full h-8 px-2.5 text-xs rounded-2xl ${sidebarTheme.fieldMuted}`}
-                    disabled={isLoadingDaily}
-                  />
-                </div>
-                <div>
-                  <label className="block text-[10px] font-medium text-[var(--ledger-text-muted)] mb-1">
-                    Blocked
-                  </label>
-                  <input
-                    value={checkin.blocked}
-                    onChange={(e) => {
-                      setCheckin((prev) => ({ ...prev, blocked: e.target.value }));
-                      setCheckinSaved(false);
-                    }}
-                    placeholder="What didn't you finish"
-                    className={`w-full h-8 px-2.5 text-xs rounded-2xl ${sidebarTheme.fieldMuted}`}
-                    disabled={isLoadingDaily}
-                  />
-                </div>
-                <div>
-                  <label className="block text-[10px] font-medium text-[var(--ledger-text-muted)] mb-1">
-                    First task tomorrow
-                  </label>
-                  <input
-                    value={checkin.firstTaskTomorrow}
-                    onChange={(e) => {
-                      setCheckin((prev) => ({ ...prev, firstTaskTomorrow: e.target.value }));
-                      setCheckinSaved(false);
-                    }}
-                    placeholder="What's first tomorrow?"
-                    className={`w-full h-8 px-2.5 text-xs rounded-2xl ${sidebarTheme.fieldMuted}`}
-                    disabled={isLoadingDaily}
-                  />
-                </div>
-              </div>
+            <div className="pl-3">
+              {!hasCheckinContent || isCheckinEditing ? (
+                <div className="space-y-2">
+                  <div className="grid grid-cols-[84px_minmax(0,1fr)] items-center gap-2">
+                    <label className="text-[10px] font-medium text-[var(--ledger-text-muted)]">
+                      Finished
+                    </label>
+                    <input
+                      ref={checkinFinishedInputRef}
+                      value={checkin.finished}
+                      onChange={(e) => {
+                        setCheckin((prev) => ({ ...prev, finished: e.target.value }));
+                        setCheckinSaved(false);
+                      }}
+                      placeholder="What did you finish?"
+                      className={`h-8 w-full rounded-lg px-2 text-xs ${sidebarTheme.fieldMuted}`}
+                      disabled={isLoadingDaily}
+                    />
+                  </div>
+                  <div className="grid grid-cols-[84px_minmax(0,1fr)] items-center gap-2">
+                    <label className="text-[10px] font-medium text-[var(--ledger-text-muted)]">
+                      Blocked
+                    </label>
+                    <input
+                      value={checkin.blocked}
+                      onChange={(e) => {
+                        setCheckin((prev) => ({ ...prev, blocked: e.target.value }));
+                        setCheckinSaved(false);
+                      }}
+                      placeholder="Anything blocked?"
+                      className={`h-8 w-full rounded-lg px-2 text-xs ${sidebarTheme.fieldMuted}`}
+                      disabled={isLoadingDaily}
+                    />
+                  </div>
+                  <div className="grid grid-cols-[84px_minmax(0,1fr)] items-center gap-2">
+                    <label className="text-[10px] font-medium text-[var(--ledger-text-muted)]">
+                      Tomorrow
+                    </label>
+                    <input
+                      value={checkin.firstTaskTomorrow}
+                      onChange={(e) => {
+                        setCheckin((prev) => ({ ...prev, firstTaskTomorrow: e.target.value }));
+                        setCheckinSaved(false);
+                      }}
+                      placeholder="First task tomorrow?"
+                      className={`h-8 w-full rounded-lg px-2 text-xs ${sidebarTheme.fieldMuted}`}
+                      disabled={isLoadingDaily}
+                    />
+                  </div>
 
-              <div className="mt-3 grid grid-cols-2 gap-2">
-                <button
-                  onClick={() => void clearCheckin()}
-                  className={`h-8 text-xs font-semibold rounded-2xl transition disabled:opacity-60 ${sidebarTheme.buttonSecondary}`}
-                  disabled={
-                    isLoadingDaily ||
-                    (!checkinSaved &&
-                      !checkin.finished.trim() &&
-                      !checkin.blocked.trim() &&
-                      !checkin.firstTaskTomorrow.trim())
-                  }
-                >
-                  Clear
-                </button>
-                <button
-                  onClick={() => void saveCheckin()}
-                  className={`h-8 text-xs font-semibold rounded-2xl transition disabled:opacity-60 ${sidebarTheme.buttonPrimary}`}
-                  disabled={isLoadingDaily}
-                >
-                  Save Check-in
-                </button>
-              </div>
-            </>
-          )}
-        </section>
+                  <div className="flex items-center justify-between gap-2 pt-0.5">
+                    <button
+                      onClick={() => void clearCheckin()}
+                      className={`h-7 rounded-lg px-3 text-xs font-medium transition disabled:opacity-60 ${sidebarTheme.buttonSecondary}`}
+                      disabled={
+                        isLoadingDaily ||
+                        (!checkinSaved &&
+                          !checkin.finished.trim() &&
+                          !checkin.blocked.trim() &&
+                          !checkin.firstTaskTomorrow.trim())
+                      }
+                    >
+                      Clear
+                    </button>
+                    <button
+                      onClick={() => void saveCheckin()}
+                      className={`h-7 rounded-lg px-3 text-xs font-medium transition disabled:opacity-60 ${sidebarTheme.buttonPrimary}`}
+                      disabled={isLoadingDaily}
+                    >
+                      Save
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <div className="space-y-1.5">
+                    <div>
+                      <p className="text-[10px] font-medium text-[var(--ledger-text-muted)]">Finished</p>
+                      <p className="mt-0.5 text-[12px] text-[var(--ledger-text-primary)]">
+                        {checkin.finished.trim() || 'Nothing yet'}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-medium text-[var(--ledger-text-muted)]">Blocked</p>
+                      <p className="mt-0.5 text-[12px] text-[var(--ledger-text-primary)]">
+                        {checkin.blocked.trim() || 'Nothing blocked'}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-medium text-[var(--ledger-text-muted)]">Tomorrow</p>
+                      <p className="mt-0.5 text-[12px] text-[var(--ledger-text-primary)]">
+                        {checkin.firstTaskTomorrow.trim() || 'Nothing set'}
+                      </p>
+                    </div>
+                  </div>
 
-        <section>
-          <div className="flex items-center justify-between mb-2">
-            <h2 className="text-xs font-semibold text-[var(--ledger-text-muted)]">
-              Project Tracker
-            </h2>
-            <button
-              onClick={() => setIsCreatingProject(!isCreatingProject)}
-              className="text-xs font-medium text-[var(--ledger-accent)] px-2 py-1 rounded"
-            >
-              {isCreatingProject ? 'Cancel' : '+ New'}
-            </button>
-          </div>
-
-          {isCreatingProject && (
-            <div className={`mb-2 space-y-2 overflow-hidden p-3 ${sidebarTheme.surfaceSoft}`}>
-              <input
-                value={newProjectName}
-                onChange={(e) => setNewProjectName(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    void createProject();
-                  }
-                }}
-                placeholder="Project name"
-                className={`w-full h-8 px-2 text-xs rounded-md ${sidebarTheme.fieldMuted}`}
-                autoFocus
-              />
-              <button
-                onClick={() => void createProject()}
-                disabled={!newProjectName.trim()}
-                className={`w-full h-7 rounded-md text-white text-xs font-medium disabled:opacity-60 ${sidebarTheme.buttonPrimary}`}
-              >
-                Create Project
-              </button>
+                  <div className="flex items-center justify-between gap-2 pt-0.5">
+                    <button
+                      type="button"
+                      onClick={() => setIsCheckinEditing(true)}
+                      className={`h-7 rounded-lg px-3 text-xs font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]`}
+                    >
+                      Edit
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void clearCheckin()}
+                      className={`h-7 rounded-lg px-3 text-xs font-medium transition disabled:opacity-60 ${sidebarTheme.buttonSecondary}`}
+                      disabled={isLoadingDaily}
+                    >
+                      Clear
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
-
-          <div className="space-y-2">
-            {isLoadingProjects ? (
-              <SkeletonList count={2} />
-            ) : projects.length === 0 ? (
-              <p className="text-xs text-[var(--ledger-text-muted)]">No active projects</p>
-            ) : (
-              projects.map((project) => {
-                const isExpanded = expandedProjectId === project.id;
-                const statusKey = normalizeProjectStatus(String(project.status));
-                const statusLabel = projectStatusLabels[statusKey];
-                const statusColor = projectStatusStyles[statusKey];
-                const displayCompleteness = Math.max(0, Math.min(100, Number(project.completeness) || 0));
-                const progressColor = getProgressStateColor(displayCompleteness);
-                const projectAccent = project.color || 'var(--ledger-accent)';
-
-                return (
-                  <div
-                    key={project.id}
-                    className={`overflow-hidden ${sidebarTheme.surfaceSoft}`}
-                    onContextMenu={(e) => {
-                      e.preventDefault();
-                      setContextMenu({
-                        type: 'project',
-                        id: project.id,
-                        x: e.clientX,
-                        y: e.clientY,
-                      });
-                    }}
-                  >
-                    <button
-                      onClick={() => setExpandedProjectId(isExpanded ? null : project.id)}
-                      className="w-full text-left p-3 flex items-start justify-between bg-[var(--ledger-surface-muted)] transition hover:bg-[var(--ledger-surface-hover)]"
-                    >
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span
-                            className="h-2 w-2 shrink-0 rounded-full border border-[color:rgba(17,24,39,0.05)]"
-                            style={{ backgroundColor: projectAccent }}
-                          />
-                          <p className="text-xs font-semibold text-[var(--ledger-text-primary)] truncate">
-                            {project.name}
-                          </p>
-                        </div>
-                        <div
-                          onPointerDown={(e) => {
-                            e.stopPropagation();
-                            const rect = e.currentTarget.getBoundingClientRect();
-                            const percent = Math.round(
-                              ((e.clientX - rect.left) / rect.width) * 100
-                            );
-                            setDraggingProjectId(project.id);
-                            projectDragRef.current = {
-                              projectId: project.id,
-                              rectLeft: rect.left,
-                              rectWidth: rect.width,
-                              pointerId: e.pointerId,
-                            };
-                            setProjectCompletenessLocal(project.id, percent);
-                            e.currentTarget.setPointerCapture(e.pointerId);
-                          }}
-                          onClick={(e) => e.stopPropagation()}
-                          className={`mt-2 h-2.5 rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] overflow-hidden transition touch-none ${
-                            'cursor-pointer hover:border-[color:var(--ledger-border-strong)]'
-                          }`}
-                        >
-                          <div
-                            className={`h-full rounded-full ${
-                              draggingProjectId === project.id ? '' : 'transition-all'
-                            }`}
-                            style={{
-                              width: `${displayCompleteness}%`,
-                              backgroundColor: progressColor,
-                            }}
-                          />
-                        </div>
-                        <div className="mt-2 flex items-center justify-between gap-2">
-                          <p className="text-[10px] text-[var(--ledger-text-secondary)]">
-                            {displayCompleteness}% complete
-                          </p>
-                          <span className={`text-[10px] font-medium ${statusColor}`}>
-                            {statusLabel}
-                          </span>
-                        </div>
-                      </div>
-                      <ChevronDown
-                        size={14}
-                        className={`text-[var(--ledger-text-muted)] transition-transform shrink-0 ml-2 ${
-                          isExpanded ? 'rotate-180' : ''
-                        }`}
-                      />
-                    </button>
-
-                    {isExpanded && (
-                      <div className="border-t border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] p-3 space-y-2">
-                        <div>
-                          <label className="text-[10px] font-semibold uppercase text-[var(--ledger-text-muted)]">
-                            Project Status
-                          </label>
-                          <div className="mt-1.5 flex gap-1 flex-wrap">
-                            {(
-                              ['NotStarted', 'InProgress', 'Paused', 'Completed'] as ProjectStatus[]
-                            ).map((status) => (
-                              <button
-                                key={status}
-                                onClick={() => updateProjectStatus(project.id, status)}
-                                disabled={projectUpdating === project.id}
-                                className={`text-[10px] font-medium border transition ${
-                                  normalizeProjectStatus(String(project.status)) ===
-                                  normalizeProjectStatus(status)
-                                    ? 'px-2.5 py-1.5 rounded-2xl bg-[var(--ledger-accent)] text-white border-[color:var(--ledger-border-subtle)]'
-                                    : 'px-2.5 py-1.5 rounded-2xl bg-[var(--ledger-surface-muted)] border-[color:var(--ledger-border-subtle)] text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:border-[color:var(--ledger-border-strong)]'
-                                }`}
-                              >
-                                {projectStatusLabels[normalizeProjectStatus(status)]}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                );
-              })
-            )}
-          </div>
         </section>
 
-        <section>
-          <h2 className="text-xs font-semibold text-[var(--ledger-text-muted)] mb-2">
-            Upcoming
-          </h2>
-          <div className="space-y-2">
-            {isLoadingUpcoming ? (
-              <SkeletonList count={2} />
-            ) : upcomingItems.length === 0 ? (
-              <p className="text-xs text-[var(--ledger-text-muted)]">No upcoming events</p>
-            ) : (
-              upcomingItems.map((item) => {
-                const isExpanded = expandedUpcomingId === item.id;
-                const details = isExpanded ? getUpcomingEventDetails(item) : [];
-                return (
-                  <div
-                    key={item.id}
-                    className={`overflow-hidden transition ${sidebarTheme.surfaceSoft} hover:bg-[var(--ledger-surface-hover)]`}
-                  >
-                    <button
-                      onClick={() => setExpandedUpcomingId(isExpanded ? null : item.id)}
-                      onContextMenu={(e) => {
-                        e.preventDefault();
-                        setContextMenu({ type: 'upcoming', id: item.id, x: e.clientX, y: e.clientY });
-                      }}
-                      className="w-full p-3 text-left transition"
-                    >
-                      <div className="flex items-start gap-2">
-                        <div className="shrink-0 mt-0.5">
-                          {item.type === 'event' ? (
-                            <CalendarDays size={14} className="text-[var(--ledger-accent)]" />
-                          ) : (
-                            <CheckCircle2 size={14} className="text-[var(--ledger-success)]" />
-                          )}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p
-                            className={`text-[13px] font-semibold leading-5 text-[var(--ledger-text-primary)] ${
-                              isExpanded ? '' : 'truncate'
-                            }`}
-                          >
-                            {item.title}
-                          </p>
-                          <p className="mt-1 text-[11px] text-[var(--ledger-text-secondary)]">
-                            {item.dueDate}
-                            {item.time && ` · ${item.time}`}
-                          </p>
-                          {calendarScope === 'all_accessible_workspaces' && item.workspace_name && (
-                            <p className="mt-0.5 text-[11px] text-[var(--ledger-text-muted)]">
-                              Workspace · {item.workspace_name}
-                            </p>
-                          )}
-                        </div>
-                        <div className="shrink-0 mt-0.5">
-                          {isExpanded ? (
-                            <ChevronUp size={12} className="text-[var(--ledger-text-muted)]" />
-                          ) : (
-                            <ChevronDown size={12} className="text-[var(--ledger-text-muted)]" />
-                          )}
-                        </div>
-                      </div>
-                    </button>
+        <section className="space-y-1.5">
+          <section className="space-y-1">
+            <button
+              type="button"
+              onClick={toggleTodayCollapsed}
+              className={`flex h-9 w-full items-center justify-between gap-3 rounded-xl px-2.5 text-left text-[13px] font-medium transition ${
+                todayCollapsed
+                  ? 'text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]'
+                  : 'bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-primary)]'
+              }`}
+            >
+              <span className="flex min-w-0 items-center gap-2.5">
+                <ClipboardCheck size={15} className="shrink-0 text-[var(--ledger-text-muted)]" />
+                <span className="truncate">Today</span>
+              </span>
+              <span className="flex shrink-0 items-center gap-2 text-[11px] text-[var(--ledger-text-muted)]">
+                <span>{todayTotalCount > 0 ? `${completedToday.length}/${todayTotalCount}` : '0/0'}</span>
+                <ChevronDown
+                  size={14}
+                  className={`transition-transform ${todayCollapsed ? 'rotate-180' : ''}`}
+                />
+              </span>
+            </button>
 
-                    {isExpanded && (
-                      <div className="border-t border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 py-2.5">
-                        {details.length ? (
-                          <div className="space-y-2">
-                            {details.map((detail) => (
-                              <div key={`${item.id}-${detail.label}`} className="space-y-0.5">
-                                <p className="text-[11px] font-medium text-[var(--ledger-text-muted)]">
-                                  {detail.label}
-                                </p>
-                                <p className="text-[11px] leading-5 text-[var(--ledger-text-secondary)]">
-                                  {detail.value}
-                                </p>
+            {!todayCollapsed && (
+              <div className="space-y-0.5 pl-1">
+                {isLoadingToday && todayItems.length === 0 && completedToday.length === 0 ? (
+                  <SkeletonList />
+                ) : (
+                  <>
+                    {visibleTodayItems.length > 0 ? (
+                      <div className="space-y-0.5">
+                        {visibleTodayItems.map((item) => (
+                          <div
+                            key={item.id}
+                            role="button"
+                            tabIndex={0}
+                            onContextMenu={(e) => {
+                              e.preventDefault();
+                              setContextMenu({
+                                type: 'today-active',
+                                id: item.id,
+                                kind: item.kind,
+                                x: e.clientX,
+                                y: e.clientY,
+                              });
+                            }}
+                            onClick={() =>
+                              void window.desktopWindow?.toggleModule('dashboard', {
+                                focusTaskId: item.id,
+                              })
+                            }
+                            onKeyDown={(event) => {
+                              if (event.key !== 'Enter' && event.key !== ' ') return;
+                              event.preventDefault();
+                              void window.desktopWindow?.toggleModule('dashboard', {
+                                focusTaskId: item.id,
+                              });
+                            }}
+                            className="group flex w-full items-start gap-2 rounded-lg px-2 py-1.5 text-left transition hover:bg-[var(--ledger-surface-muted)]"
+                          >
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                void toggleCompleteTodayItem(item.id);
+                              }}
+                              className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center text-[var(--ledger-text-muted)] transition hover:text-[var(--ledger-text-primary)]"
+                              title="Mark complete"
+                            >
+                              <Circle size={13} className="shrink-0" />
+                            </button>
+                            <div className="min-w-0 flex-1">
+                              <div className="truncate text-[12px] leading-4 text-[var(--ledger-text-primary)]">
+                                {item.title}
+                              </div>
+                              <div className="mt-0.5 flex min-w-0 items-center gap-1.5 truncate text-[10px] text-[var(--ledger-text-muted)]">
+                                <span
+                                  className="h-1.5 w-1.5 shrink-0 rounded-full"
+                                  style={{
+                                    backgroundColor: item.workspace_color || 'var(--ledger-border-subtle)',
+                                  }}
+                                />
+                                <span className="truncate">
+                                  {item.project_name || item.workspace_name || 'Workspace'}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                        {todayItems.length > visibleTodayItems.length && (
+                          <button
+                            type="button"
+                            onClick={() => void window.desktopWindow?.toggleModule('dashboard')}
+                            className="w-full rounded-lg px-2 py-1 text-left text-[11px] font-medium text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]"
+                          >
+                            View all today
+                          </button>
+                        )}
+                      </div>
+                    ) : (
+                      <p className="px-2 py-1 text-[11px] text-[var(--ledger-text-muted)]">
+                        Nothing for today.
+                      </p>
+                    )}
+
+                    {todayAddRowOpen ? (
+                      <div className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 transition hover:bg-[var(--ledger-surface-muted)]">
+                        <input
+                          ref={todayAddInputRef}
+                          value={todayQuickDraft}
+                          onChange={(e) => setTodayQuickDraft(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === '+') {
+                              e.preventDefault();
+                              void saveTodayQuickTask();
+                            }
+                            if (e.key === 'Escape' && !todayQuickDraft.trim()) {
+                              e.preventDefault();
+                              setTodayQuickDraft('');
+                              setTodayAddRowOpen(false);
+                            }
+                          }}
+                          onBlur={() => {
+                            if (!todayQuickDraft.trim()) {
+                              setTodayQuickDraft('');
+                              setTodayAddRowOpen(false);
+                            }
+                          }}
+                          placeholder="Add task for today..."
+                          className="min-w-0 flex-1 bg-transparent px-0 py-0.5 text-[12px] leading-4 text-[var(--ledger-text-primary)] placeholder:text-[var(--ledger-placeholder)] focus:outline-none"
+                          disabled={todayQuickSaving || isLoadingToday}
+                        />
+                        <button
+                          type="button"
+                          onMouseDown={(e) => e.preventDefault()}
+                          onClick={() => void saveTodayQuickTask()}
+                          className="inline-flex h-6 items-center justify-center rounded-full px-2 text-[11px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] disabled:opacity-60"
+                          disabled={todayQuickSaving || isLoadingToday || !todayQuickDraft.trim()}
+                          aria-label="Add task"
+                        >
+                          +
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setTodayAddRowOpen(true)}
+                        className="flex h-8 w-full items-center gap-2 rounded-lg px-2 text-left text-[12px] text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]"
+                      >
+                        <Plus size={13} className="shrink-0" />
+                        <span className="truncate">Add task</span>
+                      </button>
+                    )}
+
+                    {completedToday.length > 0 && (
+                      <div className="space-y-0.5 pt-0.5">
+                        <button
+                          type="button"
+                          onClick={() => setCompletedTodayExpanded((prev) => !prev)}
+                          className="flex h-8 w-full items-center justify-between rounded-lg px-2 text-left text-[12px] text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]"
+                        >
+                          <span>Completed · {completedToday.length}</span>
+                          <ChevronDown
+                            size={14}
+                            className={`shrink-0 transition-transform ${
+                              completedTodayExpanded ? 'rotate-180' : ''
+                            }`}
+                          />
+                        </button>
+                        {completedTodayExpanded && (
+                          <div className="space-y-0.5">
+                            {visibleCompletedToday.map((item) => (
+                              <div
+                                key={item.id}
+                                role="button"
+                                tabIndex={0}
+                                onContextMenu={(e) => {
+                                  e.preventDefault();
+                                  setContextMenu({
+                                    type: 'today-completed',
+                                    id: item.id,
+                                    kind: item.kind,
+                                    x: e.clientX,
+                                    y: e.clientY,
+                                  });
+                                }}
+                                onClick={() =>
+                                  void window.desktopWindow?.toggleModule('dashboard', {
+                                    focusTaskId: item.id,
+                                  })
+                                }
+                                onKeyDown={(event) => {
+                                  if (event.key !== 'Enter' && event.key !== ' ') return;
+                                  event.preventDefault();
+                                  void window.desktopWindow?.toggleModule('dashboard', {
+                                    focusTaskId: item.id,
+                                  });
+                                }}
+                                className="group flex w-full items-start gap-2 rounded-xl px-2 py-1.5 text-left transition hover:bg-[var(--ledger-surface-muted)]"
+                              >
+                                <button
+                                  type="button"
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    void toggleCompleteTodayItem(item.id);
+                                  }}
+                                  className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center text-[var(--ledger-success)] transition hover:text-[var(--ledger-success)]"
+                                  title="Mark incomplete"
+                                >
+                                  <Check size={12} />
+                                </button>
+                                <div className="min-w-0 flex-1">
+                                  <div className="truncate text-[12px] leading-4 text-[var(--ledger-text-secondary)] line-through decoration-[color:var(--ledger-border-strong)]">
+                                    {item.title}
+                                  </div>
+                                  <div className="mt-0.5 flex min-w-0 items-center gap-1.5 truncate text-[10px] text-[var(--ledger-text-muted)]">
+                                    <span
+                                      className="h-1.5 w-1.5 shrink-0 rounded-full"
+                                      style={{
+                                        backgroundColor: item.workspace_color || 'var(--ledger-border-subtle)',
+                                      }}
+                                    />
+                                    <span className="truncate">
+                                      {item.project_name || item.workspace_name || 'Workspace'}
+                                    </span>
+                                  </div>
+                                </div>
                               </div>
                             ))}
+                            {completedToday.length > visibleCompletedToday.length && (
+                              <button
+                                type="button"
+                                onClick={() => void window.desktopWindow?.toggleModule('dashboard')}
+                                className="w-full rounded-xl px-2 py-1 text-left text-[11px] font-medium text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]"
+                              >
+                                View all completed
+                              </button>
+                            )}
                           </div>
-                        ) : (
-                          <p className="text-[11px] leading-5 text-[var(--ledger-text-muted)]">
-                            No attached project, note, calendar, or event notes yet.
-                          </p>
                         )}
                       </div>
                     )}
-                  </div>
-                );
-              })
+                  </>
+                )}
+              </div>
             )}
+          </section>
+        </section>
+
+        <section className="space-y-2">
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={toggleProjectsCollapsed}
+              className={`flex h-9 min-w-0 flex-1 items-center justify-between gap-3 rounded-xl px-2.5 text-left text-[13px] font-medium transition ${
+                projectsCollapsed
+                  ? 'text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]'
+                  : 'bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-primary)]'
+              }`}
+            >
+              <span className="flex min-w-0 items-center gap-2.5">
+                <Folder size={15} className="shrink-0 text-[var(--ledger-text-muted)]" />
+                <span className="truncate">Projects</span>
+              </span>
+              <span className="flex shrink-0 items-center gap-2 text-[11px] text-[var(--ledger-text-muted)]">
+                <span>{projects.length}</span>
+                <ChevronDown
+                  size={14}
+                  className={`transition-transform ${projectsCollapsed ? 'rotate-180' : ''}`}
+                />
+              </span>
+            </button>
           </div>
+
+          {!projectsCollapsed && (
+            <div className="space-y-1">
+              {isLoadingProjects ? (
+                <SkeletonList count={2} />
+              ) : projects.length === 0 ? (
+                <p className="px-0.5 text-xs text-[var(--ledger-text-muted)]">No active projects</p>
+              ) : (
+                <>
+                  {projects.slice(0, 4).map((project) => {
+                    const displayCompleteness = Math.max(0, Math.min(100, Number(project.completeness) || 0));
+                    const projectAccent = project.color || 'var(--ledger-accent)';
+
+                    return (
+                      <button
+                        key={project.id}
+                        type="button"
+                        onClick={() => {
+                          void window.desktopWindow?.toggleModule('projects', {
+                            kind: 'projects',
+                            focusProjectId: project.id,
+                          });
+                        }}
+                        onContextMenu={(e) => {
+                          e.preventDefault();
+                          setContextMenu({
+                            type: 'project',
+                            id: project.id,
+                            x: e.clientX,
+                            y: e.clientY,
+                          });
+                        }}
+                        className="group w-full rounded-xl px-2 py-2 text-left transition hover:bg-[var(--ledger-surface-muted)]"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex min-w-0 items-center gap-2">
+                            <span
+                              className="h-2 w-2 shrink-0 rounded-full border border-[color:rgba(17,24,39,0.05)]"
+                              style={{ backgroundColor: projectAccent }}
+                            />
+                            <p className="truncate text-xs font-medium text-[var(--ledger-text-primary)]">
+                              {project.name}
+                            </p>
+                          </div>
+                          <span className="shrink-0 text-[11px] font-medium text-[var(--ledger-text-muted)]">
+                            {displayCompleteness}%
+                          </span>
+                        </div>
+                        <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-[var(--ledger-border-subtle)]">
+                          <div
+                            className="h-full rounded-full transition-all"
+                            style={{
+                              width: `${displayCompleteness}%`,
+                              backgroundColor: projectAccent,
+                            }}
+                          />
+                        </div>
+                      </button>
+                    );
+                  })}
+                  {projects.length > 4 && (
+                    <button
+                      type="button"
+                      onClick={() => window.desktopWindow?.toggleModule('projects')}
+                      className="w-full rounded-lg px-2 py-1 text-left text-[11px] font-medium text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]"
+                    >
+                      +{projects.length - 4} more projects
+                    </button>
+                  )}
+                  {isCreatingProject ? (
+                    <div className={`space-y-2 overflow-hidden p-3 ${sidebarTheme.surfaceSoft}`}>
+                      <input
+                        value={newProjectName}
+                        onChange={(e) => setNewProjectName(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            void createProject();
+                          }
+                        }}
+                        placeholder="Project name"
+                        className={`w-full h-8 px-2 text-xs rounded-md ${sidebarTheme.fieldMuted}`}
+                        autoFocus
+                      />
+                      <button
+                        onClick={() => void createProject()}
+                        disabled={!newProjectName.trim()}
+                        className={`w-full h-7 rounded-md text-white text-xs font-medium disabled:opacity-60 ${sidebarTheme.buttonPrimary}`}
+                      >
+                        Create Project
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setIsCreatingProject(true)}
+                      className="flex h-8 w-full items-center gap-2 rounded-xl px-2 text-left text-[12px] text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]"
+                    >
+                      <Plus size={13} className="shrink-0" />
+                      <span className="truncate">Add Project</span>
+                    </button>
+                  )}
+                </>
+              )}
+            </div>
+          )}
         </section>
 
         {saveError && <p className="text-[11px] text-[var(--ledger-danger)]">{saveError}</p>}
+        </section>
       </div>
 
       {contextMenu &&
@@ -3610,32 +3314,6 @@ export const ExpandedSidebar = ({
           >
             {contextMenu.type === 'project' && (
               <>
-                {expandedProjectId === contextMenu.id ? (
-                  <button
-                    onClick={() => {
-                      setExpandedProjectId(null);
-                      setContextMenu(null);
-                    }}
-                    className={sidebarTheme.menuItem}
-                  >
-                    <ChevronUp size={14} />
-                    Collapse
-                  </button>
-                ) : (
-                  <button
-                    onClick={() => {
-                      const project = projects.find((p) => p.id === contextMenu.id);
-                      if (project) {
-                        setExpandedProjectId(contextMenu.id);
-                        setContextMenu(null);
-                      }
-                    }}
-                    className={sidebarTheme.menuItem}
-                  >
-                    <ChevronDown size={14} />
-                    Expand
-                  </button>
-                )}
                 <button
                   onClick={() => {
                     const project = projects.find((p) => p.id === contextMenu.id);
@@ -3660,69 +3338,6 @@ export const ExpandedSidebar = ({
                 >
                   <Trash2 size={14} />
                   Delete
-                </button>
-              </>
-            )}
-
-            {contextMenu.type === 'upcoming' && (
-              <>
-                {expandedUpcomingId === contextMenu.id ? (
-                  <button
-                    onClick={() => {
-                      setExpandedUpcomingId(null);
-                      setContextMenu(null);
-                    }}
-                    className={sidebarTheme.menuItem}
-                  >
-                    <ChevronUp size={14} />
-                    Collapse
-                  </button>
-                ) : (
-                  <button
-                    onClick={() => {
-                      setExpandedUpcomingId(contextMenu.id);
-                      setContextMenu(null);
-                    }}
-                    className={sidebarTheme.menuItem}
-                  >
-                    <ChevronDown size={14} />
-                    Expand
-                  </button>
-                )}
-                <button
-                  onClick={() => {
-                    const event = upcomingItems.find((e) => e.id === contextMenu.id);
-                    if (event) {
-                      void window.desktopWindow?.openModule('calendar', event.rawDate);
-                      setContextMenu(null);
-                    }
-                  }}
-                  className={sidebarTheme.menuItemAccent}
-                >
-                  <CalendarDays size={14} />
-                  Open in Calendar
-                </button>
-                <button
-                  onClick={() => {
-                    const targetId = contextMenu.id;
-                    const previousItems = upcomingItems;
-                    setUpcomingItems((prev) => prev.filter((item) => item.id !== targetId));
-                    setExpandedUpcomingId((current) => (current === targetId ? null : current));
-                    setContextMenu(null);
-                    void (async () => {
-                      try {
-                        await api.deleteEvent(targetId);
-                        window.ipcRenderer?.send('calendar:items-updated');
-                      } catch (error) {
-                        setUpcomingItems(previousItems);
-                        setSaveError('Could not delete event.');
-                      }
-                    })();
-                  }}
-                  className={sidebarTheme.menuItemDanger}
-                >
-                  <Trash2 size={14} />
-                  Delete Event
                 </button>
               </>
             )}
@@ -3757,23 +3372,6 @@ export const ExpandedSidebar = ({
           </div>,
           document.body
         )}
-
-      <div className="px-5 space-y-2.5 border-t border-[color:var(--ledger-border-subtle)] pt-4">
-        <button
-          onClick={() => window.desktopWindow?.toggleModule('dashboard')}
-          className={`w-full px-3 py-2 text-sm font-medium rounded-lg transition flex items-center justify-center gap-2 text-white ${sidebarTheme.buttonPrimary}`}
-        >
-          <BarChart3 size={16} />
-          Open Dashboard
-        </button>
-        <button
-          onClick={signOut}
-          className={`w-full px-3 py-2 text-sm font-medium rounded-lg transition flex items-center justify-center gap-2 border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)] hover:bg-[color:rgba(255,95,64,0.08)] hover:text-[var(--ledger-accent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-accent)]/20`}
-        >
-          <LogOut size={15} />
-          Sign Out
-        </button>
-      </div>
     </div>
   );
 };
