@@ -333,9 +333,9 @@ const normalizeProjectType = (value) => {
 const projectSelectColumns =
   'id, name, description, status, completeness, color, start_date, end_date, project_type, lead_id, created_by, created_at, updated_at';
 const projectMilestoneSelectColumns =
-  'id, workspace_id, project_id, title, milestone_date, type, note, completed, linked_note_id, linked_reminder_id, linked_event_id, created_by, updated_by, created_at, updated_at';
+  'id, workspace_id, project_id, title, milestone_date, type, note, completed, linked_note_id, linked_reminder_id, linked_event_id, assigned_team_id, created_by, updated_by, created_at, updated_at';
 const taskSelectColumns =
-  'id, workspace_id, project_id, milestone_id, title, description, notes, due_date, due_time, status, priority, assigned_to, tags, completed_at, source, source_platform, created_at, updated_at';
+  'id, workspace_id, project_id, milestone_id, title, description, notes, due_date, due_time, status, priority, assigned_to, assigned_team_id, tags, completed_at, source, source_platform, created_at, updated_at';
 const taskSelectWithHorizonColumns = `${taskSelectColumns}, task_horizon`;
 const reminderSelectColumns =
   'id, workspace_id, user_id, title, body, remind_at, status, linked_type, linked_id, completed_at, dismissed_at, snoozed_until, source, source_platform, created_at, updated_at, calendar_id, project_id, note_id, notes, color, is_done, created_by, series_id, series_type, recurrence_rule';
@@ -4091,6 +4091,16 @@ const ensureWorkspaceResource = async (table, id, workspaceId) => {
   return Boolean(result.data?.id);
 };
 
+const ensureWorkspaceTeam = async (teamId, workspaceId) => {
+  const result = await supabase
+    .from('workspace_teams')
+    .select('id')
+    .eq('id', teamId)
+    .eq('workspace_id', workspaceId)
+    .maybeSingle();
+  return Boolean(result.data?.id);
+};
+
 const isMissingTableError = (error) => {
   const message = String(error?.message ?? '').toLowerCase();
   return message.includes('relation') && message.includes('does not exist');
@@ -6673,6 +6683,425 @@ app.delete(
   }
 );
 
+const teamRoleValues = ['lead', 'member'];
+
+const normalizeTeamIdentifier = (value) =>
+  String(value ?? '')
+    .trim()
+    .replace(/[^a-zA-Z0-9]/g, '')
+    .slice(0, 8)
+    .toUpperCase();
+
+const getInitialsFromName = (name, email = null) => {
+  const source = String(name ?? '').trim() || String(email ?? '').split('@')[0] || 'Member';
+  const parts = source.split(/\s+/).filter(Boolean);
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
+};
+
+const buildTeamWorkItem = ({
+  kind,
+  row,
+  projectName,
+}) => {
+  const dueDate = kind === 'task' ? row.due_date ?? null : row.milestone_date ?? null;
+  const dueLabel = dueDate ? new Date(dueDate).toLocaleDateString([], { month: 'short', day: 'numeric' }) : null;
+  const detail = [
+    kind === 'task' ? 'Task' : 'Milestone',
+    projectName,
+    dueLabel,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+
+  return {
+    kind,
+    sourceId: row.id,
+    title: row.title,
+    projectId: row.project_id ?? null,
+    projectName,
+    detail,
+    dueDate,
+    priority: kind === 'task' ? row.priority ?? null : null,
+    typeLabel: kind === 'milestone' ? row.type ?? 'Custom' : null,
+    searchText: [row.title, projectName, detail, row.priority, row.type].filter(Boolean).join(' ').toLowerCase(),
+    assignedAt: row.updated_at ?? row.created_at ?? new Date().toISOString(),
+  };
+};
+
+const loadWorkspaceTeams = async (workspaceId, currentUserId) => {
+  const [teamsResult, membersResult, projectsResult, tasksResult, milestonesResult] = await Promise.all([
+    supabase
+      .from('workspace_teams')
+      .select('id, workspace_id, created_by, updated_by, name, identifier, description, color, created_at, updated_at')
+      .eq('workspace_id', workspaceId)
+      .order('created_at', { ascending: true }),
+    supabase
+      .from('workspace_team_members')
+      .select('team_id, user_id, role, created_by, created_at')
+      .eq('workspace_id', workspaceId)
+      .order('created_at', { ascending: true }),
+    supabase
+      .from('projects')
+      .select('id, name')
+      .eq('workspace_id', workspaceId),
+    supabase
+      .from('tasks')
+      .select(taskSelectColumns)
+      .eq('workspace_id', workspaceId)
+      .not('assigned_team_id', 'is', null),
+    supabase
+      .from('project_milestones')
+      .select(projectMilestoneSelectColumns)
+      .eq('workspace_id', workspaceId)
+      .not('assigned_team_id', 'is', null),
+  ]);
+
+  if (teamsResult.error) throw teamsResult.error;
+  if (membersResult.error) throw membersResult.error;
+  if (projectsResult.error) throw projectsResult.error;
+  if (tasksResult.error) throw tasksResult.error;
+  if (milestonesResult.error) throw milestonesResult.error;
+
+  const teamRows = teamsResult.data ?? [];
+  const memberRows = membersResult.data ?? [];
+  const projectMap = new Map((projectsResult.data ?? []).map((project) => [project.id, project.name]));
+
+  const userIds = [
+    ...new Set(
+      [
+        ...teamRows.map((team) => team.created_by).filter(Boolean),
+        ...memberRows.map((row) => row.user_id).filter(Boolean),
+      ]
+    ),
+  ];
+
+  const usersResult =
+    userIds.length > 0
+      ? await supabase.from('users').select('id, email, full_name').in('id', userIds)
+      : { data: [], error: null };
+
+  if (usersResult.error) throw usersResult.error;
+  const userMap = new Map((usersResult.data ?? []).map((user) => [user.id, user]));
+
+  const membersByTeamId = new Map();
+  for (const row of memberRows) {
+    if (!row.team_id) continue;
+    const member = userMap.get(row.user_id);
+    const fullName = member?.full_name?.trim() || member?.email?.split('@')[0] || 'Team member';
+    const nextMember = {
+      id: row.user_id,
+      name: fullName,
+      email: member?.email ?? null,
+      role: String(row.role ?? 'member').toLowerCase() === 'lead' ? 'lead' : 'member',
+      initials: getInitialsFromName(fullName, member?.email ?? null),
+    };
+    if (!membersByTeamId.has(row.team_id)) {
+      membersByTeamId.set(row.team_id, []);
+    }
+    membersByTeamId.get(row.team_id).push(nextMember);
+  }
+
+  const tasksByTeamId = new Map();
+  for (const task of tasksResult.data ?? []) {
+    if (!task.assigned_team_id) continue;
+    const projectName = task.project_id ? projectMap.get(task.project_id) ?? 'Workspace' : 'Workspace';
+    const item = buildTeamWorkItem({ kind: 'task', row: task, projectName });
+    if (!tasksByTeamId.has(task.assigned_team_id)) {
+      tasksByTeamId.set(task.assigned_team_id, []);
+    }
+    tasksByTeamId.get(task.assigned_team_id).push(item);
+  }
+
+  const milestonesByTeamId = new Map();
+  for (const milestone of milestonesResult.data ?? []) {
+    if (!milestone.assigned_team_id) continue;
+    const projectName = milestone.project_id ? projectMap.get(milestone.project_id) ?? 'Workspace' : 'Workspace';
+    const item = buildTeamWorkItem({ kind: 'milestone', row: milestone, projectName });
+    if (!milestonesByTeamId.has(milestone.assigned_team_id)) {
+      milestonesByTeamId.set(milestone.assigned_team_id, []);
+    }
+    milestonesByTeamId.get(milestone.assigned_team_id).push(item);
+  }
+
+  return teamRows.map((team) => {
+    const teamMembers = (membersByTeamId.get(team.id) ?? []).sort((a, b) => {
+      if (a.role !== b.role) return a.role === 'lead' ? -1 : 1;
+      return String(a.name ?? '').localeCompare(String(b.name ?? ''));
+    });
+    const taskItems = (tasksByTeamId.get(team.id) ?? []).sort((a, b) =>
+      String(b.assignedAt).localeCompare(String(a.assignedAt))
+    );
+    const milestoneItems = (milestonesByTeamId.get(team.id) ?? []).sort((a, b) =>
+      String(b.assignedAt).localeCompare(String(a.assignedAt))
+    );
+    const assignedWork = [...taskItems, ...milestoneItems].sort((a, b) =>
+      String(b.assignedAt).localeCompare(String(a.assignedAt))
+    );
+    const activeProjects = [...new Set(assignedWork.map((item) => item.projectName).filter(Boolean))];
+    const currentUserMember = teamMembers.find((member) => member.id === currentUserId) ?? null;
+    const currentUserRole =
+      currentUserMember?.role ?? (team.created_by === currentUserId ? 'lead' : null);
+
+    return {
+      id: team.id,
+      name: team.name,
+      identifier: team.identifier,
+      description: team.description ?? null,
+      color: team.color ?? '#FF5F40',
+      members: teamMembers,
+      assignedWork,
+      assignedCount: taskItems.length,
+      milestoneCount: milestoneItems.length,
+      activeProjects,
+      notes: [],
+      currentUserRole,
+    };
+  });
+};
+
+const ensureTeamManageAccess = async ({ userId, teamId, workspaceId }) => {
+  const access = await requireWorkspaceAccess(userId, workspaceId, 'member');
+  if (access.role === 'owner' || access.role === 'admin') {
+    return access;
+  }
+
+  const teamResult = await supabase
+    .from('workspace_teams')
+    .select('id, created_by, workspace_id')
+    .eq('id', teamId)
+    .eq('workspace_id', workspaceId)
+    .maybeSingle();
+
+  if (teamResult.error) throw teamResult.error;
+  if (!teamResult.data?.id) {
+    const error = new Error('Team not found');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  if (teamResult.data.created_by === userId) {
+    return access;
+  }
+
+  const memberResult = await supabase
+    .from('workspace_team_members')
+    .select('id, role')
+    .eq('workspace_id', workspaceId)
+    .eq('team_id', teamId)
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  if (memberResult.error) throw memberResult.error;
+  if (String(memberResult.data?.role ?? '').toLowerCase() === 'lead') {
+    return access;
+  }
+
+  const error = new Error('Team access denied');
+  error.statusCode = 403;
+  throw error;
+};
+
+app.get('/api/teams', authMiddleware, rateLimit('read'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    const access = await requireWorkspaceAccess(req.authUser.id, workspaceId, 'member');
+    const teams = await loadWorkspaceTeams(workspaceId, req.authUser.id);
+    res.json({ current_user_role: access.role, teams });
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
+app.post('/api/teams', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    await requireWorkspaceAccess(req.authUser.id, workspaceId, 'member');
+    const name = String(req.body?.name ?? '').trim();
+    if (!name) {
+      return res.status(400).json({ error: 'Team name is required' });
+    }
+
+    const identifierSource = normalizeTeamIdentifier(req.body?.identifier) || normalizeTeamIdentifier(name);
+    if (!identifierSource) {
+      return res.status(400).json({ error: 'Team identifier is required' });
+    }
+
+    const description = normalizeNullableText(req.body?.description);
+    const color = normalizeNullableText(req.body?.color) || '#FF5F40';
+
+    let identifier = identifierSource;
+    for (let suffix = 0; suffix < 20; suffix += 1) {
+      const candidate = suffix === 0 ? identifierSource : `${identifierSource}${suffix + 1}`;
+      const existing = await supabase
+        .from('workspace_teams')
+        .select('id')
+        .eq('workspace_id', workspaceId)
+        .eq('identifier', candidate)
+        .maybeSingle();
+      if (existing.error) throw existing.error;
+      if (!existing.data?.id) {
+        identifier = candidate;
+        break;
+      }
+    }
+
+    const teamInsert = await supabase
+      .from('workspace_teams')
+      .insert({
+        workspace_id: workspaceId,
+        created_by: req.authUser.id,
+        updated_by: req.authUser.id,
+        name,
+        identifier,
+        description,
+        color,
+      })
+      .select('id, workspace_id, created_by, updated_by, name, identifier, description, color, created_at, updated_at')
+      .single();
+
+    if (teamInsert.error) throw teamInsert.error;
+
+    const memberInsert = await supabase.from('workspace_team_members').insert({
+      workspace_id: workspaceId,
+      team_id: teamInsert.data.id,
+      user_id: req.authUser.id,
+      role: 'lead',
+      created_by: req.authUser.id,
+    });
+    if (memberInsert.error) throw memberInsert.error;
+
+    const teams = await loadWorkspaceTeams(workspaceId, req.authUser.id);
+    const createdTeam = teams.find((team) => team.id === teamInsert.data.id) ?? null;
+    res.status(201).json({ team: createdTeam ?? teamInsert.data, current_user_role: 'lead' });
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
+app.patch('/api/teams/:teamId', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    const teamId = String(req.params.teamId);
+    await ensureTeamManageAccess({ userId: req.authUser.id, teamId, workspaceId });
+
+    const update = { updated_at: new Date().toISOString(), updated_by: req.authUser.id };
+    if (req.body?.name !== undefined) {
+      const name = String(req.body.name ?? '').trim();
+      if (!name) return res.status(400).json({ error: 'Team name is required' });
+      update.name = name;
+    }
+    if (req.body?.identifier !== undefined) {
+      const identifier = normalizeTeamIdentifier(req.body.identifier);
+      if (!identifier) return res.status(400).json({ error: 'Team identifier is required' });
+      update.identifier = identifier;
+    }
+    if (req.body?.description !== undefined) update.description = normalizeNullableText(req.body.description);
+    if (req.body?.color !== undefined) update.color = normalizeNullableText(req.body.color) || '#FF5F40';
+
+    const updated = await supabase
+      .from('workspace_teams')
+      .update(update)
+      .eq('workspace_id', workspaceId)
+      .eq('id', teamId)
+      .select('id, workspace_id, created_by, updated_by, name, identifier, description, color, created_at, updated_at')
+      .single();
+
+    if (updated.error) throw updated.error;
+    const teams = await loadWorkspaceTeams(workspaceId, req.authUser.id);
+    const team = teams.find((item) => item.id === teamId) ?? null;
+    res.json({ team: team ?? updated.data });
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
+app.post('/api/teams/:teamId/members', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    const teamId = String(req.params.teamId);
+    await ensureTeamManageAccess({ userId: req.authUser.id, teamId, workspaceId });
+
+    const userId = normalizeNullableText(req.body?.user_id);
+    if (!userId) return res.status(400).json({ error: 'Member user id is required' });
+
+    const teamAllowed = await ensureWorkspaceTeam(teamId, workspaceId);
+    if (!teamAllowed) return res.status(404).json({ error: 'Team not found' });
+
+    const workspaceMember = await supabase
+      .from('workspace_members')
+      .select('user_id')
+      .eq('workspace_id', workspaceId)
+      .eq('user_id', userId)
+      .maybeSingle();
+    if (workspaceMember.error) throw workspaceMember.error;
+    if (!workspaceMember.data?.user_id && userId !== req.authUser.id) {
+      return res.status(404).json({ error: 'Workspace member not found' });
+    }
+
+    const role = String(req.body?.role ?? 'member').toLowerCase() === 'lead' ? 'lead' : 'member';
+    const insert = await supabase
+      .from('workspace_team_members')
+      .upsert(
+        {
+          workspace_id: workspaceId,
+          team_id: teamId,
+          user_id: userId,
+          role,
+          created_by: req.authUser.id,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'team_id,user_id' }
+      )
+      .select('id')
+      .single();
+
+    if (insert.error) throw insert.error;
+    const teams = await loadWorkspaceTeams(workspaceId, req.authUser.id);
+    const team = teams.find((item) => item.id === teamId) ?? null;
+    res.json({ team });
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
+app.delete('/api/teams/:teamId/members/:userId', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    const teamId = String(req.params.teamId);
+    const userId = String(req.params.userId);
+    await ensureTeamManageAccess({ userId: req.authUser.id, teamId, workspaceId });
+
+    const deleted = await supabase
+      .from('workspace_team_members')
+      .delete()
+      .eq('workspace_id', workspaceId)
+      .eq('team_id', teamId)
+      .eq('user_id', userId);
+
+    if (deleted.error) throw deleted.error;
+    const teams = await loadWorkspaceTeams(workspaceId, req.authUser.id);
+    const team = teams.find((item) => item.id === teamId) ?? null;
+    res.json({ team });
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
+app.delete('/api/teams/:teamId', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    const teamId = String(req.params.teamId);
+    await ensureTeamManageAccess({ userId: req.authUser.id, teamId, workspaceId });
+
+    const deleted = await supabase.from('workspace_teams').delete().eq('workspace_id', workspaceId).eq('id', teamId);
+    if (deleted.error) throw deleted.error;
+    res.json({ success: true });
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
 app.get('/api/invitations/:token', rateLimit('read'), async (req, res) => {
   try {
     const token = String(req.params.token ?? '').trim();
@@ -7267,6 +7696,7 @@ app.post('/api/projects/:id/milestones', authMiddleware, rateLimit('write'), asy
     const linkedNoteId = normalizeNullableText(req.body?.linked_note_id);
     const linkedReminderId = normalizeNullableText(req.body?.linked_reminder_id);
     const linkedEventId = normalizeNullableText(req.body?.linked_event_id);
+    const assignedTeamId = normalizeNullableText(req.body?.assigned_team_id);
 
     if (!title) return res.status(400).json({ error: 'Milestone title required' });
     if (!milestoneDate) return res.status(400).json({ error: 'Milestone date required' });
@@ -7284,6 +7714,10 @@ app.post('/api/projects/:id/milestones', authMiddleware, rateLimit('write'), asy
     if (!noteAllowed) return res.status(404).json({ error: 'Linked note not found' });
     if (!reminderAllowed) return res.status(404).json({ error: 'Linked reminder not found' });
     if (!eventAllowed) return res.status(404).json({ error: 'Linked event not found' });
+    if (assignedTeamId) {
+      const teamAllowed = await ensureWorkspaceTeam(assignedTeamId, workspaceId);
+      if (!teamAllowed) return res.status(404).json({ error: 'Team not found' });
+    }
 
     const { data, error } = await supabase
       .from('project_milestones')
@@ -7300,6 +7734,7 @@ app.post('/api/projects/:id/milestones', authMiddleware, rateLimit('write'), asy
         linked_note_id: linkedNoteId,
         linked_reminder_id: linkedReminderId,
         linked_event_id: linkedEventId,
+        assigned_team_id: assignedTeamId,
       })
       .select(projectMilestoneSelectColumns)
       .single();
@@ -7337,6 +7772,14 @@ app.patch('/api/project-milestones/:id', authMiddleware, rateLimit('write'), asy
       const projectAllowed = await ensureWorkspaceResource('projects', projectId, workspaceId);
       if (!projectAllowed) return res.status(404).json({ error: 'Project not found' });
       update.project_id = projectId;
+    }
+    if (req.body?.assigned_team_id !== undefined) {
+      const assignedTeamId = normalizeNullableText(req.body.assigned_team_id);
+      if (assignedTeamId) {
+        const teamAllowed = await ensureWorkspaceTeam(assignedTeamId, workspaceId);
+        if (!teamAllowed) return res.status(404).json({ error: 'Team not found' });
+      }
+      update.assigned_team_id = assignedTeamId;
     }
 
     const linkChecks = [];
@@ -7749,6 +8192,14 @@ app.post(
         }
       }
 
+      const assignedTeamId = normalizeNullableText(req.body?.assigned_team_id);
+      if (assignedTeamId) {
+        const teamAllowed = await ensureWorkspaceTeam(assignedTeamId, workspaceId);
+        if (!teamAllowed) {
+          return res.status(404).json({ error: 'Team not found' });
+        }
+      }
+
       const milestoneId = req.body?.milestone_id ? String(req.body.milestone_id) : null;
       if (milestoneId) {
         const { data: milestone, error: milestoneError } = await supabase
@@ -7810,6 +8261,7 @@ app.post(
           status: req.body?.status ? String(req.body.status) : 'todo',
           priority: req.body?.priority ? String(req.body.priority) : 'medium',
           assigned_to: assignedTo,
+          assigned_team_id: assignedTeamId,
           tags,
           source,
           source_platform: sourcePlatform,
@@ -7884,6 +8336,16 @@ app.patch('/api/tasks/:id', authMiddleware, rateLimit('write'), async (req, res)
     if (req.body?.priority !== undefined) update.priority = String(req.body.priority);
     if (req.body?.assigned_to !== undefined)
       update.assigned_to = req.body.assigned_to ? String(req.body.assigned_to) : null;
+    if (req.body?.assigned_team_id !== undefined) {
+      const assignedTeamId = normalizeNullableText(req.body.assigned_team_id);
+      if (assignedTeamId) {
+        const teamAllowed = await ensureWorkspaceTeam(assignedTeamId, workspaceId);
+        if (!teamAllowed) {
+          return res.status(404).json({ error: 'Team not found' });
+        }
+      }
+      update.assigned_team_id = assignedTeamId;
+    }
     if (req.body?.tags !== undefined) {
       update.tags = Array.isArray(req.body.tags)
         ? req.body.tags.map((tag) => String(tag).trim()).filter(Boolean)

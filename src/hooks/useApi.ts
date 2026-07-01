@@ -410,6 +410,7 @@ export const useApi = () => {
           linked_note_id?: string | null;
           linked_reminder_id?: string | null;
           linked_event_id?: string | null;
+          assigned_team_id?: string | null;
         }
       ) =>
         request(`/api/projects/${projectId}/milestones`, {
@@ -428,6 +429,7 @@ export const useApi = () => {
           linked_note_id?: string | null;
           linked_reminder_id?: string | null;
           linked_event_id?: string | null;
+          assigned_team_id?: string | null;
         }
       ) =>
         request(`/api/project-milestones/${id}`, {
@@ -462,6 +464,7 @@ export const useApi = () => {
         status?: string;
         priority?: string;
         assigned_to?: string | null;
+        assigned_team_id?: string | null;
         tags?: string[];
         task_horizon?: 'today' | 'long_term';
         project_id?: string | null;
@@ -495,6 +498,48 @@ export const useApi = () => {
           method: 'DELETE',
           skipWorkspaceHeader: true,
           headers: { 'X-Workspace-Id': workspaceId },
+        }),
+
+      // Teams
+      getTeams: () => request('/api/teams'),
+      createTeam: (payload: {
+        name: string;
+        identifier?: string | null;
+        description?: string | null;
+        color?: string | null;
+      }) =>
+        request('/api/teams', {
+          method: 'POST',
+          body: JSON.stringify(payload),
+        }),
+      updateTeam: (
+        teamId: string,
+        payload: {
+          name?: string;
+          identifier?: string;
+          description?: string | null;
+          color?: string | null;
+        }
+      ) =>
+        request(`/api/teams/${teamId}`, {
+          method: 'PATCH',
+          body: JSON.stringify(payload),
+        }),
+      deleteTeam: (teamId: string) =>
+        request(`/api/teams/${teamId}`, {
+          method: 'DELETE',
+        }),
+      addTeamMember: (
+        teamId: string,
+        payload: { user_id: string; role?: 'lead' | 'member' }
+      ) =>
+        request(`/api/teams/${teamId}/members`, {
+          method: 'POST',
+          body: JSON.stringify(payload),
+        }),
+      removeTeamMember: (teamId: string, userId: string) =>
+        request(`/api/teams/${teamId}/members/${userId}`, {
+          method: 'DELETE',
         }),
 
       // Calendars
