@@ -24,6 +24,7 @@ import {
   Sparkles,
   Loader2,
   Trash2,
+  Users,
   X,
   UserRound,
 } from 'lucide-react';
@@ -624,6 +625,10 @@ export const ProjectsWindow = () => {
   const [projectContextMenu, setProjectContextMenu] = useState<ProjectContextMenuState | null>(
     null
   );
+  const [projectOwnerTeamPickerProjectId, setProjectOwnerTeamPickerProjectId] = useState<
+    string | null
+  >(null);
+  const [projectOwnerTeamDraft, setProjectOwnerTeamDraft] = useState('');
   const [taskContextMenu, setTaskContextMenu] = useState<TaskContextMenuState | null>(null);
   const [linkedNoteContextMenu, setLinkedNoteContextMenu] =
     useState<LinkedNoteContextMenuState | null>(null);
@@ -747,6 +752,7 @@ export const ProjectsWindow = () => {
     useState<ProjectsOverviewRange>('all');
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [isEditingBrief, setIsEditingBrief] = useState(false);
+  const [newProjectOwnerTeamId, setNewProjectOwnerTeamId] = useState('');
   const areSidePanelsCollapsed = isLeftPaneCollapsed && isRightPaneCollapsed;
   const taskComposerRef = useRef<HTMLDivElement | null>(null);
   const taskTitleInputRef = useRef<HTMLInputElement | null>(null);
@@ -1189,6 +1195,29 @@ export const ProjectsWindow = () => {
     return getClampedMenuPosition(projectContextMenu.x, projectContextMenu.y, 208, 304);
   }, [projectContextMenu]);
 
+  const projectOwnerTeamPickerProject = useMemo(
+    () => projects.find((project) => project.id === projectOwnerTeamPickerProjectId) ?? null,
+    [projectOwnerTeamPickerProjectId, projects]
+  );
+
+  const openProjectOwnerTeamPicker = useCallback((projectId: string) => {
+    setProjectOwnerTeamPickerProjectId(projectId);
+    setProjectContextMenu(null);
+  }, []);
+
+  const saveProjectOwnerTeam = useCallback(async () => {
+    if (!projectOwnerTeamPickerProject) return;
+    try {
+      const updated = (await api.updateProject(projectOwnerTeamPickerProject.id, {
+        owner_team_id: projectOwnerTeamDraft || null,
+      })) as ProjectRow;
+      setProjects((prev) => prev.map((project) => (project.id === updated.id ? updated : project)));
+      setProjectOwnerTeamPickerProjectId(null);
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Could not update project owner team.');
+    }
+  }, [api, projectOwnerTeamDraft, projectOwnerTeamPickerProject]);
+
   const taskMenuPosition = useMemo(() => {
     if (!taskContextMenu) return null;
     return getClampedMenuPosition(taskContextMenu.x, taskContextMenu.y, 256, 520);
@@ -1597,6 +1626,7 @@ export const ProjectsWindow = () => {
         status: 'NotStarted',
         project_type: newProjectType,
         lead_id: newProjectLeadId || null,
+        owner_team_id: newProjectOwnerTeamId || null,
       });
       const created = data as ProjectRow;
       let linkNoteError: string | null = null;
@@ -1623,6 +1653,7 @@ export const ProjectsWindow = () => {
       setNewProjectDescription('');
       setNewProjectType('code');
       setNewProjectLeadId('');
+      setNewProjectOwnerTeamId('');
       setNewProjectNoteIds([]);
       setNewProjectNotesSearch('');
       setIsNewProjectNotesExpanded(false);
@@ -1640,6 +1671,7 @@ export const ProjectsWindow = () => {
     newProjectDescription,
     newProjectLeadId,
     newProjectName,
+    newProjectOwnerTeamId,
     newProjectNoteIds,
     newProjectType,
     syncDraftFromProject,
@@ -1698,6 +1730,7 @@ export const ProjectsWindow = () => {
     setNewProjectDescription('');
     setNewProjectType('code');
     setNewProjectLeadId('');
+    setNewProjectOwnerTeamId('');
     setNewProjectNoteIds([]);
     setNewProjectNotes([]);
     setNewProjectNotesSearch('');
@@ -2955,6 +2988,14 @@ export const ProjectsWindow = () => {
       window.removeEventListener('keydown', onEscape);
     };
   }, [projectContextMenu]);
+
+  useEffect(() => {
+    if (!projectOwnerTeamPickerProject) {
+      setProjectOwnerTeamDraft('');
+      return;
+    }
+    setProjectOwnerTeamDraft(projectOwnerTeamPickerProject.owner_team_id ?? '');
+  }, [projectOwnerTeamPickerProject]);
 
   useEffect(() => {
     if (!taskContextMenu) return;
@@ -5246,6 +5287,18 @@ export const ProjectsWindow = () => {
                   </option>
                 ))}
             </select>
+            <select
+              value={newProjectOwnerTeamId}
+              onChange={(e) => setNewProjectOwnerTeamId(e.target.value)}
+              className="inline-flex h-8 min-w-[160px] items-center rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2.5 text-xs font-medium text-[var(--ledger-text-secondary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60"
+            >
+              <option value="">No owner team</option>
+              {workspaceTeams.map((team) => (
+                <option key={team.id} value={team.id}>
+                  {team.name}
+                </option>
+              ))}
+            </select>
 
             <button
               type="button"
@@ -6668,6 +6721,64 @@ export const ProjectsWindow = () => {
       </ModalOverlay>
 
       <ModalOverlay
+        isOpen={Boolean(projectOwnerTeamPickerProject)}
+        onClose={() => setProjectOwnerTeamPickerProjectId(null)}
+        backdropBorderRadius="inherit"
+        disablePortal
+        manageWindowChrome={false}
+        classNameContainer="w-full max-w-[420px] overflow-hidden rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-[var(--ledger-shadow)]"
+      >
+        <div className="flex items-start justify-between gap-4 border-b border-[color:var(--ledger-border-subtle)] px-5 py-4">
+          <div>
+            <p className="text-sm font-semibold text-[var(--ledger-text-primary)]">
+              Assign to team
+            </p>
+            <p className="mt-1 text-sm text-[var(--ledger-text-secondary)]">
+              Set the owner team for {projectOwnerTeamPickerProject?.name}
+            </p>
+          </div>
+          <ModalCloseButton
+            onClick={() => setProjectOwnerTeamPickerProjectId(null)}
+            ariaLabel="Close owner team modal"
+            className="shrink-0"
+          />
+        </div>
+        <div className="space-y-3 p-5">
+          <select
+            value={projectOwnerTeamDraft}
+            onChange={(event) => setProjectOwnerTeamDraft(event.target.value)}
+            className="h-10 w-full rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 text-sm text-[var(--ledger-text-primary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60"
+          >
+            <option value="">No owner team</option>
+            {workspaceTeams.map((team) => (
+              <option key={team.id} value={team.id}>
+                {team.name}
+              </option>
+            ))}
+          </select>
+          <p className="text-xs text-[var(--ledger-text-muted)]">
+            Existing notes and milestones on the project stay attached and will surface in the team.
+          </p>
+        </div>
+        <div className="flex items-center justify-end gap-2 border-t border-[color:var(--ledger-border-subtle)] px-5 py-3">
+          <button
+            type="button"
+            onClick={() => setProjectOwnerTeamPickerProjectId(null)}
+            className="rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 py-1.5 text-sm font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={() => void saveProjectOwnerTeam()}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-[var(--ledger-accent)] px-3 py-1.5 text-sm font-medium text-white transition hover:bg-[var(--ledger-accent-hover)]"
+          >
+            Save
+          </button>
+        </div>
+      </ModalOverlay>
+
+      <ModalOverlay
         isOpen={isLinkCalendarModalOpen}
         onClose={() => setIsLinkCalendarModalOpen(false)}
         backdropBorderRadius="inherit"
@@ -6810,6 +6921,13 @@ export const ProjectsWindow = () => {
           >
             <CheckCircle2 size={14} />
             Mark complete
+          </button>
+          <button
+            onClick={() => openProjectOwnerTeamPicker(projectContextMenu.projectId)}
+            className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+          >
+            <Users size={14} />
+            Assign to team
           </button>
           <div className="px-4 py-2">
             <p className="mb-2 text-[11px] font-medium uppercase tracking-wide text-[var(--ledger-text-muted)]">

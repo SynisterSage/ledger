@@ -2471,6 +2471,17 @@ const getUserWorkspaceIds = async (userId) => {
   return ids;
 };
 
+const resolveTodayWorkspaceIds = async (req) => {
+  const requestedWorkspaceId = getRequestedWorkspaceId(req);
+  if (requestedWorkspaceId) {
+    await requireWorkspaceAccess(req.authUser.id, requestedWorkspaceId, 'member');
+    return [requestedWorkspaceId];
+  }
+
+  const workspaceIdsSet = await getUserWorkspaceIds(req.authUser.id);
+  return Array.from(workspaceIdsSet);
+};
+
 const isWorkspaceAccessibleToUser = async (userId, workspaceId) => {
   if (!workspaceId) return false;
   const workspaceIds = await getUserWorkspaceIds(userId);
@@ -8369,8 +8380,7 @@ app.get('/api/tasks', authMiddleware, rateLimit('read'), async (req, res) => {
 
 app.get('/api/today', authMiddleware, rateLimit('read'), async (req, res) => {
   try {
-    const workspaceIdsSet = await getUserWorkspaceIds(req.authUser.id);
-    const workspaceIds = Array.from(workspaceIdsSet);
+    const workspaceIds = await resolveTodayWorkspaceIds(req);
 
     if (!workspaceIds.length) return res.json([]);
 

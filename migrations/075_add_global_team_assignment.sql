@@ -36,15 +36,9 @@ ALTER TABLE public.project_milestones
 
 UPDATE public.project_milestones
 SET
-  assigned_to_user_id = COALESCE(assigned_to_user_id, assigned_to),
   assigned_to_team_id = COALESCE(assigned_to_team_id, assigned_team_id)
-WHERE assigned_to_user_id IS NULL OR assigned_to_team_id IS NULL;
-
-UPDATE public.project_milestones
-SET
-  assigned_to = COALESCE(assigned_to, assigned_to_user_id),
-  assigned_team_id = COALESCE(assigned_team_id, assigned_to_team_id)
-WHERE assigned_to IS NULL OR assigned_team_id IS NULL;
+WHERE assigned_to_team_id IS NULL
+  AND assigned_team_id IS NOT NULL;
 
 CREATE INDEX IF NOT EXISTS idx_project_milestones_assigned_to_user_id
   ON public.project_milestones(assigned_to_user_id);
@@ -76,3 +70,53 @@ CREATE INDEX IF NOT EXISTS idx_note_team_links_note_id
 
 CREATE INDEX IF NOT EXISTS idx_note_team_links_team_id
   ON public.note_team_links(team_id);
+
+ALTER TABLE public.note_team_links ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Users can read workspace note team links" ON public.note_team_links;
+CREATE POLICY "Users can read workspace note team links"
+  ON public.note_team_links
+  FOR SELECT
+  USING (
+    public.is_workspace_owner(workspace_id, auth.uid())
+    OR public.is_workspace_member(workspace_id, auth.uid())
+  );
+
+DROP POLICY IF EXISTS "Team leads and workspace admins can manage note team links" ON public.note_team_links;
+CREATE POLICY "Team leads and workspace admins can manage note team links"
+  ON public.note_team_links
+  FOR ALL
+  USING (
+    public.is_workspace_owner(workspace_id, auth.uid())
+    OR EXISTS (
+      SELECT 1
+      FROM public.workspace_team_members wtm
+      WHERE wtm.team_id = note_team_links.team_id
+        AND wtm.user_id = auth.uid()
+        AND wtm.role = 'lead'
+    )
+    OR EXISTS (
+      SELECT 1
+      FROM public.workspace_members wm
+      WHERE wm.workspace_id = note_team_links.workspace_id
+        AND wm.user_id = auth.uid()
+        AND wm.role = 'admin'
+    )
+  )
+  WITH CHECK (
+    public.is_workspace_owner(workspace_id, auth.uid())
+    OR EXISTS (
+      SELECT 1
+      FROM public.workspace_team_members wtm
+      WHERE wtm.team_id = note_team_links.team_id
+        AND wtm.user_id = auth.uid()
+        AND wtm.role = 'lead'
+    )
+    OR EXISTS (
+      SELECT 1
+      FROM public.workspace_members wm
+      WHERE wm.workspace_id = note_team_links.workspace_id
+        AND wm.user_id = auth.uid()
+        AND wm.role = 'admin'
+    )
+  );

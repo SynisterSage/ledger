@@ -459,8 +459,8 @@ export const useApi = () => {
           return dedupeById(data);
         });
       },
-      // Today (unified across accessible workspaces)
-      getToday: () => request('/api/today', { skipWorkspaceHeader: true }),
+      // Today (scoped to the active workspace when available)
+      getToday: () => request('/api/today'),
       createTask: (payload: {
         title: string;
         description?: string | null;
