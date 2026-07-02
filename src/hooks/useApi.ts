@@ -382,6 +382,8 @@ export const useApi = () => {
           method: 'DELETE',
         }),
       getProjectNoteLinks: (projectId: string) => request(`/api/projects/${projectId}/note-links`),
+      getWorkspaceProjectNoteLinks: (workspaceId: string) =>
+        request(`/api/workspaces/${workspaceId}/project-note-links`),
       linkProjectNote: (projectId: string, noteId: string) =>
         request(`/api/projects/${projectId}/note-links`, {
           method: 'POST',
@@ -632,6 +634,7 @@ export const useApi = () => {
         calendar_id?: string;
         project_id?: string | null;
         note_id?: string | null;
+        assigned_to_team_id?: string | null;
         color?: string;
         recurrence_rule?: string;
         specific_dates?: string[];
@@ -675,6 +678,7 @@ export const useApi = () => {
         calendar_id?: string;
         project_id?: string | null;
         note_id?: string | null;
+        assigned_to_team_id?: string | null;
         notes?: string | null;
         color?: string;
         is_done?: boolean;

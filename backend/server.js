@@ -335,14 +335,14 @@ const projectSelectColumns =
 const workspaceTeamSelectColumns =
   'id, workspace_id, created_by, updated_by, name, identifier, description, color, archived_at, archived_by, default_task_scope, default_project_visibility, default_assignee_behavior, created_at, updated_at';
 const projectMilestoneSelectColumns =
-  'id, workspace_id, project_id, title, milestone_date, type, note, completed, linked_note_id, linked_reminder_id, linked_event_id, assigned_to, assigned_to_user_id, assigned_to_team_id, assigned_team_id, assigned_by_user_id, assigned_at, created_by, updated_by, created_at, updated_at';
+  'id, workspace_id, project_id, title, milestone_date, type, note, completed, linked_note_id, linked_reminder_id, linked_event_id, assigned_to_user_id, assigned_to_team_id, assigned_team_id, assigned_by_user_id, assigned_at, created_by, updated_by, created_at, updated_at';
 const taskSelectColumns =
   'id, workspace_id, project_id, milestone_id, title, description, notes, due_date, due_time, status, priority, assigned_to, assigned_to_user_id, assigned_to_team_id, assigned_team_id, assigned_by_user_id, assigned_at, tags, completed_at, source, source_platform, created_at, updated_at';
 const taskSelectWithHorizonColumns = `${taskSelectColumns}, task_horizon`;
 const reminderSelectColumns =
-  'id, workspace_id, user_id, title, body, remind_at, status, linked_type, linked_id, completed_at, dismissed_at, snoozed_until, source, source_platform, created_at, updated_at, calendar_id, project_id, note_id, notes, color, is_done, created_by, series_id, series_type, recurrence_rule';
+  'id, workspace_id, user_id, title, body, remind_at, status, linked_type, linked_id, completed_at, dismissed_at, snoozed_until, source, source_platform, created_at, updated_at, calendar_id, project_id, note_id, notes, color, is_done, created_by, series_id, series_type, recurrence_rule, assigned_to_team_id';
 const reminderDashboardSelectColumns =
-  'id, workspace_id, user_id, title, body, remind_at, status, linked_type, linked_id, completed_at, dismissed_at, snoozed_until, source, source_platform, created_at, updated_at, calendar_id, project_id, note_id, notes, color, is_done, created_by, series_id, series_type, recurrence_rule';
+  'id, workspace_id, user_id, title, body, remind_at, status, linked_type, linked_id, completed_at, dismissed_at, snoozed_until, source, source_platform, created_at, updated_at, calendar_id, project_id, note_id, notes, color, is_done, created_by, series_id, series_type, recurrence_rule, assigned_to_team_id';
 const reminderLinkedTypes = ['task', 'event', 'note', 'project', 'inbox', 'none'];
 const reminderStatusValues = ['active', 'completed', 'dismissed', 'overdue'];
 const reminderLinkedLabels = {
@@ -4243,6 +4243,7 @@ const mapReminderRow = (row, nowMs = Date.now()) => {
     note_id: row.note_id ?? null,
     notes: row.notes ?? null,
     color: row.color ?? null,
+    assigned_to_team_id: row.assigned_to_team_id ?? null,
     is_done: Boolean(row.is_done ?? false),
     created_by: row.created_by ?? null,
     series_id: row.series_id ?? null,
@@ -6842,7 +6843,7 @@ const loadWorkspaceTeams = async (workspaceId, currentUserId, options = {}) => {
     projectIds.length > 0
       ? await supabase
           .from('project_milestones')
-          .select('id, workspace_id, project_id, title, milestone_date, type, note, completed, linked_note_id, linked_reminder_id, linked_event_id, assigned_to, assigned_to_user_id, assigned_to_team_id, assigned_team_id, assigned_by_user_id, assigned_at, created_by, updated_by, created_at, updated_at')
+          .select('id, workspace_id, project_id, title, milestone_date, type, note, completed, linked_note_id, linked_reminder_id, linked_event_id, assigned_to_user_id, assigned_to_team_id, assigned_team_id, assigned_by_user_id, assigned_at, created_by, updated_by, created_at, updated_at')
           .eq('workspace_id', workspaceId)
           .in('project_id', projectIds)
       : { data: [], error: null };
@@ -7151,7 +7152,7 @@ app.post('/api/teams', authMiddleware, rateLimit('write'), async (req, res) => {
 
     let identifier = identifierSource;
     for (let suffix = 0; suffix < 20; suffix += 1) {
-      const candidate = suffix === 0 ? identifierSource : `${identifierSource}${suffix + 1}`;
+      const candidate = suffix === 0 ? identifierSource : `${identifierSource}-${suffix + 1}`;
       const existing = await supabase
         .from('workspace_teams')
         .select('id')
@@ -7878,6 +7879,58 @@ app.get('/api/projects/:id/note-links', authMiddleware, rateLimit('read'), async
       .filter(Boolean);
 
     res.json({ links });
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
+app.get('/api/workspaces/:workspaceId/project-note-links', authMiddleware, rateLimit('read'), async (req, res) => {
+  try {
+    const workspaceId = String(req.params.workspaceId);
+    const access = await requireWorkspaceAccess(req.authUser.id, workspaceId, 'member');
+
+    const { data, error } = await supabase
+      .from('project_note_links')
+      .select('id, project_id, note_id, created_at')
+      .eq('workspace_id', workspaceId)
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+
+    const projectIds = [...new Set((data ?? []).map((row) => row.project_id).filter(Boolean))];
+    const projectsResult =
+      projectIds.length > 0
+        ? await supabase
+            .from('projects')
+            .select('id, name, status, completeness, end_date')
+            .eq('workspace_id', workspaceId)
+            .in('id', projectIds)
+        : { data: [], error: null };
+    if (projectsResult.error) throw projectsResult.error;
+
+    const projectMap = new Map((projectsResult.data ?? []).map((project) => [project.id, project]));
+
+    const links = (data ?? [])
+      .map((row) => {
+        const project = projectMap.get(row.project_id);
+        if (!project) return null;
+        return {
+          id: row.id,
+          note_id: row.note_id,
+          project_id: row.project_id,
+          project_name: project.name || 'Untitled project',
+          project_status: project.status ?? null,
+          project_completeness: project.completeness ?? null,
+          project_end_date: project.end_date ?? null,
+          created_at: row.created_at,
+        };
+      })
+      .filter(Boolean);
+
+    res.json({
+      current_user_role: access.role,
+      links,
+    });
   } catch (error) {
     return respondWithError(res, error);
   }
@@ -9116,7 +9169,7 @@ app.get('/api/events', authMiddleware, rateLimit('read'), async (req, res) => {
     let query = supabase
       .from('events')
       .select(
-        'id, title, start_at, end_at, all_day, calendar_id, color, status, recurrence_rule, notes, project_id, note_id, series_id, series_type, created_at, updated_at'
+        'id, title, start_at, end_at, all_day, calendar_id, color, status, recurrence_rule, notes, project_id, note_id, series_id, series_type, created_at, updated_at, assigned_to_team_id'
       )
       .in('workspace_id', workspaceIds);
     if (projectId) {
@@ -9193,7 +9246,7 @@ app.get('/api/events/upcoming', authMiddleware, rateLimit('read'), async (req, r
     const { data: futureData, error: futureError } = await supabase
       .from('events')
       .select(
-        'id, workspace_id, title, start_at, end_at, all_day, calendar_id, color, status, visibility, recurrence_rule, series_id, series_type, source, source_platform, project_id, note_id, notes, updated_at'
+        'id, workspace_id, title, start_at, end_at, all_day, calendar_id, color, status, visibility, recurrence_rule, series_id, series_type, source, source_platform, project_id, note_id, notes, updated_at, assigned_to_team_id'
       )
       .in('workspace_id', workspaceIds)
       .gte('start_at', now.toISOString())
@@ -9206,7 +9259,7 @@ app.get('/api/events/upcoming', authMiddleware, rateLimit('read'), async (req, r
     const { data: ongoingData, error: ongoingError } = await supabase
       .from('events')
       .select(
-        'id, workspace_id, title, start_at, end_at, all_day, calendar_id, color, status, visibility, recurrence_rule, series_id, series_type, source, source_platform, project_id, note_id, notes, updated_at'
+        'id, workspace_id, title, start_at, end_at, all_day, calendar_id, color, status, visibility, recurrence_rule, series_id, series_type, source, source_platform, project_id, note_id, notes, updated_at, assigned_to_team_id'
       )
       .in('workspace_id', workspaceIds)
       .lt('start_at', now.toISOString())
@@ -9324,6 +9377,18 @@ app.post(
           return res.status(404).json({ error: 'Note not found' });
         }
       }
+      const assignedToTeamId = normalizeNullableText(
+        req.body?.assigned_to_team_id ?? req.body?.assigned_team_id
+      );
+      if (assignedToTeamId) {
+        if (!isUuidLike(assignedToTeamId)) {
+          return res.status(400).json({ error: 'Invalid assigned_to_team_id' });
+        }
+        const teamAllowed = await ensureWorkspaceTeam(assignedToTeamId, workspaceId);
+        if (!teamAllowed) {
+          return res.status(404).json({ error: 'Team not found' });
+        }
+      }
 
       const startAt = String(req.body?.start_at ?? '');
       const parsedStartAt = startAt ? new Date(startAt) : null;
@@ -9358,6 +9423,7 @@ app.post(
         project_id: projectId || null,
         linked_project_id: projectId || null,
         note_id: noteId || null,
+        assigned_to_team_id: assignedToTeamId || null,
         series_id: seriesId,
         series_type: isSpecificDates ? SPECIFIC_DATES_SERIES_TYPE : null,
         source,
@@ -9381,9 +9447,9 @@ app.post(
 
         const { data, error } = await supabase
           .from('events')
-          .insert(specificDatePayloads)
-          .select(
-            'id, title, start_at, end_at, all_day, calendar_id, color, status, visibility, recurrence_rule, notes, project_id, note_id, series_id, series_type, source, source_platform'
+        .insert(specificDatePayloads)
+        .select(
+            'id, title, start_at, end_at, all_day, calendar_id, color, status, visibility, recurrence_rule, notes, project_id, note_id, series_id, series_type, source, source_platform, assigned_to_team_id'
           );
 
         if (error) throw error;
@@ -9403,7 +9469,7 @@ app.post(
           end_at: endAt,
         })
         .select(
-          'id, title, start_at, end_at, all_day, calendar_id, color, status, visibility, recurrence_rule, notes, project_id, note_id, series_id, series_type, source, source_platform'
+          'id, title, start_at, end_at, all_day, calendar_id, color, status, visibility, recurrence_rule, notes, project_id, note_id, series_id, series_type, source, source_platform, assigned_to_team_id'
         )
         .single();
 
@@ -9471,6 +9537,11 @@ app.patch('/api/events/:id', authMiddleware, rateLimit('write'), async (req, res
 
     const effectiveProjectId = hasProjectId ? nextProjectId : existingEvent.project_id ?? null;
     const effectiveNoteId = hasNoteId ? nextNoteId : existingEvent.note_id ?? null;
+    const hasAssignedToTeamId =
+      req.body?.assigned_to_team_id !== undefined || req.body?.assigned_team_id !== undefined;
+    const nextAssignedToTeamId = hasAssignedToTeamId
+      ? normalizeNullableText(req.body.assigned_to_team_id ?? req.body.assigned_team_id)
+      : null;
     if (effectiveProjectId) {
       const projectAllowed = await ensureWorkspaceResource(
         'projects',
@@ -9485,6 +9556,17 @@ app.patch('/api/events/:id', authMiddleware, rateLimit('write'), async (req, res
       const noteAllowed = await ensureWorkspaceResource('notes', effectiveNoteId, targetWorkspaceId);
       if (!noteAllowed) {
         return res.status(404).json({ error: 'Note not found' });
+      }
+    }
+    if (hasAssignedToTeamId) {
+      if (nextAssignedToTeamId && !isUuidLike(nextAssignedToTeamId)) {
+        return res.status(400).json({ error: 'Invalid assigned_to_team_id' });
+      }
+      if (nextAssignedToTeamId) {
+        const teamAllowed = await ensureWorkspaceTeam(nextAssignedToTeamId, targetWorkspaceId);
+        if (!teamAllowed) {
+          return res.status(404).json({ error: 'Team not found' });
+        }
       }
     }
 
@@ -9503,6 +9585,9 @@ app.patch('/api/events/:id', authMiddleware, rateLimit('write'), async (req, res
       'note_id',
     ]) {
       if (req.body?.[key] !== undefined) update[key] = req.body[key];
+    }
+    if (hasAssignedToTeamId) {
+      update.assigned_to_team_id = nextAssignedToTeamId;
     }
     if (hasCalendarId) {
       update.calendar_id = resolvedCalendarId;
@@ -9528,7 +9613,7 @@ app.patch('/api/events/:id', authMiddleware, rateLimit('write'), async (req, res
       .eq('id', req.params.id)
       .eq('workspace_id', eventWorkspaceId)
       .select(
-        'id, title, start_at, end_at, all_day, calendar_id, color, status, visibility, recurrence_rule, notes, project_id, note_id, series_id, series_type'
+        'id, title, start_at, end_at, all_day, calendar_id, color, status, visibility, recurrence_rule, notes, project_id, note_id, series_id, series_type, assigned_to_team_id'
       )
       .single();
 
@@ -9629,14 +9714,14 @@ async function searchWorkspaceContent({
       .limit(25),
     supabase
       .from('events')
-      .select('id, title, start_at, end_at, status, color, created_at, updated_at, notes, project_id, note_id')
+      .select('id, title, start_at, end_at, status, color, created_at, updated_at, notes, project_id, note_id, assigned_to_team_id')
       .eq('workspace_id', workspaceId)
       .or(`title.ilike.${like},notes.ilike.${like}`)
       .order('start_at', { ascending: true })
       .limit(25),
     supabase
       .from('reminders')
-      .select('id, title, body, remind_at, status, project_id, note_id, created_at, updated_at')
+      .select('id, title, body, remind_at, status, project_id, note_id, created_at, updated_at, assigned_to_team_id')
       .eq('workspace_id', workspaceId)
       .or(`title.ilike.${like},body.ilike.${like}`)
       .order('updated_at', { ascending: false })
@@ -10093,12 +10178,24 @@ app.post(
       const specificDates = normalizeDateKeyList(req.body?.specific_dates);
       const source = normalizeCaptureSource(req.body?.source);
       const sourcePlatform = normalizeCaptureSourcePlatform(req.body?.source_platform);
+      const assignedToTeamId = normalizeNullableText(
+        req.body?.assigned_to_team_id ?? req.body?.assigned_team_id
+      );
 
       if (linkedId && !isUuidLike(linkedId)) {
         return res.status(400).json({ error: 'Invalid linked_id' });
       }
       if ((linkedType === null || linkedType === 'none') && linkedId) {
         return res.status(400).json({ error: 'linked_type is required when linked_id is provided' });
+      }
+      if (assignedToTeamId) {
+        if (!isUuidLike(assignedToTeamId)) {
+          return res.status(400).json({ error: 'Invalid assigned_to_team_id' });
+        }
+        const teamAllowed = await ensureWorkspaceTeam(assignedToTeamId, workspaceId);
+        if (!teamAllowed) {
+          return res.status(404).json({ error: 'Team not found' });
+        }
       }
 
       await validateReminderLink({ workspaceId, linkedType, linkedId });
@@ -10132,6 +10229,7 @@ app.post(
         color: req.body?.color || calendarColor || '#F59E0B',
         linked_type: linkedType,
         linked_id: linkedId,
+        assigned_to_team_id: assignedToTeamId || null,
         completed_at: null,
         dismissed_at: null,
         snoozed_until: null,
@@ -10220,6 +10318,11 @@ app.patch('/api/reminders/:id', authMiddleware, rateLimit('write'), async (req, 
     const nextLinkedId = hasLinkedId ? normalizeNullableText(req.body.linked_id) : null;
     const hasCalendarId = req.body?.calendar_id !== undefined;
     const nextCalendarId = hasCalendarId ? normalizeNullableText(req.body.calendar_id) : null;
+    const hasAssignedToTeamId =
+      req.body?.assigned_to_team_id !== undefined || req.body?.assigned_team_id !== undefined;
+    const nextAssignedToTeamId = hasAssignedToTeamId
+      ? normalizeNullableText(req.body.assigned_to_team_id ?? req.body.assigned_team_id)
+      : null;
 
     if (nextLinkedId && !isUuidLike(nextLinkedId)) {
       return res.status(400).json({ error: 'Invalid linked_id' });
@@ -10229,6 +10332,9 @@ app.patch('/api/reminders/:id', authMiddleware, rateLimit('write'), async (req, 
     }
     if (hasCalendarId && nextCalendarId && !isUuidLike(nextCalendarId)) {
       return res.status(400).json({ error: 'Invalid calendar_id' });
+    }
+    if (hasAssignedToTeamId && nextAssignedToTeamId && !isUuidLike(nextAssignedToTeamId)) {
+      return res.status(400).json({ error: 'Invalid assigned_to_team_id' });
     }
 
     const currentStatus = String(reminder.status ?? 'active').toLowerCase();
@@ -10246,6 +10352,14 @@ app.patch('/api/reminders/:id', authMiddleware, rateLimit('write'), async (req, 
       await requireWorkspaceAccess(req.authUser.id, calendar.workspace_id, 'member');
       targetWorkspaceId = calendar.workspace_id;
       resolvedCalendarId = calendar.id;
+    }
+    if (hasAssignedToTeamId) {
+      if (nextAssignedToTeamId) {
+        const teamAllowed = await ensureWorkspaceTeam(nextAssignedToTeamId, targetWorkspaceId);
+        if (!teamAllowed) {
+          return res.status(404).json({ error: 'Team not found' });
+        }
+      }
     }
 
     if ((currentStatus === 'completed' || currentStatus === 'dismissed') && hasRemindAt && effectiveStatus !== 'active') {
@@ -10284,6 +10398,7 @@ app.patch('/api/reminders/:id', authMiddleware, rateLimit('write'), async (req, 
     if (hasLinkedType) updatePayload.linked_type = nextLinkedType;
     if (hasLinkedId) updatePayload.linked_id = nextLinkedId;
     if (hasCalendarId) updatePayload.calendar_id = resolvedCalendarId;
+    if (hasAssignedToTeamId) updatePayload.assigned_to_team_id = nextAssignedToTeamId;
 
     if (effectiveStatus === 'active') {
       updatePayload.completed_at = null;

@@ -44,12 +44,16 @@ type FocusItem = {
   done: boolean;
 };
 
-type QuickNote = {
+type SidebarNote = {
   id: string;
   title: string;
-  body: string;
-  createdAt: string;
+  content: string;
+  content_html?: string | null;
+  created_at: string;
+  updated_at?: string | null;
+  source?: string | null;
 };
+
 type QuickCaptureMode = 'none' | 'note' | 'event';
 type TodayTask = {
   kind: 'task' | 'reminder';
@@ -122,13 +126,6 @@ const normalizeProjectNameKey = (value: unknown) =>
     .trim()
     .toLowerCase();
 type ProjectSemanticStatus = 'not_started' | 'in_progress' | 'paused' | 'completed';
-
-const htmlToPlainText = (value: string) =>
-  String(value ?? '')
-    .replace(/<[^>]*>/g, ' ')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
 
 const formatTodayTaskWorkspace = (item: {
   workspace_name?: string | null;
@@ -290,16 +287,15 @@ export const ExpandedSidebar = ({
     blocked: '',
     firstTaskTomorrow: '',
   });
-  const [checkinSaved, setCheckinSaved] = useState(false);
   const [isCheckinExpanded, setIsCheckinExpanded] = useState(false);
-  const [isCheckinEditing, setIsCheckinEditing] = useState(false);
   const [isLoadingDaily, setIsLoadingDaily] = useState(true);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [quickCaptureMode, setQuickCaptureMode] = useState<QuickCaptureMode>('none');
   const [todayQuickDraft, setTodayQuickDraft] = useState('');
   const [todayQuickSaving, setTodayQuickSaving] = useState(false);
   const [noteDraft, setNoteDraft] = useState('');
-  const [quickNotes, setQuickNotes] = useState<QuickNote[]>([]);
+  const [savedNotes, setSavedNotes] = useState<SidebarNote[]>([]);
+  const [savedNotesExpanded, setSavedNotesExpanded] = useState(false);
   const [eventDraft, setEventDraft] = useState('');
   const [eventDate, setEventDate] = useState(todayKey());
   const [eventStartTime, setEventStartTime] = useState('09:00');
@@ -326,6 +322,7 @@ export const ExpandedSidebar = ({
     'current_workspace'
   );
   const [upcomingItems, setUpcomingItems] = useState<UpcomingItem[]>([]);
+  const [eventsExpanded, setEventsExpanded] = useState(false);
   const [todayItems, setTodayItems] = useState<TodayTask[]>([]);
   const [isLoadingToday, setIsLoadingToday] = useState(true);
   const [completedToday, setCompletedToday] = useState<CompletedTodayTask[]>([]);
@@ -334,6 +331,7 @@ export const ExpandedSidebar = ({
   const TODAY_COLLAPSE_STORAGE_KEY = 'ledger:sidebar:today-collapsed:v1';
   const CHECKIN_COLLAPSE_STORAGE_KEY = 'ledger:sidebar:checkin-collapsed:v1';
   const PROJECTS_COLLAPSE_STORAGE_KEY = 'ledger:sidebar:projects-collapsed:v1';
+  const EVENTS_COLLAPSE_STORAGE_KEY = 'ledger:sidebar:events-collapsed:v1';
   const loadCollapsedPreference = (key: string, fallback = true) => {
     try {
       const saved = window.localStorage.getItem(key);
@@ -375,6 +373,10 @@ export const ExpandedSidebar = ({
     setIsCheckinExpanded(!loadCollapsedPreference(CHECKIN_COLLAPSE_STORAGE_KEY, true));
   }, []);
 
+  useEffect(() => {
+    setEventsExpanded(!loadCollapsedPreference(EVENTS_COLLAPSE_STORAGE_KEY, false));
+  }, []);
+
   const [contextMenu, setContextMenu] = useState<{
     type: 'project' | 'today-active' | 'today-completed';
     id: string;
@@ -383,7 +385,6 @@ export const ExpandedSidebar = ({
     y: number;
   } | null>(null);
   const noteCaptureRef = useRef<HTMLTextAreaElement | null>(null);
-  const checkinFinishedInputRef = useRef<HTMLInputElement | null>(null);
   const quickCaptureNoticeTimerRef = useRef<number | null>(null);
   const workspaceCaptureRef = useRef<HTMLDivElement | null>(null);
 
@@ -430,7 +431,6 @@ export const ExpandedSidebar = ({
   const todayDockButtonRef = useRef<HTMLButtonElement | null>(null);
   const todayDockPopoverRef = useRef<HTMLDivElement | null>(null);
   const checkinSectionRef = useRef<HTMLElement | null>(null);
-  const checkinSavedTimerRef = useRef<number | null>(null);
   const sidebarContextMenuWidth = 196;
   const sidebarContextMenuHeight = 176;
 
@@ -449,7 +449,7 @@ export const ExpandedSidebar = ({
   useEffect(() => {
     if (!activeWorkspaceId) {
       setIsLoadingProjects(false);
-      setQuickNotes([]);
+      setSavedNotes([]);
       setProjects([]);
       setUpcomingItems([]);
       return;
@@ -464,7 +464,6 @@ export const ExpandedSidebar = ({
         if (!cancelled) {
           setFocusItems([]);
           setCheckin({ finished: '', blocked: '', firstTaskTomorrow: '' });
-          setCheckinSaved(false);
           setIsLoadingDaily(false);
         }
         return;
@@ -491,13 +490,11 @@ export const ExpandedSidebar = ({
           blocked: row?.checkin_blocked ?? '',
           firstTaskTomorrow: row?.checkin_first_task_tomorrow ?? '',
         });
-        setCheckinSaved(false);
       } catch (error) {
         if (!cancelled) {
           console.error('Failed to load daily accountability:', error);
           setFocusItems([]);
           setCheckin({ finished: '', blocked: '', firstTaskTomorrow: '' });
-          setCheckinSaved(false);
         }
       } finally {
         if (!cancelled) {
@@ -587,63 +584,58 @@ export const ExpandedSidebar = ({
   useEffect(() => {
     let cancelled = false;
 
-    const loadQuickNotes = async () => {
+    const loadNotes = async () => {
       if (!user || !activeWorkspaceId) {
-        setQuickNotes([]);
+        setSavedNotes([]);
         return;
       }
 
       try {
         const data = await api.getNotes();
-
         if (cancelled) return;
 
         const payload = data as
           | {
-              notes?: Array<{
-                id: string;
-                title: string;
-                content: string;
-                created_at: string;
-                source?: string | null;
-              }>;
+              notes?: Array<SidebarNote>;
             }
-          | Array<{
-              id: string;
-              title: string;
-              content: string;
-              created_at: string;
-              source?: string | null;
-            }>;
+          | Array<SidebarNote>;
         const rows = Array.isArray(payload)
           ? payload
           : Array.isArray(payload?.notes)
           ? payload.notes
           : [];
-        const mapped = rows
-          .filter((row) => (row.source ?? 'workspace') === 'quick_capture')
-          .map((row) => ({
-            id: row.id,
-            title: row.title,
-            body: htmlToPlainText(row.content ?? ''),
-            createdAt: row.created_at,
-          }));
 
-        setQuickNotes(mapped);
+        const next = rows
+          .map((note) => ({
+            id: note.id,
+            title: note.title,
+            content: note.content ?? '',
+            content_html: note.content_html ?? null,
+            created_at: note.created_at,
+            updated_at: note.updated_at ?? null,
+            source: note.source ?? null,
+          }))
+          .sort((a, b) => {
+            const aTime = new Date(a.updated_at || a.created_at).getTime();
+            const bTime = new Date(b.updated_at || b.created_at).getTime();
+            return bTime - aTime;
+          });
+
+        setSavedNotes(next);
       } catch (error) {
         if (!cancelled) {
           console.error('Failed to load notes:', error);
-          setQuickNotes([]);
+          setSavedNotes([]);
         }
       }
     };
 
-    void loadQuickNotes();
+    void loadNotes();
 
     return () => {
       cancelled = true;
     };
-  }, [user?.id, activeWorkspaceId, sidebarRefreshToken]);
+  }, [activeWorkspaceId, api, user, sidebarRefreshToken]);
 
   useEffect(() => {
     if (!user) {
@@ -1019,7 +1011,6 @@ export const ExpandedSidebar = ({
       todayBucketRef.current = currentDay;
       setFocusItems([]);
       setCheckin({ finished: '', blocked: '', firstTaskTomorrow: '' });
-      setCheckinSaved(false);
       setIsLoadingDaily(true);
 
       void (async () => {
@@ -1038,7 +1029,6 @@ export const ExpandedSidebar = ({
             blocked: row?.checkin_blocked ?? '',
             firstTaskTomorrow: row?.checkin_first_task_tomorrow ?? '',
           });
-          setCheckinSaved(false);
         } catch (error) {
           console.error('Failed to refresh daily accountability on day rollover:', error);
         } finally {
@@ -1227,39 +1217,11 @@ export const ExpandedSidebar = ({
       blocked: checkin.blocked,
       firstTaskTomorrow: checkin.firstTaskTomorrow,
     });
-    const success = await saveDaily({ checkin });
-    if (success) {
-      setCheckinSaved(true);
-      setIsCheckinEditing(false);
-      if (checkinSavedTimerRef.current !== null) {
-        window.clearTimeout(checkinSavedTimerRef.current);
-      }
-      checkinSavedTimerRef.current = window.setTimeout(() => {
-        setCheckinSaved(false);
-        checkinSavedTimerRef.current = null;
-      }, 2200);
-    }
-  };
-
-  const clearCheckin = async () => {
-    const empty = { finished: '', blocked: '', firstTaskTomorrow: '' };
-    setCheckin(empty);
-    setIsCheckinEditing(true);
-    window.ipcRenderer?.send('daily:checkin-updated', empty);
-    const success = await saveDaily({ checkin: empty });
-    if (checkinSavedTimerRef.current !== null) {
-      window.clearTimeout(checkinSavedTimerRef.current);
-      checkinSavedTimerRef.current = null;
-    }
-    if (success) setCheckinSaved(false);
+    await saveDaily({ checkin });
   };
 
   useEffect(() => {
-    return () => {
-      if (checkinSavedTimerRef.current !== null) {
-        window.clearTimeout(checkinSavedTimerRef.current);
-      }
-    };
+    return () => {};
   }, []);
 
   useEffect(() => {
@@ -1326,26 +1288,33 @@ export const ExpandedSidebar = ({
         ?.trim() ?? 'Untitled note';
     const title = firstLine.replace(/^#\s*/, '').slice(0, 72);
 
-    const data = await api.createNote(title, text, { source: 'quick_capture' });
+    const data = await api.createNote(title, text, { source: 'sidebar_quick_capture' });
 
     if (!data) {
       setSaveError('Could not save note.');
       return;
     }
 
-    const row = data as { id: string; title: string; content: string; created_at: string };
-    const note: QuickNote = {
-      id: row.id,
-      title: row.title,
-      body: htmlToPlainText(row.content ?? text),
-      createdAt: row.created_at ?? new Date().toISOString(),
-    };
-
-    setQuickNotes((prev) => [note, ...prev].slice(0, 24));
+    const row = data as SidebarNote;
+    setSavedNotes((prev) => [
+      {
+        id: row.id,
+        title: row.title,
+        content: row.content ?? text,
+        content_html: row.content_html ?? null,
+        created_at: row.created_at ?? new Date().toISOString(),
+        updated_at: row.updated_at ?? row.created_at ?? new Date().toISOString(),
+        source: row.source ?? 'sidebar_quick_capture',
+      },
+      ...prev.filter((item) => item.id !== row.id),
+    ]);
     setNoteDraft('');
     setQuickCaptureMode('none');
-    setQuickCaptureNotice(`Saved note to ${activeWorkspace?.name?.trim() || 'workspace'}`);
+    setSavedNotesExpanded(true);
+    setQuickCaptureNotice('Saved note');
   };
+
+  const visibleSavedNotes = savedNotes.slice(0, 6);
 
   const saveTodayQuickTask = async () => {
     const base = todayQuickDraft.trim();
@@ -1507,30 +1476,45 @@ export const ExpandedSidebar = ({
     checkin.finished.trim() || checkin.blocked.trim() || checkin.firstTaskTomorrow.trim()
   );
   const checkinStatusLabel = hasCheckinContent ? 'Done' : 'Not started';
-  const quickCaptureShellClass =
-    'rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] p-2.5';
-  const quickCaptureControlClass =
-    'h-8 rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] px-2 text-xs text-[var(--ledger-text-primary)] placeholder:text-[var(--ledger-placeholder)] focus:border-[color:var(--ledger-border-strong)] focus:outline-none focus:ring-1 focus:ring-[color:var(--ledger-accent)]/10';
+  const checkinFieldClass =
+    'h-8 w-full rounded-lg bg-transparent px-2 text-xs text-[var(--ledger-text-primary)] placeholder:text-[var(--ledger-placeholder)] transition hover:bg-[var(--ledger-surface-muted)] focus:bg-[var(--ledger-surface-muted)] focus:outline-none shadow-none border-0 ring-0';
+  const eventComposerFieldClass =
+    'h-8 rounded-lg bg-transparent px-2 text-xs text-[var(--ledger-text-primary)] placeholder:text-[var(--ledger-placeholder)] transition hover:bg-[var(--ledger-surface-muted)] focus:bg-[var(--ledger-surface-muted)] focus:outline-none shadow-none border-0 ring-0';
+
+  const persistCollapsedState = (key: string, value: boolean) => {
+    try {
+      window.localStorage.setItem(key, value ? '1' : '0');
+    } catch {
+      // No-op when storage is unavailable.
+    }
+  };
+
+  const closeWorkspaceSections = (next?: 'tasks' | 'today' | 'note' | 'event' | 'events' | 'checkin' | 'projects') => {
+    setTasksCollapsed(next !== 'tasks');
+    setTodayCollapsed(next !== 'today');
+    setProjectsCollapsed(next !== 'projects');
+    setIsCheckinExpanded(next === 'checkin');
+    setQuickCaptureMode(next === 'note' ? 'note' : next === 'event' ? 'event' : 'none');
+    setEventsExpanded(next === 'events');
+    setTodayAddRowOpen(false);
+    setCompletedTodayExpanded(false);
+    setSavedNotesExpanded(false);
+
+    persistCollapsedState(TODAY_COLLAPSE_STORAGE_KEY, next !== 'today');
+    persistCollapsedState(PROJECTS_COLLAPSE_STORAGE_KEY, next !== 'projects');
+    persistCollapsedState(CHECKIN_COLLAPSE_STORAGE_KEY, next !== 'checkin');
+    persistCollapsedState(EVENTS_COLLAPSE_STORAGE_KEY, next !== 'events');
+  };
 
   const toggleTodayCollapsed = () => {
     setTodayCollapsed((current) => {
       const next = !current;
-      try {
-        window.localStorage.setItem(TODAY_COLLAPSE_STORAGE_KEY, next ? '1' : '0');
-      } catch {
-        // No-op when storage is unavailable.
-      }
-      return next;
-    });
-  };
-
-  const toggleProjectsCollapsed = () => {
-    setProjectsCollapsed((current) => {
-      const next = !current;
-      try {
-        window.localStorage.setItem(PROJECTS_COLLAPSE_STORAGE_KEY, next ? '1' : '0');
-      } catch {
-        // No-op when storage is unavailable.
+      persistCollapsedState(TODAY_COLLAPSE_STORAGE_KEY, next);
+      if (next) {
+        setTodayAddRowOpen(false);
+        setCompletedTodayExpanded(false);
+      } else {
+        closeWorkspaceSections('today');
       }
       return next;
     });
@@ -1542,24 +1526,13 @@ export const ExpandedSidebar = ({
   }, [todayAddRowOpen]);
 
   useEffect(() => {
-    if (!isCheckinExpanded || !isCheckinEditing) return;
+    if (!isCheckinExpanded) return;
     const timer = window.setTimeout(() => {
-      checkinFinishedInputRef.current?.focus();
+      const firstCheckinInput = document.querySelector<HTMLInputElement>('[data-checkin-input="finished"]');
+      firstCheckinInput?.focus();
     }, 120);
     return () => window.clearTimeout(timer);
-  }, [isCheckinEditing, isCheckinExpanded]);
-
-  const toggleCheckinExpanded = () => {
-    setIsCheckinExpanded((current) => {
-      const next = !current;
-      try {
-        window.localStorage.setItem(CHECKIN_COLLAPSE_STORAGE_KEY, next ? '0' : '1');
-      } catch {
-        // No-op when storage is unavailable.
-      }
-      return next;
-    });
-  };
+  }, [isCheckinExpanded]);
 
   const saveQuickEvent = async () => {
     const title = eventDraft.trim();
@@ -1687,15 +1660,15 @@ export const ExpandedSidebar = ({
         project_name: null,
         note_id: null,
         note_title: null,
-        calendar_id: null,
-        calendar_name: null,
+        calendar_id: selectedCalendar.id,
+        calendar_name: (selectedCalendar as { name?: string | null }).name ?? null,
         workspace_name: activeWorkspace?.name?.trim() || null,
         workspace_color: activeWorkspace?.color ?? null,
       };
       setUpcomingItems((prev) =>
         [...prev.filter((item) => item.id !== newItem.id), newItem]
           .sort((a, b) => a.sortAt - b.sortAt)
-          .slice(0, 5)
+          .slice(0, 12)
       );
 
       setEventDraft('');
@@ -1703,7 +1676,8 @@ export const ExpandedSidebar = ({
       setEventStartTime('09:00');
       setEventEndTime('10:00');
       setQuickCaptureMode('none');
-      setQuickCaptureNotice(`Event added to ${activeWorkspace?.name?.trim() || 'workspace'}`);
+      setEventsExpanded(true);
+      setQuickCaptureNotice('Saved event');
     } catch (error) {
       console.error('Failed to create event from sidebar:', error);
       setSaveError(error instanceof Error ? error.message : 'Could not save event.');
@@ -2196,8 +2170,11 @@ export const ExpandedSidebar = ({
             <button
               type="button"
               onClick={() => {
-                setTasksCollapsed((prev) => !prev);
-                setQuickCaptureMode('none');
+                if (tasksCollapsed) {
+                  closeWorkspaceSections('tasks');
+                } else {
+                  setTasksCollapsed(true);
+                }
               }}
               className={`relative z-20 flex h-9 w-full items-center justify-between gap-3 rounded-xl px-2.5 text-left text-[13px] font-medium transition ${
                 tasksCollapsed
@@ -2219,7 +2196,7 @@ export const ExpandedSidebar = ({
               </span>
             </button>
             {!tasksCollapsed && (
-              <div className="relative z-10 mt-1.5 space-y-2 pl-3">
+              <div className="relative z-10 mt-1.5 space-y-2 pl-1">
                 <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-[var(--ledger-text-muted)]">
                   <span>Assigned to me · {workspaceAssignedTasks.length}</span>
                   <span>Long-term · {workspaceTaskCount}</span>
@@ -2314,53 +2291,29 @@ export const ExpandedSidebar = ({
                   </button>
                 </div>
 
-                <div className="flex items-center justify-between gap-2 pl-1">
-                  <div className="flex items-center gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => setTaskScope('today')}
-                      className={`h-7 rounded-full px-2.5 text-[11px] font-medium transition ${
-                        taskScope === 'today'
-                          ? 'bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-primary)]'
-                          : 'text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]'
-                      }`}
-                    >
-                      Today
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setTaskScope('long_term')}
-                      className={`h-7 rounded-full px-2.5 text-[11px] font-medium transition ${
-                        taskScope === 'long_term'
-                          ? 'bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-primary)]'
-                          : 'text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]'
-                      }`}
-                    >
-                      Long-term
-                    </button>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setTaskDraft('');
-                        setTaskScope('long_term');
-                        setTasksCollapsed(true);
-                      }}
-                      className={`h-7 rounded-lg px-3 text-xs font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]`}
-                      disabled={isSavingWorkspaceTask && !taskDraft.trim()}
-                    >
-                      Clear
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => void saveWorkspaceTask()}
-                      disabled={isSavingWorkspaceTask || !taskDraft.trim()}
-                      className={`h-7 rounded-lg px-3 text-xs font-medium transition disabled:opacity-60 ${sidebarTheme.buttonPrimary}`}
-                    >
-                      Add
-                    </button>
-                  </div>
+                <div className="flex items-center justify-start gap-1.5 pl-1">
+                  <button
+                    type="button"
+                    onClick={() => setTaskScope('today')}
+                    className={`h-7 rounded-full px-2.5 text-[11px] font-medium transition ${
+                      taskScope === 'today'
+                        ? 'bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-primary)]'
+                        : 'text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]'
+                    }`}
+                  >
+                    Today
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setTaskScope('long_term')}
+                    className={`h-7 rounded-full px-2.5 text-[11px] font-medium transition ${
+                      taskScope === 'long_term'
+                        ? 'bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-primary)]'
+                        : 'text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]'
+                    }`}
+                  >
+                    Long-term
+                  </button>
                 </div>
               </div>
             )}
@@ -2368,8 +2321,11 @@ export const ExpandedSidebar = ({
             <button
               type="button"
               onClick={() => {
-                setTasksCollapsed(true);
-                setQuickCaptureMode((prev) => (prev === 'note' ? 'none' : 'note'));
+                if (quickCaptureMode === 'note') {
+                  setQuickCaptureMode('none');
+                } else {
+                  closeWorkspaceSections('note');
+                }
               }}
               className={`flex h-9 w-full items-center justify-between gap-3 rounded-xl px-2.5 text-left text-[13px] font-medium transition ${
                 quickCaptureMode === 'note'
@@ -2390,13 +2346,20 @@ export const ExpandedSidebar = ({
               </span>
             </button>
             {quickCaptureMode === 'note' && (
-              <div className="pl-3">
+              <div className="pl-1">
                 <div className="flex w-full items-center gap-2 rounded-lg px-2 py-2.5 transition hover:bg-[var(--ledger-surface-muted)]">
                   <textarea
                     ref={noteCaptureRef}
                     value={noteDraft}
                     onChange={(e) => setNoteDraft(e.target.value)}
                     onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey && !e.metaKey && !e.ctrlKey) {
+                        if (noteDraft.trim() && !noteDraft.includes('\n')) {
+                          e.preventDefault();
+                          void saveQuickNote();
+                        }
+                        return;
+                      }
                       if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
                         e.preventDefault();
                         void saveQuickNote();
@@ -2420,14 +2383,78 @@ export const ExpandedSidebar = ({
                     +
                   </button>
                 </div>
+
+                {quickCaptureNotice && (
+                  <p className="px-1 pt-1 text-[11px] text-[var(--ledger-text-muted)]">
+                    {quickCaptureNotice}
+                  </p>
+                )}
+
+                {savedNotes.length > 0 && (
+                  <div className="space-y-0.5 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => setSavedNotesExpanded((prev) => !prev)}
+                      className="flex h-8 w-full items-center justify-between rounded-lg px-2 text-left text-[12px] text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]"
+                    >
+                      <span>Notes · {savedNotes.length}</span>
+                      <ChevronDown
+                        size={14}
+                        className={`shrink-0 transition-transform ${
+                          savedNotesExpanded ? 'rotate-180' : ''
+                        }`}
+                      />
+                    </button>
+                {savedNotesExpanded && (
+                  <div className="max-h-44 space-y-0.5 overflow-auto pr-0.5">
+                    {visibleSavedNotes.map((note) => {
+                        return (
+                          <button
+                            key={note.id}
+                              type="button"
+                              onClick={() =>
+                                void window.desktopWindow?.toggleModule('notes', {
+                                  focusNoteId: note.id,
+                                })
+                              }
+                              className="flex w-full items-center justify-between gap-2 rounded-lg px-2 py-1.5 text-left transition hover:bg-[var(--ledger-surface-muted)]"
+                            >
+                              <span className="min-w-0 flex-1 truncate text-[12px] font-normal text-[var(--ledger-text-primary)]">
+                                {note.title}
+                              </span>
+                              <span className="shrink-0 text-[10px] text-[var(--ledger-text-muted)]">
+                                {new Date(note.updated_at || note.created_at).toLocaleDateString([], {
+                                  month: 'short',
+                                  day: 'numeric',
+                                })}
+                              </span>
+                            </button>
+                          );
+                        })}
+                    {savedNotes.length > visibleSavedNotes.length && (
+                      <button
+                        type="button"
+                        onClick={() => void window.desktopWindow?.toggleModule('notes')}
+                        className="w-full rounded-lg px-2 py-1.5 text-left text-[11px] font-medium text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]"
+                      >
+                        View all notes
+                      </button>
+                    )}
+                  </div>
+                )}
+                  </div>
+                )}
               </div>
             )}
 
             <button
               type="button"
               onClick={() => {
-                setTasksCollapsed(true);
-                setQuickCaptureMode((prev) => (prev === 'event' ? 'none' : 'event'));
+                if (quickCaptureMode === 'event') {
+                  setQuickCaptureMode('none');
+                } else {
+                  closeWorkspaceSections('event');
+                }
               }}
               className={`flex h-9 w-full items-center justify-between gap-3 rounded-xl px-2.5 text-left text-[13px] font-medium transition ${
                 quickCaptureMode === 'event'
@@ -2448,130 +2475,145 @@ export const ExpandedSidebar = ({
               </span>
             </button>
             {quickCaptureMode === 'event' && (
-              <div className="pl-3">
-                <div className={quickCaptureShellClass}>
-                  <input
-                    ref={eventCaptureRef}
-                    value={eventDraft}
-                    onChange={(e) => setEventDraft(e.target.value)}
-                    onKeyDown={(e) => {
-                      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
-                        e.preventDefault();
-                        void saveQuickEvent();
-                      } else if (e.key === 'Escape') {
-                        e.preventDefault();
-                        if (!eventDraft.trim()) setQuickCaptureMode('none');
-                      }
-                    }}
-                    placeholder="Event title..."
-                    className={`w-full ${quickCaptureControlClass}`}
-                  />
-                  <div className="mt-2 grid grid-cols-2 gap-2">
+              <div className="space-y-2 pl-1 pt-1">
+                <div className="space-y-2">
+                  <div className={`flex w-full items-center gap-2 ${eventComposerFieldClass}`}>
+                    <input
+                      ref={eventCaptureRef}
+                      value={eventDraft}
+                      onChange={(e) => setEventDraft(e.target.value)}
+                      onKeyDown={(e) => {
+                        if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+                          e.preventDefault();
+                          void saveQuickEvent();
+                        } else if (e.key === 'Escape') {
+                          e.preventDefault();
+                          if (!eventDraft.trim()) setQuickCaptureMode('none');
+                        }
+                      }}
+                      placeholder="Event title..."
+                      className="min-w-0 flex-1 bg-transparent px-0 text-xs text-[var(--ledger-text-primary)] placeholder:text-[var(--ledger-placeholder)] focus:outline-none"
+                    />
+                    <button
+                      type="button"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => void saveQuickEvent()}
+                      disabled={!eventDraft.trim()}
+                      className="inline-flex h-6 shrink-0 items-center justify-center rounded-full px-2 text-[11px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] disabled:opacity-60"
+                      aria-label="Save event"
+                    >
+                      +
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-[1.2fr_0.9fr_0.9fr] gap-2">
                     <input
                       type="date"
                       value={eventDate}
                       onChange={(e) => setEventDate(e.target.value)}
-                      className={`w-full ${quickCaptureControlClass}`}
+                      className={`w-full appearance-none ${eventComposerFieldClass}`}
                     />
                     <input
                       type="time"
                       value={eventStartTime}
                       onChange={(e) => setEventStartTime(e.target.value)}
-                      className={`w-full ${quickCaptureControlClass}`}
+                      className={`w-full appearance-none ${eventComposerFieldClass}`}
                     />
                     <input
                       type="time"
                       value={eventEndTime}
                       onChange={(e) => setEventEndTime(e.target.value)}
-                      className={`w-full ${quickCaptureControlClass}`}
+                      className={`w-full appearance-none ${eventComposerFieldClass}`}
                     />
-                    <div className="flex items-center justify-end gap-1.5">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setEventDraft('');
-                          setEventDate(todayKey());
-                          setEventStartTime('09:00');
-                          setEventEndTime('10:00');
-                          setQuickCaptureMode('none');
-                        }}
-                        className={`h-7 rounded-full px-3 text-[11px] font-medium ${sidebarTheme.buttonSecondary}`}
-                      >
-                        Clear
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => void saveQuickEvent()}
-                        disabled={!eventDraft.trim()}
-                        className={`h-7 rounded-full px-3 text-[11px] font-medium disabled:opacity-60 ${sidebarTheme.buttonPrimary}`}
-                      >
-                        Save
-                      </button>
-                    </div>
                   </div>
+                </div>
+            {quickCaptureNotice && (
+              <p className="px-0.5 text-[11px] text-[var(--ledger-text-muted)]">
+                {quickCaptureNotice}
+              </p>
+            )}
+                <div className="space-y-0.5 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEventsExpanded((current) => {
+                        const next = !current;
+                        persistCollapsedState(EVENTS_COLLAPSE_STORAGE_KEY, !next);
+                        return next;
+                      });
+                    }}
+                    className="flex h-8 w-full items-center justify-between rounded-lg px-2 text-left text-[12px] text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]"
+                  >
+                    <span>Events · {upcomingItems.length}</span>
+                    <ChevronDown
+                      size={14}
+                      className={`shrink-0 transition-transform ${
+                        eventsExpanded ? 'rotate-180' : ''
+                      }`}
+                    />
+                  </button>
+                  {eventsExpanded && (
+                    <div className="max-h-44 space-y-0.5 overflow-auto pr-0.5">
+                      {upcomingItems.length > 0 ? (
+                        <>
+                          {upcomingItems.map((item) => (
+                            <button
+                              key={item.id}
+                              type="button"
+                              onClick={() =>
+                                void window.desktopWindow?.toggleModule('calendar', {
+                                  focusContext: `focus-event:${item.id}`,
+                                })
+                              }
+                              className="flex w-full items-center justify-between gap-2 rounded-lg px-2 py-1.5 text-left transition hover:bg-[var(--ledger-surface-muted)]"
+                            >
+                              <span className="min-w-0 flex-1 truncate text-[12px] font-normal text-[var(--ledger-text-primary)]">
+                                {item.title}
+                              </span>
+                              <span className="shrink-0 text-[10px] text-[var(--ledger-text-muted)]">
+                                {item.dueDate}
+                              </span>
+                            </button>
+                          ))}
+                          <button
+                            type="button"
+                            onClick={() => void window.desktopWindow?.openModule('calendar')}
+                            className="w-full rounded-lg px-2 py-1.5 text-left text-[11px] font-medium text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]"
+                          >
+                            View all events
+                          </button>
+                        </>
+                      ) : (
+                        <div className="px-2 py-1">
+                          <p className="text-[11px] text-[var(--ledger-text-muted)]">
+                            No upcoming events
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() => setQuickCaptureMode('event')}
+                            className="mt-1 text-[11px] font-medium text-[var(--ledger-text-secondary)] transition hover:text-[var(--ledger-text-primary)]"
+                          >
+                            Create one from Event above
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
             )}
           </div>
 
-          {quickCaptureNotice && (
-            <p className="px-1 text-[11px] text-[var(--ledger-text-muted)]">{quickCaptureNotice}</p>
-          )}
-
-          {quickNotes.length > 0 && (
-            <div className="space-y-1.5 max-h-40 overflow-auto pr-0.5">
-              {quickNotes.slice(0, 6).map((note) => (
-                <div
-                  key={note.id}
-                  className={`w-full rounded-md border px-2 py-1.5 ${sidebarTheme.surface}`}
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <button
-                      onClick={() => {
-                        setNoteDraft(note.body);
-                        setQuickCaptureMode('note');
-                      }}
-                      className="min-w-0 text-left flex-1"
-                    >
-                      <p className="truncate text-[11px] font-medium text-[var(--ledger-text-primary)]">
-                        {note.title}
-                      </p>
-                      <p className="mt-0.5 text-[10px] text-[var(--ledger-text-muted)]">
-                        {new Date(note.createdAt).toLocaleString([], {
-                          month: 'short',
-                          day: 'numeric',
-                          hour: 'numeric',
-                          minute: '2-digit',
-                        })}
-                      </p>
-                    </button>
-                    <button
-                      onClick={async (e) => {
-                        e.stopPropagation();
-                        try {
-                          await api.deleteNote(note.id);
-                        } catch (error) {
-                          setSaveError('Could not delete note.');
-                          return;
-                        }
-                        setQuickNotes((prev) => prev.filter((item) => item.id !== note.id));
-                      }}
-                      className="mt-0.5 rounded p-1 text-[var(--ledger-text-muted)] transition hover:bg-[color:rgba(217,45,32,0.08)] hover:text-[var(--ledger-danger)]"
-                      title="Delete note"
-                      aria-label="Delete note"
-                    >
-                      <Trash2 size={12} />
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-
         <section ref={checkinSectionRef} className="order-5 space-y-1.5">
           <button
             type="button"
-            onClick={toggleCheckinExpanded}
+            onClick={() => {
+              if (isCheckinExpanded) {
+                setIsCheckinExpanded(false);
+                persistCollapsedState(CHECKIN_COLLAPSE_STORAGE_KEY, true);
+              } else {
+                closeWorkspaceSections('checkin');
+              }
+            }}
             className={`flex h-9 w-full items-center justify-between gap-3 rounded-xl px-2.5 text-left text-[13px] font-medium transition ${
               isCheckinExpanded
                 ? 'bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-primary)]'
@@ -2593,121 +2635,57 @@ export const ExpandedSidebar = ({
           </button>
 
           {isCheckinExpanded && (
-            <div className="pl-3">
-              {!hasCheckinContent || isCheckinEditing ? (
-                <div className="space-y-2">
-                  <div className="grid grid-cols-[84px_minmax(0,1fr)] items-center gap-2">
-                    <label className="text-[10px] font-medium text-[var(--ledger-text-muted)]">
-                      Finished
-                    </label>
-                    <input
-                      ref={checkinFinishedInputRef}
-                      value={checkin.finished}
-                      onChange={(e) => {
-                        setCheckin((prev) => ({ ...prev, finished: e.target.value }));
-                        setCheckinSaved(false);
-                      }}
-                      placeholder="What did you finish?"
-                      className={`h-8 w-full rounded-lg px-2 text-xs ${sidebarTheme.fieldMuted}`}
-                      disabled={isLoadingDaily}
-                    />
-                  </div>
-                  <div className="grid grid-cols-[84px_minmax(0,1fr)] items-center gap-2">
-                    <label className="text-[10px] font-medium text-[var(--ledger-text-muted)]">
-                      Blocked
-                    </label>
-                    <input
-                      value={checkin.blocked}
-                      onChange={(e) => {
-                        setCheckin((prev) => ({ ...prev, blocked: e.target.value }));
-                        setCheckinSaved(false);
-                      }}
-                      placeholder="Anything blocked?"
-                      className={`h-8 w-full rounded-lg px-2 text-xs ${sidebarTheme.fieldMuted}`}
-                      disabled={isLoadingDaily}
-                    />
-                  </div>
-                  <div className="grid grid-cols-[84px_minmax(0,1fr)] items-center gap-2">
-                    <label className="text-[10px] font-medium text-[var(--ledger-text-muted)]">
-                      Tomorrow
-                    </label>
-                    <input
-                      value={checkin.firstTaskTomorrow}
-                      onChange={(e) => {
-                        setCheckin((prev) => ({ ...prev, firstTaskTomorrow: e.target.value }));
-                        setCheckinSaved(false);
-                      }}
-                      placeholder="First task tomorrow?"
-                      className={`h-8 w-full rounded-lg px-2 text-xs ${sidebarTheme.fieldMuted}`}
-                      disabled={isLoadingDaily}
-                    />
-                  </div>
-
-                  <div className="flex items-center justify-between gap-2 pt-0.5">
-                    <button
-                      onClick={() => void clearCheckin()}
-                      className={`h-7 rounded-lg px-3 text-xs font-medium transition disabled:opacity-60 ${sidebarTheme.buttonSecondary}`}
-                      disabled={
-                        isLoadingDaily ||
-                        (!checkinSaved &&
-                          !checkin.finished.trim() &&
-                          !checkin.blocked.trim() &&
-                          !checkin.firstTaskTomorrow.trim())
-                      }
-                    >
-                      Clear
-                    </button>
-                    <button
-                      onClick={() => void saveCheckin()}
-                      className={`h-7 rounded-lg px-3 text-xs font-medium transition disabled:opacity-60 ${sidebarTheme.buttonPrimary}`}
-                      disabled={isLoadingDaily}
-                    >
-                      Save
-                    </button>
-                  </div>
+            <div className="pl-1">
+              <div className="space-y-2">
+                <div className="grid grid-cols-[84px_minmax(0,1fr)] items-center gap-2">
+                  <label className="text-[10px] font-medium text-[var(--ledger-text-muted)]">Finished</label>
+                  <input
+                    data-checkin-input="finished"
+                    value={checkin.finished}
+                    onChange={(e) => {
+                      setCheckin((prev) => ({ ...prev, finished: e.target.value }));
+                    }}
+                    placeholder="What did you finish?"
+                    className={checkinFieldClass}
+                    disabled={isLoadingDaily}
+                  />
                 </div>
-              ) : (
-                <div className="space-y-2">
-                  <div className="space-y-1.5">
-                    <div>
-                      <p className="text-[10px] font-medium text-[var(--ledger-text-muted)]">Finished</p>
-                      <p className="mt-0.5 text-[12px] text-[var(--ledger-text-primary)]">
-                        {checkin.finished.trim() || 'Nothing yet'}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-[10px] font-medium text-[var(--ledger-text-muted)]">Blocked</p>
-                      <p className="mt-0.5 text-[12px] text-[var(--ledger-text-primary)]">
-                        {checkin.blocked.trim() || 'Nothing blocked'}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-[10px] font-medium text-[var(--ledger-text-muted)]">Tomorrow</p>
-                      <p className="mt-0.5 text-[12px] text-[var(--ledger-text-primary)]">
-                        {checkin.firstTaskTomorrow.trim() || 'Nothing set'}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center justify-between gap-2 pt-0.5">
-                    <button
-                      type="button"
-                      onClick={() => setIsCheckinEditing(true)}
-                      className={`h-7 rounded-lg px-3 text-xs font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]`}
-                    >
-                      Edit
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => void clearCheckin()}
-                      className={`h-7 rounded-lg px-3 text-xs font-medium transition disabled:opacity-60 ${sidebarTheme.buttonSecondary}`}
-                      disabled={isLoadingDaily}
-                    >
-                      Clear
-                    </button>
-                  </div>
+                <div className="grid grid-cols-[84px_minmax(0,1fr)] items-center gap-2">
+                  <label className="text-[10px] font-medium text-[var(--ledger-text-muted)]">Blocked</label>
+                  <input
+                    value={checkin.blocked}
+                    onChange={(e) => {
+                      setCheckin((prev) => ({ ...prev, blocked: e.target.value }));
+                    }}
+                    placeholder="Anything blocked?"
+                    className={checkinFieldClass}
+                    disabled={isLoadingDaily}
+                  />
                 </div>
-              )}
+                <div className="grid grid-cols-[84px_minmax(0,1fr)] items-center gap-2">
+                  <label className="text-[10px] font-medium text-[var(--ledger-text-muted)]">Tomorrow</label>
+                  <input
+                    value={checkin.firstTaskTomorrow}
+                    onChange={(e) => {
+                      setCheckin((prev) => ({ ...prev, firstTaskTomorrow: e.target.value }));
+                    }}
+                    placeholder="First task tomorrow?"
+                    className={checkinFieldClass}
+                    disabled={isLoadingDaily}
+                  />
+                </div>
+
+                <div className="flex items-center justify-end gap-2 pt-0.5">
+                  <button
+                    onClick={() => void saveCheckin()}
+                    className="inline-flex h-6 shrink-0 items-center justify-center rounded-full px-2 text-[11px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] disabled:opacity-60"
+                    disabled={isLoadingDaily}
+                    aria-label="Save check-in"
+                  >
+                    +
+                  </button>
+                </div>
+              </div>
             </div>
           )}
         </section>
@@ -2966,7 +2944,13 @@ export const ExpandedSidebar = ({
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={toggleProjectsCollapsed}
+              onClick={() => {
+                if (projectsCollapsed) {
+                  closeWorkspaceSections('projects');
+                } else {
+                  setProjectsCollapsed(true);
+                }
+              }}
               className={`flex h-9 min-w-0 flex-1 items-center justify-between gap-3 rounded-xl px-2.5 text-left text-[13px] font-medium transition ${
                 projectsCollapsed
                   ? 'text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]'

@@ -43,6 +43,8 @@ import {
   ModuleWindowHeader,
 } from '../Common/ModuleWindowHeader';
 import { CloseGuardModal } from '../Common/CloseGuardModal';
+import { ModalOverlay } from '../Common/ModalOverlay';
+import { ModalCloseButton } from '../Common/ModalCloseButton';
 import { SkeletonLoader, SkeletonNoteCard } from '../Common/Skeleton';
 import { MindMapEditor } from './MindMapEditor';
 import { RichTextEditor } from './RichTextEditor';
@@ -101,6 +103,25 @@ type NoteSection = {
   parent_id?: string | null;
   sort_order: number;
   collapsed: boolean;
+};
+
+type ProjectLinkCandidate = {
+  id: string;
+  name: string;
+  status?: string | null;
+  completeness?: number | null;
+  end_date?: string | null;
+};
+
+type WorkspaceProjectNoteLink = {
+  id: string;
+  note_id: string;
+  project_id: string;
+  project_name: string;
+  project_status?: string | null;
+  project_completeness?: number | null;
+  project_end_date?: string | null;
+  created_at: string;
 };
 
 const POLL_INTERVAL_MS = 15000;
@@ -681,6 +702,14 @@ export const NotesWindow = () => {
   const [workspaceTemplates, setWorkspaceTemplates] = useState<Array<{ id: string; name: string }>>(
     []
   );
+  const [workspaceProjectNoteLinks, setWorkspaceProjectNoteLinks] = useState<
+    WorkspaceProjectNoteLink[]
+  >([]);
+  const [isLinkProjectModalOpen, setIsLinkProjectModalOpen] = useState(false);
+  const [linkProjectTargetNoteId, setLinkProjectTargetNoteId] = useState<string | null>(null);
+  const [linkableProjects, setLinkableProjects] = useState<ProjectLinkCandidate[]>([]);
+  const [isLoadingLinkableProjects, setIsLoadingLinkableProjects] = useState(false);
+  const [linkProjectSearch, setLinkProjectSearch] = useState('');
   const toast = useToast();
   const [workspaceMembers, setWorkspaceMembers] = useState<WorkspaceMember[]>([]);
   const quickTemplates = [
@@ -770,6 +799,111 @@ export const NotesWindow = () => {
     [notes, selectedNoteId]
   );
   const selectedNoteIdSet = useMemo(() => new Set(selectedNoteIds), [selectedNoteIds]);
+  const selectedNoteProjectLinks = useMemo(() => {
+    if (!selectedNoteId) return [];
+    const seen = new Set<string>();
+    return workspaceProjectNoteLinks.filter((link) => {
+      if (link.note_id !== selectedNoteId) return false;
+      if (seen.has(link.project_id)) return false;
+      seen.add(link.project_id);
+      return true;
+    });
+  }, [selectedNoteId, workspaceProjectNoteLinks]);
+
+  const openLinkProjectModal = useCallback(
+    async (noteId: string | null = selectedNoteId) => {
+      if (!noteId) return;
+
+      setNoteContextMenu(null);
+      setIsNoteActionsOpen(false);
+      setIsInspectorActionsOpen(false);
+      setLinkProjectTargetNoteId(noteId);
+      setLinkProjectSearch('');
+      setIsLinkProjectModalOpen(true);
+      setIsLoadingLinkableProjects(true);
+
+      try {
+        const projectsPayload = await api.getProjects();
+        const projects = Array.isArray(projectsPayload)
+          ? (projectsPayload as ProjectLinkCandidate[])
+          : [];
+        setLinkableProjects(
+          projects.filter((project) => {
+            const status = String(project.status ?? '').toLowerCase();
+            return status !== 'completed' && status !== 'paused' && status !== 'archived';
+          })
+        );
+      } catch (error) {
+        console.error('Failed to load linkable projects:', error);
+        setLinkableProjects([]);
+      } finally {
+        setIsLoadingLinkableProjects(false);
+      }
+    },
+    [api, selectedNoteId]
+  );
+
+  const linkNoteToProject = useCallback(
+    async (projectId: string) => {
+      const noteId = linkProjectTargetNoteId ?? selectedNoteId;
+      if (!noteId) return;
+
+      try {
+        await api.linkProjectNote(projectId, noteId);
+        if (activeWorkspaceId) {
+          try {
+            const payload = (await api.getWorkspaceProjectNoteLinks(activeWorkspaceId)) as
+              | { links?: WorkspaceProjectNoteLink[] }
+              | WorkspaceProjectNoteLink[]
+              | null;
+            const links = Array.isArray(payload)
+              ? payload
+              : Array.isArray(payload?.links)
+                ? payload.links
+                : [];
+            setWorkspaceProjectNoteLinks(
+              links
+                .filter((link) => link.note_id && link.project_id && link.project_name)
+                .map((link) => ({
+                  id: link.id,
+                  note_id: link.note_id,
+                  project_id: link.project_id,
+                  project_name: link.project_name,
+                  project_status: link.project_status ?? null,
+                  project_completeness:
+                    typeof link.project_completeness === 'number' ? link.project_completeness : null,
+                  project_end_date: link.project_end_date ?? null,
+                  created_at: link.created_at,
+                }))
+            );
+          } catch (refreshError) {
+            console.error('Failed to refresh project links after linking note:', refreshError);
+          }
+        }
+        toast.show('Linked to project', {
+          detail: 'The note is now connected to the selected project.',
+          variant: 'success',
+        });
+        setIsLinkProjectModalOpen(false);
+        setLinkProjectTargetNoteId(null);
+      } catch (error) {
+        console.error('Failed to link note to project:', error);
+        toast.show(error instanceof Error ? error.message : 'Could not link note', {
+          variant: 'error',
+        });
+      }
+    },
+    [activeWorkspaceId, api, linkProjectTargetNoteId, selectedNoteId, toast]
+  );
+
+  const filteredLinkableProjects = useMemo(() => {
+    const query = linkProjectSearch.trim().toLowerCase();
+    if (!query) return linkableProjects;
+    return linkableProjects.filter((project) => {
+      const haystack = `${project.name} ${project.status ?? ''}`.toLowerCase();
+      return haystack.includes(query);
+    });
+  }, [linkProjectSearch, linkableProjects]);
 
   const getSortPreferenceForScope = useCallback(
     (scopeId: string) => {
@@ -1618,6 +1752,55 @@ export const NotesWindow = () => {
     };
 
     void loadWorkspaceMembers();
+    return () => {
+      mounted = false;
+    };
+  }, [activeWorkspaceId, api]);
+
+  useEffect(() => {
+    let mounted = true;
+
+    const loadProjectLinks = async () => {
+      if (!activeWorkspaceId) {
+        if (mounted) setWorkspaceProjectNoteLinks([]);
+        return;
+      }
+
+      try {
+        const payload = (await api.getWorkspaceProjectNoteLinks(activeWorkspaceId)) as
+          | { links?: WorkspaceProjectNoteLink[] }
+          | WorkspaceProjectNoteLink[]
+          | null;
+        if (!mounted) return;
+
+        const links = Array.isArray(payload)
+          ? payload
+          : Array.isArray(payload?.links)
+            ? payload.links
+            : [];
+
+        setWorkspaceProjectNoteLinks(
+          links
+            .filter((link) => link.note_id && link.project_id && link.project_name)
+            .map((link) => ({
+              id: link.id,
+              note_id: link.note_id,
+              project_id: link.project_id,
+              project_name: link.project_name,
+              project_status: link.project_status ?? null,
+              project_completeness:
+                typeof link.project_completeness === 'number' ? link.project_completeness : null,
+              project_end_date: link.project_end_date ?? null,
+              created_at: link.created_at,
+            }))
+        );
+      } catch (error) {
+        console.error('Failed to load project links for notes:', error);
+        if (mounted) setWorkspaceProjectNoteLinks([]);
+      }
+    };
+
+    void loadProjectLinks();
     return () => {
       mounted = false;
     };
@@ -4692,6 +4875,14 @@ export const NotesWindow = () => {
                             >
                               Add child note
                             </button>
+                            <button
+                              onClick={() => {
+                                void openLinkProjectModal(selectedNote.id);
+                              }}
+                              className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]"
+                            >
+                              Link to project
+                            </button>
                             <div className="my-1 h-px bg-[var(--ledger-border-subtle)]" />
                             <button
                               disabled={isDeleting}
@@ -4740,6 +4931,75 @@ export const NotesWindow = () => {
                   ) : (
                     <p className="text-sm text-[var(--ledger-text-muted)]">
                       No metadata to show until a note is selected.
+                    </p>
+                  )}
+                </div>
+
+                <div className="space-y-2 border-t border-[color:var(--ledger-border-subtle)] pt-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-xs font-medium text-[var(--ledger-text-muted)]">
+                      Linked project
+                    </p>
+                    {selectedNote && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void openLinkProjectModal(selectedNote.id);
+                        }}
+                        className="text-xs font-medium text-[var(--ledger-accent)] transition hover:text-[var(--ledger-accent-hover)]"
+                      >
+                        Link to project
+                      </button>
+                    )}
+                  </div>
+                  {selectedNote ? (
+                    selectedNoteProjectLinks.length > 0 ? (
+                      <div className="space-y-2">
+                        {selectedNoteProjectLinks.slice(0, 3).map((link) => (
+                          <div
+                            key={link.id}
+                            className="rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3 py-2"
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <p className="truncate text-sm font-medium text-[var(--ledger-text-primary)]">
+                                  {link.project_name}
+                                </p>
+                                <p className="mt-0.5 truncate text-xs text-[var(--ledger-text-muted)]">
+                                  {String(link.project_status ?? 'active').split('_').join(' ')}
+                                  {typeof link.project_completeness === 'number'
+                                    ? ` · ${Math.round(link.project_completeness)}%`
+                                    : ''}
+                                  {link.project_end_date
+                                    ? ` · Due ${formatCompactDateTime(link.project_end_date)}`
+                                    : ''}
+                                </p>
+                              </div>
+                              <span className="shrink-0 rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2 py-0.5 text-[11px] font-medium text-[var(--ledger-text-secondary)]">
+                                Linked
+                              </span>
+                            </div>
+                          </div>
+                        ))}
+                        {selectedNoteProjectLinks.length > 3 && (
+                          <p className="px-1 text-xs text-[var(--ledger-text-muted)]">
+                            +{selectedNoteProjectLinks.length - 3} more linked projects
+                          </p>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3 py-2">
+                        <p className="text-sm font-medium text-[var(--ledger-text-primary)]">
+                          No linked project
+                        </p>
+                        <p className="mt-0.5 text-xs text-[var(--ledger-text-muted)]">
+                          Link this note to keep project context close by.
+                        </p>
+                      </div>
+                    )
+                  ) : (
+                    <p className="text-sm text-[var(--ledger-text-muted)]">
+                      Select a note to see linked project context.
                     </p>
                   )}
                 </div>
@@ -5130,6 +5390,15 @@ export const NotesWindow = () => {
           </button>
           <button
             onClick={() => {
+              void openLinkProjectModal(noteContextMenu.noteId);
+            }}
+            className="flex h-9 w-full items-center gap-3 rounded-none px-3 text-left text-sm transition hover:bg-[var(--ledger-surface-hover)]"
+          >
+            <Folder size={14} className="shrink-0 text-[var(--ledger-text-secondary)]" />
+            <span className="font-medium">Link to project</span>
+          </button>
+          <button
+            onClick={() => {
               void api
                 .moveNoteParent(noteContextMenu.noteId, null)
                 .then(() => loadNotes({ silent: true }))
@@ -5253,6 +5522,73 @@ export const NotesWindow = () => {
           displayUserName(workspaceMemberById.get(userId ?? '') ?? null)
         }
       />
+
+      <ModalOverlay
+        isOpen={isLinkProjectModalOpen}
+        onClose={() => {
+          setIsLinkProjectModalOpen(false);
+          setLinkProjectTargetNoteId(null);
+        }}
+        classNameContainer="w-full max-w-[420px] overflow-hidden rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-[var(--ledger-shadow)]"
+      >
+        <div className="flex items-start justify-between gap-4 border-b border-[color:var(--ledger-border-subtle)] px-5 py-4">
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-[var(--ledger-text-primary)]">Link to project</p>
+            <p className="mt-1 truncate text-sm text-[var(--ledger-text-secondary)]">
+              {selectedNote?.title || 'Untitled note'}
+            </p>
+          </div>
+          <ModalCloseButton
+            onClick={() => {
+              setIsLinkProjectModalOpen(false);
+              setLinkProjectTargetNoteId(null);
+            }}
+            ariaLabel="Close project link modal"
+          />
+        </div>
+
+        <div className="space-y-3 p-5">
+          <input
+            value={linkProjectSearch}
+            onChange={(event) => setLinkProjectSearch(event.target.value)}
+            placeholder="Search active projects..."
+            className="h-9 w-full rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 text-sm text-[var(--ledger-text-primary)] outline-none placeholder:text-[var(--ledger-text-muted)] focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60"
+          />
+
+          <div className="max-h-[48vh] overflow-auto space-y-1 pr-1">
+            {isLoadingLinkableProjects ? (
+              <p className="px-1 py-2 text-sm text-[var(--ledger-text-muted)]">Loading projects...</p>
+            ) : filteredLinkableProjects.length === 0 ? (
+              <p className="px-1 py-2 text-sm text-[var(--ledger-text-muted)]">No active projects found.</p>
+            ) : (
+              filteredLinkableProjects.map((project) => (
+                <button
+                  key={project.id}
+                  type="button"
+                  onClick={() => {
+                    void linkNoteToProject(project.id);
+                  }}
+                  className="flex w-full items-center justify-between rounded-xl border border-transparent px-3 py-2 text-left transition hover:border-[color:var(--ledger-border-subtle)] hover:bg-[var(--ledger-surface-hover)]"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium text-[var(--ledger-text-primary)]">
+                      {project.name}
+                    </p>
+                    <p className="truncate text-xs text-[var(--ledger-text-muted)]">
+                      {String(project.status ?? 'active').split('_').join(' ')}
+                      {typeof project.completeness === 'number' ? ` · ${Math.round(project.completeness)}%` : ''}
+                      {project.end_date ? ` · Due ${formatCompactDateTime(project.end_date)}` : ''}
+                    </p>
+                  </div>
+                  <span className="ml-3 shrink-0 rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2 py-0.5 text-[11px] font-medium text-[var(--ledger-text-secondary)]">
+                    Select
+                  </span>
+                </button>
+              ))
+            )}
+          </div>
+        </div>
+      </ModalOverlay>
     </div>
   );
 };
