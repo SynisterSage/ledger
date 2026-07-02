@@ -331,11 +331,13 @@ const normalizeProjectType = (value) => {
 };
 
 const projectSelectColumns =
-  'id, name, description, status, completeness, color, start_date, end_date, project_type, lead_id, created_by, created_at, updated_at';
+  'id, workspace_id, name, description, status, completeness, color, start_date, end_date, project_type, lead_id, owner_team_id, created_by, created_at, updated_at';
+const workspaceTeamSelectColumns =
+  'id, workspace_id, created_by, updated_by, name, identifier, description, color, archived_at, archived_by, default_task_scope, default_project_visibility, default_assignee_behavior, created_at, updated_at';
 const projectMilestoneSelectColumns =
-  'id, workspace_id, project_id, title, milestone_date, type, note, completed, linked_note_id, linked_reminder_id, linked_event_id, assigned_team_id, created_by, updated_by, created_at, updated_at';
+  'id, workspace_id, project_id, title, milestone_date, type, note, completed, linked_note_id, linked_reminder_id, linked_event_id, assigned_to, assigned_to_user_id, assigned_to_team_id, assigned_team_id, assigned_by_user_id, assigned_at, created_by, updated_by, created_at, updated_at';
 const taskSelectColumns =
-  'id, workspace_id, project_id, milestone_id, title, description, notes, due_date, due_time, status, priority, assigned_to, assigned_team_id, tags, completed_at, source, source_platform, created_at, updated_at';
+  'id, workspace_id, project_id, milestone_id, title, description, notes, due_date, due_time, status, priority, assigned_to, assigned_to_user_id, assigned_to_team_id, assigned_team_id, assigned_by_user_id, assigned_at, tags, completed_at, source, source_platform, created_at, updated_at';
 const taskSelectWithHorizonColumns = `${taskSelectColumns}, task_horizon`;
 const reminderSelectColumns =
   'id, workspace_id, user_id, title, body, remind_at, status, linked_type, linked_id, completed_at, dismissed_at, snoozed_until, source, source_platform, created_at, updated_at, calendar_id, project_id, note_id, notes, color, is_done, created_by, series_id, series_type, recurrence_rule';
@@ -2400,6 +2402,37 @@ const buildTaskSelectColumns = ({
     .filter(Boolean)
     .join(', ');
 
+const normalizeAssignmentTarget = (body = {}) => {
+  const nextUserId = normalizeNullableText(body.assigned_to_user_id ?? body.assigned_to);
+  const nextTeamId = normalizeNullableText(body.assigned_to_team_id ?? body.assigned_team_id);
+
+  if (nextUserId && nextTeamId) {
+    const error = new Error('Choose either a person or a team assignment');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  return {
+    assigned_to_user_id: nextUserId,
+    assigned_to_team_id: nextTeamId,
+  };
+};
+
+const buildAssignmentPersistenceFields = (assignmentTarget, actorUserId, nowIso) => {
+  const assignedToUserId = assignmentTarget?.assigned_to_user_id ?? null;
+  const assignedToTeamId = assignmentTarget?.assigned_to_team_id ?? null;
+  const hasAssignment = Boolean(assignedToUserId || assignedToTeamId);
+
+  return {
+    assigned_to: assignedToUserId,
+    assigned_to_user_id: assignedToUserId,
+    assigned_to_team_id: assignedToTeamId,
+    assigned_team_id: assignedToTeamId,
+    assigned_by_user_id: hasAssignment ? actorUserId : null,
+    assigned_at: hasAssignment ? nowIso : null,
+  };
+};
+
 const getRequestedWorkspaceId = (req) => {
   const headerWorkspace = req.headers['x-workspace-id'];
   if (typeof headerWorkspace === 'string' && headerWorkspace.trim()) {
@@ -4099,6 +4132,25 @@ const ensureWorkspaceTeam = async (teamId, workspaceId) => {
     .eq('workspace_id', workspaceId)
     .maybeSingle();
   return Boolean(result.data?.id);
+};
+
+const ensureWorkspaceMemberTarget = async (workspaceId, userId) => {
+  const workspaceResult = await supabase
+    .from('workspaces')
+    .select('owner_id')
+    .eq('id', workspaceId)
+    .maybeSingle();
+  if (workspaceResult.error) throw workspaceResult.error;
+  if (workspaceResult.data?.owner_id === userId) return true;
+
+  const memberResult = await supabase
+    .from('workspace_members')
+    .select('user_id')
+    .eq('workspace_id', workspaceId)
+    .eq('user_id', userId)
+    .maybeSingle();
+  if (memberResult.error) throw memberResult.error;
+  return Boolean(memberResult.data?.user_id);
 };
 
 const isMissingTableError = (error) => {
@@ -6683,7 +6735,8 @@ app.delete(
   }
 );
 
-const teamRoleValues = ['lead', 'member'];
+const teamRoleValues = ['lead', 'member', 'viewer'];
+const teamRoleOrder = { lead: 0, member: 1, viewer: 2 };
 
 const normalizeTeamIdentifier = (value) =>
   String(value ?? '')
@@ -6729,11 +6782,12 @@ const buildTeamWorkItem = ({
   };
 };
 
-const loadWorkspaceTeams = async (workspaceId, currentUserId) => {
-  const [teamsResult, membersResult, projectsResult, tasksResult, milestonesResult] = await Promise.all([
+const loadWorkspaceTeams = async (workspaceId, currentUserId, options = {}) => {
+  const includeArchived = Boolean(options.includeArchived);
+  const [teamsResult, membersResult, projectsResult, tasksResult, milestonesResult, noteLinksResult] = await Promise.all([
     supabase
       .from('workspace_teams')
-      .select('id, workspace_id, created_by, updated_by, name, identifier, description, color, created_at, updated_at')
+      .select(workspaceTeamSelectColumns)
       .eq('workspace_id', workspaceId)
       .order('created_at', { ascending: true }),
     supabase
@@ -6743,18 +6797,22 @@ const loadWorkspaceTeams = async (workspaceId, currentUserId) => {
       .order('created_at', { ascending: true }),
     supabase
       .from('projects')
-      .select('id, name')
+      .select('id, name, owner_team_id')
       .eq('workspace_id', workspaceId),
     supabase
       .from('tasks')
       .select(taskSelectColumns)
       .eq('workspace_id', workspaceId)
-      .not('assigned_team_id', 'is', null),
+      .or('assigned_team_id.not.is.null,assigned_to_team_id.not.is.null'),
     supabase
       .from('project_milestones')
       .select(projectMilestoneSelectColumns)
       .eq('workspace_id', workspaceId)
-      .not('assigned_team_id', 'is', null),
+      .or('assigned_team_id.not.is.null,assigned_to_team_id.not.is.null'),
+    supabase
+      .from('note_team_links')
+      .select('id, workspace_id, note_id, team_id, created_by, created_at')
+      .eq('workspace_id', workspaceId),
   ]);
 
   if (teamsResult.error) throw teamsResult.error;
@@ -6762,10 +6820,44 @@ const loadWorkspaceTeams = async (workspaceId, currentUserId) => {
   if (projectsResult.error) throw projectsResult.error;
   if (tasksResult.error) throw tasksResult.error;
   if (milestonesResult.error) throw milestonesResult.error;
+  if (noteLinksResult.error) throw noteLinksResult.error;
 
-  const teamRows = teamsResult.data ?? [];
+  const teamRows = (teamsResult.data ?? []).filter((team) => includeArchived || !team.archived_at);
   const memberRows = membersResult.data ?? [];
-  const projectMap = new Map((projectsResult.data ?? []).map((project) => [project.id, project.name]));
+  const projectRows = projectsResult.data ?? [];
+  const projectMap = new Map(projectRows.map((project) => [project.id, project.name]));
+  const projectIds = projectRows.map((project) => project.id).filter(Boolean);
+  const projectMilestonesResult =
+    projectIds.length > 0
+      ? await supabase
+          .from('project_milestones')
+          .select('id, workspace_id, project_id, title, milestone_date, type, note, completed, linked_note_id, linked_reminder_id, linked_event_id, assigned_to, assigned_to_user_id, assigned_to_team_id, assigned_team_id, assigned_by_user_id, assigned_at, created_by, updated_by, created_at, updated_at')
+          .eq('workspace_id', workspaceId)
+          .in('project_id', projectIds)
+      : { data: [], error: null };
+  if (projectMilestonesResult.error) throw projectMilestonesResult.error;
+  const projectMilestoneRows = projectMilestonesResult.data ?? [];
+  const projectsByTeamId = new Map();
+  for (const project of projectRows) {
+    if (!project.owner_team_id) continue;
+    if (!projectsByTeamId.has(project.owner_team_id)) {
+      projectsByTeamId.set(project.owner_team_id, []);
+    }
+    projectsByTeamId.get(project.owner_team_id).push({
+      id: project.id,
+      name: project.name,
+    });
+  }
+
+  const projectNoteLinksResult =
+    projectIds.length > 0
+      ? await supabase
+          .from('project_note_links')
+          .select('id, workspace_id, project_id, note_id, created_by, created_at')
+          .eq('workspace_id', workspaceId)
+          .in('project_id', projectIds)
+      : { data: [], error: null };
+  if (projectNoteLinksResult.error) throw projectNoteLinksResult.error;
 
   const userIds = [
     ...new Set(
@@ -6793,7 +6885,9 @@ const loadWorkspaceTeams = async (workspaceId, currentUserId) => {
       id: row.user_id,
       name: fullName,
       email: member?.email ?? null,
-      role: String(row.role ?? 'member').toLowerCase() === 'lead' ? 'lead' : 'member',
+      role: teamRoleValues.includes(String(row.role ?? '').toLowerCase())
+        ? String(row.role ?? '').toLowerCase()
+        : 'member',
       initials: getInitialsFromName(fullName, member?.email ?? null),
     };
     if (!membersByTeamId.has(row.team_id)) {
@@ -6804,29 +6898,91 @@ const loadWorkspaceTeams = async (workspaceId, currentUserId) => {
 
   const tasksByTeamId = new Map();
   for (const task of tasksResult.data ?? []) {
-    if (!task.assigned_team_id) continue;
+    const assignedTeamId = task.assigned_team_id ?? task.assigned_to_team_id ?? null;
+    if (!assignedTeamId) continue;
     const projectName = task.project_id ? projectMap.get(task.project_id) ?? 'Workspace' : 'Workspace';
     const item = buildTeamWorkItem({ kind: 'task', row: task, projectName });
-    if (!tasksByTeamId.has(task.assigned_team_id)) {
-      tasksByTeamId.set(task.assigned_team_id, []);
+    if (!tasksByTeamId.has(assignedTeamId)) {
+      tasksByTeamId.set(assignedTeamId, []);
     }
-    tasksByTeamId.get(task.assigned_team_id).push(item);
+    tasksByTeamId.get(assignedTeamId).push(item);
   }
 
   const milestonesByTeamId = new Map();
   for (const milestone of milestonesResult.data ?? []) {
-    if (!milestone.assigned_team_id) continue;
+    const assignedTeamId = milestone.assigned_team_id ?? milestone.assigned_to_team_id ?? null;
+    if (!assignedTeamId) continue;
     const projectName = milestone.project_id ? projectMap.get(milestone.project_id) ?? 'Workspace' : 'Workspace';
     const item = buildTeamWorkItem({ kind: 'milestone', row: milestone, projectName });
-    if (!milestonesByTeamId.has(milestone.assigned_team_id)) {
-      milestonesByTeamId.set(milestone.assigned_team_id, []);
+    if (!milestonesByTeamId.has(assignedTeamId)) {
+      milestonesByTeamId.set(assignedTeamId, []);
     }
-    milestonesByTeamId.get(milestone.assigned_team_id).push(item);
+    milestonesByTeamId.get(assignedTeamId).push(item);
+  }
+
+  const noteIds = [...new Set((noteLinksResult.data ?? []).map((row) => row.note_id).filter(Boolean))];
+  const notesResult =
+    noteIds.length > 0
+      ? await supabase.from('notes').select('id, title, updated_at, content_html, content').eq('workspace_id', workspaceId).in('id', noteIds)
+      : { data: [], error: null };
+  if (notesResult.error) throw notesResult.error;
+  const noteMap = new Map((notesResult.data ?? []).map((note) => [note.id, note]));
+  const notesByTeamId = new Map();
+  for (const row of noteLinksResult.data ?? []) {
+    const note = noteMap.get(row.note_id);
+    if (!note) continue;
+    const nextNote = {
+      id: note.id,
+      title: note.title ?? 'Untitled note',
+      updatedAt: note.updated_at ?? null,
+    };
+    if (!notesByTeamId.has(row.team_id)) {
+      notesByTeamId.set(row.team_id, []);
+    }
+    notesByTeamId.get(row.team_id).push(nextNote);
+  }
+
+  const projectNotesByTeamId = new Map();
+  const projectMilestonesByTeamId = new Map();
+  const projectNotesByProjectId = new Map();
+  for (const row of projectNoteLinksResult.data ?? []) {
+    const note = noteMap.get(row.note_id);
+    const project = projectRows.find((item) => item.id === row.project_id);
+    if (!note || !project?.owner_team_id) continue;
+    const nextNote = {
+      id: note.id,
+      title: note.title ?? 'Untitled note',
+      updatedAt: note.updated_at ?? null,
+      projectId: project.id,
+      projectName: project.name ?? 'Project',
+    };
+    if (!projectNotesByTeamId.has(project.owner_team_id)) {
+      projectNotesByTeamId.set(project.owner_team_id, []);
+    }
+    projectNotesByTeamId.get(project.owner_team_id).push(nextNote);
+    if (!projectNotesByProjectId.has(project.id)) {
+      projectNotesByProjectId.set(project.id, []);
+    }
+    projectNotesByProjectId.get(project.id).push(nextNote);
+  }
+
+  for (const milestone of projectMilestoneRows ?? []) {
+    const project = projectRows.find((item) => item.id === milestone.project_id);
+    if (!project?.owner_team_id) continue;
+    const item = buildTeamWorkItem({
+      kind: 'milestone',
+      row: milestone,
+      projectName: project.name ?? 'Workspace',
+    });
+    if (!projectMilestonesByTeamId.has(project.owner_team_id)) {
+      projectMilestonesByTeamId.set(project.owner_team_id, []);
+    }
+    projectMilestonesByTeamId.get(project.owner_team_id).push(item);
   }
 
   return teamRows.map((team) => {
     const teamMembers = (membersByTeamId.get(team.id) ?? []).sort((a, b) => {
-      if (a.role !== b.role) return a.role === 'lead' ? -1 : 1;
+      if (a.role !== b.role) return teamRoleOrder[a.role] - teamRoleOrder[b.role];
       return String(a.name ?? '').localeCompare(String(b.name ?? ''));
     });
     const taskItems = (tasksByTeamId.get(team.id) ?? []).sort((a, b) =>
@@ -6839,6 +6995,32 @@ const loadWorkspaceTeams = async (workspaceId, currentUserId) => {
       String(b.assignedAt).localeCompare(String(a.assignedAt))
     );
     const activeProjects = [...new Set(assignedWork.map((item) => item.projectName).filter(Boolean))];
+    const ownedProjects = (projectsByTeamId.get(team.id) ?? []).sort((a, b) =>
+      String(a.name).localeCompare(String(b.name))
+    );
+    const ownedProjectNotes = (projectNotesByTeamId.get(team.id) ?? []).sort((a, b) =>
+      String(b.updatedAt ?? '').localeCompare(String(a.updatedAt ?? ''))
+    );
+    const ownedProjectMilestones = (projectMilestonesByTeamId.get(team.id) ?? []).sort((a, b) =>
+      String(b.assignedAt ?? '').localeCompare(String(a.assignedAt ?? ''))
+    );
+    const ownedProjectsWithCounts = ownedProjects.map((project) => {
+      const noteCount = (projectNotesByProjectId.get(project.id) ?? []).length;
+      const milestoneCount = ownedProjectMilestones.filter((item) => item.projectId === project.id).length;
+      return {
+        ...project,
+        noteCount,
+        milestoneCount,
+      };
+    });
+    const linkedNotes = (notesByTeamId.get(team.id) ?? []).sort((a, b) =>
+      String(b.updatedAt ?? '').localeCompare(String(a.updatedAt ?? ''))
+    );
+    const allLinkedNotes = [...linkedNotes, ...ownedProjectNotes].reduce((acc, note) => {
+      if (acc.some((item) => item.id === note.id)) return acc;
+      acc.push(note);
+      return acc;
+    }, []);
     const currentUserMember = teamMembers.find((member) => member.id === currentUserId) ?? null;
     const currentUserRole =
       currentUserMember?.role ?? (team.created_by === currentUserId ? 'lead' : null);
@@ -6854,8 +7036,15 @@ const loadWorkspaceTeams = async (workspaceId, currentUserId) => {
       assignedCount: taskItems.length,
       milestoneCount: milestoneItems.length,
       activeProjects,
-      notes: [],
+      ownedProjects: ownedProjectsWithCounts,
+      linkedNotes: allLinkedNotes,
+      projectMilestones: ownedProjectMilestones,
       currentUserRole,
+      archivedAt: team.archived_at ?? null,
+      archivedBy: team.archived_by ?? null,
+      defaultTaskScope: team.default_task_scope ?? 'long_term',
+      defaultProjectVisibility: team.default_project_visibility ?? 'workspace',
+      defaultAssigneeBehavior: team.default_assignee_behavior ?? 'team',
     };
   });
 };
@@ -6906,8 +7095,27 @@ app.get('/api/teams', authMiddleware, rateLimit('read'), async (req, res) => {
   try {
     const workspaceId = await resolveWorkspaceIdForRequest(req);
     const access = await requireWorkspaceAccess(req.authUser.id, workspaceId, 'member');
-    const teams = await loadWorkspaceTeams(workspaceId, req.authUser.id);
+    const includeArchived = String(req.query?.include_archived ?? req.query?.includeArchived ?? '')
+      .toLowerCase()
+      .trim() === 'true';
+    const teams = await loadWorkspaceTeams(workspaceId, req.authUser.id, { includeArchived });
     res.json({ current_user_role: access.role, teams });
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
+app.get('/api/teams/:teamId', authMiddleware, rateLimit('read'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    const teamId = String(req.params.teamId);
+    await requireWorkspaceAccess(req.authUser.id, workspaceId, 'member');
+    const teams = await loadWorkspaceTeams(workspaceId, req.authUser.id, { includeArchived: true });
+    const team = teams.find((item) => item.id === teamId) ?? null;
+    if (!team) {
+      return res.status(404).json({ error: 'Team not found' });
+    }
+    res.json({ team });
   } catch (error) {
     return respondWithError(res, error);
   }
@@ -6956,8 +7164,11 @@ app.post('/api/teams', authMiddleware, rateLimit('write'), async (req, res) => {
         identifier,
         description,
         color,
+        default_task_scope: 'long_term',
+        default_project_visibility: 'workspace',
+        default_assignee_behavior: 'team',
       })
-      .select('id, workspace_id, created_by, updated_by, name, identifier, description, color, created_at, updated_at')
+      .select(workspaceTeamSelectColumns)
       .single();
 
     if (teamInsert.error) throw teamInsert.error;
@@ -6971,7 +7182,7 @@ app.post('/api/teams', authMiddleware, rateLimit('write'), async (req, res) => {
     });
     if (memberInsert.error) throw memberInsert.error;
 
-    const teams = await loadWorkspaceTeams(workspaceId, req.authUser.id);
+    const teams = await loadWorkspaceTeams(workspaceId, req.authUser.id, { includeArchived: true });
     const createdTeam = teams.find((team) => team.id === teamInsert.data.id) ?? null;
     res.status(201).json({ team: createdTeam ?? teamInsert.data, current_user_role: 'lead' });
   } catch (error) {
@@ -6994,21 +7205,44 @@ app.patch('/api/teams/:teamId', authMiddleware, rateLimit('write'), async (req, 
     if (req.body?.identifier !== undefined) {
       const identifier = normalizeTeamIdentifier(req.body.identifier);
       if (!identifier) return res.status(400).json({ error: 'Team identifier is required' });
+      const existingIdentifier = await supabase
+        .from('workspace_teams')
+        .select('id')
+        .eq('workspace_id', workspaceId)
+        .eq('identifier', identifier)
+        .neq('id', teamId)
+        .maybeSingle();
+      if (existingIdentifier.error) throw existingIdentifier.error;
+      if (existingIdentifier.data?.id) {
+        return res.status(409).json({ error: 'Identifier already in use' });
+      }
       update.identifier = identifier;
     }
     if (req.body?.description !== undefined) update.description = normalizeNullableText(req.body.description);
     if (req.body?.color !== undefined) update.color = normalizeNullableText(req.body.color) || '#FF5F40';
+    if (req.body?.default_task_scope !== undefined) {
+      const scope = String(req.body.default_task_scope ?? '').toLowerCase();
+      update.default_task_scope = scope === 'today' ? 'today' : 'long_term';
+    }
+    if (req.body?.default_project_visibility !== undefined) {
+      const visibility = String(req.body.default_project_visibility ?? '').toLowerCase();
+      update.default_project_visibility = visibility === 'team' ? 'team' : 'workspace';
+    }
+    if (req.body?.default_assignee_behavior !== undefined) {
+      const assigneeBehavior = String(req.body.default_assignee_behavior ?? '').toLowerCase();
+      update.default_assignee_behavior = assigneeBehavior === 'lead' ? 'lead' : 'team';
+    }
 
     const updated = await supabase
       .from('workspace_teams')
       .update(update)
       .eq('workspace_id', workspaceId)
       .eq('id', teamId)
-      .select('id, workspace_id, created_by, updated_by, name, identifier, description, color, created_at, updated_at')
+      .select(workspaceTeamSelectColumns)
       .single();
 
     if (updated.error) throw updated.error;
-    const teams = await loadWorkspaceTeams(workspaceId, req.authUser.id);
+    const teams = await loadWorkspaceTeams(workspaceId, req.authUser.id, { includeArchived: true });
     const team = teams.find((item) => item.id === teamId) ?? null;
     res.json({ team: team ?? updated.data });
   } catch (error) {
@@ -7039,7 +7273,8 @@ app.post('/api/teams/:teamId/members', authMiddleware, rateLimit('write'), async
       return res.status(404).json({ error: 'Workspace member not found' });
     }
 
-    const role = String(req.body?.role ?? 'member').toLowerCase() === 'lead' ? 'lead' : 'member';
+    const requestedRole = String(req.body?.role ?? 'member').toLowerCase();
+    const role = teamRoleValues.includes(requestedRole) ? requestedRole : 'member';
     const insert = await supabase
       .from('workspace_team_members')
       .upsert(
@@ -7057,7 +7292,7 @@ app.post('/api/teams/:teamId/members', authMiddleware, rateLimit('write'), async
       .single();
 
     if (insert.error) throw insert.error;
-    const teams = await loadWorkspaceTeams(workspaceId, req.authUser.id);
+    const teams = await loadWorkspaceTeams(workspaceId, req.authUser.id, { includeArchived: true });
     const team = teams.find((item) => item.id === teamId) ?? null;
     res.json({ team });
   } catch (error) {
@@ -7080,9 +7315,65 @@ app.delete('/api/teams/:teamId/members/:userId', authMiddleware, rateLimit('writ
       .eq('user_id', userId);
 
     if (deleted.error) throw deleted.error;
-    const teams = await loadWorkspaceTeams(workspaceId, req.authUser.id);
+    const teams = await loadWorkspaceTeams(workspaceId, req.authUser.id, { includeArchived: true });
     const team = teams.find((item) => item.id === teamId) ?? null;
     res.json({ team });
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
+app.post('/api/teams/:teamId/archive', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    const teamId = String(req.params.teamId);
+    await ensureTeamManageAccess({ userId: req.authUser.id, teamId, workspaceId });
+
+    const update = {
+      archived_at: new Date().toISOString(),
+      archived_by: req.authUser.id,
+      updated_at: new Date().toISOString(),
+      updated_by: req.authUser.id,
+    };
+
+    const archived = await supabase
+      .from('workspace_teams')
+      .update(update)
+      .eq('workspace_id', workspaceId)
+      .eq('id', teamId)
+      .select(workspaceTeamSelectColumns)
+      .single();
+
+    if (archived.error) throw archived.error;
+    res.json({ team: archived.data });
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
+app.post('/api/teams/:teamId/unarchive', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    const teamId = String(req.params.teamId);
+    await ensureTeamManageAccess({ userId: req.authUser.id, teamId, workspaceId });
+
+    const update = {
+      archived_at: null,
+      archived_by: null,
+      updated_at: new Date().toISOString(),
+      updated_by: req.authUser.id,
+    };
+
+    const restored = await supabase
+      .from('workspace_teams')
+      .update(update)
+      .eq('workspace_id', workspaceId)
+      .eq('id', teamId)
+      .select(workspaceTeamSelectColumns)
+      .single();
+
+    if (restored.error) throw restored.error;
+    res.json({ team: restored.data });
   } catch (error) {
     return respondWithError(res, error);
   }
@@ -7093,6 +7384,26 @@ app.delete('/api/teams/:teamId', authMiddleware, rateLimit('write'), async (req,
     const workspaceId = await resolveWorkspaceIdForRequest(req);
     const teamId = String(req.params.teamId);
     await ensureTeamManageAccess({ userId: req.authUser.id, teamId, workspaceId });
+
+    const [teamAssignments, milestoneAssignments] = await Promise.all([
+      supabase
+        .from('tasks')
+        .select('id', { count: 'exact', head: true })
+        .eq('workspace_id', workspaceId)
+        .or(`assigned_team_id.eq.${teamId},assigned_to_team_id.eq.${teamId}`),
+      supabase
+        .from('project_milestones')
+        .select('id', { count: 'exact', head: true })
+        .eq('workspace_id', workspaceId)
+        .or(`assigned_team_id.eq.${teamId},assigned_to_team_id.eq.${teamId}`),
+    ]);
+
+    if (teamAssignments.error) throw teamAssignments.error;
+    if (milestoneAssignments.error) throw milestoneAssignments.error;
+    const totalAssignments = Number(teamAssignments.count ?? 0) + Number(milestoneAssignments.count ?? 0);
+    if (totalAssignments > 0) {
+      return res.status(400).json({ error: 'Reassign assigned work before deleting this team.' });
+    }
 
     const deleted = await supabase.from('workspace_teams').delete().eq('workspace_id', workspaceId).eq('id', teamId);
     if (deleted.error) throw deleted.error;
@@ -7353,6 +7664,7 @@ app.post(
   quotaGuard('projects'),
   async (req, res) => {
     try {
+      const workspaceId = await resolveWorkspaceIdForRequest(req);
       const name = String(req.body?.name ?? '').trim();
       if (!name) {
         return res.status(400).json({ error: 'Project name required' });
@@ -7364,6 +7676,13 @@ app.post(
       const color = normalizeNullableText(req.body?.color);
       const projectType = normalizeProjectType(req.body?.project_type);
       const leadId = normalizeNullableText(req.body?.lead_id);
+      const ownerTeamId = normalizeNullableText(req.body?.owner_team_id);
+      if (ownerTeamId) {
+        const teamAllowed = await ensureWorkspaceTeam(ownerTeamId, workspaceId);
+        if (!teamAllowed) {
+          return res.status(404).json({ error: 'Team not found' });
+        }
+      }
       const status = req.body?.status
         ? projectStatusAliases[normalizeProjectSemanticStatus(req.body.status)][0]
         : 'NotStarted';
@@ -7371,7 +7690,7 @@ app.post(
       const { data: existingProject, error: existingError } = await supabase
         .from('projects')
         .select(projectSelectColumns)
-        .eq('workspace_id', req.workspaceId)
+        .eq('workspace_id', workspaceId)
         .ilike('name', name)
         .maybeSingle();
 
@@ -7383,7 +7702,7 @@ app.post(
       const { data, error } = await supabase
         .from('projects')
         .insert({
-          workspace_id: req.workspaceId,
+          workspace_id: workspaceId,
           created_by: req.authUser.id,
           name,
           description,
@@ -7394,6 +7713,7 @@ app.post(
           end_date: endDate,
           project_type: projectType,
           lead_id: leadId,
+          owner_team_id: ownerTeamId,
         })
         .select(projectSelectColumns)
         .single();
@@ -7455,6 +7775,16 @@ app.patch('/api/projects/:id', authMiddleware, rateLimit('write'), async (req, r
       update.project_type = normalizeProjectType(req.body.project_type);
     if (req.body?.lead_id !== undefined)
       update.lead_id = normalizeNullableText(req.body.lead_id);
+    if (req.body?.owner_team_id !== undefined) {
+      const ownerTeamId = normalizeNullableText(req.body.owner_team_id);
+      if (ownerTeamId) {
+        const teamAllowed = await ensureWorkspaceTeam(ownerTeamId, workspaceId);
+        if (!teamAllowed) {
+          return res.status(404).json({ error: 'Team not found' });
+        }
+      }
+      update.owner_team_id = ownerTeamId;
+    }
     update.updated_at = new Date().toISOString();
 
     const { data, error } = await supabase
@@ -7644,6 +7974,158 @@ app.delete(
   }
 );
 
+app.get('/api/teams/:teamId/notes', authMiddleware, rateLimit('read'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    const teamId = String(req.params.teamId);
+    const teamAllowed = await ensureWorkspaceTeam(teamId, workspaceId);
+    if (!teamAllowed) {
+      return res.status(404).json({ error: 'Team not found' });
+    }
+
+    const { data, error } = await supabase
+      .from('note_team_links')
+      .select('id, note_id, created_at')
+      .eq('workspace_id', workspaceId)
+      .eq('team_id', teamId)
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+
+    const noteIds = (data ?? []).map((row) => row.note_id).filter(Boolean);
+    let noteById = new Map();
+    if (noteIds.length > 0) {
+      const notesResult = await supabase
+        .from('notes')
+        .select('id, title, content, content_html, updated_at')
+        .eq('workspace_id', workspaceId)
+        .in('id', noteIds);
+      if (notesResult.error) throw notesResult.error;
+      noteById = new Map((notesResult.data ?? []).map((note) => [note.id, note]));
+    }
+
+    const links = (data ?? [])
+      .map((row) => {
+        const note = noteById.get(row.note_id);
+        if (!note) return null;
+        const previewSource = note.content_html || plainTextToParagraphHtml(note.content ?? '');
+        return {
+          id: row.id,
+          note_id: row.note_id,
+          created_at: row.created_at,
+          note: {
+            id: note.id,
+            title: note.title || 'Untitled note',
+            preview: htmlToPlainText(previewSource).slice(0, 160),
+            updated_at: note.updated_at ?? null,
+          },
+        };
+      })
+      .filter(Boolean);
+
+    res.json({ links });
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
+app.post('/api/teams/:teamId/notes', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    const teamId = String(req.params.teamId);
+    const noteId = String(req.body?.note_id ?? '').trim();
+    if (!noteId) {
+      return res.status(400).json({ error: 'note_id is required' });
+    }
+
+    const [teamAllowed, noteAllowed] = await Promise.all([
+      ensureWorkspaceTeam(teamId, workspaceId),
+      ensureWorkspaceResource('notes', noteId, workspaceId),
+    ]);
+
+    if (!teamAllowed) return res.status(404).json({ error: 'Team not found' });
+    if (!noteAllowed) return res.status(404).json({ error: 'Note not found' });
+
+    const existing = await supabase
+      .from('note_team_links')
+      .select('id')
+      .eq('workspace_id', workspaceId)
+      .eq('team_id', teamId)
+      .eq('note_id', noteId)
+      .maybeSingle();
+
+    if (existing.error) throw existing.error;
+    if (!existing.data) {
+      const insert = await supabase.from('note_team_links').insert({
+        workspace_id: workspaceId,
+        team_id: teamId,
+        note_id: noteId,
+        created_by: req.authUser.id,
+      });
+      if (insert.error) throw insert.error;
+    }
+
+    const { data, error } = await supabase
+      .from('note_team_links')
+      .select('id, note_id, created_at')
+      .eq('workspace_id', workspaceId)
+      .eq('team_id', teamId)
+      .eq('note_id', noteId)
+      .single();
+
+    if (error) throw error;
+
+    const noteResult = await supabase
+      .from('notes')
+      .select('id, title, content, content_html, updated_at')
+      .eq('workspace_id', workspaceId)
+      .eq('id', noteId)
+      .single();
+    if (noteResult.error) throw noteResult.error;
+    const note = noteResult.data;
+    const previewSource = note.content_html || plainTextToParagraphHtml(note.content ?? '');
+
+    res.json({
+      id: data.id,
+      note_id: data.note_id,
+      created_at: data.created_at,
+      note: {
+        id: note.id,
+        title: note.title || 'Untitled note',
+        preview: htmlToPlainText(previewSource).slice(0, 160),
+        updated_at: note.updated_at ?? null,
+      },
+    });
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
+app.delete('/api/teams/:teamId/notes/:noteId', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    const teamId = String(req.params.teamId);
+    const noteId = String(req.params.noteId);
+
+    const teamAllowed = await ensureWorkspaceTeam(teamId, workspaceId);
+    if (!teamAllowed) {
+      return res.status(404).json({ error: 'Team not found' });
+    }
+
+    const { error } = await supabase
+      .from('note_team_links')
+      .delete()
+      .eq('workspace_id', workspaceId)
+      .eq('team_id', teamId)
+      .eq('note_id', noteId);
+
+    if (error) throw error;
+    res.json({ success: true });
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
 app.get('/api/projects/:id/milestones', authMiddleware, rateLimit('read'), async (req, res) => {
   try {
     const workspaceId = await resolveWorkspaceIdForRequest(req);
@@ -7696,8 +8178,6 @@ app.post('/api/projects/:id/milestones', authMiddleware, rateLimit('write'), asy
     const linkedNoteId = normalizeNullableText(req.body?.linked_note_id);
     const linkedReminderId = normalizeNullableText(req.body?.linked_reminder_id);
     const linkedEventId = normalizeNullableText(req.body?.linked_event_id);
-    const assignedTeamId = normalizeNullableText(req.body?.assigned_team_id);
-
     if (!title) return res.status(400).json({ error: 'Milestone title required' });
     if (!milestoneDate) return res.status(400).json({ error: 'Milestone date required' });
 
@@ -7714,10 +8194,20 @@ app.post('/api/projects/:id/milestones', authMiddleware, rateLimit('write'), asy
     if (!noteAllowed) return res.status(404).json({ error: 'Linked note not found' });
     if (!reminderAllowed) return res.status(404).json({ error: 'Linked reminder not found' });
     if (!eventAllowed) return res.status(404).json({ error: 'Linked event not found' });
-    if (assignedTeamId) {
-      const teamAllowed = await ensureWorkspaceTeam(assignedTeamId, workspaceId);
+    const assignmentTarget = normalizeAssignmentTarget(req.body ?? {});
+    if (assignmentTarget.assigned_to_user_id) {
+      const userAllowed = await ensureWorkspaceMemberTarget(
+        workspaceId,
+        assignmentTarget.assigned_to_user_id
+      );
+      if (!userAllowed) return res.status(404).json({ error: 'Assigned user not found' });
+    }
+    if (assignmentTarget.assigned_to_team_id) {
+      const teamAllowed = await ensureWorkspaceTeam(assignmentTarget.assigned_to_team_id, workspaceId);
       if (!teamAllowed) return res.status(404).json({ error: 'Team not found' });
     }
+    const nowIso = new Date().toISOString();
+    const assignedFields = buildAssignmentPersistenceFields(assignmentTarget, req.authUser.id, nowIso);
 
     const { data, error } = await supabase
       .from('project_milestones')
@@ -7734,7 +8224,7 @@ app.post('/api/projects/:id/milestones', authMiddleware, rateLimit('write'), asy
         linked_note_id: linkedNoteId,
         linked_reminder_id: linkedReminderId,
         linked_event_id: linkedEventId,
-        assigned_team_id: assignedTeamId,
+        ...assignedFields,
       })
       .select(projectMilestoneSelectColumns)
       .single();
@@ -7773,13 +8263,28 @@ app.patch('/api/project-milestones/:id', authMiddleware, rateLimit('write'), asy
       if (!projectAllowed) return res.status(404).json({ error: 'Project not found' });
       update.project_id = projectId;
     }
-    if (req.body?.assigned_team_id !== undefined) {
-      const assignedTeamId = normalizeNullableText(req.body.assigned_team_id);
-      if (assignedTeamId) {
-        const teamAllowed = await ensureWorkspaceTeam(assignedTeamId, workspaceId);
+    if (
+      req.body?.assigned_to !== undefined ||
+      req.body?.assigned_to_user_id !== undefined ||
+      req.body?.assigned_to_team_id !== undefined ||
+      req.body?.assigned_team_id !== undefined
+    ) {
+      const assignmentTarget = normalizeAssignmentTarget(req.body ?? {});
+      if (assignmentTarget.assigned_to_user_id) {
+        const userAllowed = await ensureWorkspaceMemberTarget(
+          workspaceId,
+          assignmentTarget.assigned_to_user_id
+        );
+        if (!userAllowed) return res.status(404).json({ error: 'Assigned user not found' });
+      }
+      if (assignmentTarget.assigned_to_team_id) {
+        const teamAllowed = await ensureWorkspaceTeam(assignmentTarget.assigned_to_team_id, workspaceId);
         if (!teamAllowed) return res.status(404).json({ error: 'Team not found' });
       }
-      update.assigned_team_id = assignedTeamId;
+      Object.assign(
+        update,
+        buildAssignmentPersistenceFields(assignmentTarget, req.authUser.id, new Date().toISOString())
+      );
     }
 
     const linkChecks = [];
@@ -8192,9 +8697,18 @@ app.post(
         }
       }
 
-      const assignedTeamId = normalizeNullableText(req.body?.assigned_team_id);
-      if (assignedTeamId) {
-        const teamAllowed = await ensureWorkspaceTeam(assignedTeamId, workspaceId);
+      const assignmentTarget = normalizeAssignmentTarget(req.body ?? {});
+      if (assignmentTarget.assigned_to_user_id) {
+        const targetAllowed = await ensureWorkspaceMemberTarget(
+          workspaceId,
+          assignmentTarget.assigned_to_user_id
+        );
+        if (!targetAllowed) {
+          return res.status(404).json({ error: 'Assigned user not found' });
+        }
+      }
+      if (assignmentTarget.assigned_to_team_id) {
+        const teamAllowed = await ensureWorkspaceTeam(assignmentTarget.assigned_to_team_id, workspaceId);
         if (!teamAllowed) {
           return res.status(404).json({ error: 'Team not found' });
         }
@@ -8224,7 +8738,6 @@ app.post(
       const notes = normalizeNullableText(req.body?.notes);
       const dueDate = normalizeNullableDate(req.body?.due_date, 'due date');
       const dueTime = normalizeNullableText(req.body?.due_time);
-      const assignedTo = req.body?.assigned_to ? String(req.body.assigned_to) : null;
       const showInToday = Boolean(req.body?.show_in_today ?? false);
       const isTodayFocus = Boolean(req.body?.is_today_focus ?? false);
       const requestedTaskHorizon = req.body?.task_horizon;
@@ -8236,6 +8749,8 @@ app.post(
           : 'long_term';
       const source = normalizeCaptureSource(req.body?.source);
       const sourcePlatform = normalizeCaptureSourcePlatform(req.body?.source_platform);
+      const nowIso = new Date().toISOString();
+      const assignedFields = buildAssignmentPersistenceFields(assignmentTarget, req.authUser.id, nowIso);
 
       const insertAttempts = [
         { includeTaskHorizon: true, includeShowInToday: true, includeIsTodayFocus: true },
@@ -8260,8 +8775,7 @@ app.post(
           due_time: dueTime,
           status: req.body?.status ? String(req.body.status) : 'todo',
           priority: req.body?.priority ? String(req.body.priority) : 'medium',
-          assigned_to: assignedTo,
-          assigned_team_id: assignedTeamId,
+          ...assignedFields,
           tags,
           source,
           source_platform: sourcePlatform,
@@ -8334,17 +8848,29 @@ app.patch('/api/tasks/:id', authMiddleware, rateLimit('write'), async (req, res)
       update.due_time = normalizeNullableText(req.body.due_time);
     if (req.body?.status !== undefined) update.status = String(req.body.status);
     if (req.body?.priority !== undefined) update.priority = String(req.body.priority);
-    if (req.body?.assigned_to !== undefined)
-      update.assigned_to = req.body.assigned_to ? String(req.body.assigned_to) : null;
-    if (req.body?.assigned_team_id !== undefined) {
-      const assignedTeamId = normalizeNullableText(req.body.assigned_team_id);
-      if (assignedTeamId) {
-        const teamAllowed = await ensureWorkspaceTeam(assignedTeamId, workspaceId);
+    if (
+      req.body?.assigned_to !== undefined ||
+      req.body?.assigned_to_user_id !== undefined ||
+      req.body?.assigned_to_team_id !== undefined ||
+      req.body?.assigned_team_id !== undefined
+    ) {
+      const assignmentTarget = normalizeAssignmentTarget(req.body ?? {});
+      if (assignmentTarget.assigned_to_user_id) {
+        const targetAllowed = await ensureWorkspaceMemberTarget(
+          workspaceId,
+          assignmentTarget.assigned_to_user_id
+        );
+        if (!targetAllowed) {
+          return res.status(404).json({ error: 'Assigned user not found' });
+        }
+      }
+      if (assignmentTarget.assigned_to_team_id) {
+        const teamAllowed = await ensureWorkspaceTeam(assignmentTarget.assigned_to_team_id, workspaceId);
         if (!teamAllowed) {
           return res.status(404).json({ error: 'Team not found' });
         }
       }
-      update.assigned_team_id = assignedTeamId;
+      Object.assign(update, buildAssignmentPersistenceFields(assignmentTarget, req.authUser.id, new Date().toISOString()));
     }
     if (req.body?.tags !== undefined) {
       update.tags = Array.isArray(req.body.tags)

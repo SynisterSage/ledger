@@ -670,6 +670,7 @@ type ModuleFocusPayload = {
   focusNoteId?: string | null;
   focusTaskId?: string | null;
   focusContext?: string | null;
+  focusSection?: string | null;
 };
 type Rect = { x: number; y: number; width: number; height: number };
 type DockSide = 'left' | 'right';
@@ -5173,6 +5174,7 @@ ipcMain.handle('window:toggle-module', (_event, payload: ModuleWindowKind | Modu
   const focusNoteId = typeof payload === 'string' ? undefined : payload.focusNoteId;
   const focusTaskId = typeof payload === 'string' ? undefined : payload.focusTaskId;
   const focusContext = typeof payload === 'string' ? undefined : payload.focusContext;
+  const focusSection = typeof payload === 'string' ? undefined : payload.focusSection;
   const existing = moduleWins.get(kind);
 
   if (existing && !existing.isDestroyed()) {
@@ -5182,7 +5184,15 @@ ipcMain.handle('window:toggle-module', (_event, payload: ModuleWindowKind | Modu
       }
       existing.show();
       existing.focus();
-      sendModuleFocus(kind, focusDate, focusProjectId, focusNoteId, focusTaskId, focusContext);
+      sendModuleFocus(
+        kind,
+        focusDate,
+        focusProjectId,
+        focusNoteId,
+        focusTaskId,
+        focusContext,
+        focusSection
+      );
       return;
     }
 
@@ -5202,7 +5212,15 @@ ipcMain.handle('window:toggle-module', (_event, payload: ModuleWindowKind | Modu
     return;
   }
 
-  openModuleWindow(kind, focusDate, focusProjectId, focusNoteId, focusTaskId, focusContext);
+  openModuleWindow(
+    kind,
+    focusDate,
+    focusProjectId,
+    focusNoteId,
+    focusTaskId,
+    focusContext,
+    focusSection
+  );
 });
 
 ipcMain.handle('window:open-module', (_event, payload: ModuleWindowKind | ModuleFocusPayload) => {
@@ -5212,6 +5230,7 @@ ipcMain.handle('window:open-module', (_event, payload: ModuleWindowKind | Module
   const focusNoteId = typeof payload === 'string' ? undefined : payload.focusNoteId;
   const focusTaskId = typeof payload === 'string' ? undefined : payload.focusTaskId;
   const focusContext = typeof payload === 'string' ? undefined : payload.focusContext;
+  const focusSection = typeof payload === 'string' ? undefined : payload.focusSection;
   const existing = moduleWins.get(kind);
 
   if (existing && !existing.isDestroyed()) {
@@ -5225,11 +5244,27 @@ ipcMain.handle('window:open-module', (_event, payload: ModuleWindowKind | Module
         existing.focus();
       }
     }, 100);
-    sendModuleFocus(kind, focusDate, focusProjectId, focusNoteId, focusTaskId, focusContext);
+    sendModuleFocus(
+      kind,
+      focusDate,
+      focusProjectId,
+      focusNoteId,
+      focusTaskId,
+      focusContext,
+      focusSection
+    );
     return;
   }
 
-  openModuleWindow(kind, focusDate, focusProjectId, focusNoteId, focusTaskId, focusContext);
+  openModuleWindow(
+    kind,
+    focusDate,
+    focusProjectId,
+    focusNoteId,
+    focusTaskId,
+    focusContext,
+    focusSection
+  );
 });
 
 ipcMain.handle('window:close-module', (_event, kind: ModuleWindowKind) => {

@@ -349,6 +349,7 @@ export const useApi = () => {
               status?: string;
               project_type?: string | null;
               lead_id?: string | null;
+              owner_team_id?: string | null;
             }
       ) => {
         const payload = typeof input === 'string' ? { name: input } : input;
@@ -369,6 +370,7 @@ export const useApi = () => {
           end_date?: string | null;
           project_type?: string | null;
           lead_id?: string | null;
+          owner_team_id?: string | null;
         }
       ) =>
         request(`/api/projects/${id}`, {
@@ -410,7 +412,9 @@ export const useApi = () => {
           linked_note_id?: string | null;
           linked_reminder_id?: string | null;
           linked_event_id?: string | null;
+          assigned_to_user_id?: string | null;
           assigned_team_id?: string | null;
+          assigned_to_team_id?: string | null;
         }
       ) =>
         request(`/api/projects/${projectId}/milestones`, {
@@ -429,7 +433,9 @@ export const useApi = () => {
           linked_note_id?: string | null;
           linked_reminder_id?: string | null;
           linked_event_id?: string | null;
+          assigned_to_user_id?: string | null;
           assigned_team_id?: string | null;
+          assigned_to_team_id?: string | null;
         }
       ) =>
         request(`/api/project-milestones/${id}`, {
@@ -464,7 +470,9 @@ export const useApi = () => {
         status?: string;
         priority?: string;
         assigned_to?: string | null;
+        assigned_to_user_id?: string | null;
         assigned_team_id?: string | null;
+        assigned_to_team_id?: string | null;
         tags?: string[];
         task_horizon?: 'today' | 'long_term';
         project_id?: string | null;
@@ -501,12 +509,31 @@ export const useApi = () => {
         }),
 
       // Teams
-      getTeams: () => request('/api/teams'),
+      getTeams: (options?: { includeArchived?: boolean }) => {
+        const params = new URLSearchParams();
+        if (options?.includeArchived) params.set('include_archived', 'true');
+        const query = params.toString();
+        return request(`/api/teams${query ? `?${query}` : ''}`);
+      },
+      getTeam: (teamId: string) => request(`/api/teams/${teamId}`),
+      getTeamNotes: (teamId: string) => request(`/api/teams/${teamId}/notes`),
+      linkTeamNote: (teamId: string, noteId: string) =>
+        request(`/api/teams/${teamId}/notes`, {
+          method: 'POST',
+          body: JSON.stringify({ note_id: noteId }),
+        }),
+      unlinkTeamNote: (teamId: string, noteId: string) =>
+        request(`/api/teams/${teamId}/notes/${noteId}`, {
+          method: 'DELETE',
+        }),
       createTeam: (payload: {
         name: string;
         identifier?: string | null;
         description?: string | null;
         color?: string | null;
+        default_task_scope?: 'long_term' | 'today';
+        default_project_visibility?: 'workspace' | 'team';
+        default_assignee_behavior?: 'team' | 'lead';
       }) =>
         request('/api/teams', {
           method: 'POST',
@@ -519,11 +546,22 @@ export const useApi = () => {
           identifier?: string;
           description?: string | null;
           color?: string | null;
+          default_task_scope?: 'long_term' | 'today';
+          default_project_visibility?: 'workspace' | 'team';
+          default_assignee_behavior?: 'team' | 'lead';
         }
       ) =>
         request(`/api/teams/${teamId}`, {
           method: 'PATCH',
           body: JSON.stringify(payload),
+        }),
+      archiveTeam: (teamId: string) =>
+        request(`/api/teams/${teamId}/archive`, {
+          method: 'POST',
+        }),
+      restoreTeam: (teamId: string) =>
+        request(`/api/teams/${teamId}/unarchive`, {
+          method: 'POST',
         }),
       deleteTeam: (teamId: string) =>
         request(`/api/teams/${teamId}`, {
@@ -531,7 +569,7 @@ export const useApi = () => {
         }),
       addTeamMember: (
         teamId: string,
-        payload: { user_id: string; role?: 'lead' | 'member' }
+        payload: { user_id: string; role?: 'lead' | 'member' | 'viewer' }
       ) =>
         request(`/api/teams/${teamId}/members`, {
           method: 'POST',

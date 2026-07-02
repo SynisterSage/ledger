@@ -18,6 +18,8 @@ import {
   Keyboard,
   ListTree,
   Wind,
+  Plus,
+  Hash,
 } from 'lucide-react';
 import { type CSSProperties, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { ModalOverlay } from '../Common/ModalOverlay';
@@ -125,6 +127,18 @@ type WorkspaceInvitation = {
   invited_by?: string;
   created_by?: string;
   created_at: string;
+};
+
+type WorkspaceTeam = {
+  id: string;
+  name: string;
+  identifier: string;
+  description?: string | null;
+  color?: string | null;
+  members: Array<{ id: string; name: string; email?: string | null; role?: string | null }>;
+  assignedCount: number;
+  milestoneCount: number;
+  archivedAt?: string | null;
 };
 
 type SlackIntegrationStatus = {
@@ -552,6 +566,21 @@ const InlineSwitch = ({
   );
 };
 
+const makeTeamIdentifier = (value: string) => {
+  const words = value
+    .trim()
+    .replace(/[^a-zA-Z0-9\s]/g, ' ')
+    .split(/\s+/)
+    .filter(Boolean);
+  if (words.length === 0) return '';
+  if (words.length === 1) return words[0].slice(0, 4).toUpperCase();
+  return words
+    .slice(0, 4)
+    .map((word) => word[0])
+    .join('')
+    .toUpperCase();
+};
+
 export const SettingsWindow = () => {
   const { user, signOut } = useAuthContext();
   const {
@@ -617,6 +646,7 @@ export const SettingsWindow = () => {
   const [isWorkspaceDeleteModalOpen, setIsWorkspaceDeleteModalOpen] = useState(false);
   const [workspaceMembers, setWorkspaceMembers] = useState<WorkspaceMember[]>([]);
   const [workspaceInvitations, setWorkspaceInvitations] = useState<WorkspaceInvitation[]>([]);
+  const [workspaceTeams, setWorkspaceTeams] = useState<WorkspaceTeam[]>([]);
   const [workspaceUserRole, setWorkspaceUserRole] = useState<WorkspaceRole>('member');
   const [isLoadingWorkspaceAdmin, setIsLoadingWorkspaceAdmin] = useState(false);
   const [workspaceAdminError, setWorkspaceAdminError] = useState<string | null>(null);
@@ -629,6 +659,14 @@ export const SettingsWindow = () => {
   const [inviteCopyStatus, setInviteCopyStatus] = useState<string | null>(null);
   const [isSendingInvite, setIsSendingInvite] = useState(false);
   const [inviteModal, setInviteModal] = useState<InviteModalState>(null);
+  const [isCreateTeamOpen, setIsCreateTeamOpen] = useState(false);
+  const [createTeamName, setCreateTeamName] = useState('');
+  const [createTeamIdentifier, setCreateTeamIdentifier] = useState('');
+  const [createTeamIdentifierTouched, setCreateTeamIdentifierTouched] = useState(false);
+  const [createTeamDescription, setCreateTeamDescription] = useState('');
+  const [createTeamColor, setCreateTeamColor] = useState('#FF5F40');
+  const [isCreatingTeam, setIsCreatingTeam] = useState(false);
+  const [createTeamError, setCreateTeamError] = useState<string | null>(null);
   const [slackStatus, setSlackStatus] = useState<SlackIntegrationStatus | null>(null);
   const [isLoadingSlackStatus, setIsLoadingSlackStatus] = useState(false);
   const [isConnectingSlack, setIsConnectingSlack] = useState(false);
@@ -1616,9 +1654,10 @@ export const SettingsWindow = () => {
       setWorkspaceAdminError(null);
 
       try {
-        const [membersPayload, invitesPayload] = await Promise.all([
+        const [membersPayload, invitesPayload, teamsPayload] = await Promise.all([
           api.getWorkspaceMembers(activeWorkspaceId),
           api.getWorkspaceInvitations(activeWorkspaceId),
+          api.getTeams({ includeArchived: true }),
         ]);
 
         if (cancelled) return;
@@ -1632,9 +1671,13 @@ export const SettingsWindow = () => {
         )
           ? (invitesPayload as { invitations: WorkspaceInvitation[] }).invitations
           : [];
+        const nextTeams = Array.isArray((teamsPayload as { teams?: unknown[] })?.teams)
+          ? ((teamsPayload as { teams: WorkspaceTeam[] }).teams ?? [])
+          : [];
 
         setWorkspaceMembers(nextMembers);
         setWorkspaceInvitations(nextInvites);
+        setWorkspaceTeams(nextTeams);
 
         const roleCandidate = String(
           (membersPayload as { current_user_role?: string })?.current_user_role ?? 'member'
@@ -1656,6 +1699,7 @@ export const SettingsWindow = () => {
         }
         setWorkspaceMembers([]);
         setWorkspaceInvitations([]);
+        setWorkspaceTeams([]);
       } finally {
         if (!cancelled) {
           setIsLoadingWorkspaceAdmin(false);
@@ -1810,6 +1854,61 @@ export const SettingsWindow = () => {
     }
   };
 
+  const openWorkspaceTeamSettings = (teamId: string) => {
+    void window.desktopWindow?.openModule('teams', {
+      kind: 'teams',
+      focusContext: `team-settings:${teamId}`,
+    } as any);
+  };
+
+  const openTeamWorkPage = (teamId: string) => {
+    void window.desktopWindow?.openModule('teams', {
+      kind: 'teams',
+      focusContext: `team:${teamId}`,
+    } as any);
+  };
+
+  const openCreateTeamModal = () => {
+    setCreateTeamName('');
+    setCreateTeamIdentifier('');
+    setCreateTeamIdentifierTouched(false);
+    setCreateTeamDescription('');
+    setCreateTeamColor('#FF5F40');
+    setCreateTeamError(null);
+    setIsCreateTeamOpen(true);
+  };
+
+  const handleCreateTeam = async () => {
+    if (!activeWorkspaceId) return;
+    const name = createTeamName.trim();
+    if (!name) {
+      setCreateTeamError('Team name is required.');
+      return;
+    }
+
+    setIsCreatingTeam(true);
+    setCreateTeamError(null);
+    try {
+      await api.createTeam({
+        name,
+        identifier: createTeamIdentifier.trim() || makeTeamIdentifier(name),
+        description: createTeamDescription.trim() || null,
+        color: createTeamColor,
+      });
+      const teamsPayload = await api.getTeams({ includeArchived: true });
+      const nextTeams = Array.isArray((teamsPayload as { teams?: unknown[] })?.teams)
+        ? ((teamsPayload as { teams: WorkspaceTeam[] }).teams ?? [])
+        : [];
+      setWorkspaceTeams(nextTeams);
+      setIsCreateTeamOpen(false);
+      setWorkspaceStatus('Team created.');
+    } catch (err) {
+      setCreateTeamError(err instanceof Error ? err.message : 'Could not create team');
+    } finally {
+      setIsCreatingTeam(false);
+    }
+  };
+
   const attemptCloseSettings = () => {
     if (isSavingPrefs || isSavingWorkspace) {
       setShowCloseGuardModal(true);
@@ -1824,7 +1923,8 @@ export const SettingsWindow = () => {
     extensionTokenConfirmAction !== null ||
     (isWorkspaceManageModalOpen && Boolean(activeWorkspace)) ||
     (isWorkspaceDeleteModalOpen && Boolean(activeWorkspace)) ||
-    Boolean(inviteModal && selectedInvite);
+    Boolean(inviteModal && selectedInvite) ||
+    isCreateTeamOpen;
 
   return (
     <div
@@ -2519,6 +2619,154 @@ export const SettingsWindow = () => {
                             ))
                           )}
                         </div>
+                      </div>
+                    </section>
+
+                    <section className={settingsTheme.sectionShell} aria-labelledby="settings-teams">
+                      <div className="flex items-center justify-between gap-4">
+                        <div className="space-y-1">
+                          <h3 id="settings-teams" className={settingsTheme.sectionTitle}>
+                            Teams
+                          </h3>
+                          <p className={settingsTheme.sectionStatus}>Create and manage teams in this workspace.</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={openCreateTeamModal}
+                          disabled={!canManageWorkspace}
+                          className={settingsTheme.controlButton}
+                        >
+                          <Plus size={12} />
+                          New team
+                        </button>
+                      </div>
+
+                      <div className="mt-5 overflow-hidden rounded-[20px] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)]">
+                        <div className="grid grid-cols-[minmax(0,1fr)_120px_96px_120px] gap-3 border-b border-[color:var(--ledger-border-subtle)] px-4 py-3 text-xs font-medium text-[var(--ledger-text-muted)]">
+                          <div>Name</div>
+                          <div>Members</div>
+                          <div>Assigned</div>
+                          <div className="text-right">Identifier</div>
+                        </div>
+                        {workspaceTeams.length === 0 ? (
+                          <div className="flex min-h-40 items-center justify-center px-4 py-8 text-center">
+                            <div className="max-w-sm">
+                              <p className="text-sm font-medium text-[var(--ledger-text-primary)]">No teams yet.</p>
+                              <p className="mt-1 text-sm text-[var(--ledger-text-muted)]">
+                                Create teams to group people and assign work inside this workspace.
+                              </p>
+                              <div className="mt-4 flex justify-center gap-2">
+                                <button
+                                  type="button"
+                                  onClick={openCreateTeamModal}
+                                  disabled={!canManageWorkspace}
+                                  className={settingsTheme.primaryButton}
+                                >
+                                  Create team
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        ) : (
+                          workspaceTeams.map((team) => {
+                            const memberCount = Array.isArray(team.members) ? team.members.length : 0;
+                            const isArchived = Boolean(team.archivedAt);
+                            return (
+                              <div
+                                key={team.id}
+                                className="grid grid-cols-[minmax(0,1fr)_120px_96px_120px_auto] items-center gap-3 border-b border-[color:var(--ledger-border-subtle)] px-4 py-3 last:border-b-0 hover:bg-[var(--ledger-surface-hover)]"
+                              >
+                                <button
+                                  type="button"
+                                  onClick={() => openTeamWorkPage(team.id)}
+                                  className="flex min-w-0 items-center gap-3 text-left"
+                                >
+                                  <span
+                                    className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-white shadow-sm"
+                                    style={{ backgroundColor: team.color || '#FF5F40' }}
+                                  >
+                                    <Hash size={14} />
+                                  </span>
+                                  <span className="min-w-0">
+                                    <span className="block truncate text-sm font-medium text-[var(--ledger-text-primary)]">
+                                      {team.name}
+                                    </span>
+                                    <span className="block truncate text-xs text-[var(--ledger-text-muted)]">
+                                      {isArchived ? 'Archived' : 'Active'}
+                                      {team.description ? ` · ${team.description}` : ''}
+                                    </span>
+                                  </span>
+                                </button>
+                                <div className="text-sm text-[var(--ledger-text-secondary)]">{memberCount} members</div>
+                                <div className="text-sm text-[var(--ledger-text-secondary)]">{team.assignedCount} assigned</div>
+                                <div className="text-right font-mono text-xs font-semibold text-[var(--ledger-text-muted)]">
+                                  {team.identifier}
+                                </div>
+                                <div className="flex items-center justify-end gap-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => openTeamWorkPage(team.id)}
+                                    className={settingsTheme.controlButton}
+                                  >
+                                    Open
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => openWorkspaceTeamSettings(team.id)}
+                                    className={settingsTheme.controlButton}
+                                  >
+                                    Settings
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={async () => {
+                                      try {
+                                        if (isArchived) {
+                                          await api.restoreTeam(team.id);
+                                        } else {
+                                          await api.archiveTeam(team.id);
+                                        }
+                                        const teamsPayload = await api.getTeams({ includeArchived: true });
+                                        const nextTeams = Array.isArray((teamsPayload as { teams?: unknown[] })?.teams)
+                                          ? ((teamsPayload as { teams: WorkspaceTeam[] }).teams ?? [])
+                                          : [];
+                                        setWorkspaceTeams(nextTeams);
+                                      } catch (err) {
+                                        setWorkspaceAdminError(err instanceof Error ? err.message : 'Could not update team');
+                                      }
+                                    }}
+                                    className={settingsTheme.controlButton}
+                                    disabled={!canManageWorkspace}
+                                  >
+                                    {isArchived ? 'Restore' : 'Archive'}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={async () => {
+                                      if (!canManageWorkspace) return;
+                                      if (!window.confirm(`Delete ${team.name}?`)) return;
+                                      try {
+                                        await api.deleteTeam(team.id);
+                                        const teamsPayload = await api.getTeams({ includeArchived: true });
+                                        const nextTeams = Array.isArray((teamsPayload as { teams?: unknown[] })?.teams)
+                                          ? ((teamsPayload as { teams: WorkspaceTeam[] }).teams ?? [])
+                                          : [];
+                                        setWorkspaceTeams(nextTeams);
+                                      } catch (err) {
+                                        setWorkspaceAdminError(err instanceof Error ? err.message : 'Could not delete team');
+                                      }
+                                    }}
+                                    className={settingsTheme.dangerButton}
+                                    disabled={!canManageWorkspace}
+                                    title="Delete team"
+                                  >
+                                    Delete
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })
+                        )}
                       </div>
                     </section>
 
@@ -4012,6 +4260,87 @@ export const SettingsWindow = () => {
                   </div>
                 </section>
               )}
+
+            <ModalOverlay
+              isOpen={isCreateTeamOpen}
+              onClose={() => setIsCreateTeamOpen(false)}
+              backdropBorderRadius="inherit"
+              disablePortal
+              manageWindowChrome={false}
+              classNameContainer="w-full max-w-md rounded-2xl border p-5"
+            >
+              <form onSubmit={(event) => { event.preventDefault(); void handleCreateTeam(); }} className="space-y-4">
+                <div>
+                  <h3 className="text-lg font-semibold text-[var(--ledger-text-primary)]">New team</h3>
+                  <p className="mt-1 text-sm leading-5 text-[var(--ledger-text-secondary)]">
+                    Create a compact team for shared ownership.
+                  </p>
+                </div>
+                <label className="block space-y-1.5">
+                  <span className={settingsTheme.label}>Team name</span>
+                  <input
+                    value={createTeamName}
+                    onChange={(event) => {
+                      const nextName = event.target.value;
+                      setCreateTeamName(nextName);
+                      if (!createTeamIdentifierTouched) {
+                        setCreateTeamIdentifier(makeTeamIdentifier(nextName));
+                      }
+                    }}
+                    className={settingsTheme.input}
+                    placeholder="Main Room"
+                    autoFocus
+                  />
+                </label>
+                <label className="block space-y-1.5">
+                  <span className={settingsTheme.label}>Identifier</span>
+                  <input
+                    value={createTeamIdentifier}
+                    onChange={(event) => {
+                      setCreateTeamIdentifierTouched(true);
+                      setCreateTeamIdentifier(event.target.value.toUpperCase());
+                    }}
+                    className={settingsTheme.input}
+                    placeholder="MAIN"
+                  />
+                </label>
+                <label className="block space-y-1.5">
+                  <span className={settingsTheme.label}>Description</span>
+                  <textarea
+                    value={createTeamDescription}
+                    onChange={(event) => setCreateTeamDescription(event.target.value)}
+                    className={settingsTheme.input + ' min-h-20 resize-none py-2'}
+                    placeholder="Optional"
+                  />
+                </label>
+                <div className="space-y-2">
+                  <span className={settingsTheme.label}>Color</span>
+                  <div className="flex flex-wrap gap-2">
+                    {['#FF5F40', '#D97706', '#0F766E', '#2563EB', '#7C3AED', '#475569'].map((color) => (
+                      <button
+                        key={color}
+                        type="button"
+                        onClick={() => setCreateTeamColor(color)}
+                        className={`h-7 w-7 rounded-full border-2 ${
+                          createTeamColor === color ? 'border-[var(--ledger-text-primary)]' : 'border-transparent'
+                        }`}
+                        style={{ backgroundColor: color }}
+                        aria-label={`Use ${color}`}
+                      />
+                    ))}
+                  </div>
+                </div>
+                {createTeamError && <p className="text-xs text-[var(--ledger-danger)]">{createTeamError}</p>}
+                <div className="flex justify-end gap-2 pt-2">
+                  <button type="button" onClick={() => setIsCreateTeamOpen(false)} className={settingsTheme.controlButton}>
+                    Cancel
+                  </button>
+                  <button type="submit" disabled={isCreatingTeam || !createTeamName.trim()} className={settingsTheme.primaryButton}>
+                    {isCreatingTeam ? 'Creating...' : 'Create team'}
+                  </button>
+                </div>
+              </form>
+            </ModalOverlay>
 
             <ModalOverlay
               isOpen={isExtensionTokenModalOpen}

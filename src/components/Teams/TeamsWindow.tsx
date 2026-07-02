@@ -40,13 +40,31 @@ type Team = {
   assignedCount: number;
   milestoneCount: number;
   activeProjects: string[];
+  ownedProjects?: Array<{ id: string; name: string; noteCount?: number; milestoneCount?: number }>;
+  linkedNotes?: Array<{
+    id: string;
+    title: string;
+    updatedAt?: string | null;
+    projectId?: string | null;
+    projectName?: string | null;
+  }>;
+  projectMilestones?: Array<{
+    sourceId: string;
+    title: string;
+    projectName?: string | null;
+    detail: string;
+    assignedAt: string;
+  }>;
   notes: string[];
-  currentUserRole?: 'lead' | 'member' | null;
+  currentUserRole?: 'lead' | 'member' | 'viewer' | null;
 };
 
 type WorkspaceProjectRow = {
   id: string;
   name: string;
+  owner_team_id?: string | null;
+  noteCount?: number;
+  milestoneCount?: number;
 };
 
 type WorkspaceTaskRow = {
@@ -72,6 +90,12 @@ type WorkspaceMilestoneRow = {
   type?: string | null;
   completed?: boolean | null;
   created_at?: string | null;
+  updated_at?: string | null;
+};
+
+type WorkspaceNoteRow = {
+  id: string;
+  title: string;
   updated_at?: string | null;
 };
 
@@ -121,7 +145,7 @@ const teamsTheme = {
   row:
     'group grid w-full grid-cols-[minmax(220px,1.4fr)_minmax(170px,1fr)_90px_34px] items-center gap-4 border-b border-[color:var(--ledger-border-subtle)] px-4 py-3 text-left last:border-b-0 transition hover:bg-[var(--ledger-surface-hover)]',
   rowSelected:
-    'bg-[color:rgba(255,95,64,0.08)] hover:bg-[color:rgba(255,95,64,0.11)]',
+    'bg-[var(--ledger-surface-hover)] hover:bg-[var(--ledger-surface-hover)]',
   label: 'text-[11px] font-medium text-[var(--ledger-text-muted)]',
   title: 'text-[13px] font-medium text-[var(--ledger-text-primary)]',
   meta: 'text-[11px] leading-4 text-[var(--ledger-text-muted)]',
@@ -208,16 +232,24 @@ const CompactButton = ({
   </button>
 );
 
-export const TeamsWindow = () => {
+export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) => {
   const api = useApi();
   const { user } = useAuthContext();
   const { activeWorkspace, activeWorkspaceId } = useWorkspaceContext();
   const workspaceName = activeWorkspace?.name?.trim() || 'Workspace';
+  const focusTeamId = useMemo(() => {
+    const raw = String(focusContext ?? '').trim();
+    if (raw.startsWith('team:')) {
+      return raw.slice('team:'.length).trim() || null;
+    }
+    return null;
+  }, [focusContext]);
 
   const [workspaceMembers, setWorkspaceMembers] = useState<TeamMember[]>([]);
   const [workspaceProjects, setWorkspaceProjects] = useState<WorkspaceProjectRow[]>([]);
   const [workspaceTasks, setWorkspaceTasks] = useState<WorkspaceTaskRow[]>([]);
   const [workspaceMilestones, setWorkspaceMilestones] = useState<WorkspaceMilestoneRow[]>([]);
+  const [workspaceNotes, setWorkspaceNotes] = useState<WorkspaceNoteRow[]>([]);
   const [teams, setTeams] = useState<Team[]>([]);
   const [selectedTeamId, setSelectedTeamId] = useState<string | null>(null);
   const [openedTeamId, setOpenedTeamId] = useState<string | null>(null);
@@ -250,6 +282,18 @@ export const TeamsWindow = () => {
   const [milestoneComposerDate, setMilestoneComposerDate] = useState('');
   const [milestoneComposerType, setMilestoneComposerType] = useState('Custom');
   const [assignWorkError, setAssignWorkError] = useState<string | null>(null);
+  const [isProjectLinkOpen, setIsProjectLinkOpen] = useState(false);
+  const [projectLinkSearch, setProjectLinkSearch] = useState('');
+  const [projectLinkNameDraft, setProjectLinkNameDraft] = useState('');
+  const [isNoteLinkOpen, setIsNoteLinkOpen] = useState(false);
+  const [noteLinkSearch, setNoteLinkSearch] = useState('');
+  const [noteLinkTitleDraft, setNoteLinkTitleDraft] = useState('');
+
+  useEffect(() => {
+    if (!focusTeamId) return;
+    setSelectedTeamId(focusTeamId);
+    setOpenedTeamId(focusTeamId);
+  }, [focusTeamId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -294,19 +338,21 @@ export const TeamsWindow = () => {
   useEffect(() => {
     let cancelled = false;
 
-  const loadWorkspaceWork = async () => {
+    const loadWorkspaceWork = async () => {
       if (!activeWorkspaceId) {
         setWorkspaceProjects([]);
         setWorkspaceTasks([]);
         setWorkspaceMilestones([]);
+        setWorkspaceNotes([]);
         return;
       }
 
       try {
-        const [projectsPayload, tasksPayload, milestonesPayload] = await Promise.all([
+        const [projectsPayload, tasksPayload, milestonesPayload, notesPayload] = await Promise.all([
           api.getProjects({ includeCompleted: true }),
           api.getTasks(),
           api.getWorkspaceProjectMilestones(),
+          api.getNotes(),
         ]);
 
         if (cancelled) return;
@@ -315,6 +361,9 @@ export const TeamsWindow = () => {
           ? projectsPayload.map((project) => ({
               id: String(project.id),
               name: String(project.name ?? ''),
+              owner_team_id: (project as { owner_team_id?: string | null }).owner_team_id ?? null,
+              noteCount: Number((project as { noteCount?: number }).noteCount ?? 0),
+              milestoneCount: Number((project as { milestoneCount?: number }).milestoneCount ?? 0),
             }))
           : [];
 
@@ -339,14 +388,24 @@ export const TeamsWindow = () => {
             }))
           : [];
 
+        const notes = Array.isArray(notesPayload)
+          ? (notesPayload as Array<{ id: string; title: string; updated_at?: string | null }>).map((note) => ({
+              id: String(note.id),
+              title: String(note.title ?? ''),
+              updated_at: note.updated_at ?? null,
+            }))
+          : [];
+
         setWorkspaceProjects(projects);
         setWorkspaceTasks(tasks);
         setWorkspaceMilestones(milestones);
+        setWorkspaceNotes(notes);
       } catch {
         if (!cancelled) {
           setWorkspaceProjects([]);
           setWorkspaceTasks([]);
           setWorkspaceMilestones([]);
+          setWorkspaceNotes([]);
         }
       }
     };
@@ -370,7 +429,9 @@ export const TeamsWindow = () => {
       }
 
       try {
-        const payload = (await api.getTeams()) as { teams?: Team[] } | Team[];
+        const payload = (await api.getTeams({ includeArchived: Boolean(focusTeamId) })) as
+          | { teams?: Team[] }
+          | Team[];
         if (cancelled) return;
 
         const nextTeams = Array.isArray(payload)
@@ -379,12 +440,16 @@ export const TeamsWindow = () => {
             ? payload.teams
             : [];
         setTeams(nextTeams);
-        setSelectedTeamId((current) =>
-          current && nextTeams.some((team) => team.id === current) ? current : nextTeams[0]?.id ?? null
-        );
-        setOpenedTeamId((current) =>
-          current && nextTeams.some((team) => team.id === current) ? current : null
-        );
+        setSelectedTeamId((current) => {
+          if (current && nextTeams.some((team) => team.id === current)) return current;
+          if (focusTeamId && nextTeams.some((team) => team.id === focusTeamId)) return focusTeamId;
+          return null;
+        });
+        setOpenedTeamId((current) => {
+          if (current && nextTeams.some((team) => team.id === current)) return current;
+          if (focusTeamId && nextTeams.some((team) => team.id === focusTeamId)) return focusTeamId;
+          return null;
+        });
       } catch {
         if (!cancelled) {
           setTeams([]);
@@ -399,7 +464,7 @@ export const TeamsWindow = () => {
     return () => {
       cancelled = true;
     };
-  }, [activeWorkspaceId, api]);
+  }, [activeWorkspaceId, api, focusTeamId]);
 
   useEffect(() => {
     if (!assignWorkTeamId) {
@@ -594,6 +659,24 @@ export const TeamsWindow = () => {
   const assignedWorkSet = new Set(
     (assignWorkTeam?.assignedWork ?? []).map((item) => workItemKey({ kind: item.kind, sourceId: item.sourceId }))
   );
+  const openedTeamProjectIds = new Set((openedTeam?.ownedProjects ?? []).map((project) => project.id));
+  const projectLinkableItems = useMemo(() => {
+    const needle = projectLinkSearch.trim().toLowerCase();
+    return workspaceProjects.filter((project) => {
+      if (openedTeamProjectIds.has(project.id)) return false;
+      if (needle && !project.name.toLowerCase().includes(needle)) return false;
+      return true;
+    });
+  }, [openedTeamProjectIds, projectLinkSearch, workspaceProjects]);
+  const noteLinkableItems = useMemo(() => {
+    const needle = noteLinkSearch.trim().toLowerCase();
+    const linkedNoteIds = new Set((openedTeam?.linkedNotes ?? []).map((note) => note.id));
+    return workspaceNotes.filter((note) => {
+      if (linkedNoteIds.has(note.id)) return false;
+      if (needle && !note.title.toLowerCase().includes(needle)) return false;
+      return true;
+    });
+  }, [noteLinkSearch, openedTeam?.linkedNotes, workspaceNotes]);
 
   const workspaceWorkItems = useMemo(() => {
     const taskItems = workspaceTasks
@@ -685,9 +768,15 @@ export const TeamsWindow = () => {
     if (!assignWorkTeam) return;
     const assign = async () => {
       if (item.kind === 'task') {
-        await api.updateTask(item.sourceId, { assigned_team_id: assignWorkTeam.id });
+        await api.updateTask(item.sourceId, {
+          assigned_team_id: assignWorkTeam.id,
+          assigned_to_team_id: assignWorkTeam.id,
+        });
       } else {
-        await api.updateProjectMilestone(item.sourceId, { assigned_team_id: assignWorkTeam.id });
+        await api.updateProjectMilestone(item.sourceId, {
+          assigned_team_id: assignWorkTeam.id,
+          assigned_to_team_id: assignWorkTeam.id,
+        });
       }
       setAssignWorkSuccess(`Assigned to ${assignWorkTeam.name}.`);
       setAssignWorkError(null);
@@ -722,6 +811,7 @@ export const TeamsWindow = () => {
         show_in_today: taskComposerHorizon === 'today',
         is_today_focus: false,
         assigned_team_id: assignWorkTeam.id,
+        assigned_to_team_id: assignWorkTeam.id,
       });
       await reloadTeams(assignWorkTeam.id);
       setAssignWorkSuccess(`Assigned to ${assignWorkTeam.name}.`);
@@ -751,6 +841,7 @@ export const TeamsWindow = () => {
         milestone_date: milestoneDate,
         type: milestoneComposerType.trim() || 'Custom',
         assigned_team_id: assignWorkTeam.id,
+        assigned_to_team_id: assignWorkTeam.id,
       });
       await reloadTeams(assignWorkTeam.id);
       setAssignWorkSuccess(`Assigned to ${assignWorkTeam.name}.`);
@@ -778,6 +869,72 @@ export const TeamsWindow = () => {
     setMilestoneComposerProjectId('');
     setMilestoneComposerDate('');
     setMilestoneComposerType('Custom');
+  };
+
+  const openProjectLinkModal = () => {
+    if (!openedTeam) return;
+    setProjectLinkSearch('');
+    setProjectLinkNameDraft('');
+    setIsProjectLinkOpen(true);
+  };
+
+  const openNoteLinkModal = () => {
+    if (!openedTeam) return;
+    setNoteLinkSearch('');
+    setNoteLinkTitleDraft('');
+    setIsNoteLinkOpen(true);
+  };
+
+  const linkExistingProject = async (projectId: string) => {
+    if (!openedTeam) return;
+    try {
+      await api.updateProject(projectId, { owner_team_id: openedTeam.id });
+      await reloadTeams(openedTeam.id);
+      setIsProjectLinkOpen(false);
+    } catch (error) {
+      setAssignWorkError(error instanceof Error ? error.message : 'Could not add project.');
+    }
+  };
+
+  const createProjectForTeam = async () => {
+    if (!openedTeam) return;
+    const name = projectLinkNameDraft.trim();
+    if (!name) return;
+    try {
+      await api.createProject({ name, owner_team_id: openedTeam.id });
+      await reloadTeams(openedTeam.id);
+      setIsProjectLinkOpen(false);
+    } catch (error) {
+      setAssignWorkError(error instanceof Error ? error.message : 'Could not create project.');
+    }
+  };
+
+  const linkExistingNote = async (noteId: string) => {
+    if (!openedTeam) return;
+    try {
+      await api.linkTeamNote(openedTeam.id, noteId);
+      await reloadTeams(openedTeam.id);
+      setIsNoteLinkOpen(false);
+    } catch (error) {
+      setAssignWorkError(error instanceof Error ? error.message : 'Could not link note.');
+    }
+  };
+
+  const createNoteForTeam = async () => {
+    if (!openedTeam) return;
+    const title = noteLinkTitleDraft.trim();
+    if (!title) return;
+    try {
+      const created = await api.createNote(title, '', { source: 'workspace', mode: 'text' });
+      const nextNoteId = (created as { id?: string })?.id;
+      if (nextNoteId) {
+        await api.linkTeamNote(openedTeam.id, nextNoteId);
+      }
+      await reloadTeams(openedTeam.id);
+      setIsNoteLinkOpen(false);
+    } catch (error) {
+      setAssignWorkError(error instanceof Error ? error.message : 'Could not create note.');
+    }
   };
 
   const renderRightPanel = () => {
@@ -930,7 +1087,7 @@ export const TeamsWindow = () => {
 
               <div className="flex min-h-0 flex-1 flex-col">
                 <section className="min-h-0 flex-1">
-                  <div className={`${teamsTheme.panel} flex h-full flex-col`}>
+                  <div className={`${teamsTheme.panel} flex h-full flex-col overflow-hidden`}>
                     <div className="flex items-center justify-between gap-3 border-b border-[color:var(--ledger-border-subtle)] px-4 py-3">
                       <div className="flex items-baseline gap-2">
                         <h2 className="text-sm font-medium text-[var(--ledger-text-primary)]">Teams</h2>
@@ -1108,6 +1265,147 @@ export const TeamsWindow = () => {
                             </p>
                             <button type="button" onClick={openAssignWorkToCurrentTeam} className={`mt-4 ${teamsTheme.action}`}>
                               Assign work
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ) : activeTab === 'Projects' ? (
+                    <div>
+                      <div className="flex items-center justify-between gap-3 border-b border-[color:var(--ledger-border-subtle)] px-4 py-3">
+                        <p className="text-sm font-medium text-[var(--ledger-text-primary)]">Owner team projects</p>
+                        <button type="button" onClick={openProjectLinkModal} className="text-xs font-medium text-[var(--ledger-text-muted)] hover:text-[var(--ledger-text-primary)]">
+                          + Add project
+                        </button>
+                      </div>
+                      {openedTeam.ownedProjects && openedTeam.ownedProjects.length > 0 ? (
+                        openedTeam.ownedProjects.map((project) => (
+                          <button
+                            key={project.id}
+                            type="button"
+                            onClick={() =>
+                              void window.desktopWindow?.toggleModule('projects', {
+                                focusProjectId: project.id,
+                              })
+                            }
+                            className="flex w-full items-center justify-between gap-3 border-b border-[color:var(--ledger-border-subtle)] px-4 py-3 text-left transition hover:bg-[var(--ledger-surface-hover)] last:border-b-0"
+                          >
+                            <div className="min-w-0">
+                              <p className={teamsTheme.title}>{project.name}</p>
+                              <p className={teamsTheme.meta}>
+                                Owner team · {project.noteCount ?? 0} notes · {project.milestoneCount ?? 0} milestones
+                              </p>
+                            </div>
+                          </button>
+                        ))
+                      ) : (
+                        <div className="flex min-h-[220px] items-center justify-center px-4 py-10">
+                          <div className="max-w-sm text-center">
+                            <p className="text-sm font-medium text-[var(--ledger-text-primary)]">No team projects yet.</p>
+                            <p className="mt-1 text-sm text-[var(--ledger-text-muted)]">
+                              Set an existing project owner or create a project for this team.
+                            </p>
+                            <button type="button" onClick={openProjectLinkModal} className={`mt-4 ${teamsTheme.action}`}>
+                              Add project
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ) : activeTab === 'Milestones' ? (
+                    <div>
+                      <div className="flex items-center justify-between gap-3 border-b border-[color:var(--ledger-border-subtle)] px-4 py-3">
+                        <p className="text-sm font-medium text-[var(--ledger-text-primary)]">Team milestones</p>
+                        <button type="button" onClick={() => openAssignWorkForTeam(openedTeam.id)} className="text-xs font-medium text-[var(--ledger-text-muted)] hover:text-[var(--ledger-text-primary)]">
+                          + Assign milestone
+                        </button>
+                      </div>
+                      <div className="border-b border-[color:var(--ledger-border-subtle)]">
+                        <div className="px-4 py-2">
+                          <p className="text-xs font-medium text-[var(--ledger-text-muted)]">Assigned to this team</p>
+                        </div>
+                        {assignedRows.filter((row) => row.kind === 'milestone').length > 0 ? (
+                          assignedRows
+                            .filter((row) => row.kind === 'milestone')
+                            .map((row) => (
+                              <div
+                                key={workItemKey(row)}
+                                className="flex items-center gap-3 border-t border-[color:var(--ledger-border-subtle)] px-4 py-3 first:border-t-0"
+                              >
+                                <Diamond size={14} className="text-[var(--ledger-text-muted)]" />
+                                <div className="min-w-0">
+                                  <p className={teamsTheme.title}>{row.title}</p>
+                                  <p className={teamsTheme.meta}>{row.detail}</p>
+                                </div>
+                              </div>
+                            ))
+                        ) : (
+                          <p className="px-4 py-4 text-sm text-[var(--ledger-text-muted)]">No direct team milestones yet.</p>
+                        )}
+                      </div>
+                      <div>
+                        <div className="px-4 py-2">
+                          <p className="text-xs font-medium text-[var(--ledger-text-muted)]">From owned projects</p>
+                        </div>
+                        {openedTeam.projectMilestones && openedTeam.projectMilestones.length > 0 ? (
+                          openedTeam.projectMilestones.map((row) => (
+                            <div
+                              key={row.sourceId}
+                              className="flex items-center gap-3 border-t border-[color:var(--ledger-border-subtle)] px-4 py-3 first:border-t-0"
+                            >
+                              <Diamond size={14} className="text-[var(--ledger-text-muted)]" />
+                              <div className="min-w-0">
+                                <p className={teamsTheme.title}>{row.title}</p>
+                                <p className={teamsTheme.meta}>{row.detail}</p>
+                              </div>
+                            </div>
+                          ))
+                        ) : (
+                          <p className="px-4 py-4 text-sm text-[var(--ledger-text-muted)]">No project milestones yet.</p>
+                        )}
+                      </div>
+                    </div>
+                  ) : activeTab === 'Notes' ? (
+                    <div>
+                      <div className="flex items-center justify-between gap-3 border-b border-[color:var(--ledger-border-subtle)] px-4 py-3">
+                        <p className="text-sm font-medium text-[var(--ledger-text-primary)]">Linked notes</p>
+                        <button type="button" onClick={openNoteLinkModal} className="text-xs font-medium text-[var(--ledger-text-muted)] hover:text-[var(--ledger-text-primary)]">
+                          + Link note
+                        </button>
+                      </div>
+                      {openedTeam.linkedNotes && openedTeam.linkedNotes.length > 0 ? (
+                        openedTeam.linkedNotes.map((note) => (
+                          <button
+                            key={note.id}
+                            type="button"
+                            onClick={() =>
+                              void window.desktopWindow?.toggleModule('notes', {
+                                focusNoteId: note.id,
+                              })
+                            }
+                            className="flex w-full items-center justify-between gap-3 border-b border-[color:var(--ledger-border-subtle)] px-4 py-3 text-left transition hover:bg-[var(--ledger-surface-hover)] last:border-b-0"
+                          >
+                            <div className="min-w-0">
+                              <p className={teamsTheme.title}>{note.title}</p>
+                              <p className={teamsTheme.meta}>
+                                {note.projectName
+                                  ? `${note.projectName} · project note`
+                                  : note.updatedAt
+                                  ? `Updated ${formatShortDate(note.updatedAt)}`
+                                  : 'Linked note'}
+                              </p>
+                            </div>
+                          </button>
+                        ))
+                      ) : (
+                        <div className="flex min-h-[220px] items-center justify-center px-4 py-10">
+                          <div className="max-w-sm text-center">
+                            <p className="text-sm font-medium text-[var(--ledger-text-primary)]">No team notes yet.</p>
+                            <p className="mt-1 text-sm text-[var(--ledger-text-muted)]">
+                              Link meeting notes, captures, or project context.
+                            </p>
+                            <button type="button" onClick={openNoteLinkModal} className={`mt-4 ${teamsTheme.action}`}>
+                              Link note
                             </button>
                           </div>
                         </div>
@@ -1340,6 +1638,152 @@ export const TeamsWindow = () => {
           >
             Invite someone new
           </button>
+        </div>
+      </ModalOverlay>
+
+      <ModalOverlay
+        isOpen={isProjectLinkOpen}
+        onClose={() => setIsProjectLinkOpen(false)}
+        backdropBorderRadius="inherit"
+        disablePortal
+        manageWindowChrome={false}
+        classNameContainer="w-full max-w-md rounded-2xl border p-5"
+      >
+        <div className="space-y-4">
+          <div>
+            <h2 className="text-lg font-medium text-[var(--ledger-text-primary)]">
+              Add project to {openedTeam?.name}
+            </h2>
+            <p className="mt-1 text-sm text-[var(--ledger-text-muted)]">
+              Projects added here surface their notes and milestones in this team.
+            </p>
+          </div>
+          <label className="flex h-9 items-center gap-2 rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] px-3">
+            <Search size={14} className="text-[var(--ledger-text-muted)]" />
+            <input
+              value={projectLinkSearch}
+              onChange={(event) => setProjectLinkSearch(event.target.value)}
+              placeholder="Search existing projects..."
+              className="min-w-0 flex-1 bg-transparent text-sm text-[var(--ledger-text-primary)] placeholder:text-[var(--ledger-placeholder)] focus:outline-none"
+              autoFocus
+            />
+          </label>
+          <div className="max-h-56 overflow-auto rounded-2xl border border-[color:var(--ledger-border-subtle)]">
+            {projectLinkableItems.length > 0 ? (
+              projectLinkableItems.map((project) => (
+                <button
+                  key={project.id}
+                  type="button"
+                  onClick={() => void linkExistingProject(project.id)}
+                  className="flex w-full items-center justify-between gap-3 border-b border-[color:var(--ledger-border-subtle)] px-4 py-3 text-left transition last:border-b-0 hover:bg-[var(--ledger-surface-hover)]"
+                >
+                  <span className="min-w-0">
+                    <span className="block truncate text-sm font-medium text-[var(--ledger-text-primary)]">
+                      {project.name}
+                    </span>
+                    <span className="block truncate text-xs text-[var(--ledger-text-muted)]">
+                      {project.owner_team_id ? 'Already owned by a team' : 'Workspace project'}
+                    </span>
+                  </span>
+                </button>
+              ))
+            ) : (
+              <div className="px-4 py-6 text-sm text-[var(--ledger-text-muted)]">No matching projects.</div>
+            )}
+          </div>
+          <div className="space-y-2">
+            <p className="text-xs font-medium text-[var(--ledger-text-muted)]">Create new</p>
+            <label className="block space-y-1.5">
+              <span className={teamsTheme.label}>Project name</span>
+              <input
+                value={projectLinkNameDraft}
+                onChange={(event) => setProjectLinkNameDraft(event.target.value)}
+                className={teamsTheme.modalInput}
+                placeholder="New project"
+              />
+            </label>
+            <button
+              type="button"
+              onClick={() => void createProjectForTeam()}
+              disabled={!projectLinkNameDraft.trim()}
+              className={teamsTheme.primaryAction}
+            >
+              Create project
+            </button>
+          </div>
+        </div>
+      </ModalOverlay>
+
+      <ModalOverlay
+        isOpen={isNoteLinkOpen}
+        onClose={() => setIsNoteLinkOpen(false)}
+        backdropBorderRadius="inherit"
+        disablePortal
+        manageWindowChrome={false}
+        classNameContainer="w-full max-w-md rounded-2xl border p-5"
+      >
+        <div className="space-y-4">
+          <div>
+            <h2 className="text-lg font-medium text-[var(--ledger-text-primary)]">
+              Link note to {openedTeam?.name}
+            </h2>
+            <p className="mt-1 text-sm text-[var(--ledger-text-muted)]">
+              Notes linked here appear in this team, including notes attached to owned projects.
+            </p>
+          </div>
+          <label className="flex h-9 items-center gap-2 rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] px-3">
+            <Search size={14} className="text-[var(--ledger-text-muted)]" />
+            <input
+              value={noteLinkSearch}
+              onChange={(event) => setNoteLinkSearch(event.target.value)}
+              placeholder="Search notes..."
+              className="min-w-0 flex-1 bg-transparent text-sm text-[var(--ledger-text-primary)] placeholder:text-[var(--ledger-placeholder)] focus:outline-none"
+              autoFocus
+            />
+          </label>
+          <div className="max-h-56 overflow-auto rounded-2xl border border-[color:var(--ledger-border-subtle)]">
+            {noteLinkableItems.length > 0 ? (
+              noteLinkableItems.map((note) => (
+                <button
+                  key={note.id}
+                  type="button"
+                  onClick={() => void linkExistingNote(note.id)}
+                  className="flex w-full items-center justify-between gap-3 border-b border-[color:var(--ledger-border-subtle)] px-4 py-3 text-left transition last:border-b-0 hover:bg-[var(--ledger-surface-hover)]"
+                >
+                  <span className="min-w-0">
+                    <span className="block truncate text-sm font-medium text-[var(--ledger-text-primary)]">
+                      {note.title}
+                    </span>
+                    <span className="block truncate text-xs text-[var(--ledger-text-muted)]">
+                      {note.updated_at ? `Updated ${formatShortDate(note.updated_at)}` : 'Workspace note'}
+                    </span>
+                  </span>
+                </button>
+              ))
+            ) : (
+              <div className="px-4 py-6 text-sm text-[var(--ledger-text-muted)]">No matching notes.</div>
+            )}
+          </div>
+          <div className="space-y-2">
+            <p className="text-xs font-medium text-[var(--ledger-text-muted)]">Create new</p>
+            <label className="block space-y-1.5">
+              <span className={teamsTheme.label}>Note title</span>
+              <input
+                value={noteLinkTitleDraft}
+                onChange={(event) => setNoteLinkTitleDraft(event.target.value)}
+                className={teamsTheme.modalInput}
+                placeholder="Project notes"
+              />
+            </label>
+            <button
+              type="button"
+              onClick={() => void createNoteForTeam()}
+              disabled={!noteLinkTitleDraft.trim()}
+              className={teamsTheme.primaryAction}
+            >
+              Create note
+            </button>
+          </div>
         </div>
       </ModalOverlay>
 
@@ -1624,6 +2068,17 @@ export const TeamsWindow = () => {
           onClick={(event) => event.stopPropagation()}
         >
           <CompactButton onClick={() => setOpenedTeamId(contextMenu.teamId)}>Open team</CompactButton>
+          <CompactButton
+            onClick={() => {
+              void window.desktopWindow?.openModule('teams', {
+                kind: 'teams',
+                focusContext: `team-settings:${contextMenu.teamId}`,
+              } as any);
+              setContextMenu(null);
+            }}
+          >
+            Team settings
+          </CompactButton>
           <CompactButton onClick={() => openInviteForTeam(contextMenu.teamId)}>Invite member</CompactButton>
           <CompactButton
             onClick={() => {

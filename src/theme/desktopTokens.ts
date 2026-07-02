@@ -112,10 +112,10 @@ const sharedRadius = {
 } as const;
 
 const sharedShadows = {
-  card: '0 1px 2px rgba(20, 20, 18, 0.035)',
-  surface: '0 14px 42px rgba(20, 20, 18, 0.075)',
-  modal: '0 28px 80px rgba(20, 20, 18, 0.14)',
-  popover: '0 16px 42px rgba(20, 20, 18, 0.13)',
+  card: '0 1px 2px rgba(0, 0, 0, 0.05)',
+  surface: '0 14px 42px rgba(0, 0, 0, 0.08)',
+  modal: '0 28px 80px rgba(0, 0, 0, 0.12)',
+  popover: '0 16px 42px rgba(0, 0, 0, 0.12)',
   accent: '0 10px 26px rgba(255, 95, 64, 0.16)',
 } as const;
 
@@ -127,128 +127,128 @@ const sharedStructure = {
 } as const;
 
 /**
- * Option B: Graphite Workspace
+ * Linear-Inspired Color System
  *
  * Light mode:
- * - warm stone/paper base
- * - less peach/cream than the previous system
- * - orange used as a precise accent
+ * - Clean, neutral white base
+ * - High contrast, tech-forward
+ * - Orange accent (#FF5F40) precisely applied
  *
  * Dark mode:
- * - warm graphite/charcoal
- * - not navy
- * - pairs better with Ledger orange
+ * - True dark (#0F0F0F), not warm
+ * - Elevated surfaces with luminance hierarchy
+ * - Adjusted orange (#FF8C5F) for dark mode readability
  */
 const lightColors: DesktopColorTokens = {
-  background: '#F7F4EF',
-  backgroundMuted: '#EFEAE3',
+  background: '#FFFFFF',
+  backgroundMuted: '#F9F9F9',
 
-  surface: '#FFFCF7',
-  surfaceCard: '#FBF7F0',
-  surfaceMuted: '#F1ECE4',
-  surfaceSelected: '#F4E7DE',
-  surfaceHover: '#E2DDD5',
+  surface: '#FFFFFF',
+  surfaceCard: '#FAFAFA',
+  surfaceMuted: '#F5F5F5',
+  surfaceSelected: '#F0F0F0',
+  surfaceHover: '#F8F8F8',
 
-  textPrimary: '#171512',
-  textSecondary: '#4F4A43',
-  textMuted: '#766F65',
+  textPrimary: '#0A0A0A',
+  textSecondary: '#666666',
+  textMuted: '#999999',
 
-  borderSubtle: '#DED6CB',
-  borderStrong: '#C8BDAF',
+  borderSubtle: '#E5E5E5',
+  borderStrong: '#D0D0D0',
 
   accent: '#FF5F40',
-  accentHover: '#E95235',
-  accentSoft: '#FFE1D7',
+  accentHover: '#E85430',
+  accentSoft: '#FFE8DC',
 
-  danger: '#C24135',
-  success: '#168A5B',
-  warning: '#B86B16',
+  danger: '#D92D20',
+  success: '#12B76A',
+  warning: '#DC6803',
 
-  inputBackground: '#FFFCF8',
-  placeholder: '#9A9288',
+  inputBackground: '#FAFAFA',
+  placeholder: '#A0A0A0',
 
-  tabBar: '#F4EFE7',
-  tabBarBorder: '#DED6CB',
+  tabBar: '#F5F5F5',
+  tabBarBorder: '#E0E0E0',
 
-  backdrop: 'rgba(23, 21, 18, 0.48)',
-  shadow: 'rgba(23, 21, 18, 0.09)',
+  backdrop: 'rgba(10, 10, 10, 0.4)',
+  shadow: 'rgba(0, 0, 0, 0.06)',
 
-  glassWhite: 'rgba(255, 252, 247, 0.9)',
-  glassCream: 'rgba(244, 239, 231, 0.86)',
-  glassIconWhite: 'rgba(255, 252, 247, 0.72)',
-  glassIconCream: 'rgba(244, 239, 231, 0.68)',
-  glassBorder: 'rgba(222, 214, 203, 0.86)',
-  glassOutline: 'rgba(200, 189, 175, 0.16)',
+  glassWhite: 'rgba(255, 255, 255, 0.94)',
+  glassCream: 'rgba(249, 249, 249, 0.90)',
+  glassIconWhite: 'rgba(255, 255, 255, 0.78)',
+  glassIconCream: 'rgba(249, 249, 249, 0.74)',
+  glassBorder: 'rgba(229, 229, 229, 0.93)',
+  glassOutline: 'rgba(0, 0, 0, 0.08)',
   glassShadow:
-    '0 30px 90px rgba(23, 21, 18, 0.2), inset 0 1px 0 rgba(255, 252, 247, 0.86), inset 0 -1px 0 rgba(23, 21, 18, 0.045)',
+    '0 30px 90px rgba(0, 0, 0, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.95), inset 0 -1px 0 rgba(0, 0, 0, 0.04)',
   glassIconShadow:
-    '0 14px 38px rgba(23, 21, 18, 0.13), inset 0 1px 0 rgba(255, 252, 247, 0.76)',
-  glassHighlight: 'rgba(255, 252, 247, 0.58)',
-  glassSheen: 'rgba(255, 252, 247, 0.28)',
+    '0 14px 38px rgba(0, 0, 0, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.85)',
+  glassHighlight: 'rgba(255, 255, 255, 0.75)',
+  glassSheen: 'rgba(255, 255, 255, 0.40)',
 
-  glassSolidBackground: 'rgba(255, 252, 247, 0.96)',
-  glassSolidBorder: 'rgba(222, 214, 203, 0.9)',
+  glassSolidBackground: 'rgba(255, 255, 255, 0.97)',
+  glassSolidBorder: 'rgba(229, 229, 229, 0.92)',
 
-  modalBackdrop: 'rgba(23, 21, 18, 0.48)',
+  modalBackdrop: 'rgba(10, 10, 10, 0.4)',
 
-  scrollbarThumb: 'rgb(190 181 169)',
-  scrollbarThumbHover: 'rgb(150 141 130)',
+  scrollbarThumb: 'rgb(200 200 200)',
+  scrollbarThumbHover: 'rgb(150 150 150)',
 };
 
 const darkColors: DesktopColorTokens = {
-  background: '#11100E',
-  backgroundMuted: '#171512',
+  background: '#0F0F0F',
+  backgroundMuted: '#161616',
 
-  surface: '#1A1815',
-  surfaceCard: '#211F1B',
-  surfaceMuted: '#28251F',
-  surfaceSelected: '#332820',
-  surfaceHover: '#2D2923',
+  surface: '#1A1A1A',
+  surfaceCard: '#1F1F1F',
+  surfaceMuted: '#262626',
+  surfaceSelected: '#2A2A2A',
+  surfaceHover: '#202020',
 
-  textPrimary: '#F7F2EA',
-  textSecondary: '#D4CCC0',
-  textMuted: '#A79D90',
+  textPrimary: '#F5F5F5',
+  textSecondary: '#B0B0B0',
+  textMuted: '#808080',
 
-  borderSubtle: '#38332B',
-  borderStrong: '#51493D',
+  borderSubtle: '#333333',
+  borderStrong: '#404040',
 
-  accent: '#FF7A59',
-  accentHover: '#FF6846',
-  accentSoft: '#4B2B22',
+  accent: '#FF8C5F',
+  accentHover: '#FF7A4D',
+  accentSoft: '#FFAB8F',
 
   danger: '#F97066',
   success: '#32D583',
   warning: '#FDB022',
 
-  inputBackground: '#181612',
-  placeholder: '#81786C',
+  inputBackground: '#161616',
+  placeholder: '#666666',
 
-  tabBar: '#15130F',
-  tabBarBorder: '#332E27',
+  tabBar: '#0F0F0F',
+  tabBarBorder: '#2A2A2A',
 
-  backdrop: 'rgba(8, 7, 6, 0.72)',
-  shadow: 'rgba(0, 0, 0, 0.42)',
+  backdrop: 'rgba(15, 15, 15, 0.6)',
+  shadow: 'rgba(0, 0, 0, 0.3)',
 
-  glassWhite: 'rgba(26, 24, 21, 0.86)',
-  glassCream: 'rgba(20, 18, 15, 0.9)',
-  glassIconWhite: 'rgba(34, 31, 27, 0.72)',
-  glassIconCream: 'rgba(24, 22, 18, 0.78)',
-  glassBorder: 'rgba(247, 242, 234, 0.12)',
-  glassOutline: 'rgba(247, 242, 234, 0.06)',
+  glassWhite: 'rgba(26, 26, 26, 0.85)',
+  glassCream: 'rgba(30, 30, 30, 0.92)',
+  glassIconWhite: 'rgba(26, 26, 26, 0.75)',
+  glassIconCream: 'rgba(30, 30, 30, 0.84)',
+  glassBorder: 'rgba(100, 100, 100, 0.20)',
+  glassOutline: 'rgba(100, 100, 100, 0.10)',
   glassShadow:
-    '0 32px 90px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 252, 247, 0.045), inset 0 -1px 0 rgba(247, 242, 234, 0.035)',
+    '0 32px 90px rgba(0, 0, 0, 0.40), inset 0 1px 0 rgba(255, 255, 255, 0.08), inset 0 -1px 0 rgba(100, 100, 100, 0.06)',
   glassIconShadow:
-    '0 14px 38px rgba(0, 0, 0, 0.34), inset 0 1px 0 rgba(255, 252, 247, 0.04)',
-  glassHighlight: 'rgba(255, 252, 247, 0.045)',
-  glassSheen: 'rgba(255, 252, 247, 0.06)',
+    '0 14px 38px rgba(0, 0, 0, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.08)',
+  glassHighlight: 'rgba(100, 100, 100, 0.10)',
+  glassSheen: 'rgba(100, 100, 100, 0.12)',
 
-  glassSolidBackground: 'rgba(26, 24, 21, 0.96)',
-  glassSolidBorder: 'rgba(247, 242, 234, 0.12)',
+  glassSolidBackground: 'rgba(26, 26, 26, 0.96)',
+  glassSolidBorder: 'rgba(100, 100, 100, 0.18)',
 
-  modalBackdrop: 'rgba(8, 7, 6, 0.76)',
+  modalBackdrop: 'rgba(15, 15, 15, 0.65)',
 
-  scrollbarThumb: 'rgb(81 73 61)',
-  scrollbarThumbHover: 'rgb(116 105 90)',
+  scrollbarThumb: 'rgb(80 80 80)',
+  scrollbarThumbHover: 'rgb(110 110 110)',
 };
 
 export const desktopTokens = {

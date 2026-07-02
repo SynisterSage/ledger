@@ -44,6 +44,7 @@ import CalendarWindow from './components/Calendar/CalendarWindow';
 import NotesWindow from './components/Notes/NotesWindow';
 import ProjectsWindow from './components/Projects/ProjectsWindow';
 import TeamsWindow from './components/Teams/TeamsWindow';
+import TeamSettingsWindow from './components/Teams/TeamSettingsWindow';
 import InboxWindow from './components/Inbox/InboxWindow';
 import { NotificationCenterWindow } from './components/Notifications/NotificationCenterWindow';
 import SettingsWindow from './components/Settings/SettingsWindow';
@@ -3820,7 +3821,10 @@ function AppShell() {
     }
 
     if (moduleKind === 'teams') {
-      return <TeamsWindow />;
+      if (moduleFocusContext.startsWith('team-settings:')) {
+        return <TeamSettingsWindow focusContext={moduleFocusContext || undefined} />;
+      }
+      return <TeamsWindow focusContext={moduleFocusContext || undefined} />;
     }
 
     if (moduleKind === 'dashboard') {

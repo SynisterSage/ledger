@@ -7,7 +7,7 @@
 
 html,
 body {
-  color: var(--ledger-text-primary, rgb(17 24 39));
+  color: var(--ledger-text-primary, rgb(10 10 10));
   background-color: transparent;
 }
 
@@ -20,13 +20,125 @@ body {
 :root {
   --window-radius: 24px;
   --modal-backdrop-radius: var(--window-radius);
+
+  /* Light mode defaults */
+  --ledger-background: #ffffff;
+  --ledger-background-muted: #f9f9f9;
+  --ledger-surface: #ffffff;
+  --ledger-surface-card: #fafafa;
+  --ledger-surface-muted: #f5f5f5;
+  --ledger-surface-selected: #f0f0f0;
+  --ledger-surface-hover: #f8f8f8;
+  --ledger-text-primary: #0a0a0a;
+  --ledger-text-secondary: #666666;
+  --ledger-text-muted: #999999;
+  --ledger-border-subtle: #e5e5e5;
+  --ledger-border-strong: #d0d0d0;
+  --ledger-accent: #ff5f40;
+  --ledger-accent-hover: #e85430;
+  --ledger-accent-soft: #ffe8dc;
+  --ledger-danger: #d92d20;
+  --ledger-success: #12b76a;
+  --ledger-warning: #dc6803;
+  --ledger-input-background: #fafafa;
+  --ledger-placeholder: #a0a0a0;
+  --ledger-tab-bar: #f5f5f5;
+  --ledger-tab-bar-border: #e0e0e0;
+  --ledger-backdrop: rgba(10, 10, 10, 0.4);
+  --ledger-shadow: rgba(0, 0, 0, 0.06);
+  --ledger-shadow-accent: 0 10px 26px rgba(255, 95, 64, 0.16);
+  --ledger-control-radius: 12px;
+  --ledger-surface-radius: 16px;
+  --ledger-sheet-radius: 24px;
+  --ledger-pill-radius: 999px;
+  --ledger-window-radius: 24px;
+  --ledger-screen-x: 20px;
+  --ledger-screen-y: 24px;
+
+  /* Sidebar glass tokens light */
+  --ledger-sidebar-glass-white: rgba(255, 255, 255, 0.94);
+  --ledger-sidebar-glass-cream: rgba(249, 249, 249, 0.9);
+  --ledger-sidebar-glass-icon-white: rgba(255, 255, 255, 0.78);
+  --ledger-sidebar-glass-icon-cream: rgba(249, 249, 249, 0.74);
+  --ledger-sidebar-glass-border: rgba(229, 229, 229, 0.93);
+  --ledger-sidebar-glass-outline: rgba(0, 0, 0, 0.08);
+  --ledger-sidebar-glass-shadow: 0 30px 90px rgba(0, 0, 0, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.95),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.04);
+  --ledger-sidebar-glass-icon-shadow: 0 14px 38px rgba(0, 0, 0, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.85);
+  --ledger-sidebar-glass-highlight: rgba(255, 255, 255, 0.75);
+  --ledger-sidebar-glass-sheen: rgba(255, 255, 255, 0.4);
+  --ledger-sidebar-glass-solid-background: rgba(255, 255, 255, 0.97);
+  --ledger-sidebar-glass-solid-border: rgba(229, 229, 229, 0.92);
+
+  /* Modal backdrop light */
+  --ledger-modal-backdrop: rgba(10, 10, 10, 0.4);
+
+  /* Scrollbar light */
+  --ledger-scrollbar-thumb: rgb(200 200 200);
+  --ledger-scrollbar-thumb-hover: rgb(150 150 150);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ledger-background: #0f0f0f;
+    --ledger-background-muted: #161616;
+    --ledger-surface: #1a1a1a;
+    --ledger-surface-card: #1f1f1f;
+    --ledger-surface-muted: #262626;
+    --ledger-surface-selected: #2a2a2a;
+    --ledger-surface-hover: #202020;
+    --ledger-text-primary: #f5f5f5;
+    --ledger-text-secondary: #b0b0b0;
+    --ledger-text-muted: #808080;
+    --ledger-border-subtle: #333333;
+    --ledger-border-strong: #404040;
+    --ledger-accent: #ff8c5f;
+    --ledger-accent-hover: #ff7a4d;
+    --ledger-accent-soft: #ffab8f;
+    --ledger-danger: #f97066;
+    --ledger-success: #32d583;
+    --ledger-warning: #fdb022;
+    --ledger-input-background: #161616;
+    --ledger-placeholder: #666666;
+    --ledger-tab-bar: #0f0f0f;
+    --ledger-tab-bar-border: #2a2a2a;
+    --ledger-backdrop: rgba(15, 15, 15, 0.6);
+    --ledger-shadow: rgba(0, 0, 0, 0.3);
+    --ledger-shadow-accent: 0 10px 26px rgba(255, 140, 95, 0.16);
+
+    /* Sidebar glass tokens dark */
+    --ledger-sidebar-glass-white: rgba(26, 26, 26, 0.85);
+    --ledger-sidebar-glass-cream: rgba(30, 30, 30, 0.92);
+    --ledger-sidebar-glass-icon-white: rgba(26, 26, 26, 0.75);
+    --ledger-sidebar-glass-icon-cream: rgba(30, 30, 30, 0.84);
+    --ledger-sidebar-glass-border: rgba(100, 100, 100, 0.2);
+    --ledger-sidebar-glass-outline: rgba(100, 100, 100, 0.1);
+    --ledger-sidebar-glass-shadow: 0 32px 90px rgba(0, 0, 0, 0.4),
+      inset 0 1px 0 rgba(255, 255, 255, 0.08),
+      inset 0 -1px 0 rgba(100, 100, 100, 0.06);
+    --ledger-sidebar-glass-icon-shadow: 0 14px 38px rgba(0, 0, 0, 0.25),
+      inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    --ledger-sidebar-glass-highlight: rgba(100, 100, 100, 0.1);
+    --ledger-sidebar-glass-sheen: rgba(100, 100, 100, 0.12);
+    --ledger-sidebar-glass-solid-background: rgba(26, 26, 26, 0.96);
+    --ledger-sidebar-glass-solid-border: rgba(100, 100, 100, 0.18);
+
+    /* Modal backdrop dark */
+    --ledger-modal-backdrop: rgba(15, 15, 15, 0.65);
+
+    /* Scrollbar dark */
+    --ledger-scrollbar-thumb: rgb(80 80 80);
+    --ledger-scrollbar-thumb-hover: rgb(110 110 110);
+  }
 }
 
 /* When a modal is open, hide the app shell border/shadow and match body background
    to the modal backdrop color so transparent window edges don't reveal a mismatched
    background or border. This helps avoid corner artifacts in rounded Electron windows. */
 body.has-modal-open {
-  background-color: var(--ledger-modal-backdrop, rgba(17, 24, 39, 0.45)) !important;
+  background-color: var(--ledger-modal-backdrop, rgba(10, 10, 10, 0.4)) !important;
 }
 
 body.has-modal-open #root > * {
@@ -36,16 +148,16 @@ body.has-modal-open #root > * {
 }
 
 .ledger-modal-surface {
-  color: var(--ledger-text-primary, rgb(17 24 39));
-  background-color: var(--ledger-surface-card, rgb(251 247 240));
-  border-color: var(--ledger-border-subtle, rgba(232, 221, 212, 0.92));
-  box-shadow: var(--ledger-shadow, 0 24px 70px rgba(15, 23, 42, 0.12));
+  color: var(--ledger-text-primary, rgb(10 10 10));
+  background-color: var(--ledger-surface-card, rgb(250 250 250));
+  border-color: var(--ledger-border-subtle, rgba(229, 229, 229, 0.93));
+  box-shadow: var(--ledger-shadow, 0 28px 80px rgba(0, 0, 0, 0.12));
 }
 
 .ledger-modal-surface [class*='bg-white'],
 .ledger-modal-surface [class*='bg-gray-50'],
 .ledger-modal-surface [class*='bg-[#FFF'] {
-  background-color: var(--ledger-surface-card, rgb(251 247 240)) !important;
+  background-color: var(--ledger-surface-card, rgb(250 250 250)) !important;
 }
 
 .ledger-modal-surface [class*='bg-gray-100'],
@@ -55,14 +167,14 @@ body.has-modal-open #root > * {
 .ledger-modal-surface [class*='bg-[#FFF3'],
 .ledger-modal-surface [class*='bg-[#FFF7'],
 .ledger-modal-surface [class*='bg-[#FFFB'] {
-  background-color: var(--ledger-surface-muted, rgb(241 236 228)) !important;
+  background-color: var(--ledger-surface-muted, rgb(245 245 245)) !important;
 }
 
 .ledger-modal-surface [class*='hover:bg-white']:hover,
 .ledger-modal-surface [class*='hover:bg-gray-50']:hover,
 .ledger-modal-surface [class*='hover:bg-gray-100']:hover,
 .ledger-modal-surface [class*='hover:bg-[#FFF']:hover {
-  background-color: var(--ledger-surface-hover, rgb(226 221 213)) !important;
+  background-color: var(--ledger-surface-hover, rgb(248 248 248)) !important;
 }
 
 .ledger-modal-surface [class*='border-gray-100'],
@@ -70,26 +182,26 @@ body.has-modal-open #root > * {
 .ledger-modal-surface [class*='border-gray-300'],
 .ledger-modal-surface [class*='border-[#E2D4C4'],
 .ledger-modal-surface [class*='border-[#E8DDD4'] {
-  border-color: var(--ledger-border-subtle, rgba(232, 221, 212, 0.92)) !important;
+  border-color: var(--ledger-border-subtle, rgba(229, 229, 229, 0.93)) !important;
 }
 
 .ledger-modal-surface [class*='text-gray-500'] {
-  color: var(--ledger-text-muted, rgb(118 111 101)) !important;
+  color: var(--ledger-text-muted, rgb(153 153 153)) !important;
 }
 
 .ledger-modal-surface [class*='text-gray-600'],
 .ledger-modal-surface [class*='text-gray-700'] {
-  color: var(--ledger-text-secondary, rgb(79 74 67)) !important;
+  color: var(--ledger-text-secondary, rgb(102 102 102)) !important;
 }
 
 .ledger-modal-surface [class*='text-gray-800'],
 .ledger-modal-surface [class*='text-gray-900'] {
-  color: var(--ledger-text-primary, rgb(17 24 39)) !important;
+  color: var(--ledger-text-primary, rgb(10 10 10)) !important;
 }
 
 .ledger-modal-surface [class*='focus:border-gray-300']:focus,
 .ledger-modal-surface [class*='focus:border-gray-400']:focus {
-  border-color: var(--ledger-border-strong, rgb(200 189 175)) !important;
+  border-color: var(--ledger-border-strong, rgb(208 208 208)) !important;
 }
 
 .sidebar-glass {
@@ -110,12 +222,12 @@ body.has-modal-open #root > * {
   background:
     linear-gradient(
       135deg,
-      var(--ledger-sidebar-glass-white, rgba(255, 249, 244, 0.93)),
-      var(--ledger-sidebar-glass-cream, rgba(255, 244, 234, 0.88))
+      var(--ledger-sidebar-glass-white, rgba(255, 255, 255, 0.94)),
+      var(--ledger-sidebar-glass-cream, rgba(249, 249, 249, 0.9))
     );
-  border: 1px solid var(--ledger-sidebar-glass-border, rgba(232, 221, 212, 0.92));
-  outline: 1px solid var(--ledger-sidebar-glass-outline, rgba(216, 198, 182, 0.12));
-  box-shadow: var(--ledger-sidebar-glass-shadow, 0 30px 90px rgba(17, 23, 42, 0.22));
+  border: 1px solid var(--ledger-sidebar-glass-border, rgba(229, 229, 229, 0.93));
+  outline: 1px solid var(--ledger-sidebar-glass-outline, rgba(0, 0, 0, 0.08));
+  box-shadow: var(--ledger-sidebar-glass-shadow, 0 30px 90px rgba(0, 0, 0, 0.12));
   -webkit-backdrop-filter: blur(36px) saturate(0.9);
   backdrop-filter: blur(36px) saturate(0.9);
 }
@@ -129,8 +241,8 @@ body.has-modal-open #root > * {
   border-radius: inherit;
   pointer-events: none;
   background:
-    radial-gradient(circle at 18% 8%, var(--ledger-sidebar-glass-highlight, rgba(255, 249, 244, 0.7)), transparent 30%),
-    linear-gradient(135deg, var(--ledger-sidebar-glass-sheen, rgba(255, 249, 244, 0.34)), transparent 42%);
+    radial-gradient(circle at 18% 8%, var(--ledger-sidebar-glass-highlight, rgba(255, 255, 255, 0.75)), transparent 30%),
+    linear-gradient(135deg, var(--ledger-sidebar-glass-sheen, rgba(255, 255, 255, 0.4)), transparent 42%);
   opacity: 0.75;
 }
 
@@ -147,11 +259,11 @@ body.has-modal-open #root > * {
   background:
     linear-gradient(
       135deg,
-      var(--ledger-sidebar-glass-icon-white, rgba(255, 249, 244, 0.76)),
-      var(--ledger-sidebar-glass-icon-cream, rgba(255, 244, 234, 0.72))
+      var(--ledger-sidebar-glass-icon-white, rgba(255, 255, 255, 0.78)),
+      var(--ledger-sidebar-glass-icon-cream, rgba(249, 249, 249, 0.74))
     );
-  border: 1px solid var(--ledger-sidebar-glass-border, rgba(232, 221, 212, 0.7));
-  box-shadow: var(--ledger-sidebar-glass-icon-shadow, 0 14px 38px rgba(17, 24, 39, 0.14));
+  border: 1px solid var(--ledger-sidebar-glass-border, rgba(229, 229, 229, 0.7));
+  box-shadow: var(--ledger-sidebar-glass-icon-shadow, 0 14px 38px rgba(0, 0, 0, 0.08));
   -webkit-backdrop-filter: blur(24px) saturate(0.9);
   backdrop-filter: blur(24px) saturate(0.9);
 }
@@ -180,9 +292,9 @@ body.has-modal-open #root > * {
   z-index: 0;
   border-radius: inherit;
   pointer-events: none;
-  background: var(--ledger-sidebar-glass-solid-background, rgba(255, 249, 244, 0.96));
-  border-color: var(--ledger-sidebar-glass-solid-border, rgba(232, 221, 212, 0.9));
-  box-shadow: var(--ledger-sidebar-glass-shadow, 0 20px 58px rgba(17, 24, 39, 0.16));
+  background: var(--ledger-sidebar-glass-solid-background, rgba(255, 255, 255, 0.97));
+  border-color: var(--ledger-sidebar-glass-solid-border, rgba(229, 229, 229, 0.92));
+  box-shadow: var(--ledger-sidebar-glass-shadow, 0 20px 58px rgba(0, 0, 0, 0.12));
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
 }
@@ -195,19 +307,19 @@ body.has-modal-open #root > * {
   .sidebar-glass::after {
     background: linear-gradient(
       135deg,
-      var(--ledger-sidebar-glass-white, rgba(255, 249, 244, 0.97)),
-      var(--ledger-sidebar-glass-cream, rgba(255, 244, 234, 0.93))
+      var(--ledger-sidebar-glass-white, rgba(255, 255, 255, 0.97)),
+      var(--ledger-sidebar-glass-cream, rgba(249, 249, 249, 0.93))
     );
-    border-color: var(--ledger-sidebar-glass-border, rgba(232, 221, 212, 0.94));
-    box-shadow: var(--ledger-sidebar-glass-shadow, 0 26px 76px rgba(17, 24, 39, 0.16));
+    border-color: var(--ledger-sidebar-glass-border, rgba(229, 229, 229, 0.94));
+    box-shadow: var(--ledger-sidebar-glass-shadow, 0 26px 76px rgba(0, 0, 0, 0.12));
   }
 }
 
 @media (prefers-reduced-transparency: reduce) {
   .sidebar-glass::after {
-    background: var(--ledger-sidebar-glass-solid-background, rgba(255, 249, 244, 0.97));
-    border-color: var(--ledger-sidebar-glass-solid-border, rgba(232, 221, 212, 0.94));
-    box-shadow: var(--ledger-sidebar-glass-shadow, 0 20px 58px rgba(17, 24, 39, 0.16));
+    background: var(--ledger-sidebar-glass-solid-background, rgba(255, 255, 255, 0.97));
+    border-color: var(--ledger-sidebar-glass-solid-border, rgba(229, 229, 229, 0.94));
+    box-shadow: var(--ledger-sidebar-glass-shadow, 0 20px 58px rgba(0, 0, 0, 0.12));
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
   }
@@ -234,12 +346,12 @@ button:focus {
 }
 
 ::-webkit-scrollbar-thumb {
-  background-color: var(--ledger-scrollbar-thumb, rgb(209 213 219));
+  background-color: var(--ledger-scrollbar-thumb, rgb(200 200 200));
   border-radius: 9999px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background-color: var(--ledger-scrollbar-thumb-hover, rgb(156 163 175));
+  background-color: var(--ledger-scrollbar-thumb-hover, rgb(150 150 150));
 }
 
 .ledger-range {
@@ -418,9 +530,9 @@ button:focus {
   align-items: center;
   justify-content: center;
   border-radius: 20px;
-  border: 1px solid var(--ledger-border-subtle, rgba(232, 221, 212, 0.92));
-  background: var(--ledger-surface-card, rgba(17, 24, 39, 0.84));
-  box-shadow: 0 18px 46px rgba(0, 0, 0, 0.28);
+  border: 1px solid var(--ledger-border-subtle, rgba(229, 229, 229, 0.93));
+  background: var(--ledger-surface-card, rgba(250, 250, 250, 0.84));
+  box-shadow: 0 18px 46px rgba(0, 0, 0, 0.12);
   animation: ledger-prelogin-mark 1.8s ease-in-out infinite;
 }
 

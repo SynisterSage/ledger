@@ -69,6 +69,7 @@ type ProjectRow = {
   end_date: string | null;
   project_type?: string | null;
   lead_id?: string | null;
+  owner_team_id?: string | null;
   created_by?: string | null;
   created_at: string;
   updated_at: string;
@@ -79,6 +80,9 @@ type TaskRow = {
   project_id: string | null;
   milestone_id?: string | null;
   assigned_to?: string | null;
+  assigned_to_user_id?: string | null;
+  assigned_to_team_id?: string | null;
+  assigned_team_id?: string | null;
   title: string;
   description: string | null;
   notes: string | null;
@@ -132,6 +136,13 @@ type WorkspaceMember = {
   user_id: string;
   email: string | null;
   full_name: string | null;
+};
+
+type WorkspaceTeam = {
+  id: string;
+  name: string;
+  identifier: string;
+  color?: string | null;
 };
 
 type NoteOption = {
@@ -643,7 +654,8 @@ export const ProjectsWindow = () => {
     date: string;
     note: string;
     projectId: string;
-  }>({ title: '', type: 'Custom', date: todayKey(), note: '', projectId: '' });
+    assignee: string;
+  }>({ title: '', type: 'Custom', date: todayKey(), note: '', projectId: '', assignee: '' });
   const [milestoneDraftTouched, setMilestoneDraftTouched] = useState(false);
   const [milestoneDraftError, setMilestoneDraftError] = useState<string | null>(null);
   const [isSavingMilestone, setIsSavingMilestone] = useState(false);
@@ -700,6 +712,7 @@ export const ProjectsWindow = () => {
   const [taskNotesDraft, setTaskNotesDraft] = useState('');
   const [isSavingTaskNotes, setIsSavingTaskNotes] = useState(false);
   const [workspaceMembers, setWorkspaceMembers] = useState<WorkspaceMember[]>([]);
+  const [workspaceTeams, setWorkspaceTeams] = useState<WorkspaceTeam[]>([]);
   const [isContextMenuOpen, setIsContextMenuOpen] = useState(false);
   const [linkedNotes, setLinkedNotes] = useState<ProjectNoteLink[]>([]);
   const [overviewNoteLinkCounts, setOverviewNoteLinkCounts] = useState<Record<string, number>>({});
@@ -914,12 +927,35 @@ export const ProjectsWindow = () => {
     return new Map(workspaceMembers.map((member) => [member.user_id, member]));
   }, [workspaceMembers]);
 
+  const workspaceTeamById = useMemo(() => {
+    return new Map(workspaceTeams.map((team) => [team.id, team]));
+  }, [workspaceTeams]);
+
+  const getAssignmentValue = useCallback((task: Pick<TaskRow, 'assigned_to' | 'assigned_to_user_id' | 'assigned_to_team_id' | 'assigned_team_id'>) => {
+    const assignedTeamId = task.assigned_to_team_id ?? task.assigned_team_id ?? null;
+    if (assignedTeamId) return `team:${assignedTeamId}`;
+    const assignedUserId = task.assigned_to_user_id ?? task.assigned_to ?? null;
+    if (assignedUserId) return `user:${assignedUserId}`;
+    return '';
+  }, []);
+
+  const parseAssignmentValue = useCallback((value: string) => {
+    if (!value) return { assigned_to_user_id: null, assigned_to_team_id: null };
+    const [kind, id] = value.split(':', 2);
+    if (!id) return { assigned_to_user_id: null, assigned_to_team_id: null };
+    if (kind === 'team') return { assigned_to_user_id: null, assigned_to_team_id: id };
+    if (kind === 'user') return { assigned_to_user_id: id, assigned_to_team_id: null };
+    return { assigned_to_user_id: null, assigned_to_team_id: null };
+  }, []);
+
   const getAssigneeLabel = useCallback(
-    (assigneeId: string | null | undefined) => {
-      if (!assigneeId) return 'Unassigned';
-      return displayMemberName(workspaceMemberById.get(assigneeId) ?? null);
+    (assigneeValue: string | null | undefined) => {
+      if (!assigneeValue) return 'Unassigned';
+      const [kind, id] = String(assigneeValue).split(':', 2);
+      if (kind === 'team') return workspaceTeamById.get(id)?.name ?? 'Team';
+      return displayMemberName(workspaceMemberById.get(id) ?? null);
     },
-    [workspaceMemberById]
+    [workspaceMemberById, workspaceTeamById]
   );
 
   const createdByMember = useMemo(() => {
@@ -1741,13 +1777,14 @@ export const ProjectsWindow = () => {
     setTaskError(null);
 
     try {
+      const assignment = parseAssignmentValue(newTaskAssignee);
       const data = await api.createTask({
         title,
         project_id: selectedProjectId,
         priority: newTaskPriority,
         due_date: newTaskDueDate || null,
         due_time: newTaskDueTime || null,
-        assigned_to: newTaskAssignee || null,
+        ...assignment,
         milestone_id: newTaskMilestoneId || null,
         status: 'todo',
         task_horizon: 'long_term',
@@ -1779,6 +1816,7 @@ export const ProjectsWindow = () => {
     newTaskTitle,
     resetTaskComposer,
     selectedProjectId,
+    parseAssignmentValue,
   ]);
 
   const closeTaskComposer = useCallback(
@@ -1827,11 +1865,11 @@ export const ProjectsWindow = () => {
       dueDate: task.due_date ?? '',
       dueTime: task.due_time ?? '',
       priority: String(task.priority || 'medium'),
-      assignee: task.assigned_to ?? '',
+      assignee: getAssignmentValue(task),
       milestoneId: task.milestone_id ?? '',
       notes: task.notes ?? '',
     });
-  }, []);
+  }, [getAssignmentValue]);
 
   const closeActionInlineEditor = useCallback(() => {
     setExpandedActionId(null);
@@ -1862,7 +1900,7 @@ export const ProjectsWindow = () => {
           due_date: actionDraft.dueDate || null,
           due_time: actionDraft.dueTime || null,
           priority: actionDraft.priority,
-          assigned_to: actionDraft.assignee || null,
+          ...parseAssignmentValue(actionDraft.assignee),
           milestone_id: actionDraft.milestoneId || null,
           notes: actionDraft.notes.trim() || null,
         })) as TaskRow;
@@ -1874,7 +1912,7 @@ export const ProjectsWindow = () => {
         setIsSavingActionDraft(false);
       }
     },
-    [actionDraft, api, closeActionInlineEditor]
+    [actionDraft, api, closeActionInlineEditor, parseAssignmentValue]
   );
 
   const attachTaskToMilestone = useCallback(
@@ -2203,6 +2241,7 @@ export const ProjectsWindow = () => {
       date: todayKey(),
       note: '',
       projectId: '',
+      assignee: '',
     });
     setMilestoneDraftTouched(false);
     setMilestoneDraftError(null);
@@ -2235,6 +2274,7 @@ export const ProjectsWindow = () => {
         date,
         note: '',
         projectId: project?.id ?? '',
+        assignee: '',
       });
       setMilestoneDraftTouched(false);
       setMilestoneDraftError(null);
@@ -2268,6 +2308,7 @@ export const ProjectsWindow = () => {
         date,
         note: '',
         projectId: project?.id ?? (projects.length === 1 ? projects[0].id : ''),
+        assignee: '',
       });
       setMilestoneDraftTouched(false);
       setMilestoneDraftError(null);
@@ -2319,12 +2360,14 @@ export const ProjectsWindow = () => {
             type: milestoneDraft.type,
             note: milestoneDraft.note.trim() || null,
             project_id: projectId,
+            ...parseAssignmentValue(milestoneDraft.assignee),
           })) as ProjectMilestoneRow)
         : ((await api.createProjectMilestone(projectId, {
             title,
             milestone_date: date,
             type: milestoneDraft.type,
             note: milestoneDraft.note.trim() || null,
+            ...parseAssignmentValue(milestoneDraft.assignee),
           })) as ProjectMilestoneRow);
       setWorkspaceMilestones((prev) =>
         [saved, ...prev.filter((milestone) => milestone.id !== saved.id)].sort((left, right) =>
@@ -2712,10 +2755,15 @@ export const ProjectsWindow = () => {
     const loadWorkspaceMembers = async () => {
       if (!activeWorkspaceId) {
         if (mounted) setWorkspaceMembers([]);
+        if (mounted) setWorkspaceTeams([]);
         return;
       }
       try {
-        const payload = (await api.getWorkspaceMembers(activeWorkspaceId)) as {
+        const [membersPayload, teamsPayload] = await Promise.all([
+          api.getWorkspaceMembers(activeWorkspaceId),
+          api.getTeams(),
+        ]);
+        const payload = membersPayload as {
           members?: Array<{ user_id: string; email?: string | null; full_name?: string | null }>;
         };
         if (!mounted) return;
@@ -2727,8 +2775,17 @@ export const ProjectsWindow = () => {
             }))
           : [];
         setWorkspaceMembers(members);
+        const nextTeams = Array.isArray((teamsPayload as { teams?: unknown[] })?.teams)
+          ? ((teamsPayload as { teams: WorkspaceTeam[] }).teams ?? [])
+          : Array.isArray(teamsPayload)
+            ? (teamsPayload as WorkspaceTeam[])
+            : [];
+        setWorkspaceTeams(nextTeams);
       } catch {
-        if (mounted) setWorkspaceMembers([]);
+        if (mounted) {
+          setWorkspaceMembers([]);
+          setWorkspaceTeams([]);
+        }
       }
     };
     void loadWorkspaceMembers();
@@ -3098,13 +3155,14 @@ export const ProjectsWindow = () => {
       ? selectedProjectMilestoneById.get(task.milestone_id) ?? null
       : null;
     const expanded = interactive && expandedActionId === task.id;
+    const taskAssignmentValue = getAssignmentValue(task);
     const draftDirty =
       expanded &&
       (actionDraft.title !== task.title ||
         actionDraft.dueDate !== (task.due_date ?? '') ||
         actionDraft.dueTime !== (task.due_time ?? '') ||
         actionDraft.priority !== String(task.priority || 'medium') ||
-        actionDraft.assignee !== (task.assigned_to ?? '') ||
+        actionDraft.assignee !== taskAssignmentValue ||
         actionDraft.milestoneId !== (task.milestone_id ?? '') ||
         actionDraft.notes !== (task.notes ?? ''));
 
@@ -3240,11 +3298,20 @@ export const ProjectsWindow = () => {
                   className="h-8 w-full appearance-none rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] px-2 pr-8 text-xs text-[var(--ledger-text-secondary)] outline-none"
                 >
                   <option value="">Unassigned</option>
-                  {workspaceMembers.map((member) => (
-                    <option key={member.user_id} value={member.user_id}>
-                      {displayMemberName(member)}
-                    </option>
-                  ))}
+                  <optgroup label="People">
+                    {workspaceMembers.map((member) => (
+                      <option key={member.user_id} value={`user:${member.user_id}`}>
+                        {displayMemberName(member)}
+                      </option>
+                    ))}
+                  </optgroup>
+                  <optgroup label="Teams">
+                    {workspaceTeams.map((team) => (
+                      <option key={team.id} value={`team:${team.id}`}>
+                        {team.name}
+                      </option>
+                    ))}
+                  </optgroup>
                 </select>
                 <ChevronDown
                   size={12}
@@ -3544,23 +3611,32 @@ export const ProjectsWindow = () => {
             onChange={(e) => setNewTaskDueDate(e.target.value)}
             className="w-full min-w-0 rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] px-3 py-2 text-sm text-[var(--ledger-text-secondary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60"
           />
-          <div className="relative min-w-0">
-            <select
-              value={newTaskAssignee}
-              onChange={(e) => setNewTaskAssignee(e.target.value)}
-              className="w-full min-w-0 appearance-none rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] px-3 py-2 pr-8 text-sm text-[var(--ledger-text-secondary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60"
-            >
-              <option value="">Unassigned</option>
-              {workspaceMembers.map((member) => (
-                <option key={member.user_id} value={member.user_id}>
-                  {displayMemberName(member)}
-                </option>
-              ))}
-            </select>
-            <ChevronDown
-              size={14}
-              className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[var(--ledger-text-muted)]"
-            />
+              <div className="relative min-w-0">
+                <select
+                  value={newTaskAssignee}
+                  onChange={(e) => setNewTaskAssignee(e.target.value)}
+                  className="w-full min-w-0 appearance-none rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] px-3 py-2 pr-8 text-sm text-[var(--ledger-text-secondary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60"
+                >
+                  <option value="">Unassigned</option>
+                  <optgroup label="People">
+                    {workspaceMembers.map((member) => (
+                      <option key={member.user_id} value={`user:${member.user_id}`}>
+                        {displayMemberName(member)}
+                      </option>
+                    ))}
+                  </optgroup>
+                  <optgroup label="Teams">
+                    {workspaceTeams.map((team) => (
+                      <option key={team.id} value={`team:${team.id}`}>
+                        {team.name}
+                      </option>
+                    ))}
+                  </optgroup>
+                </select>
+                <ChevronDown
+                  size={14}
+                  className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[var(--ledger-text-muted)]"
+                />
           </div>
           <div className="relative min-w-0">
             <select
@@ -6325,6 +6401,35 @@ export const ProjectsWindow = () => {
             </label>
             <label className="block">
               <span className="mb-1 block text-xs font-medium text-[var(--ledger-text-muted)]">
+                Assign to
+              </span>
+              <select
+                value={milestoneDraft.assignee}
+                onChange={(event) => {
+                  setMilestoneDraftTouched(true);
+                  setMilestoneDraft((current) => ({ ...current, assignee: event.target.value }));
+                }}
+                className="h-9 w-full rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2 text-sm text-[var(--ledger-text-primary)] outline-none transition focus:border-[color:var(--ledger-border-strong)]"
+              >
+                <option value="">Unassigned</option>
+                <optgroup label="People">
+                  {workspaceMembers.map((member) => (
+                    <option key={member.user_id} value={`user:${member.user_id}`}>
+                      {displayMemberName(member)}
+                    </option>
+                  ))}
+                </optgroup>
+                <optgroup label="Teams">
+                  {workspaceTeams.map((team) => (
+                    <option key={team.id} value={`team:${team.id}`}>
+                      {team.name}
+                    </option>
+                  ))}
+                </optgroup>
+              </select>
+            </label>
+            <label className="block">
+              <span className="mb-1 block text-xs font-medium text-[var(--ledger-text-muted)]">
                 Optional note
               </span>
               <textarea
@@ -6850,6 +6955,7 @@ export const ProjectsWindow = () => {
                       date: milestone.milestone_date,
                       note: milestone.note ?? '',
                       projectId: milestone.project_id,
+                      assignee: '',
                     });
                     setMilestoneDraftTouched(false);
                     setMilestoneDraftError(null);

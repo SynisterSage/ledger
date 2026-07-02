@@ -3,14 +3,9 @@ import {
   type CSSProperties,
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
-  useEffect,
-  useMemo,
   useRef,
-  useState,
 } from 'react';
-import { createPortal } from 'react-dom';
 import {
-  ChevronDown,
   Loader2,
   Maximize2,
   Minus,
@@ -19,8 +14,8 @@ import {
   SidebarOpen,
   X,
 } from 'lucide-react';
-import { useWorkspaceContext } from '../../context/WorkspaceContext';
 import { sidebarTheme } from '../Sidebar/sidebarTheme';
+import { WorkspaceSwitcherMenu } from './WorkspaceSwitcherMenu';
 
 type ModuleWindowHeaderProps = {
   eyebrow?: string;
@@ -94,160 +89,6 @@ type ModuleHeaderStripActionProps = {
   onClick: () => void;
   title: string;
   ariaLabel: string;
-};
-
-const WorkspaceSwitcher = () => {
-  const { activeWorkspaceId, activeWorkspace, workspaces, setActiveWorkspace, isLoading } =
-    useWorkspaceContext();
-  const [isOpen, setIsOpen] = useState(false);
-  const [menuStyle, setMenuStyle] = useState<CSSProperties | null>(null);
-  const buttonRef = useRef<HTMLButtonElement | null>(null);
-  const menuRef = useRef<HTMLDivElement | null>(null);
-
-  const resolvedLabel = useMemo(
-    () => activeWorkspace?.name?.trim() || 'Workspace',
-    [activeWorkspace?.name]
-  );
-
-  useEffect(() => {
-    if (!isOpen) return;
-
-    const updateMenuPosition = () => {
-      const rect = buttonRef.current?.getBoundingClientRect();
-      if (!rect) return;
-
-      const menuWidth = 240;
-      const left = Math.max(8, Math.min(rect.left, window.innerWidth - menuWidth - 8));
-      const top = Math.min(rect.bottom + 4, window.innerHeight - 8);
-
-      setMenuStyle({
-        position: 'fixed',
-        left,
-        top,
-        width: menuWidth,
-        zIndex: 9999,
-      });
-    };
-
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        setIsOpen(false);
-      }
-    };
-
-    updateMenuPosition();
-    window.addEventListener('keydown', onKeyDown);
-    window.addEventListener('resize', updateMenuPosition);
-    window.addEventListener('scroll', updateMenuPosition, true);
-
-    return () => {
-      window.removeEventListener('keydown', onKeyDown);
-      window.removeEventListener('resize', updateMenuPosition);
-      window.removeEventListener('scroll', updateMenuPosition, true);
-    };
-  }, [isOpen]);
-
-  if (isLoading || workspaces.length === 0) {
-    return (
-      <button
-        type="button"
-        disabled
-        title="No workspaces available"
-        aria-label="No workspaces available"
-        className={`inline-flex h-7 min-w-28 max-w-60 items-center gap-1.5 text-left text-xs font-medium opacity-70 ${sidebarTheme.textMuted}`}
-        style={noDragRegionStyle}
-      >
-        <span className="min-w-0 flex-1 truncate">Workspace</span>
-        <ChevronDown size={13} className={`shrink-0 ${sidebarTheme.textMuted}`} />
-      </button>
-    );
-  }
-
-  return (
-    <div className="relative" style={noDragRegionStyle}>
-      <button
-        ref={buttonRef}
-        type="button"
-        onClick={(event) => {
-          event.stopPropagation();
-          setIsOpen((current) => !current);
-        }}
-        onMouseDown={(event) => event.stopPropagation()}
-        title={resolvedLabel}
-        aria-label={`Switch workspace. Current workspace: ${resolvedLabel}`}
-        className={`inline-flex h-7 min-w-28 max-w-60 items-center gap-1.5 text-left text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-accent)]/20 ${
-          isOpen ? sidebarTheme.textPrimary : `${sidebarTheme.textSecondary} hover:${sidebarTheme.textPrimary}`
-        }`}
-      >
-        <span className="min-w-0 flex-1 truncate">{resolvedLabel}</span>
-        <ChevronDown size={13} className={`shrink-0 ${sidebarTheme.textMuted}`} />
-      </button>
-
-      {isOpen && typeof document !== 'undefined'
-        ? createPortal(
-            <div
-              className="fixed inset-0 z-9998 pointer-events-auto"
-              onMouseDown={(event) => {
-                if (event.target === event.currentTarget) {
-                  setIsOpen(false);
-                }
-              }}
-              onContextMenu={(event) => event.preventDefault()}
-            >
-              <div
-                ref={menuRef}
-                style={menuStyle ?? undefined}
-                className={`${sidebarTheme.menu} max-h-60 overflow-y-auto shadow-[0_16px_48px_rgba(15,23,42,0.14)] ring-0 outline-none`}
-                onMouseDown={(event) => event.stopPropagation()}
-                onClick={(event) => event.stopPropagation()}
-                onMouseMove={(event) => event.stopPropagation()}
-                onMouseEnter={(event) => event.stopPropagation()}
-                onMouseLeave={(event) => event.stopPropagation()}
-              >
-                <div className="space-y-1 p-1.5" style={noDragRegionStyle}>
-                  {workspaces.map((workspace) => {
-                    const isActive = workspace.id === activeWorkspaceId;
-                    return (
-                      <button
-                        key={workspace.id}
-                        type="button"
-                        onClick={async (event) => {
-                          event.stopPropagation();
-                          try {
-                            if (!isActive) {
-                              await setActiveWorkspace(workspace.id);
-                            }
-                          } catch {
-                            // Keep current workspace if switch fails.
-                          } finally {
-                            setIsOpen(false);
-                          }
-                        }}
-                        className={`group flex min-h-10 w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-accent)]/20 ${
-                          isActive
-                            ? sidebarTheme.hoverSurface + ' ' + sidebarTheme.textPrimary
-                            : `${sidebarTheme.textSecondary} hover:${sidebarTheme.hoverSurface} hover:${sidebarTheme.textPrimary}`
-                        }`}
-                        style={noDragRegionStyle}
-                        aria-current={isActive ? 'true' : undefined}
-                      >
-                        <span
-                          className={`h-2 w-2 shrink-0 rounded-full ${
-                            isActive ? 'bg-[var(--ledger-accent)]' : 'bg-[var(--ledger-border-strong)]'
-                          }`}
-                        />
-                        <span className="min-w-0 flex-1 truncate">{workspace.name}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>,
-            document.body
-          )
-        : null}
-    </div>
-  );
 };
 
 type AppRegionStyle = CSSProperties & {
@@ -604,7 +445,7 @@ export const ModuleWindowHeader = ({
         />
 
         <div className="flex items-center gap-3" style={noDragRegionStyle}>
-          <WorkspaceSwitcher />
+          <WorkspaceSwitcherMenu variant="header" />
           {topRightActions && <div className="flex items-center gap-1">{topRightActions}</div>}
         </div>
       </div>

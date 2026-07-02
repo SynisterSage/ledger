@@ -44,6 +44,7 @@ type ModuleFocusPayload = {
   focusNoteId?: string | null;
   focusTaskId?: string | null;
   focusContext?: string | null;
+  focusSection?: string | null;
 };
 
 contextBridge.exposeInMainWorld('desktopWindow', {

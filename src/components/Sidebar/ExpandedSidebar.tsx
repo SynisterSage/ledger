@@ -11,7 +11,6 @@ import {
   LogOut,
   Plus,
   RotateCcw,
-  Settings,
   StickyNote,
   Trash2,
   Search,
@@ -36,6 +35,7 @@ import { useSearch } from '../../context/SearchContext';
 import { useApi } from '../../hooks/useApi';
 import { useWorkspaceRealtimeRefresh } from '../../hooks/useWorkspaceRealtimeRefresh';
 import { SkeletonList } from '../Common/Skeleton';
+import { WorkspaceSwitcherMenu } from '../Common/WorkspaceSwitcherMenu';
 import { sidebarTheme } from './sidebarTheme';
 
 type FocusItem = {
@@ -273,7 +273,7 @@ export const ExpandedSidebar = ({
   onCollapseRequest?: () => void;
 }) => {
   const { user, signOut } = useAuthContext();
-  const { activeWorkspace, activeWorkspaceId, workspaces, setActiveWorkspace } = useWorkspaceContext();
+  const { activeWorkspace, activeWorkspaceId } = useWorkspaceContext();
   const { collapseToRail, position } = useSidebar();
   const { openSearch } = useSearch();
   const api = useApi();
@@ -442,136 +442,9 @@ export const ExpandedSidebar = ({
     return 'not_started';
   };
 
-  const WorkspaceSwitcher = ({ compact = false }: { compact?: boolean }) => {
-    const [open, setOpen] = useState(false);
-    const buttonRef = useRef<HTMLButtonElement | null>(null);
-    const dropdownRef = useRef<HTMLDivElement | null>(null);
-    const [portalStyle, setPortalStyle] = useState<React.CSSProperties | null>(null);
-    const storedWorkspaceId =
-      typeof window !== 'undefined'
-        ? window.localStorage.getItem('ledger:active-workspace-id')?.trim() || null
-        : null;
-    const storedWorkspaceName =
-      typeof window !== 'undefined'
-        ? window.localStorage.getItem('ledger:active-workspace-name')?.trim() || null
-        : null;
-    const resolvedActiveWorkspace =
-      activeWorkspace ??
-      workspaces.find((workspace) => workspace.id === activeWorkspaceId) ??
-      workspaces.find((workspace) => workspace.id === storedWorkspaceId) ??
-      null;
-    const resolvedActiveWorkspaceLabel =
-      resolvedActiveWorkspace?.name ?? storedWorkspaceName ?? (storedWorkspaceId ? 'Workspace' : 'No workspace');
-
-    useEffect(() => {
-      const handleClickOutside = (e: MouseEvent) => {
-        if (buttonRef.current && buttonRef.current.contains(e.target as Node)) return;
-        if (dropdownRef.current && dropdownRef.current.contains(e.target as Node)) return;
-        // Prevent closing immediately after toggle due to event ordering.
-        const last = lastToggleRef.current ?? 0;
-        if (Date.now() - last < 200) return;
-        setOpen(false);
-      };
-
-      document.addEventListener('click', handleClickOutside);
-      return () => document.removeEventListener('click', handleClickOutside);
-    }, []);
-
-    useEffect(() => {
-      if (!open || !buttonRef.current) {
-        setPortalStyle(null);
-        return;
-      }
-
-      const rect = buttonRef.current.getBoundingClientRect();
-      const left = Math.max(8, rect.left + 4);
-      const top = rect.bottom + 6;
-      const width = Math.max(160, rect.width + 20);
-
-      setPortalStyle({ position: 'fixed', left: `${left}px`, top: `${top}px`, width: `${width}px`, zIndex: 9999 });
-    }, [open]);
-
-    // Prevent the surrounding layout from showing a scrollbar when the dropdown is open.
-    useEffect(() => {
-      if (!open) return;
-      const prevOverflow = document.body.style.overflow;
-      try {
-        document.body.style.overflow = 'hidden';
-      } catch {}
-      return () => {
-        try {
-          document.body.style.overflow = prevOverflow;
-        } catch {}
-      };
-    }, [open]);
-
-    const lastToggleRef = useRef<number | null>(null);
-
-    const dropdown = (
-      <div
-        ref={dropdownRef}
-        style={portalStyle ?? undefined}
-        className={`${sidebarTheme.popover} max-h-56 overflow-y-auto overscroll-contain pr-0 ring-0 outline-none [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden`}
-      >
-        {Array.isArray(workspaces) && workspaces.length > 0 ? (
-          workspaces.map((ws) => (
-            <button
-              key={ws.id}
-              onClick={async (ev) => {
-                ev.stopPropagation();
-                try {
-                  await setActiveWorkspace(ws.id);
-                } catch (err) {
-                  // ignore
-                }
-              }}
-              className={sidebarTheme.menuItem}
-            >
-              {ws.id === activeWorkspaceId ? (
-                <Check size={14} className="text-[var(--ledger-text-secondary)]" />
-              ) : (
-                <span className="w-4" />
-              )}
-              <span className="truncate">{ws.name}</span>
-            </button>
-          ))
-        ) : (
-          <div className="px-3 py-2 text-sm text-[var(--ledger-text-muted)]">
-            {storedWorkspaceId ? 'Loading workspaces...' : 'No workspaces'}
-          </div>
-        )}
-      </div>
-    );
-
-    return (
-      <div className={compact ? 'relative inline-block' : 'relative inline-block min-w-0'}>
-        <button
-          ref={buttonRef}
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-              // record toggle time to avoid immediate outside-click handlers closing the menu
-              lastToggleRef.current = Date.now();
-              setOpen((v) => !v);
-          }}
-          className={
-            compact
-              ? 'inline-flex h-7 max-w-45 items-center gap-1.5 rounded-none border-0 bg-transparent px-0 text-left text-[12px] font-medium text-[var(--ledger-text-secondary)]'
-              : 'inline-flex max-w-34 items-center gap-1.5 truncate text-left text-[11px] font-medium text-[var(--ledger-text-secondary)] transition hover:text-[var(--ledger-text-primary)]'
-          }
-        >
-          <span className="truncate" title={resolvedActiveWorkspaceLabel}>
-            {resolvedActiveWorkspaceLabel}
-          </span>
-          <ChevronDown size={12} className="shrink-0 text-[var(--ledger-text-muted)]" />
-        </button>
-
-        {open && typeof document !== 'undefined'
-          ? createPortal(dropdown, document.body)
-          : null}
-      </div>
-    );
-  };
+  const WorkspaceSwitcher = ({ compact = false }: { compact?: boolean }) => (
+    <WorkspaceSwitcherMenu variant="sidebar" compact={compact} />
+  );
 
   useEffect(() => {
     if (!activeWorkspaceId) {
@@ -1956,6 +1829,16 @@ export const ExpandedSidebar = ({
       action: () => openSettingsSection('shortcuts'),
     },
   ];
+  const trySectionRotationSeed = Number(todayKey().replace(/-/g, ''));
+  const trySectionRotationStart =
+    trySectionItems.length > 0 ? trySectionRotationSeed % trySectionItems.length : 0;
+  const trySectionVisibleItems =
+    trySectionItems.length <= 4
+      ? trySectionItems
+      : [
+          ...trySectionItems.slice(trySectionRotationStart),
+          ...trySectionItems.slice(0, trySectionRotationStart),
+        ].slice(0, 4);
 
   if (isHorizontal) {
     const isTopDock = position === 'top';
@@ -2027,14 +1910,6 @@ export const ExpandedSidebar = ({
           </div>
 
           <div className="ml-auto flex items-center gap-0.5 shrink-0">
-            <button
-              onClick={() => window.desktopWindow?.toggleModule('settings')}
-              className="inline-flex h-9 w-9 items-center justify-center rounded-xl transition hover:bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)]"
-              title="Settings"
-              aria-label="Open settings"
-            >
-              <Settings size={14} />
-            </button>
             <button
               onClick={() => {
                 onCollapseRequest?.();
@@ -2247,7 +2122,7 @@ export const ExpandedSidebar = ({
         </div>
 
         <div className="mt-0 flex items-center justify-between gap-2">
-          <div className="min-w-0">
+          <div className="min-w-0 -ml-1.5">
             <WorkspaceSwitcher compact />
           </div>
           <div className="flex shrink-0 items-center gap-1">
@@ -2280,32 +2155,20 @@ export const ExpandedSidebar = ({
               )}
             </button>
             <button
-              onClick={() => window.desktopWindow?.toggleModule('settings')}
+              onClick={openSearch}
               onMouseDown={(e) => e.stopPropagation()}
               className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]"
-              title="Settings"
-              aria-label="Open settings"
+              title="Search"
+              aria-label="Open search"
             >
-              <Settings size={14} />
+              <Search size={14} />
             </button>
           </div>
         </div>
       </div>
 
-      <div className="px-3.5 pt-2 pb-3 border-b border-[color:var(--ledger-border-subtle)]">
-        <div className="mb-2.5 flex h-9 w-full items-center justify-between gap-3 rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 text-left transition hover:border-[color:var(--ledger-border-strong)] hover:bg-[var(--ledger-surface-hover)]">
-          <span className="flex min-w-0 items-center gap-2 text-[12px] text-[var(--ledger-text-muted)]">
-            <Search size={14} className="shrink-0 text-[var(--ledger-text-muted)]" />
-            <span className="truncate">Search everything...</span>
-          </span>
-          <span className="shrink-0 rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.16em] text-[var(--ledger-text-muted)]">
-            ⌘K
-          </span>
-        </div>
-      </div>
-
-      <div className="flex-1 min-h-0 overflow-y-auto px-3.5 py-3 space-y-3">
-        <section className="space-y-2">
+      <div className="flex flex-1 min-h-0 flex-col overflow-y-auto px-3.5 py-3 gap-3">
+        <section className="order-1 space-y-2">
           <p className={sidebarTheme.sectionLabel}>Navigation</p>
           <div className="space-y-1">
             {[
@@ -2327,7 +2190,7 @@ export const ExpandedSidebar = ({
           </div>
         </section>
 
-        <section ref={workspaceCaptureRef} className="space-y-3">
+        <section ref={workspaceCaptureRef} className="order-2 space-y-3">
           <p className={sidebarTheme.sectionLabel}>Workspace</p>
           <div className="space-y-1.5">
             <button
@@ -2705,7 +2568,7 @@ export const ExpandedSidebar = ({
             </div>
           )}
 
-        <section ref={checkinSectionRef} className="space-y-1.5">
+        <section ref={checkinSectionRef} className="order-5 space-y-1.5">
           <button
             type="button"
             onClick={toggleCheckinExpanded}
@@ -2849,7 +2712,7 @@ export const ExpandedSidebar = ({
           )}
         </section>
 
-        <section className="space-y-1.5">
+        <section className="order-3 space-y-1.5">
           <section className="space-y-1">
             <button
               type="button"
@@ -3099,7 +2962,7 @@ export const ExpandedSidebar = ({
           </section>
         </section>
 
-        <section className="space-y-2">
+        <section className="order-4 space-y-2">
           <div className="flex items-center gap-2">
             <button
               type="button"
@@ -3240,10 +3103,10 @@ export const ExpandedSidebar = ({
             </button>
           </section>
 
-        <section className="space-y-2">
+        <section className="order-6 space-y-2">
           <p className={sidebarTheme.sectionLabel}>Try</p>
           <div className="space-y-1">
-            {trySectionItems.map((item) => (
+            {trySectionVisibleItems.map((item) => (
               <button
                 key={item.title}
                 type="button"
