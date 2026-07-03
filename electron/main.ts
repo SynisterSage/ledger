@@ -1964,14 +1964,14 @@ public static class Win32 {
     public RECT rcWork;
     public uint dwFlags;
   }
-  public bool TryGetWindowBounds(IntPtr hwnd, out RECT rect) {
+  public static bool TryGetWindowBounds(IntPtr hwnd, out RECT rect) {
     const int DWMWA_EXTENDED_FRAME_BOUNDS = 9;
     if (DwmGetWindowAttribute(hwnd, DWMWA_EXTENDED_FRAME_BOUNDS, out rect, System.Runtime.InteropServices.Marshal.SizeOf(typeof(RECT))) == 0) {
       return true;
     }
     return GetWindowRect(hwnd, out rect);
   }
-  public bool IsFullscreenLike(IntPtr hwnd, RECT rect) {
+  public static bool IsFullscreenLike(IntPtr hwnd, RECT rect) {
     try {
       if (IsZoomed(hwnd)) return false;
       IntPtr monitor = MonitorFromWindow(hwnd, 2);
@@ -3361,7 +3361,7 @@ public class Win32 {
     public int X;
     public int Y;
   }
-  public bool TryGetWindowBounds(IntPtr hWnd, out RECT rect) {
+  public static bool TryGetWindowBounds(IntPtr hWnd, out RECT rect) {
     const int DWMWA_EXTENDED_FRAME_BOUNDS = 9;
     if (DwmGetWindowAttribute(hWnd, DWMWA_EXTENDED_FRAME_BOUNDS, out rect, System.Runtime.InteropServices.Marshal.SizeOf(typeof(RECT))) == 0) {
       return true;
@@ -3479,7 +3479,7 @@ public class Win32 {
     public int X;
     public int Y;
   }
-  public bool TryGetWindowBounds(IntPtr hWnd, out RECT rect) {
+  public static bool TryGetWindowBounds(IntPtr hWnd, out RECT rect) {
     const int DWMWA_EXTENDED_FRAME_BOUNDS = 9;
     if (DwmGetWindowAttribute(hWnd, DWMWA_EXTENDED_FRAME_BOUNDS, out rect, System.Runtime.InteropServices.Marshal.SizeOf(typeof(RECT))) == 0) {
       return true;
@@ -3752,7 +3752,7 @@ public class Win32 {
     public int Right;
     public int Bottom;
   }
-  public bool TryGetWindowBounds(IntPtr hWnd, out RECT rect) {
+  public static bool TryGetWindowBounds(IntPtr hWnd, out RECT rect) {
     const int DWMWA_EXTENDED_FRAME_BOUNDS = 9;
     if (DwmGetWindowAttribute(hWnd, DWMWA_EXTENDED_FRAME_BOUNDS, out rect, System.Runtime.InteropServices.Marshal.SizeOf(typeof(RECT))) == 0) {
       return true;
