@@ -150,6 +150,15 @@ contextBridge.exposeInMainWorld('desktopWindow', {
   toggleModuleFullscreen(kind: ModuleWindowKind) {
     return ipcRenderer.invoke('window:toggle-module-fullscreen', kind);
   },
+  goBackWorkspaceWindow() {
+    return ipcRenderer.invoke('window:workspace-go-back');
+  },
+  goForwardWorkspaceWindow() {
+    return ipcRenderer.invoke('window:workspace-go-forward');
+  },
+  getWorkspaceNavigationState() {
+    return ipcRenderer.invoke('window:workspace-navigation-state');
+  },
   setHasShadow(enabled: boolean) {
     return ipcRenderer.invoke('window:set-has-shadow', enabled);
   },

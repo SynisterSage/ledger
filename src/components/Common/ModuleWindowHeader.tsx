@@ -3,9 +3,13 @@ import {
   type CSSProperties,
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
+  useEffect,
   useRef,
+  useState,
 } from 'react';
 import {
+  ChevronLeft,
+  ChevronRight,
   Loader2,
   Maximize2,
   Minus,
@@ -39,6 +43,7 @@ type ModuleWindowHeaderProps = {
   stripActions?: ReactNode;
   actions?: ReactNode;
   compact?: boolean;
+  showWorkspaceNavigation?: boolean;
 };
 
 type ModuleHeaderActionButtonProps = {
@@ -91,6 +96,11 @@ type ModuleHeaderStripActionProps = {
   ariaLabel: string;
 };
 
+type WorkspaceNavigationState = {
+  canGoBack: boolean;
+  canGoForward: boolean;
+};
+
 type AppRegionStyle = CSSProperties & {
   WebkitAppRegion?: 'drag' | 'no-drag';
 };
@@ -98,17 +108,16 @@ type AppRegionStyle = CSSProperties & {
 const dragRegionStyle: AppRegionStyle = { WebkitAppRegion: 'drag' };
 const noDragRegionStyle: AppRegionStyle = { WebkitAppRegion: 'no-drag' };
 const HEADER_DRAG_THRESHOLD_PX = 3;
-const actionButtonClassName =
-  `inline-flex h-9 items-center justify-center gap-1.5 rounded-full border ${sidebarTheme.subtleBorder} ${sidebarTheme.mutedSurface} px-3.5 text-xs font-medium ${sidebarTheme.textSecondary} transition hover:${sidebarTheme.hoverSurface} hover:${sidebarTheme.textPrimary} focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-accent)]/20`;
+const actionButtonClassName = `inline-flex h-9 items-center justify-center gap-1.5 rounded-full border ${sidebarTheme.subtleBorder} ${sidebarTheme.mutedSurface} px-3.5 text-xs font-medium ${sidebarTheme.textSecondary} transition hover:${sidebarTheme.hoverSurface} hover:${sidebarTheme.textPrimary} focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-accent)]/20`;
 
-const iconButtonClassName =
-  `inline-flex h-9 w-9 items-center justify-center rounded-full border ${sidebarTheme.subtleBorder} ${sidebarTheme.mutedSurface} ${sidebarTheme.textSecondary} transition hover:${sidebarTheme.hoverSurface} hover:${sidebarTheme.textPrimary} focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-accent)]/20`;
+const iconButtonClassName = `inline-flex h-9 w-9 items-center justify-center rounded-full border ${sidebarTheme.subtleBorder} ${sidebarTheme.mutedSurface} ${sidebarTheme.textSecondary} transition hover:${sidebarTheme.hoverSurface} hover:${sidebarTheme.textPrimary} focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-accent)]/20`;
 
-const segmentedGroupClassName =
-  `inline-flex h-9 items-center rounded-full border ${sidebarTheme.subtleBorder} ${sidebarTheme.hoverSurface} p-0.5`;
+const segmentedGroupClassName = `inline-flex h-9 items-center rounded-full border ${sidebarTheme.subtleBorder} ${sidebarTheme.hoverSurface} p-0.5`;
 
 const segmentedButtonBaseClassName =
   'inline-flex h-8 items-center justify-center rounded-full px-3 text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-accent)]/20';
+const stripIconButtonClassName = `inline-flex h-7 w-7 items-center justify-center rounded-lg ${sidebarTheme.textSecondary} transition hover:${sidebarTheme.hoverSurface} hover:${sidebarTheme.textPrimary} focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-accent)]/20`;
+const stripIconButtonDisabledClassName = `cursor-not-allowed opacity-35 hover:bg-transparent hover:${sidebarTheme.textSecondary}`;
 
 export const ModuleHeaderActionButton = ({
   children,
@@ -189,10 +198,10 @@ export const ModuleHeaderStatus = ({
     state === 'error'
       ? 'text-[var(--ledger-danger)] border-[color:rgba(217,45,32,0.18)] bg-[color:rgba(217,45,32,0.08)]'
       : state === 'syncing'
-        ? 'text-[var(--ledger-accent)] border-[color:rgba(255,95,64,0.18)] bg-[color:rgba(255,95,64,0.08)]'
-        : state === 'offline'
-          ? `${sidebarTheme.textSecondary} ${sidebarTheme.subtleBorder} ${sidebarTheme.mutedSurface}`
-          : 'text-[var(--ledger-accent)] border-[color:rgba(255,95,64,0.18)] bg-[var(--ledger-surface-card)]';
+      ? 'text-[var(--ledger-accent)] border-[color:rgba(255,95,64,0.18)] bg-[color:rgba(255,95,64,0.08)]'
+      : state === 'offline'
+      ? `${sidebarTheme.textSecondary} ${sidebarTheme.subtleBorder} ${sidebarTheme.mutedSurface}`
+      : 'text-[var(--ledger-accent)] border-[color:rgba(255,95,64,0.18)] bg-[var(--ledger-surface-card)]';
 
   const icon =
     state === 'syncing' ? (
@@ -300,10 +309,10 @@ export const ModuleWindowHeader = ({
   stripActions,
   actions,
   compact = false,
+  showWorkspaceNavigation = true,
 }: ModuleWindowHeaderProps) => {
   void icon;
-  const controlClassName =
-    `flex h-5 w-5 items-center justify-center rounded-full border ${sidebarTheme.subtleBorder} ${sidebarTheme.mutedSurface} ${sidebarTheme.textSecondary} shadow-[0_1px_2px_rgba(15,23,42,0.05)] transition hover:${sidebarTheme.hoverSurface} hover:${sidebarTheme.textPrimary}`;
+  const controlClassName = `flex h-5 w-5 items-center justify-center rounded-full border ${sidebarTheme.subtleBorder} ${sidebarTheme.mutedSurface} ${sidebarTheme.textSecondary} shadow-[0_1px_2px_rgba(15,23,42,0.05)] transition hover:${sidebarTheme.hoverSurface} hover:${sidebarTheme.textPrimary}`;
 
   const topRightActions = globalActions ?? stripActions;
   const rightActions = primaryActions ?? actions;
@@ -319,6 +328,48 @@ export const ModuleWindowHeader = ({
     startY: number;
     isDragging: boolean;
   } | null>(null);
+  const [workspaceNavigationState, setWorkspaceNavigationState] =
+    useState<WorkspaceNavigationState>({
+      canGoBack: false,
+      canGoForward: false,
+    });
+
+  useEffect(() => {
+    let mounted = true;
+
+    const loadNavigationState = async () => {
+      try {
+        const nextState = await window.desktopWindow?.getWorkspaceNavigationState?.();
+        if (!mounted || !nextState) return;
+        setWorkspaceNavigationState({
+          canGoBack: Boolean(nextState.canGoBack),
+          canGoForward: Boolean(nextState.canGoForward),
+        });
+      } catch {
+        // Browser dev mode and older desktop builds may not expose workspace history yet.
+      }
+    };
+
+    const handleNavigationState = (
+      _event: unknown,
+      nextState?: Partial<WorkspaceNavigationState>
+    ) => {
+      setWorkspaceNavigationState({
+        canGoBack: Boolean(nextState?.canGoBack),
+        canGoForward: Boolean(nextState?.canGoForward),
+      });
+    };
+
+    if (showWorkspaceNavigation) {
+      void loadNavigationState();
+      window.ipcRenderer?.on?.('workspace:navigation-state', handleNavigationState as any);
+    }
+
+    return () => {
+      mounted = false;
+      window.ipcRenderer?.off?.('workspace:navigation-state', handleNavigationState as any);
+    };
+  }, [showWorkspaceNavigation]);
 
   const handleTitleBarDoubleClick = () => {
     if (onToggleFullscreen) {
@@ -335,11 +386,19 @@ export const ModuleWindowHeader = ({
     handleTitleBarDoubleClick();
   };
 
-  const triggerOnPrimaryMouseDown = (
-    event: ReactMouseEvent<HTMLButtonElement>,
-  ) => {
+  const triggerOnPrimaryMouseDown = (event: ReactMouseEvent<HTMLButtonElement>) => {
     if (event.button !== 0) return;
     event.preventDefault();
+  };
+
+  const handleGoBack = () => {
+    if (!workspaceNavigationState.canGoBack) return;
+    void window.desktopWindow?.goBackWorkspaceWindow?.();
+  };
+
+  const handleGoForward = () => {
+    if (!workspaceNavigationState.canGoForward) return;
+    void window.desktopWindow?.goForwardWorkspaceWindow?.();
   };
 
   const handleHeaderPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -392,45 +451,93 @@ export const ModuleWindowHeader = ({
       onDoubleClickCapture={handleStripDoubleClick}
     >
       <div
-        className={`flex h-8 w-full cursor-default items-center justify-between border-b ${sidebarTheme.subtleBorder} ${sidebarTheme.hoverSurface} px-4`}
+        className={`flex h-10 w-full cursor-default items-center justify-between border-b ${sidebarTheme.subtleBorder} ${sidebarTheme.hoverSurface} px-4`}
         style={dragRegionStyle}
         onDoubleClickCapture={handleStripDoubleClick}
       >
-        <div className="flex items-center gap-1" style={noDragRegionStyle}>
-          <button
-            type="button"
-            onClick={onClose}
-            onMouseDown={triggerOnPrimaryMouseDown}
-            title={closeLabel}
-            aria-label={closeLabel}
-            className={controlClassName}
-          >
-            <X size={12} />
-          </button>
-          {onMinimize && (
+        <div className="flex items-center gap-2" style={noDragRegionStyle}>
+          <div className="flex items-center gap-1">
             <button
               type="button"
-              onClick={onMinimize}
+              onClick={onClose}
               onMouseDown={triggerOnPrimaryMouseDown}
-              title={minimizeLabel}
-              aria-label={minimizeLabel}
+              title={closeLabel}
+              aria-label={closeLabel}
               className={controlClassName}
             >
-              <Minus size={12} />
+              <X size={12} />
             </button>
-          )}
-          {onToggleFullscreen && (
-            <button
-              type="button"
-              onClick={onToggleFullscreen}
-              onMouseDown={triggerOnPrimaryMouseDown}
-              title={fullscreenLabel}
-              aria-label={fullscreenLabel}
-              className={controlClassName}
-            >
-              <Maximize2 size={12} />
-            </button>
-          )}
+            {onMinimize && (
+              <button
+                type="button"
+                onClick={onMinimize}
+                onMouseDown={triggerOnPrimaryMouseDown}
+                title={minimizeLabel}
+                aria-label={minimizeLabel}
+                className={controlClassName}
+              >
+                <Minus size={12} />
+              </button>
+            )}
+            {onToggleFullscreen && (
+              <button
+                type="button"
+                onClick={onToggleFullscreen}
+                onMouseDown={triggerOnPrimaryMouseDown}
+                title={fullscreenLabel}
+                aria-label={fullscreenLabel}
+                className={controlClassName}
+              >
+                <Maximize2 size={12} />
+              </button>
+            )}
+          </div>
+
+          <div className="ml-2 flex items-center gap-0.5">
+            {showWorkspaceNavigation && (
+              <>
+                <button
+                  type="button"
+                  onClick={handleGoBack}
+                  disabled={!workspaceNavigationState.canGoBack}
+                  title="Back"
+                  aria-label="Back"
+                  className={`${stripIconButtonClassName} ${
+                    !workspaceNavigationState.canGoBack ? stripIconButtonDisabledClassName : ''
+                  }`}
+                >
+                  <ChevronLeft size={16} />
+                </button>
+                <button
+                  type="button"
+                  onClick={handleGoForward}
+                  disabled={!workspaceNavigationState.canGoForward}
+                  title="Forward"
+                  aria-label="Forward"
+                  className={`${stripIconButtonClassName} ${
+                    !workspaceNavigationState.canGoForward ? stripIconButtonDisabledClassName : ''
+                  }`}
+                >
+                  <ChevronRight size={16} />
+                </button>
+              </>
+            )}
+            {showPanelToggle && onTogglePanels && (
+              <button
+                type="button"
+                onClick={onTogglePanels}
+                title={panelToggleText}
+                aria-label={panelToggleText}
+                className={`${stripIconButtonClassName} ${
+                  panelToggleText.toLowerCase().includes('show')
+                    ? `${sidebarTheme.hoverSurface} ${sidebarTheme.textPrimary}`
+                    : ''
+                }`}
+              >
+                {panelToggleIcon}
+              </button>
+            )}
+          </div>
         </div>
 
         <div
@@ -457,34 +564,34 @@ export const ModuleWindowHeader = ({
         onDoubleClickCapture={handleStripDoubleClick}
       >
         <div className="min-w-0 space-y-0.5" style={dragRegionStyle}>
-          {eyebrow && <p className={`text-[11px] font-medium leading-none ${sidebarTheme.textMuted}`}>{eyebrow}</p>}
+          {eyebrow && (
+            <p className={`text-[11px] font-medium leading-none ${sidebarTheme.textMuted}`}>
+              {eyebrow}
+            </p>
+          )}
           <h1
-            className={`truncate font-semibold leading-[1.15] tracking-tight ${sidebarTheme.textPrimary} ${
-              compact ? 'text-[18px]' : 'text-[22px]'
-            }`}
+            className={`truncate font-semibold leading-[1.15] tracking-tight ${
+              sidebarTheme.textPrimary
+            } ${compact ? 'text-[18px]' : 'text-[22px]'}`}
           >
             {title}
           </h1>
           {subtitle && (
-            <p className={`truncate leading-tight ${sidebarTheme.textMuted} ${compact ? 'text-[12px]' : 'text-[13px]'}`}>
+            <p
+              className={`truncate leading-tight ${sidebarTheme.textMuted} ${
+                compact ? 'text-[12px]' : 'text-[13px]'
+              }`}
+            >
               {subtitle}
             </p>
           )}
         </div>
 
-        {(showPanelToggle || rightActions || secondaryActions || viewControls || syncStatus) && (
-          <div className="flex flex-wrap items-center justify-end gap-1.5" style={noDragRegionStyle}>
-            {showPanelToggle && onTogglePanels && (
-              <ModuleHeaderActionButton
-                onClick={onTogglePanels}
-                title={panelToggleText}
-                ariaLabel={panelToggleText}
-                icon={panelToggleIcon}
-                iconOnly
-              >
-                <span className="sr-only">{panelToggleText}</span>
-              </ModuleHeaderActionButton>
-            )}
+        {(rightActions || secondaryActions || viewControls || syncStatus) && (
+          <div
+            className="flex flex-wrap items-center justify-end gap-1.5"
+            style={noDragRegionStyle}
+          >
             {rightActions}
             {secondaryActions}
             {viewControls}

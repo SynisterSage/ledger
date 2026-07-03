@@ -699,6 +699,7 @@ export default function InboxWindow() {
         onClose={() => window.desktopWindow?.closeModule('inbox')}
         onMinimize={() => window.desktopWindow?.minimizeModule('inbox')}
         onToggleFullscreen={() => window.desktopWindow?.toggleModuleFullscreen('inbox')}
+        showWorkspaceNavigation={false}
         stripActions={
           <ModuleHeaderStripAction
             icon={<Bell size={12} />}

@@ -3,6 +3,25 @@
 This note documents the Windows-only floating sidebar docking regression fixed in
 `electron/main.ts`.
 
+## Later Tracker Fix
+
+A second Windows issue showed up after the initial dock started working:
+
+- the sidebar would attach, then detach a moment later when the target app moved
+  or the native tracker restarted
+- the tracker sometimes crashed because the generated PowerShell/C# helper was
+  declared as a static class while it still used instance state
+- when the native tracker failed, the fallback edge polling could reflow the
+  sidebar toward the screen edge instead of staying attached to the app
+
+The follow-up fix was to keep the Windows dock tracker as an instance class,
+bind the callback during `Start()`, and guard `refreshFloatingDockTarget()` so
+only one Windows probe runs at a time. The Windows PowerShell probe timeouts
+were also increased so the tracker does not get killed mid-scan.
+
+That combination is the version that kept the sidebar attached correctly on
+Windows in the follow-up test pass.
+
 ## Symptoms
 
 - Main display: floating sidebar did not dock to either side of an app.

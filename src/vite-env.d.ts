@@ -103,6 +103,13 @@ interface Window {
     closeModule: (kind: ModuleWindowKind) => Promise<void>;
     minimizeModule: (kind: ModuleWindowKind) => Promise<void>;
     toggleModuleFullscreen: (kind: ModuleWindowKind) => Promise<boolean>;
+    goBackWorkspaceWindow?: () => Promise<void>;
+    goForwardWorkspaceWindow?: () => Promise<void>;
+    getWorkspaceNavigationState?: () => Promise<{
+      canGoBack: boolean;
+      canGoForward: boolean;
+      currentModule: ModuleWindowKind | null;
+    }>;
     openExternal: (url: string) => Promise<void>;
     openCheckin: () => Promise<void>;
   };

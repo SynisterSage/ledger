@@ -346,6 +346,7 @@ export const NotificationCenterWindow: React.FC = () => {
         onClose={() => window.desktopWindow?.closeModule('notifications')}
         onMinimize={() => window.desktopWindow?.minimizeModule('notifications')}
         onToggleFullscreen={() => window.desktopWindow?.toggleModuleFullscreen('notifications')}
+        showWorkspaceNavigation={false}
         stripActions={
           <ModuleHeaderStripAction
             icon={<Inbox size={12} />}

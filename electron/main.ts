@@ -672,6 +672,15 @@ type ModuleFocusPayload = {
   focusContext?: string | null;
   focusSection?: string | null;
 };
+type WorkspaceModuleRoute = {
+  kind: ModuleWindowKind;
+  focusDate?: string | null;
+  focusProjectId?: string | null;
+  focusNoteId?: string | null;
+  focusTaskId?: string | null;
+  focusContext?: string | null;
+  focusSection?: string | null;
+};
 type Rect = { x: number; y: number; width: number; height: number };
 type DockSide = 'left' | 'right';
 type FloatingDockTarget = {
@@ -699,6 +708,11 @@ type WindowsDockTraceInput = {
 
 let sidebarWin: BrowserWindow | null = null;
 const moduleWins = new Map<ModuleWindowKind, BrowserWindow>();
+let workspaceModuleWin: BrowserWindow | null = null;
+let workspaceModuleKind: ModuleWindowKind | null = null;
+let workspaceModuleCurrentRoute: WorkspaceModuleRoute | null = null;
+const workspaceModuleBackStack: WorkspaceModuleRoute[] = [];
+const workspaceModuleForwardStack: WorkspaceModuleRoute[] = [];
 let currentSidebarMode: SidebarWindowMode = 'auth';
 let currentSidebarPosition: SidebarPosition = 'right';
 let currentFloatingPosition = { ...defaultSidebarPreferences.floatingPosition };
@@ -4624,6 +4638,175 @@ function sendModuleFocus(
   }
 }
 
+function isWorkspaceModuleKind(kind: ModuleWindowKind) {
+  return (
+    kind === 'dashboard' ||
+    kind === 'calendar' ||
+    kind === 'notes' ||
+    kind === 'projects' ||
+    kind === 'teams' ||
+    kind === 'settings'
+  );
+}
+
+function getWorkspaceNavigationState() {
+  return {
+    canGoBack: workspaceModuleBackStack.length > 0,
+    canGoForward: workspaceModuleForwardStack.length > 0,
+    currentModule: workspaceModuleKind,
+  };
+}
+
+function broadcastWorkspaceNavigationState() {
+  const state = getWorkspaceNavigationState();
+  const targets = new Set<BrowserWindow>();
+  if (workspaceModuleWin && !workspaceModuleWin.isDestroyed()) {
+    targets.add(workspaceModuleWin);
+  }
+  for (const win of moduleWins.values()) {
+    if (!win.isDestroyed()) targets.add(win);
+  }
+  for (const win of targets) {
+    win.webContents.send('workspace:navigation-state', state);
+  }
+}
+
+function routeFromModuleArgs(
+  kind: ModuleWindowKind,
+  focusDate?: string | null,
+  focusProjectId?: string | null,
+  focusNoteId?: string | null,
+  focusTaskId?: string | null,
+  focusContext?: string | null,
+  focusSection?: string | null
+): WorkspaceModuleRoute {
+  return {
+    kind,
+    focusDate: focusDate ?? null,
+    focusProjectId: focusProjectId ?? null,
+    focusNoteId: focusNoteId ?? null,
+    focusTaskId: focusTaskId ?? null,
+    focusContext: focusContext ?? null,
+    focusSection: focusSection ?? null,
+  };
+}
+
+function isSameWorkspaceRoute(a: WorkspaceModuleRoute | null, b: WorkspaceModuleRoute) {
+  return (
+    a?.kind === b.kind &&
+    (a.focusDate ?? null) === (b.focusDate ?? null) &&
+    (a.focusProjectId ?? null) === (b.focusProjectId ?? null) &&
+    (a.focusNoteId ?? null) === (b.focusNoteId ?? null) &&
+    (a.focusTaskId ?? null) === (b.focusTaskId ?? null) &&
+    (a.focusContext ?? null) === (b.focusContext ?? null) &&
+    (a.focusSection ?? null) === (b.focusSection ?? null)
+  );
+}
+
+function buildModuleUrl(route: WorkspaceModuleRoute) {
+  const focusDateQuery = route.focusDate ? `&focusDate=${encodeURIComponent(route.focusDate)}` : '';
+  const focusProjectQuery = route.focusProjectId
+    ? `&focusProjectId=${encodeURIComponent(route.focusProjectId)}`
+    : '';
+  const focusNoteQuery = route.focusNoteId
+    ? `&focusNoteId=${encodeURIComponent(route.focusNoteId)}`
+    : '';
+  const focusTaskQuery = route.focusTaskId
+    ? `&focusTaskId=${encodeURIComponent(route.focusTaskId)}`
+    : '';
+  const focusContextQuery = route.focusContext
+    ? `&focusContext=${encodeURIComponent(route.focusContext)}`
+    : '';
+  const focusSectionQuery =
+    route.kind === 'settings' && route.focusSection
+      ? `&section=${encodeURIComponent(route.focusSection)}`
+      : '';
+  return getRendererUrl(
+    `?window=module&module=${route.kind}${focusDateQuery}${focusProjectQuery}${focusNoteQuery}${focusTaskQuery}${focusContextQuery}${focusSectionQuery}`
+  );
+}
+
+function getCurrentWorkspaceRoute(): WorkspaceModuleRoute | null {
+  if (!workspaceModuleKind || !workspaceModuleCurrentRoute) return null;
+  return { ...workspaceModuleCurrentRoute };
+}
+
+function registerWorkspaceModuleKind(
+  kind: ModuleWindowKind,
+  win: BrowserWindow,
+  route?: WorkspaceModuleRoute
+) {
+  if (workspaceModuleKind && workspaceModuleKind !== kind) {
+    moduleWins.delete(workspaceModuleKind);
+  }
+  workspaceModuleKind = kind;
+  workspaceModuleCurrentRoute = route ? { ...route } : routeFromModuleArgs(kind);
+  workspaceModuleWin = win;
+  moduleWins.set(kind, win);
+}
+
+function navigateWorkspaceModuleWindow(route: WorkspaceModuleRoute, pushHistory = true) {
+  const moduleWin = workspaceModuleWin;
+  if (!moduleWin || moduleWin.isDestroyed()) return false;
+
+  const currentRoute = getCurrentWorkspaceRoute();
+  if (pushHistory && currentRoute && !isSameWorkspaceRoute(currentRoute, route)) {
+    workspaceModuleBackStack.push(currentRoute);
+    workspaceModuleForwardStack.length = 0;
+  }
+
+  registerWorkspaceModuleKind(route.kind, moduleWin, route);
+
+  if (moduleWin.isMinimized()) {
+    moduleWin.restore();
+  }
+  moduleWin.show();
+  setTimeout(() => {
+    if (!moduleWin.isDestroyed()) {
+      moduleWin.focus();
+    }
+  }, 100);
+
+  moduleWin.webContents.once('did-finish-load', () => {
+    if (moduleWin.isDestroyed()) return;
+    applyWindowsModuleWindowShape(moduleWin);
+    sendModuleFocus(
+      route.kind,
+      route.focusDate,
+      route.focusProjectId,
+      route.focusNoteId,
+      route.focusTaskId,
+      route.focusContext,
+      route.focusSection
+    );
+    broadcastWorkspaceNavigationState();
+  });
+
+  moduleWin.loadURL(buildModuleUrl(route));
+  broadcastWorkspaceNavigationState();
+  return true;
+}
+
+function navigateWorkspaceHistory(direction: 'back' | 'forward') {
+  const target =
+    direction === 'back' ? workspaceModuleBackStack.pop() : workspaceModuleForwardStack.pop();
+  if (!target || !workspaceModuleWin || workspaceModuleWin.isDestroyed()) {
+    broadcastWorkspaceNavigationState();
+    return;
+  }
+
+  const currentRoute = getCurrentWorkspaceRoute();
+  if (currentRoute) {
+    if (direction === 'back') {
+      workspaceModuleForwardStack.push(currentRoute);
+    } else {
+      workspaceModuleBackStack.push(currentRoute);
+    }
+  }
+
+  navigateWorkspaceModuleWindow(target, false);
+}
+
 function openModuleWindow(
   kind: ModuleWindowKind,
   focusDate?: string | null,
@@ -4633,6 +4816,33 @@ function openModuleWindow(
   focusContext?: string | null,
   focusSection?: string | null
 ) {
+  const workspaceRoute = routeFromModuleArgs(
+    kind,
+    focusDate,
+    focusProjectId,
+    focusNoteId,
+    focusTaskId,
+    focusContext,
+    focusSection
+  );
+  if (
+    isWorkspaceModuleKind(kind) &&
+    workspaceModuleWin &&
+    !workspaceModuleWin.isDestroyed() &&
+    workspaceModuleKind !== kind
+  ) {
+    holdCurrentFloatingDockTarget();
+    if (
+      currentSidebarPosition === 'floating' &&
+      currentFloatingDockTarget &&
+      currentFloatingDockBounds
+    ) {
+      workspaceModuleWin.setBounds(resolveModuleBounds(kind), false);
+    }
+    navigateWorkspaceModuleWindow(workspaceRoute);
+    return;
+  }
+
   const existing = moduleWins.get(kind);
   if (existing && !existing.isDestroyed()) {
     holdCurrentFloatingDockTarget();
@@ -4650,6 +4860,14 @@ function openModuleWindow(
         existing.focus();
       }
     }, 100);
+    if (isWorkspaceModuleKind(kind)) {
+      const currentRoute = getCurrentWorkspaceRoute();
+      if (currentRoute && !isSameWorkspaceRoute(currentRoute, workspaceRoute)) {
+        workspaceModuleBackStack.push(currentRoute);
+        workspaceModuleForwardStack.length = 0;
+      }
+      registerWorkspaceModuleKind(kind, existing, workspaceRoute);
+    }
     sendModuleFocus(
       kind,
       focusDate,
@@ -4659,6 +4877,7 @@ function openModuleWindow(
       focusContext,
       focusSection
     );
+    broadcastWorkspaceNavigationState();
     return;
   }
 
@@ -4736,7 +4955,11 @@ function openModuleWindow(
   attachWindowsCloseShortcut(moduleWin);
   attachNativeContextMenu(moduleWin);
 
-  moduleWins.set(kind, moduleWin);
+  if (isWorkspaceModuleKind(kind)) {
+    registerWorkspaceModuleKind(kind, moduleWin, workspaceRoute);
+  } else {
+    moduleWins.set(kind, moduleWin);
+  }
 
   moduleWin.on('minimize', () => {
     suspendCurrentFloatingDockTarget('suspended_minimized');
@@ -4749,6 +4972,17 @@ function openModuleWindow(
 
   moduleWin.on('closed', () => {
     moduleWins.delete(kind);
+    if (workspaceModuleWin === moduleWin) {
+      if (workspaceModuleKind) {
+        moduleWins.delete(workspaceModuleKind);
+      }
+      workspaceModuleWin = null;
+      workspaceModuleKind = null;
+      workspaceModuleCurrentRoute = null;
+      workspaceModuleBackStack.length = 0;
+      workspaceModuleForwardStack.length = 0;
+      broadcastWorkspaceNavigationState();
+    }
     moduleWindowFullscreenBoundsMemory.delete(kind);
   });
 
@@ -4806,6 +5040,17 @@ function openModuleWindow(
   moduleWin.webContents.on('before-input-event', (event, input) => {
     try {
       const key = String(input.key ?? '').toLowerCase();
+      const isWorkspaceHistoryShortcut =
+        moduleWin === workspaceModuleWin &&
+        isWorkspaceModuleKind(workspaceModuleKind ?? kind) &&
+        (input.meta || input.control) &&
+        (key === '[' || key === ']');
+      if (isWorkspaceHistoryShortcut) {
+        event.preventDefault();
+        navigateWorkspaceHistory(key === '[' ? 'back' : 'forward');
+        return;
+      }
+
       const isF11 = key === 'f11';
       const isEscape = key === 'escape' || key === 'esc';
       if ((isEscape || isF11) && moduleWin && !moduleWin.isDestroyed() && moduleWin.isFullScreen()) {
@@ -4871,16 +5116,6 @@ function openModuleWindow(
     moduleWin.on('resized', rememberBounds);
   }
 
-  const focusDateQuery = focusDate ? `&focusDate=${encodeURIComponent(focusDate)}` : '';
-  const focusProjectQuery = focusProjectId
-    ? `&focusProjectId=${encodeURIComponent(focusProjectId)}`
-    : '';
-  const focusNoteQuery = focusNoteId ? `&focusNoteId=${encodeURIComponent(focusNoteId)}` : '';
-  const focusTaskQuery = focusTaskId ? `&focusTaskId=${encodeURIComponent(focusTaskId)}` : '';
-  const focusContextQuery = focusContext ? `&focusContext=${encodeURIComponent(focusContext)}` : '';
-  const focusSectionQuery = kind === 'settings' && focusSection
-    ? `&section=${encodeURIComponent(focusSection)}`
-    : '';
   moduleWin.webContents.once('did-finish-load', () => {
     applyWindowsModuleWindowShape(moduleWin);
     moduleWin.show();
@@ -4899,12 +5134,10 @@ function openModuleWindow(
       focusContext,
       focusSection
     );
+    broadcastWorkspaceNavigationState();
   });
   try {
-    const moduleUrl = getRendererUrl(
-      `?window=module&module=${kind}${focusDateQuery}${focusProjectQuery}${focusNoteQuery}${focusTaskQuery}${focusContextQuery}${focusSectionQuery}`
-    );
-    moduleWin.loadURL(moduleUrl);
+    moduleWin.loadURL(buildModuleUrl(workspaceRoute));
   } catch (err) {
     console.error('[electron] Error while loading module renderer:', err);
   }
@@ -5328,6 +5561,18 @@ ipcMain.handle('window:toggle-module-fullscreen', (_event, kind: ModuleWindowKin
   }
   restoreModuleWindowBounds(kind, existing);
   return false;
+});
+
+ipcMain.handle('window:workspace-go-back', () => {
+  navigateWorkspaceHistory('back');
+});
+
+ipcMain.handle('window:workspace-go-forward', () => {
+  navigateWorkspaceHistory('forward');
+});
+
+ipcMain.handle('window:workspace-navigation-state', () => {
+  return getWorkspaceNavigationState();
 });
 
 ipcMain.handle('window:open-external', async (_event, url: string) => {
