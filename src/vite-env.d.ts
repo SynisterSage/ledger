@@ -110,6 +110,7 @@ interface Window {
       canGoForward: boolean;
       currentModule: ModuleWindowKind | null;
     }>;
+    updateWorkspaceRoute?: (route: ModuleFocusPayload) => Promise<void>;
     openExternal: (url: string) => Promise<void>;
     openCheckin: () => Promise<void>;
   };

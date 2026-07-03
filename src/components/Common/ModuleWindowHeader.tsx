@@ -25,6 +25,7 @@ type ModuleWindowHeaderProps = {
   eyebrow?: string;
   title: string;
   subtitle?: string;
+  stripTitle?: string;
   icon: ReactNode;
   onClose: () => void;
   onMinimize?: () => void;
@@ -43,6 +44,7 @@ type ModuleWindowHeaderProps = {
   stripActions?: ReactNode;
   actions?: ReactNode;
   compact?: boolean;
+  showBodyHeader?: boolean;
   showWorkspaceNavigation?: boolean;
 };
 
@@ -53,12 +55,15 @@ type ModuleHeaderActionButtonProps = {
   ariaLabel?: string;
   icon?: ReactNode;
   iconOnly?: boolean;
+  square?: boolean;
   active?: boolean;
   disabled?: boolean;
+  variant?: 'default' | 'strip';
 };
 
 type ModuleHeaderSegmentedGroupProps = {
   children: ReactNode;
+  compact?: boolean;
 };
 
 type ModuleHeaderSegmentedButtonProps = {
@@ -69,6 +74,7 @@ type ModuleHeaderSegmentedButtonProps = {
   active?: boolean;
   iconOnly?: boolean;
   pill?: boolean;
+  compact?: boolean;
 };
 
 type ModuleHeaderStatusProps = {
@@ -113,9 +119,12 @@ const actionButtonClassName = `inline-flex h-9 items-center justify-center gap-1
 const iconButtonClassName = `inline-flex h-9 w-9 items-center justify-center rounded-full border ${sidebarTheme.subtleBorder} ${sidebarTheme.mutedSurface} ${sidebarTheme.textSecondary} transition hover:${sidebarTheme.hoverSurface} hover:${sidebarTheme.textPrimary} focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-accent)]/20`;
 
 const segmentedGroupClassName = `inline-flex h-9 items-center rounded-full border ${sidebarTheme.subtleBorder} ${sidebarTheme.hoverSurface} p-0.5`;
+const segmentedGroupCompactClassName = `inline-flex h-7 items-center rounded-full border ${sidebarTheme.subtleBorder} ${sidebarTheme.hoverSurface} p-[2px]`;
 
 const segmentedButtonBaseClassName =
   'inline-flex h-8 items-center justify-center rounded-full px-3 text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-accent)]/20';
+const segmentedButtonCompactBaseClassName =
+  'inline-flex h-6 items-center justify-center rounded-full px-2.5 text-[11px] font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-accent)]/20';
 const stripIconButtonClassName = `inline-flex h-7 w-7 items-center justify-center rounded-lg ${sidebarTheme.textSecondary} transition hover:${sidebarTheme.hoverSurface} hover:${sidebarTheme.textPrimary} focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-accent)]/20`;
 const stripIconButtonDisabledClassName = `cursor-not-allowed opacity-35 hover:bg-transparent hover:${sidebarTheme.textSecondary}`;
 
@@ -126,10 +135,30 @@ export const ModuleHeaderActionButton = ({
   ariaLabel,
   icon,
   iconOnly = false,
+  square = false,
   active = false,
   disabled = false,
+  variant = 'default',
 }: ModuleHeaderActionButtonProps) => {
-  const resolvedClassName = iconOnly ? iconButtonClassName : actionButtonClassName;
+  const isStripIconOnly = variant === 'strip' && iconOnly;
+  const resolvedClassName =
+    variant === 'strip'
+      ? `${
+          square || isStripIconOnly
+            ? 'inline-flex h-7 w-7 items-center justify-center rounded-md'
+            : 'inline-flex h-7 items-center gap-1.5 rounded-md px-1.5 text-[12px] font-medium'
+        } text-[var(--ledger-text-secondary)] transition hover:text-[var(--ledger-text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-accent)]/20 ${
+          active ? 'text-[var(--ledger-text-primary)]' : ''
+        } ${disabled ? 'cursor-not-allowed opacity-40' : ''}`
+      : iconOnly
+      ? iconButtonClassName
+      : actionButtonClassName;
+  const resolvedDisabledClassName =
+    variant === 'strip'
+      ? ''
+      : disabled
+      ? `cursor-not-allowed ${sidebarTheme.subtleBorder} ${sidebarTheme.mutedSurface} ${sidebarTheme.textMuted} hover:${sidebarTheme.mutedSurface} hover:${sidebarTheme.textMuted}`
+      : '';
   return (
     <button
       type="button"
@@ -137,23 +166,26 @@ export const ModuleHeaderActionButton = ({
       disabled={disabled}
       title={title}
       aria-label={ariaLabel ?? title}
-      className={`${resolvedClassName} ${
-        disabled
-          ? `cursor-not-allowed ${sidebarTheme.subtleBorder} ${sidebarTheme.mutedSurface} ${sidebarTheme.textMuted} hover:${sidebarTheme.mutedSurface} hover:${sidebarTheme.textMuted}`
-          : ''
-      }`}
+      className={`${resolvedClassName} ${resolvedDisabledClassName}`}
     >
       {icon}
-      {children}
-      {!iconOnly && active && (
+      {!isStripIconOnly && !square && children}
+      {variant !== 'strip' && !iconOnly && active && (
         <span className="ml-1 inline-flex h-1.5 w-1.5 rounded-full bg-[var(--ledger-accent)]" />
       )}
     </button>
   );
 };
 
-export const ModuleHeaderSegmentedGroup = ({ children }: ModuleHeaderSegmentedGroupProps) => {
-  return <div className={segmentedGroupClassName}>{children}</div>;
+export const ModuleHeaderSegmentedGroup = ({
+  children,
+  compact = false,
+}: ModuleHeaderSegmentedGroupProps) => {
+  return (
+    <div className={compact ? segmentedGroupCompactClassName : segmentedGroupClassName}>
+      {children}
+    </div>
+  );
 };
 
 export const ModuleHeaderSegmentedButton = ({
@@ -164,20 +196,28 @@ export const ModuleHeaderSegmentedButton = ({
   active = false,
   iconOnly = false,
   pill = false,
+  compact = false,
 }: ModuleHeaderSegmentedButtonProps) => {
+  const baseClassName = compact
+    ? segmentedButtonCompactBaseClassName
+    : segmentedButtonBaseClassName;
   return (
     <button
       type="button"
       onClick={onClick}
       title={title}
       aria-label={ariaLabel ?? title}
-      className={`${segmentedButtonBaseClassName} ${
+      className={`${baseClassName} ${
         active
           ? `${sidebarTheme.surface} ${sidebarTheme.textPrimary} shadow-[0_1px_2px_rgba(15,23,42,0.08)]`
           : `${sidebarTheme.textSecondary} hover:${sidebarTheme.hoverSurface} hover:${sidebarTheme.textPrimary}`
-      } ${iconOnly ? 'w-8 px-0' : ''} ${
+      } ${iconOnly ? (compact ? 'w-7 px-0' : 'w-8 px-0') : ''} ${
         pill
-          ? 'rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-4 text-[var(--ledger-text-secondary)] shadow-[0_1px_2px_rgba(17,24,39,0.04)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]'
+          ? `${
+              compact
+                ? 'rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 text-[var(--ledger-text-secondary)] shadow-[0_1px_2px_rgba(17,24,39,0.04)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]'
+                : 'rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-4 text-[var(--ledger-text-secondary)] shadow-[0_1px_2px_rgba(17,24,39,0.04)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]'
+            }`
           : ''
       }`}
     >
@@ -197,11 +237,7 @@ export const ModuleHeaderStatus = ({
   const toneClassName =
     state === 'error'
       ? 'text-[var(--ledger-danger)] border-[color:rgba(217,45,32,0.18)] bg-[color:rgba(217,45,32,0.08)]'
-      : state === 'syncing'
-      ? 'text-[var(--ledger-accent)] border-[color:rgba(255,95,64,0.18)] bg-[color:rgba(255,95,64,0.08)]'
-      : state === 'offline'
-      ? `${sidebarTheme.textSecondary} ${sidebarTheme.subtleBorder} ${sidebarTheme.mutedSurface}`
-      : 'text-[var(--ledger-accent)] border-[color:rgba(255,95,64,0.18)] bg-[var(--ledger-surface-card)]';
+      : `${sidebarTheme.textSecondary} ${sidebarTheme.subtleBorder} ${sidebarTheme.mutedSurface}`;
 
   const icon =
     state === 'syncing' ? (
@@ -217,7 +253,7 @@ export const ModuleHeaderStatus = ({
         onClick={onClick}
         title={title ?? label}
         aria-label={ariaLabel ?? label}
-        className={`inline-flex h-9 items-center justify-center rounded-full border px-3 transition hover:bg-[var(--ledger-surface-hover)] ${toneClassName}`}
+        className={`inline-flex h-7 w-7 items-center justify-center rounded-md border transition hover:${sidebarTheme.hoverSurface} hover:${sidebarTheme.textPrimary} ${toneClassName}`}
       >
         {icon}
       </button>
@@ -228,7 +264,7 @@ export const ModuleHeaderStatus = ({
     <div
       title={title ?? label}
       aria-label={ariaLabel ?? label}
-      className={`inline-flex h-9 items-center justify-center rounded-full border px-3 ${toneClassName}`}
+      className={`inline-flex h-7 w-7 items-center justify-center rounded-md border ${toneClassName}`}
     >
       {icon}
     </div>
@@ -309,6 +345,8 @@ export const ModuleWindowHeader = ({
   stripActions,
   actions,
   compact = false,
+  stripTitle,
+  showBodyHeader = true,
   showWorkspaceNavigation = true,
 }: ModuleWindowHeaderProps) => {
   void icon;
@@ -317,6 +355,10 @@ export const ModuleWindowHeader = ({
   const topRightActions = globalActions ?? stripActions;
   const rightActions = primaryActions ?? actions;
   const panelToggleText = panelToggleLabel ?? 'Hide panels';
+  const resolvedStripTitle = stripTitle ?? (compact ? title : null);
+  const stripPageActions = [viewControls, rightActions, secondaryActions, syncStatus].filter(
+    Boolean
+  );
   const panelToggleIcon = panelToggleText.toLowerCase().includes('show') ? (
     <SidebarOpen size={12} />
   ) : (
@@ -426,7 +468,6 @@ export const ModuleWindowHeader = ({
     }
 
     event.preventDefault();
-    void window.desktopWindow?.updateHeaderDrag();
   };
 
   const finishHeaderPointerDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -493,7 +534,12 @@ export const ModuleWindowHeader = ({
             )}
           </div>
 
-          <div className="ml-2 flex items-center gap-0.5">
+          <div
+            aria-hidden="true"
+            className="mx-1.5 self-stretch border-l border-[color:var(--ledger-border-subtle)]"
+          />
+
+          <div className="flex items-center gap-0.5">
             {showWorkspaceNavigation && (
               <>
                 <button
@@ -541,64 +587,86 @@ export const ModuleWindowHeader = ({
         </div>
 
         <div
-          className="mx-3 h-full min-w-0 flex-1"
+          className="ml-3 flex min-w-0 flex-1 items-center gap-3"
           style={noDragRegionStyle}
           onPointerDown={handleHeaderPointerDown}
           onPointerMove={handleHeaderPointerMove}
           onPointerUp={finishHeaderPointerDrag}
           onPointerCancel={finishHeaderPointerDrag}
           onDoubleClick={handleStripDoubleClick}
-          aria-hidden="true"
-        />
+        >
+          {resolvedStripTitle ? (
+            <div className="min-w-0 max-w-[26vw] flex-none" title={resolvedStripTitle}>
+              <p
+                className={`truncate text-[12px] font-medium leading-none tracking-tight text-[var(--ledger-text-primary)] ${
+                  compact ? 'sm:text-[13px]' : ''
+                }`}
+              >
+                {resolvedStripTitle}
+              </p>
+            </div>
+          ) : null}
+        </div>
 
         <div className="flex items-center gap-3" style={noDragRegionStyle}>
+          {compact && stripPageActions.length > 0 && (
+            <div className="flex min-w-0 flex-wrap items-center gap-1.5">{stripPageActions}</div>
+          )}
+          {compact && stripPageActions && (
+            <div
+              aria-hidden="true"
+              className="self-stretch border-l border-[color:var(--ledger-border-subtle)]"
+            />
+          )}
           <WorkspaceSwitcherMenu variant="header" />
           {topRightActions && <div className="flex items-center gap-1">{topRightActions}</div>}
         </div>
       </div>
 
-      <div
-        className={`flex w-full items-center justify-between gap-4 px-6 ${
-          compact ? 'min-h-10 py-2' : 'min-h-12 py-3'
-        }`}
-        onDoubleClickCapture={handleStripDoubleClick}
-      >
-        <div className="min-w-0 space-y-0.5" style={dragRegionStyle}>
-          {eyebrow && (
-            <p className={`text-[11px] font-medium leading-none ${sidebarTheme.textMuted}`}>
-              {eyebrow}
-            </p>
-          )}
-          <h1
-            className={`truncate font-semibold leading-[1.15] tracking-tight ${
-              sidebarTheme.textPrimary
-            } ${compact ? 'text-[18px]' : 'text-[22px]'}`}
-          >
-            {title}
-          </h1>
-          {subtitle && (
-            <p
-              className={`truncate leading-tight ${sidebarTheme.textMuted} ${
-                compact ? 'text-[12px]' : 'text-[13px]'
-              }`}
+      {showBodyHeader && (
+        <div
+          className={`flex w-full items-center justify-between gap-4 px-6 ${
+            compact ? 'min-h-9 py-1.5' : 'min-h-12 py-3'
+          }`}
+          onDoubleClickCapture={handleStripDoubleClick}
+        >
+          <div className="min-w-0 space-y-0.5" style={dragRegionStyle}>
+            {eyebrow && (
+              <p className={`text-[11px] font-medium leading-none ${sidebarTheme.textMuted}`}>
+                {eyebrow}
+              </p>
+            )}
+            <h1
+              className={`truncate font-semibold leading-[1.15] tracking-tight ${
+                sidebarTheme.textPrimary
+              } ${compact ? 'text-[18px]' : 'text-[22px]'}`}
             >
-              {subtitle}
-            </p>
+              {title}
+            </h1>
+            {subtitle && (
+              <p
+                className={`truncate leading-tight ${sidebarTheme.textMuted} ${
+                  compact ? 'text-[12px]' : 'text-[13px]'
+                }`}
+              >
+                {subtitle}
+              </p>
+            )}
+          </div>
+
+          {!compact && (rightActions || secondaryActions || viewControls || syncStatus) && (
+            <div
+              className="flex flex-wrap items-center justify-end gap-1.5"
+              style={noDragRegionStyle}
+            >
+              {rightActions}
+              {secondaryActions}
+              {viewControls}
+              {syncStatus}
+            </div>
           )}
         </div>
-
-        {(rightActions || secondaryActions || viewControls || syncStatus) && (
-          <div
-            className="flex flex-wrap items-center justify-end gap-1.5"
-            style={noDragRegionStyle}
-          >
-            {rightActions}
-            {secondaryActions}
-            {viewControls}
-            {syncStatus}
-          </div>
-        )}
-      </div>
+      )}
     </div>
   );
 };

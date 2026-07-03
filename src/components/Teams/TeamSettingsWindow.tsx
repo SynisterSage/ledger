@@ -482,6 +482,7 @@ const TeamSettingsWindow = ({ focusContext }: { focusContext?: string }) => {
             ariaLabel="Open team"
             icon={<ChevronLeft size={14} />}
             onClick={openWorkSurface}
+            variant="strip"
           >
             Open team
           </ModuleHeaderActionButton>

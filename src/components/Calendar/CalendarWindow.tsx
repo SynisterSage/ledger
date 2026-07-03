@@ -21,6 +21,7 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'rea
 import { ModalOverlay } from '../Common/ModalOverlay';
 import * as rruleModule from 'rrule';
 import { useAuthContext } from '../../context/AuthContext';
+import { useSidebar } from '../../context/SidebarContext';
 import {
   modulePaneSizing,
   clampPaneWidth,
@@ -29,6 +30,7 @@ import {
 import { useWorkspaceContext } from '../../context/WorkspaceContext';
 import { useApi } from '../../hooks/useApi';
 import { useWorkspaceRealtimeRefresh } from '../../hooks/useWorkspaceRealtimeRefresh';
+import { useWorkspaceRouteHistory } from '../../hooks/useWorkspaceRouteHistory';
 import {
   ModuleHeaderSegmentedButton,
   ModuleHeaderSegmentedGroup,
@@ -226,12 +228,7 @@ const TIMELINE_HOUR_HEIGHT = 64;
 const startOfWeek = (date: Date, weekStartsOn: 'sunday' | 'monday' = 'monday') => {
   const d = new Date(date);
   const day = d.getDay();
-  const diff =
-    weekStartsOn === 'sunday'
-      ? -day
-      : day === 0
-        ? -6
-        : 1 - day;
+  const diff = weekStartsOn === 'sunday' ? -day : day === 0 ? -6 : 1 - day;
   d.setDate(d.getDate() + diff);
   d.setHours(0, 0, 0, 0);
   return d;
@@ -713,6 +710,7 @@ const parseIcsEvents = (rawIcs: string): ParsedIcsEvent[] => {
 export const CalendarWindow = () => {
   const { user } = useAuthContext();
   const { activeWorkspaceId } = useWorkspaceContext();
+  const { workspaceShellLayout } = useSidebar();
   const api = useApi();
   const viewportWidth = useViewportWidth();
   const centerScrollRef = useRef<HTMLDivElement | null>(null);
@@ -721,7 +719,13 @@ export const CalendarWindow = () => {
   const initialFocusDate = new URLSearchParams(window.location.search).get('focusDate');
   const initialFocusContext =
     new URLSearchParams(window.location.search).get('focusContext')?.trim() ?? '';
-  const [viewMode, setViewMode] = useState<CalendarViewMode>('week');
+  const initialCalendarSection =
+    new URLSearchParams(window.location.search).get('section')?.trim() ?? '';
+  const [viewMode, setViewMode] = useState<CalendarViewMode>(
+    initialCalendarSection === 'day' || initialCalendarSection === 'month'
+      ? initialCalendarSection
+      : 'week'
+  );
   const [viewAnchor, setViewAnchor] = useState(() => {
     const date = parseValidCalendarDate(initialFocusDate);
     if (date) {
@@ -827,14 +831,14 @@ export const CalendarWindow = () => {
     startOfMonth(new Date())
   );
   const [specificDatesCleared, setSpecificDatesCleared] = useState(false);
-  const specificDatesPreviousRepeatRef = useRef<'none' | 'daily' | 'weekly' | 'monthly' | 'weekdays' | 'specific_dates'>('none');
+  const specificDatesPreviousRepeatRef = useRef<
+    'none' | 'daily' | 'weekly' | 'monthly' | 'weekdays' | 'specific_dates'
+  >('none');
   const [defaultEventDurationMinutes, setDefaultEventDurationMinutes] = useState(30);
   const [showCloseGuardModal, setShowCloseGuardModal] = useState(false);
   const [isNewCalendarModalOpen, setIsNewCalendarModalOpen] = useState(false);
   const [newCalendarName, setNewCalendarName] = useState('');
-  const [newCalendarColor, setNewCalendarColor] = useState(
-    preferenceColorMap['ledger-orange']
-  );
+  const [newCalendarColor, setNewCalendarColor] = useState(preferenceColorMap['ledger-orange']);
   const [isCreatingCalendar, setIsCreatingCalendar] = useState(false);
   const [calendarPreferences, setCalendarPreferences] = useState<CalendarPreferenceSnapshot>({
     weekStartsOn: 'monday',
@@ -983,7 +987,10 @@ export const CalendarWindow = () => {
     };
 
     void loadNotificationCount();
-    window.addEventListener('ledger:notifications-summary', handleNotificationsSummary as EventListener);
+    window.addEventListener(
+      'ledger:notifications-summary',
+      handleNotificationsSummary as EventListener
+    );
 
     const timer = window.setInterval(() => {
       void loadNotificationCount();
@@ -992,7 +999,10 @@ export const CalendarWindow = () => {
     return () => {
       cancelled = true;
       window.clearInterval(timer);
-      window.removeEventListener('ledger:notifications-summary', handleNotificationsSummary as EventListener);
+      window.removeEventListener(
+        'ledger:notifications-summary',
+        handleNotificationsSummary as EventListener
+      );
     };
   }, [api, user]);
 
@@ -1235,7 +1245,8 @@ export const CalendarWindow = () => {
 
   const isPastEvent = (event: EventRow) => new Date(event.end_at).getTime() < Date.now();
   const canEditEvent = (event: EventRow) => !isPastEvent(event);
-  const isPastReminder = (reminder: ReminderRow) => new Date(reminder.remind_at).getTime() < Date.now();
+  const isPastReminder = (reminder: ReminderRow) =>
+    new Date(reminder.remind_at).getTime() < Date.now();
   const isPastEventMuted = (event: EventRow) =>
     isPastEvent(event) && (calendarPreferences.pastEventBehavior ?? 'history') === 'fade';
   const shouldHidePastEvent = (event: EventRow) =>
@@ -1302,20 +1313,20 @@ export const CalendarWindow = () => {
             occurrenceStart < viewConfig.end
           ) {
             const occurrenceEnd = new Date(occurrenceStart.getTime() + durationMs);
-              // Debug: log if baseStart or occurrenceStart have unexpected midnight hours
-              try {
-                if (baseStart.getHours() === 0 || occurrenceStart.getHours() === 0) {
-                  console.debug('[Calendar] recurrence expansion hours', {
-                    eventId: event.id,
-                    baseStart: baseStart.toISOString(),
-                    baseStartHours: baseStart.getHours(),
-                    occurrenceStart: occurrenceStart.toISOString(),
-                    occurrenceHours: occurrenceStart.getHours(),
-                  });
-                }
-              } catch (err) {
-                /* ignore */
+            // Debug: log if baseStart or occurrenceStart have unexpected midnight hours
+            try {
+              if (baseStart.getHours() === 0 || occurrenceStart.getHours() === 0) {
+                console.debug('[Calendar] recurrence expansion hours', {
+                  eventId: event.id,
+                  baseStart: baseStart.toISOString(),
+                  baseStartHours: baseStart.getHours(),
+                  occurrenceStart: occurrenceStart.toISOString(),
+                  occurrenceHours: occurrenceStart.getHours(),
+                });
               }
+            } catch (err) {
+              /* ignore */
+            }
             expanded.push({
               ...event,
               id: `${event.id}__${formatDateKey(occurrenceStart)}`,
@@ -1360,7 +1371,11 @@ export const CalendarWindow = () => {
         const h = new Date(evt.start_at).getHours();
         const isPast = new Date(evt.end_at).getTime() < Date.now();
         if (isPast && h === 0) {
-          console.debug('[Calendar] past event at midnight', { id: evt.id, start_at: evt.start_at, end_at: evt.end_at });
+          console.debug('[Calendar] past event at midnight', {
+            id: evt.id,
+            start_at: evt.start_at,
+            end_at: evt.end_at,
+          });
         }
       } catch (err) {
         // ignore
@@ -1382,7 +1397,9 @@ export const CalendarWindow = () => {
           const exists = grouped[selectedKey].some((e) => e.id === selectedEvent.id);
           if (!exists) {
             grouped[selectedKey].push(selectedEvent);
-            grouped[selectedKey].sort((a, b) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime());
+            grouped[selectedKey].sort(
+              (a, b) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime()
+            );
           }
         }
       }
@@ -1441,7 +1458,11 @@ export const CalendarWindow = () => {
             baseStart.getMilliseconds()
           );
 
-          if (occurrenceAt >= baseStart && occurrenceAt >= viewConfig.start && occurrenceAt < viewConfig.end) {
+          if (
+            occurrenceAt >= baseStart &&
+            occurrenceAt >= viewConfig.start &&
+            occurrenceAt < viewConfig.end
+          ) {
             const key = formatDateKey(occurrenceAt);
             if (!grouped[key]) grouped[key] = [];
             grouped[key].push({
@@ -1609,7 +1630,10 @@ export const CalendarWindow = () => {
       return `${base}, ${startLabel}`;
     })();
   const getEventDurationMinutes = (event: EventRow) =>
-    Math.max(1, Math.round((new Date(event.end_at).getTime() - new Date(event.start_at).getTime()) / 60000));
+    Math.max(
+      1,
+      Math.round((new Date(event.end_at).getTime() - new Date(event.start_at).getTime()) / 60000)
+    );
   const getEventDurationRows = (event: EventRow) =>
     Math.max(1, Math.min(12, Math.ceil(getEventDurationMinutes(event) / 60)));
   const getEventMinuteOffset = (event: EventRow) => {
@@ -1644,10 +1668,11 @@ export const CalendarWindow = () => {
         if (cancelled) return;
 
         const nextPreferences: CalendarPreferenceSnapshot = {
-          weekStartsOn:
-            payload?.preferences?.weekStartsOn === 'sunday' ? 'sunday' : 'monday',
+          weekStartsOn: payload?.preferences?.weekStartsOn === 'sunday' ? 'sunday' : 'monday',
           timeFormat: payload?.preferences?.timeFormat === '24h' ? '24h' : '12h',
-          defaultEventMinutes: [30, 45, 60].includes(Number(payload?.preferences?.defaultEventMinutes))
+          defaultEventMinutes: [30, 45, 60].includes(
+            Number(payload?.preferences?.defaultEventMinutes)
+          )
             ? Number(payload?.preferences?.defaultEventMinutes)
             : 30,
           defaultEventCalendar: ['personal', 'work', 'projects'].includes(
@@ -1658,21 +1683,14 @@ export const CalendarWindow = () => {
           defaultEventStatus: ['planned', 'tentative', 'confirmed'].includes(
             String(payload?.preferences?.defaultEventStatus)
           )
-            ? (payload?.preferences?.defaultEventStatus as
-                | 'planned'
-                | 'tentative'
-                | 'confirmed')
+            ? (payload?.preferences?.defaultEventStatus as 'planned' | 'tentative' | 'confirmed')
             : 'planned',
           defaultEventVisibility:
             payload?.preferences?.defaultEventVisibility === 'workspace' ? 'workspace' : 'private',
           defaultReminderTime: ['08:00', '09:00', '12:00', '17:00'].includes(
             String(payload?.preferences?.defaultReminderTime)
           )
-            ? (payload?.preferences?.defaultReminderTime as
-                | '08:00'
-                | '09:00'
-                | '12:00'
-                | '17:00')
+            ? (payload?.preferences?.defaultReminderTime as '08:00' | '09:00' | '12:00' | '17:00')
             : '09:00',
           defaultCalendarView: ['day', 'week', 'month'].includes(
             String(payload?.preferences?.defaultCalendarView)
@@ -1702,10 +1720,7 @@ export const CalendarWindow = () => {
           missedReminderBehavior: ['needs_attention', 'today', 'hide'].includes(
             String(payload?.preferences?.missedReminderBehavior)
           )
-            ? (payload?.preferences?.missedReminderBehavior as
-                | 'needs_attention'
-                | 'today'
-                | 'hide')
+            ? (payload?.preferences?.missedReminderBehavior as 'needs_attention' | 'today' | 'hide')
             : 'needs_attention',
           completedReminderBehavior: ['collapse', 'keep_visible', 'hide_immediately'].includes(
             String(payload?.preferences?.completedReminderBehavior)
@@ -1718,10 +1733,7 @@ export const CalendarWindow = () => {
           pastEventBehavior: ['history', 'fade', 'upcoming_only'].includes(
             String(payload?.preferences?.pastEventBehavior)
           )
-            ? (payload?.preferences?.pastEventBehavior as
-                | 'history'
-                | 'fade'
-                | 'upcoming_only')
+            ? (payload?.preferences?.pastEventBehavior as 'history' | 'fade' | 'upcoming_only')
             : 'history',
           followUpBehavior: ['none', 'offer', 'review_prompt'].includes(
             String(payload?.preferences?.followUpBehavior)
@@ -1737,7 +1749,8 @@ export const CalendarWindow = () => {
                 | 'next_morning'
                 | 'custom')
             : 'tomorrow_9',
-          eventNotesBehavior: payload?.preferences?.eventNotesBehavior === 'disabled' ? 'disabled' : 'enabled',
+          eventNotesBehavior:
+            payload?.preferences?.eventNotesBehavior === 'disabled' ? 'disabled' : 'enabled',
           linkedProjectFollowUps: ['project_and_today', 'project_only', 'today_only'].includes(
             String(payload?.preferences?.linkedProjectFollowUps)
           )
@@ -1807,7 +1820,13 @@ export const CalendarWindow = () => {
       top: Math.max(0, hourRow.offsetTop - 24),
       behavior: 'smooth',
     });
-  }, [selectedTimelineHour, selectedTimelineInVisibleHours, viewMode, selectedEventPreview, selectedReminder]);
+  }, [
+    selectedTimelineHour,
+    selectedTimelineInVisibleHours,
+    viewMode,
+    selectedEventPreview,
+    selectedReminder,
+  ]);
 
   const selectedEventNoteDraft = selectedEventPreview
     ? eventNotesDrafts[selectedEventPreview.id] ?? selectedEventPreview.notes ?? ''
@@ -1840,7 +1859,9 @@ export const CalendarWindow = () => {
       calendars.find(
         (calendar) =>
           calendar.is_visible !== false && /project/i.test(String(calendar.name ?? '').trim())
-      ) ?? workspaceCalendar ?? personalCalendar;
+      ) ??
+      workspaceCalendar ??
+      personalCalendar;
 
     if (preference === 'work' || preference === 'workspace') {
       return workspaceCalendar ?? personalCalendar ?? getDefaultCalendar();
@@ -1931,7 +1952,9 @@ export const CalendarWindow = () => {
         );
 
         const eventRowsById = new Set(((eventRows ?? []) as EventRow[]).map((event) => event.id));
-        const reminderRowsById = new Set(((reminderRows ?? []) as ReminderRow[]).map((item) => item.id));
+        const reminderRowsById = new Set(
+          ((reminderRows ?? []) as ReminderRow[]).map((item) => item.id)
+        );
         setSelectedEvent((current) =>
           current && !eventRowsById.has(baseEventId(current.id)) ? null : current
         );
@@ -2246,7 +2269,8 @@ export const CalendarWindow = () => {
     setNewEventRecurrence('none');
     setNewEventSpecificDates([]);
     setComposerCalendarId(
-      mode === 'reminder' && (calendarPreferences.reminderDestination ?? 'today-calendar') === 'today'
+      mode === 'reminder' &&
+        (calendarPreferences.reminderDestination ?? 'today-calendar') === 'today'
         ? getPreferredCalendar('workspace')?.id ?? ''
         : getPreferredCalendar('event')?.id ?? ''
     );
@@ -2371,6 +2395,15 @@ export const CalendarWindow = () => {
     setViewAnchor(new Date());
   };
 
+  useWorkspaceRouteHistory(
+    {
+      kind: 'calendar',
+      focusDate: formatDateKey(viewAnchor),
+      focusSection: viewMode,
+    },
+    true
+  );
+
   const createQuickEvent = async () => {
     if (!user || !newEventTitle.trim() || calendars.length === 0) return;
     if (newEventRecurrence === 'specific_dates' && newEventSpecificDates.length === 0) {
@@ -2392,7 +2425,8 @@ export const CalendarWindow = () => {
     setError(null);
 
     if (composerMode === 'reminder') {
-      const reminderCalendarPreference = calendarPreferences.reminderDestination ?? 'today-calendar';
+      const reminderCalendarPreference =
+        calendarPreferences.reminderDestination ?? 'today-calendar';
       const selectedReminderCalendar =
         reminderCalendarPreference === 'today'
           ? getPreferredCalendar('workspace') ?? selectedCalendar
@@ -2408,15 +2442,14 @@ export const CalendarWindow = () => {
         notes: composerNotes.trim() || null,
         recurrence_rule:
           newEventRecurrence === 'specific_dates' ? 'specific_dates' : newEventRecurrence,
-        specific_dates:
-          newEventRecurrence === 'specific_dates' ? newEventSpecificDates : undefined,
+        specific_dates: newEventRecurrence === 'specific_dates' ? newEventSpecificDates : undefined,
         series_type: newEventRecurrence === 'specific_dates' ? 'specific_dates' : undefined,
       };
       const createdReminderResponse = await api.createReminder(reminderPayload);
       const createdReminders = Array.isArray(
         (createdReminderResponse as { created?: ReminderRow[] })?.created
       )
-        ? ((createdReminderResponse as { created: ReminderRow[] }).created ?? [])
+        ? (createdReminderResponse as { created: ReminderRow[] }).created ?? []
         : createdReminderResponse
         ? [createdReminderResponse as ReminderRow]
         : [];
@@ -2465,15 +2498,14 @@ export const CalendarWindow = () => {
       project_id: composerProjectId || null,
       note_id: composerNoteId || null,
       notes: composerNotes.trim() || null,
-      specific_dates:
-        newEventRecurrence === 'specific_dates' ? newEventSpecificDates : undefined,
+      specific_dates: newEventRecurrence === 'specific_dates' ? newEventSpecificDates : undefined,
       series_type: newEventRecurrence === 'specific_dates' ? 'specific_dates' : undefined,
     })) as EventRow | { created?: EventRow[] };
 
     setIsSavingEvent(false);
 
     const createdEvents = Array.isArray((createdEvent as { created?: EventRow[] })?.created)
-      ? ((createdEvent as { created: EventRow[] }).created ?? [])
+      ? (createdEvent as { created: EventRow[] }).created ?? []
       : createdEvent
       ? [createdEvent as EventRow]
       : [];
@@ -2549,7 +2581,9 @@ export const CalendarWindow = () => {
       }
 
       setReminders((prev) =>
-        prev.map((item) => (baseReminderId(item.id) === baseReminderId(updated.id) ? updated : item))
+        prev.map((item) =>
+          baseReminderId(item.id) === baseReminderId(updated.id) ? updated : item
+        )
       );
     } catch (error) {
       setError('Could not update reminder.');
@@ -2631,9 +2665,7 @@ export const CalendarWindow = () => {
 
     setReminders((prev) =>
       prev
-        .map((item) =>
-          baseReminderId(item.id) === baseReminderId(updated.id) ? updated : item
-        )
+        .map((item) => (baseReminderId(item.id) === baseReminderId(updated.id) ? updated : item))
         .sort((a, b) => new Date(a.remind_at).getTime() - new Date(b.remind_at).getTime())
     );
 
@@ -2693,7 +2725,9 @@ export const CalendarWindow = () => {
     setEditProjectId(source.project_id ?? '');
     setEditNoteId(source.note_id ?? '');
     setEditVisibility(source.visibility ?? calendarPreferences.defaultEventVisibility ?? 'private');
-    setEditRecurrence(source.recurrence_rule === 'specific_dates' ? 'none' : source.recurrence_rule ?? 'none');
+    setEditRecurrence(
+      source.recurrence_rule === 'specific_dates' ? 'none' : source.recurrence_rule ?? 'none'
+    );
     setEventNotesDrafts((prev) => ({
       ...prev,
       [source.id]: source.notes ?? prev[source.id] ?? '',
@@ -3260,7 +3294,10 @@ export const CalendarWindow = () => {
             <div key={index} className="h-12 bg-[var(--ledger-surface-hover)]" />
           ))}
           {Array.from({ length: 28 }).map((_, index) => (
-            <div key={index} className="min-h-16 border-t border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-2">
+            <div
+              key={index}
+              className="min-h-16 border-t border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-2"
+            >
               <div className="h-3 w-6 rounded bg-[var(--ledger-surface-hover)]" />
               <div className="mt-2 h-3 w-4/5 rounded bg-[var(--ledger-surface-hover)]" />
               <div className="mt-2 h-3 w-2/3 rounded bg-[var(--ledger-surface-hover)]" />
@@ -3282,7 +3319,7 @@ export const CalendarWindow = () => {
   return (
     <div
       className="relative flex h-screen flex-col overflow-hidden rounded-3xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] shadow-none"
-      style={{ scrollbarGutter: 'auto' }}
+      style={{ scrollbarGutter: 'auto', ...workspaceShellLayout.workspaceShellStyle }}
     >
       <CloseGuardModal
         isOpen={showCloseGuardModal}
@@ -3316,6 +3353,7 @@ export const CalendarWindow = () => {
           }
         }}
         compact
+        showBodyHeader={false}
         globalActions={
           <>
             <ModuleHeaderStripAction
@@ -3336,8 +3374,9 @@ export const CalendarWindow = () => {
         }
         viewControls={
           <div className="flex items-center gap-1.5">
-            <ModuleHeaderSegmentedGroup>
+            <ModuleHeaderSegmentedGroup compact>
               <ModuleHeaderSegmentedButton
+                compact
                 iconOnly
                 title="Previous period"
                 ariaLabel="Previous period"
@@ -3345,10 +3384,11 @@ export const CalendarWindow = () => {
               >
                 <ChevronLeft size={14} />
               </ModuleHeaderSegmentedButton>
-              <ModuleHeaderSegmentedButton pill title="Today" onClick={() => jumpToToday()}>
+              <ModuleHeaderSegmentedButton compact pill title="Today" onClick={() => jumpToToday()}>
                 Today
               </ModuleHeaderSegmentedButton>
               <ModuleHeaderSegmentedButton
+                compact
                 iconOnly
                 title="Next period"
                 ariaLabel="Next period"
@@ -3358,9 +3398,10 @@ export const CalendarWindow = () => {
               </ModuleHeaderSegmentedButton>
             </ModuleHeaderSegmentedGroup>
 
-            <ModuleHeaderSegmentedGroup>
+            <ModuleHeaderSegmentedGroup compact>
               {(['day', 'week', 'month'] as CalendarViewMode[]).map((mode) => (
                 <ModuleHeaderSegmentedButton
+                  compact
                   key={mode}
                   title={`Switch to ${mode} view`}
                   onClick={() => setViewMode(mode)}
@@ -3401,9 +3442,7 @@ export const CalendarWindow = () => {
               style={{ width: `${leftPaneWidth}px` }}
             >
               <div className="flex items-center justify-between mb-3">
-                <p className="text-xs font-medium text-[var(--ledger-text-muted)]">
-                  Workspace
-                </p>
+                <p className="text-xs font-medium text-[var(--ledger-text-muted)]">Workspace</p>
                 <button
                   onClick={() => setIsLeftPaneCollapsed(true)}
                   className="flex h-7 w-7 items-center justify-center rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)]"
@@ -3415,10 +3454,10 @@ export const CalendarWindow = () => {
               <div className="mb-5 rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-3">
                 <div className="flex items-start justify-between mb-3">
                   <div>
-                    <p className="text-xs font-medium text-[var(--ledger-text-muted)]">
-                      Month
-                    </p>
-                    <h2 className="text-sm font-semibold text-[var(--ledger-text-primary)]">{monthPreview.label}</h2>
+                    <p className="text-xs font-medium text-[var(--ledger-text-muted)]">Month</p>
+                    <h2 className="text-sm font-semibold text-[var(--ledger-text-primary)]">
+                      {monthPreview.label}
+                    </h2>
                   </div>
                   <div className="flex items-center gap-1">
                     <button
@@ -3482,9 +3521,7 @@ export const CalendarWindow = () => {
               </div>
 
               <div className="mb-5">
-                <p className="mb-2 text-xs font-medium text-[var(--ledger-text-muted)]">
-                  Overview
-                </p>
+                <p className="mb-2 text-xs font-medium text-[var(--ledger-text-muted)]">Overview</p>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <p className="whitespace-nowrap text-xs font-medium text-[var(--ledger-text-muted)]">
@@ -3507,14 +3544,14 @@ export const CalendarWindow = () => {
 
               <div className="mb-5 border-t border-[color:var(--ledger-border-subtle)] pt-4">
                 <div className="mb-3 flex items-center justify-between gap-2">
-                  <h2 className="text-xs font-medium text-[var(--ledger-text-muted)]">
-                    Calendars
-                  </h2>
+                  <h2 className="text-xs font-medium text-[var(--ledger-text-muted)]">Calendars</h2>
                   <button
                     type="button"
                     onClick={() => {
                       setNewCalendarName('');
-                      setNewCalendarColor(preferenceColorMap[calendarPreferences.calendarColor ?? 'ledger-orange']);
+                      setNewCalendarColor(
+                        preferenceColorMap[calendarPreferences.calendarColor ?? 'ledger-orange']
+                      );
                       setIsNewCalendarModalOpen(true);
                     }}
                     className="flex h-6 w-6 items-center justify-center rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)]"
@@ -3733,7 +3770,9 @@ export const CalendarWindow = () => {
                             });
                           }}
                           className={`min-h-29 border-b border-r border-[color:var(--ledger-border-subtle)] p-2 text-left align-top transition-colors hover:bg-[var(--ledger-surface-hover)] ${
-                            inMonth ? 'bg-[var(--ledger-surface-card)]' : 'bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-muted)]'
+                            inMonth
+                              ? 'bg-[var(--ledger-surface-card)]'
+                              : 'bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-muted)]'
                           }`}
                         >
                           <div className="flex items-start justify-between">
@@ -3753,7 +3792,7 @@ export const CalendarWindow = () => {
                             )}
                           </div>
                           <div className="mt-2 space-y-1">
-                            {visibleReminders.map((reminder) => (
+                            {visibleReminders.map((reminder) =>
                               (() => {
                                 const pastReminder = isPastReminder(reminder);
                                 return (
@@ -3792,7 +3831,7 @@ export const CalendarWindow = () => {
                                   </div>
                                 );
                               })()
-                            ))}
+                            )}
                             {visibleEvents.map((event) =>
                               (() => {
                                 const meta = getEventStatusMeta(event.status);
@@ -3807,7 +3846,9 @@ export const CalendarWindow = () => {
                                     } ${event.status === 'done' ? 'line-through opacity-80' : ''} ${
                                       event.status === 'cancelled' ? 'opacity-65' : ''
                                     } ${pastEventMuted ? 'opacity-50 grayscale-[0.35]' : ''} ${
-                                      pastEvent && !pastEventMuted ? 'opacity-75 grayscale-[0.15]' : ''
+                                      pastEvent && !pastEventMuted
+                                        ? 'opacity-75 grayscale-[0.15]'
+                                        : ''
                                     }`}
                                     style={{
                                       backgroundColor: pastEvent
@@ -3854,7 +3895,8 @@ export const CalendarWindow = () => {
                                         ✓
                                       </span>
                                     )}
-                                    {pastEvent && new Date(event.start_at).getHours() === 0 &&
+                                    {pastEvent &&
+                                      new Date(event.start_at).getHours() === 0 &&
                                       (() => {
                                         try {
                                           console.debug('[Calendar] month-preview-past-midnight', {
@@ -3864,11 +3906,13 @@ export const CalendarWindow = () => {
                                           });
                                         } catch (err) {}
                                         return null;
-                                      })()
-                                    }
+                                      })()}
                                     {event.project_id && (
-                                        <Folder size={8} className="mr-1 inline-block align-middle text-[var(--ledger-text-muted)]" />
-                                      )}
+                                      <Folder
+                                        size={8}
+                                        className="mr-1 inline-block align-middle text-[var(--ledger-text-muted)]"
+                                      />
+                                    )}
                                     {event.title}
                                   </div>
                                 );
@@ -3900,330 +3944,51 @@ export const CalendarWindow = () => {
                       gridTemplateColumns: `72px repeat(${viewConfig.dates.length}, minmax(0, 1fr))`,
                     }}
                   >
-                  <div className="sticky top-0 z-50 h-12 border-b border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)]" />
-                  {viewConfig.dates.map((dayDate) => (
-                    <div
-                      key={dayDate.toISOString()}
-                      className="sticky top-0 z-50 flex h-12 flex-col items-center justify-center border-b border-l border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)]"
-                    >
-                      <span className="text-xs font-semibold text-[var(--ledger-text-secondary)]">
-                        {dayDate.toLocaleDateString([], { weekday: 'short' })}
-                      </span>
-                      <span className="text-[10px] text-[var(--ledger-text-muted)]">
-                        {dayDate.getMonth() + 1}/{dayDate.getDate()}
-                      </span>
-                    </div>
-                  ))}
-
-                  <div className="flex h-10 items-start justify-end border-b border-[color:var(--ledger-border-subtle)] pr-3 pt-1.5 text-[11px] text-[var(--ledger-text-muted)]">
-                    All day
-                  </div>
-                  {viewConfig.dates.map((dayDate) => {
-                    const key = formatDateKey(dayDate);
-                    const allDayItems = (eventsByDay[key] ?? []).filter((evt) =>
-                      isAllDayEvent(evt)
-                    );
-                    const visibleAllDayItems = allDayItems.slice(0, 2);
-                    const hiddenAllDayCount = allDayItems.length - visibleAllDayItems.length;
-
-                    return (
+                    <div className="sticky top-0 z-50 h-12 border-b border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)]" />
+                    {viewConfig.dates.map((dayDate) => (
                       <div
-                        key={`all-day-${key}`}
-                        className="relative h-10 border-b border-l border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)]/30 px-1 py-1"
+                        key={dayDate.toISOString()}
+                        className="sticky top-0 z-50 flex h-12 flex-col items-center justify-center border-b border-l border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)]"
                       >
-                        <div className="space-y-0.5">
-                          {visibleAllDayItems.map((evt) => {
-                            const eventColor = getCalendarColor(evt.calendar_id);
-                            const pastEvent = isPastEvent(evt);
-                            const pastEventMuted = isPastEventMuted(evt);
-                            return (
-                              <button
-                                key={evt.id}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setSelectedEvent(evt);
-                                  setSelectedReminder(null);
-                                  setViewMode('day');
-                                  setViewAnchor(dayDate);
-                                }}
-                                onContextMenu={(e) => {
-                                  e.preventDefault();
-                                  e.stopPropagation();
-                                  setListContextMenu({
-                                    x: e.clientX,
-                                    y: e.clientY,
-                                    kind: 'event',
-                                    id: evt.id,
-                                  });
-                                }}
-                                className={`w-full truncate rounded-md border px-2 py-1 text-left text-[10px] leading-tight shadow-sm ${
-                                  pastEventMuted ? 'opacity-50 grayscale-[0.35]' : ''
-                                }`}
-                                style={{
-                                      backgroundColor: pastEvent
-                                        ? 'var(--ledger-surface-hover)'
-                                        : `${eventColor}22`,
-                                      borderColor: pastEvent
-                                        ? 'var(--ledger-border-subtle)'
-                                        : `${eventColor}44`,
-                                      color: pastEvent
-                                        ? 'var(--ledger-text-muted)'
-                                        : 'var(--ledger-text-primary)',
-                                    }}
-                              >
-                                <span
-                                  className="mr-1 inline-block h-1.5 w-1.5 rounded-full align-middle"
-                                  style={{ backgroundColor: eventColor }}
-                                />
-                                {evt.status === 'done' && (
-                                    <span className="mr-1 inline-block align-middle text-[12px] text-[var(--ledger-success)]">
-                                      ✓
-                                    </span>
-                                )}
-                                {evt.title}
-                              </button>
-                            );
-                          })}
-                          {hiddenAllDayCount > 0 && (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setOverflowDayKey(key);
-                              }}
-                              className="text-[10px] text-[var(--ledger-text-muted)] transition hover:text-[var(--ledger-text-primary)]"
-                              title={`${hiddenAllDayCount} more all-day event${
-                                hiddenAllDayCount === 1 ? '' : 's'
-                              }`}
-                            >
-                              +{hiddenAllDayCount} more
-                            </button>
-                          )}
-                        </div>
+                        <span className="text-xs font-semibold text-[var(--ledger-text-secondary)]">
+                          {dayDate.toLocaleDateString([], { weekday: 'short' })}
+                        </span>
+                        <span className="text-[10px] text-[var(--ledger-text-muted)]">
+                          {dayDate.getMonth() + 1}/{dayDate.getDate()}
+                        </span>
                       </div>
-                    );
-                  })}
+                    ))}
 
-                  {hoursToRender.map((hour) => (
-                    <Fragment key={hour}>
-                      {(() => {
-                        const hourInt = Number.parseInt(hour.split(':')[0], 10);
-                        const rowHeight = Math.max(
-                          64,
-                          ...viewConfig.dates.map((dayDate) => {
-                            const key = formatDateKey(dayDate);
-                            const dayReminders = remindersByDay[key] ?? [];
-                            const remindersForHour = dayReminders.filter(
-                              (reminder) => new Date(reminder.remind_at).getHours() === hourInt
-                            );
-                            const visibleReminders = remindersForHour.slice(0, 2);
-                            const hiddenReminders = remindersForHour.length - visibleReminders.length;
-                            return (
-                              64 +
-                              (visibleReminders.length > 0
-                                ? visibleReminders.length * 24 + (hiddenReminders > 0 ? 16 : 0)
-                                : 0)
-                            );
-                          })
-                        );
-                        return (
-                          <>
-                            <div
-                              data-timeline-hour={hourInt}
-                              className="flex items-start justify-end border-b border-[color:var(--ledger-border-subtle)] pr-3 pt-1.5 text-[11px] text-[var(--ledger-text-muted)]"
-                              style={{ minHeight: `${rowHeight}px` }}
-                            >
-                              {formatCalendarHourLabel(hourInt)}
-                            </div>
-                            {viewConfig.dates.map((dayDate) => {
-                              const key = formatDateKey(dayDate);
-                        const hourStart = dayDate ? new Date(dayDate) : new Date();
-                        hourStart.setHours(hourInt, 0, 0, 0);
-                        const hourEnd = new Date(hourStart.getTime() + 60 * 60 * 1000);
-                        const hourEvents = (eventsByDay[key] ?? []).filter((evt) => {
-                          if (isAllDayEvent(evt)) return false;
-                          const startTs = new Date(evt.start_at).getTime();
-                          const endTs = new Date(evt.end_at).getTime();
-                          return startTs < hourEnd.getTime() && endTs > hourStart.getTime();
-                        });
-                        const startingEvents = hourEvents.filter((evt) => {
-                          const startTs = new Date(evt.start_at).getTime();
-                          return startTs >= hourStart.getTime() && startTs < hourEnd.getTime();
-                        });
-                        const dayReminders = remindersByDay[key] ?? [];
-                        const visibleItems = startingEvents.slice(0, 2);
-                        const hiddenCount = startingEvents.length - visibleItems.length;
-                        const remindersForHour = dayReminders.filter(
-                          (reminder) => new Date(reminder.remind_at).getHours() === hourInt
-                        );
-                        const visibleReminders = remindersForHour.slice(0, 2);
-                        const hiddenReminders = remindersForHour.length - visibleReminders.length;
-                        const hasOccupiedTimelineCell = hourEvents.length > 0 || remindersForHour.length > 0;
-                        const reminderStackHeight =
-                          visibleReminders.length > 0
-                            ? visibleReminders.length * 24 + (hiddenReminders > 0 ? 16 : 6)
-                            : 0;
-                        const isQuickAddOpen =
-                          gridQuickAdd?.dateKey === key && gridQuickAdd?.hour === hourInt;
+                    <div className="flex h-10 items-start justify-end border-b border-[color:var(--ledger-border-subtle)] pr-3 pt-1.5 text-[11px] text-[var(--ledger-text-muted)]">
+                      All day
+                    </div>
+                    {viewConfig.dates.map((dayDate) => {
+                      const key = formatDateKey(dayDate);
+                      const allDayItems = (eventsByDay[key] ?? []).filter((evt) =>
+                        isAllDayEvent(evt)
+                      );
+                      const visibleAllDayItems = allDayItems.slice(0, 2);
+                      const hiddenAllDayCount = allDayItems.length - visibleAllDayItems.length;
 
-                              return (
-                                <div
-                                  key={`${hour}-${key}`}
-                                  className={`relative cursor-pointer border-b border-l border-[color:var(--ledger-border-subtle)] px-1 py-1 transition-colors ${
-                                    hasOccupiedTimelineCell
-                                      ? ''
-                                      : 'hover:bg-[var(--ledger-surface-hover)]'
-                                  }`}
-                                  style={{
-                                    minHeight: `${rowHeight}px`,
-                                    zIndex: startingEvents.length > 0 ? 5 : 0,
-                                  }}
-                                  onClick={() => {
-                                    setSelectedEvent(null);
-                                    setSelectedReminder(null);
-                                    setContextMenu(null);
-                                    setListContextMenu(null);
-                                    setGridQuickAdd(null);
-                                    setGridQuickTitle('');
-                                    setViewMode('day');
-                                    setViewAnchor(dayDate);
-                                  }}
-                                  onContextMenu={(event) => {
-                                    event.preventDefault();
-                                    setGridQuickAdd(null);
-                                    setGridQuickTitle('');
-                                    setContextMenu({
-                                      x: event.clientX,
-                                      y: event.clientY,
-                                      dateKey: key,
-                                      hour: hourInt,
-                                    });
-                                  }}
-                                >
-                            {isQuickAddOpen && (
-                              <div
-                                className="absolute left-1 right-1 top-1 z-20 rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-1.5 shadow-[var(--ledger-shadow)]"
-                                onClick={(e) => e.stopPropagation()}
-                              >
-                                <input
-                                  autoFocus
-                                  value={gridQuickTitle}
-                                  onChange={(e) => setGridQuickTitle(e.target.value)}
-                                  onKeyDown={(e) => {
-                                    if (e.key === 'Enter') {
-                                      e.preventDefault();
-                                      void createGridEvent();
-                                    }
-                                    if (e.key === 'Escape') {
-                                      setGridQuickAdd(null);
-                                      setGridQuickTitle('');
-                                    }
-                                  }}
-                                  placeholder="Quick event title"
-                                  className="h-7 w-full rounded border border-[color:var(--ledger-border-subtle)] px-2 text-[11px] outline-none focus:border-[color:var(--ledger-border-strong)]"
-                                />
-                                <div className="mt-1 flex justify-end gap-1">
-                                  <button
-                                    onClick={() => {
-                                      setGridQuickAdd(null);
-                                      setGridQuickTitle('');
-                                    }}
-                                    className="rounded bg-[var(--ledger-surface-hover)] px-1.5 py-0.5 text-[10px] text-[var(--ledger-text-secondary)]"
-                                  >
-                                    Cancel
-                                  </button>
-                                  <button
-                                    onClick={() => void createGridEvent()}
-                                    disabled={!gridQuickTitle.trim() || isSavingEvent}
-                                    className="rounded bg-[var(--ledger-accent)] px-1.5 py-0.5 text-[10px] text-white disabled:opacity-60"
-                                  >
-                                    Add
-                                  </button>
-                                </div>
-                              </div>
-                            )}
-                            {(visibleReminders.length > 0 || hiddenReminders > 0) && (
-                              <div className="relative z-40 mb-1 space-y-1">
-                                {visibleReminders.map((reminder) => (
-                                  <button
-                                    key={reminder.id}
-                                    onClick={(e) => {
-                                      setSelectedEvent(null);
-                                      setSelectedReminder(null);
-                                      e.stopPropagation();
-                                      void toggleReminderDone(reminder);
-                                    }}
-                                    onContextMenu={(e) => {
-                                      e.preventDefault();
-                                      e.stopPropagation();
-                                      setListContextMenu({
-                                        x: e.clientX,
-                                        y: e.clientY,
-                                        kind: 'reminder',
-                                        id: reminder.id,
-                                      });
-                                    }}
-                                    className={`relative z-30 block w-full truncate rounded-md border px-2 py-1.5 text-left text-[10px] leading-tight shadow-sm ${
-                                      reminder.is_done &&
-                                      (calendarPreferences.completedReminderBehavior ?? 'collapse') ===
-                                        'collapse'
-                                        ? 'line-through opacity-70'
-                                        : reminder.is_done
-                                        ? 'line-through opacity-60'
-                                        : ''
-                                    } ${isPastReminder(reminder) ? 'opacity-80' : ''}`}
-                                    style={{
-                                      backgroundColor: isPastReminder(reminder)
-                                        ? 'var(--ledger-surface-hover)'
-                                        : `${reminder.color ?? '#F59E0B'}1a`,
-                                      borderColor: isPastReminder(reminder)
-                                        ? 'var(--ledger-border-subtle)'
-                                        : `${reminder.color ?? '#F59E0B'}55`,
-                                      color: isPastReminder(reminder)
-                                        ? 'var(--ledger-text-muted)'
-                                        : 'var(--ledger-text-primary)',
-                                    }}
-                                    title={`${formatCalendarTime(new Date(reminder.remind_at))} • ${reminder.title}`}
-                                  >
-                                    <span
-                                      className="mr-1 inline-block h-1.5 w-1.5 shrink-0 rounded-full align-middle"
-                                      style={{
-                                        backgroundColor: isPastReminder(reminder)
-                                          ? '#9CA3AF'
-                                          : reminder.color ?? '#F59E0B',
-                                      }}
-                                    />
-                                    Reminder: {reminder.title}
-                                  </button>
-                                ))}
-                                {hiddenReminders > 0 && (
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      setOverflowDayKey(key);
-                                    }}
-                                    className="relative z-40 text-[10px] font-medium text-[var(--ledger-warning)]"
-                                    title={`${hiddenReminders} more reminder${
-                                      hiddenReminders === 1 ? '' : 's'
-                                    }`}
-                                  >
-                                    +{hiddenReminders} reminders
-                                  </button>
-                                )}
-                              </div>
-                            )}
-                            {visibleItems.map((evt) => {
+                      return (
+                        <div
+                          key={`all-day-${key}`}
+                          className="relative h-10 border-b border-l border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)]/30 px-1 py-1"
+                        >
+                          <div className="space-y-0.5">
+                            {visibleAllDayItems.map((evt) => {
                               const eventColor = getCalendarColor(evt.calendar_id);
                               const pastEvent = isPastEvent(evt);
                               const pastEventMuted = isPastEventMuted(evt);
-                              const durationRows = getEventDurationRows(evt);
-                              const minuteOffset = getEventMinuteOffset(evt);
-                              const durationMinutes = getEventDurationMinutes(evt);
                               return (
                                 <button
                                   key={evt.id}
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     setSelectedEvent(evt);
+                                    setSelectedReminder(null);
+                                    setViewMode('day');
+                                    setViewAnchor(dayDate);
                                   }}
                                   onContextMenu={(e) => {
                                     e.preventDefault();
@@ -4235,100 +4000,392 @@ export const CalendarWindow = () => {
                                       id: evt.id,
                                     });
                                   }}
-                                  className={`group absolute inset-x-1 z-30 flex flex-col rounded-md border text-left text-[10px] leading-tight shadow-sm transition-[border-color,box-shadow,transform] ${
-                                    durationRows > 1 ? 'p-2' : 'px-2 py-1.5'
+                                  className={`w-full truncate rounded-md border px-2 py-1 text-left text-[10px] leading-tight shadow-sm ${
+                                    pastEventMuted ? 'opacity-50 grayscale-[0.35]' : ''
                                   }`}
                                   style={{
-                                    pointerEvents: 'auto',
-                                    top: `${Math.max(
-                                      8,
-                                      reminderStackHeight + 6 + (minuteOffset / 60) * TIMELINE_HOUR_HEIGHT
-                                    )}px`,
-                                    height: `${Math.max(
-                                      40,
-                                      (durationMinutes / 60) * TIMELINE_HOUR_HEIGHT - 12
-                                    )}px`,
                                     backgroundColor: pastEvent
                                       ? 'var(--ledger-surface-hover)'
-                                      : `${eventColor}18`,
+                                      : `${eventColor}22`,
                                     borderColor: pastEvent
                                       ? 'var(--ledger-border-subtle)'
-                                      : `${eventColor}55`,
+                                      : `${eventColor}44`,
                                     color: pastEvent
                                       ? 'var(--ledger-text-muted)'
                                       : 'var(--ledger-text-primary)',
-                                    boxSizing: 'border-box',
-                                    lineHeight: 1.2,
-                                    overflow: 'hidden',
-                                    boxShadow: pastEvent
-                                      ? 'none'
-                                      : `0 0 0 1px ${eventColor}12, 0 1px 2px rgba(15, 23, 42, 0.04)`,
                                   }}
                                 >
                                   <span
-                                    aria-hidden="true"
-                                    className="pointer-events-none absolute inset-0 rounded-md opacity-0 transition-opacity duration-150 group-hover:opacity-100"
-                                    style={{
-                                      backgroundColor: pastEvent
-                                        ? 'var(--ledger-surface-hover)'
-                                        : `${eventColor}24`,
-                                    }}
+                                    className="mr-1 inline-block h-1.5 w-1.5 rounded-full align-middle"
+                                    style={{ backgroundColor: eventColor }}
                                   />
-                                  <div className="flex gap-1.5 min-w-0">
-                                    <span
-                                      className="relative z-10 h-1.5 w-1.5 rounded-full shrink-0 mt-0.5"
-                                      style={{ backgroundColor: eventColor }}
-                                    />
-                                    <div className="relative z-10 min-w-0 flex-1">
-                                      <div className="flex items-start gap-1 min-w-0">
-                                        {evt.status === 'done' && (
-                                          <span className="shrink-0 text-[10px] font-semibold leading-none -mt-0.5 text-[var(--ledger-success)]">
-                                            ✓
-                                          </span>
-                                        )}
-                                        {evt.project_id && (
-                                          <Folder
-                                            size={8}
-                                            className="shrink-0 text-[var(--ledger-text-muted)]"
-                                          />
-                                        )}
-                                        <span
-                                          className={`font-medium ${
-                                            durationRows > 1 ? 'line-clamp-3' : 'truncate'
-                                          } ${pastEventMuted ? 'opacity-70' : ''}`}
-                                        >
-                                          {evt.title}
-                                        </span>
-                                      </div>
-                                      {durationRows > 1 && (
-                                        <div className={`text-[9px] text-[var(--ledger-text-muted)] ${durationRows > 1 ? 'mt-1' : 'mt-0.5'}`}>
-                                          {formatEventTimeRangeLabel(evt)}
-                                        </div>
-                                      )}
-                                    </div>
-                                  </div>
+                                  {evt.status === 'done' && (
+                                    <span className="mr-1 inline-block align-middle text-[12px] text-[var(--ledger-success)]">
+                                      ✓
+                                    </span>
+                                  )}
+                                  {evt.title}
                                 </button>
                               );
                             })}
-                            {hiddenCount > 0 && (
+                            {hiddenAllDayCount > 0 && (
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   setOverflowDayKey(key);
                                 }}
-                                className="relative z-30 px-1.5 py-0.5 text-[10px] text-[var(--ledger-text-secondary)] transition hover:text-[var(--ledger-text-primary)]"
+                                className="text-[10px] text-[var(--ledger-text-muted)] transition hover:text-[var(--ledger-text-primary)]"
+                                title={`${hiddenAllDayCount} more all-day event${
+                                  hiddenAllDayCount === 1 ? '' : 's'
+                                }`}
                               >
-                                +{hiddenCount} more
+                                +{hiddenAllDayCount} more
                               </button>
                             )}
-                                </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+
+                    {hoursToRender.map((hour) => (
+                      <Fragment key={hour}>
+                        {(() => {
+                          const hourInt = Number.parseInt(hour.split(':')[0], 10);
+                          const rowHeight = Math.max(
+                            64,
+                            ...viewConfig.dates.map((dayDate) => {
+                              const key = formatDateKey(dayDate);
+                              const dayReminders = remindersByDay[key] ?? [];
+                              const remindersForHour = dayReminders.filter(
+                                (reminder) => new Date(reminder.remind_at).getHours() === hourInt
                               );
-                            })}
-                          </>
-                        );
-                      })()}
-                    </Fragment>
-                  ))}
+                              const visibleReminders = remindersForHour.slice(0, 2);
+                              const hiddenReminders =
+                                remindersForHour.length - visibleReminders.length;
+                              return (
+                                64 +
+                                (visibleReminders.length > 0
+                                  ? visibleReminders.length * 24 + (hiddenReminders > 0 ? 16 : 0)
+                                  : 0)
+                              );
+                            })
+                          );
+                          return (
+                            <>
+                              <div
+                                data-timeline-hour={hourInt}
+                                className="flex items-start justify-end border-b border-[color:var(--ledger-border-subtle)] pr-3 pt-1.5 text-[11px] text-[var(--ledger-text-muted)]"
+                                style={{ minHeight: `${rowHeight}px` }}
+                              >
+                                {formatCalendarHourLabel(hourInt)}
+                              </div>
+                              {viewConfig.dates.map((dayDate) => {
+                                const key = formatDateKey(dayDate);
+                                const hourStart = dayDate ? new Date(dayDate) : new Date();
+                                hourStart.setHours(hourInt, 0, 0, 0);
+                                const hourEnd = new Date(hourStart.getTime() + 60 * 60 * 1000);
+                                const hourEvents = (eventsByDay[key] ?? []).filter((evt) => {
+                                  if (isAllDayEvent(evt)) return false;
+                                  const startTs = new Date(evt.start_at).getTime();
+                                  const endTs = new Date(evt.end_at).getTime();
+                                  return startTs < hourEnd.getTime() && endTs > hourStart.getTime();
+                                });
+                                const startingEvents = hourEvents.filter((evt) => {
+                                  const startTs = new Date(evt.start_at).getTime();
+                                  return (
+                                    startTs >= hourStart.getTime() && startTs < hourEnd.getTime()
+                                  );
+                                });
+                                const dayReminders = remindersByDay[key] ?? [];
+                                const visibleItems = startingEvents.slice(0, 2);
+                                const hiddenCount = startingEvents.length - visibleItems.length;
+                                const remindersForHour = dayReminders.filter(
+                                  (reminder) => new Date(reminder.remind_at).getHours() === hourInt
+                                );
+                                const visibleReminders = remindersForHour.slice(0, 2);
+                                const hiddenReminders =
+                                  remindersForHour.length - visibleReminders.length;
+                                const hasOccupiedTimelineCell =
+                                  hourEvents.length > 0 || remindersForHour.length > 0;
+                                const reminderStackHeight =
+                                  visibleReminders.length > 0
+                                    ? visibleReminders.length * 24 + (hiddenReminders > 0 ? 16 : 6)
+                                    : 0;
+                                const isQuickAddOpen =
+                                  gridQuickAdd?.dateKey === key && gridQuickAdd?.hour === hourInt;
+
+                                return (
+                                  <div
+                                    key={`${hour}-${key}`}
+                                    className={`relative cursor-pointer border-b border-l border-[color:var(--ledger-border-subtle)] px-1 py-1 transition-colors ${
+                                      hasOccupiedTimelineCell
+                                        ? ''
+                                        : 'hover:bg-[var(--ledger-surface-hover)]'
+                                    }`}
+                                    style={{
+                                      minHeight: `${rowHeight}px`,
+                                      zIndex: startingEvents.length > 0 ? 5 : 0,
+                                    }}
+                                    onClick={() => {
+                                      setSelectedEvent(null);
+                                      setSelectedReminder(null);
+                                      setContextMenu(null);
+                                      setListContextMenu(null);
+                                      setGridQuickAdd(null);
+                                      setGridQuickTitle('');
+                                      setViewMode('day');
+                                      setViewAnchor(dayDate);
+                                    }}
+                                    onContextMenu={(event) => {
+                                      event.preventDefault();
+                                      setGridQuickAdd(null);
+                                      setGridQuickTitle('');
+                                      setContextMenu({
+                                        x: event.clientX,
+                                        y: event.clientY,
+                                        dateKey: key,
+                                        hour: hourInt,
+                                      });
+                                    }}
+                                  >
+                                    {isQuickAddOpen && (
+                                      <div
+                                        className="absolute left-1 right-1 top-1 z-20 rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-1.5 shadow-[var(--ledger-shadow)]"
+                                        onClick={(e) => e.stopPropagation()}
+                                      >
+                                        <input
+                                          autoFocus
+                                          value={gridQuickTitle}
+                                          onChange={(e) => setGridQuickTitle(e.target.value)}
+                                          onKeyDown={(e) => {
+                                            if (e.key === 'Enter') {
+                                              e.preventDefault();
+                                              void createGridEvent();
+                                            }
+                                            if (e.key === 'Escape') {
+                                              setGridQuickAdd(null);
+                                              setGridQuickTitle('');
+                                            }
+                                          }}
+                                          placeholder="Quick event title"
+                                          className="h-7 w-full rounded border border-[color:var(--ledger-border-subtle)] px-2 text-[11px] outline-none focus:border-[color:var(--ledger-border-strong)]"
+                                        />
+                                        <div className="mt-1 flex justify-end gap-1">
+                                          <button
+                                            onClick={() => {
+                                              setGridQuickAdd(null);
+                                              setGridQuickTitle('');
+                                            }}
+                                            className="rounded bg-[var(--ledger-surface-hover)] px-1.5 py-0.5 text-[10px] text-[var(--ledger-text-secondary)]"
+                                          >
+                                            Cancel
+                                          </button>
+                                          <button
+                                            onClick={() => void createGridEvent()}
+                                            disabled={!gridQuickTitle.trim() || isSavingEvent}
+                                            className="rounded bg-[var(--ledger-accent)] px-1.5 py-0.5 text-[10px] text-white disabled:opacity-60"
+                                          >
+                                            Add
+                                          </button>
+                                        </div>
+                                      </div>
+                                    )}
+                                    {(visibleReminders.length > 0 || hiddenReminders > 0) && (
+                                      <div className="relative z-40 mb-1 space-y-1">
+                                        {visibleReminders.map((reminder) => (
+                                          <button
+                                            key={reminder.id}
+                                            onClick={(e) => {
+                                              setSelectedEvent(null);
+                                              setSelectedReminder(null);
+                                              e.stopPropagation();
+                                              void toggleReminderDone(reminder);
+                                            }}
+                                            onContextMenu={(e) => {
+                                              e.preventDefault();
+                                              e.stopPropagation();
+                                              setListContextMenu({
+                                                x: e.clientX,
+                                                y: e.clientY,
+                                                kind: 'reminder',
+                                                id: reminder.id,
+                                              });
+                                            }}
+                                            className={`relative z-30 block w-full truncate rounded-md border px-2 py-1.5 text-left text-[10px] leading-tight shadow-sm ${
+                                              reminder.is_done &&
+                                              (calendarPreferences.completedReminderBehavior ??
+                                                'collapse') === 'collapse'
+                                                ? 'line-through opacity-70'
+                                                : reminder.is_done
+                                                ? 'line-through opacity-60'
+                                                : ''
+                                            } ${isPastReminder(reminder) ? 'opacity-80' : ''}`}
+                                            style={{
+                                              backgroundColor: isPastReminder(reminder)
+                                                ? 'var(--ledger-surface-hover)'
+                                                : `${reminder.color ?? '#F59E0B'}1a`,
+                                              borderColor: isPastReminder(reminder)
+                                                ? 'var(--ledger-border-subtle)'
+                                                : `${reminder.color ?? '#F59E0B'}55`,
+                                              color: isPastReminder(reminder)
+                                                ? 'var(--ledger-text-muted)'
+                                                : 'var(--ledger-text-primary)',
+                                            }}
+                                            title={`${formatCalendarTime(
+                                              new Date(reminder.remind_at)
+                                            )} • ${reminder.title}`}
+                                          >
+                                            <span
+                                              className="mr-1 inline-block h-1.5 w-1.5 shrink-0 rounded-full align-middle"
+                                              style={{
+                                                backgroundColor: isPastReminder(reminder)
+                                                  ? '#9CA3AF'
+                                                  : reminder.color ?? '#F59E0B',
+                                              }}
+                                            />
+                                            Reminder: {reminder.title}
+                                          </button>
+                                        ))}
+                                        {hiddenReminders > 0 && (
+                                          <button
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              setOverflowDayKey(key);
+                                            }}
+                                            className="relative z-40 text-[10px] font-medium text-[var(--ledger-warning)]"
+                                            title={`${hiddenReminders} more reminder${
+                                              hiddenReminders === 1 ? '' : 's'
+                                            }`}
+                                          >
+                                            +{hiddenReminders} reminders
+                                          </button>
+                                        )}
+                                      </div>
+                                    )}
+                                    {visibleItems.map((evt) => {
+                                      const eventColor = getCalendarColor(evt.calendar_id);
+                                      const pastEvent = isPastEvent(evt);
+                                      const pastEventMuted = isPastEventMuted(evt);
+                                      const durationRows = getEventDurationRows(evt);
+                                      const minuteOffset = getEventMinuteOffset(evt);
+                                      const durationMinutes = getEventDurationMinutes(evt);
+                                      return (
+                                        <button
+                                          key={evt.id}
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setSelectedEvent(evt);
+                                          }}
+                                          onContextMenu={(e) => {
+                                            e.preventDefault();
+                                            e.stopPropagation();
+                                            setListContextMenu({
+                                              x: e.clientX,
+                                              y: e.clientY,
+                                              kind: 'event',
+                                              id: evt.id,
+                                            });
+                                          }}
+                                          className={`group absolute inset-x-1 z-30 flex flex-col rounded-md border text-left text-[10px] leading-tight shadow-sm transition-[border-color,box-shadow,transform] ${
+                                            durationRows > 1 ? 'p-2' : 'px-2 py-1.5'
+                                          }`}
+                                          style={{
+                                            pointerEvents: 'auto',
+                                            top: `${Math.max(
+                                              8,
+                                              reminderStackHeight +
+                                                6 +
+                                                (minuteOffset / 60) * TIMELINE_HOUR_HEIGHT
+                                            )}px`,
+                                            height: `${Math.max(
+                                              40,
+                                              (durationMinutes / 60) * TIMELINE_HOUR_HEIGHT - 12
+                                            )}px`,
+                                            backgroundColor: pastEvent
+                                              ? 'var(--ledger-surface-hover)'
+                                              : `${eventColor}18`,
+                                            borderColor: pastEvent
+                                              ? 'var(--ledger-border-subtle)'
+                                              : `${eventColor}55`,
+                                            color: pastEvent
+                                              ? 'var(--ledger-text-muted)'
+                                              : 'var(--ledger-text-primary)',
+                                            boxSizing: 'border-box',
+                                            lineHeight: 1.2,
+                                            overflow: 'hidden',
+                                            boxShadow: pastEvent
+                                              ? 'none'
+                                              : `0 0 0 1px ${eventColor}12, 0 1px 2px rgba(15, 23, 42, 0.04)`,
+                                          }}
+                                        >
+                                          <span
+                                            aria-hidden="true"
+                                            className="pointer-events-none absolute inset-0 rounded-md opacity-0 transition-opacity duration-150 group-hover:opacity-100"
+                                            style={{
+                                              backgroundColor: pastEvent
+                                                ? 'var(--ledger-surface-hover)'
+                                                : `${eventColor}24`,
+                                            }}
+                                          />
+                                          <div className="flex gap-1.5 min-w-0">
+                                            <span
+                                              className="relative z-10 h-1.5 w-1.5 rounded-full shrink-0 mt-0.5"
+                                              style={{ backgroundColor: eventColor }}
+                                            />
+                                            <div className="relative z-10 min-w-0 flex-1">
+                                              <div className="flex items-start gap-1 min-w-0">
+                                                {evt.status === 'done' && (
+                                                  <span className="shrink-0 text-[10px] font-semibold leading-none -mt-0.5 text-[var(--ledger-success)]">
+                                                    ✓
+                                                  </span>
+                                                )}
+                                                {evt.project_id && (
+                                                  <Folder
+                                                    size={8}
+                                                    className="shrink-0 text-[var(--ledger-text-muted)]"
+                                                  />
+                                                )}
+                                                <span
+                                                  className={`font-medium ${
+                                                    durationRows > 1 ? 'line-clamp-3' : 'truncate'
+                                                  } ${pastEventMuted ? 'opacity-70' : ''}`}
+                                                >
+                                                  {evt.title}
+                                                </span>
+                                              </div>
+                                              {durationRows > 1 && (
+                                                <div
+                                                  className={`text-[9px] text-[var(--ledger-text-muted)] ${
+                                                    durationRows > 1 ? 'mt-1' : 'mt-0.5'
+                                                  }`}
+                                                >
+                                                  {formatEventTimeRangeLabel(evt)}
+                                                </div>
+                                              )}
+                                            </div>
+                                          </div>
+                                        </button>
+                                      );
+                                    })}
+                                    {hiddenCount > 0 && (
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setOverflowDayKey(key);
+                                        }}
+                                        className="relative z-30 px-1.5 py-0.5 text-[10px] text-[var(--ledger-text-secondary)] transition hover:text-[var(--ledger-text-primary)]"
+                                      >
+                                        +{hiddenCount} more
+                                      </button>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </>
+                          );
+                        })()}
+                      </Fragment>
+                    ))}
                   </div>
                 </div>
               )}
@@ -4357,9 +4414,7 @@ export const CalendarWindow = () => {
             >
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <p className="text-xs font-medium text-[var(--ledger-text-muted)]">
-                    Day context
-                  </p>
+                  <p className="text-xs font-medium text-[var(--ledger-text-muted)]">Day context</p>
                   <h2 className="mt-2 text-[15px] font-semibold leading-5 text-[var(--ledger-text-primary)]">
                     {selectedContextDate.toLocaleDateString([], {
                       weekday: 'long',
@@ -4423,7 +4478,9 @@ export const CalendarWindow = () => {
                               <p className="mt-1 text-[13px] text-[var(--ledger-text-secondary)]">
                                 {formatEventDateTimeLabel(selectedEventPreview)}
                               </p>
-                              <p className="mt-1 text-[13px] text-[var(--ledger-text-primary)]">{meta.label}</p>
+                              <p className="mt-1 text-[13px] text-[var(--ledger-text-primary)]">
+                                {meta.label}
+                              </p>
                               <p className="mt-1 text-[12px] text-[var(--ledger-text-muted)]">
                                 Visibility ·{' '}
                                 {selectedEventPreview.visibility === 'workspace'
@@ -4463,7 +4520,9 @@ export const CalendarWindow = () => {
                                   )}
                                 </div>
                                 <div className="flex items-center justify-between gap-3">
-                                  <span className="text-[var(--ledger-text-muted)]">Linked note</span>
+                                  <span className="text-[var(--ledger-text-muted)]">
+                                    Linked note
+                                  </span>
                                   {selectedEventNote ? (
                                     <button
                                       type="button"
@@ -4512,7 +4571,9 @@ export const CalendarWindow = () => {
                               minute: '2-digit',
                             })}
                           </p>
-                          <p className="mt-1 text-[13px] text-[var(--ledger-text-primary)]">Reminder context</p>
+                          <p className="mt-1 text-[13px] text-[var(--ledger-text-primary)]">
+                            Reminder context
+                          </p>
                           {showWorkspaceNames && selectedReminder.workspace_name && (
                             <p className="mt-1 text-[12px] text-[var(--ledger-text-muted)]">
                               Workspace · {selectedReminder.workspace_name}
@@ -4588,7 +4649,9 @@ export const CalendarWindow = () => {
 
                 {selectedEventPreview && calendarPreferences.eventNotesBehavior !== 'disabled' && (
                   <div className="space-y-2 border-t border-[color:var(--ledger-border-subtle)] pt-6">
-                    <p className="text-xs font-medium text-[var(--ledger-text-muted)]">Event notes</p>
+                    <p className="text-xs font-medium text-[var(--ledger-text-muted)]">
+                      Event notes
+                    </p>
                     <textarea
                       value={selectedEventNoteDraft}
                       onChange={(e) => {
@@ -4603,7 +4666,9 @@ export const CalendarWindow = () => {
                       className="w-full rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3 py-2 text-[13px] text-[var(--ledger-text-primary)] outline-none placeholder:text-[var(--ledger-text-muted)] focus:border-[color:var(--ledger-border-strong)]"
                     />
                     <div className="flex items-center justify-between gap-2">
-                      <p className="text-[12px] text-[var(--ledger-text-muted)]">Saved to the event.</p>
+                      <p className="text-[12px] text-[var(--ledger-text-muted)]">
+                        Saved to the event.
+                      </p>
                       <button
                         type="button"
                         onClick={() => void saveSelectedEventNotes()}
@@ -4618,7 +4683,9 @@ export const CalendarWindow = () => {
                 {selectedEventPreview && calendarPreferences.followUpBehavior !== 'none' && (
                   <div className="space-y-2 border-t border-[color:var(--ledger-border-subtle)] pt-6">
                     <div className="flex items-center justify-between gap-3">
-                      <p className="text-xs font-medium text-[var(--ledger-text-muted)]">Follow-ups</p>
+                      <p className="text-xs font-medium text-[var(--ledger-text-muted)]">
+                        Follow-ups
+                      </p>
                       <button
                         type="button"
                         onClick={() =>
@@ -4655,7 +4722,9 @@ export const CalendarWindow = () => {
                             className="flex h-8 w-full items-center justify-between gap-2 rounded-md px-2 text-left text-[13px] transition hover:bg-[var(--ledger-surface-hover)]"
                             title={task.title}
                           >
-                            <span className="min-w-0 truncate text-[var(--ledger-text-primary)]">{task.title}</span>
+                            <span className="min-w-0 truncate text-[var(--ledger-text-primary)]">
+                              {task.title}
+                            </span>
                             <span className="shrink-0 text-[12px] text-[var(--ledger-text-muted)]">
                               {task.status === 'done' ? 'Done' : 'Todo'}
                             </span>
@@ -4663,52 +4732,62 @@ export const CalendarWindow = () => {
                         ))}
                       </div>
                     ) : (
-                      <p className="text-[14px] text-[var(--ledger-text-muted)]">No follow-ups yet.</p>
+                      <p className="text-[14px] text-[var(--ledger-text-muted)]">
+                        No follow-ups yet.
+                      </p>
                     )}
                   </div>
                 )}
 
                 <div className="space-y-2 border-t border-[color:var(--ledger-border-subtle)] pt-6">
-                  <p className="text-xs font-medium text-[var(--ledger-text-muted)]">
-                    Agenda
-                  </p>
-                    <div className="space-y-1">
-                      {selectedContextDayEvents.length === 0 ? (
-                        <p className="text-[14px] text-[var(--ledger-text-muted)]">No events for this day.</p>
-                      ) : (
-                        selectedContextDayEvents.map((event) => {
-                          const isSelected = selectedEventPreview?.id === event.id;
-                          const eventColor = getCalendarColor(event.calendar_id);
-                          return (
-                            <button
-                              key={event.id}
-                              onClick={() => setSelectedEvent(event)}
-                              className={`flex h-8 w-full items-center gap-2 rounded-md px-2 text-left transition ${
-                                isSelected
-                                  ? 'bg-[var(--ledger-surface-hover)] ring-1 ring-[color:var(--ledger-border-subtle)]'
-                                  : 'hover:bg-[var(--ledger-surface-hover)]'
-                              }`}
-                            >
-                              <span
-                                className="h-2 w-2 shrink-0 rounded-full"
-                                style={{ backgroundColor: isPastEvent(event) ? '#9CA3AF' : eventColor }}
-                              />
-                              <p className="w-28 shrink-0 whitespace-nowrap text-[12px] font-medium text-[var(--ledger-text-primary)]">
-                                {formatEventTimeLabel(event)}
+                  <p className="text-xs font-medium text-[var(--ledger-text-muted)]">Agenda</p>
+                  <div className="space-y-1">
+                    {selectedContextDayEvents.length === 0 ? (
+                      <p className="text-[14px] text-[var(--ledger-text-muted)]">
+                        No events for this day.
+                      </p>
+                    ) : (
+                      selectedContextDayEvents.map((event) => {
+                        const isSelected = selectedEventPreview?.id === event.id;
+                        const eventColor = getCalendarColor(event.calendar_id);
+                        return (
+                          <button
+                            key={event.id}
+                            onClick={() => setSelectedEvent(event)}
+                            className={`flex h-8 w-full items-center gap-2 rounded-md px-2 text-left transition ${
+                              isSelected
+                                ? 'bg-[var(--ledger-surface-hover)] ring-1 ring-[color:var(--ledger-border-subtle)]'
+                                : 'hover:bg-[var(--ledger-surface-hover)]'
+                            }`}
+                          >
+                            <span
+                              className="h-2 w-2 shrink-0 rounded-full"
+                              style={{
+                                backgroundColor: isPastEvent(event) ? '#9CA3AF' : eventColor,
+                              }}
+                            />
+                            <p className="w-28 shrink-0 whitespace-nowrap text-[12px] font-medium text-[var(--ledger-text-primary)]">
+                              {formatEventTimeLabel(event)}
+                            </p>
+                            <div className="min-w-0 flex-1">
+                              <p
+                                className={`truncate text-[13px] ${
+                                  isPastEvent(event)
+                                    ? 'text-[var(--ledger-text-muted)]'
+                                    : 'text-[var(--ledger-text-secondary)]'
+                                }`}
+                              >
+                                {event.title}
                               </p>
-                              <div className="min-w-0 flex-1">
-                                <p className={`truncate text-[13px] ${isPastEvent(event) ? 'text-[var(--ledger-text-muted)]' : 'text-[var(--ledger-text-secondary)]'}`}>
-                                  {event.title}
+                              {showWorkspaceNames && event.workspace_name && (
+                                <p className="mt-0.5 truncate text-[11px] text-[var(--ledger-text-muted)]">
+                                  Workspace · {event.workspace_name}
                                 </p>
-                                {showWorkspaceNames && event.workspace_name && (
-                                  <p className="mt-0.5 truncate text-[11px] text-[var(--ledger-text-muted)]">
-                                    Workspace · {event.workspace_name}
-                                  </p>
-                                )}
-                              </div>
-                            </button>
-                          );
-                        })
+                              )}
+                            </div>
+                          </button>
+                        );
+                      })
                     )}
                   </div>
                 </div>
@@ -5038,7 +5117,9 @@ export const CalendarWindow = () => {
               </p>
               {specificDatesDraft.length > 0 && (
                 <p className="text-xs text-gray-500">
-                  {specificDatesDraft.length === 1 ? '1 selected date' : `${specificDatesDraft.length} selected dates`}
+                  {specificDatesDraft.length === 1
+                    ? '1 selected date'
+                    : `${specificDatesDraft.length} selected dates`}
                 </p>
               )}
             </div>
@@ -5240,9 +5321,7 @@ export const CalendarWindow = () => {
               <p className="p-3 text-sm text-gray-500">No notes found.</p>
             ) : (
               linkNotes
-                .filter((note) =>
-                  note.title.toLowerCase().includes(linkNotesSearch.toLowerCase())
-                )
+                .filter((note) => note.title.toLowerCase().includes(linkNotesSearch.toLowerCase()))
                 .map((note) => (
                   <button
                     key={note.id}
@@ -5753,7 +5832,9 @@ export const CalendarWindow = () => {
         >
           <button
             onClick={() => {
-              const calendar = calendars.find((item) => item.id === calendarRowContextMenu.calendarId);
+              const calendar = calendars.find(
+                (item) => item.id === calendarRowContextMenu.calendarId
+              );
               if (calendar) {
                 setEditingCalendarId(calendar.id);
                 setEditingCalendarName(calendar.name);
@@ -5767,7 +5848,9 @@ export const CalendarWindow = () => {
           </button>
           <button
             onClick={() => {
-              const calendar = calendars.find((item) => item.id === calendarRowContextMenu.calendarId);
+              const calendar = calendars.find(
+                (item) => item.id === calendarRowContextMenu.calendarId
+              );
               if (calendar) {
                 void toggleCalendarVisibility(calendar);
               }
@@ -5782,22 +5865,21 @@ export const CalendarWindow = () => {
               <EyeOff size={14} className="shrink-0 text-gray-500" />
             )}
             <span className="text-[14px] font-medium tracking-tight">
-              {calendars.find((item) => item.id === calendarRowContextMenu.calendarId)?.is_visible ===
-              false
+              {calendars.find((item) => item.id === calendarRowContextMenu.calendarId)
+                ?.is_visible === false
                 ? 'Show'
                 : 'Hide'}
             </span>
           </button>
           <button
             onClick={() => {
-              const calendar = calendars.find((item) => item.id === calendarRowContextMenu.calendarId);
+              const calendar = calendars.find(
+                (item) => item.id === calendarRowContextMenu.calendarId
+              );
               if (calendar) {
                 setCalendarColorMenu({
-                    x: Math.max(
-                      8,
-                      Math.min(calendarRowContextMenu.x, window.innerWidth - 264)
-                    ),
-                    y: Math.max(8, Math.min(calendarRowContextMenu.y + 12, window.innerHeight - 180)),
+                  x: Math.max(8, Math.min(calendarRowContextMenu.x, window.innerWidth - 264)),
+                  y: Math.max(8, Math.min(calendarRowContextMenu.y + 12, window.innerHeight - 180)),
                   calendarId: calendar.id,
                 });
               }
@@ -5810,7 +5892,9 @@ export const CalendarWindow = () => {
           </button>
           <button
             onClick={() => {
-              const calendar = calendars.find((item) => item.id === calendarRowContextMenu.calendarId);
+              const calendar = calendars.find(
+                (item) => item.id === calendarRowContextMenu.calendarId
+              );
               if (calendar) {
                 const confirmed = window.confirm(
                   `Delete calendar “${calendar.name}”? Events and reminders in it will also be removed.`
@@ -5838,9 +5922,7 @@ export const CalendarWindow = () => {
           onMouseDown={(e) => e.stopPropagation()}
         >
           <div className="mb-3 flex items-center justify-between">
-            <p className="text-xs font-medium text-gray-500">
-              Calendar Color
-            </p>
+            <p className="text-xs font-medium text-gray-500">Calendar Color</p>
           </div>
           <div className="grid grid-cols-6 gap-2">
             {[
@@ -5864,7 +5946,9 @@ export const CalendarWindow = () => {
                   key={color}
                   type="button"
                   onClick={() => {
-                    const target = calendars.find((item) => item.id === calendarColorMenu.calendarId);
+                    const target = calendars.find(
+                      (item) => item.id === calendarColorMenu.calendarId
+                    );
                     if (target) void saveCalendarColor(target, color);
                     setCalendarColorMenu(null);
                   }}
@@ -5880,13 +5964,14 @@ export const CalendarWindow = () => {
         </div>
       )}
 
-      {listContextMenu && (
+      {listContextMenu &&
         (() => {
           const menuWidth = 248;
           const menuHeight = listContextMenu.kind === 'event' ? 292 : 280;
           const viewportPadding = 8;
           const menuActualWidth = Math.min(menuWidth, window.innerWidth - viewportPadding * 2);
-          const canOpenBelow = listContextMenu.y + menuHeight + viewportPadding <= window.innerHeight;
+          const canOpenBelow =
+            listContextMenu.y + menuHeight + viewportPadding <= window.innerHeight;
           const top = canOpenBelow
             ? listContextMenu.y + viewportPadding
             : Math.max(viewportPadding, listContextMenu.y - menuHeight - viewportPadding);
@@ -5895,175 +5980,179 @@ export const CalendarWindow = () => {
             Math.min(listContextMenu.x, window.innerWidth - menuActualWidth - viewportPadding)
           );
           const menuTarget = getListContextMenuSlot();
-          const menuTitle = menuTarget?.title ?? (listContextMenu.kind === 'event' ? 'Event' : 'Reminder');
+          const menuTitle =
+            menuTarget?.title ?? (listContextMenu.kind === 'event' ? 'Event' : 'Reminder');
           const menuTime = menuTarget?.timeLabel ?? null;
           const showPastCheck = Boolean(menuTarget?.isPast);
 
           return (
-        <div
-          className="fixed z-50 overflow-hidden rounded-2xl border border-[#E2D4C4] bg-[#FFF8F2] shadow-[0_16px_40px_rgba(15,23,42,0.14)]"
-          style={{
-            left,
-            top,
-            width: `${menuActualWidth}px`,
-          }}
-          onClick={(e) => e.stopPropagation()}
-          onMouseDown={(e) => e.stopPropagation()}
-        >
-          <div className="border-b border-[#E8DDD4] px-3 py-2.5">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-gray-400">
-              {listContextMenu.kind === 'event' ? 'Event' : 'Reminder'}
-            </p>
-            <div className="mt-1 min-w-0">
-              <div className="flex items-center gap-1.5">
-                {showPastCheck && (
-                  <span className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[var(--ledger-success)]">
-                    <Check size={12} strokeWidth={2.5} />
-                  </span>
-                )}
-                <p className="truncate text-[14px] font-semibold leading-5 text-gray-900">
-                  {menuTitle}
+            <div
+              className="fixed z-50 overflow-hidden rounded-2xl border border-[#E2D4C4] bg-[#FFF8F2] shadow-[0_16px_40px_rgba(15,23,42,0.14)]"
+              style={{
+                left,
+                top,
+                width: `${menuActualWidth}px`,
+              }}
+              onClick={(e) => e.stopPropagation()}
+              onMouseDown={(e) => e.stopPropagation()}
+            >
+              <div className="border-b border-[#E8DDD4] px-3 py-2.5">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-gray-400">
+                  {listContextMenu.kind === 'event' ? 'Event' : 'Reminder'}
                 </p>
+                <div className="mt-1 min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    {showPastCheck && (
+                      <span className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[var(--ledger-success)]">
+                        <Check size={12} strokeWidth={2.5} />
+                      </span>
+                    )}
+                    <p className="truncate text-[14px] font-semibold leading-5 text-gray-900">
+                      {menuTitle}
+                    </p>
+                  </div>
+                  {menuTime ? (
+                    <p className="mt-0.5 text-[11px] leading-4 text-gray-500">{menuTime}</p>
+                  ) : null}
+                </div>
               </div>
-              {menuTime ? (
-                <p className="mt-0.5 text-[11px] leading-4 text-gray-500">{menuTime}</p>
-              ) : null}
-            </div>
-          </div>
-          <div className="px-1.5 py-1.5">
-            {listContextMenu.kind === 'event' ? (
-              (() => {
-                const event = events.find((item) => item.id === baseEventId(listContextMenu.id));
-                const canEditMenuEvent = Boolean(event && canEditEvent(event));
+              <div className="px-1.5 py-1.5">
+                {listContextMenu.kind === 'event' ? (
+                  (() => {
+                    const event = events.find(
+                      (item) => item.id === baseEventId(listContextMenu.id)
+                    );
+                    const canEditMenuEvent = Boolean(event && canEditEvent(event));
 
-                return (
+                    return (
+                      <button
+                        onClick={() => {
+                          if (!canEditMenuEvent || !event) return;
+                          openEventEditor(event);
+                          setListContextMenu(null);
+                        }}
+                        disabled={!canEditMenuEvent}
+                        className={`flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm ${
+                          canEditMenuEvent
+                            ? 'text-gray-700 hover:bg-[#FFF1E3]'
+                            : 'cursor-not-allowed text-gray-300'
+                        }`}
+                        title={canEditMenuEvent ? 'Edit Event' : 'Past events are read-only here'}
+                      >
+                        <PencilLine size={14} className="shrink-0 text-gray-500" />
+                        <span className="min-w-0 truncate text-[14px] font-medium tracking-tight">
+                          Edit Event
+                        </span>
+                      </button>
+                    );
+                  })()
+                ) : (
                   <button
                     onClick={() => {
-                      if (!canEditMenuEvent || !event) return;
-                      openEventEditor(event);
+                      const reminder = reminders.find((item) => item.id === listContextMenu.id);
+                      if (reminder) openReminderEditor(reminder);
                       setListContextMenu(null);
                     }}
-                    disabled={!canEditMenuEvent}
-                    className={`flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm ${
-                      canEditMenuEvent
-                        ? 'text-gray-700 hover:bg-[#FFF1E3]'
-                        : 'cursor-not-allowed text-gray-300'
-                    }`}
-                    title={canEditMenuEvent ? 'Edit Event' : 'Past events are read-only here'}
+                    className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm text-gray-700 hover:bg-[#FFF1E3]"
                   >
                     <PencilLine size={14} className="shrink-0 text-gray-500" />
                     <span className="min-w-0 truncate text-[14px] font-medium tracking-tight">
-                      Edit Event
+                      Edit Reminder
                     </span>
                   </button>
-                );
-              })()
-            ) : (
-              <button
-                onClick={() => {
-                  const reminder = reminders.find((item) => item.id === listContextMenu.id);
-                  if (reminder) openReminderEditor(reminder);
-                  setListContextMenu(null);
-                }}
-                className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm text-gray-700 hover:bg-[#FFF1E3]"
-              >
-                <PencilLine size={14} className="shrink-0 text-gray-500" />
-                <span className="min-w-0 truncate text-[14px] font-medium tracking-tight">
-                  Edit Reminder
-                </span>
-              </button>
-            )}
+                )}
 
-            <button
-              onClick={() => openNewItemFromListContextMenu('event')}
-              className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm text-gray-700 hover:bg-[#FFF1E3]"
-            >
-              <CalendarPlus size={14} className="shrink-0 text-gray-500" />
-              <span className="min-w-0 truncate text-[14px] font-medium tracking-tight">
-                New Event Here
-              </span>
-            </button>
+                <button
+                  onClick={() => openNewItemFromListContextMenu('event')}
+                  className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm text-gray-700 hover:bg-[#FFF1E3]"
+                >
+                  <CalendarPlus size={14} className="shrink-0 text-gray-500" />
+                  <span className="min-w-0 truncate text-[14px] font-medium tracking-tight">
+                    New Event Here
+                  </span>
+                </button>
 
-            <button
-              onClick={() => openNewItemFromListContextMenu('reminder')}
-              className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm text-gray-700 hover:bg-[#FFF1E3]"
-            >
-              <BellRing size={14} className="shrink-0 text-gray-500" />
-              <span className="min-w-0 truncate text-[14px] font-medium tracking-tight">
-                New Reminder Here
-              </span>
-            </button>
+                <button
+                  onClick={() => openNewItemFromListContextMenu('reminder')}
+                  className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm text-gray-700 hover:bg-[#FFF1E3]"
+                >
+                  <BellRing size={14} className="shrink-0 text-gray-500" />
+                  <span className="min-w-0 truncate text-[14px] font-medium tracking-tight">
+                    New Reminder Here
+                  </span>
+                </button>
 
-            {listContextMenu.kind === 'event' ? (
-              <button
-                onClick={() => {
-                  const event = events.find((item) => item.id === baseEventId(listContextMenu.id));
-                  if (event) {
-                    const nextStatus = event.status === 'done' ? 'planned' : 'done';
-                    void api.updateEvent(event.id, { status: nextStatus });
-                    setEvents((prev) =>
-                      prev.map((item) =>
-                        item.id === event.id ? { ...item, status: nextStatus } : item
-                      )
-                    );
-                    setSelectedEvent((current) =>
-                      current && baseEventId(current.id) === event.id
-                        ? { ...current, status: nextStatus }
-                        : current
-                    );
-                  }
-                  setListContextMenu(null);
-                }}
-                className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm text-gray-700 hover:bg-[#FFF1E3]"
-              >
-                <BellRing size={14} className="shrink-0 text-gray-500" />
-                <span className="min-w-0 truncate text-[14px] font-medium tracking-tight">
-                  Mark{' '}
-                  {events.find((item) => item.id === baseEventId(listContextMenu.id))?.status ===
-                  'done'
-                    ? 'Planned'
-                    : 'Done'}
-                </span>
-              </button>
-            ) : (
-              <button
-                onClick={() => {
-                  const reminder = reminders.find((item) => item.id === listContextMenu.id);
-                  if (reminder) void toggleReminderDone(reminder);
-                  setListContextMenu(null);
-                }}
-                className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm text-gray-700 hover:bg-[#FFF1E3]"
-              >
-                <BellRing size={14} className="shrink-0 text-gray-500" />
-                <span className="min-w-0 truncate text-[14px] font-medium tracking-tight">
-                  Toggle Done
-                </span>
-              </button>
-            )}
+                {listContextMenu.kind === 'event' ? (
+                  <button
+                    onClick={() => {
+                      const event = events.find(
+                        (item) => item.id === baseEventId(listContextMenu.id)
+                      );
+                      if (event) {
+                        const nextStatus = event.status === 'done' ? 'planned' : 'done';
+                        void api.updateEvent(event.id, { status: nextStatus });
+                        setEvents((prev) =>
+                          prev.map((item) =>
+                            item.id === event.id ? { ...item, status: nextStatus } : item
+                          )
+                        );
+                        setSelectedEvent((current) =>
+                          current && baseEventId(current.id) === event.id
+                            ? { ...current, status: nextStatus }
+                            : current
+                        );
+                      }
+                      setListContextMenu(null);
+                    }}
+                    className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm text-gray-700 hover:bg-[#FFF1E3]"
+                  >
+                    <BellRing size={14} className="shrink-0 text-gray-500" />
+                    <span className="min-w-0 truncate text-[14px] font-medium tracking-tight">
+                      Mark{' '}
+                      {events.find((item) => item.id === baseEventId(listContextMenu.id))
+                        ?.status === 'done'
+                        ? 'Planned'
+                        : 'Done'}
+                    </span>
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => {
+                      const reminder = reminders.find((item) => item.id === listContextMenu.id);
+                      if (reminder) void toggleReminderDone(reminder);
+                      setListContextMenu(null);
+                    }}
+                    className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm text-gray-700 hover:bg-[#FFF1E3]"
+                  >
+                    <BellRing size={14} className="shrink-0 text-gray-500" />
+                    <span className="min-w-0 truncate text-[14px] font-medium tracking-tight">
+                      Toggle Done
+                    </span>
+                  </button>
+                )}
 
-            <div className="my-1.5 border-t border-[#E8DDD4]" />
+                <div className="my-1.5 border-t border-[#E8DDD4]" />
 
-            <button
-              onClick={() => {
-                if (listContextMenu.kind === 'event') {
-                  void quickDeleteEvent(listContextMenu.id);
-                } else {
-                  void quickDeleteReminder(listContextMenu.id);
-                }
-                setListContextMenu(null);
-              }}
-              className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm text-red-600 hover:bg-red-50"
-            >
-              <Trash2 size={14} className="shrink-0 text-red-500" />
-              <span className="min-w-0 truncate text-[14px] font-medium tracking-tight">
-                Delete {listContextMenu.kind === 'event' ? 'Event' : 'Reminder'}
-              </span>
-            </button>
-          </div>
-        </div>
+                <button
+                  onClick={() => {
+                    if (listContextMenu.kind === 'event') {
+                      void quickDeleteEvent(listContextMenu.id);
+                    } else {
+                      void quickDeleteReminder(listContextMenu.id);
+                    }
+                    setListContextMenu(null);
+                  }}
+                  className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm text-red-600 hover:bg-red-50"
+                >
+                  <Trash2 size={14} className="shrink-0 text-red-500" />
+                  <span className="min-w-0 truncate text-[14px] font-medium tracking-tight">
+                    Delete {listContextMenu.kind === 'event' ? 'Event' : 'Reminder'}
+                  </span>
+                </button>
+              </div>
+            </div>
           );
-        })()
-      )}
+        })()}
     </div>
   );
 };

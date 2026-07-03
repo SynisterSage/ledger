@@ -159,6 +159,9 @@ contextBridge.exposeInMainWorld('desktopWindow', {
   getWorkspaceNavigationState() {
     return ipcRenderer.invoke('window:workspace-navigation-state');
   },
+  updateWorkspaceRoute(route: ModuleFocusPayload) {
+    return ipcRenderer.invoke('window:workspace-route-changed', route);
+  },
   setHasShadow(enabled: boolean) {
     return ipcRenderer.invoke('window:set-has-shadow', enabled);
   },

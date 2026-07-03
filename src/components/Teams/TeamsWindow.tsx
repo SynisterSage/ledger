@@ -19,6 +19,7 @@ import { ModuleHeaderActionButton, ModuleWindowHeader } from '../Common/ModuleWi
 import { ModalOverlay } from '../Common/ModalOverlay';
 import { useApi } from '../../hooks/useApi';
 import { useAuthContext } from '../../context/AuthContext';
+import { useSidebar } from '../../context/SidebarContext';
 import { useWorkspaceContext } from '../../context/WorkspaceContext';
 
 type TeamMember = {
@@ -134,7 +135,8 @@ const teamsTheme = {
     'relative flex h-screen flex-col overflow-hidden rounded-3xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] shadow-none',
   content: 'flex-1 min-h-0 overflow-auto bg-[var(--ledger-background)] px-6 py-7',
   page: 'mx-auto flex min-h-full w-full max-w-7xl flex-col gap-7',
-  pageTitle: 'text-[32px] font-normal leading-tight tracking-tight text-[var(--ledger-text-primary)]',
+  pageTitle:
+    'text-[32px] font-normal leading-tight tracking-tight text-[var(--ledger-text-primary)]',
   subtitle: 'text-sm font-light text-[var(--ledger-text-muted)]',
   action:
     'inline-flex h-8 items-center gap-2 rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3 text-xs font-medium text-[var(--ledger-text-secondary)] transition hover:border-[color:var(--ledger-border-strong)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]',
@@ -142,15 +144,12 @@ const teamsTheme = {
     'inline-flex h-8 items-center gap-2 rounded-full border border-[color:var(--ledger-accent)] bg-[var(--ledger-accent)] px-3 text-xs font-semibold text-white transition hover:bg-[var(--ledger-accent-hover)]',
   panel:
     'rounded-[22px] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)]',
-  row:
-    'group grid w-full grid-cols-[minmax(220px,1.4fr)_minmax(170px,1fr)_90px_34px] items-center gap-4 border-b border-[color:var(--ledger-border-subtle)] px-4 py-3 text-left last:border-b-0 transition hover:bg-[var(--ledger-surface-hover)]',
-  rowSelected:
-    'bg-[var(--ledger-surface-hover)] hover:bg-[var(--ledger-surface-hover)]',
+  row: 'group grid w-full grid-cols-[minmax(220px,1.4fr)_minmax(170px,1fr)_90px_34px] items-center gap-4 border-b border-[color:var(--ledger-border-subtle)] px-4 py-3 text-left last:border-b-0 transition hover:bg-[var(--ledger-surface-hover)]',
+  rowSelected: 'bg-[var(--ledger-surface-hover)] hover:bg-[var(--ledger-surface-hover)]',
   label: 'text-[11px] font-medium text-[var(--ledger-text-muted)]',
   title: 'text-[13px] font-medium text-[var(--ledger-text-primary)]',
   meta: 'text-[11px] leading-4 text-[var(--ledger-text-muted)]',
-  chip:
-    'inline-flex h-5 items-center rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2 text-[10px] font-medium text-[var(--ledger-text-secondary)]',
+  chip: 'inline-flex h-5 items-center rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2 text-[10px] font-medium text-[var(--ledger-text-secondary)]',
   rightPanel:
     'space-y-5 border-t border-[color:var(--ledger-border-subtle)] pt-6 lg:sticky lg:top-0 lg:self-start lg:border-l lg:border-t-0 lg:pl-8 lg:pt-0',
   sectionTitle: 'text-xs font-medium text-[var(--ledger-text-primary)]',
@@ -236,6 +235,7 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
   const api = useApi();
   const { user } = useAuthContext();
   const { activeWorkspace, activeWorkspaceId } = useWorkspaceContext();
+  const { workspaceShellLayout } = useSidebar();
   const workspaceName = activeWorkspace?.name?.trim() || 'Workspace';
   const focusTeamId = useMemo(() => {
     const raw = String(focusContext ?? '').trim();
@@ -270,13 +270,19 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
   const [memberSearchDraft, setMemberSearchDraft] = useState('');
   const [assignWorkTeamId, setAssignWorkTeamId] = useState<string | null>(null);
   const [assignWorkSearch, setAssignWorkSearch] = useState('');
-  const [assignWorkMode, setAssignWorkMode] = useState<'search' | 'new-task' | 'new-milestone'>('search');
+  const [assignWorkMode, setAssignWorkMode] = useState<'search' | 'new-task' | 'new-milestone'>(
+    'search'
+  );
   const [assignWorkSuccess, setAssignWorkSuccess] = useState<string | null>(null);
   const [taskComposerTitle, setTaskComposerTitle] = useState('');
   const [taskComposerProjectId, setTaskComposerProjectId] = useState('');
   const [taskComposerDueDate, setTaskComposerDueDate] = useState('');
-  const [taskComposerPriority, setTaskComposerPriority] = useState<'low' | 'medium' | 'high' | 'urgent'>('medium');
-  const [taskComposerHorizon, setTaskComposerHorizon] = useState<'today' | 'long_term'>('long_term');
+  const [taskComposerPriority, setTaskComposerPriority] = useState<
+    'low' | 'medium' | 'high' | 'urgent'
+  >('medium');
+  const [taskComposerHorizon, setTaskComposerHorizon] = useState<'today' | 'long_term'>(
+    'long_term'
+  );
   const [milestoneComposerTitle, setMilestoneComposerTitle] = useState('');
   const [milestoneComposerProjectId, setMilestoneComposerProjectId] = useState('');
   const [milestoneComposerDate, setMilestoneComposerDate] = useState('');
@@ -312,7 +318,8 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
 
         const members = Array.isArray(payload?.members)
           ? payload.members.map((member) => {
-              const name = member.full_name?.trim() || member.email?.split('@')[0] || 'Workspace member';
+              const name =
+                member.full_name?.trim() || member.email?.split('@')[0] || 'Workspace member';
               return {
                 id: member.user_id,
                 name,
@@ -375,7 +382,8 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
               .map((task) => ({
                 ...task,
                 project_name:
-                  task.project_name ?? (task.project_id ? projectNameById.get(task.project_id) ?? null : null),
+                  task.project_name ??
+                  (task.project_id ? projectNameById.get(task.project_id) ?? null : null),
               }))
           : [];
 
@@ -389,11 +397,13 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
           : [];
 
         const notes = Array.isArray(notesPayload)
-          ? (notesPayload as Array<{ id: string; title: string; updated_at?: string | null }>).map((note) => ({
-              id: String(note.id),
-              title: String(note.title ?? ''),
-              updated_at: note.updated_at ?? null,
-            }))
+          ? (notesPayload as Array<{ id: string; title: string; updated_at?: string | null }>).map(
+              (note) => ({
+                id: String(note.id),
+                title: String(note.title ?? ''),
+                updated_at: note.updated_at ?? null,
+              })
+            )
           : [];
 
         setWorkspaceProjects(projects);
@@ -437,8 +447,8 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
         const nextTeams = Array.isArray(payload)
           ? payload
           : Array.isArray(payload?.teams)
-            ? payload.teams
-            : [];
+          ? payload.teams
+          : [];
         setTeams(nextTeams);
         setSelectedTeamId((current) => {
           if (current && nextTeams.some((team) => team.id === current)) return current;
@@ -534,8 +544,8 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
 
   const selectedTeam = teams.find((team) => team.id === selectedTeamId) ?? null;
   const openedTeam = teams.find((team) => team.id === openedTeamId) ?? null;
-    const addMemberTeam = teams.find((team) => team.id === addMemberTeamId) ?? null;
-    const inviteTeam = teams.find((team) => team.id === inviteTeamId) ?? null;
+  const addMemberTeam = teams.find((team) => team.id === addMemberTeamId) ?? null;
+  const inviteTeam = teams.find((team) => team.id === inviteTeamId) ?? null;
 
   const availableMembers = useMemo(() => {
     if (!addMemberTeam) return [];
@@ -544,7 +554,9 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
     return workspaceMembers.filter((member) => {
       if (existing.has(member.id)) return false;
       if (!needle) return true;
-      return member.name.toLowerCase().includes(needle) || member.email?.toLowerCase().includes(needle);
+      return (
+        member.name.toLowerCase().includes(needle) || member.email?.toLowerCase().includes(needle)
+      );
     });
   }, [addMemberTeam, memberSearchDraft, workspaceMembers]);
 
@@ -599,8 +611,8 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
     const nextTeams = Array.isArray(payload)
       ? payload
       : Array.isArray(payload?.teams)
-        ? payload.teams
-        : [];
+      ? payload.teams
+      : [];
     setTeams(nextTeams);
     if (focusTeamId) {
       setSelectedTeamId(focusTeamId);
@@ -618,7 +630,10 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
   const addMemberToTeam = async (member: TeamMember) => {
     if (!addMemberTeamId) return;
     try {
-      await api.addTeamMember(addMemberTeamId, { user_id: member.id, role: member.role ?? 'member' });
+      await api.addTeamMember(addMemberTeamId, {
+        user_id: member.id,
+        role: member.role ?? 'member',
+      });
       setAddMemberTeamId(null);
       setMemberSearchDraft('');
       await reloadTeams(addMemberTeamId);
@@ -639,7 +654,9 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
   const deleteTeam = async (teamId: string) => {
     const team = teams.find((item) => item.id === teamId);
     if (!team) return;
-    const confirmed = window.confirm(`Delete ${team.name}? Assigned work will remain in the workspace.`);
+    const confirmed = window.confirm(
+      `Delete ${team.name}? Assigned work will remain in the workspace.`
+    );
     if (!confirmed) return;
     try {
       await api.deleteTeam(teamId);
@@ -657,9 +674,13 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
 
   const assignWorkTeam = teams.find((team) => team.id === assignWorkTeamId) ?? null;
   const assignedWorkSet = new Set(
-    (assignWorkTeam?.assignedWork ?? []).map((item) => workItemKey({ kind: item.kind, sourceId: item.sourceId }))
+    (assignWorkTeam?.assignedWork ?? []).map((item) =>
+      workItemKey({ kind: item.kind, sourceId: item.sourceId })
+    )
   );
-  const openedTeamProjectIds = new Set((openedTeam?.ownedProjects ?? []).map((project) => project.id));
+  const openedTeamProjectIds = new Set(
+    (openedTeam?.ownedProjects ?? []).map((project) => project.id)
+  );
   const projectLinkableItems = useMemo(() => {
     const needle = projectLinkSearch.trim().toLowerCase();
     return workspaceProjects.filter((project) => {
@@ -683,11 +704,7 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
       .map<TeamAssignedWorkItem>((task) => {
         const projectName = String(task.project_name ?? '').trim() || workspaceName;
         const dueLabel = formatShortDate(task.due_date);
-        const detail = [
-          'Task',
-          projectName,
-          dueLabel ? `Due ${dueLabel}` : null,
-        ]
+        const detail = ['Task', projectName, dueLabel ? `Due ${dueLabel}` : null]
           .filter(Boolean)
           .join(' · ');
         return {
@@ -699,7 +716,10 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
           detail,
           dueDate: task.due_date ?? null,
           priority: task.priority ?? null,
-          searchText: [task.title, projectName, detail, task.priority, task.task_horizon].filter(Boolean).join(' ').toLowerCase(),
+          searchText: [task.title, projectName, detail, task.priority, task.task_horizon]
+            .filter(Boolean)
+            .join(' ')
+            .toLowerCase(),
           assignedAt: task.updated_at ?? task.created_at ?? new Date().toISOString(),
         };
       })
@@ -709,13 +729,7 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
       .map<TeamAssignedWorkItem>((milestone) => {
         const projectName = String(milestone.project_name ?? '').trim() || workspaceName;
         const dueLabel = formatShortDate(milestone.milestone_date);
-        const detail = [
-          'Milestone',
-          projectName,
-          dueLabel ?? null,
-        ]
-          .filter(Boolean)
-          .join(' · ');
+        const detail = ['Milestone', projectName, dueLabel ?? null].filter(Boolean).join(' · ');
         return {
           kind: 'milestone' as const,
           sourceId: milestone.id,
@@ -725,7 +739,10 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
           detail,
           dueDate: milestone.milestone_date ?? null,
           typeLabel: milestone.type ?? 'Custom',
-          searchText: [milestone.title, projectName, detail, milestone.type].filter(Boolean).join(' ').toLowerCase(),
+          searchText: [milestone.title, projectName, detail, milestone.type]
+            .filter(Boolean)
+            .join(' ')
+            .toLowerCase(),
           assignedAt: milestone.updated_at ?? milestone.created_at ?? new Date().toISOString(),
         };
       })
@@ -746,7 +763,9 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
 
   const assignedRows = openedTeam?.assignedWork ?? [];
   const hasAssignWorkQuery = assignWorkSearch.trim().length > 0;
-  const visibleAssignWorkItems = hasAssignWorkQuery ? filteredAssignableItems : recentAssignableItems;
+  const visibleAssignWorkItems = hasAssignWorkQuery
+    ? filteredAssignableItems
+    : recentAssignableItems;
 
   const closeAssignWorkModal = () => {
     setAssignWorkTeamId(null);
@@ -800,7 +819,8 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
     if (!title) return;
 
     try {
-      const dueDate = taskComposerHorizon === 'today' ? todayKey() : taskComposerDueDate.trim() || null;
+      const dueDate =
+        taskComposerHorizon === 'today' ? todayKey() : taskComposerDueDate.trim() || null;
       await api.createTask({
         title,
         project_id: taskComposerProjectId.trim() || null,
@@ -978,7 +998,9 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
               <div key={member.id} className="group flex items-center gap-2 rounded-xl px-2 py-1.5">
                 <MemberAvatar member={member} />
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-xs font-medium text-[var(--ledger-text-secondary)]">{member.name}</p>
+                  <p className="truncate text-xs font-medium text-[var(--ledger-text-secondary)]">
+                    {member.name}
+                  </p>
                   {member.role === 'lead' ? <p className={teamsTheme.meta}>Lead</p> : null}
                 </div>
                 <button
@@ -992,7 +1014,9 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                 </button>
               </div>
             ))}
-            {selectedTeam.members.length === 0 ? <p className={teamsTheme.meta}>No members yet.</p> : null}
+            {selectedTeam.members.length === 0 ? (
+              <p className={teamsTheme.meta}>No members yet.</p>
+            ) : null}
           </div>
         </div>
         <div className="space-y-2">
@@ -1016,7 +1040,9 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
         <div className="space-y-1">
           <p className={teamsTheme.sectionTitle}>Quick actions</p>
           <CompactButton onClick={() => setOpenedTeamId(selectedTeam.id)}>Open team</CompactButton>
-          <CompactButton onClick={() => openInviteForTeam(selectedTeam.id)}>Invite member</CompactButton>
+          <CompactButton onClick={() => openInviteForTeam(selectedTeam.id)}>
+            Invite member
+          </CompactButton>
           <CompactButton onClick={() => setIsNewTeamOpen(true)}>Create team</CompactButton>
           <CompactButton onClick={() => deleteTeam(selectedTeam.id)} destructive>
             Delete team
@@ -1027,7 +1053,7 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
   };
 
   return (
-    <div className={teamsTheme.shell}>
+    <div className={teamsTheme.shell} style={workspaceShellLayout.workspaceShellStyle}>
       <ModuleWindowHeader
         title="Teams"
         icon={<Users size={17} />}
@@ -1042,6 +1068,7 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
               ariaLabel="Invite member"
               icon={<UserPlus size={14} />}
               onClick={() => openInviteForTeam(openedTeamId ?? selectedTeamId)}
+              variant="strip"
             >
               Invite member
             </ModuleHeaderActionButton>
@@ -1050,6 +1077,7 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
               ariaLabel="New team"
               icon={<Plus size={14} />}
               onClick={() => setIsNewTeamOpen(true)}
+              variant="strip"
             >
               New team
             </ModuleHeaderActionButton>
@@ -1083,15 +1111,17 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
         <div className={teamsTheme.page}>
           {!openedTeam ? (
             <>
-            
-
               <div className="flex min-h-0 flex-1 flex-col">
                 <section className="min-h-0 flex-1">
                   <div className={`${teamsTheme.panel} flex h-full flex-col overflow-hidden`}>
                     <div className="flex items-center justify-between gap-3 border-b border-[color:var(--ledger-border-subtle)] px-4 py-3">
                       <div className="flex items-baseline gap-2">
-                        <h2 className="text-sm font-medium text-[var(--ledger-text-primary)]">Teams</h2>
-                        <span className="text-sm text-[var(--ledger-text-muted)]">{filteredTeams.length}</span>
+                        <h2 className="text-sm font-medium text-[var(--ledger-text-primary)]">
+                          Teams
+                        </h2>
+                        <span className="text-sm text-[var(--ledger-text-muted)]">
+                          {filteredTeams.length}
+                        </span>
                       </div>
                       <div className="flex w-full max-w-xl items-center gap-2">
                         <button type="button" className={teamsTheme.action}>
@@ -1126,16 +1156,23 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                             onContextMenu={(event) => {
                               event.preventDefault();
                               setSelectedTeamId(team.id);
-                              setContextMenu({ teamId: team.id, x: event.clientX, y: event.clientY });
+                              setContextMenu({
+                                teamId: team.id,
+                                x: event.clientX,
+                                y: event.clientY,
+                              });
                             }}
-                            className={`${teamsTheme.row} ${selectedTeamId === team.id ? teamsTheme.rowSelected : ''}`}
+                            className={`${teamsTheme.row} ${
+                              selectedTeamId === team.id ? teamsTheme.rowSelected : ''
+                            }`}
                           >
                             <span className="flex min-w-0 items-center gap-3">
                               <TeamBadge team={team} />
                               <span className="min-w-0">
                                 <span className={teamsTheme.title}>{team.name}</span>
                                 <span className="mt-0.5 block truncate text-[11px] text-[var(--ledger-text-muted)]">
-                                  {team.description || `${team.members.length} members · ${team.assignedCount} assigned`}
+                                  {team.description ||
+                                    `${team.members.length} members · ${team.assignedCount} assigned`}
                                 </span>
                               </span>
                             </span>
@@ -1147,7 +1184,9 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                                 </span>
                               ) : null}
                               <span className={teamsTheme.meta}>{team.members.length} members</span>
-                              <span className={teamsTheme.meta}>· {team.assignedCount} assigned</span>
+                              <span className={teamsTheme.meta}>
+                                · {team.assignedCount} assigned
+                              </span>
                             </span>
                             <span className="font-mono text-xs font-semibold text-[var(--ledger-text-muted)]">
                               {team.identifier}
@@ -1156,27 +1195,44 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                               className="flex h-7 w-7 items-center justify-center rounded-lg opacity-0 transition group-hover:opacity-100 hover:bg-[var(--ledger-surface-muted)]"
                               onClick={(event) => {
                                 event.stopPropagation();
-                                setContextMenu({ teamId: team.id, x: event.clientX, y: event.clientY });
+                                setContextMenu({
+                                  teamId: team.id,
+                                  x: event.clientX,
+                                  y: event.clientY,
+                                });
                               }}
                             >
-                              <MoreHorizontal size={14} className="text-[var(--ledger-text-muted)]" />
+                              <MoreHorizontal
+                                size={14}
+                                className="text-[var(--ledger-text-muted)]"
+                              />
                             </span>
                           </button>
                         ))
                       ) : (
                         <div className="flex min-h-[280px] items-center justify-center px-4 py-8">
                           <div className="max-w-sm text-center">
-                            <p className="text-sm font-medium text-[var(--ledger-text-primary)]">No teams yet.</p>
+                            <p className="text-sm font-medium text-[var(--ledger-text-primary)]">
+                              No teams yet.
+                            </p>
                             <p className="mt-1 text-sm text-[var(--ledger-text-muted)]">
                               Create teams to group people and assign work inside this workspace.
                             </p>
                             <div className="mt-4 flex justify-center gap-2">
-                            <button type="button" onClick={() => setIsNewTeamOpen(true)} className={teamsTheme.primaryAction}>
-                              Create team
-                            </button>
-                            <button type="button" onClick={() => openInviteForTeam(null)} className={teamsTheme.action}>
-                              Invite member
-                            </button>
+                              <button
+                                type="button"
+                                onClick={() => setIsNewTeamOpen(true)}
+                                className={teamsTheme.primaryAction}
+                              >
+                                Create team
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => openInviteForTeam(null)}
+                                className={teamsTheme.action}
+                              >
+                                Invite member
+                              </button>
                             </div>
                           </div>
                         </div>
@@ -1207,11 +1263,19 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                     </div>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
-                    <button type="button" onClick={() => setAddMemberTeamId(openedTeam.id)} className={teamsTheme.action}>
+                    <button
+                      type="button"
+                      onClick={() => setAddMemberTeamId(openedTeam.id)}
+                      className={teamsTheme.action}
+                    >
                       <Plus size={13} />
                       Add member
                     </button>
-                    <button type="button" onClick={() => openInviteForTeam(openedTeam.id)} className={teamsTheme.action}>
+                    <button
+                      type="button"
+                      onClick={() => openInviteForTeam(openedTeam.id)}
+                      className={teamsTheme.action}
+                    >
                       <UserPlus size={13} />
                       Invite member
                     </button>
@@ -1237,7 +1301,9 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                   {activeTab === 'Assigned' ? (
                     <div>
                       <div className="border-b border-[color:var(--ledger-border-subtle)] px-4 py-3">
-                        <p className="text-sm font-medium text-[var(--ledger-text-primary)]">Needs attention</p>
+                        <p className="text-sm font-medium text-[var(--ledger-text-primary)]">
+                          Needs attention
+                        </p>
                       </div>
                       {openedTeam.assignedCount > 0 ? (
                         assignedRows.map((row) => (
@@ -1259,11 +1325,17 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                       ) : (
                         <div className="flex min-h-[240px] items-center justify-center px-4 py-10">
                           <div className="max-w-sm text-center">
-                            <p className="text-sm font-medium text-[var(--ledger-text-primary)]">No assigned work yet.</p>
+                            <p className="text-sm font-medium text-[var(--ledger-text-primary)]">
+                              No assigned work yet.
+                            </p>
                             <p className="mt-1 text-sm text-[var(--ledger-text-muted)]">
                               Assign a task or milestone to this team.
                             </p>
-                            <button type="button" onClick={openAssignWorkToCurrentTeam} className={`mt-4 ${teamsTheme.action}`}>
+                            <button
+                              type="button"
+                              onClick={openAssignWorkToCurrentTeam}
+                              className={`mt-4 ${teamsTheme.action}`}
+                            >
                               Assign work
                             </button>
                           </div>
@@ -1273,8 +1345,14 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                   ) : activeTab === 'Projects' ? (
                     <div>
                       <div className="flex items-center justify-between gap-3 border-b border-[color:var(--ledger-border-subtle)] px-4 py-3">
-                        <p className="text-sm font-medium text-[var(--ledger-text-primary)]">Owner team projects</p>
-                        <button type="button" onClick={openProjectLinkModal} className="text-xs font-medium text-[var(--ledger-text-muted)] hover:text-[var(--ledger-text-primary)]">
+                        <p className="text-sm font-medium text-[var(--ledger-text-primary)]">
+                          Owner team projects
+                        </p>
+                        <button
+                          type="button"
+                          onClick={openProjectLinkModal}
+                          className="text-xs font-medium text-[var(--ledger-text-muted)] hover:text-[var(--ledger-text-primary)]"
+                        >
                           + Add project
                         </button>
                       </div>
@@ -1293,7 +1371,8 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                             <div className="min-w-0">
                               <p className={teamsTheme.title}>{project.name}</p>
                               <p className={teamsTheme.meta}>
-                                Owner team · {project.noteCount ?? 0} notes · {project.milestoneCount ?? 0} milestones
+                                Owner team · {project.noteCount ?? 0} notes ·{' '}
+                                {project.milestoneCount ?? 0} milestones
                               </p>
                             </div>
                           </button>
@@ -1301,11 +1380,17 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                       ) : (
                         <div className="flex min-h-[220px] items-center justify-center px-4 py-10">
                           <div className="max-w-sm text-center">
-                            <p className="text-sm font-medium text-[var(--ledger-text-primary)]">No team projects yet.</p>
+                            <p className="text-sm font-medium text-[var(--ledger-text-primary)]">
+                              No team projects yet.
+                            </p>
                             <p className="mt-1 text-sm text-[var(--ledger-text-muted)]">
                               Set an existing project owner or create a project for this team.
                             </p>
-                            <button type="button" onClick={openProjectLinkModal} className={`mt-4 ${teamsTheme.action}`}>
+                            <button
+                              type="button"
+                              onClick={openProjectLinkModal}
+                              className={`mt-4 ${teamsTheme.action}`}
+                            >
                               Add project
                             </button>
                           </div>
@@ -1315,14 +1400,22 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                   ) : activeTab === 'Milestones' ? (
                     <div>
                       <div className="flex items-center justify-between gap-3 border-b border-[color:var(--ledger-border-subtle)] px-4 py-3">
-                        <p className="text-sm font-medium text-[var(--ledger-text-primary)]">Team milestones</p>
-                        <button type="button" onClick={() => openAssignWorkForTeam(openedTeam.id)} className="text-xs font-medium text-[var(--ledger-text-muted)] hover:text-[var(--ledger-text-primary)]">
+                        <p className="text-sm font-medium text-[var(--ledger-text-primary)]">
+                          Team milestones
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => openAssignWorkForTeam(openedTeam.id)}
+                          className="text-xs font-medium text-[var(--ledger-text-muted)] hover:text-[var(--ledger-text-primary)]"
+                        >
                           + Assign milestone
                         </button>
                       </div>
                       <div className="border-b border-[color:var(--ledger-border-subtle)]">
                         <div className="px-4 py-2">
-                          <p className="text-xs font-medium text-[var(--ledger-text-muted)]">Assigned to this team</p>
+                          <p className="text-xs font-medium text-[var(--ledger-text-muted)]">
+                            Assigned to this team
+                          </p>
                         </div>
                         {assignedRows.filter((row) => row.kind === 'milestone').length > 0 ? (
                           assignedRows
@@ -1340,12 +1433,16 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                               </div>
                             ))
                         ) : (
-                          <p className="px-4 py-4 text-sm text-[var(--ledger-text-muted)]">No direct team milestones yet.</p>
+                          <p className="px-4 py-4 text-sm text-[var(--ledger-text-muted)]">
+                            No direct team milestones yet.
+                          </p>
                         )}
                       </div>
                       <div>
                         <div className="px-4 py-2">
-                          <p className="text-xs font-medium text-[var(--ledger-text-muted)]">From owned projects</p>
+                          <p className="text-xs font-medium text-[var(--ledger-text-muted)]">
+                            From owned projects
+                          </p>
                         </div>
                         {openedTeam.projectMilestones && openedTeam.projectMilestones.length > 0 ? (
                           openedTeam.projectMilestones.map((row) => (
@@ -1361,15 +1458,23 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                             </div>
                           ))
                         ) : (
-                          <p className="px-4 py-4 text-sm text-[var(--ledger-text-muted)]">No project milestones yet.</p>
+                          <p className="px-4 py-4 text-sm text-[var(--ledger-text-muted)]">
+                            No project milestones yet.
+                          </p>
                         )}
                       </div>
                     </div>
                   ) : activeTab === 'Notes' ? (
                     <div>
                       <div className="flex items-center justify-between gap-3 border-b border-[color:var(--ledger-border-subtle)] px-4 py-3">
-                        <p className="text-sm font-medium text-[var(--ledger-text-primary)]">Linked notes</p>
-                        <button type="button" onClick={openNoteLinkModal} className="text-xs font-medium text-[var(--ledger-text-muted)] hover:text-[var(--ledger-text-primary)]">
+                        <p className="text-sm font-medium text-[var(--ledger-text-primary)]">
+                          Linked notes
+                        </p>
+                        <button
+                          type="button"
+                          onClick={openNoteLinkModal}
+                          className="text-xs font-medium text-[var(--ledger-text-muted)] hover:text-[var(--ledger-text-primary)]"
+                        >
                           + Link note
                         </button>
                       </div>
@@ -1400,11 +1505,17 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                       ) : (
                         <div className="flex min-h-[220px] items-center justify-center px-4 py-10">
                           <div className="max-w-sm text-center">
-                            <p className="text-sm font-medium text-[var(--ledger-text-primary)]">No team notes yet.</p>
+                            <p className="text-sm font-medium text-[var(--ledger-text-primary)]">
+                              No team notes yet.
+                            </p>
                             <p className="mt-1 text-sm text-[var(--ledger-text-muted)]">
                               Link meeting notes, captures, or project context.
                             </p>
-                            <button type="button" onClick={openNoteLinkModal} className={`mt-4 ${teamsTheme.action}`}>
+                            <button
+                              type="button"
+                              onClick={openNoteLinkModal}
+                              className={`mt-4 ${teamsTheme.action}`}
+                            >
                               Link note
                             </button>
                           </div>
@@ -1414,7 +1525,9 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                   ) : activeTab === 'Members' ? (
                     <div>
                       <div className="flex items-center justify-between border-b border-[color:var(--ledger-border-subtle)] px-4 py-3">
-                        <p className="text-sm font-medium text-[var(--ledger-text-primary)]">Members</p>
+                        <p className="text-sm font-medium text-[var(--ledger-text-primary)]">
+                          Members
+                        </p>
                         <button
                           type="button"
                           onClick={() => setAddMemberTeamId(openedTeam.id)}
@@ -1431,7 +1544,9 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                           <MemberAvatar member={member} />
                           <div className="min-w-0 flex-1">
                             <p className={teamsTheme.title}>{member.name}</p>
-                            <p className={teamsTheme.meta}>{member.email ?? (member.role === 'lead' ? 'Lead' : 'Member')}</p>
+                            <p className={teamsTheme.meta}>
+                              {member.email ?? (member.role === 'lead' ? 'Lead' : 'Member')}
+                            </p>
                           </div>
                           <button
                             type="button"
@@ -1449,7 +1564,8 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                         {activeTab} will use team-owned work.
                       </p>
                       <p className="mt-1 text-sm text-[var(--ledger-text-muted)]">
-                        This tab is ready for the team assignment API when tasks, milestones, notes, and projects support team ownership.
+                        This tab is ready for the team assignment API when tasks, milestones, notes,
+                        and projects support team ownership.
                       </p>
                     </div>
                   )}
@@ -1472,7 +1588,9 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
         <form onSubmit={handleCreateTeam} className="space-y-4">
           <div>
             <h2 className="text-lg font-medium text-[var(--ledger-text-primary)]">New team</h2>
-            <p className="mt-1 text-sm text-[var(--ledger-text-muted)]">Create a group for shared ownership.</p>
+            <p className="mt-1 text-sm text-[var(--ledger-text-muted)]">
+              Create a group for shared ownership.
+            </p>
           </div>
           <label className="block space-y-1.5">
             <span className={teamsTheme.label}>Team name</span>
@@ -1511,7 +1629,9 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                   type="button"
                   onClick={() => setTeamColorDraft(color)}
                   className={`h-7 w-7 rounded-full border-2 ${
-                    teamColorDraft === color ? 'border-[var(--ledger-text-primary)]' : 'border-transparent'
+                    teamColorDraft === color
+                      ? 'border-[var(--ledger-text-primary)]'
+                      : 'border-transparent'
                   }`}
                   style={{ backgroundColor: color }}
                   aria-label={`Use ${color}`}
@@ -1520,10 +1640,18 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
             </div>
           </div>
           <div className="flex justify-end gap-2 pt-2">
-            <button type="button" onClick={() => setIsNewTeamOpen(false)} className={teamsTheme.action}>
+            <button
+              type="button"
+              onClick={() => setIsNewTeamOpen(false)}
+              className={teamsTheme.action}
+            >
               Cancel
             </button>
-            <button type="submit" disabled={!teamNameDraft.trim()} className={teamsTheme.primaryAction}>
+            <button
+              type="submit"
+              disabled={!teamNameDraft.trim()}
+              className={teamsTheme.primaryAction}
+            >
               Create team
             </button>
           </div>
@@ -1572,10 +1700,18 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
             </select>
           </label>
           <div className="flex justify-end gap-2 pt-2">
-            <button type="button" onClick={() => setIsInviteOpen(false)} className={teamsTheme.action}>
+            <button
+              type="button"
+              onClick={() => setIsInviteOpen(false)}
+              className={teamsTheme.action}
+            >
               Cancel
             </button>
-            <button type="submit" disabled={!inviteEmailDraft.trim()} className={teamsTheme.primaryAction}>
+            <button
+              type="submit"
+              disabled={!inviteEmailDraft.trim()}
+              className={teamsTheme.primaryAction}
+            >
               Send invite
             </button>
           </div>
@@ -1620,12 +1756,16 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                     <span className="block truncate text-sm font-medium text-[var(--ledger-text-primary)]">
                       {member.name}
                     </span>
-                    <span className="block truncate text-xs text-[var(--ledger-text-muted)]">{member.email}</span>
+                    <span className="block truncate text-xs text-[var(--ledger-text-muted)]">
+                      {member.email}
+                    </span>
                   </span>
                 </button>
               ))
             ) : (
-              <p className="px-2 py-4 text-sm text-[var(--ledger-text-muted)]">No available workspace members.</p>
+              <p className="px-2 py-4 text-sm text-[var(--ledger-text-muted)]">
+                No available workspace members.
+              </p>
             )}
           </div>
           <button
@@ -1688,7 +1828,9 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                 </button>
               ))
             ) : (
-              <div className="px-4 py-6 text-sm text-[var(--ledger-text-muted)]">No matching projects.</div>
+              <div className="px-4 py-6 text-sm text-[var(--ledger-text-muted)]">
+                No matching projects.
+              </div>
             )}
           </div>
           <div className="space-y-2">
@@ -1755,13 +1897,17 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                       {note.title}
                     </span>
                     <span className="block truncate text-xs text-[var(--ledger-text-muted)]">
-                      {note.updated_at ? `Updated ${formatShortDate(note.updated_at)}` : 'Workspace note'}
+                      {note.updated_at
+                        ? `Updated ${formatShortDate(note.updated_at)}`
+                        : 'Workspace note'}
                     </span>
                   </span>
                 </button>
               ))
             ) : (
-              <div className="px-4 py-6 text-sm text-[var(--ledger-text-muted)]">No matching notes.</div>
+              <div className="px-4 py-6 text-sm text-[var(--ledger-text-muted)]">
+                No matching notes.
+              </div>
             )}
           </div>
           <div className="space-y-2">
@@ -1806,10 +1952,18 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
               <div className="space-y-4 px-5 py-5">
                 <p className="text-sm text-[var(--ledger-text-secondary)]">{assignWorkSuccess}</p>
                 <div className="flex justify-end gap-2">
-                  <button type="button" onClick={resetAssignWorkComposer} className={teamsTheme.action}>
+                  <button
+                    type="button"
+                    onClick={resetAssignWorkComposer}
+                    className={teamsTheme.action}
+                  >
                     Assign another
                   </button>
-                  <button type="button" onClick={closeAssignWorkModal} className={teamsTheme.primaryAction}>
+                  <button
+                    type="button"
+                    onClick={closeAssignWorkModal}
+                    className={teamsTheme.primaryAction}
+                  >
                     Done
                   </button>
                 </div>
@@ -1854,13 +2008,23 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                               className="flex w-full items-start gap-3 border-b border-[color:var(--ledger-border-subtle)] px-4 py-3 text-left transition last:border-b-0 hover:bg-[var(--ledger-surface-hover)]"
                             >
                               {item.kind === 'task' ? (
-                                <Circle size={14} className="mt-0.5 text-[var(--ledger-text-muted)]" />
+                                <Circle
+                                  size={14}
+                                  className="mt-0.5 text-[var(--ledger-text-muted)]"
+                                />
                               ) : (
-                                <Diamond size={14} className="mt-0.5 text-[var(--ledger-text-muted)]" />
+                                <Diamond
+                                  size={14}
+                                  className="mt-0.5 text-[var(--ledger-text-muted)]"
+                                />
                               )}
                               <div className="min-w-0 flex-1">
-                                <p className="truncate text-sm font-medium text-[var(--ledger-text-primary)]">{item.title}</p>
-                                <p className="truncate text-xs text-[var(--ledger-text-muted)]">{item.detail}</p>
+                                <p className="truncate text-sm font-medium text-[var(--ledger-text-primary)]">
+                                  {item.title}
+                                </p>
+                                <p className="truncate text-xs text-[var(--ledger-text-muted)]">
+                                  {item.detail}
+                                </p>
                               </div>
                             </button>
                           ))
@@ -1873,7 +2037,9 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                       </div>
                     </div>
                     <div className="space-y-2">
-                      <p className="text-xs font-medium text-[var(--ledger-text-muted)]">Create new</p>
+                      <p className="text-xs font-medium text-[var(--ledger-text-muted)]">
+                        Create new
+                      </p>
                       <div className="flex gap-2">
                         <button
                           type="button"
@@ -1901,7 +2067,9 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                 ) : assignWorkMode === 'new-task' ? (
                   <form onSubmit={assignTask} className="space-y-3">
                     <div className="flex items-center justify-between">
-                      <p className="text-xs font-medium text-[var(--ledger-text-muted)]">New task</p>
+                      <p className="text-xs font-medium text-[var(--ledger-text-muted)]">
+                        New task
+                      </p>
                       <button
                         type="button"
                         onClick={() => setAssignWorkMode('search')}
@@ -1949,7 +2117,11 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                         <span className={teamsTheme.label}>Priority</span>
                         <select
                           value={taskComposerPriority}
-                          onChange={(event) => setTaskComposerPriority(event.target.value as typeof taskComposerPriority)}
+                          onChange={(event) =>
+                            setTaskComposerPriority(
+                              event.target.value as typeof taskComposerPriority
+                            )
+                          }
                           className={teamsTheme.modalInput}
                         >
                           <option value="low">Low</option>
@@ -1963,19 +2135,31 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                       <span className={teamsTheme.label}>Horizon</span>
                       <select
                         value={taskComposerHorizon}
-                        onChange={(event) => setTaskComposerHorizon(event.target.value as typeof taskComposerHorizon)}
+                        onChange={(event) =>
+                          setTaskComposerHorizon(event.target.value as typeof taskComposerHorizon)
+                        }
                         className={teamsTheme.modalInput}
                       >
                         <option value="long_term">Long term</option>
                         <option value="today">Today</option>
                       </select>
                     </label>
-                    {assignWorkError ? <p className="text-xs text-[color:#B42318]">{assignWorkError}</p> : null}
+                    {assignWorkError ? (
+                      <p className="text-xs text-[color:#B42318]">{assignWorkError}</p>
+                    ) : null}
                     <div className="flex justify-end gap-2 pt-2">
-                      <button type="button" onClick={closeAssignWorkModal} className={teamsTheme.action}>
+                      <button
+                        type="button"
+                        onClick={closeAssignWorkModal}
+                        className={teamsTheme.action}
+                      >
                         Cancel
                       </button>
-                      <button type="submit" disabled={!taskComposerTitle.trim()} className={teamsTheme.primaryAction}>
+                      <button
+                        type="submit"
+                        disabled={!taskComposerTitle.trim()}
+                        className={teamsTheme.primaryAction}
+                      >
                         Assign task
                       </button>
                     </div>
@@ -1983,7 +2167,9 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                 ) : (
                   <form onSubmit={assignMilestone} className="space-y-3">
                     <div className="flex items-center justify-between">
-                      <p className="text-xs font-medium text-[var(--ledger-text-muted)]">New milestone</p>
+                      <p className="text-xs font-medium text-[var(--ledger-text-muted)]">
+                        New milestone
+                      </p>
                       <button
                         type="button"
                         onClick={() => setAssignWorkMode('search')}
@@ -2037,14 +2223,24 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                         />
                       </label>
                     </div>
-                    {assignWorkError ? <p className="text-xs text-[color:#B42318]">{assignWorkError}</p> : null}
+                    {assignWorkError ? (
+                      <p className="text-xs text-[color:#B42318]">{assignWorkError}</p>
+                    ) : null}
                     <div className="flex justify-end gap-2 pt-2">
-                      <button type="button" onClick={closeAssignWorkModal} className={teamsTheme.action}>
+                      <button
+                        type="button"
+                        onClick={closeAssignWorkModal}
+                        className={teamsTheme.action}
+                      >
                         Cancel
                       </button>
                       <button
                         type="submit"
-                        disabled={!milestoneComposerTitle.trim() || !milestoneComposerProjectId.trim() || !milestoneComposerDate.trim()}
+                        disabled={
+                          !milestoneComposerTitle.trim() ||
+                          !milestoneComposerProjectId.trim() ||
+                          !milestoneComposerDate.trim()
+                        }
                         className={teamsTheme.primaryAction}
                       >
                         Assign milestone
@@ -2067,7 +2263,9 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
           }}
           onClick={(event) => event.stopPropagation()}
         >
-          <CompactButton onClick={() => setOpenedTeamId(contextMenu.teamId)}>Open team</CompactButton>
+          <CompactButton onClick={() => setOpenedTeamId(contextMenu.teamId)}>
+            Open team
+          </CompactButton>
           <CompactButton
             onClick={() => {
               void window.desktopWindow?.openModule('teams', {
@@ -2079,11 +2277,16 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
           >
             Team settings
           </CompactButton>
-          <CompactButton onClick={() => openInviteForTeam(contextMenu.teamId)}>Invite member</CompactButton>
+          <CompactButton onClick={() => openInviteForTeam(contextMenu.teamId)}>
+            Invite member
+          </CompactButton>
           <CompactButton
             onClick={() => {
               const team = teams.find((item) => item.id === contextMenu.teamId);
-              if (team) void navigator.clipboard?.writeText(`${window.location.origin}/teams/${team.id}`).catch(() => undefined);
+              if (team)
+                void navigator.clipboard
+                  ?.writeText(`${window.location.origin}/teams/${team.id}`)
+                  .catch(() => undefined);
               setContextMenu(null);
             }}
           >

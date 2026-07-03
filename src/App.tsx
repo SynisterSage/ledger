@@ -31,7 +31,15 @@ import {
 } from 'lucide-react';
 import { ToastProvider } from './components/Common/ToastProvider';
 import { NotificationMonitor } from './components/Common/NotificationMonitor';
-import { type CSSProperties, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  type CSSProperties,
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { createPortal } from 'react-dom';
 import { useAuthContext } from './context/AuthContext';
 import { useWorkspaceContext } from './context/WorkspaceContext';
@@ -62,12 +70,10 @@ import { SearchProvider } from './context/SearchContext';
 import { useSearch } from './context/SearchContext';
 import { QuickCaptureWindow } from './components/Common/QuickCaptureWindow';
 import { CreateNoteModal } from './components/Notes/CreateNoteModal';
-import {
-  saveSidebarPreferences,
-  type SidebarPosition,
-} from './config/sidebarPreferences';
+import { saveSidebarPreferences, type SidebarPosition } from './config/sidebarPreferences';
 import { useToast } from './components/Common/ToastProvider';
 import { getProjectTypeOption } from './utils/projectTypes';
+import { useWorkspaceRouteHistory } from './hooks/useWorkspaceRouteHistory';
 
 type PostAuthStage = 'idle' | 'loading' | 'onboarding' | 'ready';
 type OnboardingStep = 'welcome' | 'workspace' | 'position';
@@ -91,6 +97,7 @@ const windowParams = new URLSearchParams(window.location.search);
 const isModuleWindow = windowParams.get('window') === 'module';
 const moduleKind = (windowParams.get('module') as ModuleKind) ?? null;
 const moduleFocusContext = windowParams.get('focusContext')?.trim() ?? '';
+const moduleSection = windowParams.get('section')?.trim() ?? '';
 const dragRegionStyle = { WebkitAppRegion: 'drag' } as CSSProperties & { WebkitAppRegion: 'drag' };
 const noDragRegionStyle = { WebkitAppRegion: 'no-drag' } as CSSProperties & {
   WebkitAppRegion: 'no-drag';
@@ -110,7 +117,8 @@ const dashboardTheme = {
   sectionLabel: 'text-xs font-medium text-[var(--ledger-text-muted)]',
   sectionAction:
     'inline-flex items-center whitespace-nowrap text-xs font-medium text-[var(--ledger-text-secondary)] transition hover:text-[var(--ledger-text-primary)]',
-  queueLabel: 'text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--ledger-text-muted)]',
+  queueLabel:
+    'text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--ledger-text-muted)]',
   queuePrimary:
     'rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-4 py-4',
   queuePrimaryTitle: 'text-sm font-medium text-[var(--ledger-text-primary)]',
@@ -119,7 +127,8 @@ const dashboardTheme = {
   queueSecondaryLine: 'text-xs leading-5 text-[var(--ledger-text-muted)]',
   queueCta:
     'inline-flex items-center justify-center rounded-2xl bg-[var(--ledger-accent)] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[var(--ledger-accent-hover)]',
-  queueLink: 'text-xs font-medium text-[var(--ledger-text-secondary)] transition hover:text-[var(--ledger-text-primary)]',
+  queueLink:
+    'text-xs font-medium text-[var(--ledger-text-secondary)] transition hover:text-[var(--ledger-text-primary)]',
   sectionRow:
     'group flex w-full items-start justify-between gap-3 rounded-2xl border-b border-[color:var(--ledger-border-subtle)] px-3 py-3 text-left transition hover:bg-[var(--ledger-surface-hover)]',
   sectionRowCompact:
@@ -141,8 +150,7 @@ const dashboardTheme = {
   emptyBody: 'text-sm font-light text-[var(--ledger-text-muted)]',
   mutedBody: 'text-xs text-[var(--ledger-text-muted)]',
   body: 'text-sm text-[var(--ledger-text-secondary)]',
-  chip:
-    'whitespace-nowrap rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3 py-1.5 text-xs font-medium text-[var(--ledger-text-secondary)] transition hover:border-[color:var(--ledger-border-strong)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]',
+  chip: 'whitespace-nowrap rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3 py-1.5 text-xs font-medium text-[var(--ledger-text-secondary)] transition hover:border-[color:var(--ledger-border-strong)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]',
   chipSelected:
     'whitespace-nowrap rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-hover)] px-3 py-1.5 text-xs font-medium text-[var(--ledger-text-primary)]',
   actionLink:
@@ -221,21 +229,17 @@ const getInviteTokenFromInput = (value: string) => {
 const todayKey = () => new Date().toISOString().slice(0, 10);
 
 const DashboardSkeletonTaskItem = () => (
-  <div className="flex items-start gap-3 rounded-2xl border px-4 py-3 animate-pulse"
-    style={{ backgroundColor: dashboardSkeletonSurface, borderColor: dashboardSkeletonBorder }}>
+  <div
+    className="flex items-start gap-3 rounded-2xl border px-4 py-3 animate-pulse"
+    style={{ backgroundColor: dashboardSkeletonSurface, borderColor: dashboardSkeletonBorder }}
+  >
     <div
       className="mt-0.5 h-5 w-5 shrink-0 rounded-full"
       style={{ backgroundColor: dashboardSkeletonFill }}
     />
     <div className="flex-1 space-y-1.5">
-      <div
-        className="h-4 rounded w-3/4"
-        style={{ backgroundColor: dashboardSkeletonFill }}
-      />
-      <div
-        className="h-3 rounded w-1/2"
-        style={{ backgroundColor: dashboardSkeletonFill }}
-      />
+      <div className="h-4 rounded w-3/4" style={{ backgroundColor: dashboardSkeletonFill }} />
+      <div className="h-3 rounded w-1/2" style={{ backgroundColor: dashboardSkeletonFill }} />
     </div>
     <div
       className="mt-0.5 h-5 w-5 shrink-0 rounded"
@@ -254,14 +258,13 @@ const isUpcomingEventActive = (event: {
   return Number.isFinite(endAt) && endAt > Date.now();
 };
 
-const formatExpiryCounter = (task: {
-  due_date?: string | null;
-  due_time?: string | null;
-}) => {
+const formatExpiryCounter = (task: { due_date?: string | null; due_time?: string | null }) => {
   if (!task.due_date) return null;
 
   const dueAt = task.due_time
-    ? new Date(`${task.due_date}T${task.due_time.length === 5 ? `${task.due_time}:00` : task.due_time}`)
+    ? new Date(
+        `${task.due_date}T${task.due_time.length === 5 ? `${task.due_time}:00` : task.due_time}`
+      )
     : new Date(`${task.due_date}T23:59:59`);
 
   if (Number.isNaN(dueAt.getTime())) return null;
@@ -296,9 +299,7 @@ const loadCompletedFocusTasks = (): CompletedFocusTask[] => {
     const raw = window.localStorage.getItem(DASHBOARD_COMPLETED_FOCUS_STORAGE_KEY);
     if (!raw) return [];
 
-    const parsed = JSON.parse(raw) as
-      | { day?: string; items?: CompletedFocusTask[] | null }
-      | null;
+    const parsed = JSON.parse(raw) as { day?: string; items?: CompletedFocusTask[] | null } | null;
 
     if (parsed?.day !== todayKey()) return [];
     return Array.isArray(parsed.items) ? parsed.items : [];
@@ -327,8 +328,12 @@ function AuthStatusScreen({
       <div className="relative z-10 flex min-h-[calc(100vh-1.5rem)] w-full items-center justify-center rounded-3xl px-6 py-8">
         <div className="flex flex-col items-center text-center" style={noDragRegionStyle}>
           <img src="./logo-color.svg" alt="Ledger" className="h-11 w-11" />
-          <h2 className="mt-4 text-[22px] font-medium leading-tight text-[var(--ledger-text-primary)]">{title}</h2>
-          <p className="mt-1.5 max-w-[18rem] text-sm leading-6 text-[var(--ledger-text-muted)]">{subtitle}</p>
+          <h2 className="mt-4 text-[22px] font-medium leading-tight text-[var(--ledger-text-primary)]">
+            {title}
+          </h2>
+          <p className="mt-1.5 max-w-[18rem] text-sm leading-6 text-[var(--ledger-text-muted)]">
+            {subtitle}
+          </p>
           <Loader2 size={14} className="mt-4 animate-spin text-[var(--ledger-text-muted)]" />
         </div>
       </div>
@@ -492,11 +497,17 @@ function OnboardingFlow({
               </div>
 
               <div className="text-center md:text-left">
-                <img src="./logo-color.svg" alt="Ledger" className="mx-auto mb-6 h-11 w-11 md:mx-0" />
+                <img
+                  src="./logo-color.svg"
+                  alt="Ledger"
+                  className="mx-auto mb-6 h-11 w-11 md:mx-0"
+                />
                 <h1 className="text-[34px] font-semibold leading-tight text-[var(--ledger-text-primary)] sm:text-[40px]">
                   Welcome to Ledger
                 </h1>
-                <p className="mt-3 text-xl text-[var(--ledger-text-secondary)]">Your day, beside your work.</p>
+                <p className="mt-3 text-xl text-[var(--ledger-text-secondary)]">
+                  Your day, beside your work.
+                </p>
                 <p className="mt-4 max-w-sm text-sm leading-6 text-[var(--ledger-text-muted)] md:max-w-none">
                   Capture notes, tasks, events, and follow-ups without leaving your flow.
                 </p>
@@ -555,7 +566,9 @@ function OnboardingFlow({
                 onClick={() => onModeChange(mode === 'create' ? 'join' : 'create')}
                 className="mt-3 text-sm font-medium text-[var(--ledger-accent)] transition hover:text-[var(--ledger-accent-hover)]"
               >
-                {mode === 'create' ? 'Have an invite? Join a workspace' : 'Back to create a workspace'}
+                {mode === 'create'
+                  ? 'Have an invite? Join a workspace'
+                  : 'Back to create a workspace'}
               </button>
 
               {error ? (
@@ -573,7 +586,13 @@ function OnboardingFlow({
                 className="mt-7 inline-flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-[var(--ledger-accent)] px-5 text-sm font-semibold text-white shadow-[var(--ledger-shadow-accent)] transition hover:bg-[var(--ledger-accent-hover)] disabled:opacity-60"
               >
                 {isSaving ? <Loader2 size={17} className="animate-spin" /> : null}
-                {isSaving ? (mode === 'create' ? 'Creating...' : 'Joining...') : mode === 'create' ? 'Continue' : 'Join workspace'}
+                {isSaving
+                  ? mode === 'create'
+                    ? 'Creating...'
+                    : 'Joining...'
+                  : mode === 'create'
+                  ? 'Continue'
+                  : 'Join workspace'}
               </button>
             </div>
           ) : null}
@@ -677,7 +696,7 @@ function DashboardContent() {
   const { user } = useAuthContext();
   const { activeWorkspace, activeWorkspaceId } = useWorkspaceContext();
   const api = useApi();
-  const { setState } = useSidebar();
+  const { setState, workspaceShellLayout } = useSidebar();
   const toast = useToast();
 
   const [isLoadingDashboard, setIsLoadingDashboard] = useState(true);
@@ -840,9 +859,8 @@ function DashboardContent() {
   const [isOverviewCreateProjectOpen, setIsOverviewCreateProjectOpen] = useState(false);
   const [overviewProjectName, setOverviewProjectName] = useState('');
   const [overviewProjectDescription, setOverviewProjectDescription] = useState('');
-  const [overviewProjectType, setOverviewProjectType] = useState<(typeof overviewProjectTypeOptions)[number]['id']>(
-    'code'
-  );
+  const [overviewProjectType, setOverviewProjectType] =
+    useState<(typeof overviewProjectTypeOptions)[number]['id']>('code');
   const [overviewProjectLeadId, setOverviewProjectLeadId] = useState('');
   const [overviewProjectOwnerTeamId, setOverviewProjectOwnerTeamId] = useState('');
   const [overviewProjectTeams, setOverviewProjectTeams] = useState<
@@ -867,9 +885,9 @@ function DashboardContent() {
   const upcomingQuickTitleRef = useRef<HTMLInputElement | null>(null);
   const overviewProjectNameRef = useRef<HTMLInputElement | null>(null);
   const [expandedNoteIds, setExpandedNoteIds] = useState<Set<string>>(new Set());
-  const [calendarScope, setCalendarScope] = useState<'current_workspace' | 'all_accessible_workspaces'>(
-    'current_workspace'
-  );
+  const [calendarScope, setCalendarScope] = useState<
+    'current_workspace' | 'all_accessible_workspaces'
+  >('current_workspace');
   const autoExpireTodayTaskIdsRef = useRef<Set<string>>(new Set());
   const workspaceMemberById = useMemo(
     () => new Map(workspaceMembers.map((member) => [member.user_id, member])),
@@ -932,7 +950,11 @@ function DashboardContent() {
       }
     | null
   >(null);
-  const [overviewTab, setOverviewTab] = useState<'all' | 'assigned' | 'today' | 'projects' | 'notes'>('all');
+  const [overviewTab, setOverviewTab] = useState<'all' | 'assigned' | 'today' | 'projects' | 'notes'>(
+    ['all', 'assigned', 'today', 'projects', 'notes'].includes(moduleSection)
+      ? (moduleSection as 'all' | 'assigned' | 'today' | 'projects' | 'notes')
+      : 'all'
+  );
   const [overviewLayout, setOverviewLayout] = useState<'list' | 'compact'>('list');
   const [isOverviewFilterOpen, setIsOverviewFilterOpen] = useState(false);
   const [isOverviewDisplayOpen, setIsOverviewDisplayOpen] = useState(false);
@@ -1010,7 +1032,14 @@ function DashboardContent() {
     );
   };
 
-  const sortNewestFirst = <T extends { created_at?: string | null; updated_at?: string | null; start_at?: string | null; due_date?: string | null }>(
+  const sortNewestFirst = <
+    T extends {
+      created_at?: string | null;
+      updated_at?: string | null;
+      start_at?: string | null;
+      due_date?: string | null;
+    }
+  >(
     items: T[]
   ) =>
     [...items].sort(
@@ -1043,9 +1072,16 @@ function DashboardContent() {
         if (cancelled) return;
         const teams = Array.isArray(payload)
           ? payload
-          : Array.isArray((payload as { teams?: Array<{ id: string; name: string; identifier?: string | null }> | null } | null)?.teams)
-            ? ((payload as { teams: Array<{ id: string; name: string; identifier?: string | null }> }).teams ?? [])
-            : [];
+          : Array.isArray(
+              (
+                payload as {
+                  teams?: Array<{ id: string; name: string; identifier?: string | null }> | null;
+                } | null
+              )?.teams
+            )
+          ? (payload as { teams: Array<{ id: string; name: string; identifier?: string | null }> })
+              .teams ?? []
+          : [];
         setOverviewProjectTeams(
           teams
             .map((team) => ({
@@ -1207,13 +1243,11 @@ function DashboardContent() {
     const loadCalendarSettings = async () => {
       try {
         const payload = (await api.getUserSettings()) as {
-          preferences?:
-            | {
-                calendarScope?: 'current_workspace' | 'all_accessible_workspaces';
-                showTrayIcon?: boolean;
-                runInBackground?: boolean;
-              }
-            | null;
+          preferences?: {
+            calendarScope?: 'current_workspace' | 'all_accessible_workspaces';
+            showTrayIcon?: boolean;
+            runInBackground?: boolean;
+          } | null;
         };
         if (cancelled) return;
         setCalendarScope(
@@ -1270,7 +1304,10 @@ function DashboardContent() {
     };
 
     void loadNotificationSummary();
-    window.addEventListener('ledger:notifications-summary', handleNotificationsSummary as EventListener);
+    window.addEventListener(
+      'ledger:notifications-summary',
+      handleNotificationsSummary as EventListener
+    );
 
     return () => {
       cancelled = true;
@@ -1312,21 +1349,21 @@ function DashboardContent() {
       hasLoadedDashboardRef.current = false;
       setIsLoadingDashboard(false);
       setDashboardError(null);
-        setDaily({
-          focusItems: [],
-          finished: '',
-          blocked: '',
-          firstTaskTomorrow: '',
-        });
-        setProjects([]);
-        setUpcoming([]);
-        setNotes([]);
-        optimisticNotesRef.current = [];
-        setWorkspaceTeams([]);
-        setFollowUpTasks([]);
-        setWorkspaceTasks([]);
-        return;
-      }
+      setDaily({
+        focusItems: [],
+        finished: '',
+        blocked: '',
+        firstTaskTomorrow: '',
+      });
+      setProjects([]);
+      setUpcoming([]);
+      setNotes([]);
+      optimisticNotesRef.current = [];
+      setWorkspaceTeams([]);
+      setFollowUpTasks([]);
+      setWorkspaceTasks([]);
+      return;
+    }
 
     let cancelled = false;
 
@@ -1339,17 +1376,25 @@ function DashboardContent() {
           setDashboardError(null);
         }
 
-        const [dailyData, todayData, projectData, upcomingData, noteData, taskData, projectNoteLinksData, teamsData] =
-          await Promise.allSettled([
-            api.getDailyAccountability(),
-            api.getToday(),
-            api.getProjects(),
-            api.getUpcomingEvents({ scope: calendarScope }),
-            api.getNotes(),
-            api.getTasks(),
-            api.getWorkspaceProjectNoteLinks(activeWorkspaceId),
-            api.getTeams(),
-          ]);
+        const [
+          dailyData,
+          todayData,
+          projectData,
+          upcomingData,
+          noteData,
+          taskData,
+          projectNoteLinksData,
+          teamsData,
+        ] = await Promise.allSettled([
+          api.getDailyAccountability(),
+          api.getToday(),
+          api.getProjects(),
+          api.getUpcomingEvents({ scope: calendarScope }),
+          api.getNotes(),
+          api.getTasks(),
+          api.getWorkspaceProjectNoteLinks(activeWorkspaceId),
+          api.getTeams(),
+        ]);
 
         if (cancelled) return;
 
@@ -1466,9 +1511,23 @@ function DashboardContent() {
                   name: string;
                   identifier?: string | null;
                 }>)
-              : Array.isArray((teamsData.value as { teams?: Array<{ id: string; name: string; identifier?: string | null }> | null } | null)?.teams)
-                ? ((teamsData.value as { teams: Array<{ id: string; name: string; identifier?: string | null }> }).teams ?? [])
-                : []
+              : Array.isArray(
+                  (
+                    teamsData.value as {
+                      teams?: Array<{
+                        id: string;
+                        name: string;
+                        identifier?: string | null;
+                      }> | null;
+                    } | null
+                  )?.teams
+                )
+              ? (
+                  teamsData.value as {
+                    teams: Array<{ id: string; name: string; identifier?: string | null }>;
+                  }
+                ).teams ?? []
+              : []
             : [];
         setWorkspaceTeams(
           normalizedTeams
@@ -1589,10 +1648,7 @@ function DashboardContent() {
               : '';
             const noteText = String(task.notes ?? '');
             const noteTitle = noteText.startsWith('Follow-up from calendar: ')
-              ? noteText
-                  .slice('Follow-up from calendar: '.length)
-                  .split(/\r?\n/, 1)[0]
-                  .trim()
+              ? noteText.slice('Follow-up from calendar: '.length).split(/\r?\n/, 1)[0].trim()
               : '';
             const fallbackTitle = String(task.title ?? '')
               .replace(/^Follow\s*-?\s*up:\s*/i, '')
@@ -1906,9 +1962,8 @@ function DashboardContent() {
     const title = overviewTaskTitle.trim();
     if (!title || isSavingOverviewTask) return;
 
-    const { assigned_to_user_id, assigned_to_team_id } = parseAssignmentValue(
-      overviewTaskAssigneeValue
-    );
+    const { assigned_to_user_id, assigned_to_team_id } =
+      parseAssignmentValue(overviewTaskAssigneeValue);
     const dueDate = overviewTaskMode === 'long_term' ? overviewTaskDueDate.trim() || null : null;
     const showInToday = overviewTaskMode !== 'long_term';
     const isTodayFocus = overviewTaskMode === 'focus';
@@ -2011,8 +2066,15 @@ function DashboardContent() {
         if (cancelled) return;
         const calendars = Array.isArray(payload)
           ? payload
-          : Array.isArray((payload as { calendars?: Array<{ id: string; name: string; color?: string | null }> | null } | null)?.calendars)
-          ? ((payload as { calendars: Array<{ id: string; name: string; color?: string | null }> }).calendars ?? [])
+          : Array.isArray(
+              (
+                payload as {
+                  calendars?: Array<{ id: string; name: string; color?: string | null }> | null;
+                } | null
+              )?.calendars
+            )
+          ? (payload as { calendars: Array<{ id: string; name: string; color?: string | null }> })
+              .calendars ?? []
           : [];
         const normalizedCalendars = calendars
           .map((calendar) => ({
@@ -2052,8 +2114,15 @@ function DashboardContent() {
         if (cancelled) return;
         const teams = Array.isArray(payload)
           ? payload
-          : Array.isArray((payload as { teams?: Array<{ id: string; name: string; identifier?: string | null }> | null } | null)?.teams)
-          ? ((payload as { teams: Array<{ id: string; name: string; identifier?: string | null }> }).teams ?? [])
+          : Array.isArray(
+              (
+                payload as {
+                  teams?: Array<{ id: string; name: string; identifier?: string | null }> | null;
+                } | null
+              )?.teams
+            )
+          ? (payload as { teams: Array<{ id: string; name: string; identifier?: string | null }> })
+              .teams ?? []
           : [];
         const normalizedTeams = teams
           .map((team) => ({
@@ -2128,7 +2197,7 @@ function DashboardContent() {
         const createdReminders = Array.isArray(
           (createdReminderResponse as { created?: Array<{ id: string }> })?.created
         )
-          ? ((createdReminderResponse as { created: Array<{ id: string }> }).created ?? [])
+          ? (createdReminderResponse as { created: Array<{ id: string }> }).created ?? []
           : createdReminderResponse
           ? [createdReminderResponse as { id?: string }]
           : [];
@@ -2155,13 +2224,39 @@ function DashboardContent() {
           notes: upcomingQuickNotes.trim() || null,
         })) as
           | { id: string; title: string; start_at: string; end_at: string; color?: string | null }
-          | { created?: Array<{ id: string; title: string; start_at: string; end_at: string; color?: string | null }> }
+          | {
+              created?: Array<{
+                id: string;
+                title: string;
+                start_at: string;
+                end_at: string;
+                color?: string | null;
+              }>;
+            }
           | null;
 
         const createdEvents = Array.isArray((createdEvent as { created?: unknown[] })?.created)
-          ? ((createdEvent as { created: Array<{ id: string; title: string; start_at: string; end_at: string; color?: string | null }> }).created ?? [])
+          ? (
+              createdEvent as {
+                created: Array<{
+                  id: string;
+                  title: string;
+                  start_at: string;
+                  end_at: string;
+                  color?: string | null;
+                }>;
+              }
+            ).created ?? []
           : createdEvent
-          ? [createdEvent as { id: string; title: string; start_at: string; end_at: string; color?: string | null }]
+          ? [
+              createdEvent as {
+                id: string;
+                title: string;
+                start_at: string;
+                end_at: string;
+                color?: string | null;
+              },
+            ]
           : [];
 
         const created = createdEvents[0];
@@ -2226,7 +2321,6 @@ function DashboardContent() {
         };
       }
     ) => {
-
       if (detail?.source !== 'sidebar') return;
       if (!detail.task?.id || !detail.task?.title) return;
       const clientId = detail.client_id ?? null;
@@ -2327,15 +2421,16 @@ function DashboardContent() {
         setTodayTasks((prev) => [
           restoredTask,
           ...prev.filter(
-            (item) =>
-              item.id !== restoredTask.id && (clientId ? item.client_id !== clientId : true)
+            (item) => item.id !== restoredTask.id && (clientId ? item.client_id !== clientId : true)
           ),
         ]);
         return;
       }
 
       setTodayTasks((prev) =>
-        prev.filter((item) => item.id !== detail.task?.id && (clientId ? item.client_id !== clientId : true))
+        prev.filter(
+          (item) => item.id !== detail.task?.id && (clientId ? item.client_id !== clientId : true)
+        )
       );
     };
 
@@ -2380,7 +2475,14 @@ function DashboardContent() {
     remind_at?: string | null;
   };
 
-  type OverviewActionRowKind = 'task' | 'reminder' | 'project' | 'note' | 'event' | 'milestone' | 'capture';
+  type OverviewActionRowKind =
+    | 'task'
+    | 'reminder'
+    | 'project'
+    | 'note'
+    | 'event'
+    | 'milestone'
+    | 'capture';
 
   const findOverviewTaskTarget = (taskId: string): OverviewTaskTarget | null => {
     const todayTask = todayTasks.find((task) => task.id === taskId);
@@ -2596,7 +2698,10 @@ function DashboardContent() {
     }
   };
 
-  const moveOverviewRowToLongTerm = async (row: { kind: OverviewActionRowKind; sourceId: string }) => {
+  const moveOverviewRowToLongTerm = async (row: {
+    kind: OverviewActionRowKind;
+    sourceId: string;
+  }) => {
     if (row.kind !== 'task' && row.kind !== 'reminder') return;
     const target = findOverviewTaskTarget(row.sourceId);
     if (!target) return;
@@ -2914,10 +3019,7 @@ function DashboardContent() {
   };
 
   const getMemberInitials = (name: string) => {
-    const parts = name
-      .trim()
-      .split(/\s+/)
-      .filter(Boolean);
+    const parts = name.trim().split(/\s+/).filter(Boolean);
     if (parts.length === 0) return '?';
     if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
     return `${parts[0][0] ?? ''}${parts[1][0] ?? ''}`.toUpperCase();
@@ -2956,8 +3058,8 @@ function DashboardContent() {
     const assignedMember = task.assigned_to
       ? workspaceMemberById.get(task.assigned_to) ?? null
       : task.assigned_to_user_id
-        ? workspaceMemberById.get(task.assigned_to_user_id) ?? null
-        : null;
+      ? workspaceMemberById.get(task.assigned_to_user_id) ?? null
+      : null;
     const assigneeName = assignedMember?.full_name?.trim() || assignedMember?.email?.trim() || '';
     const teamName = teamId ? workspaceTeamById.get(teamId)?.name?.trim() || '' : '';
     const assignmentLabel = teamId
@@ -2965,14 +3067,17 @@ function DashboardContent() {
         ? `Team ${teamName}`
         : 'Team'
       : assigneeName
-        ? `Assigned to ${assigneeName}`
-        : '';
+      ? `Assigned to ${assigneeName}`
+      : '';
     return {
       id: `${group}:${task.id}`,
       sourceId: task.id,
       kind: isReminder ? 'reminder' : 'task',
       title: task.title,
-      meta: [task.project_name || task.workspace_name || activeWorkspace?.name || 'Workspace', dueLabel ? `Due ${dueLabel}` : timeLabel]
+      meta: [
+        task.project_name || task.workspace_name || activeWorkspace?.name || 'Workspace',
+        dueLabel ? `Due ${dueLabel}` : timeLabel,
+      ]
         .filter(Boolean)
         .join(' · '),
       chips:
@@ -2982,22 +3087,24 @@ function DashboardContent() {
               isReminder
                 ? 'Reminder'
                 : task.is_today_focus
-                  ? 'Focus'
-                  : task.task_horizon === 'long_term'
-                    ? 'Long-term'
-                    : 'Short-term',
+                ? 'Focus'
+                : task.task_horizon === 'long_term'
+                ? 'Long-term'
+                : 'Short-term',
             ],
       dateLabel: timeLabel || dueLabel || undefined,
       group,
-      icon: isReminder
-        ? <Bell size={13} />
-        : group === 'Today'
-          ? <Zap size={13} />
-          : group === 'Long-term tasks'
-            ? <MapIcon size={13} />
-            : group === 'Needs attention'
-              ? <CircleAlert size={13} />
-              : <Circle size={13} />,
+      icon: isReminder ? (
+        <Bell size={13} />
+      ) : group === 'Today' ? (
+        <Zap size={13} />
+      ) : group === 'Long-term tasks' ? (
+        <MapIcon size={13} />
+      ) : group === 'Needs attention' ? (
+        <CircleAlert size={13} />
+      ) : (
+        <Circle size={13} />
+      ),
       accent: isReminder ? 'var(--ledger-accent)' : undefined,
       assignee: assigneeName
         ? {
@@ -3029,7 +3136,10 @@ function DashboardContent() {
         dueLabel ? `Due ${dueLabel}` : 'No due date',
       ].join(' · '),
       chips: progress >= 90 ? ['Near done'] : ['Project'],
-      contextLabel: [ownerTeamName ? `Team ${ownerTeamName}` : null, leadName ? `Lead ${leadName}` : null]
+      contextLabel: [
+        ownerTeamName ? `Team ${ownerTeamName}` : null,
+        leadName ? `Lead ${leadName}` : null,
+      ]
         .filter(Boolean)
         .join(' · '),
       ownerTeam: ownerTeamName ? { name: ownerTeamName } : undefined,
@@ -3050,19 +3160,22 @@ function DashboardContent() {
   const longTermTaskRows = workspaceTasks
     .filter((task) => task.task_horizon === 'long_term')
     .slice(0, 8)
-    .map<OverviewRow>((task) => buildTaskRow(task as (typeof todayTasks)[number], 'Long-term tasks', ['Long-term']));
+    .map<OverviewRow>((task) =>
+      buildTaskRow(task as (typeof todayTasks)[number], 'Long-term tasks', ['Long-term'])
+    );
 
   const noteRows = recentNotes.slice(0, 6).map<OverviewRow>((note) => ({
     id: `Recent notes:${note.id}`,
     sourceId: note.id,
     kind: 'note',
     title: note.title || 'Untitled note',
-    meta: [activeWorkspace?.name || 'Workspace', `${formatShortDate(note.updated_at) ?? 'Recently'}`]
+    meta: [
+      activeWorkspace?.name || 'Workspace',
+      `${formatShortDate(note.updated_at) ?? 'Recently'}`,
+    ]
       .filter(Boolean)
       .join(' · '),
-    chips: noteProjectNamesById.get(note.id)?.length
-      ? ['Linked note']
-      : ['Regular note'],
+    chips: noteProjectNamesById.get(note.id)?.length ? ['Linked note'] : ['Regular note'],
     contextLabel: noteProjectNamesById.get(note.id)?.length
       ? `Linked to ${noteProjectNamesById.get(note.id)?.[0]}`
       : undefined,
@@ -3083,7 +3196,11 @@ function DashboardContent() {
       sourceId: event.id,
       kind: 'event',
       title: event.title,
-      meta: ['Event', timeLabel, calendarScope === 'all_accessible_workspaces' ? event.workspace_name : null]
+      meta: [
+        'Event',
+        timeLabel,
+        calendarScope === 'all_accessible_workspaces' ? event.workspace_name : null,
+      ]
         .filter(Boolean)
         .join(' · '),
       chips: [isToday ? 'Today' : 'Upcoming'],
@@ -3106,7 +3223,11 @@ function DashboardContent() {
       sourceId: task.id,
       kind: 'task',
       title: task.title,
-      meta: [task.eventTitle || 'Meeting follow-up', 'Action', formatShortDate(task.updated_at) ?? 'Recent']
+      meta: [
+        task.eventTitle || 'Meeting follow-up',
+        'Action',
+        formatShortDate(task.updated_at) ?? 'Recent',
+      ]
         .filter(Boolean)
         .join(' · '),
       chips: ['Follow-up'],
@@ -3197,14 +3318,14 @@ function DashboardContent() {
     ? selectedOverviewRow.kind === 'task'
       ? 'Action'
       : selectedOverviewRow.kind === 'project'
-        ? 'Project'
-        : selectedOverviewRow.kind === 'note'
-          ? 'Note'
-          : selectedOverviewRow.kind === 'event'
-            ? 'Event'
-            : selectedOverviewRow.kind === 'reminder'
-              ? 'Reminder'
-              : selectedOverviewRow.kind
+      ? 'Project'
+      : selectedOverviewRow.kind === 'note'
+      ? 'Note'
+      : selectedOverviewRow.kind === 'event'
+      ? 'Event'
+      : selectedOverviewRow.kind === 'reminder'
+      ? 'Reminder'
+      : selectedOverviewRow.kind
     : '';
 
   const overviewDetailSections = selectedOverviewRow
@@ -3213,7 +3334,10 @@ function DashboardContent() {
           title: 'Details',
           rows: [
             ['Type', selectedOverviewTypeLabel],
-            ['Status', selectedOverviewRow.kind === 'note' ? 'Recent note' : selectedOverviewRow.group],
+            [
+              'Status',
+              selectedOverviewRow.kind === 'note' ? 'Recent note' : selectedOverviewRow.group,
+            ],
             ['Workspace', activeWorkspace?.name ?? 'Workspace'],
             ['Date', selectedOverviewRow.dateLabel ?? 'Not set'],
           ],
@@ -3222,8 +3346,13 @@ function DashboardContent() {
           title: selectedOverviewRow.kind === 'project' ? 'Project context' : 'Linked context',
           rows:
             selectedOverviewRow.kind === 'project'
-            ? [
-                  ['Progress', typeof selectedOverviewRow.progress === 'number' ? `${selectedOverviewRow.progress}%` : 'Not set'],
+              ? [
+                  [
+                    'Progress',
+                    typeof selectedOverviewRow.progress === 'number'
+                      ? `${selectedOverviewRow.progress}%`
+                      : 'Not set',
+                  ],
                   ['Team', selectedOverviewRow.ownerTeam?.name || 'None'],
                   ['Lead', selectedOverviewRow.leadName || 'None'],
                   ['Active actions', selectedOverviewRow.chips.includes('Near done') ? '2' : '0'],
@@ -3231,17 +3360,17 @@ function DashboardContent() {
                   ['Recent notes', '0'],
                 ]
               : selectedOverviewRow.kind === 'task' || selectedOverviewRow.kind === 'reminder'
-                ? [
+              ? [
                   ['Project', selectedOverviewRow.meta.split(' · ')[0] || 'None'],
                   ['Priority', selectedOverviewRow.chips.includes('Focus') ? 'Focus' : 'None'],
                   ['Assignment', selectedOverviewRow.contextLabel || 'Unassigned'],
                 ]
-                : selectedOverviewRow.kind === 'note'
-                  ? [
-                      ['Actions', '0'],
-                      ['Milestones', '0'],
-                    ]
-                : [
+              : selectedOverviewRow.kind === 'note'
+              ? [
+                  ['Actions', '0'],
+                  ['Milestones', '0'],
+                ]
+              : [
                   ['Project', 'None'],
                   ['Actions', '0'],
                   ['Milestones', '0'],
@@ -3257,7 +3386,12 @@ function DashboardContent() {
   const selectedOverviewQuickActions = selectedOverviewRow
     ? [
         {
-          label: selectedOverviewRow.kind === 'project' ? 'Open project' : selectedOverviewRow.kind === 'note' ? 'Open note' : 'Open',
+          label:
+            selectedOverviewRow.kind === 'project'
+              ? 'Open project'
+              : selectedOverviewRow.kind === 'note'
+              ? 'Open note'
+              : 'Open',
           icon: <ArrowRight size={13} />,
           action: openSelectedOverviewRow,
           disabled: false,
@@ -3292,36 +3426,36 @@ function DashboardContent() {
               },
             ]
           : selectedOverviewRow.kind === 'project'
-            ? [
-                {
-                  label: 'Add action',
-                  icon: <Plus size={13} />,
-                  action: () => window.desktopWindow?.toggleModule('quick-task' as any),
-                  disabled: false,
-                },
-                {
-                  label: 'Add milestone',
-                  icon: <Plus size={13} />,
-                  action: () => undefined,
-                  disabled: true,
-                },
-              ]
-              : selectedOverviewRow.kind === 'note'
-              ? [
-                  {
-                    label: 'Create action',
-                    icon: <Plus size={13} />,
-                    action: () => window.desktopWindow?.toggleModule('quick-task' as any),
-                    disabled: false,
-                  },
-                  {
-                    label: 'Link to project',
-                    icon: <Folder size={13} />,
-                    action: () => openOverviewLinkProjectModal(selectedOverviewRow.sourceId),
-                    disabled: false,
-                  },
-                ]
-              : []),
+          ? [
+              {
+                label: 'Add action',
+                icon: <Plus size={13} />,
+                action: () => window.desktopWindow?.toggleModule('quick-task' as any),
+                disabled: false,
+              },
+              {
+                label: 'Add milestone',
+                icon: <Plus size={13} />,
+                action: () => undefined,
+                disabled: true,
+              },
+            ]
+          : selectedOverviewRow.kind === 'note'
+          ? [
+              {
+                label: 'Create action',
+                icon: <Plus size={13} />,
+                action: () => window.desktopWindow?.toggleModule('quick-task' as any),
+                disabled: false,
+              },
+              {
+                label: 'Link to project',
+                icon: <Folder size={13} />,
+                action: () => openOverviewLinkProjectModal(selectedOverviewRow.sourceId),
+                disabled: false,
+              },
+            ]
+          : []),
         {
           label: 'Clear selection',
           icon: <X size={13} />,
@@ -3339,6 +3473,13 @@ function DashboardContent() {
       return next;
     });
   };
+
+  useWorkspaceRouteHistory(
+    isModuleWindow && moduleKind === 'dashboard'
+      ? { kind: 'dashboard', focusSection: overviewTab }
+      : null,
+    Boolean(isModuleWindow && moduleKind === 'dashboard')
+  );
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -3372,8 +3513,8 @@ function DashboardContent() {
         event.key === 'ArrowDown'
           ? Math.min(rows.length - 1, currentIndex + 1)
           : currentIndex < 0
-            ? rows.length - 1
-            : Math.max(0, currentIndex - 1);
+          ? rows.length - 1
+          : Math.max(0, currentIndex - 1);
       setSelectedOverviewRowId(rows[nextIndex]?.id ?? null);
     };
 
@@ -3401,7 +3542,10 @@ function DashboardContent() {
     void window.desktopWindow?.closeModule('dashboard');
   };
   return (
-    <div className={dashboardTheme.shell} style={{ scrollbarGutter: 'auto' }}>
+    <div
+      className={dashboardTheme.shell}
+      style={{ scrollbarGutter: 'auto', ...workspaceShellLayout.workspaceShellStyle }}
+    >
       <CloseGuardModal
         isOpen={showCloseGuardModal}
         isSaving={isSavingOverviewTask}
@@ -3431,14 +3575,8 @@ function DashboardContent() {
         }}
       />
       <ModuleWindowHeader
-        title={activeWorkspace?.name ?? 'My Work'}
-        subtitle={
-          activeWorkspace
-            ? activeWorkspace.is_personal
-              ? 'Personal workspace'
-              : activeWorkspace.role
-            : 'Workspace overview'
-        }
+        title="Workspace overview"
+        stripTitle="Workspace overview"
         icon={<img src="./logo-color.svg" alt="" className="h-5 w-5" />}
         globalActions={
           <>
@@ -3486,6 +3624,7 @@ function DashboardContent() {
                 key={label}
                 onClick={() => void action()}
                 title={`Create ${label.toLowerCase()}`}
+                variant="strip"
               >
                 <Plus size={12} />
                 {label}
@@ -3504,22 +3643,20 @@ function DashboardContent() {
         }}
         onClose={attemptCloseDashboard}
         compact
+        showBodyHeader={false}
       />
 
       <div
-        className={`flex-1 min-h-0 overflow-auto ${dashboardTheme.content} px-6 py-8`}
+        className={`flex-1 min-h-0 overflow-auto ${dashboardTheme.content} px-4 py-4 lg:px-5 lg:py-5`}
         style={{ scrollbarGutter: 'auto' }}
       >
-        <div className="flex h-full min-h-[720px] w-full flex-col rounded-[18px] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-[0_18px_44px_rgba(66,42,24,0.06)]">
-          <header className="flex flex-col gap-3 border-b border-[color:var(--ledger-border-subtle)] px-5 py-3.5 lg:flex-row lg:items-end lg:justify-between">
-            <div className="min-w-0 space-y-1">
-              <p className="text-[12px] font-medium text-[var(--ledger-text-muted)]">
-                {activeWorkspace?.name ?? 'Workspace'} › Overview
-              </p>
-              <h2 className="text-[24px] font-semibold text-[var(--ledger-text-primary)]">
+        <div className="flex h-full min-h-[680px] w-full flex-col rounded-[18px] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-[0_18px_44px_rgba(66,42,24,0.06)]">
+          <header className="flex flex-col gap-3 border-b border-[color:var(--ledger-border-subtle)] px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="min-w-0">
+              <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-[var(--ledger-text-muted)]">
                 Workspace overview
-              </h2>
-              <p className="text-[13px] text-[var(--ledger-text-muted)]">
+              </p>
+              <p className="mt-1 text-[13px] text-[var(--ledger-text-muted)]">
                 Everything happening across {activeWorkspace?.name ?? 'this workspace'}.
               </p>
             </div>
@@ -3533,18 +3670,18 @@ function DashboardContent() {
                   ['projects', 'Projects'],
                   ['notes', 'Notes'],
                 ].map(([id, label]) => (
-                  <button
-                    key={id}
-                    type="button"
-                    onClick={() => setOverviewTab(id as typeof overviewTab)}
-                    className={`rounded-full px-2.5 py-1 text-[12px] font-medium transition ${
-                      overviewTab === id
-                        ? 'bg-[var(--ledger-surface-card)] text-[var(--ledger-text-primary)] shadow-sm'
-                        : 'text-[var(--ledger-text-muted)] hover:text-[var(--ledger-text-primary)]'
-                    }`}
-                  >
-                    {label}
-                  </button>
+                      <button
+                        key={id}
+                        type="button"
+                        onClick={() => setOverviewTab(id as typeof overviewTab)}
+                        className={`rounded-full px-2.5 py-1 text-[12px] font-medium transition ${
+                          overviewTab === id
+                            ? 'bg-[var(--ledger-surface-card)] text-[var(--ledger-text-primary)] shadow-sm'
+                            : 'text-[var(--ledger-text-muted)] hover:text-[var(--ledger-text-primary)]'
+                        }`}
+                      >
+                        {label}
+                      </button>
                 ))}
               </div>
 
@@ -3562,18 +3699,25 @@ function DashboardContent() {
                 </button>
                 {isOverviewFilterOpen && (
                   <div className="absolute right-0 z-30 mt-2 w-56 rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-2 shadow-[var(--ledger-shadow)]">
-                    {['Type', 'Status', 'Project', 'Due date', 'Assignee', 'Priority', 'Workspace', 'Completed'].map(
-                      (item) => (
-                        <button
-                          key={item}
-                          type="button"
-                          className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-[13px] text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
-                        >
-                          {item}
-                          <ChevronRight size={13} className="text-[var(--ledger-text-muted)]" />
-                        </button>
-                      )
-                    )}
+                    {[
+                      'Type',
+                      'Status',
+                      'Project',
+                      'Due date',
+                      'Assignee',
+                      'Priority',
+                      'Workspace',
+                      'Completed',
+                    ].map((item) => (
+                      <button
+                        key={item}
+                        type="button"
+                        className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-[13px] text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+                      >
+                        {item}
+                        <ChevronRight size={13} className="text-[var(--ledger-text-muted)]" />
+                      </button>
+                    ))}
                   </div>
                 )}
               </div>
@@ -3592,7 +3736,9 @@ function DashboardContent() {
                 </button>
                 {isOverviewDisplayOpen && (
                   <div className="absolute right-0 z-30 mt-2 w-72 rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-2 shadow-[var(--ledger-shadow)]">
-                    <p className="px-3 py-1.5 text-[11px] font-medium text-[var(--ledger-text-muted)]">Layout</p>
+                    <p className="px-3 py-1.5 text-[11px] font-medium text-[var(--ledger-text-muted)]">
+                      Layout
+                    </p>
                     {['List', 'Compact list'].map((item) => (
                       <button
                         key={item}
@@ -3601,11 +3747,15 @@ function DashboardContent() {
                         className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-[13px] text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
                       >
                         {item}
-                        {overviewLayout === (item === 'List' ? 'list' : 'compact') && <CheckCircle2 size={13} />}
+                        {overviewLayout === (item === 'List' ? 'list' : 'compact') && (
+                          <CheckCircle2 size={13} />
+                        )}
                       </button>
                     ))}
                     <div className="my-1 h-px bg-[var(--ledger-border-subtle)]" />
-                    <p className="px-3 py-1.5 text-[11px] font-medium text-[var(--ledger-text-muted)]">Group by</p>
+                    <p className="px-3 py-1.5 text-[11px] font-medium text-[var(--ledger-text-muted)]">
+                      Group by
+                    </p>
                     {['None', 'Status', 'Type', 'Project', 'Due date', 'Assignee'].map((item) => (
                       <button
                         key={item}
@@ -3617,18 +3767,27 @@ function DashboardContent() {
                       </button>
                     ))}
                     <div className="my-1 h-px bg-[var(--ledger-border-subtle)]" />
-                    <p className="px-3 py-1.5 text-[11px] font-medium text-[var(--ledger-text-muted)]">Properties</p>
+                    <p className="px-3 py-1.5 text-[11px] font-medium text-[var(--ledger-text-muted)]">
+                      Properties
+                    </p>
                     <div className="grid grid-cols-2 gap-1 px-1 pb-1">
-                      {['Priority', 'Project', 'Due date', 'Assignee', 'Members', 'Progress', 'Linked notes', 'Updated'].map(
-                        (item) => (
-                          <span
-                            key={item}
-                            className="rounded-lg px-2 py-1 text-[12px] text-[var(--ledger-text-muted)]"
-                          >
-                            {item}
-                          </span>
-                        )
-                      )}
+                      {[
+                        'Priority',
+                        'Project',
+                        'Due date',
+                        'Assignee',
+                        'Members',
+                        'Progress',
+                        'Linked notes',
+                        'Updated',
+                      ].map((item) => (
+                        <span
+                          key={item}
+                          className="rounded-lg px-2 py-1 text-[12px] text-[var(--ledger-text-muted)]"
+                        >
+                          {item}
+                        </span>
+                      ))}
                     </div>
                   </div>
                 )}
@@ -3732,7 +3891,7 @@ function DashboardContent() {
                           </button>
                         </div>
                         {!isCollapsed && (
-                        <div className="space-y-1 pb-1 pt-1">
+                          <div className="space-y-1 pb-1 pt-1">
                             {group.rows.map((row) => {
                               const isSelected = selectedOverviewRow?.id === row.id;
                               return (
@@ -3750,16 +3909,16 @@ function DashboardContent() {
                                     })
                                   }
                                   className={`group grid w-full grid-cols-[28px_minmax(0,1fr)_auto] items-center gap-2 px-3 text-left transition ${
-                                    overviewLayout === 'compact' ? 'min-h-9 py-1' : 'min-h-10 py-1.5'
+                                    overviewLayout === 'compact'
+                                      ? 'min-h-9 py-1'
+                                      : 'min-h-10 py-1.5'
                                   } ${
                                     isSelected
                                       ? 'rounded-lg bg-[var(--ledger-surface-muted)]'
                                       : 'hover:rounded-lg hover:bg-[var(--ledger-surface-muted)]'
                                   }`}
                                 >
-                                  <span
-                                    className="flex h-6 w-6 items-center justify-center rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] text-[13px] text-[var(--ledger-text-secondary)]"
-                                  >
+                                  <span className="flex h-6 w-6 items-center justify-center rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] text-[13px] text-[var(--ledger-text-secondary)]">
                                     {row.icon}
                                   </span>
                                   <span className="min-w-0 truncate text-[13px] font-medium text-[var(--ledger-text-primary)]">
@@ -3810,7 +3969,9 @@ function DashboardContent() {
                                       onClick={(event) => {
                                         event.preventDefault();
                                         event.stopPropagation();
-                                        const rect = (event.currentTarget as HTMLButtonElement).getBoundingClientRect();
+                                        const rect = (
+                                          event.currentTarget as HTMLButtonElement
+                                        ).getBoundingClientRect();
                                         setDashboardContextMenu({
                                           x: rect.right,
                                           y: rect.bottom,
@@ -3843,16 +4004,36 @@ function DashboardContent() {
                 {!selectedOverviewRow ? (
                   <>
                     <div>
-                      <p className="text-[12px] font-medium text-[var(--ledger-text-muted)]">{todayLabel}</p>
+                      <p className="text-[12px] font-medium text-[var(--ledger-text-muted)]">
+                        {todayLabel}
+                      </p>
                       <h3 className="mt-1 text-lg font-semibold text-[var(--ledger-text-primary)]">
                         {activeWorkspace?.name ?? 'Workspace'}
                       </h3>
                     </div>
                     <div className="space-y-2">
                       {[
-                        ['Today', `${Math.max(0, completedFocusTasks.length)}/${Math.max(1, todayTasks.length)} complete`],
-                        ['Long-term', `${workspaceTasks.filter((task) => task.task_horizon === 'long_term').length} tasks`],
-                        ['Assigned to me', `${todayTasks.filter((task) => task.assigned_to || task.project_name).length} tasks`],
+                        [
+                          'Today',
+                          `${Math.max(0, completedFocusTasks.length)}/${Math.max(
+                            1,
+                            todayTasks.length
+                          )} complete`,
+                        ],
+                        [
+                          'Long-term',
+                          `${
+                            workspaceTasks.filter((task) => task.task_horizon === 'long_term')
+                              .length
+                          } tasks`,
+                        ],
+                        [
+                          'Assigned to me',
+                          `${
+                            todayTasks.filter((task) => task.assigned_to || task.project_name)
+                              .length
+                          } tasks`,
+                        ],
                         ['Active projects', `${attentionProjects.length} active`],
                         ['Upcoming', `${upcoming.length} events`],
                       ].map(([label, value]) => (
@@ -3860,23 +4041,35 @@ function DashboardContent() {
                           key={label}
                           className="flex items-center justify-between border-b border-[color:var(--ledger-border-subtle)] py-2"
                         >
-                          <span className="text-[12px] text-[var(--ledger-text-muted)]">{label}</span>
-                          <span className="text-[13px] font-medium text-[var(--ledger-text-primary)]">{value}</span>
+                          <span className="text-[12px] text-[var(--ledger-text-muted)]">
+                            {label}
+                          </span>
+                          <span className="text-[13px] font-medium text-[var(--ledger-text-primary)]">
+                            {value}
+                          </span>
                         </div>
                       ))}
                     </div>
                     {recentNotes[0] && (
                       <div className="border-t border-[color:var(--ledger-border-subtle)] pt-4">
-                        <p className="text-[11px] font-medium text-[var(--ledger-text-muted)]">Recent note</p>
+                        <p className="text-[11px] font-medium text-[var(--ledger-text-muted)]">
+                          Recent note
+                        </p>
                         <p className="mt-1 truncate text-[13px] font-medium text-[var(--ledger-text-primary)]">
                           {recentNotes[0].title}
                         </p>
-                        <p className="mt-1 text-[12px] text-[var(--ledger-text-muted)]">2 actions created</p>
+                        <p className="mt-1 text-[12px] text-[var(--ledger-text-muted)]">
+                          2 actions created
+                        </p>
                       </div>
                     )}
                     <div className="pt-4">
-                      <p className="text-[11px] font-medium text-[var(--ledger-text-muted)]">Try next</p>
-                      <p className="mt-1 text-[13px] font-medium text-[var(--ledger-text-primary)]">Connect calendar</p>
+                      <p className="text-[11px] font-medium text-[var(--ledger-text-muted)]">
+                        Try next
+                      </p>
+                      <p className="mt-1 text-[13px] font-medium text-[var(--ledger-text-primary)]">
+                        Connect calendar
+                      </p>
                       <p className="mt-1 text-[12px] leading-5 text-[var(--ledger-text-muted)]">
                         Turn meetings into notes and actions.
                       </p>
@@ -3908,15 +4101,22 @@ function DashboardContent() {
                     </div>
 
                     {overviewDetailSections.map((section) => (
-                      <section key={section.title} className="space-y-2 border-t border-[color:var(--ledger-border-subtle)] pt-4">
-                        <p className="text-[11px] font-medium text-[var(--ledger-text-muted)]">{section.title}</p>
+                      <section
+                        key={section.title}
+                        className="space-y-2 border-t border-[color:var(--ledger-border-subtle)] pt-4"
+                      >
+                        <p className="text-[11px] font-medium text-[var(--ledger-text-muted)]">
+                          {section.title}
+                        </p>
                         <div className="space-y-1">
                           {section.rows.map(([label, value]) => (
                             <div
                               key={label}
                               className="flex items-center justify-between gap-4 rounded-lg px-1 py-1.5"
                             >
-                              <span className="text-[12px] text-[var(--ledger-text-muted)]">{label}</span>
+                              <span className="text-[12px] text-[var(--ledger-text-muted)]">
+                                {label}
+                              </span>
                               <span className="max-w-44 truncate text-right text-[13px] font-medium capitalize text-[var(--ledger-text-primary)]">
                                 {value}
                               </span>
@@ -3927,7 +4127,9 @@ function DashboardContent() {
                     ))}
 
                     <section className="space-y-2 border-t border-[color:var(--ledger-border-subtle)] pt-4">
-                      <p className="text-[11px] font-medium text-[var(--ledger-text-muted)]">Quick actions</p>
+                      <p className="text-[11px] font-medium text-[var(--ledger-text-muted)]">
+                        Quick actions
+                      </p>
                       <div className="space-y-1">
                         {selectedOverviewQuickActions.map((action) => (
                           <button
@@ -3960,7 +4162,9 @@ function DashboardContent() {
       >
         <div className="flex items-start justify-between gap-4 border-b border-[color:var(--ledger-border-subtle)] px-5 py-4">
           <div className="min-w-0">
-            <p className="text-sm font-semibold text-[var(--ledger-text-primary)]">Link to project</p>
+            <p className="text-sm font-semibold text-[var(--ledger-text-primary)]">
+              Link to project
+            </p>
             <p className="mt-1 truncate text-sm text-[var(--ledger-text-secondary)]">
               {notes.find((note) => note.id === overviewLinkTargetNoteId)?.title || 'Untitled note'}
             </p>
@@ -3984,9 +4188,13 @@ function DashboardContent() {
 
           <div className="max-h-[48vh] space-y-1 overflow-auto pr-1">
             {isLoadingOverviewLinkableProjects ? (
-              <p className="px-1 py-2 text-sm text-[var(--ledger-text-muted)]">Loading projects...</p>
+              <p className="px-1 py-2 text-sm text-[var(--ledger-text-muted)]">
+                Loading projects...
+              </p>
             ) : filteredOverviewLinkableProjects.length === 0 ? (
-              <p className="px-1 py-2 text-sm text-[var(--ledger-text-muted)]">No active projects found.</p>
+              <p className="px-1 py-2 text-sm text-[var(--ledger-text-muted)]">
+                No active projects found.
+              </p>
             ) : (
               filteredOverviewLinkableProjects.map((project) => (
                 <button
@@ -4000,8 +4208,12 @@ function DashboardContent() {
                       {project.name}
                     </p>
                     <p className="truncate text-xs text-[var(--ledger-text-muted)]">
-                      {String(project.status ?? 'active').split('_').join(' ')}
-                      {typeof project.completeness === 'number' ? ` · ${Math.round(project.completeness)}%` : ''}
+                      {String(project.status ?? 'active')
+                        .split('_')
+                        .join(' ')}
+                      {typeof project.completeness === 'number'
+                        ? ` · ${Math.round(project.completeness)}%`
+                        : ''}
                       {project.end_date ? ` · Due ${formatShortDate(project.end_date)}` : ''}
                     </p>
                   </div>
@@ -4119,7 +4331,9 @@ function DashboardContent() {
             >
               <option value="">Working on it</option>
               {user && (
-                <option value={user.id}>{user.user_metadata?.full_name?.trim() || user.email || 'You'}</option>
+                <option value={user.id}>
+                  {user.user_metadata?.full_name?.trim() || user.email || 'You'}
+                </option>
               )}
               {workspaceMembers
                 .filter((member) => member.user_id !== user?.id)
@@ -4175,9 +4389,7 @@ function DashboardContent() {
         classNameContainer="w-full max-w-xl rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-[var(--ledger-shadow)]"
       >
         <div className="border-b border-[color:var(--ledger-border-subtle)] px-5 py-4">
-          <p className="text-xs font-medium text-[var(--ledger-text-muted)]">
-            Add from Today
-          </p>
+          <p className="text-xs font-medium text-[var(--ledger-text-muted)]">Add from Today</p>
           <p className="mt-1 text-sm text-[var(--ledger-text-secondary)]">
             Pick up to three priorities from today&apos;s queue.
           </p>
@@ -4200,7 +4412,9 @@ function DashboardContent() {
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <p className="truncate text-[13px] font-medium text-[var(--ledger-text-primary)]">{task.title}</p>
+                    <p className="truncate text-[13px] font-medium text-[var(--ledger-text-primary)]">
+                      {task.title}
+                    </p>
                     <p className="mt-0.5 truncate text-[11px] text-[var(--ledger-text-muted)]">
                       {task.project_name || task.workspace_name || 'Workspace task'}
                       {formatExpiryCounter(task) ? ` · ${formatExpiryCounter(task)}` : ''}
@@ -4238,15 +4452,15 @@ function DashboardContent() {
               {overviewTaskMode === 'focus'
                 ? 'New focus'
                 : overviewTaskMode === 'today'
-                  ? 'New today task'
-                  : 'New long-term task'}
+                ? 'New today task'
+                : 'New long-term task'}
             </p>
             <p className="mt-1 text-sm text-[var(--ledger-text-secondary)]">
               {overviewTaskMode === 'focus'
                 ? 'Create a priority for the day and assign it if needed.'
                 : overviewTaskMode === 'today'
-                  ? 'Create a short-term task for today.'
-                  : 'Create a longer horizon task with an optional end date.'}
+                ? 'Create a short-term task for today.'
+                : 'Create a longer horizon task with an optional end date.'}
             </p>
           </div>
           <ModalCloseButton onClick={closeOverviewTaskModal} ariaLabel="Close task modal" />
@@ -4294,10 +4508,18 @@ function DashboardContent() {
             placeholder="Task title"
             className="w-full rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 py-2 text-sm text-[var(--ledger-text-primary)] outline-none transition focus:border-[color:var(--ledger-border-strong)]"
           />
-          <div className={overviewTaskMode === 'long_term' ? 'grid grid-cols-1 gap-3 sm:grid-cols-2' : 'grid grid-cols-1 gap-3'}>
+          <div
+            className={
+              overviewTaskMode === 'long_term'
+                ? 'grid grid-cols-1 gap-3 sm:grid-cols-2'
+                : 'grid grid-cols-1 gap-3'
+            }
+          >
             {overviewTaskMode === 'long_term' ? (
               <label className="space-y-1">
-                <span className="text-xs font-medium text-[var(--ledger-text-secondary)]">End date</span>
+                <span className="text-xs font-medium text-[var(--ledger-text-secondary)]">
+                  End date
+                </span>
                 <input
                   type="date"
                   value={overviewTaskDueDate}
@@ -4344,8 +4566,8 @@ function DashboardContent() {
             {overviewTaskMode === 'focus'
               ? 'Focus items appear in Today and can be assigned to a person or team.'
               : overviewTaskMode === 'today'
-                ? 'Short-term tasks stay in Today and can still be assigned.'
-                : 'Long-term tasks can carry an end date and belong to a person or team.'}
+              ? 'Short-term tasks stay in Today and can still be assigned.'
+              : 'Long-term tasks can carry an end date and belong to a person or team.'}
           </p>
         </div>
         <div className="flex items-center justify-end gap-2 border-t border-[color:var(--ledger-border-subtle)] px-5 py-4">
@@ -4365,8 +4587,8 @@ function DashboardContent() {
             {overviewTaskMode === 'focus'
               ? 'Add focus'
               : overviewTaskMode === 'today'
-                ? 'Add today task'
-                : 'Add long-term task'}
+              ? 'Add today task'
+              : 'Add long-term task'}
           </button>
         </div>
       </ModalOverlay>
@@ -4552,129 +4774,136 @@ function DashboardContent() {
             onClick={(event) => event.stopPropagation()}
             onMouseDown={(event) => event.stopPropagation()}
           >
-            {dashboardContextMenu.type === 'overview-row' && (() => {
-              const row = overviewRows.find((item) => item.id === dashboardContextMenu.rowId);
-              if (!row) return null;
-              const isFollowUpTask = followUpTasks.some((task) => task.id === row.sourceId);
-              const isTaskRow = row.kind === 'task' || row.kind === 'reminder';
-              const canAddToFocus = isTaskRow && !row.chips.includes('Focus');
-              const moveLabel =
-                row.group === 'Today' ? 'Move to Long-term' : row.group === 'Long-term tasks' ? 'Move to Today' : null;
-              const deleteRow = () => {
-                if (row.kind === 'project') void deleteDashboardProject(row.sourceId);
-                else if (row.kind === 'note') void deleteDashboardNote(row.sourceId);
-                else if (row.kind === 'event') void deleteTimelineEvent(row.sourceId);
-                else if (isFollowUpTask) void deleteFollowUp(row.sourceId);
-                else void deleteOverviewRow({ kind: row.kind, sourceId: row.sourceId });
-              };
-              const markDone = () => {
-                if (isTaskRow) {
-                  void completeOverviewRow({ kind: row.kind, sourceId: row.sourceId });
-                } else if (isFollowUpTask) {
-                  void markFollowUpDone(row.sourceId);
-                } else {
+            {dashboardContextMenu.type === 'overview-row' &&
+              (() => {
+                const row = overviewRows.find((item) => item.id === dashboardContextMenu.rowId);
+                if (!row) return null;
+                const isFollowUpTask = followUpTasks.some((task) => task.id === row.sourceId);
+                const isTaskRow = row.kind === 'task' || row.kind === 'reminder';
+                const canAddToFocus = isTaskRow && !row.chips.includes('Focus');
+                const moveLabel =
+                  row.group === 'Today'
+                    ? 'Move to Long-term'
+                    : row.group === 'Long-term tasks'
+                    ? 'Move to Today'
+                    : null;
+                const deleteRow = () => {
+                  if (row.kind === 'project') void deleteDashboardProject(row.sourceId);
+                  else if (row.kind === 'note') void deleteDashboardNote(row.sourceId);
+                  else if (row.kind === 'event') void deleteTimelineEvent(row.sourceId);
+                  else if (isFollowUpTask) void deleteFollowUp(row.sourceId);
+                  else void deleteOverviewRow({ kind: row.kind, sourceId: row.sourceId });
+                };
+                const markDone = () => {
+                  if (isTaskRow) {
+                    void completeOverviewRow({ kind: row.kind, sourceId: row.sourceId });
+                  } else if (isFollowUpTask) {
+                    void markFollowUpDone(row.sourceId);
+                  } else {
+                    setDashboardContextMenu(null);
+                  }
+                };
+                const moveToToday = () => {
+                  if (isTaskRow) {
+                    void moveOverviewRowToToday({ kind: row.kind, sourceId: row.sourceId });
+                  } else {
+                    setDashboardContextMenu(null);
+                  }
+                };
+                const moveToLongTerm = () => {
+                  if (isTaskRow) {
+                    void moveOverviewRowToLongTerm({ kind: row.kind, sourceId: row.sourceId });
+                  } else {
+                    setDashboardContextMenu(null);
+                  }
+                };
+                const openRow = () => {
+                  row.open();
                   setDashboardContextMenu(null);
-                }
-              };
-              const moveToToday = () => {
-                if (isTaskRow) {
-                  void moveOverviewRowToToday({ kind: row.kind, sourceId: row.sourceId });
-                } else {
-                  setDashboardContextMenu(null);
-                }
-              };
-              const moveToLongTerm = () => {
-                if (isTaskRow) {
-                  void moveOverviewRowToLongTerm({ kind: row.kind, sourceId: row.sourceId });
-                } else {
-                  setDashboardContextMenu(null);
-                }
-              };
-              const openRow = () => {
-                row.open();
-                setDashboardContextMenu(null);
-              };
-              const addToFocus = () => {
-                if (isTaskRow) void addTaskToFocus(row.sourceId);
-                else setDashboardContextMenu(null);
-              };
-              return (
-                <>
-                  {!isTaskRow && (
-                    <button
-                      onClick={openRow}
-                      className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-accent)] hover:bg-[var(--ledger-surface-hover)]"
-                    >
-                      <ArrowRight size={14} />
-                      Open in new panel
-                    </button>
-                  )}
-                  {isTaskRow && (
-                    <>
-                      {canAddToFocus && (
+                };
+                const addToFocus = () => {
+                  if (isTaskRow) void addTaskToFocus(row.sourceId);
+                  else setDashboardContextMenu(null);
+                };
+                return (
+                  <>
+                    {!isTaskRow && (
+                      <button
+                        onClick={openRow}
+                        className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-accent)] hover:bg-[var(--ledger-surface-hover)]"
+                      >
+                        <ArrowRight size={14} />
+                        Open in new panel
+                      </button>
+                    )}
+                    {isTaskRow && (
+                      <>
+                        {canAddToFocus && (
+                          <button
+                            onClick={addToFocus}
+                            className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]"
+                          >
+                            <Circle size={14} />
+                            Add to Focus
+                          </button>
+                        )}
                         <button
-                          onClick={addToFocus}
+                          onClick={markDone}
                           className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]"
                         >
-                          <Circle size={14} />
-                          Add to Focus
+                          <CheckCircle2 size={14} />
+                          Mark complete
                         </button>
-                      )}
+                        {moveLabel && (
+                          <button
+                            onClick={row.group === 'Today' ? moveToLongTerm : moveToToday}
+                            className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]"
+                          >
+                            <Circle size={14} />
+                            {moveLabel}
+                          </button>
+                        )}
+                      </>
+                    )}
+                    {row.kind === 'project' && (
                       <button
-                        onClick={markDone}
+                        onClick={() => {
+                          void updateProjectStatus(row.sourceId, 'in_progress');
+                        }}
                         className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]"
                       >
-                        <CheckCircle2 size={14} />
-                        Mark complete
+                        <MoreHorizontal size={14} />
+                        Mark in progress
                       </button>
-                      {moveLabel && (
-                        <button
-                          onClick={row.group === 'Today' ? moveToLongTerm : moveToToday}
-                          className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]"
-                        >
-                          <Circle size={14} />
-                          {moveLabel}
-                        </button>
-                      )}
-                    </>
-                  )}
-                  {row.kind === 'project' && (
+                    )}
+                    {row.kind === 'note' && (
+                      <button
+                        onClick={() => openOverviewLinkProjectModal(row.sourceId)}
+                        className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]"
+                      >
+                        <Folder size={14} />
+                        Link to project
+                      </button>
+                    )}
                     <button
-                      onClick={() => {
-                        void updateProjectStatus(row.sourceId, 'in_progress');
-                      }}
+                      onClick={() => void copyOverviewRowLink(row)}
                       className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]"
                     >
-                      <MoreHorizontal size={14} />
-                      Mark in progress
+                      <StickyNote size={14} />
+                      Copy link
                     </button>
-                  )}
-                  {row.kind === 'note' && (
                     <button
-                      onClick={() => openOverviewLinkProjectModal(row.sourceId)}
-                      className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]"
+                      onClick={deleteRow}
+                      className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-danger)] hover:bg-[color:rgba(217,45,32,0.08)]"
                     >
-                      <Folder size={14} />
-                      Link to project
+                      <Trash2 size={14} />
+                      {row.kind === 'note' || row.kind === 'project' || row.kind === 'event'
+                        ? 'Archive'
+                        : 'Delete'}
                     </button>
-                  )}
-                  <button
-                    onClick={() => void copyOverviewRowLink(row)}
-                    className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]"
-                  >
-                    <StickyNote size={14} />
-                    Copy link
-                  </button>
-                  <button
-                    onClick={deleteRow}
-                    className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-danger)] hover:bg-[color:rgba(217,45,32,0.08)]"
-                  >
-                    <Trash2 size={14} />
-                    {row.kind === 'note' || row.kind === 'project' || row.kind === 'event' ? 'Archive' : 'Delete'}
-                  </button>
-                </>
-              );
-            })()}
+                  </>
+                );
+              })()}
             {dashboardContextMenu.type === 'followup' && (
               <>
                 <button
@@ -4889,9 +5118,9 @@ function AppShell() {
   const postAuthBootstrapUserRef = useRef<string | null>(null);
   const ensuredVisibleOnBootRef = useRef(false);
   const authTransitionTimerRef = useRef<number | null>(null);
-  const sidebarModeRef = useRef<'auth' | 'minimized' | 'compact' | 'expanded' | 'fullscreen' | null>(
-    null
-  );
+  const sidebarModeRef = useRef<
+    'auth' | 'minimized' | 'compact' | 'expanded' | 'fullscreen' | null
+  >(null);
   const sidebarModeTimerRef = useRef<number | null>(null);
   const inviteToastTimerRef = useRef<number | null>(null);
   const [showAuthenticatedShell, setShowAuthenticatedShell] = useState(false);
@@ -4977,7 +5206,8 @@ function AppShell() {
         return;
       }
 
-      const isHorizontal = sidebarPreferences.position === 'top' || sidebarPreferences.position === 'bottom';
+      const isHorizontal =
+        sidebarPreferences.position === 'top' || sidebarPreferences.position === 'bottom';
 
       if (state === 'expanded') {
         if (isHorizontal) {
@@ -5179,7 +5409,6 @@ function AppShell() {
     };
   }, []);
 
-
   useEffect(() => {
     if (isModuleWindow) return;
     if (isLoading) return;
@@ -5199,9 +5428,7 @@ function AppShell() {
 
   if (isModuleWindow) {
     if (isLoading) {
-      return (
-        <AuthStatusScreen title="Opening module" subtitle="Bringing it into view…" />
-      );
+      return <AuthStatusScreen title="Opening module" subtitle="Bringing it into view…" />;
     }
 
     if (!user) {
@@ -5476,7 +5703,15 @@ function AppShell() {
     return () => {
       cancelled = true;
     };
-  }, [pendingInviteToken, isLoading, user, api, refreshWorkspaces, inviteFlowStatus, setActiveWorkspace]);
+  }, [
+    pendingInviteToken,
+    isLoading,
+    user,
+    api,
+    refreshWorkspaces,
+    inviteFlowStatus,
+    setActiveWorkspace,
+  ]);
 
   useEffect(() => {
     if (user) return;
@@ -5771,12 +6006,7 @@ function AppShell() {
   }
 
   if (postAuthStage === 'idle' || postAuthStage === 'loading') {
-    return (
-      <AuthStatusScreen
-        title={startupTitle}
-        subtitle={startupSubtitle}
-      />
-    );
+    return <AuthStatusScreen title={startupTitle} subtitle={startupSubtitle} />;
   }
 
   if (postAuthStage === 'onboarding') {
@@ -5794,7 +6024,11 @@ function AppShell() {
             return;
           }
 
-          if (activeWorkspaceId && activeWorkspace?.is_personal && activeWorkspace.owner_id === user.id) {
+          if (
+            activeWorkspaceId &&
+            activeWorkspace?.is_personal &&
+            activeWorkspace.owner_id === user.id
+          ) {
             await api.updateWorkspace(activeWorkspaceId, { name: workspaceName });
           } else {
             await api.createWorkspace({
@@ -5842,9 +6076,7 @@ function AppShell() {
         await refreshWorkspaces();
         setPostAuthStage('ready');
       } catch (error) {
-        setOnboardingError(
-          error instanceof Error ? error.message : 'Could not open Ledger.'
-        );
+        setOnboardingError(error instanceof Error ? error.message : 'Could not open Ledger.');
       } finally {
         setIsSavingOnboarding(false);
       }
@@ -5885,21 +6117,13 @@ function AppShell() {
   // Authenticated view - sidebar shell
   if (postAuthStage !== 'ready') {
     return (
-      <AuthStatusScreen
-        title={startupTitle}
-        subtitle={startupSubtitle}
-        isExiting={isAuthExiting}
-      />
+      <AuthStatusScreen title={startupTitle} subtitle={startupSubtitle} isExiting={isAuthExiting} />
     );
   }
 
   if (!showAuthenticatedShell) {
     return (
-      <AuthStatusScreen
-        title={startupTitle}
-        subtitle={startupSubtitle}
-        isExiting={isAuthExiting}
-      />
+      <AuthStatusScreen title={startupTitle} subtitle={startupSubtitle} isExiting={isAuthExiting} />
     );
   }
 

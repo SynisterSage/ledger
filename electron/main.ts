@@ -100,9 +100,7 @@ const readRuntimeConfigValues = (): RuntimeConfigValues => {
         apiUrl: apiUrlMatch?.[1]?.trim() || null,
         supabaseUrl: supabaseUrlMatch?.[1]?.trim() || null,
         supabasePublishableKey:
-          supabasePublishableKeyMatch?.[1]?.trim() ||
-          supabaseAnonKeyMatch?.[1]?.trim() ||
-          null,
+          supabasePublishableKeyMatch?.[1]?.trim() || supabaseAnonKeyMatch?.[1]?.trim() || null,
       };
     } catch {
       // Best-effort only. Fall back to the next candidate or the default host.
@@ -118,14 +116,19 @@ const readRuntimeConfigValues = (): RuntimeConfigValues => {
 
 const runtimeConfigValues = readRuntimeConfigValues();
 const LEDGER_API_URL =
-  process.env.VITE_API_URL?.trim() || runtimeConfigValues.apiUrl || 'https://api.ledgerworkspace.com';
+  process.env.VITE_API_URL?.trim() ||
+  runtimeConfigValues.apiUrl ||
+  'https://api.ledgerworkspace.com';
 
 const isSettingsSection = (value: string | null | undefined): value is string =>
   SETTINGS_SECTIONS.has(String(value ?? '').toLowerCase());
 
 const extractLedgerProtocolUrl = (argv: string[]) =>
-  argv.find((value) => String(value ?? '').toLowerCase().startsWith(`${LEDGER_PROTOCOL}://`)) ??
-  null;
+  argv.find((value) =>
+    String(value ?? '')
+      .toLowerCase()
+      .startsWith(`${LEDGER_PROTOCOL}://`)
+  ) ?? null;
 
 const registerLedgerProtocol = () => {
   try {
@@ -153,7 +156,11 @@ const handleLedgerProtocolUrl = (url: string) => {
     const host = parsed.hostname.toLowerCase();
     const pathnameParts = parsed.pathname.split('/').filter(Boolean);
     const sectionCandidate =
-      host === 'settings' ? pathnameParts[0] : pathnameParts[0] === 'settings' ? pathnameParts[1] : null;
+      host === 'settings'
+        ? pathnameParts[0]
+        : pathnameParts[0] === 'settings'
+        ? pathnameParts[1]
+        : null;
     const section = isSettingsSection(sectionCandidate) ? sectionCandidate : 'integrations';
 
     const inviteToken =
@@ -727,19 +734,20 @@ let floatingDockDragActive = false;
 let floatingDockTrackingTimer: NodeJS.Timeout | null = null;
 let floatingDockNativeTracker: ChildProcessWithoutNullStreams | null = null;
 let floatingDockRefreshInFlight = false;
+let workspaceDockRefreshTimer: NodeJS.Timeout | null = null;
+let workspaceDockLastRefreshAt = 0;
 let floatingDockNativeBuffer = '';
 let windowsNativeDockRequeryAt = 0;
-let floatingDragStart:
-  | {
-      cursor: Electron.Point;
-      bounds: Electron.Rectangle;
-    }
-  | null = null;
+let floatingDragStart: {
+  cursor: Electron.Point;
+  bounds: Electron.Rectangle;
+} | null = null;
 const headerDragStarts = new Map<
   number,
   {
     cursor: Electron.Point;
     bounds: Electron.Rectangle;
+    timer: NodeJS.Timeout | null;
   }
 >();
 let sidebarIsVisible = true;
@@ -791,6 +799,88 @@ function syncCurrentFloatingPosition(bounds?: Electron.Rectangle | null) {
     currentFloatingDockDisplayId = getDisplayForBounds(bounds).id;
   }
 }
+
+function shouldAttachWorkspaceWindowToSidebar() {
+  return (
+    currentSidebarPosition === 'floating' &&
+    currentSidebarPreferences.floatingDockEnabled !== false &&
+    currentSidebarMode !== 'auth' &&
+    currentSidebarMode !== 'fullscreen'
+  );
+}
+
+function getWorkspaceDockTargetId(win: BrowserWindow) {
+  return `ledger-workspace:${win.id}`;
+}
+
+function isWorkspaceDockTarget(target: FloatingDockTarget | null = currentFloatingDockTarget) {
+  return Boolean(target?.isLedgerWindow && String(target.id).startsWith('ledger-workspace:'));
+}
+
+function getWorkspaceDockTargetBounds() {
+  if (!workspaceModuleWin || workspaceModuleWin.isDestroyed()) return null;
+  if (workspaceModuleWin.isMinimized()) return null;
+  return workspaceModuleWin.getBounds();
+}
+
+function setWorkspaceWindowAsFloatingDockTarget(kindOverride?: ModuleWindowKind) {
+  if (!shouldAttachWorkspaceWindowToSidebar()) return;
+  if (!sidebarWin || sidebarWin.isDestroyed()) return;
+  if (!workspaceModuleWin || workspaceModuleWin.isDestroyed()) return;
+
+  const targetBounds = getWorkspaceDockTargetBounds();
+  if (!targetBounds) return;
+
+  const kind = kindOverride ?? workspaceModuleKind;
+  if (!kind || !isWorkspaceModuleKind(kind)) return;
+
+  const side = getDockSide(sidebarWin.getBounds(), targetBounds);
+  stopFloatingDockNativeTracker();
+  stopMacDockHelperTracking();
+  setCurrentFloatingDockTarget(
+    {
+      platform: process.platform === 'win32' ? 'win32' : 'darwin',
+      id: getWorkspaceDockTargetId(workspaceModuleWin),
+      side,
+      isLedgerWindow: true,
+    },
+    targetBounds
+  );
+  applyFloatingDockTargetBounds(targetBounds, side, {
+    trackerType: 'ledger-workspace-window',
+    targetId: getWorkspaceDockTargetId(workspaceModuleWin),
+    targetWindowHandle: getWorkspaceDockTargetId(workspaceModuleWin),
+    normalizedTargetBounds: targetBounds,
+    normalizedTargetBoundsCoordinateSystem: 'electron-dip',
+    reason: 'workspace_window_attached_to_floating_sidebar',
+  });
+  cancelWorkspaceDockRefresh();
+}
+
+function suspendWorkspaceWindowDockTarget() {
+  if (!isWorkspaceDockTarget()) return;
+  stopFloatingDockNativeTracker();
+  stopFloatingDockTracking();
+  stopMacDockHelperTracking();
+  cancelWorkspaceDockRefresh();
+  currentFloatingDockAttachmentStatus = 'suspended_minimized';
+}
+
+function syncWorkspaceWindowAttachment(kindOverride?: ModuleWindowKind) {
+  if (!shouldAttachWorkspaceWindowToSidebar()) return;
+  if (!workspaceModuleWin || workspaceModuleWin.isDestroyed()) return;
+  if (floatingDockDragActive) return;
+  if (isWorkspaceDockTarget()) return;
+
+  const kind = kindOverride ?? workspaceModuleKind;
+  if (!kind || !isWorkspaceModuleKind(kind)) return;
+
+  const nextBounds = resolveWorkspaceModuleBounds(kind);
+  const currentBounds = workspaceModuleWin.getBounds();
+  if (rectsMatch(currentBounds, nextBounds)) return;
+
+  workspaceModuleWin.setBounds(nextBounds, false);
+}
 const FLOATING_RAIL_HEIGHT = 520;
 const MIN_DOCK_HEIGHT = {
   expanded: 640,
@@ -818,8 +908,9 @@ const QUICK_CAPTURE_HEIGHT = 320;
 const MODULE_GAP = 12;
 const NOTIFICATION_SCHEDULER_INTERVAL_MS = 60_000;
 const NOTIFICATION_PREFS_REFRESH_MS = 5 * 60_000;
-const NOTIFICATION_SCHEDULER_BACKOFF_MS = 90_000;
 const NOTIFICATION_SCHEDULER_REFRESH_MIN_DELAY_MS = 15_000;
+const NOTIFICATION_SCHEDULER_429_MIN_BACKOFF_MS = 30_000;
+const NOTIFICATION_SCHEDULER_429_MAX_BACKOFF_MS = 5 * 60_000;
 
 type NotificationSchedulerItem = {
   id: string;
@@ -849,6 +940,7 @@ let notificationSchedulerTimer: NodeJS.Timeout | null = null;
 let notificationSchedulerInFlight = false;
 let notificationSchedulerCooldownUntil = 0;
 let notificationSchedulerLastRunAt = 0;
+let notificationScheduler429Streak = 0;
 let notificationSchedulerQueuedTimer: NodeJS.Timeout | null = null;
 let notificationSchedulerQueuedAt = 0;
 let notificationAccessToken: string | null = null;
@@ -876,7 +968,9 @@ const loadNotificationDeliveryState = () => {
   try {
     if (!fs.existsSync(notificationDeliveryStatePath)) return;
     const raw = fs.readFileSync(notificationDeliveryStatePath, 'utf8');
-    const parsed = JSON.parse(raw) as { namespaces?: Record<string, Record<string, number>> } | null;
+    const parsed = JSON.parse(raw) as {
+      namespaces?: Record<string, Record<string, number>>;
+    } | null;
     const namespaces = parsed?.namespaces;
     if (!namespaces || typeof namespaces !== 'object') return;
 
@@ -916,7 +1010,9 @@ const pruneNotificationDeliveryState = (state: Record<string, number>) => {
   const entries = Object.entries(state).filter(([, ts]) => Number.isFinite(Number(ts)));
   if (entries.length <= 2000) return state;
 
-  const next = Object.fromEntries(entries.sort((a, b) => Number(b[1]) - Number(a[1])).slice(0, 2000));
+  const next = Object.fromEntries(
+    entries.sort((a, b) => Number(b[1]) - Number(a[1])).slice(0, 2000)
+  );
   return next;
 };
 
@@ -1204,7 +1300,8 @@ const deliverDesktopNotification = (item: NotificationSchedulerItem) => {
   try {
     if (!Notification.isSupported()) return;
     const iconPath = getDesktopNotificationIconPath();
-    const subtitle = [item.context?.trim(), item.workspaceName?.trim()].filter(Boolean).join(' · ') || undefined;
+    const subtitle =
+      [item.context?.trim(), item.workspaceName?.trim()].filter(Boolean).join(' · ') || undefined;
     const body = getNotificationDisplayBody(item);
     const notification = new Notification({
       title: getNotificationDisplayTitle(item),
@@ -1232,7 +1329,7 @@ const deliverDesktopNotification = (item: NotificationSchedulerItem) => {
   }
 };
 
-const fetchLedgerApi = async <T,>(
+const fetchLedgerApi = async <T>(
   endpoint: string,
   token: string,
   options: RequestInit = {}
@@ -1280,7 +1377,10 @@ const queueNotificationSchedulerRun = (delayMs = 0) => {
 
   const now = Date.now();
   const cooldownDelay = Math.max(0, notificationSchedulerCooldownUntil - now);
-  const refreshDelay = Math.max(0, notificationSchedulerLastRunAt + NOTIFICATION_SCHEDULER_REFRESH_MIN_DELAY_MS - now);
+  const refreshDelay = Math.max(
+    0,
+    notificationSchedulerLastRunAt + NOTIFICATION_SCHEDULER_REFRESH_MIN_DELAY_MS - now
+  );
   const nextDelay = Math.max(delayMs, cooldownDelay, refreshDelay);
   const targetAt = now + nextDelay;
 
@@ -1342,18 +1442,17 @@ const runNotificationScheduler = async () => {
     );
     const activeItems = Array.isArray(notifications) ? notifications : [];
     if (shouldDeliverInApp || shouldDeliverDesktop) {
-      const currentNamespace = getNotificationNamespace(notificationApiUrl, notificationSessionUserId);
+      const currentNamespace = getNotificationNamespace(
+        notificationApiUrl,
+        notificationSessionUserId
+      );
       if (currentNamespace && notificationSeenIdsLoadedNamespace !== currentNamespace) {
         hydrateNotificationSeenIds(currentNamespace);
       }
       const batchKeys = new Set<string>();
       const unseenItems = activeItems.filter((item) => {
         if (notificationSeenIds.has(item.id)) return false;
-        const batchKey = [
-          item.sourceType,
-          item.sourceId,
-          item.notificationType,
-        ].join(':');
+        const batchKey = [item.sourceType, item.sourceId, item.notificationType].join(':');
         if (batchKeys.has(batchKey)) return false;
         batchKeys.add(batchKey);
         return true;
@@ -1372,35 +1471,42 @@ const runNotificationScheduler = async () => {
       }
     }
     broadcastNotificationSummary(Number(summary?.counts?.active ?? 0));
+    notificationScheduler429Streak = 0;
   } catch (error) {
-    if (typeof (error as { status?: number } | null)?.status === 'number' && (error as { status?: number }).status === 429) {
+    if (
+      typeof (error as { status?: number } | null)?.status === 'number' &&
+      (error as { status?: number }).status === 429
+    ) {
       const retryAfterMs = Number((error as { retryAfterMs?: number } | null)?.retryAfterMs ?? 0);
+      notificationScheduler429Streak = Math.min(notificationScheduler429Streak + 1, 6);
+      const exponentialBackoffMs = Math.min(
+        NOTIFICATION_SCHEDULER_429_MAX_BACKOFF_MS,
+        NOTIFICATION_SCHEDULER_429_MIN_BACKOFF_MS * 2 ** (notificationScheduler429Streak - 1)
+      );
+      const retryAfterBackoffMs =
+        retryAfterMs > 0 ? Math.max(retryAfterMs, NOTIFICATION_SCHEDULER_429_MIN_BACKOFF_MS) : 0;
       const nextBackoffMs = Math.min(
-        15 * 60_000,
-        retryAfterMs > 0
-          ? retryAfterMs
-          : Math.max(
-              NOTIFICATION_SCHEDULER_BACKOFF_MS,
-              notificationSchedulerLastRunAt ? Date.now() - notificationSchedulerLastRunAt : 0
-            ) * 2
+        NOTIFICATION_SCHEDULER_429_MAX_BACKOFF_MS,
+        Math.max(exponentialBackoffMs, retryAfterBackoffMs)
       );
       notificationSchedulerCooldownUntil = Date.now() + nextBackoffMs;
-      console.warn(
-        `[electron] Notification scheduler backed off for ${nextBackoffMs}ms after 429`
-      );
+      console.warn(`[electron] Notification scheduler backed off for ${nextBackoffMs}ms after 429`);
       return;
     }
+    notificationScheduler429Streak = 0;
     console.warn('[electron] Notification scheduler failed', error);
   } finally {
     notificationSchedulerInFlight = false;
   }
 };
 
-const syncNotificationSession = (payload: {
-  accessToken?: string | null;
-  userId?: string | null;
-  apiUrl?: string | null;
-} | null) => {
+const syncNotificationSession = (
+  payload: {
+    accessToken?: string | null;
+    userId?: string | null;
+    apiUrl?: string | null;
+  } | null
+) => {
   if (payload?.apiUrl?.trim()) notificationApiUrl = payload.apiUrl.trim();
   notificationSessionUserId = payload?.userId?.trim() || null;
   const accessToken = payload?.accessToken ?? null;
@@ -1416,7 +1522,10 @@ const syncNotificationSession = (payload: {
     notificationSchedulerCooldownUntil = 0;
   }
   notificationAccessToken = nextAccessToken;
-  if (sessionChanged || Date.now() - notificationSchedulerLastRunAt > NOTIFICATION_SCHEDULER_INTERVAL_MS) {
+  if (
+    sessionChanged ||
+    Date.now() - notificationSchedulerLastRunAt > NOTIFICATION_SCHEDULER_INTERVAL_MS
+  ) {
     queueNotificationSchedulerRun(0);
   }
 };
@@ -1503,7 +1612,11 @@ function getModuleWindowChromeOptions() {
   };
 }
 
-const buildRoundedWindowShape = (width: number, height: number, radius: number): Electron.Rectangle[] => {
+const buildRoundedWindowShape = (
+  width: number,
+  height: number,
+  radius: number
+): Electron.Rectangle[] => {
   const safeWidth = Math.max(1, Math.round(width));
   const safeHeight = Math.max(1, Math.round(height));
   const safeRadius = Math.max(
@@ -1566,10 +1679,7 @@ const applyWindowsModuleWindowShape = (win: BrowserWindow) => {
   }
 };
 
-function getDockedBounds(
-  width: number,
-  position: SidebarPosition = currentSidebarPosition
-) {
+function getDockedBounds(width: number, position: SidebarPosition = currentSidebarPosition) {
   const { x, y, width: workWidth, height: workHeight } = screen.getPrimaryDisplay().workArea;
   const minHeight = Math.min(MIN_DOCK_HEIGHT.expanded, workHeight - WINDOW_MARGIN * 2);
   const maxHeight = workHeight - WINDOW_MARGIN * 2;
@@ -1583,8 +1693,7 @@ function getDockedBounds(
     );
     const width = Math.max(1, targetWidth);
     const height = Math.max(1, targetHeight);
-    const dockY =
-      position === 'top' ? y + WINDOW_MARGIN : y + workHeight - height - WINDOW_MARGIN;
+    const dockY = position === 'top' ? y + WINDOW_MARGIN : y + workHeight - height - WINDOW_MARGIN;
 
     return clampRectToWorkArea(
       {
@@ -1614,18 +1723,14 @@ function getDockedBounds(
   };
 }
 
-function getCollapsedBounds(
-  size: number,
-  position: SidebarPosition = currentSidebarPosition
-) {
+function getCollapsedBounds(size: number, position: SidebarPosition = currentSidebarPosition) {
   const { x, y, width: workWidth, height: workHeight } = screen.getPrimaryDisplay().workArea;
   const safeSize = Math.min(size, workWidth - WINDOW_MARGIN * 2, workHeight - WINDOW_MARGIN * 2);
 
   if (position === 'top' || position === 'bottom') {
     const width = Math.min(HORIZONTAL_COLLAPSED_WIDTH, workWidth - WINDOW_MARGIN * 2);
     const height = Math.min(HORIZONTAL_COLLAPSED_HEIGHT, workHeight - WINDOW_MARGIN * 2);
-    const dockY =
-      position === 'top' ? y + WINDOW_MARGIN : y + workHeight - height - WINDOW_MARGIN;
+    const dockY = position === 'top' ? y + WINDOW_MARGIN : y + workHeight - height - WINDOW_MARGIN;
 
     return clampRectToWorkArea(
       {
@@ -1750,6 +1855,21 @@ function clampRectToWorkArea(rect: Rect, workArea: Electron.Rectangle) {
   };
 }
 
+function clampDockedRectToWorkArea(
+  rect: Rect,
+  workArea: Electron.Rectangle,
+  options: { allowVerticalOverflow?: boolean } = {}
+) {
+  const maxX = workArea.x + workArea.width - rect.width;
+  const maxY = workArea.y + workArea.height - rect.height;
+  return {
+    x: Math.max(workArea.x, Math.min(rect.x, maxX)),
+    y: options.allowVerticalOverflow ? rect.y : Math.max(workArea.y, Math.min(rect.y, maxY)),
+    width: rect.width,
+    height: rect.height,
+  };
+}
+
 function getDisplayForBounds(bounds: Rect) {
   if (
     !Number.isFinite(bounds.x) ||
@@ -1793,8 +1913,7 @@ function getDisplayMatchingNativeRect(rect: Rect) {
     const physicalBounds = getDisplayNativeBounds(display);
     const physicalCenterX = physicalBounds.x + physicalBounds.width / 2;
     const physicalCenterY = physicalBounds.y + physicalBounds.height / 2;
-    const distance =
-      (physicalCenterX - rectCenterX) ** 2 + (physicalCenterY - rectCenterY) ** 2;
+    const distance = (physicalCenterX - rectCenterX) ** 2 + (physicalCenterY - rectCenterY) ** 2;
 
     const overlapWidth = Math.max(
       0,
@@ -2140,10 +2259,7 @@ function isLikelyMinimizingToDock(nextBounds: Rect, previousBounds: Rect | null)
   const centerX = nextBounds.x + nextBounds.width / 2;
   const centerY = nextBounds.y + nextBounds.height / 2;
   const isMovingOutsideWorkArea =
-    centerX < workArea.x ||
-    centerX > workRight ||
-    centerY < workArea.y ||
-    centerY > workBottom;
+    centerX < workArea.x || centerX > workRight || centerY < workArea.y || centerY > workBottom;
   const isNearDockEdge =
     nextBounds.x <= workArea.x + tolerance ||
     nextBounds.y <= workArea.y + tolerance ||
@@ -2158,6 +2274,18 @@ function getFullscreenWorkAreaForWindow(win: BrowserWindow) {
   return screen.getDisplayMatching(bounds).workArea;
 }
 
+function sendModuleFullscreenState(
+  kind: ModuleWindowKind,
+  win: BrowserWindow,
+  isFullscreen: boolean
+) {
+  try {
+    if (!win.isDestroyed() && !win.webContents.isDestroyed()) {
+      win.webContents.send('module:fullscreen-state-changed', { kind, isFullscreen });
+    }
+  } catch {}
+}
+
 function restoreModuleWindowBounds(kind: ModuleWindowKind, win: BrowserWindow) {
   const restoredBounds = moduleWindowFullscreenBoundsMemory.get(kind);
   if (restoredBounds) {
@@ -2167,6 +2295,7 @@ function restoreModuleWindowBounds(kind: ModuleWindowKind, win: BrowserWindow) {
   }
   win.show();
   win.focus();
+  sendModuleFullscreenState(kind, win, false);
 }
 
 function enterModuleWindowFullscreen(kind: ModuleWindowKind, win: BrowserWindow) {
@@ -2176,6 +2305,7 @@ function enterModuleWindowFullscreen(kind: ModuleWindowKind, win: BrowserWindow)
   win.setBounds(clampRectToWorkArea({ ...workArea }, workArea), false);
   win.show();
   win.focus();
+  sendModuleFullscreenState(kind, win, true);
 }
 
 function getDockSide(currentBounds: Rect, targetBounds: Rect): DockSide {
@@ -2203,7 +2333,12 @@ function getHorizontalGapBetweenRects(a: Rect, b: Rect) {
   return 0;
 }
 
-function getDockedBoundsForTarget(targetBounds: Rect, side: DockSide, mode: SidebarWindowMode) {
+function getDockedBoundsForTarget(
+  targetBounds: Rect,
+  side: DockSide,
+  mode: SidebarWindowMode,
+  options: { allowVerticalOverflow?: boolean } = {}
+) {
   const targetDisplay = getDisplayForBounds(targetBounds);
   const { width: workWidth, height: workHeight } = targetDisplay.workArea;
   const width =
@@ -2223,10 +2358,7 @@ function getDockedBoundsForTarget(targetBounds: Rect, side: DockSide, mode: Side
   const height = Math.max(minHeight, Math.min(targetBounds.height, maxHeight));
   const x = side === 'left' ? targetBounds.x - width : targetBounds.x + targetBounds.width;
   const y = targetBounds.y;
-  return clampRectToWorkArea(
-    { x, y, width, height },
-    targetDisplay.workArea
-  );
+  return clampDockedRectToWorkArea({ x, y, width, height }, targetDisplay.workArea, options);
 }
 
 function sendFloatingDockChanged(
@@ -2239,6 +2371,7 @@ function sendFloatingDockChanged(
       sidebarWin.webContents.send('sidebar:floating-dock-changed', {
         isDocked,
         attachmentStatus,
+        side: currentFloatingDockTarget?.side ?? null,
       });
     }
   } catch {
@@ -2289,6 +2422,59 @@ function stopFloatingDockTracking() {
     clearInterval(floatingDockTrackingTimer);
     floatingDockTrackingTimer = null;
   }
+}
+
+function cancelWorkspaceDockRefresh() {
+  if (workspaceDockRefreshTimer !== null) {
+    clearTimeout(workspaceDockRefreshTimer);
+    workspaceDockRefreshTimer = null;
+  }
+  workspaceDockLastRefreshAt = 0;
+}
+
+function applyWorkspaceDockTargetBounds(targetBoundsOverride?: Rect) {
+  if (!isWorkspaceDockTarget()) return;
+  if (!sidebarWin || sidebarWin.isDestroyed()) return;
+  if (!workspaceModuleWin || workspaceModuleWin.isDestroyed()) return;
+
+  const targetBounds = targetBoundsOverride ?? getWorkspaceDockTargetBounds();
+  if (!targetBounds) {
+    void refreshFloatingDockTarget();
+    return;
+  }
+
+  currentFloatingDockBounds = targetBounds;
+  currentFloatingDockMisses = 0;
+  const side = currentFloatingDockTarget?.side ?? getDockSide(sidebarWin.getBounds(), targetBounds);
+  const nextBounds = getDockedBoundsForTarget(targetBounds, side, currentSidebarMode, {
+    allowVerticalOverflow: true,
+  });
+
+  if (rectsMatch(sidebarWin.getBounds(), nextBounds)) return;
+  if (!setSidebarBounds(nextBounds, false)) return;
+  currentFloatingPosition = { x: nextBounds.x, y: nextBounds.y };
+}
+
+function scheduleWorkspaceDockRefresh(delayMs = 16) {
+  if (!isWorkspaceDockTarget()) return;
+  if (!workspaceModuleWin || workspaceModuleWin.isDestroyed()) return;
+
+  const now = Date.now();
+  const elapsed = now - workspaceDockLastRefreshAt;
+
+  if (elapsed >= delayMs && workspaceDockRefreshTimer === null) {
+    workspaceDockLastRefreshAt = now;
+    applyWorkspaceDockTargetBounds();
+    return;
+  }
+
+  if (workspaceDockRefreshTimer !== null) return;
+
+  workspaceDockRefreshTimer = setTimeout(() => {
+    workspaceDockRefreshTimer = null;
+    workspaceDockLastRefreshAt = Date.now();
+    applyWorkspaceDockTargetBounds();
+  }, Math.max(0, delayMs - elapsed));
 }
 
 function stopFloatingDockNativeTracker() {
@@ -2550,10 +2736,7 @@ function applyFloatingDockTargetBounds(
     traceReason: trace.reason ?? null,
   });
 
-  const writeSkippedTrace = (
-    reason: string,
-    details: Record<string, unknown> = {}
-  ) => {
+  const writeSkippedTrace = (reason: string, details: Record<string, unknown> = {}) => {
     writeWindowsDockTrace('dock-tick', {
       ...baseTrace(),
       movementSkipped: true,
@@ -2637,7 +2820,8 @@ function applyFloatingDockTargetBounds(
   const computedBoundsBeforeFinalClamp = getDockedBoundsForTarget(
     targetBounds,
     side,
-    currentSidebarMode
+    currentSidebarMode,
+    { allowVerticalOverflow: isWorkspaceDockTarget() }
   );
   const finalClampedBounds = computedBoundsBeforeFinalClamp;
   if (rectsMatch(currentLedgerBoundsBefore, finalClampedBounds)) {
@@ -2821,6 +3005,52 @@ function handleNativeDockTrackerLine(line: string, side: DockSide) {
       normalizedTargetBoundsCoordinateSystem: 'electron-dip',
     }
   );
+}
+
+function stopHeaderDragLoop(webContentsId: number) {
+  const dragStart = headerDragStarts.get(webContentsId);
+  if (!dragStart?.timer) return;
+  clearTimeout(dragStart.timer);
+  dragStart.timer = null;
+}
+
+function applyHeaderDragPosition(webContentsId: number, win: BrowserWindow) {
+  const dragStart = headerDragStarts.get(webContentsId);
+  if (!dragStart) return;
+  if (win.isDestroyed() || win.isFullScreen()) return;
+
+  const cursor = screen.getCursorScreenPoint();
+  const nextX = Math.round(dragStart.bounds.x + cursor.x - dragStart.cursor.x);
+  const nextY = Math.round(dragStart.bounds.y + cursor.y - dragStart.cursor.y);
+  const nextBounds = {
+    ...dragStart.bounds,
+    x: nextX,
+    y: nextY,
+  };
+
+  win.setPosition(nextX, nextY, false);
+
+  if (win === workspaceModuleWin && isWorkspaceDockTarget()) {
+    applyWorkspaceDockTargetBounds(nextBounds);
+  }
+}
+
+function startHeaderDragLoop(webContentsId: number, win: BrowserWindow) {
+  stopHeaderDragLoop(webContentsId);
+
+  const tick = () => {
+    const dragStart = headerDragStarts.get(webContentsId);
+    if (!dragStart) return;
+    if (win.isDestroyed() || win.isFullScreen()) {
+      headerDragStarts.delete(webContentsId);
+      return;
+    }
+
+    applyHeaderDragPosition(webContentsId, win);
+    dragStart.timer = setTimeout(tick, 8);
+  };
+
+  tick();
 }
 
 function startFloatingDockNativeTracker(target: FloatingDockTarget) {
@@ -3054,8 +3284,13 @@ $tracker.Start([Int64]${target.id})
       floatingDockNativeTracker = null;
       floatingDockNativeBuffer = '';
     }
-    if (currentFloatingDockTarget?.platform === 'win32' && currentFloatingDockTarget.id === target.id) {
-      dockLog(`[dock-debug] Windows native dock tracker exited for ${target.id}; falling back to polling`);
+    if (
+      currentFloatingDockTarget?.platform === 'win32' &&
+      currentFloatingDockTarget.id === target.id
+    ) {
+      dockLog(
+        `[dock-debug] Windows native dock tracker exited for ${target.id}; falling back to polling`
+      );
       startFloatingDockTracking();
     }
   });
@@ -3114,183 +3349,226 @@ async function refreshFloatingDockTarget() {
   if (floatingDockRefreshInFlight) return;
   floatingDockRefreshInFlight = true;
   try {
-  if (!sidebarWin || sidebarWin.isDestroyed()) return;
-  if (currentSidebarPosition !== 'floating') return;
-  if (currentSidebarMode === 'auth' || currentSidebarMode === 'fullscreen') return;
-  if (floatingDockDragActive) return;
-  if (!currentSidebarPreferences.floatingDockEnabled) return;
-  if (!currentFloatingDockTarget) return;
+    if (!sidebarWin || sidebarWin.isDestroyed()) return;
+    if (currentSidebarPosition !== 'floating') return;
+    if (currentSidebarMode === 'auth' || currentSidebarMode === 'fullscreen') return;
+    if (floatingDockDragActive) return;
+    if (!currentSidebarPreferences.floatingDockEnabled) return;
+    if (!currentFloatingDockTarget) return;
 
-  if (
-    process.platform === 'win32' &&
-    floatingDockNativeTracker &&
-    currentFloatingDockTarget.platform === 'win32'
-  ) {
-    // Let the Windows native tracker stay authoritative, but re-query the target
-    // HWND periodically so a stalled event hook does not strand the dock on the
-    // primary display when the app moves across monitors.
-    if (Date.now() - windowsNativeDockRequeryAt >= 500) {
-      windowsNativeDockRequeryAt = Date.now();
-      const targetHandleBounds = await queryWindowsDockTargetBounds(currentFloatingDockTarget.id);
-      if (targetHandleBounds?.kind === 'state') {
-        if (targetHandleBounds.state === 'minimized') {
-          writeWindowsDockTrace('refresh-windows-native-requery', {
-            trackerType: 'windows-native-target-requery',
-            targetId: currentFloatingDockTarget.id,
-            targetWindowHandle: currentFloatingDockTarget.id,
-            normalizedTargetBounds: currentFloatingDockBounds
-              ? rectForDockTrace(currentFloatingDockBounds)
-              : null,
-            normalizedTargetBoundsCoordinateSystem: 'electron-dip',
-            movementSkipped: true,
-            skipReason: 'target_minimized',
-            detachOrSuspendGuardTriggered: 'suspended_minimized',
-          });
-          suspendCurrentFloatingDockTarget('suspended_minimized');
-        } else {
-          writeWindowsDockTrace('refresh-windows-native-requery', {
-            trackerType: 'windows-native-target-requery',
-            targetId: currentFloatingDockTarget.id,
-            targetWindowHandle: currentFloatingDockTarget.id,
-            normalizedTargetBounds: currentFloatingDockBounds
-              ? rectForDockTrace(currentFloatingDockBounds)
-              : null,
-            normalizedTargetBoundsCoordinateSystem: 'electron-dip',
-            movementSkipped: true,
-            skipReason: 'target_fullscreen_like',
-            detachOrSuspendGuardTriggered: 'suspended_fullscreen',
-          });
-          clearCurrentFloatingDockTarget('suspended_fullscreen');
+    if (isWorkspaceDockTarget()) {
+      const targetBounds = getWorkspaceDockTargetBounds();
+      if (!targetBounds) {
+        if (workspaceModuleWin && workspaceModuleWin.isMinimized()) {
+          suspendWorkspaceWindowDockTarget();
+          return;
         }
+        clearCurrentFloatingDockTarget('target_closed');
+        stopFloatingDockTracking();
         return;
       }
+      currentFloatingDockBounds = targetBounds;
+      applyFloatingDockTargetBounds(targetBounds, currentFloatingDockTarget.side, {
+        trackerType: 'ledger-workspace-window',
+        targetId: currentFloatingDockTarget.id,
+        targetWindowHandle: currentFloatingDockTarget.id,
+        normalizedTargetBounds: targetBounds,
+        normalizedTargetBoundsCoordinateSystem: 'electron-dip',
+        reason: 'workspace_window_bounds_refresh',
+      });
+      return;
+    }
 
-      if (targetHandleBounds?.kind === 'bounds') {
-        const normalizedBounds = nativeRectToDipRect(targetHandleBounds.bounds);
-        writeWindowsDockTrace('refresh-windows-native-requery', {
-          trackerType: 'windows-native-target-requery',
+    if (
+      process.platform === 'win32' &&
+      floatingDockNativeTracker &&
+      currentFloatingDockTarget.platform === 'win32'
+    ) {
+      // Let the Windows native tracker stay authoritative, but re-query the target
+      // HWND periodically so a stalled event hook does not strand the dock on the
+      // primary display when the app moves across monitors.
+      if (Date.now() - windowsNativeDockRequeryAt >= 500) {
+        windowsNativeDockRequeryAt = Date.now();
+        const targetHandleBounds = await queryWindowsDockTargetBounds(currentFloatingDockTarget.id);
+        if (targetHandleBounds?.kind === 'state') {
+          if (targetHandleBounds.state === 'minimized') {
+            writeWindowsDockTrace('refresh-windows-native-requery', {
+              trackerType: 'windows-native-target-requery',
+              targetId: currentFloatingDockTarget.id,
+              targetWindowHandle: currentFloatingDockTarget.id,
+              normalizedTargetBounds: currentFloatingDockBounds
+                ? rectForDockTrace(currentFloatingDockBounds)
+                : null,
+              normalizedTargetBoundsCoordinateSystem: 'electron-dip',
+              movementSkipped: true,
+              skipReason: 'target_minimized',
+              detachOrSuspendGuardTriggered: 'suspended_minimized',
+            });
+            suspendCurrentFloatingDockTarget('suspended_minimized');
+          } else {
+            writeWindowsDockTrace('refresh-windows-native-requery', {
+              trackerType: 'windows-native-target-requery',
+              targetId: currentFloatingDockTarget.id,
+              targetWindowHandle: currentFloatingDockTarget.id,
+              normalizedTargetBounds: currentFloatingDockBounds
+                ? rectForDockTrace(currentFloatingDockBounds)
+                : null,
+              normalizedTargetBoundsCoordinateSystem: 'electron-dip',
+              movementSkipped: true,
+              skipReason: 'target_fullscreen_like',
+              detachOrSuspendGuardTriggered: 'suspended_fullscreen',
+            });
+            clearCurrentFloatingDockTarget('suspended_fullscreen');
+          }
+          return;
+        }
+
+        if (targetHandleBounds?.kind === 'bounds') {
+          const normalizedBounds = nativeRectToDipRect(targetHandleBounds.bounds);
+          writeWindowsDockTrace('refresh-windows-native-requery', {
+            trackerType: 'windows-native-target-requery',
+            targetId: currentFloatingDockTarget.id,
+            targetWindowHandle: currentFloatingDockTarget.id,
+            rawTargetBounds: rectForDockTrace(targetHandleBounds.bounds),
+            rawTargetBoundsCoordinateSystem: 'windows-native-physical-pixels',
+            normalizedTargetBounds: rectForDockTrace(normalizedBounds),
+            normalizedTargetBoundsCoordinateSystem: 'electron-dip',
+            targetCenterPoint: rectCenterForDockTrace(normalizedBounds),
+            currentLedgerBounds: rectForDockTrace(sidebarWin.getBounds()),
+            reason: 'windows_native_tracker_periodic_requery',
+          });
+          applyFloatingDockTargetBounds(normalizedBounds, currentFloatingDockTarget.side, {
+            trackerType: 'windows-native-target-requery',
+            targetId: currentFloatingDockTarget.id,
+            targetWindowHandle: currentFloatingDockTarget.id,
+            rawTargetBounds: targetHandleBounds.bounds,
+            rawTargetBoundsCoordinateSystem: 'windows-native-physical-pixels',
+            normalizedTargetBounds: normalizedBounds,
+            normalizedTargetBoundsCoordinateSystem: 'electron-dip',
+            reason: 'windows_native_tracker_periodic_requery',
+          });
+          return;
+        }
+      }
+
+      // Let the Windows native tracker drive authoritative target bounds,
+      // including multi-display moves.
+      if (currentFloatingDockBounds) {
+        writeWindowsDockTrace('refresh-skip-edge-probe', {
+          trackerType: 'windows-native-tracker',
           targetId: currentFloatingDockTarget.id,
           targetWindowHandle: currentFloatingDockTarget.id,
-          rawTargetBounds: rectForDockTrace(targetHandleBounds.bounds),
-          rawTargetBoundsCoordinateSystem: 'windows-native-physical-pixels',
-          normalizedTargetBounds: rectForDockTrace(normalizedBounds),
+          normalizedTargetBounds: rectForDockTrace(currentFloatingDockBounds),
           normalizedTargetBoundsCoordinateSystem: 'electron-dip',
-          targetCenterPoint: rectCenterForDockTrace(normalizedBounds),
           currentLedgerBounds: rectForDockTrace(sidebarWin.getBounds()),
-          reason: 'windows_native_tracker_periodic_requery',
+          reason: 'native_tracker_authoritative_edge_probe_skipped',
         });
-        applyFloatingDockTargetBounds(normalizedBounds, currentFloatingDockTarget.side, {
-          trackerType: 'windows-native-target-requery',
+        applyFloatingDockTargetBounds(currentFloatingDockBounds, currentFloatingDockTarget.side, {
+          trackerType: 'windows-native-cache-reapply',
           targetId: currentFloatingDockTarget.id,
           targetWindowHandle: currentFloatingDockTarget.id,
-          rawTargetBounds: targetHandleBounds.bounds,
-          rawTargetBoundsCoordinateSystem: 'windows-native-physical-pixels',
-          normalizedTargetBounds: normalizedBounds,
+          normalizedTargetBounds: currentFloatingDockBounds,
           normalizedTargetBoundsCoordinateSystem: 'electron-dip',
-          reason: 'windows_native_tracker_periodic_requery',
+          reason: 'native_tracker_authoritative_edge_probe_skipped',
+        });
+      }
+      return;
+    }
+
+    const sidebarBounds = sidebarWin.getBounds();
+    const dockTarget = currentFloatingDockTarget;
+    const target = await getFloatingDockTargetAtEdge(
+      sidebarBounds,
+      dockTarget.side,
+      Boolean(dockTarget.isLedgerWindow)
+    );
+
+    if (!sidebarWin || sidebarWin.isDestroyed()) return;
+
+    if (!target) {
+      if (isFloatingDockHoldActive() && currentFloatingDockTarget && currentFloatingDockBounds) {
+        currentFloatingDockMisses = 0;
+        applyFloatingDockTargetBounds(currentFloatingDockBounds, currentFloatingDockTarget.side);
+        return;
+      }
+      currentFloatingDockMisses += 1;
+      if (currentFloatingDockMisses <= 24 && currentFloatingDockBounds) {
+        const fallbackBounds = getDockedBoundsForTarget(
+          currentFloatingDockBounds,
+          currentFloatingDockTarget.side,
+          currentSidebarMode
+        );
+        if (!sidebarWin || sidebarWin.isDestroyed()) return;
+        if (rectsMatch(sidebarWin.getBounds(), fallbackBounds)) return;
+        if (!setSidebarBounds(fallbackBounds)) return;
+        currentFloatingPosition = { x: fallbackBounds.x, y: fallbackBounds.y };
+        writeWindowsDockTrace('edge-poll-fallback', {
+          trackerType: getWindowsDockTrackerType(),
+          targetId: currentFloatingDockTarget.id,
+          targetWindowHandle: currentFloatingDockTarget.id,
+          missCount: currentFloatingDockMisses,
+          normalizedTargetBounds: rectForDockTrace(currentFloatingDockBounds),
+          computedLedgerBoundsBeforeFinalClamp: rectForDockTrace(fallbackBounds),
+          finalClampedLedgerBounds: rectForDockTrace(fallbackBounds),
+          boundsPassedToSetBounds: rectForDockTrace(fallbackBounds),
+          ledgerBoundsImmediatelyAfterSetBounds: rectForDockTrace(sidebarWin.getBounds()),
+          reason: 'target_probe_missing_using_last_known_bounds',
         });
         return;
       }
-    }
-
-    // Let the Windows native tracker drive authoritative target bounds,
-    // including multi-display moves.
-    if (currentFloatingDockBounds) {
-      writeWindowsDockTrace('refresh-skip-edge-probe', {
-        trackerType: 'windows-native-tracker',
-        targetId: currentFloatingDockTarget.id,
-        targetWindowHandle: currentFloatingDockTarget.id,
-        normalizedTargetBounds: rectForDockTrace(currentFloatingDockBounds),
-        normalizedTargetBoundsCoordinateSystem: 'electron-dip',
-        currentLedgerBounds: rectForDockTrace(sidebarWin.getBounds()),
-        reason: 'native_tracker_authoritative_edge_probe_skipped',
-      });
-      applyFloatingDockTargetBounds(currentFloatingDockBounds, currentFloatingDockTarget.side, {
-        trackerType: 'windows-native-cache-reapply',
-        targetId: currentFloatingDockTarget.id,
-        targetWindowHandle: currentFloatingDockTarget.id,
-        normalizedTargetBounds: currentFloatingDockBounds,
-        normalizedTargetBoundsCoordinateSystem: 'electron-dip',
-        reason: 'native_tracker_authoritative_edge_probe_skipped',
-      });
-    }
-    return;
-  }
-
-  const sidebarBounds = sidebarWin.getBounds();
-  const dockTarget = currentFloatingDockTarget;
-  const target = await getFloatingDockTargetAtEdge(
-    sidebarBounds,
-    dockTarget.side,
-    Boolean(dockTarget.isLedgerWindow)
-  );
-
-  if (!sidebarWin || sidebarWin.isDestroyed()) return;
-
-  if (!target) {
-    if (isFloatingDockHoldActive() && currentFloatingDockTarget && currentFloatingDockBounds) {
-      currentFloatingDockMisses = 0;
-      applyFloatingDockTargetBounds(currentFloatingDockBounds, currentFloatingDockTarget.side);
-      return;
-    }
-    currentFloatingDockMisses += 1;
-    if (currentFloatingDockMisses <= 24 && currentFloatingDockBounds) {
-      const fallbackBounds = getDockedBoundsForTarget(
-        currentFloatingDockBounds,
-        currentFloatingDockTarget.side,
-        currentSidebarMode
-      );
-      if (!sidebarWin || sidebarWin.isDestroyed()) return;
-      if (rectsMatch(sidebarWin.getBounds(), fallbackBounds)) return;
-      if (!setSidebarBounds(fallbackBounds)) return;
-      currentFloatingPosition = { x: fallbackBounds.x, y: fallbackBounds.y };
-      writeWindowsDockTrace('edge-poll-fallback', {
+      writeWindowsDockTrace('edge-poll-clear-target', {
         trackerType: getWindowsDockTrackerType(),
-        targetId: currentFloatingDockTarget.id,
-        targetWindowHandle: currentFloatingDockTarget.id,
+        targetId: currentFloatingDockTarget?.id ?? null,
+        targetWindowHandle: currentFloatingDockTarget?.id ?? null,
         missCount: currentFloatingDockMisses,
-        normalizedTargetBounds: rectForDockTrace(currentFloatingDockBounds),
-        computedLedgerBoundsBeforeFinalClamp: rectForDockTrace(fallbackBounds),
-        finalClampedLedgerBounds: rectForDockTrace(fallbackBounds),
-        boundsPassedToSetBounds: rectForDockTrace(fallbackBounds),
-        ledgerBoundsImmediatelyAfterSetBounds: rectForDockTrace(sidebarWin.getBounds()),
-        reason: 'target_probe_missing_using_last_known_bounds',
+        movementSkipped: true,
+        skipReason: 'target_missing_after_probe_misses',
+      });
+      clearCurrentFloatingDockTarget();
+      stopFloatingDockTracking();
+      // Reflow to normal floating geometry once dock target is gone.
+      applySidebarWindowMode(currentSidebarMode);
+      return;
+    }
+
+    currentFloatingDockMisses = 0;
+    currentFloatingDockTarget = target.target;
+    currentFloatingDockBounds = target.bounds;
+    if (isFullscreenLikeBounds(target.bounds)) {
+      sendFloatingDockChanged(false, 'suspended_fullscreen');
+      return;
+    }
+    if (currentFloatingDockAttachmentStatus !== 'attached') {
+      sendFloatingDockChanged(true, 'attached');
+    }
+    const nextBounds = getDockedBoundsForTarget(
+      target.bounds,
+      currentFloatingDockTarget.side,
+      currentSidebarMode
+    );
+    if (!sidebarWin || sidebarWin.isDestroyed()) return;
+    const currentLedgerBoundsBefore = sidebarWin.getBounds();
+    if (rectsMatch(currentLedgerBoundsBefore, nextBounds)) {
+      writeWindowsDockTrace('dock-tick', {
+        trackerType: getWindowsDockTrackerType(),
+        targetId: target.target.id,
+        targetWindowHandle: target.target.id,
+        side: currentFloatingDockTarget.side,
+        normalizedTargetBounds: rectForDockTrace(target.bounds),
+        normalizedTargetBoundsCoordinateSystem: 'electron-dip',
+        targetCenterPoint: rectCenterForDockTrace(target.bounds),
+        matchedDisplayId: getDisplayForBounds(target.bounds).id,
+        matchedDisplay: displayForDockTrace(getDisplayForBounds(target.bounds)),
+        currentLedgerBoundsBeforePlacement: rectForDockTrace(currentLedgerBoundsBefore),
+        computedLedgerBoundsBeforeFinalClamp: rectForDockTrace(nextBounds),
+        finalClampedLedgerBounds: rectForDockTrace(nextBounds),
+        movementSkipped: true,
+        skipReason: 'already_at_computed_bounds',
+        setBoundsCalled: false,
       });
       return;
     }
-    writeWindowsDockTrace('edge-poll-clear-target', {
-      trackerType: getWindowsDockTrackerType(),
-      targetId: currentFloatingDockTarget?.id ?? null,
-      targetWindowHandle: currentFloatingDockTarget?.id ?? null,
-      missCount: currentFloatingDockMisses,
-      movementSkipped: true,
-      skipReason: 'target_missing_after_probe_misses',
-    });
-    clearCurrentFloatingDockTarget();
-    stopFloatingDockTracking();
-    // Reflow to normal floating geometry once dock target is gone.
-    applySidebarWindowMode(currentSidebarMode);
-    return;
-  }
-
-  currentFloatingDockMisses = 0;
-  currentFloatingDockTarget = target.target;
-  currentFloatingDockBounds = target.bounds;
-  if (isFullscreenLikeBounds(target.bounds)) {
-    sendFloatingDockChanged(false, 'suspended_fullscreen');
-    return;
-  }
-  if (currentFloatingDockAttachmentStatus !== 'attached') {
-    sendFloatingDockChanged(true, 'attached');
-  }
-  const nextBounds = getDockedBoundsForTarget(
-    target.bounds,
-    currentFloatingDockTarget.side,
-    currentSidebarMode
-  );
-  if (!sidebarWin || sidebarWin.isDestroyed()) return;
-  const currentLedgerBoundsBefore = sidebarWin.getBounds();
-  if (rectsMatch(currentLedgerBoundsBefore, nextBounds)) {
+    const setBoundsCalled = setSidebarBounds(nextBounds);
     writeWindowsDockTrace('dock-tick', {
       trackerType: getWindowsDockTrackerType(),
       targetId: target.target.id,
@@ -3304,34 +3582,14 @@ async function refreshFloatingDockTarget() {
       currentLedgerBoundsBeforePlacement: rectForDockTrace(currentLedgerBoundsBefore),
       computedLedgerBoundsBeforeFinalClamp: rectForDockTrace(nextBounds),
       finalClampedLedgerBounds: rectForDockTrace(nextBounds),
-      movementSkipped: true,
-      skipReason: 'already_at_computed_bounds',
-      setBoundsCalled: false,
+      boundsPassedToSetBounds: rectForDockTrace(nextBounds),
+      setBoundsCalled,
+      movementSkipped: !setBoundsCalled,
+      skipReason: setBoundsCalled ? null : 'set_bounds_failed',
+      ledgerBoundsImmediatelyAfterSetBounds: rectForDockTrace(sidebarWin.getBounds()),
     });
-    return;
-  }
-  const setBoundsCalled = setSidebarBounds(nextBounds);
-  writeWindowsDockTrace('dock-tick', {
-    trackerType: getWindowsDockTrackerType(),
-    targetId: target.target.id,
-    targetWindowHandle: target.target.id,
-    side: currentFloatingDockTarget.side,
-    normalizedTargetBounds: rectForDockTrace(target.bounds),
-    normalizedTargetBoundsCoordinateSystem: 'electron-dip',
-    targetCenterPoint: rectCenterForDockTrace(target.bounds),
-    matchedDisplayId: getDisplayForBounds(target.bounds).id,
-    matchedDisplay: displayForDockTrace(getDisplayForBounds(target.bounds)),
-    currentLedgerBoundsBeforePlacement: rectForDockTrace(currentLedgerBoundsBefore),
-    computedLedgerBoundsBeforeFinalClamp: rectForDockTrace(nextBounds),
-    finalClampedLedgerBounds: rectForDockTrace(nextBounds),
-    boundsPassedToSetBounds: rectForDockTrace(nextBounds),
-    setBoundsCalled,
-    movementSkipped: !setBoundsCalled,
-    skipReason: setBoundsCalled ? null : 'set_bounds_failed',
-    ledgerBoundsImmediatelyAfterSetBounds: rectForDockTrace(sidebarWin.getBounds()),
-  });
-  if (!setBoundsCalled) return;
-  currentFloatingPosition = { x: nextBounds.x, y: nextBounds.y };
+    if (!setBoundsCalled) return;
+    currentFloatingPosition = { x: nextBounds.x, y: nextBounds.y };
   } finally {
     floatingDockRefreshInFlight = false;
   }
@@ -3592,7 +3850,9 @@ if ($script:result) { Write-Output $script:result }
               rawTargetBounds: rectForDockTrace(rawBounds),
               rawTargetBoundsCoordinateSystem: 'windows-native-physical-pixels',
               rawTargetMatchedDisplay: displayForDockTrace(rawDisplay),
-              rawTargetMatchedDisplayNativeBounds: rectForDockTrace(getDisplayNativeBounds(rawDisplay)),
+              rawTargetMatchedDisplayNativeBounds: rectForDockTrace(
+                getDisplayNativeBounds(rawDisplay)
+              ),
               normalizedTargetBounds: rectForDockTrace(bounds),
               normalizedTargetBoundsCoordinateSystem: 'electron-dip',
               targetCenterPoint: rectCenterForDockTrace(bounds),
@@ -3723,11 +3983,16 @@ async function getFloatingDockTargetAtEdge(
       const nativeOffsetScale = Math.max(1, sidebarDisplay.scaleFactor || 1);
       const nativeCenterY = nativeSidebarBounds.y + Math.floor(nativeSidebarBounds.height / 2);
       const nativeProbePoints = probePoints.map((probe) => {
-        const nativeXOffset = Math.max(1, Math.round(Math.abs(
-          probe.side === 'left'
-            ? probe.x - (sidebarBounds.x + sidebarBounds.width)
-            : sidebarBounds.x - probe.x
-        ) * nativeOffsetScale));
+        const nativeXOffset = Math.max(
+          1,
+          Math.round(
+            Math.abs(
+              probe.side === 'left'
+                ? probe.x - (sidebarBounds.x + sidebarBounds.width)
+                : sidebarBounds.x - probe.x
+            ) * nativeOffsetScale
+          )
+        );
         const nativeYOffset = Math.round((probe.y - centerY) * nativeOffsetScale);
 
         return {
@@ -4031,10 +4296,7 @@ async function dockFloatingSidebarToTarget() {
       : getDockSide(currentBounds, target.bounds);
   const dockBounds = getDockedBoundsForTarget(target.bounds, side, currentSidebarMode);
   const targetDisplay = getDisplayForBounds(target.bounds);
-  const clamped = clampRectToWorkArea(
-    dockBounds,
-    targetDisplay.workArea
-  );
+  const clamped = clampRectToWorkArea(dockBounds, targetDisplay.workArea);
 
   setCurrentFloatingDockTarget({ ...target.target, side }, target.bounds);
   const setBoundsCalled = setSidebarBounds(clamped);
@@ -4116,11 +4378,7 @@ function resolveModuleBounds(kind: ModuleWindowKind): Electron.Rectangle {
     const display = screen.getDisplayNearestPoint(sidebarAnchorPoint);
     const workArea = display.workArea;
     return clampRectToWorkArea(
-      getCenteredBoundsInWorkArea(
-        NOTIFICATION_CENTER_WIDTH,
-        NOTIFICATION_CENTER_HEIGHT,
-        workArea
-      ),
+      getCenteredBoundsInWorkArea(NOTIFICATION_CENTER_WIDTH, NOTIFICATION_CENTER_HEIGHT, workArea),
       workArea
     );
   }
@@ -4190,10 +4448,7 @@ function resolveModuleBounds(kind: ModuleWindowKind): Electron.Rectangle {
     : 'left';
 
   const sideSpace = side === 'right' ? rightSpace : leftSpace;
-  const width = Math.max(
-    minWidth,
-    Math.min(targetWidth, Math.max(minWidth, sideSpace))
-  );
+  const width = Math.max(minWidth, Math.min(targetWidth, Math.max(minWidth, sideSpace)));
   const height = targetHeight;
 
   const x =
@@ -4205,6 +4460,72 @@ function resolveModuleBounds(kind: ModuleWindowKind): Electron.Rectangle {
   const fitsWithoutOverlap =
     (side === 'right' && candidate.x >= sidebarBounds.x + sidebarBounds.width + MODULE_GAP) ||
     (side === 'left' && candidate.x + candidate.width <= sidebarBounds.x - MODULE_GAP);
+
+  if (fitsWithoutOverlap && isRectInsideWorkArea(candidate, workArea)) {
+    return candidate;
+  }
+
+  return clampRectToWorkArea(getCenteredBoundsInWorkArea(width, height, workArea), workArea);
+}
+
+function resolveWorkspaceModuleBounds(kind: ModuleWindowKind): Electron.Rectangle {
+  const defaultWidth = kind === 'dashboard' ? DASHBOARD_WIDTH : MODULE_DEFAULT_WIDTH;
+  const defaultHeight = kind === 'dashboard' ? DASHBOARD_HEIGHT : MODULE_DEFAULT_HEIGHT;
+  const minWidth = MODULE_MIN_WIDTH;
+  const minHeight = MODULE_MIN_HEIGHT;
+  const attachmentGap = 0;
+
+  const sidebarBounds = sidebarWin?.getBounds() ?? getDockedBounds(RAIL_SIZE);
+  const sidebarAnchorPoint = {
+    x: Math.round(sidebarBounds.x + sidebarBounds.width / 2),
+    y: Math.round(sidebarBounds.y + sidebarBounds.height / 2),
+  };
+  const display = screen.getDisplayNearestPoint(sidebarAnchorPoint);
+  const workArea = display.workArea;
+
+  const maxWidth = Math.max(minWidth, workArea.width - WINDOW_MARGIN * 2);
+  const maxHeight = Math.max(minHeight, workArea.height - WINDOW_MARGIN * 2);
+  const targetWidth = Math.min(defaultWidth, maxWidth);
+  const targetHeight = Math.min(defaultHeight, maxHeight);
+
+  const leftSpace = sidebarBounds.x - workArea.x - attachmentGap - WINDOW_MARGIN;
+  const rightSpace =
+    workArea.x +
+    workArea.width -
+    (sidebarBounds.x + sidebarBounds.width) -
+    attachmentGap -
+    WINDOW_MARGIN;
+
+  const preferredSide: 'left' | 'right' =
+    currentSidebarPosition === 'left'
+      ? 'right'
+      : currentSidebarPosition === 'right'
+      ? 'left'
+      : rightSpace >= leftSpace
+      ? 'right'
+      : 'left';
+
+  const canFitPreferred =
+    preferredSide === 'right' ? rightSpace >= targetWidth : leftSpace >= targetWidth;
+  const side: 'left' | 'right' = canFitPreferred
+    ? preferredSide
+    : rightSpace >= leftSpace
+    ? 'right'
+    : 'left';
+
+  const sideSpace = side === 'right' ? rightSpace : leftSpace;
+  const width = Math.max(minWidth, Math.min(targetWidth, Math.max(minWidth, sideSpace)));
+  const height = targetHeight;
+
+  const x =
+    side === 'right'
+      ? sidebarBounds.x + sidebarBounds.width + attachmentGap
+      : sidebarBounds.x - width - attachmentGap;
+  const y = sidebarBounds.y;
+  const candidate = clampRectToWorkArea({ x, y, width, height }, workArea);
+  const fitsWithoutOverlap =
+    (side === 'right' && candidate.x >= sidebarBounds.x + sidebarBounds.width + attachmentGap) ||
+    (side === 'left' && candidate.x + candidate.width <= sidebarBounds.x - attachmentGap);
 
   if (fitsWithoutOverlap && isRectInsideWorkArea(candidate, workArea)) {
     return candidate;
@@ -4573,9 +4894,9 @@ function createSidebarWindow() {
                 : currentSidebarPreferences.isExpanded
                 ? getDockedBounds(RAIL_SIZE)
                 : getCollapsedBounds(COLLAPSED_SIZE)
-          : currentSidebarPosition === 'top' || currentSidebarPosition === 'bottom'
-          ? getDockedBounds(HORIZONTAL_DOCK_WIDTH)
-          : getDockedBounds(EXPANDED_WIDTH);
+              : currentSidebarPosition === 'top' || currentSidebarPosition === 'bottom'
+              ? getDockedBounds(HORIZONTAL_DOCK_WIDTH)
+              : getDockedBounds(EXPANDED_WIDTH);
           sidebarWin.setBounds(nextBounds);
           applyWindowsModuleWindowShape(sidebarWin);
           sidebarWin.showInactive();
@@ -4593,6 +4914,7 @@ function createSidebarWindow() {
     sidebarWin.on('resize', () => {
       if (sidebarWin && !sidebarWin.isDestroyed()) {
         applyWindowsModuleWindowShape(sidebarWin);
+        syncWorkspaceWindowAttachment();
       }
     });
 
@@ -4600,6 +4922,7 @@ function createSidebarWindow() {
       if (!sidebarWin || sidebarWin.isDestroyed()) return;
       if (currentSidebarMode === 'auth' || currentSidebarMode === 'fullscreen') return;
       syncCurrentFloatingPosition(sidebarWin.getBounds());
+      syncWorkspaceWindowAttachment();
     });
   } catch (err) {
     console.error('[electron] Error while loading sidebar renderer:', err);
@@ -4717,10 +5040,9 @@ function buildModuleUrl(route: WorkspaceModuleRoute) {
   const focusContextQuery = route.focusContext
     ? `&focusContext=${encodeURIComponent(route.focusContext)}`
     : '';
-  const focusSectionQuery =
-    route.kind === 'settings' && route.focusSection
-      ? `&section=${encodeURIComponent(route.focusSection)}`
-      : '';
+  const focusSectionQuery = route.focusSection
+    ? `&section=${encodeURIComponent(route.focusSection)}`
+    : '';
   return getRendererUrl(
     `?window=module&module=${route.kind}${focusDateQuery}${focusProjectQuery}${focusNoteQuery}${focusTaskQuery}${focusContextQuery}${focusSectionQuery}`
   );
@@ -4756,6 +5078,8 @@ function navigateWorkspaceModuleWindow(route: WorkspaceModuleRoute, pushHistory 
   }
 
   registerWorkspaceModuleKind(route.kind, moduleWin, route);
+  syncWorkspaceWindowAttachment(route.kind);
+  setWorkspaceWindowAsFloatingDockTarget(route.kind);
 
   if (moduleWin.isMinimized()) {
     moduleWin.restore();
@@ -4783,6 +5107,27 @@ function navigateWorkspaceModuleWindow(route: WorkspaceModuleRoute, pushHistory 
   });
 
   moduleWin.loadURL(buildModuleUrl(route));
+  broadcastWorkspaceNavigationState();
+  return true;
+}
+
+function updateWorkspaceModuleRoute(route: WorkspaceModuleRoute) {
+  const moduleWin = workspaceModuleWin;
+  if (!moduleWin || moduleWin.isDestroyed()) return false;
+  const currentRoute = getCurrentWorkspaceRoute();
+  if (currentRoute && isSameWorkspaceRoute(currentRoute, route)) {
+    broadcastWorkspaceNavigationState();
+    return true;
+  }
+
+  if (currentRoute) {
+    workspaceModuleBackStack.push(currentRoute);
+  }
+  workspaceModuleForwardStack.length = 0;
+
+  registerWorkspaceModuleKind(route.kind, moduleWin, route);
+  syncWorkspaceWindowAttachment(route.kind);
+  setWorkspaceWindowAsFloatingDockTarget(route.kind);
   broadcastWorkspaceNavigationState();
   return true;
 }
@@ -4832,12 +5177,9 @@ function openModuleWindow(
     workspaceModuleKind !== kind
   ) {
     holdCurrentFloatingDockTarget();
-    if (
-      currentSidebarPosition === 'floating' &&
-      currentFloatingDockTarget &&
-      currentFloatingDockBounds
-    ) {
-      workspaceModuleWin.setBounds(resolveModuleBounds(kind), false);
+    if (shouldAttachWorkspaceWindowToSidebar()) {
+      workspaceModuleWin.setBounds(resolveWorkspaceModuleBounds(kind), false);
+      setWorkspaceWindowAsFloatingDockTarget(kind);
     }
     navigateWorkspaceModuleWindow(workspaceRoute);
     return;
@@ -4846,7 +5188,12 @@ function openModuleWindow(
   const existing = moduleWins.get(kind);
   if (existing && !existing.isDestroyed()) {
     holdCurrentFloatingDockTarget();
-    if (
+    if (isWorkspaceModuleKind(kind)) {
+      if (shouldAttachWorkspaceWindowToSidebar()) {
+        existing.setBounds(resolveWorkspaceModuleBounds(kind), false);
+        setWorkspaceWindowAsFloatingDockTarget(kind);
+      }
+    } else if (
       currentSidebarPosition === 'floating' &&
       currentFloatingDockTarget &&
       currentFloatingDockBounds
@@ -4886,7 +5233,10 @@ function openModuleWindow(
   const isNotificationCenter = kind === 'notifications';
   const isInbox = kind === 'inbox';
   holdCurrentFloatingDockTarget();
-  let initialBounds = resolveModuleBounds(kind);
+  let initialBounds =
+    isWorkspaceModuleKind(kind) && shouldAttachWorkspaceWindowToSidebar()
+      ? resolveWorkspaceModuleBounds(kind)
+      : resolveModuleBounds(kind);
 
   if (isQuickCapture) {
     const displayForModule = screen.getDisplayMatching(initialBounds).workArea;
@@ -4957,12 +5307,17 @@ function openModuleWindow(
 
   if (isWorkspaceModuleKind(kind)) {
     registerWorkspaceModuleKind(kind, moduleWin, workspaceRoute);
+    setWorkspaceWindowAsFloatingDockTarget(kind);
   } else {
     moduleWins.set(kind, moduleWin);
   }
 
   moduleWin.on('minimize', () => {
-    suspendCurrentFloatingDockTarget('suspended_minimized');
+    if (moduleWin === workspaceModuleWin && isWorkspaceDockTarget()) {
+      suspendWorkspaceWindowDockTarget();
+    } else {
+      suspendCurrentFloatingDockTarget('suspended_minimized');
+    }
     sidebarWin?.webContents.send('module:state-changed', { kind, state: 'minimized' });
   });
 
@@ -4973,6 +5328,11 @@ function openModuleWindow(
   moduleWin.on('closed', () => {
     moduleWins.delete(kind);
     if (workspaceModuleWin === moduleWin) {
+      if (isWorkspaceDockTarget()) {
+        clearCurrentFloatingDockTarget('target_closed');
+        stopFloatingDockTracking();
+      }
+      cancelWorkspaceDockRefresh();
       if (workspaceModuleKind) {
         moduleWins.delete(workspaceModuleKind);
       }
@@ -5018,6 +5378,20 @@ function openModuleWindow(
   });
   moduleWin.on('resized', () => {
     applyWindowsModuleWindowShape(moduleWin);
+    if (moduleWin === workspaceModuleWin && isWorkspaceDockTarget()) {
+      scheduleWorkspaceDockRefresh();
+    }
+  });
+  moduleWin.on('moved', () => {
+    if (moduleWin === workspaceModuleWin && isWorkspaceDockTarget()) {
+      if (headerDragStarts.has(moduleWin.webContents.id)) return;
+      scheduleWorkspaceDockRefresh(16);
+    }
+  });
+  moduleWin.on('restore', () => {
+    if (moduleWin === workspaceModuleWin && shouldAttachWorkspaceWindowToSidebar()) {
+      setWorkspaceWindowAsFloatingDockTarget(kind);
+    }
   });
 
   moduleWin.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL) => {
@@ -5053,7 +5427,12 @@ function openModuleWindow(
 
       const isF11 = key === 'f11';
       const isEscape = key === 'escape' || key === 'esc';
-      if ((isEscape || isF11) && moduleWin && !moduleWin.isDestroyed() && moduleWin.isFullScreen()) {
+      if (
+        (isEscape || isF11) &&
+        moduleWin &&
+        !moduleWin.isDestroyed() &&
+        moduleWin.isFullScreen()
+      ) {
         // Prevent the renderer from also handling it
         event.preventDefault();
         moduleWin.setFullScreen(false);
@@ -5089,6 +5468,7 @@ function openModuleWindow(
         applyWindowsModuleWindowShape(moduleWin);
         moduleWin.show();
         moduleWin.focus();
+        sendModuleFullscreenState(kind, moduleWin, true);
       }
     } catch (err) {}
   });
@@ -5099,6 +5479,7 @@ function openModuleWindow(
         applyWindowsModuleWindowShape(moduleWin);
         moduleWin.show();
         moduleWin.focus();
+        sendModuleFullscreenState(kind, moduleWin, false);
       }
     } catch (err) {}
   });
@@ -5133,6 +5514,11 @@ function openModuleWindow(
       focusTaskId,
       focusContext,
       focusSection
+    );
+    sendModuleFullscreenState(
+      kind,
+      moduleWin,
+      moduleWindowFullscreenBoundsMemory.has(kind) || moduleWin.isFullScreen()
     );
     broadcastWorkspaceNavigationState();
   });
@@ -5270,9 +5656,9 @@ ipcMain.handle(
       applySidebarWindowMode(currentSidebarMode, true);
 
       if (
-      currentSidebarPosition === 'floating' &&
-      currentFloatingDockTarget &&
-      currentSidebarPreferences.floatingDockEnabled !== false
+        currentSidebarPosition === 'floating' &&
+        currentFloatingDockTarget &&
+        currentSidebarPreferences.floatingDockEnabled !== false
       ) {
         if (
           !floatingDockNativeTracker &&
@@ -5384,10 +5770,13 @@ ipcMain.handle('window:begin-header-drag', (event) => {
   }
 
   const bounds = win.getBounds();
+  stopHeaderDragLoop(event.sender.id);
   headerDragStarts.set(event.sender.id, {
     cursor: screen.getCursorScreenPoint(),
     bounds,
+    timer: null,
   });
+  startHeaderDragLoop(event.sender.id, win);
   return bounds;
 });
 
@@ -5398,21 +5787,19 @@ ipcMain.handle('window:update-header-drag', (event) => {
   if (!dragStart) return win.getBounds();
   if (win.isFullScreen()) return win.getBounds();
 
-  const cursor = screen.getCursorScreenPoint();
-  const nextPosition = {
-    x: dragStart.bounds.x + cursor.x - dragStart.cursor.x,
-    y: dragStart.bounds.y + cursor.y - dragStart.cursor.y,
-  };
-
-  win.setPosition(Math.round(nextPosition.x), Math.round(nextPosition.y), false);
+  applyHeaderDragPosition(event.sender.id, win);
   return win.getBounds();
 });
 
 ipcMain.handle('window:finish-header-drag', (event) => {
   const win = BrowserWindow.fromWebContents(event.sender);
+  stopHeaderDragLoop(event.sender.id);
   headerDragStarts.delete(event.sender.id);
   if (!win || win.isDestroyed()) return null;
   applyWindowsModuleWindowShape(win);
+  if (win === workspaceModuleWin && isWorkspaceDockTarget()) {
+    applyWorkspaceDockTargetBounds(win.getBounds());
+  }
   return win.getBounds();
 });
 
@@ -5443,6 +5830,9 @@ ipcMain.handle('window:toggle-module', (_event, payload: ModuleWindowKind | Modu
     if (focusDate || focusProjectId || focusNoteId || focusTaskId) {
       if (existing.isMinimized()) {
         existing.restore();
+        if (isWorkspaceModuleKind(kind)) {
+          setWorkspaceWindowAsFloatingDockTarget(kind);
+        }
       }
       existing.show();
       existing.focus();
@@ -5460,6 +5850,9 @@ ipcMain.handle('window:toggle-module', (_event, payload: ModuleWindowKind | Modu
 
     if (existing.isMinimized()) {
       existing.restore();
+      if (isWorkspaceModuleKind(kind)) {
+        setWorkspaceWindowAsFloatingDockTarget(kind);
+      }
       existing.focus();
       return;
     }
@@ -5560,6 +5953,7 @@ ipcMain.handle('window:toggle-module-fullscreen', (_event, kind: ModuleWindowKin
     existing.setFullScreen(false);
   }
   restoreModuleWindowBounds(kind, existing);
+  sendModuleFullscreenState(kind, existing, false);
   return false;
 });
 
@@ -5573,6 +5967,22 @@ ipcMain.handle('window:workspace-go-forward', () => {
 
 ipcMain.handle('window:workspace-navigation-state', () => {
   return getWorkspaceNavigationState();
+});
+
+ipcMain.handle('window:workspace-route-changed', (_event, payload: ModuleFocusPayload) => {
+  const kind = payload?.kind;
+  if (!kind) return false;
+  return updateWorkspaceModuleRoute(
+    routeFromModuleArgs(
+      kind,
+      payload.focusDate,
+      payload.focusProjectId,
+      payload.focusNoteId,
+      payload.focusTaskId,
+      payload.focusContext,
+      payload.focusSection
+    )
+  );
 });
 
 ipcMain.handle('window:open-external', async (_event, url: string) => {
@@ -5695,14 +6105,17 @@ ipcMain.on('calendar:items-updated', () => {
   broadcastCalendarItemsUpdated();
 });
 
-ipcMain.on('ledger:theme-updated', (_event, payload: { theme?: 'light' | 'dark' | 'system' } | null) => {
-  const windows = BrowserWindow.getAllWindows().filter((win) => !win.isDestroyed());
-  for (const win of windows) {
-    if (!win.webContents.isDestroyed()) {
-      win.webContents.send('ledger:theme-updated', payload ?? null);
+ipcMain.on(
+  'ledger:theme-updated',
+  (_event, payload: { theme?: 'light' | 'dark' | 'system' } | null) => {
+    const windows = BrowserWindow.getAllWindows().filter((win) => !win.isDestroyed());
+    for (const win of windows) {
+      if (!win.webContents.isDestroyed()) {
+        win.webContents.send('ledger:theme-updated', payload ?? null);
+      }
     }
   }
-});
+);
 
 // Touch Bar setup for macOS
 function syncTouchBar() {
@@ -5798,7 +6211,10 @@ app.whenReady().then(() => {
   );
   ipcMain.on(
     'notifications:set-session',
-    (_event, payload?: { accessToken?: string | null; userId?: string | null; apiUrl?: string | null }) => {
+    (
+      _event,
+      payload?: { accessToken?: string | null; userId?: string | null; apiUrl?: string | null }
+    ) => {
       syncNotificationSession(payload ?? null);
     }
   );
@@ -5837,7 +6253,6 @@ app.whenReady().then(() => {
   if (!allWindowsRegistered) {
     console.warn(`[electron] Failed to register all windows shortcut: ${toggleAllWindowsShortcut}`);
   }
-
 });
 
 app.on('before-quit', () => {

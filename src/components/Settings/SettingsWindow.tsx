@@ -49,6 +49,7 @@ import { ModuleWindowHeader } from '../Common/ModuleWindowHeader';
 import { CloseGuardModal } from '../Common/CloseGuardModal';
 import { ModalCloseButton } from '../Common/ModalCloseButton';
 import authService from '../../services/auth';
+import { useWorkspaceRouteHistory } from '../../hooks/useWorkspaceRouteHistory';
 
 type UserPreferences = {
   weekStartsOn: 'sunday' | 'monday';
@@ -217,7 +218,12 @@ const settingsNavGroups: Array<{
     icon: UserRound,
     sections: [
       { id: 'account', label: 'Account', description: 'Identity and security', icon: UserRound },
-      { id: 'sessions', label: 'Sessions', description: 'Signed-in devices and access', icon: Shield },
+      {
+        id: 'sessions',
+        label: 'Sessions',
+        description: 'Signed-in devices and access',
+        icon: Shield,
+      },
     ],
   },
   {
@@ -231,11 +237,36 @@ const settingsNavGroups: Array<{
         description: 'Display and behavior defaults',
         icon: BriefcaseBusiness,
       },
-      { id: 'calendar', label: 'Calendar', description: 'Event and reminder defaults', icon: CalendarDays },
-      { id: 'notifications', label: 'Notifications', description: 'Alerts and delivery', icon: Bell },
-      { id: 'integrations', label: 'Integrations', description: 'Connect external signals', icon: Plug2 },
-      { id: 'sidebar', label: 'Sidebar', description: 'Docking, visibility, and placement', icon: PanelLeft },
-      { id: 'shortcuts', label: 'Keyboard shortcuts', description: 'Quick reference for actions', icon: Keyboard },
+      {
+        id: 'calendar',
+        label: 'Calendar',
+        description: 'Event and reminder defaults',
+        icon: CalendarDays,
+      },
+      {
+        id: 'notifications',
+        label: 'Notifications',
+        description: 'Alerts and delivery',
+        icon: Bell,
+      },
+      {
+        id: 'integrations',
+        label: 'Integrations',
+        description: 'Connect external signals',
+        icon: Plug2,
+      },
+      {
+        id: 'sidebar',
+        label: 'Sidebar',
+        description: 'Docking, visibility, and placement',
+        icon: PanelLeft,
+      },
+      {
+        id: 'shortcuts',
+        label: 'Keyboard shortcuts',
+        description: 'Quick reference for actions',
+        icon: Keyboard,
+      },
     ],
   },
   {
@@ -254,7 +285,9 @@ const settingsNavGroups: Array<{
 ];
 
 const isSettingsSection = (value: string | null | undefined): value is SettingsSectionId => {
-  const section = String(value ?? '').trim().toLowerCase();
+  const section = String(value ?? '')
+    .trim()
+    .toLowerCase();
   return (
     section === 'account' ||
     section === 'sessions' ||
@@ -293,7 +326,10 @@ const shortcutSections: Array<{
     title: 'Sidebar',
     shortcuts: [
       { keys: '⌘ + ⇧ + B', description: 'hide / show sidebar' },
-      { keys: '⌘/Ctrl + ⇧ + H', description: 'toggle side panels in Notes, Calendar, and Projects' },
+      {
+        keys: '⌘/Ctrl + ⇧ + H',
+        description: 'toggle side panels in Notes, Calendar, and Projects',
+      },
       { keys: '⌘/Ctrl + ⇧ + L', description: 'hide / show all Ledger windows' },
       { keys: '⌘ + B', description: 'collapse / expand' },
     ],
@@ -435,8 +471,7 @@ const compactSelectClassName =
 
 const preferenceSelectClassName = `${compactSelectClassName} w-full`;
 
-const preferenceRowClassName =
-  'grid gap-3 py-5 sm:grid-cols-[minmax(0,1fr)_280px] sm:items-center';
+const preferenceRowClassName = 'grid gap-3 py-5 sm:grid-cols-[minmax(0,1fr)_280px] sm:items-center';
 
 const inlineSwitchClassName =
   'relative inline-flex h-7 w-12 shrink-0 items-center rounded-full border transition focus:outline-none focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60';
@@ -455,7 +490,8 @@ const settingsTheme = {
   pageSubtitle: 'text-sm text-[var(--ledger-text-secondary)]',
   pageStatus: 'text-xs text-[var(--ledger-text-muted)]',
   sectionShell: 'border-t border-[color:var(--ledger-border-subtle)] pt-6',
-  sectionRows: 'mt-5 divide-y divide-[color:var(--ledger-border-subtle)] border-t border-[color:var(--ledger-border-subtle)]',
+  sectionRows:
+    'mt-5 divide-y divide-[color:var(--ledger-border-subtle)] border-t border-[color:var(--ledger-border-subtle)]',
   rowLabel: 'text-sm font-medium text-[var(--ledger-text-secondary)]',
   rowValue: 'text-sm text-[var(--ledger-text-primary)]',
   rowMuted: 'text-xs text-[var(--ledger-text-muted)]',
@@ -501,15 +537,18 @@ const settingsTheme = {
     'h-10 w-full rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 text-sm text-[var(--ledger-text-primary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60',
   inputSecondary:
     'h-10 rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 text-sm text-[var(--ledger-text-primary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60',
-  pill:
-    'inline-flex rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2.5 py-1 text-[11px] font-medium text-[var(--ledger-text-secondary)]',
+  pill: 'inline-flex rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2.5 py-1 text-[11px] font-medium text-[var(--ledger-text-secondary)]',
   dangerPill:
     'inline-flex rounded-full border border-[color:rgba(217,45,32,0.18)] bg-[var(--ledger-surface-card)] px-3 text-xs font-medium text-[var(--ledger-danger)] transition hover:bg-[color:rgba(217,45,32,0.08)]',
   disabledButton:
     'h-8 rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 text-xs font-medium text-[var(--ledger-text-muted)] transition',
 } as const;
 
-const themeOptionOrder: Array<{ value: UserPreferences['theme']; label: string; description: string }> = [
+const themeOptionOrder: Array<{
+  value: UserPreferences['theme'];
+  label: string;
+  description: string;
+}> = [
   { value: 'system', label: 'System', description: 'Match your OS appearance.' },
   { value: 'light', label: 'Light', description: 'Always use the warm light theme.' },
   { value: 'dark', label: 'Dark', description: 'Always use the graphite dark theme.' },
@@ -597,6 +636,7 @@ export const SettingsWindow = () => {
     setDefaultState,
     setAlwaysOnTop,
     setAutoHide,
+    workspaceShellLayout,
   } = useSidebar();
   const api = useApi();
   const {
@@ -608,14 +648,15 @@ export const SettingsWindow = () => {
     isLoading: isLoadingWorkspaces,
     error: workspaceError,
   } = useWorkspaceContext();
-  const [activeSection, setActiveSection] = useState<SettingsSectionId>(getInitialSettingsSection());
+  const [activeSection, setActiveSection] = useState<SettingsSectionId>(
+    getInitialSettingsSection()
+  );
 
   const [preferences, setPreferences] = useState<UserPreferences>(defaultPrefs);
   const [isSavingPrefs, setIsSavingPrefs] = useState(false);
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
-  const [notificationPreferences, setNotificationPreferences] = useState<NotificationPreferences>(
-    defaultNotificationPrefs
-  );
+  const [notificationPreferences, setNotificationPreferences] =
+    useState<NotificationPreferences>(defaultNotificationPrefs);
   const [isSavingNotificationPrefs, setIsSavingNotificationPrefs] = useState(false);
 
   const [fullName, setFullName] = useState('');
@@ -673,8 +714,9 @@ export const SettingsWindow = () => {
   const [isDisconnectingSlack, setIsDisconnectingSlack] = useState(false);
   const [slackError, setSlackError] = useState<string | null>(null);
   const [slackRefreshToken, setSlackRefreshToken] = useState(0);
-  const [extensionTokenStatus, setExtensionTokenStatus] =
-    useState<ExtensionTokenStatus | null>(null);
+  const [extensionTokenStatus, setExtensionTokenStatus] = useState<ExtensionTokenStatus | null>(
+    null
+  );
   const [isLoadingExtensionTokenStatus, setIsLoadingExtensionTokenStatus] = useState(false);
   const [isExtensionTokenBusy, setIsExtensionTokenBusy] = useState(false);
   const [extensionTokenError, setExtensionTokenError] = useState<string | null>(null);
@@ -831,10 +873,7 @@ export const SettingsWindow = () => {
   useEffect(() => {
     if (!settingsHydratedRef.current) return;
 
-    const scheme = resolveDesktopThemeScheme(
-      preferences.theme,
-      getSystemDesktopThemeScheme()
-    );
+    const scheme = resolveDesktopThemeScheme(preferences.theme, getSystemDesktopThemeScheme());
     applyDesktopCssVars(document.documentElement, scheme);
     window.ipcRenderer?.send('ledger:theme-updated', {
       theme: preferences.theme,
@@ -846,7 +885,8 @@ export const SettingsWindow = () => {
 
     const loadNotificationPreferences = async () => {
       try {
-        const payload = (await api.getNotificationPreferences()) as Partial<NotificationPreferences>;
+        const payload =
+          (await api.getNotificationPreferences()) as Partial<NotificationPreferences>;
 
         if (cancelled) return;
 
@@ -940,6 +980,11 @@ export const SettingsWindow = () => {
       window.ipcRenderer?.off('settings:focus-section', handleFocusSection);
     };
   }, []);
+
+  useWorkspaceRouteHistory(
+    { kind: 'settings', focusSection: activeSection },
+    Boolean(activeSection)
+  );
 
   const currentAccountSession = useMemo(
     () => accountSessions.find((session) => session.is_current) ?? null,
@@ -1194,7 +1239,7 @@ export const SettingsWindow = () => {
       }
 
       await refreshWorkspaces();
-      
+
       window.dispatchEvent(new CustomEvent('ledger:workspaces-changed'));
       setWorkspaceCreateStatus('Workspace created and activated. Next step: invite teammates.');
       window.setTimeout(() => {
@@ -1505,7 +1550,13 @@ export const SettingsWindow = () => {
       setWorkspaceEditDescription(activeWorkspace?.description ?? '');
       setWorkspaceDeleteConfirm('');
     }
-  }, [activeWorkspace?.id, activeWorkspace?.name, activeWorkspace?.description, isWorkspaceDeleteModalOpen, isWorkspaceManageModalOpen]);
+  }, [
+    activeWorkspace?.id,
+    activeWorkspace?.name,
+    activeWorkspace?.description,
+    isWorkspaceDeleteModalOpen,
+    isWorkspaceManageModalOpen,
+  ]);
 
   const handleUpdateWorkspace = async () => {
     if (!activeWorkspaceId) return false;
@@ -1548,7 +1599,8 @@ export const SettingsWindow = () => {
     setWorkspaceDeleteError(null);
     setIsDeletingWorkspace(true);
 
-    const nextWorkspace = workspaces.find((workspace) => workspace.id !== activeWorkspaceId) ?? null;
+    const nextWorkspace =
+      workspaces.find((workspace) => workspace.id !== activeWorkspaceId) ?? null;
 
     try {
       await api.deleteWorkspace(activeWorkspaceId);
@@ -1572,7 +1624,7 @@ export const SettingsWindow = () => {
       }
 
       await refreshWorkspaces();
-      
+
       window.dispatchEvent(new CustomEvent('ledger:workspaces-changed'));
       return true;
     } catch (err) {
@@ -1672,7 +1724,7 @@ export const SettingsWindow = () => {
           ? (invitesPayload as { invitations: WorkspaceInvitation[] }).invitations
           : [];
         const nextTeams = Array.isArray((teamsPayload as { teams?: unknown[] })?.teams)
-          ? ((teamsPayload as { teams: WorkspaceTeam[] }).teams ?? [])
+          ? (teamsPayload as { teams: WorkspaceTeam[] }).teams ?? []
           : [];
 
         setWorkspaceMembers(nextMembers);
@@ -1897,7 +1949,7 @@ export const SettingsWindow = () => {
       });
       const teamsPayload = await api.getTeams({ includeArchived: true });
       const nextTeams = Array.isArray((teamsPayload as { teams?: unknown[] })?.teams)
-        ? ((teamsPayload as { teams: WorkspaceTeam[] }).teams ?? [])
+        ? (teamsPayload as { teams: WorkspaceTeam[] }).teams ?? []
         : [];
       setWorkspaceTeams(nextTeams);
       setIsCreateTeamOpen(false);
@@ -1929,7 +1981,10 @@ export const SettingsWindow = () => {
   return (
     <div
       className={settingsTheme.shell}
-      style={{ scrollbarGutter: 'auto' }}
+      style={{
+        scrollbarGutter: 'auto',
+        ...workspaceShellLayout.workspaceShellStyle,
+      }}
     >
       <CloseGuardModal
         isOpen={showCloseGuardModal}
@@ -1952,6 +2007,7 @@ export const SettingsWindow = () => {
         }}
         onClose={attemptCloseSettings}
         compact
+        showBodyHeader={false}
         actions={
           <button
             onClick={() => {
@@ -1966,10 +2022,7 @@ export const SettingsWindow = () => {
 
       <div className={settingsTheme.root}>
         <div className="h-full grid grid-cols-[260px_1fr]">
-          <aside
-            className={settingsTheme.aside}
-            aria-label="Settings sections"
-          >
+          <aside className={settingsTheme.aside} aria-label="Settings sections">
             <nav className="space-y-3" aria-label="Settings navigation">
               {settingsNavGroups.map((group) => (
                 <section key={group.id} className="space-y-1.5">
@@ -2013,7 +2066,9 @@ export const SettingsWindow = () => {
           </aside>
 
           <main
-            className={`${settingsTheme.main} ${isSettingsModalOpen ? 'overflow-hidden' : 'overflow-auto'}`}
+            className={`${settingsTheme.main} ${
+              isSettingsModalOpen ? 'overflow-hidden' : 'overflow-auto'
+            }`}
             aria-live="polite"
           >
             <div className="mx-auto max-w-4xl space-y-5">
@@ -2032,7 +2087,10 @@ export const SettingsWindow = () => {
                   </div>
 
                   <div className="mt-8 space-y-10">
-                    <section className={settingsTheme.sectionShell} aria-labelledby="settings-profile">
+                    <section
+                      className={settingsTheme.sectionShell}
+                      aria-labelledby="settings-profile"
+                    >
                       <h3 id="settings-profile" className={settingsTheme.sectionTitle}>
                         Profile
                       </h3>
@@ -2043,7 +2101,9 @@ export const SettingsWindow = () => {
                             <label htmlFor="settings-full-name" className={settingsTheme.rowLabel}>
                               Display name
                             </label>
-                            <p className={settingsTheme.rowMuted}>Your name as it appears in Ledger.</p>
+                            <p className={settingsTheme.rowMuted}>
+                              Your name as it appears in Ledger.
+                            </p>
                           </div>
                           <div className="max-w-130">
                             <input
@@ -2069,15 +2129,16 @@ export const SettingsWindow = () => {
                       </div>
                     </section>
 
-                    <section className={settingsTheme.sectionShell} aria-labelledby="settings-security">
+                    <section
+                      className={settingsTheme.sectionShell}
+                      aria-labelledby="settings-security"
+                    >
                       <div className="flex items-center justify-between gap-4">
                         <div className="space-y-1">
                           <h3 id="settings-security" className={settingsTheme.sectionTitle}>
                             Security
                           </h3>
-                          <p className={settingsTheme.rowMuted}>
-                            Change your account password.
-                          </p>
+                          <p className={settingsTheme.rowMuted}>Change your account password.</p>
                         </div>
                         {!showPasswordEditor ? (
                           <button
@@ -2108,10 +2169,7 @@ export const SettingsWindow = () => {
                         <div className="mt-5 max-w-155 space-y-4">
                           <div className="grid gap-4 md:grid-cols-2">
                             <div className="grid gap-2">
-                              <label
-                                htmlFor="settings-password"
-                                className={settingsTheme.rowLabel}
-                              >
+                              <label htmlFor="settings-password" className={settingsTheme.rowLabel}>
                                 New password
                               </label>
                               <input
@@ -2148,7 +2206,10 @@ export const SettingsWindow = () => {
                               {isUpdatingPassword ? 'Updating...' : 'Update password'}
                             </button>
                             {isUpdatingPassword && (
-                              <Loader2 size={14} className="animate-spin text-[var(--ledger-text-muted)]" />
+                              <Loader2
+                                size={14}
+                                className="animate-spin text-[var(--ledger-text-muted)]"
+                              />
                             )}
                           </div>
                           {passwordError && (
@@ -2164,7 +2225,10 @@ export const SettingsWindow = () => {
                       ) : null}
                     </section>
 
-                    <section className={settingsTheme.sectionShell} aria-labelledby="settings-session">
+                    <section
+                      className={settingsTheme.sectionShell}
+                      aria-labelledby="settings-session"
+                    >
                       <div className="flex items-center justify-between gap-4">
                         <div className="space-y-1">
                           <h3 id="settings-session" className={settingsTheme.sectionTitle}>
@@ -2207,7 +2271,10 @@ export const SettingsWindow = () => {
                   </div>
 
                   <div className="mt-8 space-y-10">
-                    <section className={settingsTheme.sectionShell} aria-labelledby="settings-current-session">
+                    <section
+                      className={settingsTheme.sectionShell}
+                      aria-labelledby="settings-current-session"
+                    >
                       <div className="flex items-center justify-between gap-4">
                         <div className="space-y-1">
                           <h3 id="settings-current-session" className={settingsTheme.sectionTitle}>
@@ -2231,13 +2298,13 @@ export const SettingsWindow = () => {
                       <div className={settingsTheme.sectionRows}>
                         <div className="grid gap-4 py-5 md:grid-cols-[220px_minmax(0,1fr)]">
                           <div className={settingsTheme.rowLabel}>Device</div>
-                          <div className={settingsTheme.rowValue}>
-                            {currentSessionDeviceLabel}
-                          </div>
+                          <div className={settingsTheme.rowValue}>{currentSessionDeviceLabel}</div>
                         </div>
                         <div className="grid gap-4 py-5 md:grid-cols-[220px_minmax(0,1fr)]">
                           <div className={settingsTheme.rowLabel}>App</div>
-                          <div className={settingsTheme.rowValue}>{currentSessionPlatformLabel}</div>
+                          <div className={settingsTheme.rowValue}>
+                            {currentSessionPlatformLabel}
+                          </div>
                         </div>
                         <div className="grid gap-4 py-5 md:grid-cols-[220px_minmax(0,1fr)]">
                           <div className={settingsTheme.rowLabel}>Status</div>
@@ -2248,7 +2315,10 @@ export const SettingsWindow = () => {
                       </div>
                     </section>
 
-                    <section className={settingsTheme.sectionShell} aria-labelledby="settings-other-sessions">
+                    <section
+                      className={settingsTheme.sectionShell}
+                      aria-labelledby="settings-other-sessions"
+                    >
                       <div className="flex items-center justify-between gap-4">
                         <div className="space-y-1">
                           <h3 id="settings-other-sessions" className={settingsTheme.sectionTitle}>
@@ -2259,13 +2329,16 @@ export const SettingsWindow = () => {
                           </p>
                         </div>
                         <span className={settingsTheme.pill}>
-                          {otherAccountSessions.length} device{otherAccountSessions.length === 1 ? '' : 's'}
+                          {otherAccountSessions.length} device
+                          {otherAccountSessions.length === 1 ? '' : 's'}
                         </span>
                       </div>
 
                       <div className={settingsTheme.sectionRows}>
                         {isLoadingAccountSessions ? (
-                          <div className="py-5 text-sm text-[var(--ledger-text-muted)]">Loading sessions...</div>
+                          <div className="py-5 text-sm text-[var(--ledger-text-muted)]">
+                            Loading sessions...
+                          </div>
                         ) : otherAccountSessions.length === 0 ? (
                           <div className="py-5 text-sm text-[var(--ledger-text-muted)]">
                             No other devices are currently listed.
@@ -2304,8 +2377,8 @@ export const SettingsWindow = () => {
                     </section>
 
                     <div className="rounded-2xl border border-dashed border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-4 py-3 text-xs text-[var(--ledger-text-muted)]">
-                      Sign-out for other devices is scaffolded here. It will be wired only when the auth
-                      provider can revoke sessions safely.
+                      Sign-out for other devices is scaffolded here. It will be wired only when the
+                      auth provider can revoke sessions safely.
                     </div>
                   </div>
                 </section>
@@ -2326,13 +2399,21 @@ export const SettingsWindow = () => {
                   </div>
 
                   <div className="mt-8 space-y-10">
-                    <section className={settingsTheme.sectionShell} aria-labelledby="settings-current-workspace">
+                    <section
+                      className={settingsTheme.sectionShell}
+                      aria-labelledby="settings-current-workspace"
+                    >
                       <div className="flex items-center justify-between gap-4">
                         <div className="space-y-1">
-                          <h3 id="settings-current-workspace" className={settingsTheme.sectionTitle}>
+                          <h3
+                            id="settings-current-workspace"
+                            className={settingsTheme.sectionTitle}
+                          >
                             Current workspace
                           </h3>
-                          <p className={settingsTheme.sectionStatus}>The workspace currently active in Ledger.</p>
+                          <p className={settingsTheme.sectionStatus}>
+                            The workspace currently active in Ledger.
+                          </p>
                         </div>
                         <div className="flex items-center gap-2">
                           <button
@@ -2350,9 +2431,7 @@ export const SettingsWindow = () => {
                               Manage
                             </button>
                           ) : (
-                            <span className={settingsTheme.pill}>
-                              Owner only
-                            </span>
+                            <span className={settingsTheme.pill}>Owner only</span>
                           )}
                         </div>
                       </div>
@@ -2375,7 +2454,9 @@ export const SettingsWindow = () => {
                                       }))
                                     }
                                     className={`flex-1 px-4 py-3 text-sm font-medium transition ${
-                                      index > 0 ? 'border-l border-[color:var(--ledger-border-subtle)]' : ''
+                                      index > 0
+                                        ? 'border-l border-[color:var(--ledger-border-subtle)]'
+                                        : ''
                                     } ${
                                       isSelected
                                         ? 'bg-[var(--ledger-surface-hover)] text-[var(--ledger-text-primary)]'
@@ -2389,7 +2470,11 @@ export const SettingsWindow = () => {
                               })}
                             </div>
                             <p className="text-xs leading-5 text-[var(--ledger-text-muted)]">
-                              {themeOptionOrder.find((option) => option.value === preferences.theme)?.description}
+                              {
+                                themeOptionOrder.find(
+                                  (option) => option.value === preferences.theme
+                                )?.description
+                              }
                             </p>
                           </div>
                         </div>
@@ -2416,7 +2501,11 @@ export const SettingsWindow = () => {
                               id="settings-active-workspace"
                               value={activeWorkspaceId ?? ''}
                               onChange={(e) => void handleSwitchWorkspace(e.target.value)}
-                              disabled={isLoadingWorkspaces || isSwitchingWorkspace || workspaces.length === 0}
+                              disabled={
+                                isLoadingWorkspaces ||
+                                isSwitchingWorkspace ||
+                                workspaces.length === 0
+                              }
                               className={settingsTheme.inputSecondary + ' appearance-none pr-9'}
                               style={selectChevronStyle}
                             >
@@ -2434,13 +2523,18 @@ export const SettingsWindow = () => {
                       </div>
                     </section>
 
-                    <section className={settingsTheme.sectionShell} aria-labelledby="settings-members">
+                    <section
+                      className={settingsTheme.sectionShell}
+                      aria-labelledby="settings-members"
+                    >
                       <div className="flex items-center justify-between gap-4">
                         <div className="space-y-1">
                           <h3 id="settings-members" className={settingsTheme.sectionTitle}>
                             Members
                           </h3>
-                          <p className={settingsTheme.sectionStatus}>Manage access for the selected workspace.</p>
+                          <p className={settingsTheme.sectionStatus}>
+                            Manage access for the selected workspace.
+                          </p>
                         </div>
                         <span className={settingsTheme.pill}>
                           {workspaceUserRole === 'owner' ? 'Owner' : `Role: ${workspaceUserRole}`}
@@ -2449,9 +2543,13 @@ export const SettingsWindow = () => {
 
                       <div className={settingsTheme.sectionRows}>
                         {isLoadingWorkspaceAdmin ? (
-                          <div className="py-4 text-xs text-[var(--ledger-text-muted)]">Loading members...</div>
+                          <div className="py-4 text-xs text-[var(--ledger-text-muted)]">
+                            Loading members...
+                          </div>
                         ) : workspaceMembers.length === 0 ? (
-                          <div className="py-4 text-xs text-[var(--ledger-text-muted)]">No members yet.</div>
+                          <div className="py-4 text-xs text-[var(--ledger-text-muted)]">
+                            No members yet.
+                          </div>
                         ) : (
                           workspaceMembers.map((member) => {
                             const displayName = member.full_name || member.email || member.user_id;
@@ -2463,9 +2561,12 @@ export const SettingsWindow = () => {
                                 className="grid gap-4 py-4 md:grid-cols-[minmax(0,1fr)_auto_auto] md:items-center"
                               >
                                 <div className="min-w-0">
-                                  <p className="truncate text-sm font-medium text-[var(--ledger-text-primary)]">{displayName}</p>
+                                  <p className="truncate text-sm font-medium text-[var(--ledger-text-primary)]">
+                                    {displayName}
+                                  </p>
                                   <p className="truncate text-xs text-[var(--ledger-text-muted)]">
-                                    {member.email || 'No email'}{member.is_owner ? ' · Owner' : ''}
+                                    {member.email || 'No email'}
+                                    {member.is_owner ? ' · Owner' : ''}
                                   </p>
                                 </div>
                                 <select
@@ -2477,7 +2578,10 @@ export const SettingsWindow = () => {
                                     )
                                   }
                                   disabled={!canEditRole || memberActionId === member.user_id}
-                                  className={settingsTheme.inputSecondary + ' h-8 w-full appearance-none rounded-lg px-2 pr-8 text-xs md:w-auto'}
+                                  className={
+                                    settingsTheme.inputSecondary +
+                                    ' h-8 w-full appearance-none rounded-lg px-2 pr-8 text-xs md:w-auto'
+                                  }
                                   style={selectChevronStyle}
                                   aria-label={`Update ${displayName} role`}
                                 >
@@ -2515,13 +2619,18 @@ export const SettingsWindow = () => {
                       )}
                     </section>
 
-                    <section className={settingsTheme.sectionShell} aria-labelledby="settings-invites">
+                    <section
+                      className={settingsTheme.sectionShell}
+                      aria-labelledby="settings-invites"
+                    >
                       <div className="flex items-center justify-between gap-4">
                         <div className="space-y-1">
                           <h3 id="settings-invites" className={settingsTheme.sectionTitle}>
                             Invites
                           </h3>
-                          <p className={settingsTheme.sectionStatus}>Invite someone to this workspace.</p>
+                          <p className={settingsTheme.sectionStatus}>
+                            Invite someone to this workspace.
+                          </p>
                         </div>
                       </div>
 
@@ -2560,7 +2669,14 @@ export const SettingsWindow = () => {
 
                       {(inviteLink || inviteToken) && (
                         <div className="mt-4 border-t border-[color:var(--ledger-border-subtle)] pt-4">
-                          <p className={settingsTheme.rowMuted.replace('text-xs', 'text-xs font-medium')}>Invite link</p>
+                          <p
+                            className={settingsTheme.rowMuted.replace(
+                              'text-xs',
+                              'text-xs font-medium'
+                            )}
+                          >
+                            Invite link
+                          </p>
                           <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center">
                             {inviteLink && (
                               <p className="min-w-0 flex-1 break-all text-sm text-[var(--ledger-text-secondary)]">
@@ -2571,23 +2687,37 @@ export const SettingsWindow = () => {
                               type="button"
                               onClick={() => void handleCopyInvitationLink()}
                               disabled={!inviteLink}
-                              className={settingsTheme.controlButtonNeutral + ' inline-flex items-center justify-center gap-2'}
+                              className={
+                                settingsTheme.controlButtonNeutral +
+                                ' inline-flex items-center justify-center gap-2'
+                              }
                             >
                               <Copy size={14} />
                               Copy link
                             </button>
                           </div>
                           {inviteCopyStatus && (
-                            <p className="mt-2 text-xs text-[var(--ledger-text-secondary)]">{inviteCopyStatus}</p>
+                            <p className="mt-2 text-xs text-[var(--ledger-text-secondary)]">
+                              {inviteCopyStatus}
+                            </p>
                           )}
                         </div>
                       )}
 
                       <div className="mt-4 border-t border-[color:var(--ledger-border-subtle)] pt-4">
-                        <p className={settingsTheme.rowMuted.replace('text-xs', 'text-xs font-medium')}>Recent invites</p>
+                        <p
+                          className={settingsTheme.rowMuted.replace(
+                            'text-xs',
+                            'text-xs font-medium'
+                          )}
+                        >
+                          Recent invites
+                        </p>
                         <div className={settingsTheme.sectionRows}>
                           {workspaceInvitations.length === 0 ? (
-                            <div className="py-4 text-xs text-[var(--ledger-text-muted)]">No pending invites.</div>
+                            <div className="py-4 text-xs text-[var(--ledger-text-muted)]">
+                              No pending invites.
+                            </div>
                           ) : (
                             workspaceInvitations.map((invite) => (
                               <div
@@ -2611,7 +2741,9 @@ export const SettingsWindow = () => {
                                 <button
                                   onClick={() => setInviteModal({ id: invite.id })}
                                   disabled={!canManageWorkspace}
-                                  className={settingsTheme.controlButtonNeutral + ' rounded-lg px-2'}
+                                  className={
+                                    settingsTheme.controlButtonNeutral + ' rounded-lg px-2'
+                                  }
                                 >
                                   Manage
                                 </button>
@@ -2622,13 +2754,18 @@ export const SettingsWindow = () => {
                       </div>
                     </section>
 
-                    <section className={settingsTheme.sectionShell} aria-labelledby="settings-teams">
+                    <section
+                      className={settingsTheme.sectionShell}
+                      aria-labelledby="settings-teams"
+                    >
                       <div className="flex items-center justify-between gap-4">
                         <div className="space-y-1">
                           <h3 id="settings-teams" className={settingsTheme.sectionTitle}>
                             Teams
                           </h3>
-                          <p className={settingsTheme.sectionStatus}>Create and manage teams in this workspace.</p>
+                          <p className={settingsTheme.sectionStatus}>
+                            Create and manage teams in this workspace.
+                          </p>
                         </div>
                         <button
                           type="button"
@@ -2651,7 +2788,9 @@ export const SettingsWindow = () => {
                         {workspaceTeams.length === 0 ? (
                           <div className="flex min-h-40 items-center justify-center px-4 py-8 text-center">
                             <div className="max-w-sm">
-                              <p className="text-sm font-medium text-[var(--ledger-text-primary)]">No teams yet.</p>
+                              <p className="text-sm font-medium text-[var(--ledger-text-primary)]">
+                                No teams yet.
+                              </p>
                               <p className="mt-1 text-sm text-[var(--ledger-text-muted)]">
                                 Create teams to group people and assign work inside this workspace.
                               </p>
@@ -2669,7 +2808,9 @@ export const SettingsWindow = () => {
                           </div>
                         ) : (
                           workspaceTeams.map((team) => {
-                            const memberCount = Array.isArray(team.members) ? team.members.length : 0;
+                            const memberCount = Array.isArray(team.members)
+                              ? team.members.length
+                              : 0;
                             const isArchived = Boolean(team.archivedAt);
                             return (
                               <div
@@ -2697,8 +2838,12 @@ export const SettingsWindow = () => {
                                     </span>
                                   </span>
                                 </button>
-                                <div className="text-sm text-[var(--ledger-text-secondary)]">{memberCount} members</div>
-                                <div className="text-sm text-[var(--ledger-text-secondary)]">{team.assignedCount} assigned</div>
+                                <div className="text-sm text-[var(--ledger-text-secondary)]">
+                                  {memberCount} members
+                                </div>
+                                <div className="text-sm text-[var(--ledger-text-secondary)]">
+                                  {team.assignedCount} assigned
+                                </div>
                                 <div className="text-right font-mono text-xs font-semibold text-[var(--ledger-text-muted)]">
                                   {team.identifier}
                                 </div>
@@ -2726,13 +2871,21 @@ export const SettingsWindow = () => {
                                         } else {
                                           await api.archiveTeam(team.id);
                                         }
-                                        const teamsPayload = await api.getTeams({ includeArchived: true });
-                                        const nextTeams = Array.isArray((teamsPayload as { teams?: unknown[] })?.teams)
-                                          ? ((teamsPayload as { teams: WorkspaceTeam[] }).teams ?? [])
+                                        const teamsPayload = await api.getTeams({
+                                          includeArchived: true,
+                                        });
+                                        const nextTeams = Array.isArray(
+                                          (teamsPayload as { teams?: unknown[] })?.teams
+                                        )
+                                          ? (teamsPayload as { teams: WorkspaceTeam[] }).teams ?? []
                                           : [];
                                         setWorkspaceTeams(nextTeams);
                                       } catch (err) {
-                                        setWorkspaceAdminError(err instanceof Error ? err.message : 'Could not update team');
+                                        setWorkspaceAdminError(
+                                          err instanceof Error
+                                            ? err.message
+                                            : 'Could not update team'
+                                        );
                                       }
                                     }}
                                     className={settingsTheme.controlButton}
@@ -2747,13 +2900,21 @@ export const SettingsWindow = () => {
                                       if (!window.confirm(`Delete ${team.name}?`)) return;
                                       try {
                                         await api.deleteTeam(team.id);
-                                        const teamsPayload = await api.getTeams({ includeArchived: true });
-                                        const nextTeams = Array.isArray((teamsPayload as { teams?: unknown[] })?.teams)
-                                          ? ((teamsPayload as { teams: WorkspaceTeam[] }).teams ?? [])
+                                        const teamsPayload = await api.getTeams({
+                                          includeArchived: true,
+                                        });
+                                        const nextTeams = Array.isArray(
+                                          (teamsPayload as { teams?: unknown[] })?.teams
+                                        )
+                                          ? (teamsPayload as { teams: WorkspaceTeam[] }).teams ?? []
                                           : [];
                                         setWorkspaceTeams(nextTeams);
                                       } catch (err) {
-                                        setWorkspaceAdminError(err instanceof Error ? err.message : 'Could not delete team');
+                                        setWorkspaceAdminError(
+                                          err instanceof Error
+                                            ? err.message
+                                            : 'Could not delete team'
+                                        );
                                       }
                                     }}
                                     className={settingsTheme.dangerButton}
@@ -2770,11 +2931,19 @@ export const SettingsWindow = () => {
                       </div>
                     </section>
 
-                    <section className={settingsTheme.sectionShell} aria-labelledby="settings-defaults">
-                      <h3 id="settings-defaults" className={settingsTheme.sectionTitle}>Defaults</h3>
+                    <section
+                      className={settingsTheme.sectionShell}
+                      aria-labelledby="settings-defaults"
+                    >
+                      <h3 id="settings-defaults" className={settingsTheme.sectionTitle}>
+                        Defaults
+                      </h3>
                       <div className="mt-5 grid gap-4 md:grid-cols-2">
                         <div>
-                          <label htmlFor="settings-week-start" className="mb-2 block text-xs font-medium text-[var(--ledger-text-muted)]">
+                          <label
+                            htmlFor="settings-week-start"
+                            className="mb-2 block text-xs font-medium text-[var(--ledger-text-muted)]"
+                          >
                             Week starts on
                           </label>
                           <select
@@ -2794,7 +2963,10 @@ export const SettingsWindow = () => {
                           </select>
                         </div>
                         <div>
-                          <label htmlFor="settings-time-format" className="mb-2 block text-xs font-medium text-[var(--ledger-text-muted)]">
+                          <label
+                            htmlFor="settings-time-format"
+                            className="mb-2 block text-xs font-medium text-[var(--ledger-text-muted)]"
+                          >
                             Time format
                           </label>
                           <select
@@ -2816,21 +2988,29 @@ export const SettingsWindow = () => {
                       </div>
                     </section>
 
-                    <section className={settingsTheme.sectionShell} aria-labelledby="settings-create-workspace">
+                    <section
+                      className={settingsTheme.sectionShell}
+                      aria-labelledby="settings-create-workspace"
+                    >
                       <div className="flex items-center justify-between gap-4">
                         <div className="space-y-1">
                           <h3 id="settings-create-workspace" className={settingsTheme.sectionTitle}>
                             Create workspace
                           </h3>
                           <p className={settingsTheme.sectionStatus}>
-                            Create another focused space for school, internship, freelance, or personal work.
+                            Create another focused space for school, internship, freelance, or
+                            personal work.
                           </p>
                         </div>
                         <button
                           type="button"
                           onClick={() => setShowCreateWorkspaceForm((value) => !value)}
                           className={settingsTheme.controlButton}
-                          aria-label={showCreateWorkspaceForm ? 'Close workspace creation' : 'Create workspace'}
+                          aria-label={
+                            showCreateWorkspaceForm
+                              ? 'Close workspace creation'
+                              : 'Create workspace'
+                          }
                         >
                           {showCreateWorkspaceForm ? 'Collapse' : 'Create workspace'}
                         </button>
@@ -2869,13 +3049,17 @@ export const SettingsWindow = () => {
                           <div className="flex items-center justify-between gap-3">
                             <div className="min-h-5">
                               {workspaceCreateStatus && (
-                                <p className="text-xs text-[color:var(--ledger-accent)]">{workspaceCreateStatus}</p>
+                                <p className="text-xs text-[color:var(--ledger-accent)]">
+                                  {workspaceCreateStatus}
+                                </p>
                               )}
                             </div>
                             <button
                               onClick={() => void handleCreateWorkspace()}
                               disabled={isCreatingWorkspace || !workspaceCreateName.trim()}
-                              className={settingsTheme.primaryButton + ' h-8 rounded-lg px-3 text-xs'}
+                              className={
+                                settingsTheme.primaryButton + ' h-8 rounded-lg px-3 text-xs'
+                              }
                             >
                               {isCreatingWorkspace ? 'Creating...' : 'Create workspace'}
                             </button>
@@ -2884,7 +3068,10 @@ export const SettingsWindow = () => {
                       ) : null}
                     </section>
 
-                    <section className={settingsTheme.sectionShell} aria-labelledby="settings-danger-zone">
+                    <section
+                      className={settingsTheme.sectionShell}
+                      aria-labelledby="settings-danger-zone"
+                    >
                       <div className="flex items-center justify-between gap-4">
                         <div className="space-y-1">
                           <h3 id="settings-danger-zone" className={settingsTheme.sectionTitle}>
@@ -2921,7 +3108,10 @@ export const SettingsWindow = () => {
                   </div>
 
                   <div className="mt-8 space-y-8">
-                    <section className={settingsTheme.sectionShell} aria-labelledby="calendar-defaults">
+                    <section
+                      className={settingsTheme.sectionShell}
+                      aria-labelledby="calendar-defaults"
+                    >
                       <h3 id="calendar-defaults" className={settingsTheme.sectionTitle}>
                         Calendar defaults
                       </h3>
@@ -2957,7 +3147,10 @@ export const SettingsWindow = () => {
                             onChange={(e) =>
                               setPreferences((prev) => ({
                                 ...prev,
-                                defaultEventCalendar: e.target.value as 'personal' | 'work' | 'projects',
+                                defaultEventCalendar: e.target.value as
+                                  | 'personal'
+                                  | 'work'
+                                  | 'projects',
                               }))
                             }
                             className={preferenceSelectClassName}
@@ -3015,7 +3208,10 @@ export const SettingsWindow = () => {
                       </div>
                     </section>
 
-                    <section className={settingsTheme.sectionShell} aria-labelledby="reminder-defaults">
+                    <section
+                      className={settingsTheme.sectionShell}
+                      aria-labelledby="reminder-defaults"
+                    >
                       <h3 id="reminder-defaults" className={settingsTheme.sectionTitle}>
                         Reminder defaults
                       </h3>
@@ -3119,7 +3315,10 @@ export const SettingsWindow = () => {
                       </div>
                     </section>
 
-                    <section className={settingsTheme.sectionShell} aria-labelledby="overdue-behavior">
+                    <section
+                      className={settingsTheme.sectionShell}
+                      aria-labelledby="overdue-behavior"
+                    >
                       <h3 id="overdue-behavior" className={settingsTheme.sectionTitle}>
                         Overdue behavior
                       </h3>
@@ -3203,7 +3402,10 @@ export const SettingsWindow = () => {
                       </p>
                     </section>
 
-                    <section className={settingsTheme.sectionShell} aria-labelledby="follow-up-behavior">
+                    <section
+                      className={settingsTheme.sectionShell}
+                      aria-labelledby="follow-up-behavior"
+                    >
                       <h3 id="follow-up-behavior" className={settingsTheme.sectionTitle}>
                         Follow-up behavior
                       </h3>
@@ -3305,7 +3507,10 @@ export const SettingsWindow = () => {
                       </div>
                     </section>
 
-                    <section className={settingsTheme.sectionShell} aria-labelledby="calendar-display">
+                    <section
+                      className={settingsTheme.sectionShell}
+                      aria-labelledby="calendar-display"
+                    >
                       <h3 id="calendar-display" className={settingsTheme.sectionTitle}>
                         Calendar display
                       </h3>
@@ -3331,7 +3536,10 @@ export const SettingsWindow = () => {
                             <option value="month">Month</option>
                           </select>
                         </PreferenceRow>
-                        <PreferenceRow label="Week starts on" help="Start the week on Sunday or Monday.">
+                        <PreferenceRow
+                          label="Week starts on"
+                          help="Start the week on Sunday or Monday."
+                        >
                           <select
                             id="settings-week-starts-on"
                             value={preferences.weekStartsOn}
@@ -3422,7 +3630,10 @@ export const SettingsWindow = () => {
                       </div>
                     </section>
 
-                    <section className={settingsTheme.sectionShell} aria-labelledby="workspace-calendars">
+                    <section
+                      className={settingsTheme.sectionShell}
+                      aria-labelledby="workspace-calendars"
+                    >
                       <h3 id="workspace-calendars" className={settingsTheme.sectionTitle}>
                         Workspace calendars
                       </h3>
@@ -3528,7 +3739,10 @@ export const SettingsWindow = () => {
                   </div>
 
                   <div className="mt-8 space-y-8">
-                    <section className={settingsTheme.sectionShell} aria-labelledby="notification-control">
+                    <section
+                      className={settingsTheme.sectionShell}
+                      aria-labelledby="notification-control"
+                    >
                       <h3 id="notification-control" className={settingsTheme.sectionTitle}>
                         Control
                       </h3>
@@ -3538,9 +3752,7 @@ export const SettingsWindow = () => {
                       <div className={settingsTheme.sectionRows}>
                         <div className="flex items-start justify-between gap-4 px-4 py-3">
                           <span className="min-w-0">
-                            <span className={settingsTheme.label}>
-                              Pause notifications
-                            </span>
+                            <span className={settingsTheme.label}>Pause notifications</span>
                             <span className={settingsTheme.help}>
                               Temporarily mute new reminders and alerts from Ledger.
                             </span>
@@ -3559,7 +3771,10 @@ export const SettingsWindow = () => {
                       </div>
                     </section>
 
-                    <section className={settingsTheme.sectionShell} aria-labelledby="notification-delivery">
+                    <section
+                      className={settingsTheme.sectionShell}
+                      aria-labelledby="notification-delivery"
+                    >
                       <h3 id="notification-delivery" className={settingsTheme.sectionTitle}>
                         Delivery
                       </h3>
@@ -3597,7 +3812,10 @@ export const SettingsWindow = () => {
                       </div>
                     </section>
 
-                    <section className={settingsTheme.sectionShell} aria-labelledby="notification-sources">
+                    <section
+                      className={settingsTheme.sectionShell}
+                      aria-labelledby="notification-sources"
+                    >
                       <h3 id="notification-sources" className={settingsTheme.sectionTitle}>
                         Notify me about
                       </h3>
@@ -3686,7 +3904,10 @@ export const SettingsWindow = () => {
                       </div>
                     </section>
 
-                    <section className={settingsTheme.sectionShell} aria-labelledby="notification-timing">
+                    <section
+                      className={settingsTheme.sectionShell}
+                      aria-labelledby="notification-timing"
+                    >
                       <h3 id="notification-timing" className={settingsTheme.sectionTitle}>
                         Timing
                       </h3>
@@ -3724,7 +3945,8 @@ export const SettingsWindow = () => {
                             onChange={(e) =>
                               setNotificationPreferences((prev) => ({
                                 ...prev,
-                                defaultTaskTiming: e.target.value as NotificationPreferences['defaultTaskTiming'],
+                                defaultTaskTiming: e.target
+                                  .value as NotificationPreferences['defaultTaskTiming'],
                               }))
                             }
                             className={preferenceSelectClassName}
@@ -3785,7 +4007,10 @@ export const SettingsWindow = () => {
                       </div>
                     </section>
 
-                    <section className={settingsTheme.sectionShell} aria-labelledby="notification-behavior">
+                    <section
+                      className={settingsTheme.sectionShell}
+                      aria-labelledby="notification-behavior"
+                    >
                       <h3 id="notification-behavior" className={settingsTheme.sectionTitle}>
                         Behavior
                       </h3>
@@ -3838,7 +4063,10 @@ export const SettingsWindow = () => {
                   </div>
 
                   <div className="mt-8 space-y-8">
-                    <section className={settingsTheme.sectionShell} aria-labelledby="integration-list">
+                    <section
+                      className={settingsTheme.sectionShell}
+                      aria-labelledby="integration-list"
+                    >
                       <h3 id="integration-list" className="sr-only">
                         Connected integrations
                       </h3>
@@ -3853,12 +4081,14 @@ export const SettingsWindow = () => {
                               {isLoadingSlackStatus
                                 ? 'Checking status'
                                 : slackStatus?.connected
-                                  ? `Connected to ${slackStatus.team_name || 'Slack'}${
-                                      slackStatus.updated_at
-                                        ? ` · Updated ${formatIntegrationDate(slackStatus.updated_at)}`
-                                        : ''
-                                    }`
-                                  : 'Not connected'}
+                                ? `Connected to ${slackStatus.team_name || 'Slack'}${
+                                    slackStatus.updated_at
+                                      ? ` · Updated ${formatIntegrationDate(
+                                          slackStatus.updated_at
+                                        )}`
+                                      : ''
+                                  }`
+                                : 'Not connected'}
                             </p>
                           </div>
 
@@ -3866,7 +4096,9 @@ export const SettingsWindow = () => {
                             <button
                               type="button"
                               onClick={() => void handleConnectSlack()}
-                              disabled={isConnectingSlack || !activeWorkspaceId || !canManageWorkspace}
+                              disabled={
+                                isConnectingSlack || !activeWorkspaceId || !canManageWorkspace
+                              }
                               className={`h-8 rounded-lg px-3 text-xs font-medium transition disabled:opacity-50 ${
                                 slackStatus?.connected
                                   ? `${settingsTheme.controlButtonNeutral} rounded-lg`
@@ -3876,8 +4108,8 @@ export const SettingsWindow = () => {
                               {isConnectingSlack
                                 ? 'Opening...'
                                 : slackStatus?.connected
-                                  ? 'Reconnect'
-                                  : 'Connect Slack'}
+                                ? 'Reconnect'
+                                : 'Connect Slack'}
                             </button>
                             {slackStatus?.connected && (
                               <button
@@ -3904,18 +4136,19 @@ export const SettingsWindow = () => {
                               {isLoadingExtensionTokenStatus
                                 ? 'Checking status'
                                 : extensionTokenStatus?.exists
-                                  ? [
-                                      'Token active',
-                                      extensionTokenStatus.last_used_at
-                                        ? `Last used ${
-                                            formatIntegrationDate(extensionTokenStatus.last_used_at) ??
-                                            'recently'
-                                          }`
-                                        : null,
-                                    ]
-                                      .filter(Boolean)
-                                      .join(' · ')
-                                  : 'No token created'}
+                                ? [
+                                    'Token active',
+                                    extensionTokenStatus.last_used_at
+                                      ? `Last used ${
+                                          formatIntegrationDate(
+                                            extensionTokenStatus.last_used_at
+                                          ) ?? 'recently'
+                                        }`
+                                      : null,
+                                  ]
+                                    .filter(Boolean)
+                                    .join(' · ')
+                                : 'No token created'}
                             </p>
                           </div>
 
@@ -3977,7 +4210,9 @@ export const SettingsWindow = () => {
                       {(slackError || extensionTokenError || extensionTokenCopyStatus) && (
                         <p
                           className={`mt-4 flex items-center gap-1.5 text-xs ${
-                            slackError || extensionTokenError ? 'text-[var(--ledger-danger)]' : 'text-[var(--ledger-text-secondary)]'
+                            slackError || extensionTokenError
+                              ? 'text-[var(--ledger-danger)]'
+                              : 'text-[var(--ledger-text-secondary)]'
                           }`}
                         >
                           {(slackError || extensionTokenError) && <CircleAlert size={12} />}
@@ -3986,20 +4221,31 @@ export const SettingsWindow = () => {
                       )}
                     </section>
 
-                    <section className={settingsTheme.sectionShell} aria-labelledby="integration-coming-soon">
+                    <section
+                      className={settingsTheme.sectionShell}
+                      aria-labelledby="integration-coming-soon"
+                    >
                       <h3 id="integration-coming-soon" className={settingsTheme.sectionTitle}>
                         Coming soon
                       </h3>
                       <div className="mt-3 divide-y divide-[color:var(--ledger-border-subtle)] border-y border-[color:var(--ledger-border-subtle)]">
                         {['Email', 'Google Calendar', 'GitHub', 'Linear'].map((source) => (
-                          <div key={source} className="py-3 text-sm text-[var(--ledger-text-secondary)]">
+                          <div
+                            key={source}
+                            className="py-3 text-sm text-[var(--ledger-text-secondary)]"
+                          >
                             {source}
                           </div>
                         ))}
                       </div>
                     </section>
 
-                    <p className={settingsTheme.sectionShell + ' pt-4 text-xs leading-5 text-[var(--ledger-text-muted)]'}>
+                    <p
+                      className={
+                        settingsTheme.sectionShell +
+                        ' pt-4 text-xs leading-5 text-[var(--ledger-text-muted)]'
+                      }
+                    >
                       Connected tools send captures to Inbox. You decide later whether they become
                       tasks, notes, reminders, or events.
                     </p>
@@ -4051,10 +4297,15 @@ export const SettingsWindow = () => {
                           })}
                         </div>
                       </PreferenceRow>
-                      <PreferenceRow label="Opacity" help="Set how much of the sidebar background shows through.">
+                      <PreferenceRow
+                        label="Opacity"
+                        help="Set how much of the sidebar background shows through."
+                      >
                         <div className="w-full sm:w-72">
                           <div className="flex items-center justify-between gap-3">
-                            <span className={settingsTheme.label}>{Math.round(opacity * 100)}%</span>
+                            <span className={settingsTheme.label}>
+                              {Math.round(opacity * 100)}%
+                            </span>
                             <span className={settingsTheme.rowMuted}>70% to 100%</span>
                           </div>
                           <input
@@ -4069,7 +4320,10 @@ export const SettingsWindow = () => {
                           />
                         </div>
                       </PreferenceRow>
-                      <PreferenceRow label="Blur" help="Apply a soft glass blur behind the sidebar.">
+                      <PreferenceRow
+                        label="Blur"
+                        help="Apply a soft glass blur behind the sidebar."
+                      >
                         <InlineSwitch
                           checked={blur}
                           onToggle={() => setBlur(!blur)}
@@ -4095,10 +4349,7 @@ export const SettingsWindow = () => {
                           ))}
                         </select>
                       </PreferenceRow>
-                      <PreferenceRow
-                        label="Always on top"
-                        help="Keep Ledger above other windows."
-                      >
+                      <PreferenceRow label="Always on top" help="Keep Ledger above other windows.">
                         <InlineSwitch
                           checked={alwaysOnTop}
                           onToggle={() => setAlwaysOnTop(!alwaysOnTop)}
@@ -4146,9 +4397,7 @@ export const SettingsWindow = () => {
                     <div className={settingsTheme.sectionRows}>
                       <div className="flex items-start justify-between gap-4 px-4 py-3">
                         <span className="min-w-0">
-                          <span className={settingsTheme.label}>
-                            Reduce motion
-                          </span>
+                          <span className={settingsTheme.label}>Reduce motion</span>
                           <span className={settingsTheme.help}>
                             Minimize non-essential animations.
                           </span>
@@ -4156,16 +4405,17 @@ export const SettingsWindow = () => {
                         <InlineSwitch
                           checked={preferences.reduceMotion}
                           onToggle={() =>
-                            setPreferences((prev) => ({ ...prev, reduceMotion: !prev.reduceMotion }))
+                            setPreferences((prev) => ({
+                              ...prev,
+                              reduceMotion: !prev.reduceMotion,
+                            }))
                           }
                           label="Reduce motion"
                         />
                       </div>
                       <div className="flex items-start justify-between gap-4 px-4 py-3">
                         <span className="min-w-0">
-                          <span className={settingsTheme.label}>
-                            High contrast
-                          </span>
+                          <span className={settingsTheme.label}>High contrast</span>
                           <span className={settingsTheme.help}>
                             Increase contrast for text, borders, and controls.
                           </span>
@@ -4173,16 +4423,17 @@ export const SettingsWindow = () => {
                         <InlineSwitch
                           checked={preferences.highContrast}
                           onToggle={() =>
-                            setPreferences((prev) => ({ ...prev, highContrast: !prev.highContrast }))
+                            setPreferences((prev) => ({
+                              ...prev,
+                              highContrast: !prev.highContrast,
+                            }))
                           }
                           label="High contrast"
                         />
                       </div>
                       <div className="flex items-start justify-between gap-4 px-4 py-3">
                         <span className="min-w-0">
-                          <span className={settingsTheme.label}>
-                            Compact density
-                          </span>
+                          <span className={settingsTheme.label}>Compact density</span>
                           <span className={settingsTheme.help}>
                             Use tighter spacing across Ledger.
                           </span>
@@ -4201,16 +4452,17 @@ export const SettingsWindow = () => {
                     </div>
                   </section>
 
-                  <section className={settingsTheme.sectionShell} aria-labelledby="accessibility-startup">
+                  <section
+                    className={settingsTheme.sectionShell}
+                    aria-labelledby="accessibility-startup"
+                  >
                     <h3 id="accessibility-startup" className={settingsTheme.sectionTitle}>
                       Startup
                     </h3>
                     <div className={settingsTheme.sectionRows}>
                       <div className="flex items-start justify-between gap-4 px-4 py-3">
                         <span className="min-w-0">
-                          <span className={settingsTheme.label}>
-                            Open overview by default
-                          </span>
+                          <span className={settingsTheme.label}>Open overview by default</span>
                           <span className={settingsTheme.help}>
                             Open Overview when Ledger starts.
                           </span>
@@ -4250,8 +4502,12 @@ export const SettingsWindow = () => {
                               key={`${section.id}-${shortcut.keys}`}
                               className="grid gap-3 py-3 md:grid-cols-[160px_minmax(0,1fr)] md:items-center"
                             >
-                              <p className={settingsTheme.rowMuted + ' font-medium'}>{shortcut.keys}</p>
-                              <p className="text-sm text-[var(--ledger-text-secondary)]">{shortcut.description}</p>
+                              <p className={settingsTheme.rowMuted + ' font-medium'}>
+                                {shortcut.keys}
+                              </p>
+                              <p className="text-sm text-[var(--ledger-text-secondary)]">
+                                {shortcut.description}
+                              </p>
                             </div>
                           ))}
                         </div>
@@ -4261,443 +4517,517 @@ export const SettingsWindow = () => {
                 </section>
               )}
 
-            <ModalOverlay
-              isOpen={isCreateTeamOpen}
-              onClose={() => setIsCreateTeamOpen(false)}
-              backdropBorderRadius="inherit"
-              disablePortal
-              manageWindowChrome={false}
-              classNameContainer="w-full max-w-md rounded-2xl border p-5"
-            >
-              <form onSubmit={(event) => { event.preventDefault(); void handleCreateTeam(); }} className="space-y-4">
-                <div>
-                  <h3 className="text-lg font-semibold text-[var(--ledger-text-primary)]">New team</h3>
-                  <p className="mt-1 text-sm leading-5 text-[var(--ledger-text-secondary)]">
-                    Create a compact team for shared ownership.
-                  </p>
-                </div>
-                <label className="block space-y-1.5">
-                  <span className={settingsTheme.label}>Team name</span>
-                  <input
-                    value={createTeamName}
-                    onChange={(event) => {
-                      const nextName = event.target.value;
-                      setCreateTeamName(nextName);
-                      if (!createTeamIdentifierTouched) {
-                        setCreateTeamIdentifier(makeTeamIdentifier(nextName));
-                      }
-                    }}
-                    className={settingsTheme.input}
-                    placeholder="Main Room"
-                    autoFocus
-                  />
-                </label>
-                <label className="block space-y-1.5">
-                  <span className={settingsTheme.label}>Identifier</span>
-                  <input
-                    value={createTeamIdentifier}
-                    onChange={(event) => {
-                      setCreateTeamIdentifierTouched(true);
-                      setCreateTeamIdentifier(event.target.value.toUpperCase());
-                    }}
-                    className={settingsTheme.input}
-                    placeholder="MAIN"
-                  />
-                </label>
-                <label className="block space-y-1.5">
-                  <span className={settingsTheme.label}>Description</span>
-                  <textarea
-                    value={createTeamDescription}
-                    onChange={(event) => setCreateTeamDescription(event.target.value)}
-                    className={settingsTheme.input + ' min-h-20 resize-none py-2'}
-                    placeholder="Optional"
-                  />
-                </label>
-                <div className="space-y-2">
-                  <span className={settingsTheme.label}>Color</span>
-                  <div className="flex flex-wrap gap-2">
-                    {['#FF5F40', '#D97706', '#0F766E', '#2563EB', '#7C3AED', '#475569'].map((color) => (
-                      <button
-                        key={color}
-                        type="button"
-                        onClick={() => setCreateTeamColor(color)}
-                        className={`h-7 w-7 rounded-full border-2 ${
-                          createTeamColor === color ? 'border-[var(--ledger-text-primary)]' : 'border-transparent'
-                        }`}
-                        style={{ backgroundColor: color }}
-                        aria-label={`Use ${color}`}
-                      />
-                    ))}
-                  </div>
-                </div>
-                {createTeamError && <p className="text-xs text-[var(--ledger-danger)]">{createTeamError}</p>}
-                <div className="flex justify-end gap-2 pt-2">
-                  <button type="button" onClick={() => setIsCreateTeamOpen(false)} className={settingsTheme.controlButton}>
-                    Cancel
-                  </button>
-                  <button type="submit" disabled={isCreatingTeam || !createTeamName.trim()} className={settingsTheme.primaryButton}>
-                    {isCreatingTeam ? 'Creating...' : 'Create team'}
-                  </button>
-                </div>
-              </form>
-            </ModalOverlay>
-
-            <ModalOverlay
-              isOpen={isExtensionTokenModalOpen}
-              onClose={closeExtensionTokenModal}
-              backdropBorderRadius="inherit"
-              disablePortal
-              manageWindowChrome={false}
-              classNameContainer={`w-full max-w-115 ${settingsTheme.modalShell}`}
-            >
-              <div className="flex items-start justify-between gap-4 px-5 pt-5">
-                <div>
-                  <h3 className="text-lg font-semibold text-[var(--ledger-text-primary)]">Connect browser extension</h3>
-                  <p className="mt-1 text-sm leading-5 text-[var(--ledger-text-secondary)]">
-                    Use this token in the Ledger browser extension.
-                  </p>
-                </div>
-                <ModalCloseButton onClick={closeExtensionTokenModal} ariaLabel="Close extension token modal" />
-              </div>
-
-              <div className="mt-5 border-y border-[color:var(--ledger-border-subtle)] px-5 py-4">
-                <div className="rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 py-2">
-                  <p className="break-all font-mono text-xs leading-5 text-[var(--ledger-text-primary)]">
-                    {generatedExtensionToken}
-                  </p>
-                </div>
-                <p className="mt-2 text-xs leading-5 text-[var(--ledger-text-muted)]">
-                  This token is shown once. Keep it somewhere safe.
-                </p>
-                {extensionTokenCopyStatus && (
-                  <p className="mt-2 text-xs text-[var(--ledger-text-secondary)]">{extensionTokenCopyStatus}</p>
-                )}
-              </div>
-
-              <div className="flex items-center justify-end gap-2 px-5 py-4">
-                <button
-                  type="button"
-                  onClick={() => setExtensionTokenConfirmAction('regenerate')}
-                  disabled={isExtensionTokenBusy}
-                  className={settingsTheme.controlButtonNeutral + ' rounded-lg'}
+              <ModalOverlay
+                isOpen={isCreateTeamOpen}
+                onClose={() => setIsCreateTeamOpen(false)}
+                backdropBorderRadius="inherit"
+                disablePortal
+                manageWindowChrome={false}
+                classNameContainer="w-full max-w-md rounded-2xl border p-5"
+              >
+                <form
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    void handleCreateTeam();
+                  }}
+                  className="space-y-4"
                 >
-                  Regenerate
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void handleCopyExtensionToken()}
-                  className={settingsTheme.controlButtonNeutral + ' inline-flex items-center gap-2 rounded-lg'}
-                >
-                  <Copy size={13} />
-                  Copy token
-                </button>
-                <button
-                  type="button"
-                  onClick={closeExtensionTokenModal}
-                  className="h-8 rounded-lg bg-[var(--ledger-accent)] px-3 text-xs font-medium text-white transition hover:bg-[var(--ledger-accent-hover)]"
-                >
-                  Done
-                </button>
-              </div>
-            </ModalOverlay>
-
-            <ModalOverlay
-              isOpen={extensionTokenConfirmAction === 'regenerate'}
-              onClose={() => setExtensionTokenConfirmAction(null)}
-              backdropBorderRadius="inherit"
-              disablePortal
-              manageWindowChrome={false}
-              classNameContainer={`w-full max-w-115 ${settingsTheme.modalShell}`}
-            >
-              <div className="flex items-start justify-between gap-4 px-5 pt-5">
-                <div>
-                  <h3 className="text-lg font-semibold text-[var(--ledger-text-primary)]">Regenerate extension token?</h3>
-                  <p className="mt-1 text-sm leading-5 text-[var(--ledger-text-secondary)]">
-                    Your existing browser extension token will stop working. You’ll need to paste the
-                    new token into the extension.
-                  </p>
-                </div>
-                <ModalCloseButton
-                  onClick={() => setExtensionTokenConfirmAction(null)}
-                  ariaLabel="Close regenerate token modal"
-                />
-              </div>
-              <div className="mt-5 flex items-center justify-end gap-2 border-t border-[color:var(--ledger-border-subtle)] px-5 py-4">
-                <button
-                  type="button"
-                  onClick={() => setExtensionTokenConfirmAction(null)}
-                  className={settingsTheme.controlButtonNeutral + ' rounded-lg'}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void handleRegenerateExtensionToken()}
-                  disabled={isExtensionTokenBusy}
-                  className="h-8 rounded-lg bg-[var(--ledger-accent)] px-3 text-xs font-medium text-white transition hover:bg-[var(--ledger-accent-hover)] disabled:opacity-50"
-                >
-                  {isExtensionTokenBusy ? 'Regenerating...' : 'Regenerate token'}
-                </button>
-              </div>
-            </ModalOverlay>
-
-            <ModalOverlay
-              isOpen={extensionTokenConfirmAction === 'revoke'}
-              onClose={() => setExtensionTokenConfirmAction(null)}
-              backdropBorderRadius="inherit"
-              disablePortal
-              manageWindowChrome={false}
-              classNameContainer={`w-full max-w-115 ${settingsTheme.modalShell}`}
-            >
-              <div className="flex items-start justify-between gap-4 px-5 pt-5">
-                <div>
-                  <h3 className="text-lg font-semibold text-[var(--ledger-text-primary)]">Revoke extension token?</h3>
-                  <p className="mt-1 text-sm leading-5 text-[var(--ledger-text-secondary)]">
-                    The browser extension will no longer be able to save captures to Ledger.
-                  </p>
-                </div>
-                <ModalCloseButton
-                  onClick={() => setExtensionTokenConfirmAction(null)}
-                  ariaLabel="Close revoke token modal"
-                />
-              </div>
-              <div className="mt-5 flex items-center justify-end gap-2 border-t border-[color:var(--ledger-border-subtle)] px-5 py-4">
-                <button
-                  type="button"
-                  onClick={() => setExtensionTokenConfirmAction(null)}
-                  className={settingsTheme.controlButtonNeutral + ' rounded-lg'}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void handleRevokeExtensionToken()}
-                  disabled={isExtensionTokenBusy}
-                  className={settingsTheme.dangerButton + ' rounded-lg'}
-                >
-                  {isExtensionTokenBusy ? 'Revoking...' : 'Revoke'}
-                </button>
-              </div>
-            </ModalOverlay>
-
-            <ModalOverlay
-              isOpen={isWorkspaceManageModalOpen && !!activeWorkspace}
-              onClose={closeWorkspaceManageModal}
-              backdropBorderRadius="inherit"
-              disablePortal
-              manageWindowChrome={false}
-              classNameContainer={`w-full max-w-[720px] ${settingsTheme.modalShell}`}
-            >
-              <div className="flex items-start justify-between gap-4 px-5 pt-5">
-                <div>
-                  <p className={settingsTheme.rowMuted + ' font-medium'}>Workspace settings</p>
-                  <h3 id="workspace-manage-title" className="mt-1 text-lg font-semibold text-[var(--ledger-text-primary)]">
-                    {activeWorkspace?.name}
-                  </h3>
-                  <p className={settingsTheme.rowMuted + ' mt-0.5'}>{activeWorkspaceKindLabel}</p>
-                </div>
-                <ModalCloseButton onClick={closeWorkspaceManageModal} ariaLabel="Close workspace settings modal" />
-              </div>
-
-              <div className="mt-4 border-t border-[color:var(--ledger-border-subtle)] px-5 pt-4">
-                <div className="grid gap-4 md:grid-cols-[220px_minmax(0,1fr)] md:items-start">
-                  <div className="space-y-1 pt-1">
-                    <p className="text-sm font-medium text-[var(--ledger-text-primary)]">Name</p>
-                    <p className={settingsTheme.rowMuted}>Workspace display name.</p>
-                  </div>
-                  <input
-                    id="workspace-edit-name"
-                    value={workspaceEditName}
-                    onChange={(e) => setWorkspaceEditName(e.target.value)}
-                    disabled={!canManageWorkspace || isSavingWorkspace}
-                    className={settingsTheme.input}
-                    aria-label="Edit workspace name"
-                  />
-                </div>
-              </div>
-
-              <div className="mt-4 px-5">
-                <div className="grid gap-4 md:grid-cols-[220px_minmax(0,1fr)] md:items-start">
-                  <div className="space-y-1 pt-1">
-                    <p className="text-sm font-medium text-[var(--ledger-text-primary)]">Description</p>
-                    <p className={settingsTheme.rowMuted}>Optional workspace context.</p>
-                  </div>
-                  <textarea
-                    id="workspace-edit-description"
-                    value={workspaceEditDescription}
-                    onChange={(e) => setWorkspaceEditDescription(e.target.value)}
-                    disabled={!canManageWorkspace || isSavingWorkspace}
-                    className={settingsTheme.input + ' min-h-24 resize-none py-2'}
-                    aria-label="Edit workspace description"
-                  />
-                </div>
-              </div>
-
-              <div className="mt-4 border-t border-[color:var(--ledger-border-subtle)] px-5 pt-4">
-                <div className="flex items-center justify-between gap-4">
                   <div>
-                    <p className="text-sm font-semibold text-[var(--ledger-text-primary)]">Danger zone</p>
-                    <p className={settingsTheme.rowMuted + ' mt-1'}>Delete this workspace and all data inside it.</p>
+                    <h3 className="text-lg font-semibold text-[var(--ledger-text-primary)]">
+                      New team
+                    </h3>
+                    <p className="mt-1 text-sm leading-5 text-[var(--ledger-text-secondary)]">
+                      Create a compact team for shared ownership.
+                    </p>
                   </div>
+                  <label className="block space-y-1.5">
+                    <span className={settingsTheme.label}>Team name</span>
+                    <input
+                      value={createTeamName}
+                      onChange={(event) => {
+                        const nextName = event.target.value;
+                        setCreateTeamName(nextName);
+                        if (!createTeamIdentifierTouched) {
+                          setCreateTeamIdentifier(makeTeamIdentifier(nextName));
+                        }
+                      }}
+                      className={settingsTheme.input}
+                      placeholder="Main Room"
+                      autoFocus
+                    />
+                  </label>
+                  <label className="block space-y-1.5">
+                    <span className={settingsTheme.label}>Identifier</span>
+                    <input
+                      value={createTeamIdentifier}
+                      onChange={(event) => {
+                        setCreateTeamIdentifierTouched(true);
+                        setCreateTeamIdentifier(event.target.value.toUpperCase());
+                      }}
+                      className={settingsTheme.input}
+                      placeholder="MAIN"
+                    />
+                  </label>
+                  <label className="block space-y-1.5">
+                    <span className={settingsTheme.label}>Description</span>
+                    <textarea
+                      value={createTeamDescription}
+                      onChange={(event) => setCreateTeamDescription(event.target.value)}
+                      className={settingsTheme.input + ' min-h-20 resize-none py-2'}
+                      placeholder="Optional"
+                    />
+                  </label>
+                  <div className="space-y-2">
+                    <span className={settingsTheme.label}>Color</span>
+                    <div className="flex flex-wrap gap-2">
+                      {['#FF5F40', '#D97706', '#0F766E', '#2563EB', '#7C3AED', '#475569'].map(
+                        (color) => (
+                          <button
+                            key={color}
+                            type="button"
+                            onClick={() => setCreateTeamColor(color)}
+                            className={`h-7 w-7 rounded-full border-2 ${
+                              createTeamColor === color
+                                ? 'border-[var(--ledger-text-primary)]'
+                                : 'border-transparent'
+                            }`}
+                            style={{ backgroundColor: color }}
+                            aria-label={`Use ${color}`}
+                          />
+                        )
+                      )}
+                    </div>
+                  </div>
+                  {createTeamError && (
+                    <p className="text-xs text-[var(--ledger-danger)]">{createTeamError}</p>
+                  )}
+                  <div className="flex justify-end gap-2 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => setIsCreateTeamOpen(false)}
+                      className={settingsTheme.controlButton}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={isCreatingTeam || !createTeamName.trim()}
+                      className={settingsTheme.primaryButton}
+                    >
+                      {isCreatingTeam ? 'Creating...' : 'Create team'}
+                    </button>
+                  </div>
+                </form>
+              </ModalOverlay>
+
+              <ModalOverlay
+                isOpen={isExtensionTokenModalOpen}
+                onClose={closeExtensionTokenModal}
+                backdropBorderRadius="inherit"
+                disablePortal
+                manageWindowChrome={false}
+                classNameContainer={`w-full max-w-115 ${settingsTheme.modalShell}`}
+              >
+                <div className="flex items-start justify-between gap-4 px-5 pt-5">
+                  <div>
+                    <h3 className="text-lg font-semibold text-[var(--ledger-text-primary)]">
+                      Connect browser extension
+                    </h3>
+                    <p className="mt-1 text-sm leading-5 text-[var(--ledger-text-secondary)]">
+                      Use this token in the Ledger browser extension.
+                    </p>
+                  </div>
+                  <ModalCloseButton
+                    onClick={closeExtensionTokenModal}
+                    ariaLabel="Close extension token modal"
+                  />
+                </div>
+
+                <div className="mt-5 border-y border-[color:var(--ledger-border-subtle)] px-5 py-4">
+                  <div className="rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 py-2">
+                    <p className="break-all font-mono text-xs leading-5 text-[var(--ledger-text-primary)]">
+                      {generatedExtensionToken}
+                    </p>
+                  </div>
+                  <p className="mt-2 text-xs leading-5 text-[var(--ledger-text-muted)]">
+                    This token is shown once. Keep it somewhere safe.
+                  </p>
+                  {extensionTokenCopyStatus && (
+                    <p className="mt-2 text-xs text-[var(--ledger-text-secondary)]">
+                      {extensionTokenCopyStatus}
+                    </p>
+                  )}
+                </div>
+
+                <div className="flex items-center justify-end gap-2 px-5 py-4">
                   <button
                     type="button"
-                    onClick={openWorkspaceDeleteModal}
-                    disabled={workspaceUserRole !== 'owner' || isDeletingWorkspace}
-                    className={settingsTheme.dangerButton}
+                    onClick={() => setExtensionTokenConfirmAction('regenerate')}
+                    disabled={isExtensionTokenBusy}
+                    className={settingsTheme.controlButtonNeutral + ' rounded-lg'}
                   >
-                    Delete workspace
+                    Regenerate
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void handleCopyExtensionToken()}
+                    className={
+                      settingsTheme.controlButtonNeutral +
+                      ' inline-flex items-center gap-2 rounded-lg'
+                    }
+                  >
+                    <Copy size={13} />
+                    Copy token
+                  </button>
+                  <button
+                    type="button"
+                    onClick={closeExtensionTokenModal}
+                    className="h-8 rounded-lg bg-[var(--ledger-accent)] px-3 text-xs font-medium text-white transition hover:bg-[var(--ledger-accent-hover)]"
+                  >
+                    Done
                   </button>
                 </div>
-              </div>
+              </ModalOverlay>
 
-              {(workspaceEditError || workspaceEditStatus) && (
-                <p className="px-5 pt-3 text-xs text-[var(--ledger-text-secondary)]" role="status">
-                  {workspaceEditError || workspaceEditStatus}
-                </p>
-              )}
-
-              <div className="mt-5 flex items-center justify-end gap-2 border-t border-[color:var(--ledger-border-subtle)] px-5 py-4">
-                <button
-                  type="button"
-                  onClick={closeWorkspaceManageModal}
-                  className={settingsTheme.controlButtonNeutral + ' rounded-lg'}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void handleSaveWorkspaceChanges()}
-                  disabled={!canManageWorkspace || isSavingWorkspace}
-                  className="h-8 rounded-lg bg-[var(--ledger-accent)] px-3 text-xs font-medium text-white transition hover:bg-[var(--ledger-accent-hover)] disabled:opacity-60"
-                >
-                  {isSavingWorkspace ? 'Saving...' : 'Save changes'}
-                </button>
-              </div>
-            </ModalOverlay>
-            <ModalOverlay
-              isOpen={isWorkspaceDeleteModalOpen && !!activeWorkspace}
-              onClose={closeWorkspaceDeleteModal}
-              backdropBorderRadius="inherit"
-              disablePortal
-              manageWindowChrome={false}
-              classNameContainer={`w-full max-w-[640px] ${settingsTheme.modalShell}`}
-            >
-              <div className="flex items-start justify-between gap-4 px-5 pt-5">
-                <div>
-                  <p className={settingsTheme.rowMuted + ' font-medium'}>Danger zone</p>
-                  <h3 id="workspace-delete-title" className="mt-1 text-lg font-semibold text-[var(--ledger-text-primary)]">
-                    Delete workspace
-                  </h3>
-                  <p className="mt-1 text-sm text-[var(--ledger-text-secondary)]">
-                    Type <span className="font-medium text-[var(--ledger-text-primary)]">{activeWorkspace?.name}</span> to confirm deletion.
-                  </p>
-                </div>
-                <ModalCloseButton onClick={closeWorkspaceDeleteModal} ariaLabel="Close delete workspace modal" />
-              </div>
-
-              <div className="mt-4 border-t border-[color:var(--ledger-border-subtle)] px-5 pt-4">
-                <label
-                  htmlFor="workspace-delete-confirm"
-                  className="mb-2 block text-xs font-medium text-[var(--ledger-text-muted)]"
-                >
-                  Workspace name
-                </label>
-                <input
-                  id="workspace-delete-confirm"
-                  value={workspaceDeleteConfirm}
-                  onChange={(e) => setWorkspaceDeleteConfirm(e.target.value)}
-                  disabled={workspaceUserRole !== 'owner' || isDeletingWorkspace}
-                  placeholder={activeWorkspace?.name}
-                  className={settingsTheme.inputSecondary + ' h-9 w-full'}
-                  aria-label="Confirm workspace deletion"
-                />
-                <p className="mt-2 text-xs text-[var(--ledger-text-muted)]">This removes the workspace and all data inside it.</p>
-              </div>
-
-              {workspaceDeleteError && (
-                <p className="px-5 pt-3 text-xs text-[var(--ledger-danger)]" role="alert">
-                  {workspaceDeleteError}
-                </p>
-              )}
-
-              <div className="mt-5 flex items-center justify-end gap-2 border-t border-[color:var(--ledger-border-subtle)] px-5 py-4">
-                <button
-                  type="button"
-                  onClick={closeWorkspaceDeleteModal}
-                  className={settingsTheme.controlButtonNeutral + ' rounded-lg'}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void submitWorkspaceDeleteConfirmation()}
-                  disabled={
-                    workspaceUserRole !== 'owner' ||
-                    isDeletingWorkspace ||
-                    workspaceDeleteConfirm.trim() !== activeWorkspace?.name?.trim()
-                  }
-                  className={settingsTheme.dangerButton + ' rounded-lg'}
-                >
-                  {isDeletingWorkspace ? 'Deleting...' : 'Delete workspace'}
-                </button>
-              </div>
-            </ModalOverlay>
-
-            <ModalOverlay
-              isOpen={!!inviteModal && !!selectedInvite}
-              onClose={() => setInviteModal(null)}
-              backdropBorderRadius="inherit"
-              disablePortal
-              manageWindowChrome={false}
-              classNameContainer={`w-full max-w-[560px] overflow-hidden ${settingsTheme.modalShell}`}
-            >
-              <div className="flex min-h-70 flex-col">
-              <div className="flex items-start justify-between gap-4 px-5 pt-5">
-                <div>
-                  <p className={settingsTheme.rowMuted + ' font-medium'}>Manage invite</p>
-                  <h3 className="mt-1 text-lg font-semibold text-[var(--ledger-text-primary)]">
-                    {selectedInvite?.invited_email}
-                  </h3>
-                  <p className={settingsTheme.rowMuted + ' mt-0.5'}>
-                    {selectedInvite?.role} · {selectedInvite?.status}
-                  </p>
-                </div>
-                <ModalCloseButton onClick={() => setInviteModal(null)} ariaLabel="Close invite modal" />
-              </div>
-
-              <div className="mt-4 flex-1 border-t border-[color:var(--ledger-border-subtle)] px-5 pt-4 pb-5">
-                <p className={settingsTheme.rowMuted + ' font-medium'}>Invite link</p>
-                {selectedInvite?.status === 'pending' ? (
-                  <>
-                    <p className="mt-2 break-all text-sm text-[var(--ledger-text-secondary)]">
-                      {getInviteUrl(selectedInvite) ?? 'No link available'}
+              <ModalOverlay
+                isOpen={extensionTokenConfirmAction === 'regenerate'}
+                onClose={() => setExtensionTokenConfirmAction(null)}
+                backdropBorderRadius="inherit"
+                disablePortal
+                manageWindowChrome={false}
+                classNameContainer={`w-full max-w-115 ${settingsTheme.modalShell}`}
+              >
+                <div className="flex items-start justify-between gap-4 px-5 pt-5">
+                  <div>
+                    <h3 className="text-lg font-semibold text-[var(--ledger-text-primary)]">
+                      Regenerate extension token?
+                    </h3>
+                    <p className="mt-1 text-sm leading-5 text-[var(--ledger-text-secondary)]">
+                      Your existing browser extension token will stop working. You’ll need to paste
+                      the new token into the extension.
                     </p>
-                    <div className="mt-3 flex gap-2">
-                      <button
-                        type="button"
-                        onClick={() => void handleCopySelectedInviteLink()}
-                        disabled={!getInviteUrl(selectedInvite)}
-                        className={settingsTheme.controlButtonNeutral + ' inline-flex flex-1 items-center justify-center gap-2 rounded-full'}
-                      >
-                        <Copy size={14} />
-                        Copy link
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => void handleRevokeInvitation(selectedInvite.id)}
-                        disabled={invitationActionId === selectedInvite.id}
-                        className={settingsTheme.dangerButton + ' inline-flex flex-1 items-center justify-center rounded-full'}
-                      >
-                        {invitationActionId === selectedInvite.id ? 'Revoking...' : 'Revoke'}
-                      </button>
+                  </div>
+                  <ModalCloseButton
+                    onClick={() => setExtensionTokenConfirmAction(null)}
+                    ariaLabel="Close regenerate token modal"
+                  />
+                </div>
+                <div className="mt-5 flex items-center justify-end gap-2 border-t border-[color:var(--ledger-border-subtle)] px-5 py-4">
+                  <button
+                    type="button"
+                    onClick={() => setExtensionTokenConfirmAction(null)}
+                    className={settingsTheme.controlButtonNeutral + ' rounded-lg'}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void handleRegenerateExtensionToken()}
+                    disabled={isExtensionTokenBusy}
+                    className="h-8 rounded-lg bg-[var(--ledger-accent)] px-3 text-xs font-medium text-white transition hover:bg-[var(--ledger-accent-hover)] disabled:opacity-50"
+                  >
+                    {isExtensionTokenBusy ? 'Regenerating...' : 'Regenerate token'}
+                  </button>
+                </div>
+              </ModalOverlay>
+
+              <ModalOverlay
+                isOpen={extensionTokenConfirmAction === 'revoke'}
+                onClose={() => setExtensionTokenConfirmAction(null)}
+                backdropBorderRadius="inherit"
+                disablePortal
+                manageWindowChrome={false}
+                classNameContainer={`w-full max-w-115 ${settingsTheme.modalShell}`}
+              >
+                <div className="flex items-start justify-between gap-4 px-5 pt-5">
+                  <div>
+                    <h3 className="text-lg font-semibold text-[var(--ledger-text-primary)]">
+                      Revoke extension token?
+                    </h3>
+                    <p className="mt-1 text-sm leading-5 text-[var(--ledger-text-secondary)]">
+                      The browser extension will no longer be able to save captures to Ledger.
+                    </p>
+                  </div>
+                  <ModalCloseButton
+                    onClick={() => setExtensionTokenConfirmAction(null)}
+                    ariaLabel="Close revoke token modal"
+                  />
+                </div>
+                <div className="mt-5 flex items-center justify-end gap-2 border-t border-[color:var(--ledger-border-subtle)] px-5 py-4">
+                  <button
+                    type="button"
+                    onClick={() => setExtensionTokenConfirmAction(null)}
+                    className={settingsTheme.controlButtonNeutral + ' rounded-lg'}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void handleRevokeExtensionToken()}
+                    disabled={isExtensionTokenBusy}
+                    className={settingsTheme.dangerButton + ' rounded-lg'}
+                  >
+                    {isExtensionTokenBusy ? 'Revoking...' : 'Revoke'}
+                  </button>
+                </div>
+              </ModalOverlay>
+
+              <ModalOverlay
+                isOpen={isWorkspaceManageModalOpen && !!activeWorkspace}
+                onClose={closeWorkspaceManageModal}
+                backdropBorderRadius="inherit"
+                disablePortal
+                manageWindowChrome={false}
+                classNameContainer={`w-full max-w-[720px] ${settingsTheme.modalShell}`}
+              >
+                <div className="flex items-start justify-between gap-4 px-5 pt-5">
+                  <div>
+                    <p className={settingsTheme.rowMuted + ' font-medium'}>Workspace settings</p>
+                    <h3
+                      id="workspace-manage-title"
+                      className="mt-1 text-lg font-semibold text-[var(--ledger-text-primary)]"
+                    >
+                      {activeWorkspace?.name}
+                    </h3>
+                    <p className={settingsTheme.rowMuted + ' mt-0.5'}>{activeWorkspaceKindLabel}</p>
+                  </div>
+                  <ModalCloseButton
+                    onClick={closeWorkspaceManageModal}
+                    ariaLabel="Close workspace settings modal"
+                  />
+                </div>
+
+                <div className="mt-4 border-t border-[color:var(--ledger-border-subtle)] px-5 pt-4">
+                  <div className="grid gap-4 md:grid-cols-[220px_minmax(0,1fr)] md:items-start">
+                    <div className="space-y-1 pt-1">
+                      <p className="text-sm font-medium text-[var(--ledger-text-primary)]">Name</p>
+                      <p className={settingsTheme.rowMuted}>Workspace display name.</p>
                     </div>
-                  </>
-                ) : (
-                  <p className="mt-2 text-sm text-[var(--ledger-text-secondary)]">This invite is no longer pending.</p>
+                    <input
+                      id="workspace-edit-name"
+                      value={workspaceEditName}
+                      onChange={(e) => setWorkspaceEditName(e.target.value)}
+                      disabled={!canManageWorkspace || isSavingWorkspace}
+                      className={settingsTheme.input}
+                      aria-label="Edit workspace name"
+                    />
+                  </div>
+                </div>
+
+                <div className="mt-4 px-5">
+                  <div className="grid gap-4 md:grid-cols-[220px_minmax(0,1fr)] md:items-start">
+                    <div className="space-y-1 pt-1">
+                      <p className="text-sm font-medium text-[var(--ledger-text-primary)]">
+                        Description
+                      </p>
+                      <p className={settingsTheme.rowMuted}>Optional workspace context.</p>
+                    </div>
+                    <textarea
+                      id="workspace-edit-description"
+                      value={workspaceEditDescription}
+                      onChange={(e) => setWorkspaceEditDescription(e.target.value)}
+                      disabled={!canManageWorkspace || isSavingWorkspace}
+                      className={settingsTheme.input + ' min-h-24 resize-none py-2'}
+                      aria-label="Edit workspace description"
+                    />
+                  </div>
+                </div>
+
+                <div className="mt-4 border-t border-[color:var(--ledger-border-subtle)] px-5 pt-4">
+                  <div className="flex items-center justify-between gap-4">
+                    <div>
+                      <p className="text-sm font-semibold text-[var(--ledger-text-primary)]">
+                        Danger zone
+                      </p>
+                      <p className={settingsTheme.rowMuted + ' mt-1'}>
+                        Delete this workspace and all data inside it.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={openWorkspaceDeleteModal}
+                      disabled={workspaceUserRole !== 'owner' || isDeletingWorkspace}
+                      className={settingsTheme.dangerButton}
+                    >
+                      Delete workspace
+                    </button>
+                  </div>
+                </div>
+
+                {(workspaceEditError || workspaceEditStatus) && (
+                  <p
+                    className="px-5 pt-3 text-xs text-[var(--ledger-text-secondary)]"
+                    role="status"
+                  >
+                    {workspaceEditError || workspaceEditStatus}
+                  </p>
                 )}
-              </div>
-              </div>
-            </ModalOverlay>
+
+                <div className="mt-5 flex items-center justify-end gap-2 border-t border-[color:var(--ledger-border-subtle)] px-5 py-4">
+                  <button
+                    type="button"
+                    onClick={closeWorkspaceManageModal}
+                    className={settingsTheme.controlButtonNeutral + ' rounded-lg'}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void handleSaveWorkspaceChanges()}
+                    disabled={!canManageWorkspace || isSavingWorkspace}
+                    className="h-8 rounded-lg bg-[var(--ledger-accent)] px-3 text-xs font-medium text-white transition hover:bg-[var(--ledger-accent-hover)] disabled:opacity-60"
+                  >
+                    {isSavingWorkspace ? 'Saving...' : 'Save changes'}
+                  </button>
+                </div>
+              </ModalOverlay>
+              <ModalOverlay
+                isOpen={isWorkspaceDeleteModalOpen && !!activeWorkspace}
+                onClose={closeWorkspaceDeleteModal}
+                backdropBorderRadius="inherit"
+                disablePortal
+                manageWindowChrome={false}
+                classNameContainer={`w-full max-w-[640px] ${settingsTheme.modalShell}`}
+              >
+                <div className="flex items-start justify-between gap-4 px-5 pt-5">
+                  <div>
+                    <p className={settingsTheme.rowMuted + ' font-medium'}>Danger zone</p>
+                    <h3
+                      id="workspace-delete-title"
+                      className="mt-1 text-lg font-semibold text-[var(--ledger-text-primary)]"
+                    >
+                      Delete workspace
+                    </h3>
+                    <p className="mt-1 text-sm text-[var(--ledger-text-secondary)]">
+                      Type{' '}
+                      <span className="font-medium text-[var(--ledger-text-primary)]">
+                        {activeWorkspace?.name}
+                      </span>{' '}
+                      to confirm deletion.
+                    </p>
+                  </div>
+                  <ModalCloseButton
+                    onClick={closeWorkspaceDeleteModal}
+                    ariaLabel="Close delete workspace modal"
+                  />
+                </div>
+
+                <div className="mt-4 border-t border-[color:var(--ledger-border-subtle)] px-5 pt-4">
+                  <label
+                    htmlFor="workspace-delete-confirm"
+                    className="mb-2 block text-xs font-medium text-[var(--ledger-text-muted)]"
+                  >
+                    Workspace name
+                  </label>
+                  <input
+                    id="workspace-delete-confirm"
+                    value={workspaceDeleteConfirm}
+                    onChange={(e) => setWorkspaceDeleteConfirm(e.target.value)}
+                    disabled={workspaceUserRole !== 'owner' || isDeletingWorkspace}
+                    placeholder={activeWorkspace?.name}
+                    className={settingsTheme.inputSecondary + ' h-9 w-full'}
+                    aria-label="Confirm workspace deletion"
+                  />
+                  <p className="mt-2 text-xs text-[var(--ledger-text-muted)]">
+                    This removes the workspace and all data inside it.
+                  </p>
+                </div>
+
+                {workspaceDeleteError && (
+                  <p className="px-5 pt-3 text-xs text-[var(--ledger-danger)]" role="alert">
+                    {workspaceDeleteError}
+                  </p>
+                )}
+
+                <div className="mt-5 flex items-center justify-end gap-2 border-t border-[color:var(--ledger-border-subtle)] px-5 py-4">
+                  <button
+                    type="button"
+                    onClick={closeWorkspaceDeleteModal}
+                    className={settingsTheme.controlButtonNeutral + ' rounded-lg'}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void submitWorkspaceDeleteConfirmation()}
+                    disabled={
+                      workspaceUserRole !== 'owner' ||
+                      isDeletingWorkspace ||
+                      workspaceDeleteConfirm.trim() !== activeWorkspace?.name?.trim()
+                    }
+                    className={settingsTheme.dangerButton + ' rounded-lg'}
+                  >
+                    {isDeletingWorkspace ? 'Deleting...' : 'Delete workspace'}
+                  </button>
+                </div>
+              </ModalOverlay>
+
+              <ModalOverlay
+                isOpen={!!inviteModal && !!selectedInvite}
+                onClose={() => setInviteModal(null)}
+                backdropBorderRadius="inherit"
+                disablePortal
+                manageWindowChrome={false}
+                classNameContainer={`w-full max-w-[560px] overflow-hidden ${settingsTheme.modalShell}`}
+              >
+                <div className="flex min-h-70 flex-col">
+                  <div className="flex items-start justify-between gap-4 px-5 pt-5">
+                    <div>
+                      <p className={settingsTheme.rowMuted + ' font-medium'}>Manage invite</p>
+                      <h3 className="mt-1 text-lg font-semibold text-[var(--ledger-text-primary)]">
+                        {selectedInvite?.invited_email}
+                      </h3>
+                      <p className={settingsTheme.rowMuted + ' mt-0.5'}>
+                        {selectedInvite?.role} · {selectedInvite?.status}
+                      </p>
+                    </div>
+                    <ModalCloseButton
+                      onClick={() => setInviteModal(null)}
+                      ariaLabel="Close invite modal"
+                    />
+                  </div>
+
+                  <div className="mt-4 flex-1 border-t border-[color:var(--ledger-border-subtle)] px-5 pt-4 pb-5">
+                    <p className={settingsTheme.rowMuted + ' font-medium'}>Invite link</p>
+                    {selectedInvite?.status === 'pending' ? (
+                      <>
+                        <p className="mt-2 break-all text-sm text-[var(--ledger-text-secondary)]">
+                          {getInviteUrl(selectedInvite) ?? 'No link available'}
+                        </p>
+                        <div className="mt-3 flex gap-2">
+                          <button
+                            type="button"
+                            onClick={() => void handleCopySelectedInviteLink()}
+                            disabled={!getInviteUrl(selectedInvite)}
+                            className={
+                              settingsTheme.controlButtonNeutral +
+                              ' inline-flex flex-1 items-center justify-center gap-2 rounded-full'
+                            }
+                          >
+                            <Copy size={14} />
+                            Copy link
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void handleRevokeInvitation(selectedInvite.id)}
+                            disabled={invitationActionId === selectedInvite.id}
+                            className={
+                              settingsTheme.dangerButton +
+                              ' inline-flex flex-1 items-center justify-center rounded-full'
+                            }
+                          >
+                            {invitationActionId === selectedInvite.id ? 'Revoking...' : 'Revoke'}
+                          </button>
+                        </div>
+                      </>
+                    ) : (
+                      <p className="mt-2 text-sm text-[var(--ledger-text-secondary)]">
+                        This invite is no longer pending.
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </ModalOverlay>
             </div>
           </main>
         </div>

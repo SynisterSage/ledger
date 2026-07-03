@@ -1,4 +1,12 @@
-import React, { createContext, useContext, ReactNode, useEffect, useState } from 'react';
+import React, {
+  createContext,
+  useContext,
+  type CSSProperties,
+  ReactNode,
+  useEffect,
+  useMemo,
+  useState,
+} from 'react';
 import {
   SIDEBAR_PREFERENCES_STORAGE_KEY,
   loadSidebarPreferences,
@@ -11,6 +19,30 @@ import {
 
 export type SidebarState = 'minimized' | 'expanded' | 'fullscreen';
 export type ModuleView = 'dashboard' | 'calendar';
+export type SidebarAttachmentMode = 'attached' | 'overlay';
+type WorkspaceShellKind = 'dashboard' | 'calendar' | 'notes' | 'projects' | 'teams' | 'settings';
+
+export type WorkspaceShellLayout = {
+  sidebarPlacement: SidebarPosition;
+  sidebarMode: SidebarAttachmentMode;
+  sidebarSize: {
+    left: number;
+    right: number;
+    top: number;
+    bottom: number;
+  };
+  shellFullscreen: boolean;
+  workspaceShellStyle: CSSProperties;
+};
+
+const workspaceShellKinds = new Set<WorkspaceShellKind>([
+  'dashboard',
+  'calendar',
+  'notes',
+  'projects',
+  'teams',
+  'settings',
+]);
 
 interface SidebarContextType {
   state: SidebarState;
@@ -51,6 +83,7 @@ interface SidebarContextType {
   focusDate: string | null;
   setFocusDate: (date: string | null) => void;
   isHydrated: boolean;
+  workspaceShellLayout: WorkspaceShellLayout;
 }
 
 const SidebarContext = createContext<SidebarContextType | undefined>(undefined);
@@ -65,6 +98,8 @@ export const SidebarProvider = ({ children }: { children: ReactNode }) => {
   const didNormalizeFloatingStartupRef = React.useRef(false);
   const wasFloatingDockedRef = React.useRef(false);
   const [isFloatingDocked, setIsFloatingDocked] = React.useState(false);
+  const [shellFullscreen, setShellFullscreen] = useState(false);
+  const [floatingDockSide, setFloatingDockSide] = useState<SidebarPosition | null>(null);
   const [state, setSidebarState] = React.useState<SidebarState>(() => {
     const prefs = loadSidebarPreferences();
     if (prefs.defaultState === 'expanded') return 'expanded';
@@ -156,10 +191,15 @@ export const SidebarProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     const handleFloatingDockChanged = (_event: unknown, payload: { isDocked?: boolean }) => {
       const nextIsDocked = Boolean(payload?.isDocked);
+      const nextSide =
+        payload && typeof (payload as { side?: unknown }).side === 'string'
+          ? ((payload as { side?: unknown }).side as SidebarPosition)
+          : null;
       const wasDocked = wasFloatingDockedRef.current;
 
       wasFloatingDockedRef.current = nextIsDocked;
       setIsFloatingDocked(nextIsDocked);
+      setFloatingDockSide(nextIsDocked ? nextSide ?? floatingDockSide : null);
 
       if (
         wasDocked &&
@@ -181,7 +221,45 @@ export const SidebarProvider = ({ children }: { children: ReactNode }) => {
     return () => {
       window.ipcRenderer?.off('sidebar:floating-dock-changed', handleFloatingDockChanged);
     };
-  }, [sidebarPreferences.position, state]);
+  }, [floatingDockSide, sidebarPreferences.position, state]);
+
+  useEffect(() => {
+    const handleModuleFullscreenState = (
+      _event: unknown,
+      payload: { kind?: string; isFullscreen?: boolean } | null
+    ) => {
+      if (payload?.kind && !workspaceShellKinds.has(payload.kind as WorkspaceShellKind)) {
+        return;
+      }
+      setShellFullscreen(Boolean(payload?.isFullscreen));
+    };
+
+    window.ipcRenderer?.on('module:fullscreen-state-changed', handleModuleFullscreenState);
+    return () => {
+      window.ipcRenderer?.off('module:fullscreen-state-changed', handleModuleFullscreenState);
+    };
+  }, []);
+
+  useEffect(() => {
+    const handleModuleStateChanged = (
+      _event: unknown,
+      payload: { kind?: string; state?: 'minimized' | 'closed' } | null
+    ) => {
+      if (payload?.state !== 'closed') return;
+      if (!shellFullscreen) return;
+      if (!payload?.kind || !workspaceShellKinds.has(payload.kind as WorkspaceShellKind)) {
+        return;
+      }
+
+      setShellFullscreen(false);
+      collapseSidebar();
+    };
+
+    window.ipcRenderer?.on('module:state-changed', handleModuleStateChanged);
+    return () => {
+      window.ipcRenderer?.off('module:state-changed', handleModuleStateChanged);
+    };
+  }, [collapseSidebar, shellFullscreen]);
 
   const toggleExpand = () => {
     setState(state === 'expanded' ? 'minimized' : 'expanded');
@@ -208,7 +286,7 @@ export const SidebarProvider = ({ children }: { children: ReactNode }) => {
     }));
   };
 
-  const collapseSidebar = () => {
+  function collapseSidebar() {
     const nextRestoreView: SidebarPreferences['collapsedRestoreView'] =
       state === 'expanded' ? 'expanded' : sidebarPreferences.isExpanded ? 'rail' : 'collapsed';
     setSidebarState('minimized');
@@ -219,7 +297,7 @@ export const SidebarProvider = ({ children }: { children: ReactNode }) => {
       isExpanded: false,
       lastState: 'collapsed',
     }));
-  };
+  }
 
   const collapseToRail = () => {
     setSidebarState('minimized');
@@ -341,6 +419,71 @@ export const SidebarProvider = ({ children }: { children: ReactNode }) => {
     }));
   };
 
+  const isSidebarVisible = !sidebarPreferences.isHidden;
+  const workspaceShellLayout = useMemo<WorkspaceShellLayout>(() => {
+    const sidebarPlacement = sidebarPreferences.position;
+    const effectivePlacement =
+      sidebarPlacement === 'floating' ? floatingDockSide ?? 'right' : sidebarPlacement;
+    const sidebarMode: SidebarAttachmentMode =
+      shellFullscreen && isSidebarVisible && (sidebarPlacement !== 'floating' || isFloatingDocked)
+        ? 'attached'
+        : 'overlay';
+    const verticalSidebarWidth = state === 'expanded' ? 320 : 64;
+    const horizontalSidebarHeight = state === 'expanded' ? 144 : 60;
+    const isVerticalPlacement = effectivePlacement === 'left' || effectivePlacement === 'right';
+    const attachedWidth = isVerticalPlacement ? verticalSidebarWidth : 0;
+    const attachedHeight = isVerticalPlacement ? 0 : horizontalSidebarHeight;
+
+    return {
+      sidebarPlacement,
+      sidebarMode,
+      sidebarSize: {
+        left:
+          shellFullscreen && sidebarMode === 'attached' && effectivePlacement === 'left'
+            ? attachedWidth
+            : 0,
+        right:
+          shellFullscreen && sidebarMode === 'attached' && effectivePlacement === 'right'
+            ? attachedWidth
+            : 0,
+        top:
+          shellFullscreen && sidebarMode === 'attached' && effectivePlacement === 'top'
+            ? attachedHeight
+            : 0,
+        bottom:
+          shellFullscreen && sidebarMode === 'attached' && effectivePlacement === 'bottom'
+            ? attachedHeight
+            : 0,
+      },
+      shellFullscreen,
+      workspaceShellStyle: {
+        ['--ledger-sidebar-inset-left' as string]:
+          shellFullscreen && sidebarMode === 'attached' && effectivePlacement === 'left'
+            ? `${attachedWidth}px`
+            : '0px',
+        ['--ledger-sidebar-inset-right' as string]:
+          shellFullscreen && sidebarMode === 'attached' && effectivePlacement === 'right'
+            ? `${attachedWidth}px`
+            : '0px',
+        ['--ledger-sidebar-inset-top' as string]:
+          shellFullscreen && sidebarMode === 'attached' && effectivePlacement === 'top'
+            ? `${attachedHeight}px`
+            : '0px',
+        ['--ledger-sidebar-inset-bottom' as string]:
+          shellFullscreen && sidebarMode === 'attached' && effectivePlacement === 'bottom'
+            ? `${attachedHeight}px`
+            : '0px',
+      },
+    };
+  }, [
+    floatingDockSide,
+    isFloatingDocked,
+    isSidebarVisible,
+    shellFullscreen,
+    sidebarPreferences.position,
+    state,
+  ]);
+
   return (
     <SidebarContext.Provider
       value={{
@@ -382,6 +525,7 @@ export const SidebarProvider = ({ children }: { children: ReactNode }) => {
         focusDate,
         setFocusDate,
         isHydrated,
+        workspaceShellLayout,
       }}
     >
       {children}

@@ -28,6 +28,7 @@ import {
 import { createPortal } from 'react-dom';
 import { useToast } from '../Common/ToastProvider';
 import { useAuthContext } from '../../context/AuthContext';
+import { useSidebar } from '../../context/SidebarContext';
 import {
   modulePaneSizing,
   clampPaneWidth,
@@ -49,6 +50,7 @@ import { SkeletonLoader, SkeletonNoteCard } from '../Common/Skeleton';
 import { MindMapEditor } from './MindMapEditor';
 import { RichTextEditor } from './RichTextEditor';
 import { useViewportWidth } from '../../hooks/useViewportWidth';
+import { useWorkspaceRouteHistory } from '../../hooks/useWorkspaceRouteHistory';
 import { CreateNoteModal } from './CreateNoteModal';
 import { BulkExportModal } from './BulkExportModal';
 import { VersionHistoryModal } from './VersionHistoryModal';
@@ -387,7 +389,9 @@ const displayFirstName = (value: string) => {
 const InspectorInfoRow = ({ label, value }: { label: string; value: string }) => (
   <div className="py-1">
     <p className="text-[11px] text-[var(--ledger-text-muted)]">{label}</p>
-    <p className="mt-0.5 text-sm font-medium text-[var(--ledger-text-primary)] wrap-break-word">{value}</p>
+    <p className="mt-0.5 text-sm font-medium text-[var(--ledger-text-primary)] wrap-break-word">
+      {value}
+    </p>
   </div>
 );
 
@@ -454,7 +458,9 @@ const loadLastOpenedAtById = (workspaceId?: string | null) => {
     getLastOpenedStorageKey(workspaceId),
     {}
   );
-  const entries = Object.entries(stored ?? {}).filter(([, value]) => Number.isFinite(Number(value)));
+  const entries = Object.entries(stored ?? {}).filter(([, value]) =>
+    Number.isFinite(Number(value))
+  );
   return Object.fromEntries(entries.map(([id, value]) => [id, Number(value)]));
 };
 
@@ -563,7 +569,8 @@ const getDropPreviewClasses = (
   targetId: string
 ) => {
   if (!preview || preview.targetId !== targetId) return '';
-  if (preview.position === 'inside') return 'bg-[var(--ledger-surface-hover)] border-l-[color:var(--ledger-border-strong)]';
+  if (preview.position === 'inside')
+    return 'bg-[var(--ledger-surface-hover)] border-l-[color:var(--ledger-border-strong)]';
   if (preview.position === 'before') return 'border-t border-[color:var(--ledger-border-subtle)]';
   return 'border-b border-[color:var(--ledger-border-subtle)]';
 };
@@ -571,6 +578,7 @@ const getDropPreviewClasses = (
 export const NotesWindow = () => {
   const { user } = useAuthContext();
   const { activeWorkspaceId, activeWorkspace } = useWorkspaceContext();
+  const { workspaceShellLayout } = useSidebar();
   const api = useApi();
   const viewportWidth = useViewportWidth();
   const initialFocusNoteId = new URLSearchParams(window.location.search).get('focusNoteId');
@@ -597,7 +605,7 @@ export const NotesWindow = () => {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
-  const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null);
+  const [selectedNoteId, setSelectedNoteId] = useState<string | null>(initialFocusNoteId);
   const [selectedNoteIds, setSelectedNoteIds] = useState<string[]>([]);
   const [draftTitle, setDraftTitle] = useState('');
   const [draftContent, setDraftContent] = useState('');
@@ -721,18 +729,15 @@ export const NotesWindow = () => {
   const quickTemplateFallbacks: Record<string, { content: string; content_html: string }> = {
     'meeting notes': {
       content: 'Date\nAttendees\nAgenda\nDiscussion\nAction items',
-      content_html:
-        '<p>Date</p><p>Attendees</p><p>Agenda</p><p>Discussion</p><p>Action items</p>',
+      content_html: '<p>Date</p><p>Attendees</p><p>Agenda</p><p>Discussion</p><p>Action items</p>',
     },
     'project brief': {
       content: 'Project\nOwner\nDue\nObjective\nSuccess criteria',
-      content_html:
-        '<p>Project</p><p>Owner</p><p>Due</p><p>Objective</p><p>Success criteria</p>',
+      content_html: '<p>Project</p><p>Owner</p><p>Due</p><p>Objective</p><p>Success criteria</p>',
     },
     'daily reflection': {
-      content: 'Wins\nLessons\nBlockers\nTomorrow\'s focus\nMood',
-      content_html:
-        "<p>Wins</p><p>Lessons</p><p>Blockers</p><p>Tomorrow's focus</p><p>Mood</p>",
+      content: "Wins\nLessons\nBlockers\nTomorrow's focus\nMood",
+      content_html: "<p>Wins</p><p>Lessons</p><p>Blockers</p><p>Tomorrow's focus</p><p>Mood</p>",
     },
     'book notes': {
       content: 'Title\nAuthor\nSummary\nKey takeaways\nQuotes',
@@ -859,8 +864,8 @@ export const NotesWindow = () => {
             const links = Array.isArray(payload)
               ? payload
               : Array.isArray(payload?.links)
-                ? payload.links
-                : [];
+              ? payload.links
+              : [];
             setWorkspaceProjectNoteLinks(
               links
                 .filter((link) => link.note_id && link.project_id && link.project_name)
@@ -871,7 +876,9 @@ export const NotesWindow = () => {
                   project_name: link.project_name,
                   project_status: link.project_status ?? null,
                   project_completeness:
-                    typeof link.project_completeness === 'number' ? link.project_completeness : null,
+                    typeof link.project_completeness === 'number'
+                      ? link.project_completeness
+                      : null,
                   project_end_date: link.project_end_date ?? null,
                   created_at: link.created_at,
                 }))
@@ -934,16 +941,13 @@ export const NotesWindow = () => {
     []
   );
 
-  const recordNoteOpened = useCallback(
-    (noteId: string) => {
-      const openedAt = Date.now();
-      setLastOpenedAtById((current) => ({
-        ...current,
-        [noteId]: openedAt,
-      }));
-    },
-    []
-  );
+  const recordNoteOpened = useCallback((noteId: string) => {
+    const openedAt = Date.now();
+    setLastOpenedAtById((current) => ({
+      ...current,
+      [noteId]: openedAt,
+    }));
+  }, []);
 
   const sortNotesForScope = useCallback(
     (items: NoteRow[], scopeId: string) => {
@@ -952,7 +956,8 @@ export const NotesWindow = () => {
         return [...items].sort((left, right) => {
           const orderDiff = toNonNegativeInt(left.sort_order) - toNonNegativeInt(right.sort_order);
           if (orderDiff !== 0) return orderDiff;
-          const dateDiff = new Date(left.created_at).getTime() - new Date(right.created_at).getTime();
+          const dateDiff =
+            new Date(left.created_at).getTime() - new Date(right.created_at).getTime();
           if (dateDiff !== 0) return dateDiff;
           return String(left.title ?? '').localeCompare(String(right.title ?? ''));
         });
@@ -962,7 +967,9 @@ export const NotesWindow = () => {
         if (preference.field === 'created') return new Date(note.created_at).getTime();
         if (preference.field === 'modified') return new Date(note.updated_at).getTime();
         if (preference.field === 'opened') return lastOpenedAtById[note.id] ?? 0;
-        return String(note.title ?? '').trim().toLowerCase();
+        return String(note.title ?? '')
+          .trim()
+          .toLowerCase();
       };
 
       return [...items].sort((left, right) => {
@@ -994,6 +1001,14 @@ export const NotesWindow = () => {
   useEffect(() => {
     selectedNoteIdRef.current = selectedNoteId;
   }, [selectedNoteId]);
+
+  useWorkspaceRouteHistory(
+    {
+      kind: 'notes',
+      focusNoteId: selectedNoteId,
+    },
+    true
+  );
 
   useEffect(() => {
     try {
@@ -1090,7 +1105,10 @@ export const NotesWindow = () => {
     };
 
     void loadNotificationCount();
-    window.addEventListener('ledger:notifications-summary', handleNotificationsSummary as EventListener);
+    window.addEventListener(
+      'ledger:notifications-summary',
+      handleNotificationsSummary as EventListener
+    );
 
     const timer = window.setInterval(() => {
       void loadNotificationCount();
@@ -1099,7 +1117,10 @@ export const NotesWindow = () => {
     return () => {
       cancelled = true;
       window.clearInterval(timer);
-      window.removeEventListener('ledger:notifications-summary', handleNotificationsSummary as EventListener);
+      window.removeEventListener(
+        'ledger:notifications-summary',
+        handleNotificationsSummary as EventListener
+      );
     };
   }, [api, user]);
 
@@ -1360,9 +1381,7 @@ export const NotesWindow = () => {
     for (const section of orderedSections) {
       if (!visibleSectionIds.has(section.id)) continue;
       const sectionRoots = sortNotesForScope(
-        notes.filter(
-        (note) => note.section_id === section.id && !note.parent_id
-        ),
+        notes.filter((note) => note.section_id === section.id && !note.parent_id),
         section.id
       );
       for (const root of sectionRoots) pushNote(root, section.id);
@@ -1375,7 +1394,15 @@ export const NotesWindow = () => {
     for (const root of unsortedRoots) pushNote(root, ROOT_NOTE_SCOPE_ID);
 
     return ordered;
-  }, [expandedNoteIds, notes, orderedSections, search, sortNotesForScope, visibleNotes, visibleSections]);
+  }, [
+    expandedNoteIds,
+    notes,
+    orderedSections,
+    search,
+    sortNotesForScope,
+    visibleNotes,
+    visibleSections,
+  ]);
 
   const applySidebarSelection = useCallback(
     (noteId: string, modifiers?: { shiftKey?: boolean; metaKey?: boolean; ctrlKey?: boolean }) => {
@@ -1522,9 +1549,13 @@ export const NotesWindow = () => {
         const versions = (await api.getNoteVersions(selectedNoteId)) as NoteVersion[] | null;
         if (cancelled) return;
         const ids = Array.from(
-          new Set((Array.isArray(versions) ? versions : []).map((v) => v.versioned_by).filter(Boolean))
+          new Set(
+            (Array.isArray(versions) ? versions : []).map((v) => v.versioned_by).filter(Boolean)
+          )
         );
-        const members = ids.map((id) => workspaceMemberById.get(String(id))).filter(Boolean) as WorkspaceMember[];
+        const members = ids
+          .map((id) => workspaceMemberById.get(String(id)))
+          .filter(Boolean) as WorkspaceMember[];
         setNoteViewers(members);
       } catch (e) {
         if (!cancelled) setNoteViewers([]);
@@ -1676,21 +1707,17 @@ export const NotesWindow = () => {
       setIsDeleting(false);
       closeNoteContextMenu();
     }
-  }, [
-    api,
-    clearSidebarSelection,
-    closeNoteContextMenu,
-    notes,
-    selectedNoteIds,
-    syncDraftFromNote,
-  ]);
+  }, [api, clearSidebarSelection, closeNoteContextMenu, notes, selectedNoteIds, syncDraftFromNote]);
 
   const refreshTemplates = useCallback(async () => {
     try {
       const data = await api.getTemplates();
       setWorkspaceTemplates(
         Array.isArray(data)
-          ? data.map((template: { id: string; name: string }) => ({ id: template.id, name: template.name }))
+          ? data.map((template: { id: string; name: string }) => ({
+              id: template.id,
+              name: template.name,
+            }))
           : []
       );
     } catch (e) {
@@ -1776,8 +1803,8 @@ export const NotesWindow = () => {
         const links = Array.isArray(payload)
           ? payload
           : Array.isArray(payload?.links)
-            ? payload.links
-            : [];
+          ? payload.links
+          : [];
 
         setWorkspaceProjectNoteLinks(
           links
@@ -2015,14 +2042,7 @@ export const NotesWindow = () => {
         setHasLoadedOnce(true);
       }
     },
-    [
-      api,
-      activeWorkspaceId,
-      hasLoadedOnce,
-      initialFocusNoteId,
-      syncDraftFromNote,
-      user,
-    ]
+    [api, activeWorkspaceId, hasLoadedOnce, initialFocusNoteId, syncDraftFromNote, user]
   );
 
   const refreshCurrentNoteFromServer = useCallback(
@@ -2054,16 +2074,7 @@ export const NotesWindow = () => {
         }
       }
     },
-    [
-      activeWorkspaceId,
-      api,
-      loadNotes,
-      setError,
-      setNoteTree,
-      setNotes,
-      syncDraftFromNote,
-      user,
-    ]
+    [activeWorkspaceId, api, loadNotes, setError, setNoteTree, setNotes, syncDraftFromNote, user]
   );
 
   const dismissRemoteNoteUpdateToast = useCallback(() => {
@@ -2106,12 +2117,7 @@ export const NotesWindow = () => {
         ],
       });
     },
-    [
-      dismissRemoteNoteUpdateToast,
-      refreshCurrentNoteFromServer,
-      setError,
-      toast,
-    ]
+    [dismissRemoteNoteUpdateToast, refreshCurrentNoteFromServer, setError, toast]
   );
 
   useEffect(() => {
@@ -2293,7 +2299,8 @@ export const NotesWindow = () => {
         return null;
       }
 
-      const currentServerUpdatedAt = selectedNote?.updated_at ?? selectedNoteServerUpdatedAtRef.current;
+      const currentServerUpdatedAt =
+        selectedNote?.updated_at ?? selectedNoteServerUpdatedAtRef.current;
       const currentServerUpdatedBy =
         selectedNote?.updated_by ?? selectedNoteServerUpdatedByRef.current ?? null;
       const baseUpdatedAt = selectedNoteServerUpdatedAtRef.current;
@@ -2308,9 +2315,7 @@ export const NotesWindow = () => {
         if (!remoteNoteUpdatePendingRef.current) {
           const updaterName = getNoteUpdatedByLabel(currentServerUpdatedBy);
           showRemoteNoteUpdateToast(
-            updaterName
-              ? `${updaterName} updated this note.`
-              : 'This note was updated elsewhere.'
+            updaterName ? `${updaterName} updated this note.` : 'This note was updated elsewhere.'
           );
         }
         setError('This note changed elsewhere. Reload latest before saving.');
@@ -2382,7 +2387,8 @@ export const NotesWindow = () => {
         setIsDirty(false);
         setLastSavedAt(updated.updated_at);
         selectedNoteServerUpdatedAtRef.current = updated.updated_at ?? null;
-        selectedNoteServerUpdatedByRef.current = updated.updated_by ?? updated.user_id ?? currentUserId;
+        selectedNoteServerUpdatedByRef.current =
+          updated.updated_by ?? updated.user_id ?? currentUserId;
         remoteNoteUpdatePendingRef.current = false;
         dismissRemoteNoteUpdateToast();
         return updated;
@@ -2583,7 +2589,14 @@ export const NotesWindow = () => {
       recordNoteOpened(note.id);
       titleRef.current?.focus();
     },
-    [flushAutosave, isDirty, recordNoteOpened, selectedNoteId, selectedNoteIds.length, syncDraftFromNote]
+    [
+      flushAutosave,
+      isDirty,
+      recordNoteOpened,
+      selectedNoteId,
+      selectedNoteIds.length,
+      syncDraftFromNote,
+    ]
   );
 
   const openNoteById = useCallback(
@@ -2624,7 +2637,16 @@ export const NotesWindow = () => {
         setError(error instanceof Error ? error.message : 'Could not load note.');
       }
     },
-    [api, flushAutosave, isDirty, notes, openNote, recordNoteOpened, selectedNoteIds.length, syncDraftFromNote]
+    [
+      api,
+      flushAutosave,
+      isDirty,
+      notes,
+      openNote,
+      recordNoteOpened,
+      selectedNoteIds.length,
+      syncDraftFromNote,
+    ]
   );
 
   const handleSidebarNoteClick = useCallback(
@@ -3098,18 +3120,18 @@ export const NotesWindow = () => {
         setNotes((prev) => {
           const next = prev.filter((note) => note.id !== noteId);
           const fallback = next[0] ?? null;
-        if (fallback) {
-          setSelectedNoteId(fallback.id);
-          setSelectedNoteIds([fallback.id]);
-          selectionAnchorNoteIdRef.current = fallback.id;
-          syncDraftFromNote(fallback);
-        } else {
-          setSelectedNoteId(null);
-          setSelectedNoteIds([]);
-          selectionAnchorNoteIdRef.current = null;
-          setDraftTitle('');
-          setDraftContent('');
-          setDraftDate(todayKey());
+          if (fallback) {
+            setSelectedNoteId(fallback.id);
+            setSelectedNoteIds([fallback.id]);
+            selectionAnchorNoteIdRef.current = fallback.id;
+            syncDraftFromNote(fallback);
+          } else {
+            setSelectedNoteId(null);
+            setSelectedNoteIds([]);
+            selectionAnchorNoteIdRef.current = null;
+            setDraftTitle('');
+            setDraftContent('');
+            setDraftDate(todayKey());
             setDraftMood('');
             setIsDirty(false);
           }
@@ -3457,7 +3479,7 @@ export const NotesWindow = () => {
   return (
     <div
       className="ledger-notes-shell relative flex h-screen flex-col overflow-hidden rounded-3xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] shadow-none"
-      style={{ scrollbarGutter: 'auto' }}
+      style={{ scrollbarGutter: 'auto', ...workspaceShellLayout.workspaceShellStyle }}
     >
       <CloseGuardModal
         isOpen={showCloseGuardModal}
@@ -3505,6 +3527,7 @@ export const NotesWindow = () => {
           }
         }}
         compact
+        showBodyHeader={false}
         globalActions={
           <>
             <ModuleHeaderStripAction
@@ -3533,6 +3556,7 @@ export const NotesWindow = () => {
               title="Create a new note"
               disabled={isCreating}
               icon={<Plus size={12} />}
+              variant="strip"
             >
               {isCreating ? 'Creating...' : 'New note'}
             </ModuleHeaderActionButton>
@@ -3544,6 +3568,7 @@ export const NotesWindow = () => {
               title="Export notes or mind maps"
               disabled={notes.length === 0}
               icon={<Download size={12} />}
+              variant="strip"
             >
               Export
             </ModuleHeaderActionButton>
@@ -3574,12 +3599,14 @@ export const NotesWindow = () => {
               }`}
               style={{ width: `${leftPaneWidth}px` }}
             >
-              <div className={`${isCompactLayout ? 'p-3' : 'p-4'} border-b border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)]`}>
+              <div
+                className={`${
+                  isCompactLayout ? 'p-3' : 'p-4'
+                } border-b border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)]`}
+              >
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-2 min-w-0">
-                    <h2 className="text-xs font-medium text-[var(--ledger-text-muted)]">
-                      Notes
-                    </h2>
+                    <h2 className="text-xs font-medium text-[var(--ledger-text-muted)]">Notes</h2>
                     <button
                       onClick={() => setIsLeftPaneCollapsed(true)}
                       className="flex h-7 w-7 items-center justify-center rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)]"
@@ -3646,8 +3673,8 @@ export const NotesWindow = () => {
                               }}
                               className={`relative w-full rounded-md px-2.5 py-1.5 text-left text-xs font-medium transition ${
                                 isActive
-                                ? 'bg-[var(--ledger-surface-hover)] text-[var(--ledger-text-primary)]'
-                                : 'text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]'
+                                  ? 'bg-[var(--ledger-surface-hover)] text-[var(--ledger-text-primary)]'
+                                  : 'text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]'
                               }`}
                             >
                               {option.label}
@@ -3746,7 +3773,10 @@ export const NotesWindow = () => {
                           }`}
                         >
                           <div className="flex items-center gap-2 min-w-0">
-                            <StickyNote size={12} className="shrink-0 text-[var(--ledger-text-muted)]" />
+                            <StickyNote
+                              size={12}
+                              className="shrink-0 text-[var(--ledger-text-muted)]"
+                            />
                             <div className="min-w-0 flex-1">
                               <p
                                 className="font-medium truncate text-sm leading-5"
@@ -3758,7 +3788,9 @@ export const NotesWindow = () => {
                               >
                                 {note.title || 'Untitled'}
                               </p>
-                              <p className="truncate text-xs text-[var(--ledger-text-muted)]">{preview}</p>
+                              <p className="truncate text-xs text-[var(--ledger-text-muted)]">
+                                {preview}
+                              </p>
                             </div>
                           </div>
                         </button>
@@ -3876,7 +3908,10 @@ export const NotesWindow = () => {
                             <div
                               className={`h-1.5 w-1.5 rounded-full shrink-0 ${sectionColor.dot}`}
                             />
-                            <Folder size={14} className="shrink-0 text-[var(--ledger-text-muted)]" />
+                            <Folder
+                              size={14}
+                              className="shrink-0 text-[var(--ledger-text-muted)]"
+                            />
                             <span
                               className="flex-1 truncate"
                               onDoubleClick={(event) => {
@@ -3915,7 +3950,9 @@ export const NotesWindow = () => {
                                 !isSectionCollapsed ? 'rotate-90' : ''
                               }`}
                             />
-                            <span className="mr-1 text-xs text-[var(--ledger-text-muted)]">{sectionTotalCount}</span>
+                            <span className="mr-1 text-xs text-[var(--ledger-text-muted)]">
+                              {sectionTotalCount}
+                            </span>
                           </button>
 
                           {/* Section notes */}
@@ -3965,7 +4002,10 @@ export const NotesWindow = () => {
                                       >
                                         <div className="flex items-center gap-2 min-w-0">
                                           {childCount > 0 ? (
-                                            <Folder size={12} className="shrink-0 text-[var(--ledger-text-muted)]" />
+                                            <Folder
+                                              size={12}
+                                              className="shrink-0 text-[var(--ledger-text-muted)]"
+                                            />
                                           ) : (
                                             <StickyNote
                                               size={12}
@@ -4048,10 +4088,7 @@ export const NotesWindow = () => {
                                               <div className="w-5 shrink-0" />
                                               <button
                                                 onClick={(event) =>
-                                                  void handleSidebarNoteClick(
-                                                    child,
-                                                    event.shiftKey
-                                                  )
+                                                  void handleSidebarNoteClick(child, event.shiftKey)
                                                 }
                                                 draggable
                                                 onDragStart={() => handleTreeDragStart(child.id)}
@@ -4119,15 +4156,17 @@ export const NotesWindow = () => {
 
                     {notes.length === 0 && (
                       <div className="px-3 py-5 text-center">
-                        <p className="text-sm font-medium text-[var(--ledger-text-primary)]">No notes yet</p>
+                        <p className="text-sm font-medium text-[var(--ledger-text-primary)]">
+                          No notes yet
+                        </p>
                         <p className="mt-1 text-xs text-[var(--ledger-text-muted)]">
                           Create a note or drop one into a folder to start organizing.
                         </p>
                       </div>
                     )}
 
-                   {/* Unsorted section for notes without a section */}
-                   {(() => {
+                    {/* Unsorted section for notes without a section */}
+                    {(() => {
                       const unsortedNotes = sortNotesForScope(
                         notes.filter((n) => !n.section_id && !n.parent_id),
                         ROOT_NOTE_SCOPE_ID
@@ -4167,7 +4206,10 @@ export const NotesWindow = () => {
                             <div
                               className={`h-1.5 w-1.5 rounded-full shrink-0 ${sectionColor.dot}`}
                             />
-                            <Folder size={14} className="shrink-0 text-[var(--ledger-text-muted)]" />
+                            <Folder
+                              size={14}
+                              className="shrink-0 text-[var(--ledger-text-muted)]"
+                            />
                             <span className="flex-1 truncate">Unsorted</span>
                             <ChevronRight
                               size={14}
@@ -4221,7 +4263,10 @@ export const NotesWindow = () => {
                                         } ${getDropPreviewClasses(dropPreview, note.id)}`}
                                       >
                                         {childCount > 0 ? (
-                                          <Folder size={13} className="shrink-0 text-[var(--ledger-text-muted)]" />
+                                          <Folder
+                                            size={13}
+                                            className="shrink-0 text-[var(--ledger-text-muted)]"
+                                          />
                                         ) : (
                                           <StickyNote
                                             size={13}
@@ -4297,69 +4342,64 @@ export const NotesWindow = () => {
                                             htmlToPlainText(child.content).slice(0, 50) ||
                                             'No content';
                                           return (
-                                              <button
-                                                key={child.id}
-                                                onMouseDown={(event) => {
-                                                  if (event.shiftKey) event.preventDefault();
-                                                }}
-                                                onClick={(event) =>
-                                                  void handleSidebarNoteClick(
-                                                    child,
-                                                    event.shiftKey
-                                                  )
-                                                }
-                                                draggable
-                                                onDragStart={() => handleTreeDragStart(child.id)}
-                                                onDragEnd={handleTreeDragEnd}
-                                                onDragOver={(event) => {
-                                                  event.preventDefault();
-                                                  handleTreeDropPreview(event, child.id);
-                                                }}
-                                                onDrop={(event) => {
-                                                  event.preventDefault();
-                                                  void handleDropOnNote(
-                                                    child,
-                                                    getDropPosition(event)
-                                                  );
-                                                }}
-                                                onContextMenu={(event) =>
-                                                  handleSidebarNoteContextMenu(child, event)
-                                                }
-                                                className={`w-full flex items-center gap-2 rounded px-2.5 py-1 text-left text-xs transition ${
-                                                  childActive
-                                                    ? 'bg-[var(--ledger-surface-hover)] text-[var(--ledger-text-primary)] ring-1 ring-[color:var(--ledger-border-subtle)]'
-                                                    : 'bg-transparent text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]'
-                                                } ${getDropPreviewClasses(dropPreview, child.id)}`}
-                                              >
-                                                <StickyNote
-                                                  size={12}
-                                                  className="shrink-0 text-[var(--ledger-text-muted)]"
-                                                />
-                                                <div className="min-w-0 flex-1">
-                                                  {renamingNoteId === child.id ? (
-                                                    <input
-                                                      ref={renameInputRef}
-                                                      value={renameDraft}
-                                                      onChange={(e) =>
-                                                        setRenameDraft(e.target.value)
-                                                      }
-                                                      onClick={(e) => e.stopPropagation()}
-                                                      onMouseDown={(e) => e.stopPropagation()}
-                                                      onBlur={() => {
+                                            <button
+                                              key={child.id}
+                                              onMouseDown={(event) => {
+                                                if (event.shiftKey) event.preventDefault();
+                                              }}
+                                              onClick={(event) =>
+                                                void handleSidebarNoteClick(child, event.shiftKey)
+                                              }
+                                              draggable
+                                              onDragStart={() => handleTreeDragStart(child.id)}
+                                              onDragEnd={handleTreeDragEnd}
+                                              onDragOver={(event) => {
+                                                event.preventDefault();
+                                                handleTreeDropPreview(event, child.id);
+                                              }}
+                                              onDrop={(event) => {
+                                                event.preventDefault();
+                                                void handleDropOnNote(
+                                                  child,
+                                                  getDropPosition(event)
+                                                );
+                                              }}
+                                              onContextMenu={(event) =>
+                                                handleSidebarNoteContextMenu(child, event)
+                                              }
+                                              className={`w-full flex items-center gap-2 rounded px-2.5 py-1 text-left text-xs transition ${
+                                                childActive
+                                                  ? 'bg-[var(--ledger-surface-hover)] text-[var(--ledger-text-primary)] ring-1 ring-[color:var(--ledger-border-subtle)]'
+                                                  : 'bg-transparent text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]'
+                                              } ${getDropPreviewClasses(dropPreview, child.id)}`}
+                                            >
+                                              <StickyNote
+                                                size={12}
+                                                className="shrink-0 text-[var(--ledger-text-muted)]"
+                                              />
+                                              <div className="min-w-0 flex-1">
+                                                {renamingNoteId === child.id ? (
+                                                  <input
+                                                    ref={renameInputRef}
+                                                    value={renameDraft}
+                                                    onChange={(e) => setRenameDraft(e.target.value)}
+                                                    onClick={(e) => e.stopPropagation()}
+                                                    onMouseDown={(e) => e.stopPropagation()}
+                                                    onBlur={() => {
+                                                      void commitInlineRename();
+                                                    }}
+                                                    onKeyDown={(e) => {
+                                                      if (e.key === 'Enter') {
+                                                        e.preventDefault();
                                                         void commitInlineRename();
-                                                      }}
-                                                      onKeyDown={(e) => {
-                                                        if (e.key === 'Enter') {
-                                                          e.preventDefault();
-                                                          void commitInlineRename();
-                                                        } else if (e.key === 'Escape') {
-                                                          e.preventDefault();
-                                                          cancelInlineRename();
-                                                        }
-                                                      }}
-                                                      className="w-full bg-transparent font-medium text-[var(--ledger-text-primary)] outline-none"
-                                                    />
-                                                  ) : (
+                                                      } else if (e.key === 'Escape') {
+                                                        e.preventDefault();
+                                                        cancelInlineRename();
+                                                      }
+                                                    }}
+                                                    className="w-full bg-transparent font-medium text-[var(--ledger-text-primary)] outline-none"
+                                                  />
+                                                ) : (
                                                   <p
                                                     className="font-medium truncate leading-5"
                                                     onDoubleClick={(event) => {
@@ -4370,12 +4410,12 @@ export const NotesWindow = () => {
                                                   >
                                                     {child.title || 'Untitled'}
                                                   </p>
-                                                  )}
-                                                  <p className="truncate text-xs text-[var(--ledger-text-muted)]">
-                                                    {childPreview}
-                                                  </p>
-                                                </div>
-                                              </button>
+                                                )}
+                                                <p className="truncate text-xs text-[var(--ledger-text-muted)]">
+                                                  {childPreview}
+                                                </p>
+                                              </div>
+                                            </button>
                                           );
                                         })}
                                       </div>
@@ -4496,7 +4536,9 @@ export const NotesWindow = () => {
                         : ''}
                     </p>
                     <div className="flex items-center gap-2 shrink-0">
-                      <span className="text-[11px] text-[var(--ledger-text-muted)]">{saveStatus}</span>
+                      <span className="text-[11px] text-[var(--ledger-text-muted)]">
+                        {saveStatus}
+                      </span>
                       <div className="relative" ref={noteActionsMenuRef}>
                         <button
                           type="button"
@@ -4701,11 +4743,13 @@ export const NotesWindow = () => {
               </div>
             ) : (
               <div className="flex-1 flex items-center justify-center p-8">
-                  <div className="max-w-md text-center">
+                <div className="max-w-md text-center">
                   <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-hover)]">
                     <StickyNote size={22} className="text-[var(--ledger-accent)]" />
                   </div>
-                  <h2 className="mt-4 text-xl font-semibold text-[var(--ledger-text-primary)]">No note selected</h2>
+                  <h2 className="mt-4 text-xl font-semibold text-[var(--ledger-text-primary)]">
+                    No note selected
+                  </h2>
                   <p className="mt-2 text-sm text-[var(--ledger-text-secondary)]">
                     Create a note to start writing, planning, or dumping ideas.
                   </p>
@@ -4743,9 +4787,7 @@ export const NotesWindow = () => {
               <div className="space-y-5">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0 flex-1">
-                    <p className="text-xs font-medium text-[var(--ledger-text-muted)]">
-                      Inspector
-                    </p>
+                    <p className="text-xs font-medium text-[var(--ledger-text-muted)]">Inspector</p>
                     <p className="mt-1 truncate text-sm font-semibold text-[var(--ledger-text-primary)]">
                       {selectedNote ? 'Current note' : 'No note selected'}
                     </p>
@@ -4900,9 +4942,7 @@ export const NotesWindow = () => {
                 </div>
 
                 <div className="space-y-2 border-t border-[color:var(--ledger-border-subtle)] pt-4">
-                  <p className="text-xs font-medium text-[var(--ledger-text-muted)]">
-                    Details
-                  </p>
+                  <p className="text-xs font-medium text-[var(--ledger-text-muted)]">Details</p>
                   {selectedNote ? (
                     <div className="space-y-2">
                       <div className="flex items-center justify-between gap-3 text-sm">
@@ -4919,11 +4959,15 @@ export const NotesWindow = () => {
                       </div>
                       <div className="flex items-center justify-between gap-3 text-sm">
                         <span className="text-[var(--ledger-text-muted)]">Date</span>
-                        <span className="text-[var(--ledger-text-primary)]">{selectedNote.date || 'Not set'}</span>
+                        <span className="text-[var(--ledger-text-primary)]">
+                          {selectedNote.date || 'Not set'}
+                        </span>
                       </div>
                       <div className="flex items-center justify-between gap-3 text-sm">
                         <span className="text-[var(--ledger-text-muted)]">Words</span>
-                        <span className="text-[var(--ledger-text-primary)]">{wordCount(selectedNote.content)}</span>
+                        <span className="text-[var(--ledger-text-primary)]">
+                          {wordCount(selectedNote.content)}
+                        </span>
                       </div>
                     </div>
                   ) : (
@@ -4964,7 +5008,9 @@ export const NotesWindow = () => {
                                   {link.project_name}
                                 </p>
                                 <p className="mt-0.5 truncate text-xs text-[var(--ledger-text-muted)]">
-                                  {String(link.project_status ?? 'active').split('_').join(' ')}
+                                  {String(link.project_status ?? 'active')
+                                    .split('_')
+                                    .join(' ')}
                                   {typeof link.project_completeness === 'number'
                                     ? ` · ${Math.round(link.project_completeness)}%`
                                     : ''}
@@ -5003,9 +5049,7 @@ export const NotesWindow = () => {
                 </div>
 
                 <div className="space-y-2 border-t border-[color:var(--ledger-border-subtle)] pt-4">
-                  <p className="text-xs font-medium text-[var(--ledger-text-muted)]">
-                    Workspace
-                  </p>
+                  <p className="text-xs font-medium text-[var(--ledger-text-muted)]">Workspace</p>
                   {selectedNote ? (
                     <div className="space-y-2">
                       <div className="truncate text-sm font-medium text-[var(--ledger-text-primary)]">
@@ -5020,7 +5064,9 @@ export const NotesWindow = () => {
                       />
                       <div className="py-1">
                         <p className="text-[11px] text-[var(--ledger-text-muted)]">Viewing</p>
-                        <p className="mt-0.5 text-sm font-medium text-[var(--ledger-text-primary)]">{viewingSummary}</p>
+                        <p className="mt-0.5 text-sm font-medium text-[var(--ledger-text-primary)]">
+                          {viewingSummary}
+                        </p>
                       </div>
                       <InspectorInfoRow label="Notes" value={String(notes.length)} />
                     </div>
@@ -5060,7 +5106,9 @@ export const NotesWindow = () => {
                       ))}
                     </div>
                   ) : (
-                    <p className="text-sm text-[var(--ledger-text-muted)]">No recent updates yet.</p>
+                    <p className="text-sm text-[var(--ledger-text-muted)]">
+                      No recent updates yet.
+                    </p>
                   )}
                 </div>
               </div>
@@ -5156,9 +5204,7 @@ export const NotesWindow = () => {
             <span className="font-medium">Create subfolder</span>
           </button>
           <div className="border-b border-[color:var(--ledger-border-subtle)] px-3 py-2">
-            <p className="text-xs font-medium text-[var(--ledger-text-muted)]">
-              Folder color
-            </p>
+            <p className="text-xs font-medium text-[var(--ledger-text-muted)]">Folder color</p>
             <div className="relative mt-2">
               <div className="overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                 <div className="flex items-center gap-1.5 w-max pr-8">
@@ -5244,7 +5290,7 @@ export const NotesWindow = () => {
         createPortal(
           <div
             ref={sortMenuRef}
-          className="fixed z-210 min-w-52 overflow-hidden rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-0 text-[var(--ledger-text-primary)] shadow-[var(--ledger-shadow)]"
+            className="fixed z-210 min-w-52 overflow-hidden rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-0 text-[var(--ledger-text-primary)] shadow-[var(--ledger-shadow)]"
             style={{
               left: Math.max(8, Math.min(sortMenu.x, window.innerWidth - 240)),
               top: Math.max(8, Math.min(sortMenu.y, window.innerHeight - 380)),
@@ -5289,7 +5335,7 @@ export const NotesWindow = () => {
           document.body
         )}
 
-      {noteContextMenu && (
+      {noteContextMenu &&
         (() => {
           const isBulkSelection =
             selectedNoteIds.length > 1 && selectedNoteIdSet.has(noteContextMenu.noteId);
@@ -5345,118 +5391,117 @@ export const NotesWindow = () => {
           }
 
           return (
-        <div
-          className="fixed z-210 min-w-44 rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-0 text-[var(--ledger-text-primary)] shadow-[var(--ledger-shadow)]"
-          style={{
-            left: Math.max(8, Math.min(noteContextMenu.x, window.innerWidth - 180)),
-            top: Math.max(8, Math.min(noteContextMenu.y, window.innerHeight - 280)),
-          }}
-          onClick={(e) => e.stopPropagation()}
-          onMouseDown={(e) => e.stopPropagation()}
-        >
-          {/* First group: Open, Rename, Create child */}
-          <button
-            onClick={() => {
-              const note = notes.find((item) => item.id === noteContextMenu.noteId);
-              if (note) void openNote(note);
-              setNoteContextMenu(null);
-            }}
-            className="flex h-9 w-full items-center gap-3 rounded-none px-3 text-left text-sm transition hover:bg-[var(--ledger-surface-hover)]"
-          >
-            <StickyNote size={14} className="shrink-0 text-[var(--ledger-text-secondary)]" />
-            <span className="font-medium">Open</span>
-          </button>
-          <button
-            onClick={() => {
-              beginInlineRename(noteContextMenu.noteId);
-              setNoteContextMenu(null);
-            }}
-            className="w-full h-9 px-3 rounded-none text-left hover:bg-[var(--ledger-surface-hover)] flex items-center gap-3 text-sm transition"
-          >
-            <span className="shrink-0 text-[var(--ledger-text-muted)]">Aa</span>
-            <span className="font-medium">Rename</span>
-          </button>
-          <button
-            onClick={() => {
-              void createChildNote(noteContextMenu.noteId);
-              setNoteContextMenu(null);
-            }}
-            className="flex h-9 w-full items-center gap-3 rounded-none px-3 text-left text-sm transition hover:bg-[var(--ledger-surface-hover)]"
-          >
-            <Plus size={14} className="shrink-0 text-[var(--ledger-text-secondary)]" />
-            <span className="font-medium">Create child</span>
-          </button>
-          <button
-            onClick={() => {
-              void openLinkProjectModal(noteContextMenu.noteId);
-            }}
-            className="flex h-9 w-full items-center gap-3 rounded-none px-3 text-left text-sm transition hover:bg-[var(--ledger-surface-hover)]"
-          >
-            <Folder size={14} className="shrink-0 text-[var(--ledger-text-secondary)]" />
-            <span className="font-medium">Link to project</span>
-          </button>
-          <button
-            onClick={() => {
-              void api
-                .moveNoteParent(noteContextMenu.noteId, null)
-                .then(() => loadNotes({ silent: true }))
-                .catch(() => {});
-              setNoteContextMenu(null);
-            }}
-            className="flex h-9 w-full items-center gap-3 rounded-none px-3 text-left text-sm transition hover:bg-[var(--ledger-surface-hover)]"
-          >
-            <Folder size={14} className="shrink-0 text-[var(--ledger-text-secondary)]" />
-            <span className="font-medium">Move to root</span>
-          </button>
+            <div
+              className="fixed z-210 min-w-44 rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-0 text-[var(--ledger-text-primary)] shadow-[var(--ledger-shadow)]"
+              style={{
+                left: Math.max(8, Math.min(noteContextMenu.x, window.innerWidth - 180)),
+                top: Math.max(8, Math.min(noteContextMenu.y, window.innerHeight - 280)),
+              }}
+              onClick={(e) => e.stopPropagation()}
+              onMouseDown={(e) => e.stopPropagation()}
+            >
+              {/* First group: Open, Rename, Create child */}
+              <button
+                onClick={() => {
+                  const note = notes.find((item) => item.id === noteContextMenu.noteId);
+                  if (note) void openNote(note);
+                  setNoteContextMenu(null);
+                }}
+                className="flex h-9 w-full items-center gap-3 rounded-none px-3 text-left text-sm transition hover:bg-[var(--ledger-surface-hover)]"
+              >
+                <StickyNote size={14} className="shrink-0 text-[var(--ledger-text-secondary)]" />
+                <span className="font-medium">Open</span>
+              </button>
+              <button
+                onClick={() => {
+                  beginInlineRename(noteContextMenu.noteId);
+                  setNoteContextMenu(null);
+                }}
+                className="w-full h-9 px-3 rounded-none text-left hover:bg-[var(--ledger-surface-hover)] flex items-center gap-3 text-sm transition"
+              >
+                <span className="shrink-0 text-[var(--ledger-text-muted)]">Aa</span>
+                <span className="font-medium">Rename</span>
+              </button>
+              <button
+                onClick={() => {
+                  void createChildNote(noteContextMenu.noteId);
+                  setNoteContextMenu(null);
+                }}
+                className="flex h-9 w-full items-center gap-3 rounded-none px-3 text-left text-sm transition hover:bg-[var(--ledger-surface-hover)]"
+              >
+                <Plus size={14} className="shrink-0 text-[var(--ledger-text-secondary)]" />
+                <span className="font-medium">Create child</span>
+              </button>
+              <button
+                onClick={() => {
+                  void openLinkProjectModal(noteContextMenu.noteId);
+                }}
+                className="flex h-9 w-full items-center gap-3 rounded-none px-3 text-left text-sm transition hover:bg-[var(--ledger-surface-hover)]"
+              >
+                <Folder size={14} className="shrink-0 text-[var(--ledger-text-secondary)]" />
+                <span className="font-medium">Link to project</span>
+              </button>
+              <button
+                onClick={() => {
+                  void api
+                    .moveNoteParent(noteContextMenu.noteId, null)
+                    .then(() => loadNotes({ silent: true }))
+                    .catch(() => {});
+                  setNoteContextMenu(null);
+                }}
+                className="flex h-9 w-full items-center gap-3 rounded-none px-3 text-left text-sm transition hover:bg-[var(--ledger-surface-hover)]"
+              >
+                <Folder size={14} className="shrink-0 text-[var(--ledger-text-secondary)]" />
+                <span className="font-medium">Move to root</span>
+              </button>
 
-          {/* Divider */}
-          <div className="my-1 h-px bg-[var(--ledger-border-subtle)]" />
+              {/* Divider */}
+              <div className="my-1 h-px bg-[var(--ledger-border-subtle)]" />
 
-          {/* Second group: Duplicate, Save as template */}
-          <button
-            onClick={() => {
-              void duplicateNoteById(noteContextMenu.noteId);
-              setNoteContextMenu(null);
-            }}
-            className="flex h-9 w-full items-center gap-3 rounded-none px-3 text-left text-sm transition hover:bg-[var(--ledger-surface-hover)]"
-          >
-            <Copy size={14} className="shrink-0 text-[var(--ledger-text-secondary)]" />
-            <span className="font-medium">Duplicate</span>
-          </button>
-          <button
-            onClick={() => {
-              const id = noteContextMenu?.noteId;
-              if (id) {
-                const target = notes.find((n) => n.id === id);
-                const name = target?.title || 'Untitled note';
-                void handleSaveNoteAsTemplate(id, name);
-              }
-              setNoteContextMenu(null);
-            }}
-            className="flex h-9 w-full items-center gap-3 rounded-none px-3 text-left text-sm transition hover:bg-[var(--ledger-surface-hover)]"
-          >
-            <Zap size={14} className="shrink-0 text-[var(--ledger-text-secondary)]" />
-            <span className="font-medium">Save as template</span>
-          </button>
+              {/* Second group: Duplicate, Save as template */}
+              <button
+                onClick={() => {
+                  void duplicateNoteById(noteContextMenu.noteId);
+                  setNoteContextMenu(null);
+                }}
+                className="flex h-9 w-full items-center gap-3 rounded-none px-3 text-left text-sm transition hover:bg-[var(--ledger-surface-hover)]"
+              >
+                <Copy size={14} className="shrink-0 text-[var(--ledger-text-secondary)]" />
+                <span className="font-medium">Duplicate</span>
+              </button>
+              <button
+                onClick={() => {
+                  const id = noteContextMenu?.noteId;
+                  if (id) {
+                    const target = notes.find((n) => n.id === id);
+                    const name = target?.title || 'Untitled note';
+                    void handleSaveNoteAsTemplate(id, name);
+                  }
+                  setNoteContextMenu(null);
+                }}
+                className="flex h-9 w-full items-center gap-3 rounded-none px-3 text-left text-sm transition hover:bg-[var(--ledger-surface-hover)]"
+              >
+                <Zap size={14} className="shrink-0 text-[var(--ledger-text-secondary)]" />
+                <span className="font-medium">Save as template</span>
+              </button>
 
-          {/* Divider */}
-          <div className="my-1 h-px bg-[var(--ledger-border-subtle)]" />
+              {/* Divider */}
+              <div className="my-1 h-px bg-[var(--ledger-border-subtle)]" />
 
-          {/* Third group: Delete (destructive) */}
-          <button
-            onClick={() => {
-              void deleteNoteById(noteContextMenu.noteId);
-              setNoteContextMenu(null);
-            }}
-            className="flex h-9 w-full items-center gap-3 rounded-none px-3 text-left text-sm transition hover:bg-[color:rgba(217,45,32,0.08)]"
-          >
-            <Trash2 size={14} className="shrink-0 text-[var(--ledger-danger)]" />
-            <span className="font-medium text-[var(--ledger-danger)]">Delete</span>
-          </button>
-        </div>
+              {/* Third group: Delete (destructive) */}
+              <button
+                onClick={() => {
+                  void deleteNoteById(noteContextMenu.noteId);
+                  setNoteContextMenu(null);
+                }}
+                className="flex h-9 w-full items-center gap-3 rounded-none px-3 text-left text-sm transition hover:bg-[color:rgba(217,45,32,0.08)]"
+              >
+                <Trash2 size={14} className="shrink-0 text-[var(--ledger-danger)]" />
+                <span className="font-medium text-[var(--ledger-danger)]">Delete</span>
+              </button>
+            </div>
           );
-        })()
-      )}
+        })()}
 
       <CreateNoteModal
         isOpen={showCreateNoteModal}
@@ -5531,7 +5576,9 @@ export const NotesWindow = () => {
       >
         <div className="flex items-start justify-between gap-4 border-b border-[color:var(--ledger-border-subtle)] px-5 py-4">
           <div className="min-w-0">
-            <p className="text-sm font-semibold text-[var(--ledger-text-primary)]">Link to project</p>
+            <p className="text-sm font-semibold text-[var(--ledger-text-primary)]">
+              Link to project
+            </p>
             <p className="mt-1 truncate text-sm text-[var(--ledger-text-secondary)]">
               {selectedNote?.title || 'Untitled note'}
             </p>
@@ -5555,9 +5602,13 @@ export const NotesWindow = () => {
 
           <div className="max-h-[48vh] overflow-auto space-y-1 pr-1">
             {isLoadingLinkableProjects ? (
-              <p className="px-1 py-2 text-sm text-[var(--ledger-text-muted)]">Loading projects...</p>
+              <p className="px-1 py-2 text-sm text-[var(--ledger-text-muted)]">
+                Loading projects...
+              </p>
             ) : filteredLinkableProjects.length === 0 ? (
-              <p className="px-1 py-2 text-sm text-[var(--ledger-text-muted)]">No active projects found.</p>
+              <p className="px-1 py-2 text-sm text-[var(--ledger-text-muted)]">
+                No active projects found.
+              </p>
             ) : (
               filteredLinkableProjects.map((project) => (
                 <button
@@ -5573,8 +5624,12 @@ export const NotesWindow = () => {
                       {project.name}
                     </p>
                     <p className="truncate text-xs text-[var(--ledger-text-muted)]">
-                      {String(project.status ?? 'active').split('_').join(' ')}
-                      {typeof project.completeness === 'number' ? ` · ${Math.round(project.completeness)}%` : ''}
+                      {String(project.status ?? 'active')
+                        .split('_')
+                        .join(' ')}
+                      {typeof project.completeness === 'number'
+                        ? ` · ${Math.round(project.completeness)}%`
+                        : ''}
                       {project.end_date ? ` · Due ${formatCompactDateTime(project.end_date)}` : ''}
                     </p>
                   </div>
