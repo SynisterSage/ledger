@@ -1989,7 +1989,8 @@ public static class Win32 {
       return false;
     }
   }
-}"@
+}
+"@
 $hwnd = [IntPtr]${targetId}
 if (-not [Win32]::IsWindow($hwnd)) { return }
 if ([Win32]::IsIconic($hwnd)) {
@@ -2816,7 +2817,8 @@ function startFloatingDockNativeTracker(target: FloatingDockTarget) {
 
   const script = `
 $ErrorActionPreference = 'Stop'
-Add-Type @"using System;
+Add-Type @"
+using System;
 using System.Runtime.InteropServices;
 
 public static class LedgerDockTracker {
@@ -3366,7 +3368,8 @@ public class Win32 {
     }
     return GetWindowRect(hWnd, out rect);
   }
-}"@
+}
+"@
 try { [Win32]::SetProcessDpiAwarenessContext([IntPtr](-4)) | Out-Null } catch {}
 $sidebarLeft = ${Math.floor(nativeSidebarBounds.x)}
 $sidebarTop = ${Math.floor(nativeSidebarBounds.y)}
@@ -3483,7 +3486,8 @@ public class Win32 {
     }
     return GetWindowRect(hWnd, out rect);
   }
-}"@
+}
+"@
 try { [Win32]::SetProcessDpiAwarenessContext([IntPtr](-4)) | Out-Null } catch {}
 $sidebarLeft = ${Math.floor(nativeSidebarBounds.x)}
 $sidebarTop = ${Math.floor(nativeSidebarBounds.y)}
@@ -3760,7 +3764,8 @@ public class Win32 {
     public int X;
     public int Y;
   }
-}"@
+}
+"@
 try { [Win32]::SetProcessDpiAwarenessContext([IntPtr](-4)) | Out-Null } catch {}
 $sidebarLeft = ${Math.floor(nativeSidebarBounds.x)}
 $sidebarTop = ${Math.floor(nativeSidebarBounds.y)}
