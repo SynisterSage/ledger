@@ -712,6 +712,7 @@ let floatingDockHoldUntil = 0;
 let floatingDockDragActive = false;
 let floatingDockTrackingTimer: NodeJS.Timeout | null = null;
 let floatingDockNativeTracker: ChildProcessWithoutNullStreams | null = null;
+let floatingDockRefreshInFlight = false;
 let floatingDockNativeBuffer = '';
 let windowsNativeDockRequeryAt = 0;
 let floatingDragStart:
@@ -2010,7 +2011,7 @@ Write-Output "bounds|$($rect.Left)|$($rect.Top)|$([Math]::Max(1, $rect.Right - $
     const { stdout } = await execFileAsync(
       'powershell.exe',
       ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script],
-      { windowsHide: true, timeout: 1200 }
+      { windowsHide: true, timeout: 2500 }
     );
 
     const output = String(stdout).trim();
@@ -3094,6 +3095,9 @@ async function getMacAccessibilityDockTargetAtEdge(probe: {
 }
 
 async function refreshFloatingDockTarget() {
+  if (floatingDockRefreshInFlight) return;
+  floatingDockRefreshInFlight = true;
+  try {
   if (!sidebarWin || sidebarWin.isDestroyed()) return;
   if (currentSidebarPosition !== 'floating') return;
   if (currentSidebarMode === 'auth' || currentSidebarMode === 'fullscreen') return;
@@ -3312,6 +3316,9 @@ async function refreshFloatingDockTarget() {
   });
   if (!setBoundsCalled) return;
   currentFloatingPosition = { x: nextBounds.x, y: nextBounds.y };
+  } finally {
+    floatingDockRefreshInFlight = false;
+  }
 }
 
 async function getFloatingDockTargetAtCursor(): Promise<DockTargetResult | null> {
@@ -3438,7 +3445,7 @@ if ($script:result) { Write-Output $script:result }
         ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script],
         {
           windowsHide: true,
-          timeout: 1200,
+          timeout: 3000,
         }
       );
       const output = String(stdout).trim();
@@ -3536,7 +3543,7 @@ if ($script:result) { Write-Output $script:result }
           ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', cursorScript],
           {
             windowsHide: true,
-            timeout: 1200,
+            timeout: 3000,
           }
         );
         const cursorOutput = String(cursorStdout).trim();
@@ -3818,7 +3825,7 @@ if ($script:result) { Write-Output $script:result }
           ],
           {
             windowsHide: true,
-            timeout: 1200,
+            timeout: 3000,
           }
         );
         const [id, x, y, width, height, isLedgerWindow] = String(stdout).trim().split('|');
