@@ -2822,12 +2822,12 @@ Add-Type @"
 using System;
 using System.Runtime.InteropServices;
 
-public static class LedgerDockTracker {
+public class LedgerDockTracker {
   private const uint EVENT_OBJECT_LOCATIONCHANGE = 0x800B;
   private const uint EVENT_SYSTEM_MINIMIZESTART = 0x0016;
   private const uint WINEVENT_OUTOFCONTEXT = 0;
   private IntPtr targetHwnd;
-  private WinEventDelegate callbackRef = Callback;
+  private WinEventDelegate callbackRef;
   private System.Timers.Timer pollTimer;
 
   public delegate void WinEventDelegate(
@@ -2924,6 +2924,7 @@ public static class LedgerDockTracker {
 
   public void Start(long hwndValue) {
     targetHwnd = new IntPtr(hwndValue);
+    callbackRef = Callback;
     pollTimer = new System.Timers.Timer(32);
     pollTimer.AutoReset = true;
     pollTimer.Elapsed += (sender, args) => EmitBounds();
@@ -2968,7 +2969,7 @@ public static class LedgerDockTracker {
     EmitBounds();
   }
 
-  private static void EmitBounds() {
+  private void EmitBounds() {
     if (IsIconic(targetHwnd)) {
       Console.Out.WriteLine("state|minimized");
       Console.Out.Flush();
@@ -2987,7 +2988,7 @@ public static class LedgerDockTracker {
     Console.Out.Flush();
   }
 
-  private static bool IsFullscreenLike(RECT rect) {
+  private bool IsFullscreenLike(RECT rect) {
     try {
       if (IsZoomed(targetHwnd)) return false;
       IntPtr monitor = MonitorFromWindow(targetHwnd, 2);
@@ -3007,8 +3008,9 @@ public static class LedgerDockTracker {
   }
 }
 "@
-[LedgerDockTracker]::EnableDpiAwareness()
-[LedgerDockTracker]::Start([Int64]${target.id})
+$tracker = [LedgerDockTracker]::new()
+$tracker.EnableDpiAwareness()
+$tracker.Start([Int64]${target.id})
 `;
 
   const tracker = spawn(
