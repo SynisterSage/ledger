@@ -1,5 +1,6 @@
 import {
   ArrowRight,
+  BriefcaseBusiness,
   Bell,
   CalendarDays,
   CircleAlert,
@@ -8,16 +9,24 @@ import {
   ChevronUp,
   CheckCircle2,
   Circle,
+  Code2,
   Folder,
   FolderKanban,
+  Link2,
   Inbox,
   LayoutList,
   Loader2,
   MoreHorizontal,
   Plus,
+  Palette,
   SlidersHorizontal,
   StickyNote,
   Trash2,
+  FileText,
+  Sparkles,
+  Map as MapIcon,
+  Zap,
+  UserRound,
   X,
 } from 'lucide-react';
 import { ToastProvider } from './components/Common/ToastProvider';
@@ -52,11 +61,13 @@ import { SearchModal } from './components/Search/SearchModal';
 import { SearchProvider } from './context/SearchContext';
 import { useSearch } from './context/SearchContext';
 import { QuickCaptureWindow } from './components/Common/QuickCaptureWindow';
+import { CreateNoteModal } from './components/Notes/CreateNoteModal';
 import {
   saveSidebarPreferences,
   type SidebarPosition,
 } from './config/sidebarPreferences';
 import { useToast } from './components/Common/ToastProvider';
+import { getProjectTypeOption } from './utils/projectTypes';
 
 type PostAuthStage = 'idle' | 'loading' | 'onboarding' | 'ready';
 type OnboardingStep = 'welcome' | 'workspace' | 'position';
@@ -141,6 +152,15 @@ const dashboardTheme = {
   hoverRow:
     'transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]',
 };
+
+const overviewProjectTypeOptions = [
+  { id: 'code', label: 'Code', color: '#3B82F6', icon: Code2 },
+  { id: 'design', label: 'Design', color: '#FF5F40', icon: Palette },
+  { id: 'personal', label: 'Personal', color: '#22C55E', icon: UserRound },
+  { id: 'ops', label: 'Ops', color: '#F59E0B', icon: BriefcaseBusiness },
+  { id: 'writing', label: 'Writing', color: '#14B8A6', icon: FileText },
+  { id: 'other', label: 'Other', color: '#6B7280', icon: Sparkles },
+] as const;
 const OPEN_LEDGER_URL = (
   import.meta.env.VITE_LEDGER_OPEN_URL?.trim() || window.location.origin
 ).replace(/\/$/, '');
@@ -679,6 +699,9 @@ function DashboardContent() {
       workspace_color?: string | null;
       calendar_name?: string | null;
       assigned_to?: string | null;
+      assigned_to_user_id?: string | null;
+      assigned_to_team_id?: string | null;
+      assigned_team_id?: string | null;
       task_horizon?: 'today' | 'long_term' | null;
       is_today_focus?: boolean;
       show_in_today?: boolean;
@@ -697,6 +720,9 @@ function DashboardContent() {
       project_id?: string | null;
       milestone_id?: string | null;
       assigned_to?: string | null;
+      assigned_to_user_id?: string | null;
+      assigned_to_team_id?: string | null;
+      assigned_team_id?: string | null;
       task_horizon?: 'today' | 'long_term' | null;
       show_in_today?: boolean;
       is_today_focus?: boolean;
@@ -724,7 +750,13 @@ function DashboardContent() {
       name: string;
       status: string;
       completeness: number;
+      project_type?: string | null;
+      color?: string | null;
       end_date?: string | null;
+      owner_team_id?: string | null;
+      lead_id?: string | null;
+      created_at?: string | null;
+      updated_at?: string | null;
     }>
   >([]);
   const [upcoming, setUpcoming] = useState<
@@ -736,10 +768,18 @@ function DashboardContent() {
       color?: string;
       workspace_name?: string | null;
       workspace_color?: string | null;
+      created_at?: string | null;
+      updated_at?: string | null;
     }>
   >([]);
   const [notes, setNotes] = useState<
     Array<{ id: string; title: string; content: string; updated_at: string }>
+  >([]);
+  const optimisticNotesRef = useRef<
+    Array<{ id: string; title: string; content: string; updated_at: string }>
+  >([]);
+  const [workspaceTeams, setWorkspaceTeams] = useState<
+    Array<{ id: string; name: string; identifier?: string | null }>
   >([]);
   const [noteProjectLinks, setNoteProjectLinks] = useState<
     Array<{ note_id: string; project_id: string; project_name: string }>
@@ -762,15 +802,20 @@ function DashboardContent() {
   const [dashboardRefreshToken, setDashboardRefreshToken] = useState(0);
   const [inboxCount, setInboxCount] = useState(0);
   const [notificationCount, setNotificationCount] = useState(0);
-  const [focusDraftTitle, setFocusDraftTitle] = useState('');
-  const [isSavingFocusTask, setIsSavingFocusTask] = useState(false);
+  const [overviewTaskMode, setOverviewTaskMode] = useState<'focus' | 'today' | 'long_term'>(
+    'focus'
+  );
+  const [overviewTaskTitle, setOverviewTaskTitle] = useState('');
+  const [overviewTaskDueDate, setOverviewTaskDueDate] = useState('');
+  const [overviewTaskAssigneeValue, setOverviewTaskAssigneeValue] = useState('');
+  const [isSavingOverviewTask, setIsSavingOverviewTask] = useState(false);
   const [showCloseGuardModal, setShowCloseGuardModal] = useState(false);
   const [focusActionId, setFocusActionId] = useState<string | null>(null);
   const [completedFocusTasks, setCompletedFocusTasks] = useState<CompletedFocusTask[]>(() =>
     loadCompletedFocusTasks()
   );
   const [isFocusPickerOpen, setIsFocusPickerOpen] = useState(false);
-  const [isNewFocusModalOpen, setIsNewFocusModalOpen] = useState(false);
+  const [isOverviewTaskModalOpen, setIsOverviewTaskModalOpen] = useState(false);
   const [isUpcomingQuickCreateOpen, setIsUpcomingQuickCreateOpen] = useState(false);
   const [upcomingQuickCreateKind, setUpcomingQuickCreateKind] = useState<'event' | 'reminder'>(
     'event'
@@ -791,6 +836,20 @@ function DashboardContent() {
   const [isLoadingUpcomingQuickTeams, setIsLoadingUpcomingQuickTeams] = useState(false);
   const [isOverviewLinkProjectOpen, setIsOverviewLinkProjectOpen] = useState(false);
   const [overviewLinkTargetNoteId, setOverviewLinkTargetNoteId] = useState<string | null>(null);
+  const [isOverviewCreateNoteOpen, setIsOverviewCreateNoteOpen] = useState(false);
+  const [isOverviewCreateProjectOpen, setIsOverviewCreateProjectOpen] = useState(false);
+  const [overviewProjectName, setOverviewProjectName] = useState('');
+  const [overviewProjectDescription, setOverviewProjectDescription] = useState('');
+  const [overviewProjectType, setOverviewProjectType] = useState<(typeof overviewProjectTypeOptions)[number]['id']>(
+    'code'
+  );
+  const [overviewProjectLeadId, setOverviewProjectLeadId] = useState('');
+  const [overviewProjectOwnerTeamId, setOverviewProjectOwnerTeamId] = useState('');
+  const [overviewProjectTeams, setOverviewProjectTeams] = useState<
+    Array<{ id: string; name: string; identifier?: string | null }>
+  >([]);
+  const [isLoadingOverviewProjectTeams, setIsLoadingOverviewProjectTeams] = useState(false);
+  const [isSavingOverviewProject, setIsSavingOverviewProject] = useState(false);
   const [overviewLinkableProjects, setOverviewLinkableProjects] = useState<
     Array<{
       id: string;
@@ -804,7 +863,9 @@ function DashboardContent() {
   const [overviewLinkProjectSearch, setOverviewLinkProjectSearch] = useState('');
   const [isSavingUpcomingQuickItem, setIsSavingUpcomingQuickItem] = useState(false);
   const [upcomingQuickError, setUpcomingQuickError] = useState<string | null>(null);
+  const overviewTaskTitleRef = useRef<HTMLInputElement | null>(null);
   const upcomingQuickTitleRef = useRef<HTMLInputElement | null>(null);
+  const overviewProjectNameRef = useRef<HTMLInputElement | null>(null);
   const [expandedNoteIds, setExpandedNoteIds] = useState<Set<string>>(new Set());
   const [calendarScope, setCalendarScope] = useState<'current_workspace' | 'all_accessible_workspaces'>(
     'current_workspace'
@@ -813,6 +874,10 @@ function DashboardContent() {
   const workspaceMemberById = useMemo(
     () => new Map(workspaceMembers.map((member) => [member.user_id, member])),
     [workspaceMembers]
+  );
+  const workspaceTeamById = useMemo(
+    () => new Map(workspaceTeams.map((team) => [team.id, team])),
+    [workspaceTeams]
   );
   const getWorkspaceTaskMetadata = () => ({
     workspace_id: activeWorkspaceId ?? null,
@@ -921,6 +986,170 @@ function DashboardContent() {
     [api]
   );
 
+  const openOverviewCreateProjectModal = useCallback(() => {
+    setIsOverviewCreateProjectOpen(true);
+    setOverviewProjectName('');
+    setOverviewProjectDescription('');
+    setOverviewProjectType('code');
+    setOverviewProjectLeadId(user?.id ?? '');
+    setOverviewProjectOwnerTeamId('');
+  }, [user?.id]);
+
+  const getSortTimestamp = (item: {
+    created_at?: string | null;
+    updated_at?: string | null;
+    start_at?: string | null;
+    due_date?: string | null;
+  }) => {
+    return (
+      item.created_at ??
+      item.updated_at ??
+      item.start_at ??
+      (item.due_date ? `${item.due_date}T23:59:59` : null) ??
+      ''
+    );
+  };
+
+  const sortNewestFirst = <T extends { created_at?: string | null; updated_at?: string | null; start_at?: string | null; due_date?: string | null }>(
+    items: T[]
+  ) =>
+    [...items].sort(
+      (left, right) =>
+        new Date(getSortTimestamp(right)).getTime() - new Date(getSortTimestamp(left)).getTime()
+    );
+
+  const closeOverviewCreateProjectModal = useCallback(() => {
+    if (isSavingOverviewProject) return;
+    setIsOverviewCreateProjectOpen(false);
+    setOverviewProjectName('');
+    setOverviewProjectDescription('');
+    setOverviewProjectType('code');
+    setOverviewProjectLeadId('');
+    setOverviewProjectOwnerTeamId('');
+    setOverviewProjectTeams([]);
+  }, [isSavingOverviewProject]);
+
+  useEffect(() => {
+    if (!isOverviewCreateProjectOpen || !user || !activeWorkspaceId) return;
+
+    let cancelled = false;
+    const loadOverviewProjectTeams = async () => {
+      setIsLoadingOverviewProjectTeams(true);
+      try {
+        const payload = (await api.getTeams()) as
+          | Array<{ id: string; name: string; identifier?: string | null }>
+          | { teams?: Array<{ id: string; name: string; identifier?: string | null }> }
+          | null;
+        if (cancelled) return;
+        const teams = Array.isArray(payload)
+          ? payload
+          : Array.isArray((payload as { teams?: Array<{ id: string; name: string; identifier?: string | null }> | null } | null)?.teams)
+            ? ((payload as { teams: Array<{ id: string; name: string; identifier?: string | null }> }).teams ?? [])
+            : [];
+        setOverviewProjectTeams(
+          teams
+            .map((team) => ({
+              id: team.id,
+              name: team.name,
+              identifier: team.identifier ?? null,
+            }))
+            .filter((team) => Boolean(team.id && team.name))
+        );
+      } catch {
+        if (!cancelled) {
+          setOverviewProjectTeams([]);
+        }
+      } finally {
+        if (!cancelled) setIsLoadingOverviewProjectTeams(false);
+      }
+    };
+
+    void loadOverviewProjectTeams();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeWorkspaceId, api, isOverviewCreateProjectOpen, user]);
+
+  useEffect(() => {
+    if (!isOverviewCreateProjectOpen) return;
+    const timer = window.setTimeout(() => {
+      overviewProjectNameRef.current?.focus();
+    }, 120);
+    return () => window.clearTimeout(timer);
+  }, [isOverviewCreateProjectOpen]);
+
+  const createOverviewProject = useCallback(async () => {
+    const name = overviewProjectName.trim();
+    if (!name || isSavingOverviewProject || !activeWorkspaceId) return;
+
+    setIsSavingOverviewProject(true);
+    try {
+      const created = await api.createProject({
+        name,
+        description: overviewProjectDescription.trim() || null,
+        color:
+          overviewProjectTypeOptions.find((option) => option.id === overviewProjectType)?.color ??
+          '#6B7280',
+        start_date: null,
+        end_date: null,
+        status: 'NotStarted',
+        project_type: overviewProjectType,
+        lead_id: overviewProjectLeadId || null,
+        owner_team_id: overviewProjectOwnerTeamId || null,
+      });
+      if (created && typeof created === 'object') {
+        const project = created as {
+          id: string;
+          name: string;
+          status?: string | null;
+          completeness?: number | null;
+          project_type?: string | null;
+          color?: string | null;
+          end_date?: string | null;
+          created_at?: string | null;
+          updated_at?: string | null;
+        };
+        setProjects((current) =>
+          sortNewestFirst([
+            {
+              id: project.id,
+              name: project.name,
+              status: project.status ?? 'NotStarted',
+              completeness: typeof project.completeness === 'number' ? project.completeness : 0,
+              project_type: project.project_type ?? 'other',
+              color: project.color ?? null,
+              end_date: project.end_date ?? null,
+              created_at: project.created_at ?? null,
+              updated_at: project.updated_at ?? null,
+            },
+            ...current.filter((item) => item.id !== project.id),
+          ]).slice(0, 4)
+        );
+        handleDashboardWorkspaceRefresh();
+        window.desktopWindow?.toggleModule('projects', {
+          kind: 'projects',
+          focusProjectId: project.id,
+        });
+      }
+      closeOverviewCreateProjectModal();
+    } catch (error) {
+      setDashboardError(error instanceof Error ? error.message : 'Could not create project.');
+    } finally {
+      setIsSavingOverviewProject(false);
+    }
+  }, [
+    activeWorkspaceId,
+    api,
+    closeOverviewCreateProjectModal,
+    handleDashboardWorkspaceRefresh,
+    isSavingOverviewProject,
+    overviewProjectDescription,
+    overviewProjectLeadId,
+    overviewProjectName,
+    overviewProjectOwnerTeamId,
+    overviewProjectType,
+  ]);
+
   const linkOverviewNoteToProject = useCallback(
     async (projectId: string) => {
       const noteId = overviewLinkTargetNoteId;
@@ -939,7 +1168,7 @@ function DashboardContent() {
 
   useWorkspaceRealtimeRefresh({
     workspaceId: activeWorkspaceId,
-    tables: ['notes', 'projects', 'tasks', 'events', 'reminders'],
+    tables: ['notes', 'projects', 'tasks', 'events', 'reminders', 'project_note_links'],
     enabled: Boolean(user && activeWorkspaceId),
     onChange: handleDashboardWorkspaceRefresh,
   });
@@ -1083,15 +1312,17 @@ function DashboardContent() {
       hasLoadedDashboardRef.current = false;
       setIsLoadingDashboard(false);
       setDashboardError(null);
-      setDaily({
-        focusItems: [],
-        finished: '',
-        blocked: '',
-        firstTaskTomorrow: '',
-      });
+        setDaily({
+          focusItems: [],
+          finished: '',
+          blocked: '',
+          firstTaskTomorrow: '',
+        });
         setProjects([]);
         setUpcoming([]);
         setNotes([]);
+        optimisticNotesRef.current = [];
+        setWorkspaceTeams([]);
         setFollowUpTasks([]);
         setWorkspaceTasks([]);
         return;
@@ -1108,7 +1339,7 @@ function DashboardContent() {
           setDashboardError(null);
         }
 
-        const [dailyData, todayData, projectData, upcomingData, noteData, taskData, projectNoteLinksData] =
+        const [dailyData, todayData, projectData, upcomingData, noteData, taskData, projectNoteLinksData, teamsData] =
           await Promise.allSettled([
             api.getDailyAccountability(),
             api.getToday(),
@@ -1117,6 +1348,7 @@ function DashboardContent() {
             api.getNotes(),
             api.getTasks(),
             api.getWorkspaceProjectNoteLinks(activeWorkspaceId),
+            api.getTeams(),
           ]);
 
         if (cancelled) return;
@@ -1149,15 +1381,17 @@ function DashboardContent() {
             ? (todayData.value as { reminders: Array<(typeof todayTasks)[number]> }).reminders
             : [];
 
-        setTodayTasks([
-          ...activeToday.map((item) => ({ ...item, kind: 'task' as const })),
-          ...activeReminders.map((item) => ({
-            ...item,
-            kind: 'reminder' as const,
-            is_today_focus: false,
-            show_in_today: true,
-          })),
-        ]);
+        setTodayTasks(
+          sortNewestFirst([
+            ...activeToday.map((item) => ({ ...item, kind: 'task' as const })),
+            ...activeReminders.map((item) => ({
+              ...item,
+              kind: 'reminder' as const,
+              is_today_focus: false,
+              show_in_today: true,
+            })),
+          ])
+        );
 
         const normalizedNotes =
           noteData.status === 'fulfilled'
@@ -1194,13 +1428,57 @@ function DashboardContent() {
             : [];
 
         const noteProjectLinks =
-          projectNoteLinksData.status === 'fulfilled' && Array.isArray(projectNoteLinksData.value)
-            ? (projectNoteLinksData.value as Array<{
-                note_id: string;
-                project_id: string;
-                project_name: string;
-              }>)
+          projectNoteLinksData.status === 'fulfilled'
+            ? Array.isArray(projectNoteLinksData.value)
+              ? (projectNoteLinksData.value as Array<{
+                  note_id: string;
+                  project_id: string;
+                  project_name: string;
+                }>)
+              : Array.isArray(
+                  (
+                    projectNoteLinksData.value as {
+                      links?: Array<{
+                        note_id: string;
+                        project_id: string;
+                        project_name: string;
+                      }>;
+                    } | null
+                  )?.links
+                )
+              ? (
+                  projectNoteLinksData.value as {
+                    links: Array<{
+                      note_id: string;
+                      project_id: string;
+                      project_name: string;
+                    }>;
+                  }
+                ).links
+              : []
             : [];
+
+        const normalizedTeams =
+          teamsData.status === 'fulfilled'
+            ? Array.isArray(teamsData.value)
+              ? (teamsData.value as Array<{
+                  id: string;
+                  name: string;
+                  identifier?: string | null;
+                }>)
+              : Array.isArray((teamsData.value as { teams?: Array<{ id: string; name: string; identifier?: string | null }> | null } | null)?.teams)
+                ? ((teamsData.value as { teams: Array<{ id: string; name: string; identifier?: string | null }> }).teams ?? [])
+                : []
+            : [];
+        setWorkspaceTeams(
+          normalizedTeams
+            .map((team) => ({
+              id: team.id,
+              name: team.name,
+              identifier: team.identifier ?? null,
+            }))
+            .filter((team) => Boolean(team.id && team.name))
+        );
 
         setProjects(
           projectData.status === 'fulfilled'
@@ -1210,8 +1488,26 @@ function DashboardContent() {
                   name: string;
                   status: string;
                   completeness: number;
+                  project_type?: string | null;
+                  color?: string | null;
+                  end_date?: string | null;
+                  owner_team_id?: string | null;
+                  lead_id?: string | null;
+                  created_at?: string | null;
+                  updated_at?: string | null;
                 }>
-              ).slice(0, 4)
+              )
+                .map((project) => ({
+                  ...project,
+                  created_at: project.created_at ?? null,
+                  updated_at: project.updated_at ?? null,
+                }))
+                .sort(
+                  (left, right) =>
+                    new Date(getSortTimestamp(right)).getTime() -
+                    new Date(getSortTimestamp(left)).getTime()
+                )
+                .slice(0, 4)
             : []
         );
         setUpcoming(
@@ -1226,13 +1522,34 @@ function DashboardContent() {
                   status?: string | null;
                   workspace_name?: string | null;
                   workspace_color?: string | null;
+                  created_at?: string | null;
+                  updated_at?: string | null;
                 }>
               )
                 .filter(isUpcomingEventActive)
+                .sort(
+                  (left, right) =>
+                    new Date(getSortTimestamp(right)).getTime() -
+                    new Date(getSortTimestamp(left)).getTime()
+                )
                 .slice(0, 4)
             : []
         );
-        setNotes(normalizedNotes.slice(0, 4));
+        const mergedNotes = [
+          ...normalizedNotes,
+          ...optimisticNotesRef.current.filter(
+            (optimistic) => !normalizedNotes.some((note) => note.id === optimistic.id)
+          ),
+        ]
+          .sort(
+            (left, right) =>
+              new Date(right.updated_at ?? 0).getTime() - new Date(left.updated_at ?? 0).getTime()
+          )
+          .slice(0, 4);
+        setNotes(mergedNotes);
+        optimisticNotesRef.current = optimisticNotesRef.current.filter(
+          (optimistic) => !normalizedNotes.some((note) => note.id === optimistic.id)
+        );
         setNoteProjectLinks(noteProjectLinks);
         const rawTasks =
           taskData.status === 'fulfilled' && Array.isArray(taskData.value)
@@ -1247,6 +1564,9 @@ function DashboardContent() {
                 project_id?: string | null;
                 milestone_id?: string | null;
                 assigned_to?: string | null;
+                assigned_to_user_id?: string | null;
+                assigned_to_team_id?: string | null;
+                assigned_team_id?: string | null;
                 task_horizon?: 'today' | 'long_term' | null;
                 show_in_today?: boolean;
                 is_today_focus?: boolean;
@@ -1299,6 +1619,7 @@ function DashboardContent() {
           noteData.status === 'rejected' ? 'notes' : null,
           projectNoteLinksData.status === 'rejected' ? 'note links' : null,
           taskData.status === 'rejected' ? 'follow-ups' : null,
+          teamsData.status === 'rejected' ? 'teams' : null,
         ].filter(Boolean);
 
         if (failedSections.length > 0) {
@@ -1474,13 +1795,14 @@ function DashboardContent() {
     });
   };
 
-  const focusTasks = todayTasks.filter((task) => task.is_today_focus);
-  const activeTodayTasks = todayTasks.filter((task) => !task.is_today_focus);
-  const reminderFocusTasks = todayTasks.filter(
+  const sortedTodayTasks = useMemo(() => sortNewestFirst(todayTasks), [todayTasks]);
+  const focusTasks = sortedTodayTasks.filter((task) => task.is_today_focus);
+  const activeTodayTasks = sortedTodayTasks.filter((task) => !task.is_today_focus);
+  const reminderFocusTasks = sortedTodayTasks.filter(
     (task) => task.kind === 'reminder' && !task.is_today_focus
   );
   const focusTasksForDisplay = focusTasks.length > 0 ? focusTasks : reminderFocusTasks.slice(0, 1);
-  const recentNotes = notes;
+  const recentNotes = useMemo(() => sortNewestFirst(notes), [notes]);
   const todayLabel = new Date().toLocaleDateString([], {
     weekday: 'long',
     month: 'long',
@@ -1555,55 +1877,100 @@ function DashboardContent() {
     autoExpireTodayTaskIdsRef.current.clear();
   }, [activeWorkspaceId, user]);
 
-  const createNewFocusTask = async () => {
-    const title = focusDraftTitle.trim();
-    if (!title || isSavingFocusTask || focusTasks.length >= 3) return;
+  const openOverviewTaskModal = useCallback((mode: 'focus' | 'today' | 'long_term') => {
+    setOverviewTaskMode(mode);
+    setOverviewTaskTitle('');
+    setOverviewTaskAssigneeValue('');
+    setOverviewTaskDueDate('');
+    setIsOverviewTaskModalOpen(true);
+  }, []);
 
-    const tempId = `focus-task-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    const dueDate = todayKey();
+  const closeOverviewTaskModal = useCallback(() => {
+    if (isSavingOverviewTask) return;
+    setIsOverviewTaskModalOpen(false);
+    setOverviewTaskTitle('');
+    setOverviewTaskAssigneeValue('');
+    setOverviewTaskDueDate('');
+    setOverviewTaskMode('focus');
+  }, [isSavingOverviewTask]);
+
+  useEffect(() => {
+    if (!isOverviewTaskModalOpen) return;
+    const timer = window.setTimeout(() => {
+      overviewTaskTitleRef.current?.focus();
+    }, 50);
+    return () => window.clearTimeout(timer);
+  }, [isOverviewTaskModalOpen]);
+
+  const createOverviewTask = async () => {
+    const title = overviewTaskTitle.trim();
+    if (!title || isSavingOverviewTask) return;
+
+    const { assigned_to_user_id, assigned_to_team_id } = parseAssignmentValue(
+      overviewTaskAssigneeValue
+    );
+    const dueDate = overviewTaskMode === 'long_term' ? overviewTaskDueDate.trim() || null : null;
+    const showInToday = overviewTaskMode !== 'long_term';
+    const isTodayFocus = overviewTaskMode === 'focus';
+    const taskHorizon = overviewTaskMode === 'long_term' ? 'long_term' : 'today';
+    const tempId = `overview-task-${Date.now()}-${Math.random().toString(36).slice(2)}`;
     const optimisticTask = {
       id: tempId,
       title,
       status: 'todo',
       due_date: dueDate,
-      show_in_today: true,
-      is_today_focus: true,
-      task_horizon: 'today' as const,
+      show_in_today: showInToday,
+      is_today_focus: isTodayFocus,
+      task_horizon: taskHorizon as 'today' | 'long_term',
+      assigned_to_user_id,
+      assigned_to_team_id,
       created_at: new Date().toISOString(),
       ...getWorkspaceTaskMetadata(),
     };
-    setTodayTasks((prev) => [optimisticTask, ...prev]);
-    setIsSavingFocusTask(true);
+    setTodayTasks((prev) => sortNewestFirst([optimisticTask, ...prev]));
+    setIsSavingOverviewTask(true);
     try {
       const created = await api.createTask({
         title,
         status: 'todo',
-        show_in_today: true,
-        is_today_focus: true,
+        show_in_today: showInToday,
+        is_today_focus: isTodayFocus,
         due_date: dueDate,
-        task_horizon: 'today',
+        task_horizon: taskHorizon,
+        assigned_to_user_id,
+        assigned_to_team_id,
       });
       if (created && typeof created === 'object') {
-        const createdTask = created as { id?: string; workspace_id?: string | null; workspace_name?: string | null; workspace_color?: string | null };
+        const createdTask = created as {
+          id?: string;
+          workspace_id?: string | null;
+          workspace_name?: string | null;
+          workspace_color?: string | null;
+        };
         const createdId = createdTask.id ?? tempId;
-        setTodayTasks((prev) => [
-          {
-            ...optimisticTask,
-            ...createdTask,
-            id: createdId,
-            ...getWorkspaceTaskMetadata(),
-          },
-          ...prev.filter((item) => item.id !== tempId && item.id !== createdId),
-        ]);
+        setTodayTasks((prev) =>
+          sortNewestFirst([
+            {
+              ...optimisticTask,
+              ...createdTask,
+              id: createdId,
+              ...getWorkspaceTaskMetadata(),
+            },
+            ...prev.filter((item) => item.id !== tempId && item.id !== createdId),
+          ])
+        );
       }
-      setFocusDraftTitle('');
-      setIsNewFocusModalOpen(false);
+      setIsOverviewTaskModalOpen(false);
+      setOverviewTaskTitle('');
+      setOverviewTaskAssigneeValue('');
+      setOverviewTaskDueDate('');
+      setOverviewTaskMode('focus');
       await refreshTodayTasks();
     } catch (error) {
       setTodayTasks((prev) => prev.filter((item) => item.id !== tempId));
       setDashboardError(error instanceof Error ? error.message : 'Could not create task.');
     } finally {
-      setIsSavingFocusTask(false);
+      setIsSavingOverviewTask(false);
     }
   };
 
@@ -1803,7 +2170,7 @@ function DashboardContent() {
         }
 
         setUpcoming((prev) =>
-          [
+          sortNewestFirst([
             ...prev.filter((item) => item.id !== created.id),
             {
               id: created.id,
@@ -1811,8 +2178,9 @@ function DashboardContent() {
               start_at: created.start_at,
               end_at: created.end_at,
               color: created.color ?? selectedCalendar.color ?? undefined,
+              created_at: new Date().toISOString(),
             },
-          ].sort((a, b) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime())
+          ])
         );
 
         toast.show('Saved event', {
@@ -2477,29 +2845,7 @@ function DashboardContent() {
     }
   };
 
-  const getProjectAttentionScore = (project: {
-    status: string;
-    completeness: number;
-    end_date?: string | null;
-    updated_at?: string | null;
-  }) => {
-    const status = String(project.status ?? '').toLowerCase();
-    const dueDate = project.end_date ? new Date(project.end_date) : null;
-    const now = Date.now();
-    const dueDays = dueDate ? Math.ceil((dueDate.getTime() - now) / (1000 * 60 * 60 * 24)) : null;
-
-    let score = 0;
-    if (status.includes('pause')) score += 4;
-    if (dueDays !== null && dueDays <= 3) score += 3;
-    if (dueDays !== null && dueDays < 0) score += 5;
-    if (project.completeness >= 70 && project.completeness < 100) score += 2;
-    if (status.includes('progress')) score += 1;
-    return score;
-  };
-
-  const attentionProjects = [...projects]
-    .sort((a, b) => getProjectAttentionScore(b as any) - getProjectAttentionScore(a as any))
-    .slice(0, 4);
+  const attentionProjects = sortNewestFirst(projects).slice(0, 4);
   const noteProjectNamesById = useMemo(() => {
     const map = new Map<string, string[]>();
     for (const link of noteProjectLinks) {
@@ -2526,6 +2872,8 @@ function DashboardContent() {
     title: string;
     meta: string;
     chips: string[];
+    contextLabel?: string;
+    contextIcon?: ReactNode;
     dateLabel?: string;
     group: string;
     icon: ReactNode;
@@ -2535,6 +2883,11 @@ function DashboardContent() {
       initials: string;
       name: string;
     };
+    ownerTeam?: {
+      name: string;
+      identifier?: string | null;
+    };
+    leadName?: string;
     open: () => void;
   };
 
@@ -2570,6 +2923,27 @@ function DashboardContent() {
     return `${parts[0][0] ?? ''}${parts[1][0] ?? ''}`.toUpperCase();
   };
 
+  const getWorkspaceMemberLabel = (userId?: string | null) => {
+    if (!userId) return '';
+    const member = workspaceMemberById.get(userId) ?? null;
+    return member?.full_name?.trim() || member?.email?.trim() || '';
+  };
+
+  const getWorkspaceTeamLabel = (teamId?: string | null) => {
+    if (!teamId) return '';
+    const team = workspaceTeamById.get(teamId) ?? null;
+    return team?.name?.trim() || '';
+  };
+
+  const parseAssignmentValue = useCallback((value: string) => {
+    if (!value) return { assigned_to_user_id: null, assigned_to_team_id: null };
+    const [kind, id] = value.split(':', 2);
+    if (!id) return { assigned_to_user_id: null, assigned_to_team_id: null };
+    if (kind === 'team') return { assigned_to_user_id: null, assigned_to_team_id: id };
+    if (kind === 'user') return { assigned_to_user_id: id, assigned_to_team_id: null };
+    return { assigned_to_user_id: null, assigned_to_team_id: null };
+  }, []);
+
   const buildTaskRow = (
     task: (typeof todayTasks)[number],
     group: string,
@@ -2578,8 +2952,21 @@ function DashboardContent() {
     const dueLabel = formatShortDate(task.due_date);
     const timeLabel = task.due_time || formatTime(task.remind_at);
     const isReminder = task.kind === 'reminder';
-    const assignedMember = task.assigned_to ? workspaceMemberById.get(task.assigned_to) ?? null : null;
+    const teamId = task.assigned_to_team_id ?? task.assigned_team_id ?? null;
+    const assignedMember = task.assigned_to
+      ? workspaceMemberById.get(task.assigned_to) ?? null
+      : task.assigned_to_user_id
+        ? workspaceMemberById.get(task.assigned_to_user_id) ?? null
+        : null;
     const assigneeName = assignedMember?.full_name?.trim() || assignedMember?.email?.trim() || '';
+    const teamName = teamId ? workspaceTeamById.get(teamId)?.name?.trim() || '' : '';
+    const assignmentLabel = teamId
+      ? teamName
+        ? `Team ${teamName}`
+        : 'Team'
+      : assigneeName
+        ? `Assigned to ${assigneeName}`
+        : '';
     return {
       id: `${group}:${task.id}`,
       sourceId: task.id,
@@ -2602,7 +2989,15 @@ function DashboardContent() {
             ],
       dateLabel: timeLabel || dueLabel || undefined,
       group,
-      icon: isReminder ? <Bell size={13} /> : <Circle size={13} />,
+      icon: isReminder
+        ? <Bell size={13} />
+        : group === 'Today'
+          ? <Zap size={13} />
+          : group === 'Long-term tasks'
+            ? <MapIcon size={13} />
+            : group === 'Needs attention'
+              ? <CircleAlert size={13} />
+              : <Circle size={13} />,
       accent: isReminder ? 'var(--ledger-accent)' : undefined,
       assignee: assigneeName
         ? {
@@ -2610,6 +3005,7 @@ function DashboardContent() {
             name: assigneeName,
           }
         : undefined,
+      contextLabel: assignmentLabel,
       open: () => {
         setSelectedOverviewRowId(`${group}:${task.id}`);
       },
@@ -2619,6 +3015,9 @@ function DashboardContent() {
   const projectRows = attentionProjects.map<OverviewRow>((project) => {
     const dueLabel = formatShortDate(project.end_date);
     const progress = Math.max(0, Math.min(100, Number(project.completeness ?? 0)));
+    const ProjectTypeIcon = getProjectTypeOption(project.project_type).icon;
+    const ownerTeamName = getWorkspaceTeamLabel(project.owner_team_id ?? null);
+    const leadName = getWorkspaceMemberLabel(project.lead_id ?? null);
     return {
       id: `Active projects:${project.id}`,
       sourceId: project.id,
@@ -2630,10 +3029,15 @@ function DashboardContent() {
         dueLabel ? `Due ${dueLabel}` : 'No due date',
       ].join(' · '),
       chips: progress >= 90 ? ['Near done'] : ['Project'],
+      contextLabel: [ownerTeamName ? `Team ${ownerTeamName}` : null, leadName ? `Lead ${leadName}` : null]
+        .filter(Boolean)
+        .join(' · '),
+      ownerTeam: ownerTeamName ? { name: ownerTeamName } : undefined,
+      leadName: leadName || undefined,
       dateLabel: dueLabel ? `Due ${dueLabel}` : undefined,
       group: 'Active projects',
-      icon: <FolderKanban size={13} />,
-      accent: 'var(--ledger-accent)',
+      icon: <ProjectTypeIcon size={13} />,
+      accent: project.color || 'var(--ledger-accent)',
       progress,
       open: () =>
         openModule('projects', {
@@ -2653,17 +3057,16 @@ function DashboardContent() {
     sourceId: note.id,
     kind: 'note',
     title: note.title || 'Untitled note',
-    meta: ['Note', activeWorkspace?.name || 'Workspace', `${formatShortDate(note.updated_at) ?? 'Recently'}`]
+    meta: [activeWorkspace?.name || 'Workspace', `${formatShortDate(note.updated_at) ?? 'Recently'}`]
       .filter(Boolean)
       .join(' · '),
     chips: noteProjectNamesById.get(note.id)?.length
-      ? [
-          noteProjectNamesById.get(note.id)?.[0] ?? 'Linked note',
-          noteProjectNamesById.get(note.id)?.length === 1
-            ? 'Linked note'
-            : `+${Math.max(0, (noteProjectNamesById.get(note.id)?.length ?? 0) - 1)}`,
-        ]
+      ? ['Linked note']
       : ['Regular note'],
+    contextLabel: noteProjectNamesById.get(note.id)?.length
+      ? `Linked to ${noteProjectNamesById.get(note.id)?.[0]}`
+      : undefined,
+    contextIcon: noteProjectNamesById.get(note.id)?.length ? <Link2 size={10} /> : undefined,
     dateLabel: formatShortDate(note.updated_at) ?? undefined,
     group: 'Recent notes',
     icon: <StickyNote size={13} />,
@@ -2683,7 +3086,7 @@ function DashboardContent() {
       meta: ['Event', timeLabel, calendarScope === 'all_accessible_workspaces' ? event.workspace_name : null]
         .filter(Boolean)
         .join(' · '),
-      chips: [isToday ? 'Today' : 'Upcoming', isToday ? 'Meeting' : 'Event'],
+      chips: [isToday ? 'Today' : 'Upcoming'],
       dateLabel: dayLabel ?? undefined,
       group: 'Upcoming',
       icon: <CalendarDays size={13} />,
@@ -2819,23 +3222,30 @@ function DashboardContent() {
           title: selectedOverviewRow.kind === 'project' ? 'Project context' : 'Linked context',
           rows:
             selectedOverviewRow.kind === 'project'
-              ? [
+            ? [
                   ['Progress', typeof selectedOverviewRow.progress === 'number' ? `${selectedOverviewRow.progress}%` : 'Not set'],
+                  ['Team', selectedOverviewRow.ownerTeam?.name || 'None'],
+                  ['Lead', selectedOverviewRow.leadName || 'None'],
                   ['Active actions', selectedOverviewRow.chips.includes('Near done') ? '2' : '0'],
                   ['Milestones', '0'],
                   ['Recent notes', '0'],
                 ]
               : selectedOverviewRow.kind === 'task' || selectedOverviewRow.kind === 'reminder'
                 ? [
-                    ['Project', selectedOverviewRow.meta.split(' · ')[0] || 'None'],
-                    ['Priority', selectedOverviewRow.chips.includes('Focus') ? 'Focus' : 'None'],
-                    ['Assignee', 'Lex'],
-                  ]
+                  ['Project', selectedOverviewRow.meta.split(' · ')[0] || 'None'],
+                  ['Priority', selectedOverviewRow.chips.includes('Focus') ? 'Focus' : 'None'],
+                  ['Assignment', selectedOverviewRow.contextLabel || 'Unassigned'],
+                ]
+                : selectedOverviewRow.kind === 'note'
+                  ? [
+                      ['Actions', '0'],
+                      ['Milestones', '0'],
+                    ]
                 : [
-                    ['Project', 'None'],
-                    ['Actions', '0'],
-                    ['Milestones', '0'],
-                  ],
+                  ['Project', 'None'],
+                  ['Actions', '0'],
+                  ['Milestones', '0'],
+                ],
         },
       ]
     : [];
@@ -2932,7 +3342,12 @@ function DashboardContent() {
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (isOverviewFilterOpen || isOverviewDisplayOpen || isFocusPickerOpen || isNewFocusModalOpen) {
+      if (
+        isOverviewFilterOpen ||
+        isOverviewDisplayOpen ||
+        isFocusPickerOpen ||
+        isOverviewTaskModalOpen
+      ) {
         if (event.key === 'Escape') {
           setIsOverviewFilterOpen(false);
           setIsOverviewDisplayOpen(false);
@@ -2966,7 +3381,7 @@ function DashboardContent() {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [
     isFocusPickerOpen,
-    isNewFocusModalOpen,
+    isOverviewTaskModalOpen,
     isOverviewDisplayOpen,
     isOverviewFilterOpen,
     selectedOverviewRow,
@@ -2975,33 +3390,40 @@ function DashboardContent() {
   ]);
 
   const attemptCloseDashboard = () => {
-    const hasUnsaved = focusDraftTitle.trim().length > 0;
-    if (isSavingFocusTask || hasUnsaved) {
+    const hasUnsaved =
+      overviewTaskTitle.trim().length > 0 ||
+      overviewTaskAssigneeValue.trim().length > 0 ||
+      (overviewTaskMode === 'long_term' && overviewTaskDueDate.trim().length > 0);
+    if (isSavingOverviewTask || hasUnsaved) {
       setShowCloseGuardModal(true);
       return;
     }
     void window.desktopWindow?.closeModule('dashboard');
   };
-  const isDashboardModalOpen = isFocusPickerOpen || isNewFocusModalOpen || showCloseGuardModal;
-
   return (
-    <div className={dashboardTheme.shell} style={{ scrollbarGutter: isDashboardModalOpen ? 'auto' : 'stable' }}>
+    <div className={dashboardTheme.shell} style={{ scrollbarGutter: 'auto' }}>
       <CloseGuardModal
         isOpen={showCloseGuardModal}
-        isSaving={isSavingFocusTask}
-        hasUnsavedChanges={focusDraftTitle.trim().length > 0}
+        isSaving={isSavingOverviewTask}
+        hasUnsavedChanges={
+          overviewTaskTitle.trim().length > 0 ||
+          overviewTaskAssigneeValue.trim().length > 0 ||
+          (overviewTaskMode === 'long_term' && overviewTaskDueDate.trim().length > 0)
+        }
         onCancel={() => setShowCloseGuardModal(false)}
         onCloseWithoutSaving={() => {
           setShowCloseGuardModal(false);
-          setFocusDraftTitle('');
-          setIsNewFocusModalOpen(false);
+          setOverviewTaskTitle('');
+          setOverviewTaskAssigneeValue('');
+          setOverviewTaskDueDate('');
+          setIsOverviewTaskModalOpen(false);
           void window.desktopWindow?.closeModule('dashboard');
         }}
         onRetrySaveAndClose={() => {
           void (async () => {
-            if (isSavingFocusTask) return;
-            if (focusDraftTitle.trim()) {
-              await createNewFocusTask();
+            if (isSavingOverviewTask) return;
+            if (overviewTaskTitle.trim()) {
+              await createOverviewTask();
             }
             setShowCloseGuardModal(false);
             void window.desktopWindow?.closeModule('dashboard');
@@ -3086,7 +3508,7 @@ function DashboardContent() {
 
       <div
         className={`flex-1 min-h-0 overflow-auto ${dashboardTheme.content} px-6 py-8`}
-        style={{ scrollbarGutter: isDashboardModalOpen ? 'auto' : 'stable' }}
+        style={{ scrollbarGutter: 'auto' }}
       >
         <div className="flex h-full min-h-[720px] w-full flex-col rounded-[18px] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-[0_18px_44px_rgba(66,42,24,0.06)]">
           <header className="flex flex-col gap-3 border-b border-[color:var(--ledger-border-subtle)] px-5 py-3.5 lg:flex-row lg:items-end lg:justify-between">
@@ -3214,7 +3636,7 @@ function DashboardContent() {
 
               <button
                 type="button"
-                onClick={() => setIsNewFocusModalOpen(true)}
+                onClick={() => openOverviewTaskModal('focus')}
                 className="inline-flex h-7 items-center gap-1.5 rounded-full bg-[var(--ledger-accent)] px-3 text-[12px] font-semibold text-white transition hover:bg-[var(--ledger-accent-hover)]"
               >
                 <Plus size={13} />
@@ -3288,11 +3710,19 @@ function DashboardContent() {
                             onClick={(event) => {
                               event.stopPropagation();
                               if (group.id === 'Active projects') {
-                                openModule('projects', { kind: 'projects', focusProjectId: '__new__' });
+                                openOverviewCreateProjectModal();
                               } else if (group.id === 'Upcoming') {
                                 openUpcomingQuickCreate('event');
+                              } else if (group.id === 'Recent notes') {
+                                setIsOverviewCreateNoteOpen(true);
+                              } else if (group.id === 'Needs attention') {
+                                openOverviewTaskModal('focus');
+                              } else if (group.id === 'Today') {
+                                openOverviewTaskModal('today');
+                              } else if (group.id === 'Long-term tasks') {
+                                openOverviewTaskModal('long_term');
                               } else {
-                                setIsNewFocusModalOpen(true);
+                                openOverviewTaskModal('focus');
                               }
                             }}
                             className="flex h-6 w-6 items-center justify-center rounded-md text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-card)] hover:text-[var(--ledger-text-primary)] select-none"
@@ -3332,10 +3762,14 @@ function DashboardContent() {
                                   >
                                     {row.icon}
                                   </span>
-                                  <span className="min-w-0">
-                                    <span className="block truncate text-[13px] font-medium text-[var(--ledger-text-primary)]">
-                                      {row.title}
-                                    </span>
+                                  <span className="min-w-0 truncate text-[13px] font-medium text-[var(--ledger-text-primary)]">
+                                    {row.title}
+                                    {row.contextLabel && (
+                                      <span className="ml-2 inline-flex items-center gap-1 text-[11px] font-normal text-[var(--ledger-text-muted)]">
+                                        {row.contextIcon}
+                                        <span>{row.contextLabel}</span>
+                                      </span>
+                                    )}
                                   </span>
                                   <span className="flex items-center gap-2">
                                     <span className="hidden min-w-0 items-center gap-1.5 sm:flex">
@@ -3355,7 +3789,10 @@ function DashboardContent() {
                                       <span className="hidden h-1 w-20 overflow-hidden rounded-full bg-[var(--ledger-border-subtle)] lg:block">
                                         <span
                                           className="block h-full rounded-full bg-[var(--ledger-accent)]"
-                                          style={{ width: `${row.progress}%` }}
+                                          style={{
+                                            width: `${row.progress}%`,
+                                            backgroundColor: row.accent ?? 'var(--ledger-accent)',
+                                          }}
                                         />
                                       </span>
                                     )}
@@ -3577,6 +4014,161 @@ function DashboardContent() {
           </div>
         </div>
       </ModalOverlay>
+      <CreateNoteModal
+        isOpen={isOverviewCreateNoteOpen}
+        onClose={() => setIsOverviewCreateNoteOpen(false)}
+        compactShell
+        onNoteCreated={(note) => {
+          optimisticNotesRef.current = [
+            {
+              id: note.id,
+              title: note.title,
+              content: note.content,
+              updated_at: note.updated_at,
+            },
+            ...optimisticNotesRef.current.filter((item) => item.id !== note.id),
+          ].slice(0, 4);
+          setNotes((current) =>
+            sortNewestFirst([
+              {
+                id: note.id,
+                title: note.title,
+                content: note.content,
+                updated_at: note.updated_at,
+              },
+              ...current.filter((item) => item.id !== note.id),
+            ]).slice(0, 4)
+          );
+          setDashboardRefreshToken((current) => current + 1);
+          window.desktopWindow?.toggleModule('notes', { focusNoteId: note.id });
+        }}
+      />
+      <ModalOverlay
+        isOpen={isOverviewCreateProjectOpen}
+        onClose={closeOverviewCreateProjectModal}
+        backdropBorderRadius="inherit"
+        disablePortal
+        manageWindowChrome={false}
+        classNameContainer="w-full max-w-[420px] overflow-hidden rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-[var(--ledger-shadow)]"
+      >
+        <div className="flex items-start justify-between gap-4 border-b border-[color:var(--ledger-border-subtle)] px-5 py-4">
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-[var(--ledger-text-primary)]">New project</p>
+            <p className="mt-1 text-sm text-[var(--ledger-text-secondary)]">
+              Add a brief, choose a type, assign the lead, and attach context.
+            </p>
+          </div>
+          <ModalCloseButton
+            onClick={closeOverviewCreateProjectModal}
+            ariaLabel="Close new project modal"
+            className="shrink-0"
+          />
+        </div>
+
+        <div className="space-y-4 px-5 py-5">
+          <input
+            ref={overviewProjectNameRef}
+            value={overviewProjectName}
+            onChange={(event) => setOverviewProjectName(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.preventDefault();
+                void createOverviewProject();
+              } else if (event.key === 'Escape') {
+                event.preventDefault();
+                closeOverviewCreateProjectModal();
+              }
+            }}
+            placeholder="Project name"
+            className="h-10 w-full rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 text-sm text-[var(--ledger-text-primary)] outline-none transition placeholder:text-[var(--ledger-placeholder)] focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60"
+          />
+
+          <textarea
+            value={overviewProjectDescription}
+            onChange={(event) => setOverviewProjectDescription(event.target.value)}
+            placeholder="Brief description"
+            rows={3}
+            className="w-full resize-none rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 py-2 text-sm text-[var(--ledger-text-primary)] outline-none transition placeholder:text-[var(--ledger-placeholder)] focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60"
+          />
+
+          <div className="flex flex-wrap items-center gap-2">
+            {overviewProjectTypeOptions.map((option) => {
+              const active = overviewProjectType === option.id;
+              const TypeIcon = option.icon;
+              return (
+                <button
+                  key={option.id}
+                  type="button"
+                  onClick={() => setOverviewProjectType(option.id)}
+                  className={`inline-flex h-8 items-center gap-1.5 rounded-full border px-2.5 text-xs font-medium transition ${
+                    active
+                      ? 'border-[color:var(--ledger-border-strong)] bg-[var(--ledger-surface-hover)] text-[var(--ledger-text-primary)]'
+                      : 'border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]'
+                  }`}
+                >
+                  <TypeIcon size={12} />
+                  {option.label}
+                </button>
+              );
+            })}
+
+            <select
+              value={overviewProjectLeadId}
+              onChange={(event) => setOverviewProjectLeadId(event.target.value)}
+              className="inline-flex h-8 min-w-[144px] items-center rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2.5 text-xs font-medium text-[var(--ledger-text-secondary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60"
+            >
+              <option value="">Working on it</option>
+              {user && (
+                <option value={user.id}>{user.user_metadata?.full_name?.trim() || user.email || 'You'}</option>
+              )}
+              {workspaceMembers
+                .filter((member) => member.user_id !== user?.id)
+                .map((member) => (
+                  <option key={member.user_id} value={member.user_id}>
+                    {member.full_name?.trim() || member.email?.trim() || 'Workspace member'}
+                  </option>
+                ))}
+            </select>
+
+            <select
+              value={overviewProjectOwnerTeamId}
+              onChange={(event) => setOverviewProjectOwnerTeamId(event.target.value)}
+              className="inline-flex h-8 min-w-[160px] items-center rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2.5 text-xs font-medium text-[var(--ledger-text-secondary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60"
+            >
+              <option value="">No owner team</option>
+              {isLoadingOverviewProjectTeams ? (
+                <option value="" disabled>
+                  Loading teams...
+                </option>
+              ) : (
+                overviewProjectTeams.map((team) => (
+                  <option key={team.id} value={team.id}>
+                    {team.name}
+                  </option>
+                ))
+              )}
+            </select>
+          </div>
+
+          <div className="flex items-center justify-end gap-2 border-t border-[color:var(--ledger-border-subtle)] pt-4">
+            <button
+              type="button"
+              onClick={closeOverviewCreateProjectModal}
+              className="rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 py-1.5 text-xs font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => void createOverviewProject()}
+              disabled={!overviewProjectName.trim() || isSavingOverviewProject}
+              className="inline-flex items-center gap-1.5 rounded-md bg-[var(--ledger-accent)] px-3 py-1.5 text-xs font-medium text-white transition hover:bg-[var(--ledger-accent-hover)] disabled:opacity-60"
+            >
+              {isSavingOverviewProject ? 'Creating...' : 'Create project'}
+            </button>
+          </div>
+        </div>
+      </ModalOverlay>
       <ModalOverlay
         isOpen={isFocusPickerOpen}
         onClose={() => setIsFocusPickerOpen(false)}
@@ -3633,11 +4225,8 @@ function DashboardContent() {
         </div>
       </ModalOverlay>
       <ModalOverlay
-        isOpen={isNewFocusModalOpen}
-        onClose={() => {
-          setIsNewFocusModalOpen(false);
-          setFocusDraftTitle('');
-        }}
+        isOpen={isOverviewTaskModalOpen}
+        onClose={closeOverviewTaskModal}
         backdropBorderRadius="inherit"
         disablePortal
         manageWindowChrome={false}
@@ -3645,59 +4234,139 @@ function DashboardContent() {
       >
         <div className="flex items-start justify-between gap-4 border-b border-[color:var(--ledger-border-subtle)] px-5 py-4">
           <div className="min-w-0">
-            <p className="text-sm font-semibold text-[var(--ledger-text-primary)]">New focus</p>
+            <p className="text-sm font-semibold text-[var(--ledger-text-primary)]">
+              {overviewTaskMode === 'focus'
+                ? 'New focus'
+                : overviewTaskMode === 'today'
+                  ? 'New today task'
+                  : 'New long-term task'}
+            </p>
             <p className="mt-1 text-sm text-[var(--ledger-text-secondary)]">
-              Create a new priority and keep it in Today.
+              {overviewTaskMode === 'focus'
+                ? 'Create a priority for the day and assign it if needed.'
+                : overviewTaskMode === 'today'
+                  ? 'Create a short-term task for today.'
+                  : 'Create a longer horizon task with an optional end date.'}
             </p>
           </div>
-          <ModalCloseButton
-            onClick={() => {
-              setIsNewFocusModalOpen(false);
-              setFocusDraftTitle('');
-            }}
-            ariaLabel="Close new focus modal"
-          />
+          <ModalCloseButton onClick={closeOverviewTaskModal} ariaLabel="Close task modal" />
         </div>
-        <div className="space-y-3 p-5">
+        <div className="space-y-4 p-5">
+          <div className="flex flex-wrap gap-2">
+            {[
+              { id: 'focus', label: 'Focus' },
+              { id: 'today', label: 'Today' },
+              { id: 'long_term', label: 'Long-term' },
+            ].map((option) => (
+              <button
+                key={option.id}
+                type="button"
+                onClick={() => {
+                  setOverviewTaskMode(option.id as typeof overviewTaskMode);
+                  if (option.id !== 'long_term') {
+                    setOverviewTaskDueDate('');
+                  }
+                }}
+                className={
+                  option.id === overviewTaskMode
+                    ? 'rounded-full border border-[color:var(--ledger-border-strong)] bg-[var(--ledger-surface-hover)] px-3 py-1.5 text-xs font-medium text-[var(--ledger-text-primary)]'
+                    : 'rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3 py-1.5 text-xs font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]'
+                }
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
           <input
-            value={focusDraftTitle}
-            onChange={(event) => setFocusDraftTitle(event.target.value)}
+            ref={overviewTaskTitleRef}
+            value={overviewTaskTitle}
+            onChange={(event) => setOverviewTaskTitle(event.target.value)}
             onKeyDown={(event) => {
               if (event.key === 'Enter') {
                 event.preventDefault();
-                void createNewFocusTask();
+                void createOverviewTask();
               }
               if (event.key === 'Escape') {
                 event.preventDefault();
-                setIsNewFocusModalOpen(false);
-                setFocusDraftTitle('');
+                closeOverviewTaskModal();
               }
             }}
-            placeholder="e.g. Submit posters for critique file"
-            className="w-full rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 py-2 text-sm text-[var(--ledger-text-primary)] outline-none focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60"
+            placeholder="Task title"
+            className="w-full rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 py-2 text-sm text-[var(--ledger-text-primary)] outline-none transition focus:border-[color:var(--ledger-border-strong)]"
           />
+          <div className={overviewTaskMode === 'long_term' ? 'grid grid-cols-1 gap-3 sm:grid-cols-2' : 'grid grid-cols-1 gap-3'}>
+            {overviewTaskMode === 'long_term' ? (
+              <label className="space-y-1">
+                <span className="text-xs font-medium text-[var(--ledger-text-secondary)]">End date</span>
+                <input
+                  type="date"
+                  value={overviewTaskDueDate}
+                  onChange={(event) => setOverviewTaskDueDate(event.target.value)}
+                  className="w-full rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 py-2 text-sm text-[var(--ledger-text-primary)] outline-none transition focus:border-[color:var(--ledger-border-strong)]"
+                />
+              </label>
+            ) : null}
+            <label className="space-y-1">
+              <span className="text-xs font-medium text-[var(--ledger-text-secondary)]">
+                Assign to
+              </span>
+              <select
+                value={overviewTaskAssigneeValue}
+                onChange={(event) => setOverviewTaskAssigneeValue(event.target.value)}
+                className="w-full rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 py-2 text-sm text-[var(--ledger-text-primary)] outline-none transition focus:border-[color:var(--ledger-border-strong)]"
+              >
+                <option value="">Unassigned</option>
+                <optgroup label="People">
+                  {user?.id ? (
+                    <option value={`user:${user.id}`}>
+                      {getWorkspaceMemberLabel(user.id) || 'Me'}
+                    </option>
+                  ) : null}
+                  {workspaceMembers
+                    .filter((member) => member.user_id !== user?.id)
+                    .map((member) => (
+                      <option key={member.user_id} value={`user:${member.user_id}`}>
+                        {member.full_name?.trim() || member.email?.trim() || 'Unknown'}
+                      </option>
+                    ))}
+                </optgroup>
+                <optgroup label="Teams">
+                  {workspaceTeams.map((team) => (
+                    <option key={team.id} value={`team:${team.id}`}>
+                      {team.name}
+                    </option>
+                  ))}
+                </optgroup>
+              </select>
+            </label>
+          </div>
           <p className="text-sm text-[var(--ledger-text-secondary)]">
-            This creates a Today task and marks it as a focus priority.
+            {overviewTaskMode === 'focus'
+              ? 'Focus items appear in Today and can be assigned to a person or team.'
+              : overviewTaskMode === 'today'
+                ? 'Short-term tasks stay in Today and can still be assigned.'
+                : 'Long-term tasks can carry an end date and belong to a person or team.'}
           </p>
         </div>
         <div className="flex items-center justify-end gap-2 border-t border-[color:var(--ledger-border-subtle)] px-5 py-4">
           <button
             type="button"
-            onClick={() => {
-              setIsNewFocusModalOpen(false);
-              setFocusDraftTitle('');
-            }}
+            onClick={closeOverviewTaskModal}
             className="rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3 py-1.5 text-sm font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
           >
             Cancel
           </button>
           <button
             type="button"
-            onClick={() => void createNewFocusTask()}
-            disabled={!focusDraftTitle.trim() || isSavingFocusTask || focusTasks.length >= 3}
+            onClick={() => void createOverviewTask()}
+            disabled={!overviewTaskTitle.trim() || isSavingOverviewTask}
             className="rounded-lg bg-[var(--ledger-accent)] px-3 py-1.5 text-sm font-medium text-white transition hover:bg-[var(--ledger-accent-hover)] disabled:opacity-50"
           >
-            Add focus
+            {overviewTaskMode === 'focus'
+              ? 'Add focus'
+              : overviewTaskMode === 'today'
+                ? 'Add today task'
+                : 'Add long-term task'}
           </button>
         </div>
       </ModalOverlay>
@@ -3707,7 +4376,7 @@ function DashboardContent() {
         backdropBorderRadius="inherit"
         disablePortal
         manageWindowChrome={false}
-        classNameContainer="w-full max-w-[560px] overflow-hidden rounded-2xl border border-[#E2D4C4] bg-[#FFF8F2] shadow-xl"
+        classNameContainer="w-full max-w-[420px] overflow-hidden rounded-2xl border border-[#E2D4C4] bg-[#FFF8F2] shadow-xl"
       >
         <div className="flex items-start justify-between gap-4 border-b border-[#E8DDD4] px-5 py-4">
           <div className="min-w-0">

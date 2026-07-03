@@ -83,7 +83,7 @@ export const ModalOverlay = ({
 
   const overlay = (
     <div
-      className={`${disablePortal ? 'absolute' : 'fixed'} inset-0 z-[9999] isolate ${classNameBackdrop}`}
+      className={`${disablePortal ? 'absolute' : 'fixed'} inset-0 z-9999 isolate ${classNameBackdrop}`}
       style={wrapperStyle}
     >
       <div

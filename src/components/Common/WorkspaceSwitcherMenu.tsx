@@ -544,18 +544,18 @@ export const WorkspaceSwitcherMenu = ({ variant = 'sidebar', compact = false }: 
                           type="button"
                           data-switcher-subrow="true"
                           onClick={() => void selectWorkspace(workspace.id)}
-                          className={`flex min-h-9 w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-accent)]/20 ${
+                          className={`flex min-h-8 w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-accent)]/20 ${
                             isActive
-                              ? 'bg-[var(--ledger-surface-hover)] text-[var(--ledger-text-primary)]'
+                              ? 'bg-[color:rgba(255,95,64,0.06)] text-[var(--ledger-text-primary)]'
                               : 'text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]'
                           }`}
                         >
-                          <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-[color:rgba(255,95,64,0.12)] text-[10px] font-semibold text-[var(--ledger-accent)]">
+                          <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-md bg-[color:rgba(255,95,64,0.1)] text-[9px] font-semibold text-[var(--ledger-accent)]">
                             {getWorkspaceInitials(workspace.name)}
                           </span>
                           <span className="min-w-0 flex-1">
-                            <span className="block truncate text-sm font-medium">{workspace.name}</span>
-                            <span className="block truncate text-[11px] text-[var(--ledger-text-muted)]">
+                            <span className="block truncate text-[13px] font-medium leading-4">{workspace.name}</span>
+                            <span className="block truncate text-[10px] leading-4 text-[var(--ledger-text-muted)]">
                               {getWorkspaceLabel(workspace)}
                             </span>
                           </span>

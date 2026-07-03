@@ -1,5 +1,4 @@
 import {
-  BriefcaseBusiness,
   Bell,
   CalendarDays,
   Check,
@@ -8,7 +7,6 @@ import {
   ChevronRight,
   Clock3,
   CircleDot,
-  Code2,
   FileText,
   Flag,
   Folder,
@@ -18,15 +16,12 @@ import {
   Pause,
   Plus,
   Play,
-  Palette,
   Search,
   CheckCircle2,
-  Sparkles,
   Loader2,
   Trash2,
   Users,
   X,
-  UserRound,
 } from 'lucide-react';
 import {
   useCallback,
@@ -58,6 +53,11 @@ import { CloseGuardModal } from '../Common/CloseGuardModal';
 import { ModalCloseButton } from '../Common/ModalCloseButton';
 import { SkeletonProjectCard, SkeletonTaskItem } from '../Common/Skeleton';
 import { useViewportWidth } from '../../hooks/useViewportWidth';
+import {
+  getProjectTypeOption,
+  projectTypeOptions,
+  type ProjectTypeKind,
+} from '../../utils/projectTypes';
 
 type ProjectRow = {
   id: string;
@@ -515,64 +515,6 @@ type ProjectDraft = {
   projectType: ProjectTypeKind;
   leadId: string;
 };
-
-type ProjectTypeKind = 'code' | 'design' | 'personal' | 'ops' | 'writing' | 'other';
-
-type ProjectTypeOption = {
-  id: ProjectTypeKind;
-  label: string;
-  description: string;
-  color: string;
-  icon: typeof Code2;
-};
-
-const projectTypeOptions: ProjectTypeOption[] = [
-  {
-    id: 'code',
-    label: 'Code',
-    description: 'Engineering and product work',
-    color: '#3B82F6',
-    icon: Code2,
-  },
-  {
-    id: 'design',
-    label: 'Design',
-    description: 'Graphic and visual work',
-    color: '#FF5F40',
-    icon: Palette,
-  },
-  {
-    id: 'personal',
-    label: 'Personal',
-    description: 'Life admin and personal goals',
-    color: '#22C55E',
-    icon: UserRound,
-  },
-  {
-    id: 'ops',
-    label: 'Ops',
-    description: 'Execution and coordination',
-    color: '#F59E0B',
-    icon: BriefcaseBusiness,
-  },
-  {
-    id: 'writing',
-    label: 'Writing',
-    description: 'Docs, copy, and content',
-    color: '#14B8A6',
-    icon: FileText,
-  },
-  {
-    id: 'other',
-    label: 'Other',
-    description: 'General project work',
-    color: '#6B7280',
-    icon: Sparkles,
-  },
-];
-
-const getProjectTypeOption = (value: string | null | undefined) =>
-  projectTypeOptions.find((option) => option.id === value) ?? projectTypeOptions[5];
 
 export const ProjectsWindow = () => {
   const { user } = useAuthContext();
@@ -4476,6 +4418,7 @@ export const ProjectsWindow = () => {
                       0,
                       Math.min(100, Number(project.completeness) || 0)
                     );
+                    const ProjectTypeIcon = getProjectTypeOption(project.project_type).icon;
                     const stats = projectTaskStats.get(project.id) ?? {
                       active: 0,
                       completed: 0,
@@ -4496,10 +4439,9 @@ export const ProjectsWindow = () => {
                         className="grid w-full grid-cols-[minmax(260px,1.5fr)_120px_140px_minmax(150px,0.9fr)_minmax(180px,1fr)] gap-2 px-4 py-2.5 text-left transition hover:bg-[var(--ledger-surface-hover)]"
                       >
                         <span className="flex min-w-0 items-start gap-2">
-                          <span
-                            className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full"
-                            style={{ backgroundColor: project.color || '#FF5F40' }}
-                          />
+                          <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] text-[var(--ledger-text-secondary)]">
+                            <ProjectTypeIcon size={12} style={{ color: project.color || '#FF5F40' }} />
+                          </span>
                           <span className="min-w-0">
                             <span className="block truncate text-sm font-semibold text-[var(--ledger-text-primary)]">
                               {project.name}
@@ -4588,6 +4530,7 @@ export const ProjectsWindow = () => {
                                 <div className="space-y-1">
                                   {group.projects.map((project) => {
                                     const semantic = parseProjectStatus(String(project.status));
+                                    const ProjectTypeIcon = getProjectTypeOption(project.project_type).icon;
                                     const stats = projectTaskStats.get(project.id) ?? {
                                       active: 0,
                                       completed: 0,
@@ -4604,10 +4547,9 @@ export const ProjectsWindow = () => {
                                         className="group w-full rounded-lg px-2 py-1.5 text-left transition hover:bg-[var(--ledger-surface-hover)]"
                                       >
                                         <div className="flex items-start gap-2">
-                                          <span
-                                            className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full"
-                                            style={{ backgroundColor: project.color || '#FF5F40' }}
-                                          />
+                                                  <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] text-[var(--ledger-text-secondary)]">
+                                                    <ProjectTypeIcon size={12} style={{ color: project.color || '#FF5F40' }} />
+                                                  </span>
                                           <div className="min-w-0 flex-1">
                                             <p className="truncate text-[13px] font-semibold text-[var(--ledger-text-primary)]">
                                               {project.name}
@@ -4634,24 +4576,32 @@ export const ProjectsWindow = () => {
                                   Needs dates
                                 </p>
                                 <div className="space-y-1">
-                                  {datelessProjects.map((project) => (
-                                    <button
-                                      key={project.id}
-                                      type="button"
-                                      onClick={() => void selectProject(project)}
-                                      onContextMenu={(event) =>
-                                        handleTimelineProjectContextMenu(event, project.id)
-                                      }
-                                      className="w-full rounded-lg px-2 py-1.5 text-left transition hover:bg-[var(--ledger-surface-hover)]"
-                                    >
-                                      <p className="truncate text-[13px] font-semibold text-[var(--ledger-text-primary)]">
-                                        {project.name}
-                                      </p>
-                                      <p className="mt-0.5 text-[11px] text-[var(--ledger-text-muted)]">
-                                        No dates set · Add start or due date
-                                      </p>
-                                    </button>
-                                  ))}
+                                  {datelessProjects.map((project) => {
+                                    const ProjectTypeIcon = getProjectTypeOption(project.project_type).icon;
+                                    return (
+                                      <button
+                                        key={project.id}
+                                        type="button"
+                                        onClick={() => void selectProject(project)}
+                                        onContextMenu={(event) =>
+                                          handleTimelineProjectContextMenu(event, project.id)
+                                        }
+                                        className="w-full rounded-lg px-2 py-1.5 text-left transition hover:bg-[var(--ledger-surface-hover)]"
+                                      >
+                                        <div className="flex items-center gap-2">
+                                          <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] text-[var(--ledger-text-secondary)]">
+                                            <ProjectTypeIcon size={11} style={{ color: project.color || '#FF5F40' }} />
+                                          </span>
+                                          <p className="truncate text-[13px] font-semibold text-[var(--ledger-text-primary)]">
+                                            {project.name}
+                                          </p>
+                                        </div>
+                                        <p className="mt-0.5 text-[11px] text-[var(--ledger-text-muted)]">
+                                          No dates set · Add start or due date
+                                        </p>
+                                      </button>
+                                    );
+                                  })}
                                 </div>
                               </div>
                             )}
@@ -5026,18 +4976,22 @@ export const ProjectsWindow = () => {
                                     event.stopPropagation();
                                     void selectProject(project);
                                   }}
-                                  onContextMenu={(event) =>
-                                    handleTimelineProjectRowContextMenu(event, project.id)
-                                  }
-                                  style={{
-                                    left: `${Math.max(0, Math.min(94, lane.left))}%`,
-                                    top: `${labelTop - (barTop - 52)}px`,
-                                  }}
-                                >
-                                  <span
-                                    className="h-1.5 w-1.5 rounded-full"
-                                    style={{ backgroundColor: project.color || '#FF5F40' }}
-                                  />
+                                    onContextMenu={(event) =>
+                                      handleTimelineProjectRowContextMenu(event, project.id)
+                                    }
+                                    style={{
+                                      left: `${Math.max(0, Math.min(94, lane.left))}%`,
+                                      top: `${labelTop - (barTop - 52)}px`,
+                                    }}
+                                  >
+                                  {(() => {
+                                    const ProjectTypeIcon = getProjectTypeOption(project.project_type).icon;
+                                    return (
+                                      <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] text-[var(--ledger-text-secondary)]">
+                                        <ProjectTypeIcon size={11} style={{ color: project.color || '#FF5F40' }} />
+                                      </span>
+                                    );
+                                  })()}
                                   <span className="truncate text-[13px] font-semibold text-[var(--ledger-text-secondary)]">
                                     {project.name}
                                   </span>
@@ -5096,7 +5050,7 @@ export const ProjectsWindow = () => {
   return (
     <div
       className="relative flex h-screen flex-col overflow-hidden rounded-3xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] text-[var(--ledger-text-primary)] shadow-none"
-      style={{ scrollbarGutter: isLinkNoteModalOpen || showCloseGuardModal ? 'auto' : 'stable' }}
+      style={{ scrollbarGutter: 'auto' }}
     >
       <CloseGuardModal
         isOpen={showCloseGuardModal}

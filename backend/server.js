@@ -129,6 +129,8 @@ const rateLimit = (scope) => (req, res, next) => {
   rateBuckets.set(bucketKey, bucket);
 
   if (bucket.count > RATE_LIMITS[scope].max) {
+    const retryAfterSeconds = Math.max(1, Math.ceil((bucket.resetAt - now) / 1000));
+    res.setHeader('Retry-After', String(retryAfterSeconds));
     return res.status(429).json({ error: 'Too many requests. Slow down and try again.' });
   }
 

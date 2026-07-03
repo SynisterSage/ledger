@@ -15,16 +15,17 @@ import {
   Trash2,
   Search,
   Inbox,
-  Circle,
   CheckSquare2,
   FileText,
   FolderKanban,
   Keyboard,
   Link2,
   Milestone,
+  Map as MapIcon,
   Plug2,
   UserPlus,
   Users,
+  Zap,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
@@ -37,6 +38,7 @@ import { useWorkspaceRealtimeRefresh } from '../../hooks/useWorkspaceRealtimeRef
 import { SkeletonList } from '../Common/Skeleton';
 import { WorkspaceSwitcherMenu } from '../Common/WorkspaceSwitcherMenu';
 import { sidebarTheme } from './sidebarTheme';
+import { getProjectTypeOption } from '../../utils/projectTypes';
 
 type FocusItem = {
   id: string;
@@ -309,6 +311,7 @@ export const ExpandedSidebar = ({
       status: string;
       completeness: number;
       color?: string;
+      project_type?: string | null;
       start_date?: string | null;
       end_date?: string | null;
     }>
@@ -665,6 +668,7 @@ export const ExpandedSidebar = ({
               status: string;
               completeness: number;
               color?: string;
+              project_type?: string | null;
               start_date?: string | null;
               end_date?: string | null;
             }>
@@ -1694,18 +1698,19 @@ export const ExpandedSidebar = ({
     setIsCreatingProject(true);
     try {
       const data = await api.createProject(name);
-      const createdProject = {
-        ...(data as {
-          id: string;
-          name: string;
-          status: string;
-          completeness: number;
-          color?: string;
-          start_date?: string | null;
-          end_date?: string | null;
-        }),
-        status: normalizeProjectStatus((data as { status: string }).status),
-      };
+        const createdProject = {
+          ...(data as {
+            id: string;
+            name: string;
+            status: string;
+            completeness: number;
+            color?: string;
+            project_type?: string | null;
+            start_date?: string | null;
+            end_date?: string | null;
+          }),
+          status: normalizeProjectStatus((data as { status: string }).status),
+        };
       setProjects((prev) => {
         const next = prev.filter(
           (project) =>
@@ -2009,7 +2014,9 @@ export const ExpandedSidebar = ({
                         onClick={() => void toggleCompleteTodayItem(item.id)}
                         className="flex w-full items-start gap-2 rounded-xl px-2 py-2 text-left transition hover:bg-[var(--ledger-surface-muted)]"
                       >
-                        <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-[var(--ledger-border-subtle)]" />
+                        <span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center text-[var(--ledger-text-muted)]">
+                          {item.kind === 'reminder' ? <Bell size={13} className="shrink-0" /> : <Zap size={13} className="shrink-0" />}
+                        </span>
                         <span className="min-w-0">
                           <span className="block truncate text-sm text-[var(--ledger-text-primary)]">{item.title}</span>
                           <span className="block truncate text-[11px] text-[var(--ledger-text-muted)]">
@@ -2219,7 +2226,7 @@ export const ExpandedSidebar = ({
                           className="group flex w-full items-start gap-2 rounded-lg px-2 py-1.5 text-left transition hover:bg-[var(--ledger-surface-muted)]"
                         >
                           <span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center text-[var(--ledger-text-muted)]">
-                            <Circle size={13} className="shrink-0" />
+                            <MapIcon size={13} className="shrink-0" />
                           </span>
                           <div className="min-w-0 flex-1">
                             <div className="truncate text-[12px] leading-4 text-[var(--ledger-text-primary)]">
@@ -2317,6 +2324,258 @@ export const ExpandedSidebar = ({
                 </div>
               </div>
             )}
+
+            <section className="space-y-1">
+              <button
+                type="button"
+                onClick={toggleTodayCollapsed}
+                className={`flex h-9 w-full items-center justify-between gap-3 rounded-xl px-2.5 text-left text-[13px] font-medium transition ${
+                  todayCollapsed
+                    ? 'text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]'
+                    : 'bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-primary)]'
+                }`}
+              >
+                <span className="flex min-w-0 items-center gap-2.5">
+                  <ClipboardCheck size={15} className="shrink-0 text-[var(--ledger-text-muted)]" />
+                  <span className="truncate">Today</span>
+                </span>
+                <span className="flex shrink-0 items-center gap-2 text-[11px] text-[var(--ledger-text-muted)]">
+                  <span>{todayTotalCount > 0 ? `${completedToday.length}/${todayTotalCount}` : '0/0'}</span>
+                  <ChevronDown
+                    size={14}
+                    className={`transition-transform ${todayCollapsed ? 'rotate-180' : ''}`}
+                  />
+                </span>
+              </button>
+
+              {!todayCollapsed && (
+                <div className="space-y-0.5 pl-1">
+                  {isLoadingToday && todayItems.length === 0 && completedToday.length === 0 ? (
+                    <SkeletonList />
+                  ) : (
+                    <>
+                      {visibleTodayItems.length > 0 ? (
+                        <div className="space-y-0.5">
+                          {visibleTodayItems.map((item) => (
+                            <div
+                              key={item.id}
+                              role="button"
+                              tabIndex={0}
+                              onContextMenu={(e) => {
+                                e.preventDefault();
+                                setContextMenu({
+                                  type: 'today-active',
+                                  id: item.id,
+                                  kind: item.kind,
+                                  x: e.clientX,
+                                  y: e.clientY,
+                                });
+                              }}
+                              onClick={() =>
+                                void window.desktopWindow?.toggleModule('dashboard', {
+                                  focusTaskId: item.id,
+                                })
+                              }
+                              onKeyDown={(event) => {
+                                if (event.key !== 'Enter' && event.key !== ' ') return;
+                                event.preventDefault();
+                                void window.desktopWindow?.toggleModule('dashboard', {
+                                  focusTaskId: item.id,
+                                });
+                              }}
+                              className="group flex w-full items-start gap-2 rounded-lg px-2 py-1.5 text-left transition hover:bg-[var(--ledger-surface-muted)]"
+                            >
+                              <button
+                                type="button"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  void toggleCompleteTodayItem(item.id);
+                                }}
+                                className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center text-[var(--ledger-text-muted)] transition hover:text-[var(--ledger-text-primary)]"
+                                title="Mark complete"
+                              >
+                                {item.kind === 'reminder' ? (
+                                  <Bell size={13} className="shrink-0" />
+                                ) : (
+                                  <Zap size={13} className="shrink-0" />
+                                )}
+                              </button>
+                              <div className="min-w-0 flex-1">
+                                <div className="truncate text-[12px] leading-4 text-[var(--ledger-text-primary)]">
+                                  {item.title}
+                                </div>
+                                <div className="mt-0.5 flex min-w-0 items-center gap-1.5 truncate text-[10px] text-[var(--ledger-text-muted)]">
+                                  <span
+                                    className="h-1.5 w-1.5 shrink-0 rounded-full"
+                                    style={{
+                                      backgroundColor: item.workspace_color || 'var(--ledger-border-subtle)',
+                                    }}
+                                  />
+                                  <span className="truncate">
+                                    {item.project_name || item.workspace_name || 'Workspace'}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                          {todayItems.length > visibleTodayItems.length && (
+                            <button
+                              type="button"
+                              onClick={() => void window.desktopWindow?.toggleModule('dashboard')}
+                              className="w-full rounded-lg px-2 py-1 text-left text-[11px] font-medium text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]"
+                            >
+                              View all today
+                            </button>
+                          )}
+                        </div>
+                      ) : (
+                        <p className="px-2 py-1 text-[11px] text-[var(--ledger-text-muted)]">
+                          Nothing for today.
+                        </p>
+                      )}
+
+                      {todayAddRowOpen ? (
+                        <div className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 transition hover:bg-[var(--ledger-surface-muted)]">
+                          <input
+                            ref={todayAddInputRef}
+                            value={todayQuickDraft}
+                            onChange={(e) => setTodayQuickDraft(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' || e.key === '+') {
+                                e.preventDefault();
+                                void saveTodayQuickTask();
+                              }
+                              if (e.key === 'Escape' && !todayQuickDraft.trim()) {
+                                e.preventDefault();
+                                setTodayQuickDraft('');
+                                setTodayAddRowOpen(false);
+                              }
+                            }}
+                            onBlur={() => {
+                              if (!todayQuickDraft.trim()) {
+                                setTodayQuickDraft('');
+                                setTodayAddRowOpen(false);
+                              }
+                            }}
+                            placeholder="Add task for today..."
+                            className="min-w-0 flex-1 bg-transparent px-0 py-0.5 text-[12px] leading-4 text-[var(--ledger-text-primary)] placeholder:text-[var(--ledger-placeholder)] focus:outline-none"
+                            disabled={todayQuickSaving || isLoadingToday}
+                          />
+                          <button
+                            type="button"
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => void saveTodayQuickTask()}
+                            className="inline-flex h-6 items-center justify-center rounded-full px-2 text-[11px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] disabled:opacity-60"
+                            disabled={todayQuickSaving || isLoadingToday || !todayQuickDraft.trim()}
+                            aria-label="Add task"
+                          >
+                            +
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setTodayAddRowOpen(true)}
+                          className="flex h-8 w-full items-center gap-2 rounded-lg px-2 text-left text-[12px] text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]"
+                        >
+                          <Plus size={13} className="shrink-0" />
+                          <span className="truncate">Add task</span>
+                        </button>
+                      )}
+
+                      {completedToday.length > 0 && (
+                        <div className="space-y-0.5 pt-0.5">
+                          <button
+                            type="button"
+                            onClick={() => setCompletedTodayExpanded((prev) => !prev)}
+                            className="flex h-8 w-full items-center justify-between rounded-lg px-2 text-left text-[12px] text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]"
+                          >
+                            <span>Completed · {completedToday.length}</span>
+                            <ChevronDown
+                              size={14}
+                              className={`shrink-0 transition-transform ${
+                                completedTodayExpanded ? 'rotate-180' : ''
+                              }`}
+                            />
+                          </button>
+                          {completedTodayExpanded && (
+                            <div className="space-y-0.5">
+                              {visibleCompletedToday.map((item) => (
+                                <div
+                                  key={item.id}
+                                  role="button"
+                                  tabIndex={0}
+                                  onContextMenu={(e) => {
+                                    e.preventDefault();
+                                    setContextMenu({
+                                      type: 'today-completed',
+                                      id: item.id,
+                                      kind: item.kind,
+                                      x: e.clientX,
+                                      y: e.clientY,
+                                    });
+                                  }}
+                                  onClick={() =>
+                                    void window.desktopWindow?.toggleModule('dashboard', {
+                                      focusTaskId: item.id,
+                                    })
+                                  }
+                                  onKeyDown={(event) => {
+                                    if (event.key !== 'Enter' && event.key !== ' ') return;
+                                    event.preventDefault();
+                                    void window.desktopWindow?.toggleModule('dashboard', {
+                                      focusTaskId: item.id,
+                                    });
+                                  }}
+                                  className="group flex w-full items-start gap-2 rounded-xl px-2 py-1.5 text-left transition hover:bg-[var(--ledger-surface-muted)]"
+                                >
+                                  <button
+                                    type="button"
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      void toggleCompleteTodayItem(item.id);
+                                    }}
+                                    className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center text-[var(--ledger-success)] transition hover:text-[var(--ledger-success)]"
+                                    title="Mark incomplete"
+                                  >
+                                    <Check size={12} />
+                                  </button>
+                                  <div className="min-w-0 flex-1">
+                                    <div className="truncate text-[12px] leading-4 text-[var(--ledger-text-secondary)] line-through decoration-[color:var(--ledger-border-strong)]">
+                                      {item.title}
+                                    </div>
+                                    <div className="mt-0.5 flex min-w-0 items-center gap-1.5 truncate text-[10px] text-[var(--ledger-text-muted)]">
+                                      <span
+                                        className="h-1.5 w-1.5 shrink-0 rounded-full"
+                                        style={{
+                                          backgroundColor: item.workspace_color || 'var(--ledger-border-subtle)',
+                                        }}
+                                      />
+                                      <span className="truncate">
+                                        {item.project_name || item.workspace_name || 'Workspace'}
+                                      </span>
+                                    </div>
+                                  </div>
+                                </div>
+                              ))}
+                              {completedToday.length > visibleCompletedToday.length && (
+                                <button
+                                  type="button"
+                                  onClick={() => void window.desktopWindow?.toggleModule('dashboard')}
+                                  className="w-full rounded-xl px-2 py-1 text-left text-[11px] font-medium text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]"
+                                >
+                                  View all completed
+                                </button>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              )}
+            </section>
 
             <button
               type="button"
@@ -2690,256 +2949,6 @@ export const ExpandedSidebar = ({
           )}
         </section>
 
-        <section className="order-3 space-y-1.5">
-          <section className="space-y-1">
-            <button
-              type="button"
-              onClick={toggleTodayCollapsed}
-              className={`flex h-9 w-full items-center justify-between gap-3 rounded-xl px-2.5 text-left text-[13px] font-medium transition ${
-                todayCollapsed
-                  ? 'text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]'
-                  : 'bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-primary)]'
-              }`}
-            >
-              <span className="flex min-w-0 items-center gap-2.5">
-                <ClipboardCheck size={15} className="shrink-0 text-[var(--ledger-text-muted)]" />
-                <span className="truncate">Today</span>
-              </span>
-              <span className="flex shrink-0 items-center gap-2 text-[11px] text-[var(--ledger-text-muted)]">
-                <span>{todayTotalCount > 0 ? `${completedToday.length}/${todayTotalCount}` : '0/0'}</span>
-                <ChevronDown
-                  size={14}
-                  className={`transition-transform ${todayCollapsed ? 'rotate-180' : ''}`}
-                />
-              </span>
-            </button>
-
-            {!todayCollapsed && (
-              <div className="space-y-0.5 pl-1">
-                {isLoadingToday && todayItems.length === 0 && completedToday.length === 0 ? (
-                  <SkeletonList />
-                ) : (
-                  <>
-                    {visibleTodayItems.length > 0 ? (
-                      <div className="space-y-0.5">
-                        {visibleTodayItems.map((item) => (
-                          <div
-                            key={item.id}
-                            role="button"
-                            tabIndex={0}
-                            onContextMenu={(e) => {
-                              e.preventDefault();
-                              setContextMenu({
-                                type: 'today-active',
-                                id: item.id,
-                                kind: item.kind,
-                                x: e.clientX,
-                                y: e.clientY,
-                              });
-                            }}
-                            onClick={() =>
-                              void window.desktopWindow?.toggleModule('dashboard', {
-                                focusTaskId: item.id,
-                              })
-                            }
-                            onKeyDown={(event) => {
-                              if (event.key !== 'Enter' && event.key !== ' ') return;
-                              event.preventDefault();
-                              void window.desktopWindow?.toggleModule('dashboard', {
-                                focusTaskId: item.id,
-                              });
-                            }}
-                            className="group flex w-full items-start gap-2 rounded-lg px-2 py-1.5 text-left transition hover:bg-[var(--ledger-surface-muted)]"
-                          >
-                            <button
-                              type="button"
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                void toggleCompleteTodayItem(item.id);
-                              }}
-                              className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center text-[var(--ledger-text-muted)] transition hover:text-[var(--ledger-text-primary)]"
-                              title="Mark complete"
-                            >
-                              <Circle size={13} className="shrink-0" />
-                            </button>
-                            <div className="min-w-0 flex-1">
-                              <div className="truncate text-[12px] leading-4 text-[var(--ledger-text-primary)]">
-                                {item.title}
-                              </div>
-                              <div className="mt-0.5 flex min-w-0 items-center gap-1.5 truncate text-[10px] text-[var(--ledger-text-muted)]">
-                                <span
-                                  className="h-1.5 w-1.5 shrink-0 rounded-full"
-                                  style={{
-                                    backgroundColor: item.workspace_color || 'var(--ledger-border-subtle)',
-                                  }}
-                                />
-                                <span className="truncate">
-                                  {item.project_name || item.workspace_name || 'Workspace'}
-                                </span>
-                              </div>
-                            </div>
-                          </div>
-                        ))}
-                        {todayItems.length > visibleTodayItems.length && (
-                          <button
-                            type="button"
-                            onClick={() => void window.desktopWindow?.toggleModule('dashboard')}
-                            className="w-full rounded-lg px-2 py-1 text-left text-[11px] font-medium text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]"
-                          >
-                            View all today
-                          </button>
-                        )}
-                      </div>
-                    ) : (
-                      <p className="px-2 py-1 text-[11px] text-[var(--ledger-text-muted)]">
-                        Nothing for today.
-                      </p>
-                    )}
-
-                    {todayAddRowOpen ? (
-                      <div className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 transition hover:bg-[var(--ledger-surface-muted)]">
-                        <input
-                          ref={todayAddInputRef}
-                          value={todayQuickDraft}
-                          onChange={(e) => setTodayQuickDraft(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter' || e.key === '+') {
-                              e.preventDefault();
-                              void saveTodayQuickTask();
-                            }
-                            if (e.key === 'Escape' && !todayQuickDraft.trim()) {
-                              e.preventDefault();
-                              setTodayQuickDraft('');
-                              setTodayAddRowOpen(false);
-                            }
-                          }}
-                          onBlur={() => {
-                            if (!todayQuickDraft.trim()) {
-                              setTodayQuickDraft('');
-                              setTodayAddRowOpen(false);
-                            }
-                          }}
-                          placeholder="Add task for today..."
-                          className="min-w-0 flex-1 bg-transparent px-0 py-0.5 text-[12px] leading-4 text-[var(--ledger-text-primary)] placeholder:text-[var(--ledger-placeholder)] focus:outline-none"
-                          disabled={todayQuickSaving || isLoadingToday}
-                        />
-                        <button
-                          type="button"
-                          onMouseDown={(e) => e.preventDefault()}
-                          onClick={() => void saveTodayQuickTask()}
-                          className="inline-flex h-6 items-center justify-center rounded-full px-2 text-[11px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] disabled:opacity-60"
-                          disabled={todayQuickSaving || isLoadingToday || !todayQuickDraft.trim()}
-                          aria-label="Add task"
-                        >
-                          +
-                        </button>
-                      </div>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => setTodayAddRowOpen(true)}
-                        className="flex h-8 w-full items-center gap-2 rounded-lg px-2 text-left text-[12px] text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]"
-                      >
-                        <Plus size={13} className="shrink-0" />
-                        <span className="truncate">Add task</span>
-                      </button>
-                    )}
-
-                    {completedToday.length > 0 && (
-                      <div className="space-y-0.5 pt-0.5">
-                        <button
-                          type="button"
-                          onClick={() => setCompletedTodayExpanded((prev) => !prev)}
-                          className="flex h-8 w-full items-center justify-between rounded-lg px-2 text-left text-[12px] text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]"
-                        >
-                          <span>Completed · {completedToday.length}</span>
-                          <ChevronDown
-                            size={14}
-                            className={`shrink-0 transition-transform ${
-                              completedTodayExpanded ? 'rotate-180' : ''
-                            }`}
-                          />
-                        </button>
-                        {completedTodayExpanded && (
-                          <div className="space-y-0.5">
-                            {visibleCompletedToday.map((item) => (
-                              <div
-                                key={item.id}
-                                role="button"
-                                tabIndex={0}
-                                onContextMenu={(e) => {
-                                  e.preventDefault();
-                                  setContextMenu({
-                                    type: 'today-completed',
-                                    id: item.id,
-                                    kind: item.kind,
-                                    x: e.clientX,
-                                    y: e.clientY,
-                                  });
-                                }}
-                                onClick={() =>
-                                  void window.desktopWindow?.toggleModule('dashboard', {
-                                    focusTaskId: item.id,
-                                  })
-                                }
-                                onKeyDown={(event) => {
-                                  if (event.key !== 'Enter' && event.key !== ' ') return;
-                                  event.preventDefault();
-                                  void window.desktopWindow?.toggleModule('dashboard', {
-                                    focusTaskId: item.id,
-                                  });
-                                }}
-                                className="group flex w-full items-start gap-2 rounded-xl px-2 py-1.5 text-left transition hover:bg-[var(--ledger-surface-muted)]"
-                              >
-                                <button
-                                  type="button"
-                                  onClick={(event) => {
-                                    event.stopPropagation();
-                                    void toggleCompleteTodayItem(item.id);
-                                  }}
-                                  className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center text-[var(--ledger-success)] transition hover:text-[var(--ledger-success)]"
-                                  title="Mark incomplete"
-                                >
-                                  <Check size={12} />
-                                </button>
-                                <div className="min-w-0 flex-1">
-                                  <div className="truncate text-[12px] leading-4 text-[var(--ledger-text-secondary)] line-through decoration-[color:var(--ledger-border-strong)]">
-                                    {item.title}
-                                  </div>
-                                  <div className="mt-0.5 flex min-w-0 items-center gap-1.5 truncate text-[10px] text-[var(--ledger-text-muted)]">
-                                    <span
-                                      className="h-1.5 w-1.5 shrink-0 rounded-full"
-                                      style={{
-                                        backgroundColor: item.workspace_color || 'var(--ledger-border-subtle)',
-                                      }}
-                                    />
-                                    <span className="truncate">
-                                      {item.project_name || item.workspace_name || 'Workspace'}
-                                    </span>
-                                  </div>
-                                </div>
-                              </div>
-                            ))}
-                            {completedToday.length > visibleCompletedToday.length && (
-                              <button
-                                type="button"
-                                onClick={() => void window.desktopWindow?.toggleModule('dashboard')}
-                                className="w-full rounded-xl px-2 py-1 text-left text-[11px] font-medium text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]"
-                              >
-                                View all completed
-                              </button>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </>
-                )}
-              </div>
-            )}
-          </section>
-        </section>
-
         <section className="order-4 space-y-2">
           <div className="flex items-center gap-2">
             <button
@@ -2982,6 +2991,7 @@ export const ExpandedSidebar = ({
                   {projects.slice(0, 4).map((project) => {
                     const displayCompleteness = Math.max(0, Math.min(100, Number(project.completeness) || 0));
                     const projectAccent = project.color || 'var(--ledger-accent)';
+                    const ProjectTypeIcon = getProjectTypeOption(project.project_type).icon;
 
                     return (
                       <button
@@ -3006,10 +3016,9 @@ export const ExpandedSidebar = ({
                       >
                         <div className="flex items-center justify-between gap-2">
                           <div className="flex min-w-0 items-center gap-2">
-                            <span
-                              className="h-2 w-2 shrink-0 rounded-full border border-[color:rgba(17,24,39,0.05)]"
-                              style={{ backgroundColor: projectAccent }}
-                            />
+                            <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] text-[var(--ledger-text-secondary)]">
+                              <ProjectTypeIcon size={11} style={{ color: projectAccent }} />
+                            </span>
                             <p className="truncate text-xs font-medium text-[var(--ledger-text-primary)]">
                               {project.name}
                             </p>

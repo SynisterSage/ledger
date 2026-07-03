@@ -17,16 +17,16 @@ const noDragRegionStyle = { WebkitAppRegion: 'no-drag' } as CSSProperties & {
   WebkitAppRegion: 'no-drag';
 };
 const inputClassName =
-  'h-11 w-full rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-input-background)] px-3.5 text-sm text-[var(--ledger-text-primary)] transition placeholder:text-[var(--ledger-placeholder)] focus:border-[color:var(--ledger-border-strong)] focus:outline-none focus:ring-4 focus:ring-[color:var(--ledger-accent)]/10';
+  'h-11 w-full rounded-2xl border border-(--ledger-border-subtle) bg-(--ledger-input-background) px-3.5 text-sm text-(--ledger-text-primary) transition placeholder:text-(--ledger-placeholder) focus:border-(--ledger-border-strong) focus:outline-none focus:ring-4 focus:ring-(--ledger-accent)/10';
 const iconInputClassName =
-  'h-11 w-full rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-input-background)] pl-9 pr-3.5 text-sm text-[var(--ledger-text-primary)] transition placeholder:text-[var(--ledger-placeholder)] focus:border-[color:var(--ledger-border-strong)] focus:outline-none focus:ring-4 focus:ring-[color:var(--ledger-accent)]/10';
+  'h-11 w-full rounded-2xl border border-(--ledger-border-subtle) bg-(--ledger-input-background) pl-9 pr-3.5 text-sm text-(--ledger-text-primary) transition placeholder:text-(--ledger-placeholder) focus:border-(--ledger-border-strong) focus:outline-none focus:ring-4 focus:ring-(--ledger-accent)/10';
 const authFrameClassName =
-  'absolute inset-3 rounded-3xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]';
-const authSurfaceClassName = 'relative z-10 h-full w-full overflow-hidden rounded-3xl bg-[var(--ledger-background)]';
-const authTextPrimaryClassName = 'text-[var(--ledger-text-primary)]';
-const authLabelClassName = 'mb-1.5 block text-xs font-medium text-[var(--ledger-text-secondary)]';
+  'absolute inset-3 rounded-3xl border border-(--ledger-border-subtle) bg-(--ledger-background) shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]';
+const authSurfaceClassName = 'relative z-10 h-full w-full overflow-hidden rounded-3xl bg-(--ledger-background)';
+const authTextPrimaryClassName = 'text-(--ledger-text-primary)';
+const authLabelClassName = 'mb-1.5 block text-xs font-medium text-(--ledger-text-secondary)';
 const authChipClassName =
-  'inline-flex h-8 w-8 items-center justify-center rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]';
+  'inline-flex h-8 w-8 items-center justify-center rounded-full border border-(--ledger-border-subtle) bg-(--ledger-surface-muted) text-(--ledger-text-muted) transition hover:bg-(--ledger-surface-hover) hover:text-(--ledger-text-primary)';
 
 export const LoginForm: React.FC<LoginProps> = ({ onSuccess, notice }) => {
   const [email, setEmail] = useState('');
@@ -180,7 +180,7 @@ export const LoginForm: React.FC<LoginProps> = ({ onSuccess, notice }) => {
 
         {(showPreLoginSplash || isSplashDismissing) && (
           <div
-            className={`absolute inset-0 z-20 bg-[var(--ledger-background)] transition-opacity duration-200 ease-out ${
+            className={`absolute inset-0 z-20 bg-(--ledger-background) transition-opacity duration-200 ease-out ${
               showPreLoginSplash && !isSplashDismissing ? 'opacity-100' : 'pointer-events-none opacity-0'
             }`}
             aria-hidden={!splashOverlayVisible}
@@ -195,10 +195,10 @@ export const LoginForm: React.FC<LoginProps> = ({ onSuccess, notice }) => {
                     <img src="./logo-color.svg" alt="Ledger" className="h-12 w-12" />
                   </div>
                 </div>
-                <p className="mt-5 text-base font-medium tracking-[0.01em] text-[var(--ledger-text-primary)]">
+                <p className="mt-5 text-base font-medium tracking-[0.01em] text-(--ledger-text-primary)">
                   Ledger
                 </p>
-                <p className="mt-1 text-sm text-[var(--ledger-text-muted)]">
+                <p className="mt-1 text-sm text-(--ledger-text-muted)">
                   Preparing your workspace
                 </p>
               </div>
@@ -206,14 +206,14 @@ export const LoginForm: React.FC<LoginProps> = ({ onSuccess, notice }) => {
           </div>
         )}
 
-        <div className="relative z-10 grid h-full min-h-full w-full overflow-hidden bg-[var(--ledger-background)] min-[820px]:grid-cols-[0.42fr_0.58fr]">
+        <div className="relative z-10 grid h-full min-h-full w-full overflow-hidden bg-(--ledger-background) min-[820px]:grid-cols-[0.42fr_0.58fr]">
         <div
           className={`relative hidden overflow-hidden bg-[linear-gradient(180deg,rgba(17,24,39,0.96),rgba(17,24,39,0.88))] min-[820px]:block ${
             prefersReducedMotion ? '' : shouldPlayAuthIntro ? 'ledger-auth-left-enter' : 'opacity-0'
           }`}
         >
           {prefersReducedMotion ? (
-            <div className="flex h-full min-h-full items-center justify-center bg-[var(--ledger-background)]">
+            <div className="flex h-full min-h-full items-center justify-center bg-(--ledger-background)">
               <img src="./logo-color.svg" alt="Ledger" className="h-16 w-16" />
             </div>
           ) : (
@@ -239,7 +239,7 @@ export const LoginForm: React.FC<LoginProps> = ({ onSuccess, notice }) => {
         </div>
 
         <div
-          className={`flex h-full min-h-full items-center justify-center bg-[var(--ledger-background)] px-7 py-10 sm:px-10 min-[820px]:px-16 ${
+          className={`flex h-full min-h-full items-center justify-center bg-(--ledger-background) px-7 py-10 sm:px-10 min-[820px]:px-16 ${
             prefersReducedMotion ? '' : shouldPlayAuthIntro ? 'ledger-auth-pane-enter' : 'opacity-0'
           }`}
         >
@@ -273,7 +273,7 @@ export const LoginForm: React.FC<LoginProps> = ({ onSuccess, notice }) => {
               }`}
             >
               {notice && (
-                <div className="rounded-2xl border border-[color:rgba(245,158,11,0.2)] bg-[color:rgba(245,158,11,0.08)] px-3 py-2 text-xs leading-5 text-[color:#FCD34D]">
+                <div className="rounded-2xl border border-[rgba(245,158,11,0.2)] bg-[rgba(245,158,11,0.08)] px-3 py-2 text-xs leading-5 text-[#FCD34D]">
                   {notice}
                 </div>
               )}
@@ -299,7 +299,7 @@ export const LoginForm: React.FC<LoginProps> = ({ onSuccess, notice }) => {
                 <div className="relative">
                   <Mail
                     size={15}
-                    className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--ledger-text-muted)]"
+                    className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-(--ledger-text-muted)"
                   />
                   <input
                     type="email"
@@ -318,7 +318,7 @@ export const LoginForm: React.FC<LoginProps> = ({ onSuccess, notice }) => {
                 <div className="relative">
                   <Lock
                     size={15}
-                    className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--ledger-text-muted)]"
+                    className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-(--ledger-text-muted)"
                   />
                   <input
                     type={showPassword ? 'text' : 'password'}
@@ -333,7 +333,7 @@ export const LoginForm: React.FC<LoginProps> = ({ onSuccess, notice }) => {
                     type="button"
                     aria-label={showPassword ? 'Hide password' : 'Show password'}
                     onClick={() => setShowPassword((value) => !value)}
-                    className="absolute right-3.5 top-1/2 inline-flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-full text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+                    className="absolute right-3.5 top-1/2 inline-flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-full text-(--ledger-text-muted) transition hover:bg-(--ledger-surface-hover) hover:text-(--ledger-text-primary)"
                   >
                     {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
                   </button>
@@ -355,7 +355,7 @@ export const LoginForm: React.FC<LoginProps> = ({ onSuccess, notice }) => {
                   onClick={() => {
                     setIsSignUp(!isSignUp);
                   }}
-                  className="text-sm font-medium text-[var(--ledger-text-secondary)] transition hover:text-[var(--ledger-text-primary)]"
+                  className="text-sm font-medium text-(--ledger-text-secondary) transition hover:text-(--ledger-text-primary)"
                 >
                   {isSignUp ? 'Already have an account? Sign in' : "Don't have an account? Sign up"}
                 </button>

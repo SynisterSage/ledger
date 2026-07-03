@@ -264,7 +264,7 @@ export async function performMobileTodayAction({
         const start = item.startsAt ? new Date(item.startsAt) : new Date();
         const end = item.endsAt ? new Date(item.endsAt) : null;
         const nextStart = shiftDateLike(start.toISOString(), 1) ?? start;
-        const nextEnd = end ? shiftDateLike(end.toISOString(), 1) ?? end : new Date(nextStart.getTime() + 60 * 60 * 1000);
+        const nextEnd = ? shiftDateLike(end.toISOString(), 1) ?? : new Date(nextStart.getTime() + 60 * 60 * 1000);
         await mobileRequest(`/api/events/${item.sourceId}`, {
           method: 'PATCH',
           headers,

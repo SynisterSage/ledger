@@ -9,6 +9,7 @@ interface CreateNoteModalProps {
   isOpen: boolean;
   onClose: () => void;
   defaultSectionId?: string | null;
+  compactShell?: boolean;
   onNoteCreated?: (note: {
     id: string;
     title: string;
@@ -86,6 +87,7 @@ export const CreateNoteModal = ({
   isOpen,
   onClose,
   defaultSectionId = null,
+  compactShell = false,
   onNoteCreated,
 }: CreateNoteModalProps) => {
   const api = useApi();
@@ -249,7 +251,11 @@ export const CreateNoteModal = ({
       backdropBorderRadius="inherit"
       disablePortal
       manageWindowChrome={false}
-      classNameContainer="w-full max-w-[760px] overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-lg"
+      classNameContainer={`w-full overflow-hidden rounded-2xl border shadow-lg ${
+        compactShell
+          ? 'max-w-[420px] border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)]'
+          : 'max-w-[760px] border-gray-200 bg-white'
+      }`}
     >
       <div className="flex max-h-[88vh] flex-col">
         {/* Header */}

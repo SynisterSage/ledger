@@ -3454,12 +3454,10 @@ export const NotesWindow = () => {
     };
   }, [sortMenu]);
 
-  const isNotesModalOpen = showCreateNoteModal || showExportModal || showVersionHistoryModal || showCloseGuardModal;
-
   return (
     <div
       className="ledger-notes-shell relative flex h-screen flex-col overflow-hidden rounded-3xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] shadow-none"
-      style={{ scrollbarGutter: isNotesModalOpen ? 'auto' : 'stable' }}
+      style={{ scrollbarGutter: 'auto' }}
     >
       <CloseGuardModal
         isOpen={showCloseGuardModal}

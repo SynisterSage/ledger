@@ -1929,7 +1929,7 @@ export const SettingsWindow = () => {
   return (
     <div
       className={settingsTheme.shell}
-      style={{ scrollbarGutter: isSettingsModalOpen ? 'auto' : 'stable' }}
+      style={{ scrollbarGutter: 'auto' }}
     >
       <CloseGuardModal
         isOpen={showCloseGuardModal}

@@ -804,6 +804,7 @@ const MODULE_GAP = 12;
 const NOTIFICATION_SCHEDULER_INTERVAL_MS = 60_000;
 const NOTIFICATION_PREFS_REFRESH_MS = 5 * 60_000;
 const NOTIFICATION_SCHEDULER_BACKOFF_MS = 90_000;
+const NOTIFICATION_SCHEDULER_REFRESH_MIN_DELAY_MS = 15_000;
 
 type NotificationSchedulerItem = {
   id: string;
@@ -1234,8 +1235,21 @@ const fetchLedgerApi = async <T,>(
     const error = await response.json().catch(() => ({}));
     const requestError = new Error(error.error || `Request failed: ${response.status}`) as Error & {
       status?: number;
+      retryAfterMs?: number;
     };
     requestError.status = response.status;
+    const retryAfterHeader = response.headers.get('retry-after');
+    if (retryAfterHeader) {
+      const retryAfterSeconds = Number(retryAfterHeader);
+      if (Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0) {
+        requestError.retryAfterMs = Math.ceil(retryAfterSeconds * 1000);
+      } else {
+        const retryAfterDate = Date.parse(retryAfterHeader);
+        if (!Number.isNaN(retryAfterDate)) {
+          requestError.retryAfterMs = Math.max(0, retryAfterDate - Date.now());
+        }
+      }
+    }
     throw requestError;
   }
 
@@ -1251,7 +1265,8 @@ const queueNotificationSchedulerRun = (delayMs = 0) => {
 
   const now = Date.now();
   const cooldownDelay = Math.max(0, notificationSchedulerCooldownUntil - now);
-  const nextDelay = Math.max(delayMs, cooldownDelay);
+  const refreshDelay = Math.max(0, notificationSchedulerLastRunAt + NOTIFICATION_SCHEDULER_REFRESH_MIN_DELAY_MS - now);
+  const nextDelay = Math.max(delayMs, cooldownDelay, refreshDelay);
   const targetAt = now + nextDelay;
 
   if (notificationSchedulerQueuedTimer && notificationSchedulerQueuedAt <= targetAt) {
@@ -1344,10 +1359,15 @@ const runNotificationScheduler = async () => {
     broadcastNotificationSummary(Number(summary?.counts?.active ?? 0));
   } catch (error) {
     if (typeof (error as { status?: number } | null)?.status === 'number' && (error as { status?: number }).status === 429) {
+      const retryAfterMs = Number((error as { retryAfterMs?: number } | null)?.retryAfterMs ?? 0);
       const nextBackoffMs = Math.min(
         15 * 60_000,
-        Math.max(NOTIFICATION_SCHEDULER_BACKOFF_MS, notificationSchedulerLastRunAt ? Date.now() - notificationSchedulerLastRunAt : 0) *
-          2
+        retryAfterMs > 0
+          ? retryAfterMs
+          : Math.max(
+              NOTIFICATION_SCHEDULER_BACKOFF_MS,
+              notificationSchedulerLastRunAt ? Date.now() - notificationSchedulerLastRunAt : 0
+            ) * 2
       );
       notificationSchedulerCooldownUntil = Date.now() + nextBackoffMs;
       console.warn(
@@ -1944,14 +1964,14 @@ public static class Win32 {
     public RECT rcWork;
     public uint dwFlags;
   }
-  public static bool TryGetWindowBounds(IntPtr hwnd, out RECT rect) {
+  public bool TryGetWindowBounds(IntPtr hwnd, out RECT rect) {
     const int DWMWA_EXTENDED_FRAME_BOUNDS = 9;
     if (DwmGetWindowAttribute(hwnd, DWMWA_EXTENDED_FRAME_BOUNDS, out rect, System.Runtime.InteropServices.Marshal.SizeOf(typeof(RECT))) == 0) {
       return true;
     }
     return GetWindowRect(hwnd, out rect);
   }
-  public static bool IsFullscreenLike(IntPtr hwnd, RECT rect) {
+  public bool IsFullscreenLike(IntPtr hwnd, RECT rect) {
     try {
       if (IsZoomed(hwnd)) return false;
       IntPtr monitor = MonitorFromWindow(hwnd, 2);
@@ -1969,8 +1989,7 @@ public static class Win32 {
       return false;
     }
   }
-}
-"@
+}"@
 $hwnd = [IntPtr]${targetId}
 if (-not [Win32]::IsWindow($hwnd)) { return }
 if ([Win32]::IsIconic($hwnd)) {
@@ -2797,17 +2816,16 @@ function startFloatingDockNativeTracker(target: FloatingDockTarget) {
 
   const script = `
 $ErrorActionPreference = 'Stop'
-Add-Type @"
-using System;
+Add-Type @"using System;
 using System.Runtime.InteropServices;
 
 public static class LedgerDockTracker {
   private const uint EVENT_OBJECT_LOCATIONCHANGE = 0x800B;
   private const uint EVENT_SYSTEM_MINIMIZESTART = 0x0016;
   private const uint WINEVENT_OUTOFCONTEXT = 0;
-  private static IntPtr targetHwnd;
-  private static WinEventDelegate callbackRef = Callback;
-  private static System.Timers.Timer pollTimer;
+  private IntPtr targetHwnd;
+  private WinEventDelegate callbackRef = Callback;
+  private System.Timers.Timer pollTimer;
 
   public delegate void WinEventDelegate(
     IntPtr hWinEventHook,
@@ -2887,7 +2905,7 @@ public static class LedgerDockTracker {
     public uint dwFlags;
   }
 
-  private static bool TryGetWindowBounds(IntPtr hwnd, out RECT rect) {
+  private bool TryGetWindowBounds(IntPtr hwnd, out RECT rect) {
     const int DWMWA_EXTENDED_FRAME_BOUNDS = 9;
     if (DwmGetWindowAttribute(hwnd, DWMWA_EXTENDED_FRAME_BOUNDS, out rect, Marshal.SizeOf(typeof(RECT))) == 0) {
       return true;
@@ -2895,13 +2913,13 @@ public static class LedgerDockTracker {
     return GetWindowRect(hwnd, out rect);
   }
 
-  public static void EnableDpiAwareness() {
+  public void EnableDpiAwareness() {
     try {
       SetProcessDpiAwarenessContext(new IntPtr(-4));
     } catch {}
   }
 
-  public static void Start(long hwndValue) {
+  public void Start(long hwndValue) {
     targetHwnd = new IntPtr(hwndValue);
     pollTimer = new System.Timers.Timer(32);
     pollTimer.AutoReset = true;
@@ -2929,7 +2947,7 @@ public static class LedgerDockTracker {
     if (hook != IntPtr.Zero) UnhookWinEvent(hook);
   }
 
-  private static void Callback(
+  private void Callback(
     IntPtr hWinEventHook,
     uint eventType,
     IntPtr hwnd,
@@ -3341,15 +3359,14 @@ public class Win32 {
     public int X;
     public int Y;
   }
-  public static bool TryGetWindowBounds(IntPtr hWnd, out RECT rect) {
+  public bool TryGetWindowBounds(IntPtr hWnd, out RECT rect) {
     const int DWMWA_EXTENDED_FRAME_BOUNDS = 9;
     if (DwmGetWindowAttribute(hWnd, DWMWA_EXTENDED_FRAME_BOUNDS, out rect, System.Runtime.InteropServices.Marshal.SizeOf(typeof(RECT))) == 0) {
       return true;
     }
     return GetWindowRect(hWnd, out rect);
   }
-}
-"@
+}"@
 try { [Win32]::SetProcessDpiAwarenessContext([IntPtr](-4)) | Out-Null } catch {}
 $sidebarLeft = ${Math.floor(nativeSidebarBounds.x)}
 $sidebarTop = ${Math.floor(nativeSidebarBounds.y)}
@@ -3459,15 +3476,14 @@ public class Win32 {
     public int X;
     public int Y;
   }
-  public static bool TryGetWindowBounds(IntPtr hWnd, out RECT rect) {
+  public bool TryGetWindowBounds(IntPtr hWnd, out RECT rect) {
     const int DWMWA_EXTENDED_FRAME_BOUNDS = 9;
     if (DwmGetWindowAttribute(hWnd, DWMWA_EXTENDED_FRAME_BOUNDS, out rect, System.Runtime.InteropServices.Marshal.SizeOf(typeof(RECT))) == 0) {
       return true;
     }
     return GetWindowRect(hWnd, out rect);
   }
-}
-"@
+}"@
 try { [Win32]::SetProcessDpiAwarenessContext([IntPtr](-4)) | Out-Null } catch {}
 $sidebarLeft = ${Math.floor(nativeSidebarBounds.x)}
 $sidebarTop = ${Math.floor(nativeSidebarBounds.y)}
@@ -3732,7 +3748,7 @@ public class Win32 {
     public int Right;
     public int Bottom;
   }
-  public static bool TryGetWindowBounds(IntPtr hWnd, out RECT rect) {
+  public bool TryGetWindowBounds(IntPtr hWnd, out RECT rect) {
     const int DWMWA_EXTENDED_FRAME_BOUNDS = 9;
     if (DwmGetWindowAttribute(hWnd, DWMWA_EXTENDED_FRAME_BOUNDS, out rect, System.Runtime.InteropServices.Marshal.SizeOf(typeof(RECT))) == 0) {
       return true;
@@ -3744,8 +3760,7 @@ public class Win32 {
     public int X;
     public int Y;
   }
-}
-"@
+}"@
 try { [Win32]::SetProcessDpiAwarenessContext([IntPtr](-4)) | Out-Null } catch {}
 $sidebarLeft = ${Math.floor(nativeSidebarBounds.x)}
 $sidebarTop = ${Math.floor(nativeSidebarBounds.y)}
@@ -5529,7 +5544,7 @@ app.whenReady().then(() => {
     }
   );
   ipcMain.on('notifications:refresh', () => {
-    queueNotificationSchedulerRun(3000);
+    queueNotificationSchedulerRun(NOTIFICATION_SCHEDULER_REFRESH_MIN_DELAY_MS);
   });
 
   // Setup Touch Bar for macOS

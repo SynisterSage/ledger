@@ -305,7 +305,7 @@ function SearchDetailSheet({
   const activeResult = result;
 
   useEffect(() => {
-    if (!activeResult || !visible || activeResult.type !== 'note') {
+    if (!activeResult || visible! || activeResult.type !== 'note') {
       setNoteBody(null);
       setIsLoadingNote(false);
       return;

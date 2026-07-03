@@ -3279,21 +3279,10 @@ export const CalendarWindow = () => {
     void window.desktopWindow?.closeModule('calendar');
   };
 
-  const isCalendarModalOpen =
-    showCloseGuardModal ||
-    isComposerOpen ||
-    isSpecificDatesModalOpen ||
-    isNewCalendarModalOpen ||
-    isLinkProjectModalOpen ||
-    isLinkNoteModalOpen ||
-    Boolean(eventEditorEvent) ||
-    Boolean(selectedReminder) ||
-    Boolean(overflowDayKey);
-
   return (
     <div
       className="relative flex h-screen flex-col overflow-hidden rounded-3xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] shadow-none"
-      style={{ scrollbarGutter: isCalendarModalOpen ? 'auto' : 'stable' }}
+      style={{ scrollbarGutter: 'auto' }}
     >
       <CloseGuardModal
         isOpen={showCloseGuardModal}
