@@ -733,6 +733,7 @@ export const ProjectsWindow = () => {
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [isEditingBrief, setIsEditingBrief] = useState(false);
   const [newProjectOwnerTeamId, setNewProjectOwnerTeamId] = useState('');
+  const pendingMilestonePlacementRef = useRef(false);
   const areSidePanelsCollapsed = isLeftPaneCollapsed && isRightPaneCollapsed;
   const taskComposerRef = useRef<HTMLDivElement | null>(null);
   const taskTitleInputRef = useRef<HTMLInputElement | null>(null);
@@ -1455,20 +1456,21 @@ export const ProjectsWindow = () => {
     [flushProjectDraft, resetTaskComposer, selectedProjectId, syncDraftFromProject]
   );
 
-  const selectProjectsOverview = useCallback(async () => {
-    if (!selectedProjectId) return;
+  const selectProjectsTimeline = useCallback(async () => {
     const saved = await flushProjectDraft();
     if (!saved && isDirtyRef.current) return;
     setSelectedProjectId(null);
     setSelectedTaskId(null);
     setActiveTab('overview');
+    setProjectsOverviewView('timeline');
+    setProjectsOverviewRange('all');
     setIsEditingTitle(false);
     setIsEditingBrief(false);
     setIsTaskComposerOpen(false);
     resetTaskComposer();
     isDirtyRef.current = false;
     setProjectDraft(makeEmptyProjectDraft());
-  }, [flushProjectDraft, resetTaskComposer, selectedProjectId]);
+  }, [flushProjectDraft, resetTaskComposer]);
 
   const getProjectById = useCallback(
     (projectId: string) => projects.find((project) => project.id === projectId) ?? null,
@@ -2330,6 +2332,9 @@ export const ProjectsWindow = () => {
   }, [resetMilestoneDraft]);
 
   const enterMilestonePlacementMode = useCallback(() => {
+    if (projectsOverviewView !== 'timeline') {
+      setProjectsOverviewView('timeline');
+    }
     if (viewportWidth < 760 || 'ontouchstart' in window) {
       const project = selectedProject ?? projects[0] ?? null;
       const date = project?.end_date ?? todayKey();
@@ -2362,7 +2367,16 @@ export const ProjectsWindow = () => {
     setPendingMilestone(null);
     setEditingMilestoneId(null);
     resetMilestoneDraft();
-  }, [projects, resetMilestoneDraft, selectedProject, viewportWidth]);
+  }, [projects, projectsOverviewView, resetMilestoneDraft, selectedProject, viewportWidth]);
+
+  useEffect(() => {
+    if (!pendingMilestonePlacementRef.current) return;
+    if (selectedProjectId) return;
+    if (projectsOverviewView !== 'timeline') return;
+
+    pendingMilestonePlacementRef.current = false;
+    enterMilestonePlacementMode();
+  }, [enterMilestonePlacementMode, projectsOverviewView, selectedProjectId]);
 
   const openMilestoneEditor = useCallback(
     (projectId: string | null, date: string, position: { x: number; y: number }) => {
@@ -4434,7 +4448,7 @@ export const ProjectsWindow = () => {
                 <div className="grid grid-cols-[minmax(260px,1.5fr)_120px_140px_minmax(150px,0.9fr)_minmax(180px,1fr)] gap-2 px-4 py-2 text-xs font-medium text-[var(--ledger-text-muted)]">
                   <span>Project</span>
                   <span>Status</span>
-                  <span>Timeline</span>
+                  <span>Dates</span>
                   <span>Context</span>
                   <span>Workspace</span>
                 </div>
@@ -4469,7 +4483,7 @@ export const ProjectsWindow = () => {
                         onContextMenu={(event) =>
                           handleTimelineProjectContextMenu(event, project.id)
                         }
-                        className="grid w-full grid-cols-[minmax(260px,1.5fr)_120px_140px_minmax(150px,0.9fr)_minmax(180px,1fr)] gap-2 px-4 py-2.5 text-left transition hover:bg-[var(--ledger-surface-hover)]"
+                        className="grid w-full grid-cols-[minmax(260px,1.5fr)_120px_140px_minmax(150px,0.9fr)_minmax(180px,1fr)] gap-2 px-4 py-2 text-left transition hover:bg-[var(--ledger-surface-hover)]"
                       >
                         <span className="flex min-w-0 items-start gap-2">
                           <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] text-[var(--ledger-text-secondary)]">
@@ -4504,8 +4518,8 @@ export const ProjectsWindow = () => {
                           </span>
                           <span className="mt-0.5 block truncate text-xs text-[var(--ledger-text-muted)]">
                             {(linkedEvents || linkedReminders) > 0
-                              ? `${linkedEvents + linkedReminders} linked dates`
-                              : 'No linked dates'}
+                              ? `${linkedEvents + linkedReminders} dates`
+                              : 'No dates'}
                           </span>
                         </span>
                         <span className="min-w-0 text-sm text-[var(--ledger-text-secondary)]">
@@ -5129,13 +5143,6 @@ export const ProjectsWindow = () => {
         primaryActions={
           <div className="flex items-center gap-2">
             <ModuleHeaderActionButton
-              onClick={() => void selectProjectsOverview()}
-              title="Show projects roadmap"
-              variant="strip"
-            >
-              Roadmap
-            </ModuleHeaderActionButton>
-            <ModuleHeaderActionButton
               onClick={() => {
                 if (isCreatingProject) {
                   closeCreateProjectComposer();
@@ -5146,14 +5153,24 @@ export const ProjectsWindow = () => {
               title={isCreatingProject ? 'Cancel new project' : 'Create a new project'}
               variant="strip"
             >
-              {isCreatingProject ? 'Cancel' : 'New project'}
+              {isCreatingProject ? 'New project' : 'New project'}
             </ModuleHeaderActionButton>
             <ModuleHeaderActionButton
-              onClick={
-                isMilestonePlacementActive || pendingMilestone
-                  ? cancelMilestonePlacement
-                  : enterMilestonePlacementMode
-              }
+              onClick={() => {
+                if (isMilestonePlacementActive || pendingMilestone) {
+                  cancelMilestonePlacement();
+                  return;
+                }
+                if (selectedProjectId) {
+                  pendingMilestonePlacementRef.current = true;
+                  void selectProjectsTimeline();
+                  return;
+                }
+                if (projectsOverviewView !== 'timeline') {
+                  setProjectsOverviewView('timeline');
+                }
+                enterMilestonePlacementMode();
+              }}
               title={isMilestonePlacementActive ? 'Cancel milestone placement' : 'Place a milestone'}
               ariaLabel={isMilestonePlacementActive ? 'Cancel milestone placement' : 'Place a milestone'}
               icon={isMilestonePlacementActive || pendingMilestone ? <X size={12} /> : <Flag size={12} />}
@@ -5167,39 +5184,58 @@ export const ProjectsWindow = () => {
         }
         viewControls={
           <div className="flex items-center gap-1.5">
-            <ModuleHeaderSegmentedGroup compact>
-              {[
-                { id: 'timeline', label: 'Roadmap' },
-                { id: 'list', label: 'List' },
-              ].map((option) => (
+            {selectedProjectId ? (
+              <ModuleHeaderSegmentedGroup compact>
                 <ModuleHeaderSegmentedButton
                   compact
-                  key={option.id}
-                  title={`Switch to ${option.label.toLowerCase()} view`}
-                  onClick={() => setProjectsOverviewView(option.id as ProjectsOverviewView)}
-                  active={projectsOverviewView === option.id}
+                  title="Return to roadmap"
+                  onClick={() => void selectProjectsTimeline()}
+                  active={false}
                 >
-                  {option.label}
+                  Roadmap
                 </ModuleHeaderSegmentedButton>
-              ))}
-            </ModuleHeaderSegmentedGroup>
-            <ModuleHeaderSegmentedGroup compact>
-              {[
-                { id: 'month', label: 'Month' },
-                { id: 'quarter', label: 'Quarter' },
-                { id: 'all', label: 'All' },
-              ].map((option) => (
-                <ModuleHeaderSegmentedButton
-                  compact
-                  key={option.id}
-                  title={`Switch to ${option.label.toLowerCase()} range`}
-                  onClick={() => setProjectsOverviewRange(option.id as ProjectsOverviewRange)}
-                  active={projectsOverviewRange === option.id}
-                >
-                  {option.label}
-                </ModuleHeaderSegmentedButton>
-              ))}
-            </ModuleHeaderSegmentedGroup>
+              </ModuleHeaderSegmentedGroup>
+            ) : (
+              <>
+                <ModuleHeaderSegmentedGroup compact>
+                  {[
+                    { id: 'timeline', label: 'Roadmap' },
+                    { id: 'list', label: 'List' },
+                  ].map((option) => (
+                    <ModuleHeaderSegmentedButton
+                      compact
+                      key={option.id}
+                      title={`Switch to ${option.label.toLowerCase()} view`}
+                      onClick={() =>
+                        option.id === 'timeline'
+                          ? void selectProjectsTimeline()
+                          : setProjectsOverviewView(option.id as ProjectsOverviewView)
+                      }
+                      active={projectsOverviewView === option.id}
+                    >
+                      {option.label}
+                    </ModuleHeaderSegmentedButton>
+                  ))}
+                </ModuleHeaderSegmentedGroup>
+                <ModuleHeaderSegmentedGroup compact>
+                  {[
+                    { id: 'month', label: 'Month' },
+                    { id: 'quarter', label: 'Quarter' },
+                    { id: 'all', label: 'All' },
+                  ].map((option) => (
+                    <ModuleHeaderSegmentedButton
+                      compact
+                      key={option.id}
+                      title={`Switch to ${option.label.toLowerCase()} range`}
+                      onClick={() => setProjectsOverviewRange(option.id as ProjectsOverviewRange)}
+                      active={projectsOverviewRange === option.id}
+                    >
+                      {option.label}
+                    </ModuleHeaderSegmentedButton>
+                  ))}
+                </ModuleHeaderSegmentedGroup>
+              </>
+            )}
           </div>
         }
         syncStatus={

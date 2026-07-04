@@ -21,6 +21,10 @@ export type SidebarState = 'minimized' | 'expanded' | 'fullscreen';
 export type ModuleView = 'dashboard' | 'calendar';
 export type SidebarAttachmentMode = 'attached' | 'overlay';
 type WorkspaceShellKind = 'dashboard' | 'calendar' | 'notes' | 'projects' | 'teams' | 'settings';
+type FloatingDockPayload = {
+  isDocked?: boolean;
+  side?: SidebarPosition | null;
+};
 
 export type WorkspaceShellLayout = {
   sidebarPlacement: SidebarPosition;
@@ -189,7 +193,7 @@ export const SidebarProvider = ({ children }: { children: ReactNode }) => {
   }, [isHydrated, sidebarPreferences.lastState, sidebarPreferences.position, state]);
 
   useEffect(() => {
-    const handleFloatingDockChanged = (_event: unknown, payload: { isDocked?: boolean }) => {
+    const applyFloatingDockPayload = (payload: FloatingDockPayload | null | undefined) => {
       const nextIsDocked = Boolean(payload?.isDocked);
       const nextSide =
         payload && typeof (payload as { side?: unknown }).side === 'string'
@@ -216,6 +220,17 @@ export const SidebarProvider = ({ children }: { children: ReactNode }) => {
         }));
       }
     };
+
+    const handleFloatingDockChanged = (_event: unknown, payload: FloatingDockPayload) => {
+      applyFloatingDockPayload(payload);
+    };
+
+    void window.desktopWindow
+      ?.getFloatingDockState?.()
+      .then(applyFloatingDockPayload)
+      .catch(() => {
+        // Older desktop builds may not expose the dock-state read API.
+      });
 
     window.ipcRenderer?.on('sidebar:floating-dock-changed', handleFloatingDockChanged);
     return () => {
@@ -423,11 +438,9 @@ export const SidebarProvider = ({ children }: { children: ReactNode }) => {
   const workspaceShellLayout = useMemo<WorkspaceShellLayout>(() => {
     const sidebarPlacement = sidebarPreferences.position;
     const effectivePlacement =
-      sidebarPlacement === 'floating' ? floatingDockSide ?? 'right' : sidebarPlacement;
+      sidebarPlacement === 'floating' ? floatingDockSide ?? 'left' : sidebarPlacement;
     const sidebarMode: SidebarAttachmentMode =
-      shellFullscreen && isSidebarVisible && (sidebarPlacement !== 'floating' || isFloatingDocked)
-        ? 'attached'
-        : 'overlay';
+      shellFullscreen && isSidebarVisible ? 'attached' : 'overlay';
     const verticalSidebarWidth = state === 'expanded' ? 320 : 64;
     const horizontalSidebarHeight = state === 'expanded' ? 144 : 60;
     const isVerticalPlacement = effectivePlacement === 'left' || effectivePlacement === 'right';
@@ -457,6 +470,22 @@ export const SidebarProvider = ({ children }: { children: ReactNode }) => {
       },
       shellFullscreen,
       workspaceShellStyle: {
+        paddingLeft:
+          shellFullscreen && sidebarMode === 'attached' && effectivePlacement === 'left'
+            ? `${attachedWidth}px`
+            : '0px',
+        paddingRight:
+          shellFullscreen && sidebarMode === 'attached' && effectivePlacement === 'right'
+            ? `${attachedWidth}px`
+            : '0px',
+        paddingTop:
+          shellFullscreen && sidebarMode === 'attached' && effectivePlacement === 'top'
+            ? `${attachedHeight}px`
+            : '0px',
+        paddingBottom:
+          shellFullscreen && sidebarMode === 'attached' && effectivePlacement === 'bottom'
+            ? `${attachedHeight}px`
+            : '0px',
         ['--ledger-sidebar-inset-left' as string]:
           shellFullscreen && sidebarMode === 'attached' && effectivePlacement === 'left'
             ? `${attachedWidth}px`

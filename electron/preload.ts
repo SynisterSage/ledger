@@ -131,6 +131,13 @@ contextBridge.exposeInMainWorld('desktopWindow', {
   detachFloatingWindow() {
     return ipcRenderer.invoke('window:detach-floating-window');
   },
+  getFloatingDockState() {
+    return ipcRenderer.invoke('window:floating-dock-state') as Promise<{
+      isDocked: boolean;
+      attachmentStatus: string;
+      side: 'right' | 'left' | 'top' | 'bottom' | 'floating' | null;
+    }>;
+  },
   toggleModule(kind: ModuleWindowKind, focus?: string | ModuleFocusPayload) {
     const payload =
       typeof focus === 'string' ? { kind, focusDate: focus } : { kind, ...(focus ?? {}) };

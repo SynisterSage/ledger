@@ -3653,9 +3653,6 @@ function DashboardContent() {
         <div className="flex h-full min-h-[680px] w-full flex-col rounded-[18px] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-[0_18px_44px_rgba(66,42,24,0.06)]">
           <header className="flex flex-col gap-3 border-b border-[color:var(--ledger-border-subtle)] px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
             <div className="min-w-0">
-              <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-[var(--ledger-text-muted)]">
-                Workspace overview
-              </p>
               <p className="mt-1 text-[13px] text-[var(--ledger-text-muted)]">
                 Everything happening across {activeWorkspace?.name ?? 'this workspace'}.
               </p>
@@ -4057,9 +4054,6 @@ function DashboardContent() {
                         </p>
                         <p className="mt-1 truncate text-[13px] font-medium text-[var(--ledger-text-primary)]">
                           {recentNotes[0].title}
-                        </p>
-                        <p className="mt-1 text-[12px] text-[var(--ledger-text-muted)]">
-                          2 actions created
                         </p>
                       </div>
                     )}

@@ -748,6 +748,7 @@ const headerDragStarts = new Map<
     cursor: Electron.Point;
     bounds: Electron.Rectangle;
     timer: NodeJS.Timeout | null;
+    lastPosition: Electron.Point;
   }
 >();
 let sidebarIsVisible = true;
@@ -817,6 +818,10 @@ function isWorkspaceDockTarget(target: FloatingDockTarget | null = currentFloati
   return Boolean(target?.isLedgerWindow && String(target.id).startsWith('ledger-workspace:'));
 }
 
+function isLedgerWindowDockTarget(target: FloatingDockTarget | null = currentFloatingDockTarget) {
+  return Boolean(target?.isLedgerWindow);
+}
+
 function getWorkspaceDockTargetBounds() {
   if (!workspaceModuleWin || workspaceModuleWin.isDestroyed()) return null;
   if (workspaceModuleWin.isMinimized()) return null;
@@ -858,7 +863,7 @@ function setWorkspaceWindowAsFloatingDockTarget(kindOverride?: ModuleWindowKind)
 }
 
 function suspendWorkspaceWindowDockTarget() {
-  if (!isWorkspaceDockTarget()) return;
+  if (!isLedgerWindowDockTarget()) return;
   stopFloatingDockNativeTracker();
   stopFloatingDockTracking();
   stopMacDockHelperTracking();
@@ -2295,6 +2300,9 @@ function restoreModuleWindowBounds(kind: ModuleWindowKind, win: BrowserWindow) {
   }
   win.show();
   win.focus();
+  if (kind === workspaceModuleKind && shouldAttachWorkspaceWindowToSidebar()) {
+    setWorkspaceWindowAsFloatingDockTarget(kind);
+  }
   sendModuleFullscreenState(kind, win, false);
 }
 
@@ -2302,7 +2310,15 @@ function enterModuleWindowFullscreen(kind: ModuleWindowKind, win: BrowserWindow)
   if (moduleWindowFullscreenBoundsMemory.has(kind)) return;
   const workArea = getFullscreenWorkAreaForWindow(win);
   moduleWindowFullscreenBoundsMemory.set(kind, win.getBounds());
-  win.setBounds(clampRectToWorkArea({ ...workArea }, workArea), false);
+  const fullscreenBounds = clampRectToWorkArea({ ...workArea }, workArea);
+  win.setBounds(fullscreenBounds, false);
+  if (kind === workspaceModuleKind && shouldAttachWorkspaceWindowToSidebar()) {
+    const sidebarBounds = getSidebarBoundsInsideFullscreenTarget(fullscreenBounds);
+    if (sidebarBounds && setSidebarBounds(sidebarBounds, true)) {
+      currentFloatingPosition = { x: sidebarBounds.x, y: sidebarBounds.y };
+      currentFloatingDockBounds = fullscreenBounds;
+    }
+  }
   win.show();
   win.focus();
   sendModuleFullscreenState(kind, win, true);
@@ -2361,22 +2377,113 @@ function getDockedBoundsForTarget(
   return clampDockedRectToWorkArea({ x, y, width, height }, targetDisplay.workArea, options);
 }
 
+function getSidebarBoundsInsideFullscreenTarget(targetBounds: Rect): Rect | null {
+  if (!sidebarWin || sidebarWin.isDestroyed()) return null;
+  if (currentSidebarMode === 'auth' || currentSidebarMode === 'fullscreen') return null;
+
+  const currentBounds = sidebarWin.getBounds();
+  const targetDisplay = getDisplayForBounds(targetBounds);
+  const workArea = targetDisplay.workArea;
+  const maxWidth = Math.max(1, workArea.width - WINDOW_MARGIN * 2);
+  const maxHeight = Math.max(1, workArea.height - WINDOW_MARGIN * 2);
+  const verticalWidth =
+    currentSidebarMode === 'compact'
+      ? Math.min(COLLAPSED_SIZE, maxWidth)
+      : currentSidebarMode === 'minimized'
+      ? Math.min(RAIL_SIZE, maxWidth)
+      : Math.min(EXPANDED_WIDTH, maxWidth);
+  const baseVerticalHeight =
+    currentSidebarMode === 'compact'
+      ? MIN_DOCK_HEIGHT.compact
+      : currentSidebarMode === 'minimized'
+      ? MIN_DOCK_HEIGHT.minimized
+      : MIN_DOCK_HEIGHT.expanded;
+  const verticalHeight = Math.max(
+    Math.min(baseVerticalHeight, maxHeight),
+    Math.min(targetBounds.height, maxHeight)
+  );
+  const horizontalWidth = Math.min(
+    currentSidebarMode === 'minimized' ? HORIZONTAL_COLLAPSED_WIDTH : HORIZONTAL_DOCK_WIDTH,
+    maxWidth
+  );
+  const horizontalHeight = Math.min(
+    currentSidebarMode === 'minimized' ? HORIZONTAL_COLLAPSED_HEIGHT : HORIZONTAL_DOCK_HEIGHT,
+    maxHeight
+  );
+
+  const placement =
+    currentSidebarPosition === 'floating'
+      ? currentFloatingDockTarget?.side ?? getDockSide(currentBounds, targetBounds)
+      : currentSidebarPosition;
+
+  if (placement === 'top') {
+    return {
+      x: targetBounds.x + Math.round((targetBounds.width - horizontalWidth) / 2),
+      y: targetBounds.y,
+      width: horizontalWidth,
+      height: horizontalHeight,
+    };
+  }
+
+  if (placement === 'bottom') {
+    return {
+      x: targetBounds.x + Math.round((targetBounds.width - horizontalWidth) / 2),
+      y: targetBounds.y + targetBounds.height - horizontalHeight,
+      width: horizontalWidth,
+      height: horizontalHeight,
+    };
+  }
+
+  const side = placement === 'right' ? 'right' : 'left';
+  return {
+    x: side === 'right' ? targetBounds.x + targetBounds.width - verticalWidth : targetBounds.x,
+    y: targetBounds.y,
+    width: verticalWidth,
+    height: verticalHeight,
+  };
+}
+
 function sendFloatingDockChanged(
   isDocked: boolean,
   attachmentStatus: FloatingDockAttachmentStatus = isDocked ? 'attached' : 'detached'
 ) {
+  const payload = getFloatingDockStatePayload(isDocked, attachmentStatus);
   currentFloatingDockAttachmentStatus = attachmentStatus;
   try {
     if (sidebarWin && !sidebarWin.isDestroyed() && !sidebarWin.webContents.isDestroyed()) {
-      sidebarWin.webContents.send('sidebar:floating-dock-changed', {
-        isDocked,
-        attachmentStatus,
-        side: currentFloatingDockTarget?.side ?? null,
-      });
+      sidebarWin.webContents.send('sidebar:floating-dock-changed', payload);
     }
   } catch {
     // The window can be torn down between the destroyed check and the send.
   }
+
+  const targets = new Set<BrowserWindow>();
+  if (workspaceModuleWin && !workspaceModuleWin.isDestroyed()) {
+    targets.add(workspaceModuleWin);
+  }
+  for (const win of moduleWins.values()) {
+    if (!win.isDestroyed()) targets.add(win);
+  }
+  for (const win of targets) {
+    try {
+      if (!win.webContents.isDestroyed()) {
+        win.webContents.send('sidebar:floating-dock-changed', payload);
+      }
+    } catch {
+      // Module windows can close while a dock update is being broadcast.
+    }
+  }
+}
+
+function getFloatingDockStatePayload(
+  isDocked = Boolean(currentFloatingDockTarget && currentFloatingDockBounds),
+  attachmentStatus: FloatingDockAttachmentStatus = currentFloatingDockAttachmentStatus
+) {
+  return {
+    isDocked,
+    attachmentStatus,
+    side: currentFloatingDockTarget?.side ?? null,
+  };
 }
 
 function setCurrentFloatingDockTarget(target: FloatingDockTarget | null, bounds: Rect | null) {
@@ -2433,9 +2540,10 @@ function cancelWorkspaceDockRefresh() {
 }
 
 function applyWorkspaceDockTargetBounds(targetBoundsOverride?: Rect) {
-  if (!isWorkspaceDockTarget()) return;
+  if (!isLedgerWindowDockTarget()) return;
   if (!sidebarWin || sidebarWin.isDestroyed()) return;
   if (!workspaceModuleWin || workspaceModuleWin.isDestroyed()) return;
+  if (floatingDockDragActive) return;
 
   const targetBounds = targetBoundsOverride ?? getWorkspaceDockTargetBounds();
   if (!targetBounds) {
@@ -2445,6 +2553,18 @@ function applyWorkspaceDockTargetBounds(targetBoundsOverride?: Rect) {
 
   currentFloatingDockBounds = targetBounds;
   currentFloatingDockMisses = 0;
+  const isWorkspaceFullscreen =
+    (workspaceModuleKind ? moduleWindowFullscreenBoundsMemory.has(workspaceModuleKind) : false) ||
+    isFullscreenLikeBounds(targetBounds) ||
+    workspaceModuleWin.isFullScreen();
+  if (isWorkspaceFullscreen) {
+    const nextBounds = getSidebarBoundsInsideFullscreenTarget(targetBounds);
+    if (!nextBounds || rectsMatch(sidebarWin.getBounds(), nextBounds)) return;
+    if (!setSidebarBounds(nextBounds, false)) return;
+    currentFloatingPosition = { x: nextBounds.x, y: nextBounds.y };
+    return;
+  }
+
   const side = currentFloatingDockTarget?.side ?? getDockSide(sidebarWin.getBounds(), targetBounds);
   const nextBounds = getDockedBoundsForTarget(targetBounds, side, currentSidebarMode, {
     allowVerticalOverflow: true,
@@ -2456,8 +2576,9 @@ function applyWorkspaceDockTargetBounds(targetBoundsOverride?: Rect) {
 }
 
 function scheduleWorkspaceDockRefresh(delayMs = 16) {
-  if (!isWorkspaceDockTarget()) return;
+  if (!isLedgerWindowDockTarget()) return;
   if (!workspaceModuleWin || workspaceModuleWin.isDestroyed()) return;
+  if (floatingDockDragActive) return;
 
   const now = Date.now();
   const elapsed = now - workspaceDockLastRefreshAt;
@@ -3027,12 +3148,28 @@ function applyHeaderDragPosition(webContentsId: number, win: BrowserWindow) {
     x: nextX,
     y: nextY,
   };
+  const deltaX = nextX - dragStart.lastPosition.x;
+  const deltaY = nextY - dragStart.lastPosition.y;
 
   win.setPosition(nextX, nextY, false);
 
-  if (win === workspaceModuleWin && isWorkspaceDockTarget()) {
+  if (
+    win === workspaceModuleWin &&
+    isLedgerWindowDockTarget() &&
+    sidebarWin &&
+    !sidebarWin.isDestroyed()
+  ) {
+    const sidebarBounds = sidebarWin.getBounds();
+    sidebarWin.setPosition(sidebarBounds.x + deltaX, sidebarBounds.y + deltaY, false);
+    currentFloatingPosition = {
+      x: sidebarBounds.x + deltaX,
+      y: sidebarBounds.y + deltaY,
+    };
+  } else if (win === workspaceModuleWin && isWorkspaceDockTarget()) {
     applyWorkspaceDockTargetBounds(nextBounds);
   }
+
+  dragStart.lastPosition = { x: nextX, y: nextY };
 }
 
 function startHeaderDragLoop(webContentsId: number, win: BrowserWindow) {
@@ -4294,9 +4431,14 @@ async function dockFloatingSidebarToTarget() {
     target.target.side === 'left' || target.target.side === 'right'
       ? target.target.side
       : getDockSide(currentBounds, target.bounds);
-  const dockBounds = getDockedBoundsForTarget(target.bounds, side, currentSidebarMode);
+  const isLedgerTarget = Boolean(target.target.isLedgerWindow);
+  const dockBounds = getDockedBoundsForTarget(target.bounds, side, currentSidebarMode, {
+    allowVerticalOverflow: isLedgerTarget,
+  });
   const targetDisplay = getDisplayForBounds(target.bounds);
-  const clamped = clampRectToWorkArea(dockBounds, targetDisplay.workArea);
+  const clamped = isLedgerTarget
+    ? dockBounds
+    : clampRectToWorkArea(dockBounds, targetDisplay.workArea);
 
   setCurrentFloatingDockTarget({ ...target.target, side }, target.bounds);
   const setBoundsCalled = setSidebarBounds(clamped);
@@ -4321,6 +4463,13 @@ async function dockFloatingSidebarToTarget() {
   });
   if (!setBoundsCalled) return null;
   currentFloatingPosition = { x: clamped.x, y: clamped.y };
+  if (isLedgerTarget) {
+    stopFloatingDockNativeTracker();
+    stopFloatingDockTracking();
+    stopMacDockHelperTracking();
+    cancelWorkspaceDockRefresh();
+    return clamped;
+  }
   if (!startFloatingDockNativeTracker({ ...target.target, side })) {
     writeWindowsDockTrace('native-tracker-start-skip', {
       trackerType: 'windows-cursor-scan',
@@ -4567,6 +4716,14 @@ function applySidebarWindowMode(mode: SidebarWindowMode, animate = true) {
   }
 
   const isHorizontalDock = currentSidebarPosition === 'top' || currentSidebarPosition === 'bottom';
+  const shouldRefreshLedgerWorkspaceDock =
+    currentSidebarPosition === 'floating' &&
+    isLedgerWindowDockTarget() &&
+    Boolean(workspaceModuleKind) &&
+    Boolean(workspaceModuleWin && !workspaceModuleWin.isDestroyed());
+  if (currentSidebarPosition === 'floating' && currentFloatingDockTarget) {
+    holdCurrentFloatingDockTarget(2000);
+  }
   const bounds =
     currentSidebarPosition === 'floating'
       ? getFloatingBounds(mode)
@@ -4585,6 +4742,16 @@ function applySidebarWindowMode(mode: SidebarWindowMode, animate = true) {
   const isOpeningSidebar = mode === 'expanded' && previousMode !== 'expanded';
   syncTouchBar();
   setSidebarBounds(bounds, animate && (!isOpeningSidebar || isHorizontalDock));
+  if (shouldRefreshLedgerWorkspaceDock) {
+    setTimeout(() => {
+      if (floatingDockDragActive) return;
+      if (currentSidebarPosition !== 'floating') return;
+      if (!workspaceModuleKind || !workspaceModuleWin || workspaceModuleWin.isDestroyed()) return;
+      if (!shouldAttachWorkspaceWindowToSidebar()) return;
+      setWorkspaceWindowAsFloatingDockTarget(workspaceModuleKind);
+      applyWorkspaceDockTargetBounds();
+    }, 260);
+  }
 }
 
 function applySidebarAlwaysOnTop(alwaysOnTop: boolean) {
@@ -4914,7 +5081,6 @@ function createSidebarWindow() {
     sidebarWin.on('resize', () => {
       if (sidebarWin && !sidebarWin.isDestroyed()) {
         applyWindowsModuleWindowShape(sidebarWin);
-        syncWorkspaceWindowAttachment();
       }
     });
 
@@ -4922,7 +5088,6 @@ function createSidebarWindow() {
       if (!sidebarWin || sidebarWin.isDestroyed()) return;
       if (currentSidebarMode === 'auth' || currentSidebarMode === 'fullscreen') return;
       syncCurrentFloatingPosition(sidebarWin.getBounds());
-      syncWorkspaceWindowAttachment();
     });
   } catch (err) {
     console.error('[electron] Error while loading sidebar renderer:', err);
@@ -5378,12 +5543,12 @@ function openModuleWindow(
   });
   moduleWin.on('resized', () => {
     applyWindowsModuleWindowShape(moduleWin);
-    if (moduleWin === workspaceModuleWin && isWorkspaceDockTarget()) {
+    if (moduleWin === workspaceModuleWin && isLedgerWindowDockTarget()) {
       scheduleWorkspaceDockRefresh();
     }
   });
   moduleWin.on('moved', () => {
-    if (moduleWin === workspaceModuleWin && isWorkspaceDockTarget()) {
+    if (moduleWin === workspaceModuleWin && isLedgerWindowDockTarget()) {
       if (headerDragStarts.has(moduleWin.webContents.id)) return;
       scheduleWorkspaceDockRefresh(16);
     }
@@ -5466,6 +5631,13 @@ function openModuleWindow(
       // Ensure the window is visible and focused when entering fullscreen
       if (!moduleWin.isDestroyed()) {
         applyWindowsModuleWindowShape(moduleWin);
+        if (moduleWin === workspaceModuleWin && shouldAttachWorkspaceWindowToSidebar()) {
+          const sidebarBounds = getSidebarBoundsInsideFullscreenTarget(moduleWin.getBounds());
+          if (sidebarBounds && setSidebarBounds(sidebarBounds, true)) {
+            currentFloatingPosition = { x: sidebarBounds.x, y: sidebarBounds.y };
+            currentFloatingDockBounds = moduleWin.getBounds();
+          }
+        }
         moduleWin.show();
         moduleWin.focus();
         sendModuleFullscreenState(kind, moduleWin, true);
@@ -5477,6 +5649,9 @@ function openModuleWindow(
     try {
       if (!moduleWin.isDestroyed()) {
         applyWindowsModuleWindowShape(moduleWin);
+        if (moduleWin === workspaceModuleWin && shouldAttachWorkspaceWindowToSidebar()) {
+          setWorkspaceWindowAsFloatingDockTarget(kind);
+        }
         moduleWin.show();
         moduleWin.focus();
         sendModuleFullscreenState(kind, moduleWin, false);
@@ -5775,6 +5950,7 @@ ipcMain.handle('window:begin-header-drag', (event) => {
     cursor: screen.getCursorScreenPoint(),
     bounds,
     timer: null,
+    lastPosition: { x: bounds.x, y: bounds.y },
   });
   startHeaderDragLoop(event.sender.id, win);
   return bounds;
@@ -5814,6 +5990,10 @@ ipcMain.handle('window:detach-floating-window', () => {
   clearCurrentFloatingDockTarget();
   stopFloatingDockTracking();
   return null;
+});
+
+ipcMain.handle('window:floating-dock-state', () => {
+  return getFloatingDockStatePayload();
 });
 
 ipcMain.handle('window:toggle-module', (_event, payload: ModuleWindowKind | ModuleFocusPayload) => {

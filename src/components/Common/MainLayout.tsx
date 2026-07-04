@@ -7,7 +7,7 @@ interface MainLayoutProps {
 }
 
 export const MainLayout = ({ children }: MainLayoutProps) => {
-  const { state, isVisible, position } = useSidebar();
+  const { state, isVisible, position, workspaceShellLayout } = useSidebar();
   const isHorizontal = position === 'top' || position === 'bottom';
   const isFloating = position === 'floating';
   const shouldShowSidebar = state !== 'fullscreen' && isVisible;
@@ -24,7 +24,14 @@ export const MainLayout = ({ children }: MainLayoutProps) => {
 
   // Fullscreen mode: no sidebar
   if (state === 'fullscreen') {
-    return <div className="relative h-screen overflow-hidden bg-transparent">{childrenNode}</div>;
+    return (
+      <div
+        className="relative h-screen overflow-hidden bg-transparent"
+        style={workspaceShellLayout.workspaceShellStyle}
+      >
+        {childrenNode}
+      </div>
+    );
   }
 
   // Floating mode: sidebar floats above everything

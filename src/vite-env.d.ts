@@ -98,6 +98,11 @@ interface Window {
       height: number;
     } | null>;
     detachFloatingWindow: () => Promise<void>;
+    getFloatingDockState: () => Promise<{
+      isDocked: boolean;
+      attachmentStatus: string;
+      side: 'right' | 'left' | 'top' | 'bottom' | 'floating' | null;
+    }>;
     toggleModule: (kind: ModuleWindowKind, focus?: string | ModuleFocusPayload) => Promise<void>;
     openModule: (kind: ModuleWindowKind, focus?: string | ModuleFocusPayload) => Promise<void>;
     closeModule: (kind: ModuleWindowKind) => Promise<void>;
