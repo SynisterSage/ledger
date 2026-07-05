@@ -776,6 +776,7 @@ const moduleWindowBoundsMemory = new Map<
   }
 >();
 const moduleWindowFullscreenBoundsMemory = new Map<ModuleWindowKind, Electron.Rectangle>();
+let workspaceShellFullscreenRestoreBounds: Electron.Rectangle | null = null;
 
 const WINDOW_MARGIN = 16;
 const RAIL_SIZE = 64;
@@ -2299,11 +2300,18 @@ function restoreModuleWindowBounds(kind: ModuleWindowKind, win: BrowserWindow) {
   if (shouldRestoreWorkspaceDock) {
     pauseWorkspaceDockRefresh(260);
   }
-  const restoredBounds = moduleWindowFullscreenBoundsMemory.get(kind);
+  const isWorkspaceShell = win === workspaceModuleWin && isWorkspaceModuleKind(kind);
+  const restoredBounds = isWorkspaceShell
+    ? workspaceShellFullscreenRestoreBounds
+    : moduleWindowFullscreenBoundsMemory.get(kind);
   if (restoredBounds) {
     const workArea = screen.getDisplayMatching(restoredBounds).workArea;
     win.setBounds(clampRectToWorkArea(restoredBounds, workArea), false);
-    moduleWindowFullscreenBoundsMemory.delete(kind);
+    if (isWorkspaceShell) {
+      workspaceShellFullscreenRestoreBounds = null;
+    } else {
+      moduleWindowFullscreenBoundsMemory.delete(kind);
+    }
   }
   win.show();
   win.focus();
@@ -2319,14 +2327,25 @@ function restoreModuleWindowBounds(kind: ModuleWindowKind, win: BrowserWindow) {
 }
 
 function enterModuleWindowFullscreen(kind: ModuleWindowKind, win: BrowserWindow) {
-  if (moduleWindowFullscreenBoundsMemory.has(kind)) return;
+  const isWorkspaceShell = win === workspaceModuleWin && isWorkspaceModuleKind(kind);
+  const isPseudoFullscreen = isWorkspaceShell
+    ? Boolean(workspaceShellFullscreenRestoreBounds)
+    : moduleWindowFullscreenBoundsMemory.has(kind);
+  if (isPseudoFullscreen) {
+    sendModuleFullscreenState(kind, win, true);
+    return;
+  }
   const shouldAttachSidebar =
     kind === workspaceModuleKind && shouldAttachWorkspaceWindowToSidebar();
   if (shouldAttachSidebar) {
     pauseWorkspaceDockRefresh(260);
   }
   const workArea = getFullscreenWorkAreaForWindow(win);
-  moduleWindowFullscreenBoundsMemory.set(kind, win.getBounds());
+  if (isWorkspaceShell) {
+    workspaceShellFullscreenRestoreBounds = win.getBounds();
+  } else {
+    moduleWindowFullscreenBoundsMemory.set(kind, win.getBounds());
+  }
   const fullscreenBounds = clampRectToWorkArea({ ...workArea }, workArea);
   win.setBounds(fullscreenBounds, false);
   if (shouldAttachSidebar) {
@@ -2579,7 +2598,7 @@ function applyWorkspaceDockTargetBounds(targetBoundsOverride?: Rect) {
   currentFloatingDockBounds = targetBounds;
   currentFloatingDockMisses = 0;
   const isWorkspaceFullscreen =
-    (workspaceModuleKind ? moduleWindowFullscreenBoundsMemory.has(workspaceModuleKind) : false) ||
+    Boolean(workspaceShellFullscreenRestoreBounds) ||
     isFullscreenLikeBounds(targetBounds) ||
     workspaceModuleWin.isFullScreen();
   if (isWorkspaceFullscreen) {
@@ -5334,8 +5353,11 @@ function navigateWorkspaceModuleWindow(route: WorkspaceModuleRoute, pushHistory 
   syncWorkspaceWindowAttachment(route.kind);
   setWorkspaceWindowAsFloatingDockTarget(route.kind);
 
-  const shouldOpenFullscreen =
-    currentSidebarMode === 'fullscreen' && isWorkspaceModuleKind(route.kind);
+  const shouldKeepFullscreen =
+    isWorkspaceModuleKind(route.kind) &&
+    (Boolean(workspaceShellFullscreenRestoreBounds) ||
+      currentSidebarMode === 'fullscreen' ||
+      moduleWin.isFullScreen());
 
   if (moduleWin.isMinimized()) {
     moduleWin.restore();
@@ -5351,7 +5373,7 @@ function navigateWorkspaceModuleWindow(route: WorkspaceModuleRoute, pushHistory 
     moduleWin.webContents.once('did-finish-load', () => {
       if (moduleWin.isDestroyed()) return;
       applyWindowsModuleWindowShape(moduleWin);
-      sendModuleFullscreenState(route.kind, moduleWin, moduleWin.isFullScreen());
+      sendModuleFullscreenState(route.kind, moduleWin, shouldKeepFullscreen);
       sendWorkspaceRouteChanged(moduleWin, route);
       sendModuleFocus(
         route.kind,
@@ -5365,7 +5387,7 @@ function navigateWorkspaceModuleWindow(route: WorkspaceModuleRoute, pushHistory 
       broadcastWorkspaceNavigationState();
     });
   } else {
-    sendModuleFullscreenState(route.kind, moduleWin, moduleWin.isFullScreen());
+    sendModuleFullscreenState(route.kind, moduleWin, shouldKeepFullscreen);
     sendWorkspaceRouteChanged(moduleWin, route);
     sendModuleFocus(
       route.kind,
@@ -5378,7 +5400,7 @@ function navigateWorkspaceModuleWindow(route: WorkspaceModuleRoute, pushHistory 
     );
   }
 
-  if (shouldOpenFullscreen) {
+  if (shouldKeepFullscreen) {
     enterModuleWindowFullscreen(route.kind, moduleWin);
   }
 
@@ -5403,6 +5425,14 @@ function updateWorkspaceModuleRoute(route: WorkspaceModuleRoute) {
   registerWorkspaceModuleKind(route.kind, moduleWin, route);
   syncWorkspaceWindowAttachment(route.kind);
   setWorkspaceWindowAsFloatingDockTarget(route.kind);
+  if (
+    isWorkspaceModuleKind(route.kind) &&
+    (Boolean(workspaceShellFullscreenRestoreBounds) ||
+      currentSidebarMode === 'fullscreen' ||
+      moduleWin.isFullScreen())
+  ) {
+    enterModuleWindowFullscreen(route.kind, moduleWin);
+  }
   broadcastWorkspaceNavigationState();
   return true;
 }
@@ -5452,7 +5482,7 @@ function openModuleWindow(
     workspaceModuleKind !== kind
   ) {
     holdCurrentFloatingDockTarget();
-    if (shouldAttachWorkspaceWindowToSidebar()) {
+    if (shouldAttachWorkspaceWindowToSidebar() && !workspaceShellFullscreenRestoreBounds) {
       workspaceModuleWin.setBounds(resolveWorkspaceModuleBounds(kind), false);
       setWorkspaceWindowAsFloatingDockTarget(kind);
     }
@@ -5464,7 +5494,7 @@ function openModuleWindow(
   if (existing && !existing.isDestroyed()) {
     holdCurrentFloatingDockTarget();
     if (isWorkspaceModuleKind(kind)) {
-      if (shouldAttachWorkspaceWindowToSidebar()) {
+      if (shouldAttachWorkspaceWindowToSidebar() && !workspaceShellFullscreenRestoreBounds) {
         existing.setBounds(resolveWorkspaceModuleBounds(kind), false);
         setWorkspaceWindowAsFloatingDockTarget(kind);
       }
@@ -5618,6 +5648,7 @@ function openModuleWindow(
       workspaceModuleWin = null;
       workspaceModuleKind = null;
       workspaceModuleCurrentRoute = null;
+      workspaceShellFullscreenRestoreBounds = null;
       workspaceModuleBackStack.length = 0;
       workspaceModuleForwardStack.length = 0;
       broadcastWorkspaceNavigationState();
@@ -5785,7 +5816,13 @@ function openModuleWindow(
 
   if (!isQuickCapture) {
     const rememberBounds = () => {
-      if (moduleWin.isDestroyed() || moduleWindowFullscreenBoundsMemory.has(kind)) return;
+      if (
+        moduleWin.isDestroyed() ||
+        (moduleWin === workspaceModuleWin && Boolean(workspaceShellFullscreenRestoreBounds)) ||
+        moduleWindowFullscreenBoundsMemory.has(kind)
+      ) {
+        return;
+      }
       const bounds = moduleWin.getBounds();
       moduleWindowBoundsMemory.set(kind, {
         bounds,
@@ -5817,7 +5854,9 @@ function openModuleWindow(
     sendModuleFullscreenState(
       kind,
       moduleWin,
-      moduleWindowFullscreenBoundsMemory.has(kind) || moduleWin.isFullScreen()
+      (moduleWin === workspaceModuleWin && Boolean(workspaceShellFullscreenRestoreBounds)) ||
+        moduleWindowFullscreenBoundsMemory.has(kind) ||
+        moduleWin.isFullScreen()
     );
     if (isWorkspaceModuleKind(kind) && currentSidebarMode === 'fullscreen') {
       enterModuleWindowFullscreen(kind, moduleWin);
@@ -6263,9 +6302,11 @@ ipcMain.handle('window:toggle-module-fullscreen', (_event, kind: ModuleWindowKin
     existing.restore();
   }
   const isPseudoFullscreen = moduleWindowFullscreenBoundsMemory.has(kind);
+  const isWorkspacePseudoFullscreen =
+    existing === workspaceModuleWin && Boolean(workspaceShellFullscreenRestoreBounds);
   const isNativeFullscreen = existing.isFullScreen();
 
-  if (!isPseudoFullscreen && !isNativeFullscreen) {
+  if (!isPseudoFullscreen && !isWorkspacePseudoFullscreen && !isNativeFullscreen) {
     enterModuleWindowFullscreen(kind, existing);
     return true;
   }
