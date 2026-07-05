@@ -63,9 +63,6 @@ import {
   type ProjectTypeKind,
 } from '../../utils/projectTypes';
 
-const initialProjectsSection =
-  new URLSearchParams(window.location.search).get('section')?.trim() ?? '';
-
 const parseProjectsSection = (
   value: string
 ): { view: ProjectsOverviewView; range: ProjectsOverviewRange } | null => {
@@ -87,9 +84,7 @@ const parseProjectsSection = (
   const [viewPart, rangePart] = normalized.split(':');
   const view: ProjectsOverviewView = viewPart === 'list' ? 'list' : 'timeline';
   const range: ProjectsOverviewRange =
-    rangePart === 'month' || rangePart === 'quarter' || rangePart === 'all'
-      ? rangePart
-      : 'all';
+    rangePart === 'month' || rangePart === 'quarter' || rangePart === 'all' ? rangePart : 'all';
   return { view, range };
 };
 
@@ -560,6 +555,8 @@ export const ProjectsWindow = () => {
   const viewportWidth = useViewportWidth();
   const viewportHeight = useViewportHeight();
   const initialFocusProjectId = new URLSearchParams(window.location.search).get('focusProjectId');
+  const initialProjectsSection =
+    new URLSearchParams(window.location.search).get('section')?.trim() ?? '';
   const initialFocusHandledRef = useRef(false);
   const initialFocusTaskId = new URLSearchParams(window.location.search).get('focusTaskId');
   const autosaveTimerRef = useRef<number | null>(null);
@@ -725,8 +722,9 @@ export const ProjectsWindow = () => {
   const [showCloseGuardModal, setShowCloseGuardModal] = useState(false);
   const [workspaceRefreshToken, setWorkspaceRefreshToken] = useState(0);
   const [activeTab, setActiveTab] = useState<ProjectTab>('overview');
-  const [projectsOverviewView, setProjectsOverviewView] =
-    useState<ProjectsOverviewView>(parseProjectsSection(initialProjectsSection)?.view ?? 'timeline');
+  const [projectsOverviewView, setProjectsOverviewView] = useState<ProjectsOverviewView>(
+    parseProjectsSection(initialProjectsSection)?.view ?? 'timeline'
+  );
   const [projectsOverviewRange, setProjectsOverviewRange] = useState<ProjectsOverviewRange>(
     parseProjectsSection(initialProjectsSection)?.range ?? 'all'
   );
@@ -782,11 +780,19 @@ export const ProjectsWindow = () => {
     [projects, selectedProjectId]
   );
 
+  const statusFilteredProjects = useMemo(() => {
+    return projects.filter((project) => {
+      const semantic = parseProjectStatus(String(project.status));
+      if (statusFilter === 'all') return true;
+      if (statusFilter === 'active') return semantic !== 'completed' && semantic !== 'paused';
+      return semantic === statusFilter;
+    });
+  }, [projects, statusFilter]);
+
   const visibleProjects = useMemo(() => {
     const term = search.trim().toLowerCase();
 
-    return projects.filter((project) => {
-      const semantic = parseProjectStatus(String(project.status));
+    return statusFilteredProjects.filter((project) => {
       const matchesSearch =
         !term ||
         [
@@ -800,12 +806,9 @@ export const ProjectsWindow = () => {
           .toLowerCase()
           .includes(term);
 
-      if (!matchesSearch) return false;
-      if (statusFilter === 'all') return true;
-      if (statusFilter === 'active') return semantic !== 'completed' && semantic !== 'paused';
-      return semantic === statusFilter;
+      return matchesSearch;
     });
-  }, [projects, search, statusFilter]);
+  }, [search, statusFilteredProjects]);
 
   const selectedProjectTasks = useMemo(() => {
     return tasks
@@ -1018,7 +1021,7 @@ export const ProjectsWindow = () => {
   ]);
 
   const timelineRange = useMemo(() => {
-    const dated = projects
+    const dated = statusFilteredProjects
       .flatMap((project) => [
         parseTimelineDate(project.start_date),
         parseTimelineDate(project.end_date),
@@ -1044,7 +1047,7 @@ export const ProjectsWindow = () => {
       start: startOfMonth(addMonths(min, -1)),
       end: addMonths(startOfMonth(max), 3),
     };
-  }, [projects, projectsOverviewRange]);
+  }, [projectsOverviewRange, statusFilteredProjects]);
 
   const timelineMonths = useMemo(() => {
     const months: Date[] = [];
@@ -1061,14 +1064,14 @@ export const ProjectsWindow = () => {
   const timelineDays = daysBetween(timelineRange.start, timelineRange.end);
   const datedProjects = useMemo(
     () =>
-      projects
+      statusFilteredProjects
         .filter((project) => project.start_date || project.end_date)
         .sort((left, right) =>
           String(left.start_date ?? left.end_date ?? '').localeCompare(
             String(right.start_date ?? right.end_date ?? '')
           )
         ),
-    [projects]
+    [statusFilteredProjects]
   );
   const visibleDatedProjects = useMemo(
     () =>
@@ -1082,8 +1085,8 @@ export const ProjectsWindow = () => {
     [datedProjects, projectsOverviewRange, timelineRange]
   );
   const datelessProjects = useMemo(
-    () => projects.filter((project) => !project.start_date && !project.end_date),
-    [projects]
+    () => statusFilteredProjects.filter((project) => !project.start_date && !project.end_date),
+    [statusFilteredProjects]
   );
   const workspaceMilestonesByProject = useMemo(() => {
     const grouped = new Map<string, ProjectMilestoneRow[]>();
@@ -4289,11 +4292,11 @@ export const ProjectsWindow = () => {
     const timelineBarHeight = 42;
     const timelineWidth = Math.max(1180, timelineMonths.length * timelineMonthWidth);
     const timelineCanvasHeight = Math.max(
-      720,
-      viewportHeight - 324,
+      800,
+      viewportHeight - 220,
       240 + visibleDatedProjects.length * timelineRowPitch
     );
-    const timelineBodyHeight = Math.max(600, timelineCanvasHeight - 72);
+    const timelineBodyHeight = Math.max(680, timelineCanvasHeight - 72);
     const timelineSubdivisions = 4;
     const todayLeft = getTimelinePositionFromDate(todayKey());
     const showTodayMarker = todayLeft > 0 && todayLeft < 100;
@@ -4355,7 +4358,7 @@ export const ProjectsWindow = () => {
         ? [...datedProjects, ...datelessProjects]
         : [...visibleDatedProjects, ...datelessProjects];
     return (
-      <div className="flex min-h-0 w-full flex-1 flex-col gap-5">
+      <div className="flex h-full min-h-0 w-full flex-1 flex-col gap-5">
         {(isMilestonePlacementActive ||
           milestonePlacementHint !== 'Click a project row to place a milestone.') && (
           <section className="flex items-center gap-2 rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 py-2 text-xs text-[var(--ledger-text-secondary)]">
@@ -4570,462 +4573,462 @@ export const ProjectsWindow = () => {
                             minHeight: `${timelineCanvasHeight}px`,
                           }}
                         >
-                            {showTodayMarker && (
-                              <div
-                                className="pointer-events-none absolute z-[7] -translate-x-1/2"
-                                style={{ left: `${dateToX(todayKey())}%`, top: 0, bottom: 0 }}
-                              >
-                                <span className="absolute left-1/2 top-4 z-[8] flex min-w-[38px] -translate-x-1/2 items-center justify-center rounded-full bg-[var(--ledger-accent)] px-2 py-0.5 text-[10px] font-semibold leading-none text-white shadow-[0_10px_20px_rgba(255,95,64,0.18)]">
-                                  <span className="flex flex-col items-center justify-center gap-0.5 text-center">
-                                    <span className="block">{todayMonthLabel}</span>
-                                    <span className="block">{todayDayLabel}</span>
-                                  </span>
-                                </span>
-                                <span
-                                  className="absolute left-1/2 top-[38px] bottom-0 w-px -translate-x-1/2 bg-[var(--ledger-accent)]/60"
-                                  aria-hidden="true"
-                                />
-                                <span
-                                  className="absolute left-1/2 top-[38px] z-[8] h-0.5 w-0.5 -translate-x-1/2 rounded-full bg-[var(--ledger-accent)]/75"
-                                  aria-hidden="true"
-                                />
-                              </div>
-                            )}
-                            <div className="sticky top-0 z-[5] border-b border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)]/96">
-                              <div
-                                className="grid h-[58px]"
-                                style={{
-                                  gridTemplateColumns: `repeat(${timelineMonths.length}, minmax(${timelineMonthWidth}px, 1fr))`,
-                                  backgroundImage:
-                                    'linear-gradient(to right, color-mix(in srgb, var(--ledger-border-subtle) 40%, transparent) 1px, transparent 1px)',
-                                  backgroundSize: `${
-                                    timelineWidth /
-                                    Math.max(1, timelineMonths.length * timelineSubdivisions)
-                                  }px 100%`,
-                                }}
-                              >
-                                {timelineMonths.map((month) => (
-                                  <div
-                                    key={month.toISOString()}
-                                    className="border-r border-[color:var(--ledger-border-subtle)] px-3 py-2 last:border-r-0"
-                                  >
-                                    <p className="text-[12px] font-semibold uppercase tracking-[0.04em] text-[var(--ledger-text-secondary)]">
-                                      {month.toLocaleDateString([], { month: 'short' })}
-                                    </p>
-                                    {projectsOverviewRange !== 'all' && (
-                                      <div
-                                        className="mt-1 grid text-[10px] text-[var(--ledger-text-muted)]"
-                                        style={{
-                                          gridTemplateColumns: `repeat(${
-                                            getMonthTickDays(month).length
-                                          }, minmax(0, 1fr))`,
-                                        }}
-                                      >
-                                        {getMonthTickDays(month).map((day) => (
-                                          <span key={day} className="tabular-nums leading-none">
-                                            {day}
-                                          </span>
-                                        ))}
-                                      </div>
-                                    )}
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-
+                          {showTodayMarker && (
                             <div
-                              className="relative"
+                              className="pointer-events-none absolute z-[7] -translate-x-1/2"
+                              style={{ left: `${dateToX(todayKey())}%`, top: 0, bottom: 0 }}
+                            >
+                              <span className="absolute left-1/2 top-4 z-[8] flex min-w-[38px] -translate-x-1/2 items-center justify-center rounded-full bg-[var(--ledger-accent)] px-2 py-0.5 text-[10px] font-semibold leading-none text-white shadow-[0_10px_20px_rgba(255,95,64,0.18)]">
+                                <span className="flex flex-col items-center justify-center gap-0.5 text-center">
+                                  <span className="block">{todayMonthLabel}</span>
+                                  <span className="block">{todayDayLabel}</span>
+                                </span>
+                              </span>
+                              <span
+                                className="absolute left-1/2 top-[38px] bottom-0 w-px -translate-x-1/2 bg-[var(--ledger-accent)]/60"
+                                aria-hidden="true"
+                              />
+                              <span
+                                className="absolute left-1/2 top-[38px] z-[8] h-0.5 w-0.5 -translate-x-1/2 rounded-full bg-[var(--ledger-accent)]/75"
+                                aria-hidden="true"
+                              />
+                            </div>
+                          )}
+                          <div className="sticky top-0 z-[5] border-b border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)]/96">
+                            <div
+                              className="grid h-[58px]"
                               style={{
-                                minHeight: `${timelineBodyHeight}px`,
+                                gridTemplateColumns: `repeat(${timelineMonths.length}, minmax(${timelineMonthWidth}px, 1fr))`,
                                 backgroundImage:
-                                  'linear-gradient(to right, color-mix(in srgb, var(--ledger-border-subtle) 72%, transparent) 1px, transparent 1px), linear-gradient(to bottom, color-mix(in srgb, var(--ledger-border-subtle) 28%, transparent) 1px, transparent 1px)',
+                                  'linear-gradient(to right, color-mix(in srgb, var(--ledger-border-subtle) 40%, transparent) 1px, transparent 1px)',
                                 backgroundSize: `${
                                   timelineWidth /
                                   Math.max(1, timelineMonths.length * timelineSubdivisions)
                                 }px 100%`,
                               }}
                             >
-                              {visibleDatedProjects.length === 0 ? (
-                                <div className="flex h-72 items-center justify-center px-6 text-center">
-                                  <div className="max-w-sm">
-                                    <p className="text-sm font-semibold text-[var(--ledger-text-primary)]">
-                                      No dated projects yet.
-                                    </p>
-                                    <p className="mt-1 text-sm text-[var(--ledger-text-muted)]">
-                                      Add start or due dates to place projects on the workspace
-                                      timeline.
-                                    </p>
-                                  </div>
-                                </div>
-                              ) : (
+                              {timelineMonths.map((month) => (
                                 <div
-                                  className="relative flex-1"
-                                  style={{ minHeight: `${timelineBodyHeight}px` }}
+                                  key={month.toISOString()}
+                                  className="border-r border-[color:var(--ledger-border-subtle)] px-3 py-2 last:border-r-0"
                                 >
-                                  {visibleDatedProjects.map((project, index) => {
-                                    const semantic = parseProjectStatus(String(project.status));
-                                    const lane = getProjectLane(project);
-                                    const completeness = Math.max(
-                                      0,
-                                      Math.min(100, Number(project.completeness) || 0)
-                                    );
-                                    const barTop =
-                                      82 + index * timelineRowPitch + (index % 2 === 0 ? 0 : 24);
-                                    const labelTop = Math.max(20, barTop - 36);
-                                    const stats = projectTaskStats.get(project.id) ?? {
-                                      active: 0,
-                                      completed: 0,
-                                      total: 0,
-                                    };
-                                    const projectMilestones =
-                                      workspaceMilestonesByProject.get(project.id) ?? [];
-                                    const visibleProjectMilestones =
-                                      projectsOverviewRange === 'all'
-                                        ? projectMilestones
-                                        : projectMilestones.filter((milestone) => {
-                                            const milestoneDate = parseTimelineDate(
-                                              milestone.milestone_date
-                                            );
-                                            if (!milestoneDate) return false;
-                                            return (
-                                              milestoneDate >= timelineRange.start &&
-                                              milestoneDate < timelineRange.end
-                                            );
-                                          });
-                                    const todayDate = parseTimelineDate(todayKey());
-                                    const todayX = dateToX(todayKey());
-                                    const sortedMilestoneLayouts = visibleProjectMilestones
-                                      .map((milestone) => {
-                                        const milestoneDate = parseTimelineDate(
-                                          milestone.milestone_date
-                                        );
-                                        const markerLeft = dateToX(milestone.milestone_date);
-                                        const markerX = (markerLeft / 100) * timelineWidth;
-                                        const daysFromToday =
-                                          milestoneDate && todayDate
-                                            ? Math.round(
-                                                (milestoneDate.getTime() - todayDate.getTime()) /
-                                                  (24 * 60 * 60 * 1000)
-                                              )
-                                            : 999;
-                                        const isActive = daysFromToday === 0;
-                                        const isUpcomingSoon =
-                                          daysFromToday > 0 && daysFromToday <= 21;
-                                        const isDeadline =
-                                          milestone.type.toLowerCase() === 'deadline';
-                                        const isOverdue = !milestone.completed && daysFromToday < 0;
-                                        const priority =
-                                          (isActive ? 100 : 0) +
-                                          (isUpcomingSoon ? 70 : 0) +
-                                          (isDeadline ? 35 : 0) +
-                                          (milestone.completed ? -45 : 0) +
-                                          (isOverdue ? 25 : 0);
-                                        const labelWidth = Math.min(
-                                          144,
-                                          Math.max(76, milestone.title.length * 6.3)
-                                        );
-                                        const tooCloseToToday =
-                                          !isActive &&
-                                          showTodayMarker &&
-                                          Math.abs(markerLeft - todayX) <
-                                            (30 / Math.max(timelineWidth, 1)) * 100;
+                                  <p className="text-[12px] font-semibold uppercase tracking-[0.04em] text-[var(--ledger-text-secondary)]">
+                                    {month.toLocaleDateString([], { month: 'short' })}
+                                  </p>
+                                  {projectsOverviewRange !== 'all' && (
+                                    <div
+                                      className="mt-1 grid text-[10px] text-[var(--ledger-text-muted)]"
+                                      style={{
+                                        gridTemplateColumns: `repeat(${
+                                          getMonthTickDays(month).length
+                                        }, minmax(0, 1fr))`,
+                                      }}
+                                    >
+                                      {getMonthTickDays(month).map((day) => (
+                                        <span key={day} className="tabular-nums leading-none">
+                                          {day}
+                                        </span>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
 
-                                        return {
-                                          milestone,
-                                          markerLeft,
-                                          markerX,
-                                          labelWidth,
-                                          priority,
-                                          isActive,
-                                          isOverdue,
-                                          labelVisible: !tooCloseToToday,
-                                          labelLane: 0,
-                                        };
-                                      })
-                                      .sort((left, right) => right.priority - left.priority);
-                                    const labelOccupancy: Array<Array<[number, number]>> = [
-                                      [],
-                                      [],
-                                      [],
-                                    ];
-                                    const milestoneLayouts = sortedMilestoneLayouts
-                                      .map((layout) => {
-                                        if (!layout.labelVisible) return layout;
-                                        const halfWidth = layout.labelWidth / 2;
-                                        const nextInterval: [number, number] = [
-                                          layout.markerX - halfWidth - 10,
-                                          layout.markerX + halfWidth + 10,
-                                        ];
-                                        const lane = labelOccupancy.findIndex((intervals) =>
-                                          intervals.every(
-                                            ([start, end]) =>
-                                              nextInterval[1] < start || nextInterval[0] > end
-                                          )
-                                        );
-                                        if (lane === -1) return { ...layout, labelVisible: false };
-                                        labelOccupancy[lane].push(nextInterval);
-                                        return { ...layout, labelLane: lane };
-                                      })
-                                      .sort((left, right) => left.markerX - right.markerX);
-                                    return (
-                                      <div
-                                        key={project.id}
-                                        onClick={(event) => {
-                                          if (!isMilestonePlacementActive) return;
-                                          event.preventDefault();
-                                          event.stopPropagation();
-                                          const date =
-                                            getDateFromTimelinePosition(
-                                              event.clientX,
-                                              timelineCanvasRef.current
-                                            ) ??
-                                            project.end_date ??
-                                            todayKey();
-                                          openMilestoneEditor(project.id, date, {
-                                            x: event.clientX,
-                                            y: event.clientY,
-                                          });
-                                        }}
-                                        onMouseMove={(event) => {
-                                          if (!isMilestonePlacementActive) return;
-                                          const date = getDateFromTimelinePosition(
+                          <div
+                            className="relative"
+                            style={{
+                              minHeight: `${timelineBodyHeight}px`,
+                              backgroundImage:
+                                'linear-gradient(to right, color-mix(in srgb, var(--ledger-border-subtle) 72%, transparent) 1px, transparent 1px), linear-gradient(to bottom, color-mix(in srgb, var(--ledger-border-subtle) 28%, transparent) 1px, transparent 1px)',
+                              backgroundSize: `${
+                                timelineWidth /
+                                Math.max(1, timelineMonths.length * timelineSubdivisions)
+                              }px 100%`,
+                            }}
+                          >
+                            {visibleDatedProjects.length === 0 ? (
+                              <div className="flex h-72 items-center justify-center px-6 text-center">
+                                <div className="max-w-sm">
+                                  <p className="text-sm font-semibold text-[var(--ledger-text-primary)]">
+                                    No dated projects yet.
+                                  </p>
+                                  <p className="mt-1 text-sm text-[var(--ledger-text-muted)]">
+                                    Add start or due dates to place projects on the workspace
+                                    timeline.
+                                  </p>
+                                </div>
+                              </div>
+                            ) : (
+                              <div
+                                className="relative flex-1"
+                                style={{ minHeight: `${timelineBodyHeight}px` }}
+                              >
+                                {visibleDatedProjects.map((project, index) => {
+                                  const semantic = parseProjectStatus(String(project.status));
+                                  const lane = getProjectLane(project);
+                                  const completeness = Math.max(
+                                    0,
+                                    Math.min(100, Number(project.completeness) || 0)
+                                  );
+                                  const barTop =
+                                    82 + index * timelineRowPitch + (index % 2 === 0 ? 0 : 24);
+                                  const labelTop = Math.max(20, barTop - 36);
+                                  const stats = projectTaskStats.get(project.id) ?? {
+                                    active: 0,
+                                    completed: 0,
+                                    total: 0,
+                                  };
+                                  const projectMilestones =
+                                    workspaceMilestonesByProject.get(project.id) ?? [];
+                                  const visibleProjectMilestones =
+                                    projectsOverviewRange === 'all'
+                                      ? projectMilestones
+                                      : projectMilestones.filter((milestone) => {
+                                          const milestoneDate = parseTimelineDate(
+                                            milestone.milestone_date
+                                          );
+                                          if (!milestoneDate) return false;
+                                          return (
+                                            milestoneDate >= timelineRange.start &&
+                                            milestoneDate < timelineRange.end
+                                          );
+                                        });
+                                  const todayDate = parseTimelineDate(todayKey());
+                                  const todayX = dateToX(todayKey());
+                                  const sortedMilestoneLayouts = visibleProjectMilestones
+                                    .map((milestone) => {
+                                      const milestoneDate = parseTimelineDate(
+                                        milestone.milestone_date
+                                      );
+                                      const markerLeft = dateToX(milestone.milestone_date);
+                                      const markerX = (markerLeft / 100) * timelineWidth;
+                                      const daysFromToday =
+                                        milestoneDate && todayDate
+                                          ? Math.round(
+                                              (milestoneDate.getTime() - todayDate.getTime()) /
+                                                (24 * 60 * 60 * 1000)
+                                            )
+                                          : 999;
+                                      const isActive = daysFromToday === 0;
+                                      const isUpcomingSoon =
+                                        daysFromToday > 0 && daysFromToday <= 21;
+                                      const isDeadline =
+                                        milestone.type.toLowerCase() === 'deadline';
+                                      const isOverdue = !milestone.completed && daysFromToday < 0;
+                                      const priority =
+                                        (isActive ? 100 : 0) +
+                                        (isUpcomingSoon ? 70 : 0) +
+                                        (isDeadline ? 35 : 0) +
+                                        (milestone.completed ? -45 : 0) +
+                                        (isOverdue ? 25 : 0);
+                                      const labelWidth = Math.min(
+                                        144,
+                                        Math.max(76, milestone.title.length * 6.3)
+                                      );
+                                      const tooCloseToToday =
+                                        !isActive &&
+                                        showTodayMarker &&
+                                        Math.abs(markerLeft - todayX) <
+                                          (30 / Math.max(timelineWidth, 1)) * 100;
+
+                                      return {
+                                        milestone,
+                                        markerLeft,
+                                        markerX,
+                                        labelWidth,
+                                        priority,
+                                        isActive,
+                                        isOverdue,
+                                        labelVisible: !tooCloseToToday,
+                                        labelLane: 0,
+                                      };
+                                    })
+                                    .sort((left, right) => right.priority - left.priority);
+                                  const labelOccupancy: Array<Array<[number, number]>> = [
+                                    [],
+                                    [],
+                                    [],
+                                  ];
+                                  const milestoneLayouts = sortedMilestoneLayouts
+                                    .map((layout) => {
+                                      if (!layout.labelVisible) return layout;
+                                      const halfWidth = layout.labelWidth / 2;
+                                      const nextInterval: [number, number] = [
+                                        layout.markerX - halfWidth - 10,
+                                        layout.markerX + halfWidth + 10,
+                                      ];
+                                      const lane = labelOccupancy.findIndex((intervals) =>
+                                        intervals.every(
+                                          ([start, end]) =>
+                                            nextInterval[1] < start || nextInterval[0] > end
+                                        )
+                                      );
+                                      if (lane === -1) return { ...layout, labelVisible: false };
+                                      labelOccupancy[lane].push(nextInterval);
+                                      return { ...layout, labelLane: lane };
+                                    })
+                                    .sort((left, right) => left.markerX - right.markerX);
+                                  return (
+                                    <div
+                                      key={project.id}
+                                      onClick={(event) => {
+                                        if (!isMilestonePlacementActive) return;
+                                        event.preventDefault();
+                                        event.stopPropagation();
+                                        const date =
+                                          getDateFromTimelinePosition(
                                             event.clientX,
                                             timelineCanvasRef.current
-                                          );
-                                          if (!date) {
-                                            setMilestonePlacementHint('Choose a project row.');
-                                            setMilestoneHover(null);
+                                          ) ??
+                                          project.end_date ??
+                                          todayKey();
+                                        openMilestoneEditor(project.id, date, {
+                                          x: event.clientX,
+                                          y: event.clientY,
+                                        });
+                                      }}
+                                      onMouseMove={(event) => {
+                                        if (!isMilestonePlacementActive) return;
+                                        const date = getDateFromTimelinePosition(
+                                          event.clientX,
+                                          timelineCanvasRef.current
+                                        );
+                                        if (!date) {
+                                          setMilestonePlacementHint('Choose a project row.');
+                                          setMilestoneHover(null);
+                                          return;
+                                        }
+                                        setMilestonePlacementHint(
+                                          'Click a project row to place a milestone.'
+                                        );
+                                        setMilestoneHover({
+                                          projectId: project.id,
+                                          date,
+                                          x: event.clientX,
+                                          y: event.clientY,
+                                        });
+                                      }}
+                                      onMouseLeave={() => {
+                                        if (milestoneHover?.projectId === project.id)
+                                          setMilestoneHover(null);
+                                      }}
+                                      onContextMenu={(event) =>
+                                        handleTimelineProjectRowContextMenu(event, project.id)
+                                      }
+                                      title={`${project.name} · ${formatDateRange(
+                                        project.start_date,
+                                        project.end_date
+                                      )} · ${stats.active} active actions · ${
+                                        overviewNoteLinkCounts[project.id] ?? 0
+                                      } notes`}
+                                      className={`absolute left-0 block h-28 w-full text-left ${
+                                        isMilestonePlacementActive
+                                          ? 'cursor-crosshair'
+                                          : 'cursor-default'
+                                      }`}
+                                      style={{ top: `${barTop - 52}px` }}
+                                    >
+                                      {isMilestonePlacementActive &&
+                                        milestoneHover?.projectId === project.id &&
+                                        milestoneHover.date && (
+                                          <div
+                                            className="pointer-events-none absolute inset-y-0 z-[1] w-px bg-[var(--ledger-accent)]/25"
+                                            style={{ left: `${dateToX(milestoneHover.date)}%` }}
+                                          />
+                                        )}
+                                      <button
+                                        type="button"
+                                        data-timeline-project-bar="true"
+                                        onClick={(event) => {
+                                          event.preventDefault();
+                                          event.stopPropagation();
+                                          if (isMilestonePlacementActive) {
+                                            const date =
+                                              getDateFromTimelinePosition(
+                                                event.clientX,
+                                                timelineCanvasRef.current
+                                              ) ??
+                                              project.end_date ??
+                                              todayKey();
+                                            openMilestoneEditor(project.id, date, {
+                                              x: event.clientX,
+                                              y: event.clientY,
+                                            });
                                             return;
                                           }
-                                          setMilestonePlacementHint(
-                                            'Click a project row to place a milestone.'
-                                          );
-                                          setMilestoneHover({
-                                            projectId: project.id,
-                                            date,
-                                            x: event.clientX,
-                                            y: event.clientY,
-                                          });
-                                        }}
-                                        onMouseLeave={() => {
-                                          if (milestoneHover?.projectId === project.id)
-                                            setMilestoneHover(null);
+                                          void selectProject(project);
                                         }}
                                         onContextMenu={(event) =>
                                           handleTimelineProjectRowContextMenu(event, project.id)
                                         }
-                                        title={`${project.name} · ${formatDateRange(
-                                          project.start_date,
-                                          project.end_date
-                                        )} · ${stats.active} active actions · ${
-                                          overviewNoteLinkCounts[project.id] ?? 0
-                                        } notes`}
-                                        className={`absolute left-0 block h-28 w-full text-left ${
-                                          isMilestonePlacementActive
-                                            ? 'cursor-crosshair'
-                                            : 'cursor-default'
-                                        }`}
-                                        style={{ top: `${barTop - 52}px` }}
+                                        className="absolute rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] shadow-[0_10px_28px_rgba(17,24,39,0.05)] transition hover:border-[color:var(--ledger-border-strong)] hover:shadow-[0_14px_34px_rgba(17,24,39,0.08)]"
+                                        style={{
+                                          left: `${lane.left}%`,
+                                          top: '52px',
+                                          width: `${Math.max(5, lane.width)}%`,
+                                          height: `${timelineBarHeight}px`,
+                                        }}
                                       >
-                                        {isMilestonePlacementActive &&
-                                          milestoneHover?.projectId === project.id &&
-                                          milestoneHover.date && (
-                                            <div
-                                              className="pointer-events-none absolute inset-y-0 z-[1] w-px bg-[var(--ledger-accent)]/25"
-                                              style={{ left: `${dateToX(milestoneHover.date)}%` }}
-                                            />
-                                          )}
-                                        <button
-                                          type="button"
-                                          data-timeline-project-bar="true"
-                                          onClick={(event) => {
-                                            event.preventDefault();
-                                            event.stopPropagation();
-                                            if (isMilestonePlacementActive) {
-                                              const date =
-                                                getDateFromTimelinePosition(
-                                                  event.clientX,
-                                                  timelineCanvasRef.current
-                                                ) ??
-                                                project.end_date ??
-                                                todayKey();
-                                              openMilestoneEditor(project.id, date, {
-                                                x: event.clientX,
-                                                y: event.clientY,
-                                              });
-                                              return;
-                                            }
-                                            void selectProject(project);
-                                          }}
-                                          onContextMenu={(event) =>
-                                            handleTimelineProjectRowContextMenu(event, project.id)
-                                          }
-                                          className="absolute rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] shadow-[0_10px_28px_rgba(17,24,39,0.05)] transition hover:border-[color:var(--ledger-border-strong)] hover:shadow-[0_14px_34px_rgba(17,24,39,0.08)]"
+                                        <div
+                                          className="h-full rounded-[inherit] opacity-20"
                                           style={{
-                                            left: `${lane.left}%`,
-                                            top: '52px',
-                                            width: `${Math.max(5, lane.width)}%`,
-                                            height: `${timelineBarHeight}px`,
+                                            width: `${
+                                              semantic === 'completed' ? 100 : completeness
+                                            }%`,
+                                            backgroundColor: project.color || '#FF5F40',
                                           }}
-                                        >
-                                          <div
-                                            className="h-full rounded-[inherit] opacity-20"
-                                            style={{
-                                              width: `${
-                                                semantic === 'completed' ? 100 : completeness
-                                              }%`,
-                                              backgroundColor: project.color || '#FF5F40',
-                                            }}
-                                          />
-                                        </button>
-                                        {milestoneLayouts.map(
-                                          ({
-                                            milestone,
-                                            markerLeft,
-                                            labelVisible,
-                                            labelLane,
-                                            isActive,
-                                            isOverdue,
-                                          }) => {
-                                            return (
-                                              <div
-                                                key={milestone.id}
-                                                className="group absolute z-[3] -translate-x-1/2"
-                                                style={{ left: `${markerLeft}%`, top: '64px' }}
-                                              >
-                                                <span
-                                                  title={`${milestone.title}\n${
-                                                    milestone.type
-                                                  } · ${formatShortDate(
-                                                    milestone.milestone_date
-                                                  )}\n${project.name}`}
-                                                  onClick={(event) => {
-                                                    event.preventDefault();
-                                                    event.stopPropagation();
-                                                    openMilestoneDetail(
-                                                      milestone.id,
-                                                      event.clientX,
-                                                      event.clientY
-                                                    );
-                                                  }}
-                                                  onContextMenu={(event) =>
-                                                    handleTimelineMarkerContextMenu(
-                                                      event,
-                                                      milestone.id,
-                                                      project.id,
-                                                      milestone.title,
-                                                      'milestone'
-                                                    )
-                                                  }
-                                                  className={`mx-auto flex h-[18px] w-[18px] rotate-45 items-center justify-center rounded-[4px] border shadow-[0_8px_18px_rgba(17,24,39,0.05)] transition ${
-                                                    isActive
-                                                      ? 'border-[color:var(--ledger-accent)] bg-[var(--ledger-accent)]'
-                                                      : milestone.completed
-                                                      ? 'border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-text-muted)]/70'
-                                                      : isOverdue
-                                                      ? 'border-[color:rgba(217,45,32,0.46)] bg-[var(--ledger-surface-card)]'
-                                                      : 'border-[color:var(--ledger-accent)] bg-[var(--ledger-surface-card)]'
-                                                  }`}
-                                                >
-                                                  {milestone.completed && (
-                                                    <CheckCircle2
-                                                      size={11}
-                                                      className="-rotate-45 text-[var(--ledger-surface-card)] opacity-0 transition group-hover:opacity-100"
-                                                    />
-                                                  )}
-                                                  {isActive && (
-                                                    <span
-                                                      className="h-1.5 w-1.5 rounded-full bg-white"
-                                                      aria-hidden="true"
-                                                    />
-                                                  )}
-                                                </span>
-                                                {labelVisible && (
-                                                  <span
-                                                    className={`absolute left-1/2 w-36 -translate-x-1/2 truncate text-center text-[11px] font-medium leading-tight text-[var(--ledger-text-muted)] ${
-                                                      milestone.completed
-                                                        ? 'opacity-55'
-                                                        : 'opacity-[0.82]'
-                                                    }`}
-                                                    style={{
-                                                      top: `${22 + labelLane * 16}px`,
-                                                    }}
-                                                  >
-                                                    {milestone.title}
-                                                  </span>
-                                                )}
-                                              </div>
-                                            );
-                                          }
-                                        )}
-                                        {pendingMilestone?.projectId === project.id && (
-                                          <span
-                                            className="pointer-events-none absolute z-[4] flex h-[18px] w-[18px] -translate-x-1/2 rotate-45 items-center justify-center rounded-[4px] border border-[color:var(--ledger-accent)] bg-[var(--ledger-accent)]/20"
-                                            style={{
-                                              left: `${dateToX(pendingMilestone.date)}%`,
-                                              top: '64px',
-                                            }}
-                                          />
-                                        )}
-                                        {isMilestonePlacementActive &&
-                                          milestoneHover?.projectId === project.id &&
-                                          milestoneHover.date && (
+                                        />
+                                      </button>
+                                      {milestoneLayouts.map(
+                                        ({
+                                          milestone,
+                                          markerLeft,
+                                          labelVisible,
+                                          labelLane,
+                                          isActive,
+                                          isOverdue,
+                                        }) => {
+                                          return (
                                             <div
-                                              className="pointer-events-none absolute top-4 z-[4] -translate-x-1/2"
-                                              style={{ left: `${dateToX(milestoneHover.date)}%` }}
+                                              key={milestone.id}
+                                              className="group absolute z-[3] -translate-x-1/2"
+                                              style={{ left: `${markerLeft}%`, top: '64px' }}
                                             >
-                                              <div className="flex flex-col items-center gap-1">
-                                                <span className="rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--ledger-text-secondary)] shadow-[var(--ledger-shadow)]">
-                                                  {formatShortDate(milestoneHover.date)}
-                                                </span>
-                                                <span className="flex h-5 w-5 items-center justify-center rounded-full border border-[color:var(--ledger-accent)] bg-[var(--ledger-surface-card)] text-[var(--ledger-accent)] opacity-80">
-                                                  <Flag size={11} />
-                                                </span>
-                                              </div>
-                                            </div>
-                                          )}
-                                        <button
-                                          type="button"
-                                          className="absolute flex max-w-[420px] items-center gap-2 text-left"
-                                          onClick={(event) => {
-                                            event.preventDefault();
-                                            event.stopPropagation();
-                                            void selectProject(project);
-                                          }}
-                                          onContextMenu={(event) =>
-                                            handleTimelineProjectRowContextMenu(event, project.id)
-                                          }
-                                          style={{
-                                            left: `${Math.max(0, Math.min(94, lane.left))}%`,
-                                            top: `${labelTop - (barTop - 52)}px`,
-                                          }}
-                                        >
-                                          {(() => {
-                                            const ProjectTypeIcon = getProjectTypeOption(
-                                              project.project_type
-                                            ).icon;
-                                            return (
-                                              <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] text-[var(--ledger-text-secondary)]">
-                                                <ProjectTypeIcon
-                                                  size={11}
-                                                  style={{ color: project.color || '#FF5F40' }}
-                                                />
+                                              <span
+                                                title={`${milestone.title}\n${
+                                                  milestone.type
+                                                } · ${formatShortDate(milestone.milestone_date)}\n${
+                                                  project.name
+                                                }`}
+                                                onClick={(event) => {
+                                                  event.preventDefault();
+                                                  event.stopPropagation();
+                                                  openMilestoneDetail(
+                                                    milestone.id,
+                                                    event.clientX,
+                                                    event.clientY
+                                                  );
+                                                }}
+                                                onContextMenu={(event) =>
+                                                  handleTimelineMarkerContextMenu(
+                                                    event,
+                                                    milestone.id,
+                                                    project.id,
+                                                    milestone.title,
+                                                    'milestone'
+                                                  )
+                                                }
+                                                className={`mx-auto flex h-[18px] w-[18px] rotate-45 items-center justify-center rounded-[4px] border shadow-[0_8px_18px_rgba(17,24,39,0.05)] transition ${
+                                                  isActive
+                                                    ? 'border-[color:var(--ledger-accent)] bg-[var(--ledger-accent)]'
+                                                    : milestone.completed
+                                                    ? 'border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-text-muted)]/70'
+                                                    : isOverdue
+                                                    ? 'border-[color:rgba(217,45,32,0.46)] bg-[var(--ledger-surface-card)]'
+                                                    : 'border-[color:var(--ledger-accent)] bg-[var(--ledger-surface-card)]'
+                                                }`}
+                                              >
+                                                {milestone.completed && (
+                                                  <CheckCircle2
+                                                    size={11}
+                                                    className="-rotate-45 text-[var(--ledger-surface-card)] opacity-0 transition group-hover:opacity-100"
+                                                  />
+                                                )}
+                                                {isActive && (
+                                                  <span
+                                                    className="h-1.5 w-1.5 rounded-full bg-white"
+                                                    aria-hidden="true"
+                                                  />
+                                                )}
                                               </span>
-                                            );
-                                          })()}
-                                          <span className="truncate text-[13px] font-semibold text-[var(--ledger-text-secondary)]">
-                                            {project.name}
-                                          </span>
-                                          <span className="shrink-0 text-[13px] font-medium text-[var(--ledger-text-muted)]">
-                                            {projectStatusLabels[semantic]}
-                                          </span>
-                                        </button>
-                                      </div>
-                                    );
-                                  })}
-                                </div>
-                              )}
-                            </div>
+                                              {labelVisible && (
+                                                <span
+                                                  className={`absolute left-1/2 w-36 -translate-x-1/2 truncate text-center text-[11px] font-medium leading-tight text-[var(--ledger-text-muted)] ${
+                                                    milestone.completed
+                                                      ? 'opacity-55'
+                                                      : 'opacity-[0.82]'
+                                                  }`}
+                                                  style={{
+                                                    top: `${22 + labelLane * 16}px`,
+                                                  }}
+                                                >
+                                                  {milestone.title}
+                                                </span>
+                                              )}
+                                            </div>
+                                          );
+                                        }
+                                      )}
+                                      {pendingMilestone?.projectId === project.id && (
+                                        <span
+                                          className="pointer-events-none absolute z-[4] flex h-[18px] w-[18px] -translate-x-1/2 rotate-45 items-center justify-center rounded-[4px] border border-[color:var(--ledger-accent)] bg-[var(--ledger-accent)]/20"
+                                          style={{
+                                            left: `${dateToX(pendingMilestone.date)}%`,
+                                            top: '64px',
+                                          }}
+                                        />
+                                      )}
+                                      {isMilestonePlacementActive &&
+                                        milestoneHover?.projectId === project.id &&
+                                        milestoneHover.date && (
+                                          <div
+                                            className="pointer-events-none absolute top-4 z-[4] -translate-x-1/2"
+                                            style={{ left: `${dateToX(milestoneHover.date)}%` }}
+                                          >
+                                            <div className="flex flex-col items-center gap-1">
+                                              <span className="rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--ledger-text-secondary)] shadow-[var(--ledger-shadow)]">
+                                                {formatShortDate(milestoneHover.date)}
+                                              </span>
+                                              <span className="flex h-5 w-5 items-center justify-center rounded-full border border-[color:var(--ledger-accent)] bg-[var(--ledger-surface-card)] text-[var(--ledger-accent)] opacity-80">
+                                                <Flag size={11} />
+                                              </span>
+                                            </div>
+                                          </div>
+                                        )}
+                                      <button
+                                        type="button"
+                                        className="absolute flex max-w-[420px] items-center gap-2 text-left"
+                                        onClick={(event) => {
+                                          event.preventDefault();
+                                          event.stopPropagation();
+                                          void selectProject(project);
+                                        }}
+                                        onContextMenu={(event) =>
+                                          handleTimelineProjectRowContextMenu(event, project.id)
+                                        }
+                                        style={{
+                                          left: `${Math.max(0, Math.min(94, lane.left))}%`,
+                                          top: `${labelTop - (barTop - 52)}px`,
+                                        }}
+                                      >
+                                        {(() => {
+                                          const ProjectTypeIcon = getProjectTypeOption(
+                                            project.project_type
+                                          ).icon;
+                                          return (
+                                            <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] text-[var(--ledger-text-secondary)]">
+                                              <ProjectTypeIcon
+                                                size={11}
+                                                style={{ color: project.color || '#FF5F40' }}
+                                              />
+                                            </span>
+                                          );
+                                        })()}
+                                        <span className="truncate text-[13px] font-semibold text-[var(--ledger-text-secondary)]">
+                                          {project.name}
+                                        </span>
+                                        <span className="shrink-0 text-[13px] font-medium text-[var(--ledger-text-muted)]">
+                                          {projectStatusLabels[semantic]}
+                                        </span>
+                                      </button>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -5171,9 +5174,19 @@ export const ProjectsWindow = () => {
                 }
                 enterMilestonePlacementMode();
               }}
-              title={isMilestonePlacementActive ? 'Cancel milestone placement' : 'Place a milestone'}
-              ariaLabel={isMilestonePlacementActive ? 'Cancel milestone placement' : 'Place a milestone'}
-              icon={isMilestonePlacementActive || pendingMilestone ? <X size={12} /> : <Flag size={12} />}
+              title={
+                isMilestonePlacementActive ? 'Cancel milestone placement' : 'Place a milestone'
+              }
+              ariaLabel={
+                isMilestonePlacementActive ? 'Cancel milestone placement' : 'Place a milestone'
+              }
+              icon={
+                isMilestonePlacementActive || pendingMilestone ? (
+                  <X size={12} />
+                ) : (
+                  <Flag size={12} />
+                )
+              }
               iconOnly
               square
               variant="strip"
@@ -5492,18 +5505,15 @@ export const ProjectsWindow = () => {
                         {projects.length} {projects.length === 1 ? 'project' : 'projects'}
                       </p>
                     </div>
-                    <button
-                      onClick={() => setIsLeftPaneCollapsed(true)}
-                      className="flex h-7 w-7 items-center justify-center rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)]"
-                      title="Hide left panel"
-                      aria-label="Hide left panel"
-                    >
-                      <ChevronLeft size={13} strokeWidth={2.25} className="-translate-x-px" />
-                    </button>
                   </div>
-                  <span className="text-[11px] text-[var(--ledger-text-muted)]">
-                    {isLoadingProjects ? 'Syncing...' : 'Live'}
-                  </span>
+                  <button
+                    onClick={() => setIsLeftPaneCollapsed(true)}
+                    className="flex h-7 w-7 items-center justify-center rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)]"
+                    title="Hide left panel"
+                    aria-label="Hide left panel"
+                  >
+                    <ChevronLeft size={13} strokeWidth={2.25} className="-translate-x-px" />
+                  </button>
                 </div>
 
                 <div className="relative">

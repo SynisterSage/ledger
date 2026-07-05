@@ -18,6 +18,7 @@ export const SidebarContainer = () => {
     restoreSidebarView,
     setFloatingPosition: saveFloatingPosition,
     isHydrated,
+    workspaceShellLayout,
   } = useSidebar();
   const [isHovered, setIsHovered] = useState(false);
   const suppressAutoHideExpandRef = useRef(false);
@@ -36,14 +37,12 @@ export const SidebarContainer = () => {
   const isFloating = position === 'floating';
   const isHorizontal = position === 'top' || position === 'bottom';
   const isCollapsedIconMode = state === 'minimized' && !isExpanded;
+  const isFullscreenAttachedShell = workspaceShellLayout.shellFullscreen && state !== 'fullscreen';
   const motionDurationMs = prefersReducedMotion ? 0 : 160;
   const motionClass = prefersReducedMotion
     ? ''
     : 'transition-[width,height,opacity,transform,border-radius,clip-path] duration-[100ms] ease-[cubic-bezier(0.22,1,0.36,1)]';
-  const targetContentView = useMemo(
-    () => ({ state, isExpanded }),
-    [state, isExpanded]
-  );
+  const targetContentView = useMemo(() => ({ state, isExpanded }), [state, isExpanded]);
   const [contentView, setContentView] = useState(targetContentView);
   const contentSwapTimerRef = useRef<number | null>(null);
   const lastPositionRef = useRef(position);
@@ -172,8 +171,29 @@ export const SidebarContainer = () => {
       ? 'w-auto h-[60px]'
       : 'w-16 h-16';
   const shellRadiusClass =
-    isCollapsedIconMode && !isWindowsPlatform ? 'rounded-2xl' : 'rounded-3xl';
-  const shellClipRadius = isCollapsedIconMode && !isWindowsPlatform ? '16px' : '24px';
+    isFullscreenAttachedShell && position === 'left'
+      ? 'rounded-l-3xl rounded-r-none'
+      : isFullscreenAttachedShell && position === 'right'
+      ? 'rounded-r-3xl rounded-l-none'
+      : isFullscreenAttachedShell && position === 'top'
+      ? 'rounded-t-3xl rounded-b-none'
+      : isFullscreenAttachedShell && position === 'bottom'
+      ? 'rounded-b-3xl rounded-t-none'
+      : isCollapsedIconMode && !isWindowsPlatform
+      ? 'rounded-2xl'
+      : 'rounded-3xl';
+  const shellClipRadius =
+    isFullscreenAttachedShell && position === 'left'
+      ? '24px 0 0 24px'
+      : isFullscreenAttachedShell && position === 'right'
+      ? '0 24px 24px 0'
+      : isFullscreenAttachedShell && position === 'top'
+      ? '24px 24px 0 0'
+      : isFullscreenAttachedShell && position === 'bottom'
+      ? '0 0 24px 24px'
+      : isCollapsedIconMode && !isWindowsPlatform
+      ? '16px'
+      : '24px';
   const shellOverflowClass = 'overflow-hidden';
   const isGlassShell = state === 'expanded' || (state === 'minimized' && isExpanded);
   const platformClass =
@@ -182,14 +202,13 @@ export const SidebarContainer = () => {
       : typeof navigator !== 'undefined' && navigator.platform.toLowerCase().includes('mac')
       ? 'platform-macos'
       : '';
-  const shellSurfaceClass =
-    isGlassShell
-      ? blur
-        ? `sidebar-glass ${platformClass}`
-        : `sidebar-glass sidebar-glass--solid ${platformClass}`
-      : isCollapsedIconMode
-      ? 'sidebar-glass-icon'
-      : sidebarTheme.shellFallback;
+  const shellSurfaceClass = isGlassShell
+    ? blur
+      ? `sidebar-glass ${platformClass}`
+      : `sidebar-glass sidebar-glass--solid ${platformClass}`
+    : isCollapsedIconMode
+    ? 'sidebar-glass-icon'
+    : sidebarTheme.shellFallback;
 
   const scheduleAutoHideHide = () => {
     if (!autoHide) return;
@@ -393,10 +412,9 @@ export const SidebarContainer = () => {
         : 'min(1120px, calc(100vw - 32px))'
       : undefined,
     height: isHorizontal ? (state === 'expanded' ? '144px' : '60px') : undefined,
-    backgroundColor:
-      isGlassShell
-        ? undefined
-        : `rgba(255, 251, 247, ${Math.max(0.7, Math.min(1, opacity))})`,
+    backgroundColor: isGlassShell
+      ? undefined
+      : `rgba(255, 251, 247, ${Math.max(0.7, Math.min(1, opacity))})`,
     ['--sidebar-glass-white-alpha' as string]: Math.min(0.98, Math.max(0.92, opacity + 0.08)),
     ['--sidebar-glass-cream-alpha' as string]: Math.min(0.94, Math.max(0.86, opacity + 0.02)),
     ['--sidebar-glass-icon-alpha' as string]: Math.min(0.84, Math.max(0.74, opacity - 0.06)),
@@ -410,8 +428,9 @@ export const SidebarContainer = () => {
         : 'opacity, transform, width, height, border-radius, clip-path',
     transitionDuration: shouldDisableShellMotion ? '0ms' : `${motionDurationMs}ms`,
     transitionTimingFunction: 'cubic-bezier(0.22, 1, 0.36, 1)',
-    willChange:
-      shouldDisableShellMotion ? 'opacity' : 'width, height, opacity, transform, border-radius, clip-path',
+    willChange: shouldDisableShellMotion
+      ? 'opacity'
+      : 'width, height, opacity, transform, border-radius, clip-path',
   };
 
   const renderSidebarContent = (
@@ -419,9 +438,7 @@ export const SidebarContainer = () => {
     currentIsExpanded: boolean
   ) => {
     return (
-      <div
-        className="h-full w-full"
-      >
+      <div className="h-full w-full">
         {currentState === 'expanded' && (
           <div className="h-full min-h-0 w-full">
             <ExpandedSidebar
@@ -433,13 +450,17 @@ export const SidebarContainer = () => {
 
         {currentState === 'minimized' && currentIsExpanded && (
           <div className="h-full w-full">
-            <MinimizedSidebar onDragHandleMouseDown={isFloating ? handleDragHandleStart : undefined} />
+            <MinimizedSidebar
+              onDragHandleMouseDown={isFloating ? handleDragHandleStart : undefined}
+            />
           </div>
         )}
 
         {currentState === 'minimized' && !currentIsExpanded && (
           <div className="h-full w-full">
-            <CollapsedSidebar onDragHandleMouseDown={isFloating ? handleDragHandleStart : undefined} />
+            <CollapsedSidebar
+              onDragHandleMouseDown={isFloating ? handleDragHandleStart : undefined}
+            />
           </div>
         )}
       </div>

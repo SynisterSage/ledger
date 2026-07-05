@@ -256,6 +256,21 @@ export const SidebarProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   useEffect(() => {
+    const handleSidebarStateChanged = (
+      _event: unknown,
+      payload: { state?: SidebarState } | null
+    ) => {
+      if (!payload?.state) return;
+      setSidebarState(payload.state);
+    };
+
+    window.ipcRenderer?.on('sidebar:state-changed', handleSidebarStateChanged);
+    return () => {
+      window.ipcRenderer?.off('sidebar:state-changed', handleSidebarStateChanged);
+    };
+  }, []);
+
+  useEffect(() => {
     const handleModuleStateChanged = (
       _event: unknown,
       payload: { kind?: string; state?: 'minimized' | 'closed' } | null
@@ -470,6 +485,9 @@ export const SidebarProvider = ({ children }: { children: ReactNode }) => {
       },
       shellFullscreen,
       workspaceShellStyle: {
+        backgroundColor: shellFullscreen
+          ? 'var(--ledger-surface-muted)'
+          : 'var(--ledger-background)',
         paddingLeft:
           shellFullscreen && sidebarMode === 'attached' && effectivePlacement === 'left'
             ? `${attachedWidth}px`

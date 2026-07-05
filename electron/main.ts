@@ -736,6 +736,7 @@ let floatingDockNativeTracker: ChildProcessWithoutNullStreams | null = null;
 let floatingDockRefreshInFlight = false;
 let workspaceDockRefreshTimer: NodeJS.Timeout | null = null;
 let workspaceDockLastRefreshAt = 0;
+let workspaceDockRefreshPausedUntil = 0;
 let floatingDockNativeBuffer = '';
 let windowsNativeDockRequeryAt = 0;
 let floatingDragStart: {
@@ -749,6 +750,7 @@ const headerDragStarts = new Map<
     bounds: Electron.Rectangle;
     timer: NodeJS.Timeout | null;
     lastPosition: Electron.Point;
+    sidebarLastPosition?: Electron.Point;
   }
 >();
 let sidebarIsVisible = true;
@@ -2292,6 +2294,11 @@ function sendModuleFullscreenState(
 }
 
 function restoreModuleWindowBounds(kind: ModuleWindowKind, win: BrowserWindow) {
+  const shouldRestoreWorkspaceDock =
+    kind === workspaceModuleKind && shouldAttachWorkspaceWindowToSidebar();
+  if (shouldRestoreWorkspaceDock) {
+    pauseWorkspaceDockRefresh(260);
+  }
   const restoredBounds = moduleWindowFullscreenBoundsMemory.get(kind);
   if (restoredBounds) {
     const workArea = screen.getDisplayMatching(restoredBounds).workArea;
@@ -2300,19 +2307,29 @@ function restoreModuleWindowBounds(kind: ModuleWindowKind, win: BrowserWindow) {
   }
   win.show();
   win.focus();
-  if (kind === workspaceModuleKind && shouldAttachWorkspaceWindowToSidebar()) {
-    setWorkspaceWindowAsFloatingDockTarget(kind);
+  if (shouldRestoreWorkspaceDock) {
+    setTimeout(() => {
+      if (!workspaceModuleWin || workspaceModuleWin.isDestroyed()) return;
+      if (workspaceModuleKind !== kind) return;
+      setWorkspaceWindowAsFloatingDockTarget(kind);
+      applyWorkspaceDockTargetBounds();
+    }, 260);
   }
   sendModuleFullscreenState(kind, win, false);
 }
 
 function enterModuleWindowFullscreen(kind: ModuleWindowKind, win: BrowserWindow) {
   if (moduleWindowFullscreenBoundsMemory.has(kind)) return;
+  const shouldAttachSidebar =
+    kind === workspaceModuleKind && shouldAttachWorkspaceWindowToSidebar();
+  if (shouldAttachSidebar) {
+    pauseWorkspaceDockRefresh(260);
+  }
   const workArea = getFullscreenWorkAreaForWindow(win);
   moduleWindowFullscreenBoundsMemory.set(kind, win.getBounds());
   const fullscreenBounds = clampRectToWorkArea({ ...workArea }, workArea);
   win.setBounds(fullscreenBounds, false);
-  if (kind === workspaceModuleKind && shouldAttachWorkspaceWindowToSidebar()) {
+  if (shouldAttachSidebar) {
     const sidebarBounds = getSidebarBoundsInsideFullscreenTarget(fullscreenBounds);
     if (sidebarBounds && setSidebarBounds(sidebarBounds, true)) {
       currentFloatingPosition = { x: sidebarBounds.x, y: sidebarBounds.y };
@@ -2539,6 +2556,14 @@ function cancelWorkspaceDockRefresh() {
   workspaceDockLastRefreshAt = 0;
 }
 
+function pauseWorkspaceDockRefresh(durationMs = 220) {
+  workspaceDockRefreshPausedUntil = Math.max(
+    workspaceDockRefreshPausedUntil,
+    Date.now() + durationMs
+  );
+  cancelWorkspaceDockRefresh();
+}
+
 function applyWorkspaceDockTargetBounds(targetBoundsOverride?: Rect) {
   if (!isLedgerWindowDockTarget()) return;
   if (!sidebarWin || sidebarWin.isDestroyed()) return;
@@ -2581,6 +2606,16 @@ function scheduleWorkspaceDockRefresh(delayMs = 16) {
   if (floatingDockDragActive) return;
 
   const now = Date.now();
+  if (now < workspaceDockRefreshPausedUntil) {
+    if (workspaceDockRefreshTimer !== null) return;
+    workspaceDockRefreshTimer = setTimeout(() => {
+      workspaceDockRefreshTimer = null;
+      workspaceDockLastRefreshAt = Date.now();
+      applyWorkspaceDockTargetBounds();
+    }, workspaceDockRefreshPausedUntil - now);
+    return;
+  }
+
   const elapsed = now - workspaceDockLastRefreshAt;
 
   if (elapsed >= delayMs && workspaceDockRefreshTimer === null) {
@@ -2737,6 +2772,15 @@ function ensureMacDockHelper() {
     dockLog(`[dock-debug] mac helper stderr: ${chunk.toString().trim()}`);
   });
 
+  helper.stdin.on('error', (error) => {
+    dockLog(`[dock-debug] mac helper stdin error: ${String(error)}`);
+    if (macDockHelper === helper) {
+      macDockHelper = null;
+      macDockHelperBuffer = '';
+    }
+    resolveMacDockHelperRequestsAsMissing();
+  });
+
   helper.on('exit', () => {
     if (macDockHelper === helper) {
       macDockHelper = null;
@@ -2761,10 +2805,26 @@ function ensureMacDockHelper() {
 }
 
 function stopMacDockHelperTracking() {
-  if (!macDockHelper || macDockHelper.killed) return;
+  if (
+    !macDockHelper ||
+    macDockHelper.killed ||
+    macDockHelper.stdin.destroyed ||
+    !macDockHelper.stdin.writable
+  ) {
+    return;
+  }
   try {
-    macDockHelper.stdin.write(JSON.stringify({ kind: 'stop' }) + '\n');
-  } catch {}
+    macDockHelper.stdin.write(JSON.stringify({ kind: 'stop' }) + '\n', (error) => {
+      if (!error) return;
+      dockLog(`[dock-debug] mac helper stop write failed: ${String(error)}`);
+      if (macDockHelper?.stdin.destroyed) {
+        macDockHelper = null;
+        macDockHelperBuffer = '';
+      }
+    });
+  } catch (error) {
+    dockLog(`[dock-debug] mac helper stop write failed: ${String(error)}`);
+  }
 }
 
 function stopMacDockHelper() {
@@ -2784,7 +2844,9 @@ function requestMacDockHelper(
   timeoutMs = 700
 ): Promise<DockTargetResult | null> {
   const helper = ensureMacDockHelper();
-  if (!helper || helper.killed) return Promise.resolve(null);
+  if (!helper || helper.killed || helper.stdin.destroyed || !helper.stdin.writable) {
+    return Promise.resolve(null);
+  }
 
   const requestId = ++macDockHelperRequestId;
   const message = { ...payload, requestId };
@@ -2798,7 +2860,12 @@ function requestMacDockHelper(
     macDockHelperRequests.set(requestId, { resolve, reject, timeout });
 
     try {
-      helper.stdin.write(JSON.stringify(message) + '\n');
+      helper.stdin.write(JSON.stringify(message) + '\n', (error) => {
+        if (!error) return;
+        clearTimeout(timeout);
+        macDockHelperRequests.delete(requestId);
+        resolve(null);
+      });
     } catch (error) {
       clearTimeout(timeout);
       macDockHelperRequests.delete(requestId);
@@ -3159,12 +3226,21 @@ function applyHeaderDragPosition(webContentsId: number, win: BrowserWindow) {
     sidebarWin &&
     !sidebarWin.isDestroyed()
   ) {
-    const sidebarBounds = sidebarWin.getBounds();
-    sidebarWin.setPosition(sidebarBounds.x + deltaX, sidebarBounds.y + deltaY, false);
-    currentFloatingPosition = {
-      x: sidebarBounds.x + deltaX,
-      y: sidebarBounds.y + deltaY,
+    cancelSidebarBoundsAnimation();
+    const sidebarLastPosition = dragStart.sidebarLastPosition ?? {
+      x: sidebarWin.getBounds().x,
+      y: sidebarWin.getBounds().y,
     };
+    const nextSidebarPosition = {
+      x: sidebarLastPosition.x + deltaX,
+      y: sidebarLastPosition.y + deltaY,
+    };
+    sidebarWin.setPosition(nextSidebarPosition.x, nextSidebarPosition.y, false);
+    currentFloatingPosition = {
+      x: nextSidebarPosition.x,
+      y: nextSidebarPosition.y,
+    };
+    dragStart.sidebarLastPosition = nextSidebarPosition;
   } else if (win === workspaceModuleWin && isWorkspaceDockTarget()) {
     applyWorkspaceDockTargetBounds(nextBounds);
   }
@@ -5232,6 +5308,18 @@ function registerWorkspaceModuleKind(
   moduleWins.set(kind, win);
 }
 
+function sendWorkspaceRouteChanged(win: BrowserWindow, route: WorkspaceModuleRoute) {
+  win.webContents.send('workspace:route-changed', {
+    kind: route.kind,
+    focusDate: route.focusDate,
+    focusProjectId: route.focusProjectId,
+    focusNoteId: route.focusNoteId,
+    focusTaskId: route.focusTaskId,
+    focusContext: route.focusContext,
+    focusSection: route.focusSection,
+  });
+}
+
 function navigateWorkspaceModuleWindow(route: WorkspaceModuleRoute, pushHistory = true) {
   const moduleWin = workspaceModuleWin;
   if (!moduleWin || moduleWin.isDestroyed()) return false;
@@ -5246,6 +5334,9 @@ function navigateWorkspaceModuleWindow(route: WorkspaceModuleRoute, pushHistory 
   syncWorkspaceWindowAttachment(route.kind);
   setWorkspaceWindowAsFloatingDockTarget(route.kind);
 
+  const shouldOpenFullscreen =
+    currentSidebarMode === 'fullscreen' && isWorkspaceModuleKind(route.kind);
+
   if (moduleWin.isMinimized()) {
     moduleWin.restore();
   }
@@ -5256,9 +5347,26 @@ function navigateWorkspaceModuleWindow(route: WorkspaceModuleRoute, pushHistory 
     }
   }, 100);
 
-  moduleWin.webContents.once('did-finish-load', () => {
-    if (moduleWin.isDestroyed()) return;
-    applyWindowsModuleWindowShape(moduleWin);
+  if (moduleWin.webContents.isLoading()) {
+    moduleWin.webContents.once('did-finish-load', () => {
+      if (moduleWin.isDestroyed()) return;
+      applyWindowsModuleWindowShape(moduleWin);
+      sendModuleFullscreenState(route.kind, moduleWin, moduleWin.isFullScreen());
+      sendWorkspaceRouteChanged(moduleWin, route);
+      sendModuleFocus(
+        route.kind,
+        route.focusDate,
+        route.focusProjectId,
+        route.focusNoteId,
+        route.focusTaskId,
+        route.focusContext,
+        route.focusSection
+      );
+      broadcastWorkspaceNavigationState();
+    });
+  } else {
+    sendModuleFullscreenState(route.kind, moduleWin, moduleWin.isFullScreen());
+    sendWorkspaceRouteChanged(moduleWin, route);
     sendModuleFocus(
       route.kind,
       route.focusDate,
@@ -5268,10 +5376,12 @@ function navigateWorkspaceModuleWindow(route: WorkspaceModuleRoute, pushHistory 
       route.focusContext,
       route.focusSection
     );
-    broadcastWorkspaceNavigationState();
-  });
+  }
 
-  moduleWin.loadURL(buildModuleUrl(route));
+  if (shouldOpenFullscreen) {
+    enterModuleWindowFullscreen(route.kind, moduleWin);
+  }
+
   broadcastWorkspaceNavigationState();
   return true;
 }
@@ -5491,6 +5601,10 @@ function openModuleWindow(
   });
 
   moduleWin.on('closed', () => {
+    const shouldRestoreFloatingSidebar =
+      moduleWin === workspaceModuleWin &&
+      currentSidebarPosition === 'floating' &&
+      Boolean(currentFloatingDockTarget);
     moduleWins.delete(kind);
     if (workspaceModuleWin === moduleWin) {
       if (isWorkspaceDockTarget()) {
@@ -5509,6 +5623,9 @@ function openModuleWindow(
       broadcastWorkspaceNavigationState();
     }
     moduleWindowFullscreenBoundsMemory.delete(kind);
+    if (shouldRestoreFloatingSidebar && currentSidebarMode !== 'auth') {
+      applySidebarWindowMode('minimized', true);
+    }
   });
 
   let resizeShadowRestoreTimer: NodeJS.Timeout | null = null;
@@ -5632,6 +5749,7 @@ function openModuleWindow(
       if (!moduleWin.isDestroyed()) {
         applyWindowsModuleWindowShape(moduleWin);
         if (moduleWin === workspaceModuleWin && shouldAttachWorkspaceWindowToSidebar()) {
+          pauseWorkspaceDockRefresh(260);
           const sidebarBounds = getSidebarBoundsInsideFullscreenTarget(moduleWin.getBounds());
           if (sidebarBounds && setSidebarBounds(sidebarBounds, true)) {
             currentFloatingPosition = { x: sidebarBounds.x, y: sidebarBounds.y };
@@ -5650,7 +5768,13 @@ function openModuleWindow(
       if (!moduleWin.isDestroyed()) {
         applyWindowsModuleWindowShape(moduleWin);
         if (moduleWin === workspaceModuleWin && shouldAttachWorkspaceWindowToSidebar()) {
-          setWorkspaceWindowAsFloatingDockTarget(kind);
+          pauseWorkspaceDockRefresh(260);
+          setTimeout(() => {
+            if (!workspaceModuleWin || workspaceModuleWin.isDestroyed()) return;
+            if (workspaceModuleKind !== kind) return;
+            setWorkspaceWindowAsFloatingDockTarget(kind);
+            applyWorkspaceDockTargetBounds();
+          }, 260);
         }
         moduleWin.show();
         moduleWin.focus();
@@ -5695,6 +5819,9 @@ function openModuleWindow(
       moduleWin,
       moduleWindowFullscreenBoundsMemory.has(kind) || moduleWin.isFullScreen()
     );
+    if (isWorkspaceModuleKind(kind) && currentSidebarMode === 'fullscreen') {
+      enterModuleWindowFullscreen(kind, moduleWin);
+    }
     broadcastWorkspaceNavigationState();
   });
   try {
@@ -5944,6 +6071,11 @@ ipcMain.handle('window:begin-header-drag', (event) => {
     win.unmaximize();
   }
 
+  if (win === workspaceModuleWin && isLedgerWindowDockTarget()) {
+    cancelSidebarBoundsAnimation();
+    cancelWorkspaceDockRefresh();
+  }
+
   const bounds = win.getBounds();
   stopHeaderDragLoop(event.sender.id);
   headerDragStarts.set(event.sender.id, {
@@ -5951,6 +6083,13 @@ ipcMain.handle('window:begin-header-drag', (event) => {
     bounds,
     timer: null,
     lastPosition: { x: bounds.x, y: bounds.y },
+    sidebarLastPosition:
+      win === workspaceModuleWin &&
+      isLedgerWindowDockTarget() &&
+      sidebarWin &&
+      !sidebarWin.isDestroyed()
+        ? { x: sidebarWin.getBounds().x, y: sidebarWin.getBounds().y }
+        : undefined,
   });
   startHeaderDragLoop(event.sender.id, win);
   return bounds;
@@ -5973,7 +6112,9 @@ ipcMain.handle('window:finish-header-drag', (event) => {
   headerDragStarts.delete(event.sender.id);
   if (!win || win.isDestroyed()) return null;
   applyWindowsModuleWindowShape(win);
-  if (win === workspaceModuleWin && isWorkspaceDockTarget()) {
+  if (win === workspaceModuleWin && isLedgerWindowDockTarget()) {
+    currentFloatingDockBounds = win.getBounds();
+    currentFloatingDockDisplayId = getDisplayForBounds(currentFloatingDockBounds).id;
     applyWorkspaceDockTargetBounds(win.getBounds());
   }
   return win.getBounds();

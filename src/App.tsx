@@ -98,6 +98,31 @@ const isModuleWindow = windowParams.get('window') === 'module';
 const moduleKind = (windowParams.get('module') as ModuleKind) ?? null;
 const moduleFocusContext = windowParams.get('focusContext')?.trim() ?? '';
 const moduleSection = windowParams.get('section')?.trim() ?? '';
+type WorkspaceShellRoute = Omit<ModuleFocusPayload, 'kind'> & { kind: ModuleKind | null };
+const getWorkspaceShellRouteFromLocation = (): WorkspaceShellRoute => {
+  const params = new URLSearchParams(window.location.search);
+  return {
+    kind: (params.get('module') as ModuleKind) ?? null,
+    focusDate: params.get('focusDate'),
+    focusProjectId: params.get('focusProjectId'),
+    focusNoteId: params.get('focusNoteId'),
+    focusTaskId: params.get('focusTaskId'),
+    focusContext: params.get('focusContext'),
+    focusSection: params.get('section'),
+  };
+};
+const buildWorkspaceShellSearch = (route: WorkspaceShellRoute) => {
+  const searchParams = new URLSearchParams();
+  searchParams.set('window', 'module');
+  if (route.kind) searchParams.set('module', route.kind);
+  if (route.focusDate) searchParams.set('focusDate', route.focusDate);
+  if (route.focusProjectId) searchParams.set('focusProjectId', route.focusProjectId);
+  if (route.focusNoteId) searchParams.set('focusNoteId', route.focusNoteId);
+  if (route.focusTaskId) searchParams.set('focusTaskId', route.focusTaskId);
+  if (route.focusContext) searchParams.set('focusContext', route.focusContext);
+  if (route.focusSection) searchParams.set('section', route.focusSection);
+  return searchParams.toString();
+};
 const dragRegionStyle = { WebkitAppRegion: 'drag' } as CSSProperties & { WebkitAppRegion: 'drag' };
 const noDragRegionStyle = { WebkitAppRegion: 'no-drag' } as CSSProperties & {
   WebkitAppRegion: 'no-drag';
@@ -696,7 +721,7 @@ function DashboardContent() {
   const { user } = useAuthContext();
   const { activeWorkspace, activeWorkspaceId } = useWorkspaceContext();
   const api = useApi();
-  const { setState, workspaceShellLayout } = useSidebar();
+  const { workspaceShellLayout } = useSidebar();
   const toast = useToast();
 
   const [isLoadingDashboard, setIsLoadingDashboard] = useState(true);
@@ -950,9 +975,13 @@ function DashboardContent() {
       }
     | null
   >(null);
-  const [overviewTab, setOverviewTab] = useState<'all' | 'assigned' | 'today' | 'projects' | 'notes'>(
-    ['all', 'assigned', 'today', 'projects', 'notes'].includes(moduleSection)
-      ? (moduleSection as 'all' | 'assigned' | 'today' | 'projects' | 'notes')
+  const currentDashboardSection =
+    new URLSearchParams(window.location.search).get('section')?.trim() ?? moduleSection;
+  const [overviewTab, setOverviewTab] = useState<
+    'all' | 'assigned' | 'today' | 'projects' | 'notes'
+  >(
+    ['all', 'assigned', 'today', 'projects', 'notes'].includes(currentDashboardSection)
+      ? (currentDashboardSection as 'all' | 'assigned' | 'today' | 'projects' | 'notes')
       : 'all'
   );
   const [overviewLayout, setOverviewLayout] = useState<'list' | 'compact'>('list');
@@ -1208,22 +1237,6 @@ function DashboardContent() {
     enabled: Boolean(user && activeWorkspaceId),
     onChange: handleDashboardWorkspaceRefresh,
   });
-
-  useEffect(() => {
-    const handleSidebarStateChanged = (
-      _event: unknown,
-      payload: { state?: 'minimized' | 'expanded' | 'fullscreen' }
-    ) => {
-      if (!payload?.state) return;
-      setState(payload.state);
-    };
-
-    window.ipcRenderer?.on('sidebar:state-changed', handleSidebarStateChanged);
-
-    return () => {
-      window.ipcRenderer?.off('sidebar:state-changed', handleSidebarStateChanged);
-    };
-  }, [setState]);
 
   useEffect(() => {
     try {
@@ -2993,6 +3006,8 @@ function DashboardContent() {
       identifier?: string | null;
     };
     leadName?: string;
+    linkedContext?: Array<[string, string]>;
+    isOverdue?: boolean;
     open: () => void;
   };
 
@@ -3008,6 +3023,34 @@ function DashboardContent() {
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return null;
     return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  };
+
+  const isPastDue = (dueDate?: string | null, dueTime?: string | null) => {
+    if (!dueDate) return false;
+
+    const normalizedTime = dueTime?.trim();
+    const dueAt = normalizedTime
+      ? new Date(
+          `${dueDate}T${normalizedTime.length === 5 ? `${normalizedTime}:00` : normalizedTime}`
+        )
+      : new Date(`${dueDate}T23:59:59.999`);
+
+    if (Number.isNaN(dueAt.getTime())) return false;
+    return dueAt.getTime() < Date.now();
+  };
+
+  const isOverdueTask = (
+    task: Pick<(typeof todayTasks)[number], 'due_date' | 'due_time' | 'status'>
+  ) => {
+    const status = String(task.status ?? '').toLowerCase();
+    if (status === 'completed' || status === 'cancelled') return false;
+    return isPastDue(task.due_date, task.due_time);
+  };
+
+  const isOverdueProject = (project: { end_date?: string | null; status?: string | null }) => {
+    const status = String(project.status ?? '').toLowerCase();
+    if (status.includes('complete')) return false;
+    return isPastDue(project.end_date, null);
   };
 
   const projectStatusLabel = (statusValue: string) => {
@@ -3113,6 +3156,11 @@ function DashboardContent() {
           }
         : undefined,
       contextLabel: assignmentLabel,
+      linkedContext: [
+        task.project_name ? ['Project', task.project_name] : null,
+        assignmentLabel ? ['Assignment', assignmentLabel] : null,
+      ].filter((entry): entry is [string, string] => Boolean(entry)),
+      isOverdue: isOverdueTask(task),
       open: () => {
         setSelectedOverviewRowId(`${group}:${task.id}`);
       },
@@ -3149,6 +3197,11 @@ function DashboardContent() {
       icon: <ProjectTypeIcon size={13} />,
       accent: project.color || 'var(--ledger-accent)',
       progress,
+      linkedContext: [
+        ownerTeamName ? ['Team', ownerTeamName] : null,
+        leadName ? ['Lead', leadName] : null,
+      ].filter((entry): entry is [string, string] => Boolean(entry)),
+      isOverdue: isOverdueProject(project),
       open: () =>
         openModule('projects', {
           kind: 'projects',
@@ -3234,6 +3287,7 @@ function DashboardContent() {
       dateLabel: formatShortDate(task.updated_at) ?? undefined,
       group: 'Needs attention',
       icon: <CircleAlert size={13} />,
+      linkedContext: task.eventTitle ? [['Event', task.eventTitle]] : undefined,
       open: () => openFollowUpEvent(task.id),
     }));
 
@@ -3316,7 +3370,17 @@ function DashboardContent() {
 
   const selectedOverviewTypeLabel = selectedOverviewRow
     ? selectedOverviewRow.kind === 'task'
-      ? 'Action'
+      ? selectedOverviewRow.chips.includes('Focus')
+        ? 'Focus'
+        : selectedOverviewRow.group === 'Today'
+        ? 'Today'
+        : selectedOverviewRow.group === 'Long-term tasks'
+        ? 'Long-term'
+        : selectedOverviewRow.group === 'Needs attention'
+        ? selectedOverviewRow.chips.includes('Follow-up')
+          ? 'Follow-up'
+          : 'Needs attention'
+        : 'Task'
       : selectedOverviewRow.kind === 'project'
       ? 'Project'
       : selectedOverviewRow.kind === 'note'
@@ -3333,10 +3397,19 @@ function DashboardContent() {
         {
           title: 'Details',
           rows: [
-            ['Type', selectedOverviewTypeLabel],
+            [
+              'Type',
+              selectedOverviewRow.kind === 'task' || selectedOverviewRow.kind === 'reminder'
+                ? selectedOverviewRow.chips[0] || selectedOverviewTypeLabel
+                : selectedOverviewTypeLabel,
+            ],
             [
               'Status',
-              selectedOverviewRow.kind === 'note' ? 'Recent note' : selectedOverviewRow.group,
+              selectedOverviewRow.kind === 'note'
+                ? 'Recent note'
+                : selectedOverviewRow.kind === 'task' || selectedOverviewRow.kind === 'reminder'
+                ? selectedOverviewRow.group
+                : selectedOverviewRow.group,
             ],
             ['Workspace', activeWorkspace?.name ?? 'Workspace'],
             ['Date', selectedOverviewRow.dateLabel ?? 'Not set'],
@@ -3360,11 +3433,12 @@ function DashboardContent() {
                   ['Recent notes', '0'],
                 ]
               : selectedOverviewRow.kind === 'task' || selectedOverviewRow.kind === 'reminder'
-              ? [
-                  ['Project', selectedOverviewRow.meta.split(' · ')[0] || 'None'],
-                  ['Priority', selectedOverviewRow.chips.includes('Focus') ? 'Focus' : 'None'],
-                  ['Assignment', selectedOverviewRow.contextLabel || 'Unassigned'],
-                ]
+              ? selectedOverviewRow.linkedContext?.length
+                ? [
+                    ...selectedOverviewRow.linkedContext,
+                    ['Assignment', selectedOverviewRow.contextLabel || 'Unassigned'],
+                  ]
+                : [['Linked', 'None']]
               : selectedOverviewRow.kind === 'note'
               ? [
                   ['Actions', '0'],
@@ -3379,53 +3453,136 @@ function DashboardContent() {
       ]
     : [];
 
+  const renderOverviewDetailRow = (label: string, value: string) => (
+    <div key={label} className="flex items-center justify-between gap-3 rounded-md px-1 py-1">
+      <span className="text-[12px] text-[var(--ledger-text-muted)]">{label}</span>
+      <span className="max-w-44 truncate text-right text-[12px] font-medium capitalize text-[var(--ledger-text-primary)]">
+        {value}
+      </span>
+    </div>
+  );
+
   const openSelectedOverviewRow = () => {
     selectedOverviewRow?.open();
   };
 
+  const selectedOverviewTaskQuickActions = selectedOverviewRow
+    ? (() => {
+        if (selectedOverviewRow.kind !== 'task' && selectedOverviewRow.kind !== 'reminder') {
+          return [];
+        }
+
+        const actions: Array<{
+          label: string;
+          icon: ReactNode;
+          action: () => void;
+          disabled: boolean;
+        }> = [
+          {
+            label: 'Mark done',
+            icon: <CheckCircle2 size={13} />,
+            action: () =>
+              void completeOverviewRow({
+                kind: selectedOverviewRow.kind,
+                sourceId: selectedOverviewRow.sourceId,
+              }),
+            disabled: false,
+          },
+        ];
+
+        if (selectedOverviewRow.kind === 'reminder') {
+          return actions;
+        }
+
+        const isFocusTask = selectedOverviewRow.chips.includes('Focus');
+        const isTodayTask = selectedOverviewRow.group === 'Today';
+        const isLongTermTask = selectedOverviewRow.group === 'Long-term tasks';
+        const isNeedsAttention = selectedOverviewRow.group === 'Needs attention';
+
+        if (isFocusTask || isNeedsAttention) {
+          actions.push(
+            {
+              label: 'Move to today',
+              icon: <CalendarDays size={13} />,
+              action: () =>
+                void moveOverviewRowToToday({
+                  kind: selectedOverviewRow.kind,
+                  sourceId: selectedOverviewRow.sourceId,
+                }),
+              disabled: false,
+            },
+            {
+              label: 'Move to long term',
+              icon: <CalendarDays size={13} />,
+              action: () =>
+                void moveOverviewRowToLongTerm({
+                  kind: selectedOverviewRow.kind,
+                  sourceId: selectedOverviewRow.sourceId,
+                }),
+              disabled: false,
+            }
+          );
+        } else if (isTodayTask) {
+          actions.push(
+            {
+              label: 'Move to focus',
+              icon: <Circle size={13} />,
+              action: () => void addTaskToFocus(selectedOverviewRow.sourceId),
+              disabled: false,
+            },
+            {
+              label: 'Move to long term',
+              icon: <CalendarDays size={13} />,
+              action: () =>
+                void moveOverviewRowToLongTerm({
+                  kind: selectedOverviewRow.kind,
+                  sourceId: selectedOverviewRow.sourceId,
+                }),
+              disabled: false,
+            }
+          );
+        } else if (isLongTermTask) {
+          actions.push(
+            {
+              label: 'Move to today',
+              icon: <CalendarDays size={13} />,
+              action: () =>
+                void moveOverviewRowToToday({
+                  kind: selectedOverviewRow.kind,
+                  sourceId: selectedOverviewRow.sourceId,
+                }),
+              disabled: false,
+            },
+            {
+              label: 'Move to focus',
+              icon: <Circle size={13} />,
+              action: () => void addTaskToFocus(selectedOverviewRow.sourceId),
+              disabled: false,
+            }
+          );
+        }
+        return actions;
+      })()
+    : [];
+
   const selectedOverviewQuickActions = selectedOverviewRow
     ? [
-        {
-          label:
-            selectedOverviewRow.kind === 'project'
-              ? 'Open project'
-              : selectedOverviewRow.kind === 'note'
-              ? 'Open note'
-              : 'Open',
-          icon: <ArrowRight size={13} />,
-          action: openSelectedOverviewRow,
-          disabled: false,
-        },
         ...(selectedOverviewRow.kind === 'task' || selectedOverviewRow.kind === 'reminder'
-          ? [
+          ? selectedOverviewTaskQuickActions
+          : [
               {
-                label: 'Mark done',
-                icon: <CheckCircle2 size={13} />,
-                action: () =>
-                  void completeOverviewRow({
-                    kind: selectedOverviewRow.kind,
-                    sourceId: selectedOverviewRow.sourceId,
-                  }),
+                label:
+                  selectedOverviewRow.kind === 'project'
+                    ? 'Open project'
+                    : selectedOverviewRow.kind === 'note'
+                    ? 'Open note'
+                    : 'Open',
+                icon: <ArrowRight size={13} />,
+                action: openSelectedOverviewRow,
                 disabled: false,
               },
-              {
-                label: 'Move to today',
-                icon: <CalendarDays size={13} />,
-                action: () =>
-                  void moveOverviewRowToToday({
-                    kind: selectedOverviewRow.kind,
-                    sourceId: selectedOverviewRow.sourceId,
-                  }),
-                disabled: selectedOverviewRow.kind === 'reminder',
-              },
-              {
-                label: 'Change due date',
-                icon: <CalendarDays size={13} />,
-                action: () => undefined,
-                disabled: true,
-              },
-            ]
-          : selectedOverviewRow.kind === 'project'
+            ]),
+        ...(selectedOverviewRow.kind === 'project'
           ? [
               {
                 label: 'Add action',
@@ -3475,10 +3632,8 @@ function DashboardContent() {
   };
 
   useWorkspaceRouteHistory(
-    isModuleWindow && moduleKind === 'dashboard'
-      ? { kind: 'dashboard', focusSection: overviewTab }
-      : null,
-    Boolean(isModuleWindow && moduleKind === 'dashboard')
+    isModuleWindow ? { kind: 'dashboard', focusSection: overviewTab } : null,
+    Boolean(isModuleWindow)
   );
 
   useEffect(() => {
@@ -3667,18 +3822,18 @@ function DashboardContent() {
                   ['projects', 'Projects'],
                   ['notes', 'Notes'],
                 ].map(([id, label]) => (
-                      <button
-                        key={id}
-                        type="button"
-                        onClick={() => setOverviewTab(id as typeof overviewTab)}
-                        className={`rounded-full px-2.5 py-1 text-[12px] font-medium transition ${
-                          overviewTab === id
-                            ? 'bg-[var(--ledger-surface-card)] text-[var(--ledger-text-primary)] shadow-sm'
-                            : 'text-[var(--ledger-text-muted)] hover:text-[var(--ledger-text-primary)]'
-                        }`}
-                      >
-                        {label}
-                      </button>
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => setOverviewTab(id as typeof overviewTab)}
+                    className={`rounded-full px-2.5 py-1 text-[12px] font-medium transition ${
+                      overviewTab === id
+                        ? 'bg-[var(--ledger-surface-card)] text-[var(--ledger-text-primary)] shadow-sm'
+                        : 'text-[var(--ledger-text-muted)] hover:text-[var(--ledger-text-primary)]'
+                    }`}
+                  >
+                    {label}
+                  </button>
                 ))}
               </div>
 
@@ -3807,7 +3962,7 @@ function DashboardContent() {
             </div>
           )}
 
-          <div className="grid min-h-0 flex-1 lg:grid-cols-[minmax(0,1fr)_360px]">
+          <div className="grid min-h-0 flex-1 lg:grid-cols-[minmax(0,1fr)_320px]">
             <main className="flex min-h-0 min-w-0 flex-col overflow-auto px-3 py-3">
               {isLoadingDashboard ? (
                 <div className="space-y-2 p-3">
@@ -3915,8 +4070,16 @@ function DashboardContent() {
                                       : 'hover:rounded-lg hover:bg-[var(--ledger-surface-muted)]'
                                   }`}
                                 >
-                                  <span className="flex h-6 w-6 items-center justify-center rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] text-[13px] text-[var(--ledger-text-secondary)]">
+                                  <span className="relative flex h-6 w-6 items-center justify-center overflow-visible rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] text-[13px] text-[var(--ledger-text-secondary)]">
                                     {row.icon}
+                                    {row.isOverdue && (
+                                      <span
+                                        className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full border border-[color:var(--ledger-surface-card)] bg-[var(--ledger-accent)] text-[8px] font-semibold leading-none text-white shadow-[0_1px_2px_rgba(17,24,39,0.18)]"
+                                        aria-hidden="true"
+                                      >
+                                        !
+                                      </span>
+                                    )}
                                   </span>
                                   <span className="min-w-0 truncate text-[13px] font-medium text-[var(--ledger-text-primary)]">
                                     {row.title}
@@ -3996,132 +4159,126 @@ function DashboardContent() {
               )}
             </main>
 
-            <aside className="min-h-0 border-t border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)]/35 p-5 lg:border-l lg:border-t-0">
-              <div className="flex h-full min-h-0 flex-col space-y-5 overflow-y-auto pr-1">
+            <aside className="min-h-0 border-t border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)]/35 p-4 lg:border-l lg:border-t-0">
+              <div className="flex h-full min-h-0 flex-col overflow-y-auto pr-0.5">
                 {!selectedOverviewRow ? (
                   <>
-                    <div>
-                      <p className="text-[12px] font-medium text-[var(--ledger-text-muted)]">
-                        {todayLabel}
-                      </p>
-                      <h3 className="mt-1 text-lg font-semibold text-[var(--ledger-text-primary)]">
-                        {activeWorkspace?.name ?? 'Workspace'}
-                      </h3>
-                    </div>
-                    <div className="space-y-2">
-                      {[
-                        [
-                          'Today',
-                          `${Math.max(0, completedFocusTasks.length)}/${Math.max(
-                            1,
-                            todayTasks.length
-                          )} complete`,
-                        ],
-                        [
-                          'Long-term',
-                          `${
-                            workspaceTasks.filter((task) => task.task_horizon === 'long_term')
-                              .length
-                          } tasks`,
-                        ],
-                        [
-                          'Assigned to me',
-                          `${
-                            todayTasks.filter((task) => task.assigned_to || task.project_name)
-                              .length
-                          } tasks`,
-                        ],
-                        ['Active projects', `${attentionProjects.length} active`],
-                        ['Upcoming', `${upcoming.length} events`],
-                      ].map(([label, value]) => (
-                        <div
-                          key={label}
-                          className="flex items-center justify-between border-b border-[color:var(--ledger-border-subtle)] py-2"
-                        >
-                          <span className="text-[12px] text-[var(--ledger-text-muted)]">
-                            {label}
-                          </span>
-                          <span className="text-[13px] font-medium text-[var(--ledger-text-primary)]">
-                            {value}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                    {recentNotes[0] && (
-                      <div className="border-t border-[color:var(--ledger-border-subtle)] pt-4">
+                    <div className="space-y-4">
+                      <div>
                         <p className="text-[11px] font-medium text-[var(--ledger-text-muted)]">
-                          Recent note
+                          {todayLabel}
                         </p>
-                        <p className="mt-1 truncate text-[13px] font-medium text-[var(--ledger-text-primary)]">
-                          {recentNotes[0].title}
+                        <h3 className="mt-1 text-[17px] font-semibold leading-6 text-[var(--ledger-text-primary)]">
+                          {activeWorkspace?.name ?? 'Workspace'}
+                        </h3>
+                      </div>
+                      <div className="space-y-1.5">
+                        {[
+                          [
+                            'Today',
+                            `${Math.max(0, completedFocusTasks.length)}/${Math.max(
+                              1,
+                              todayTasks.length
+                            )} complete`,
+                          ],
+                          [
+                            'Long-term',
+                            `${
+                              workspaceTasks.filter((task) => task.task_horizon === 'long_term')
+                                .length
+                            } tasks`,
+                          ],
+                          [
+                            'Assigned to me',
+                            `${
+                              todayTasks.filter((task) => task.assigned_to || task.project_name)
+                                .length
+                            } tasks`,
+                          ],
+                          ['Active projects', `${attentionProjects.length} active`],
+                          ['Upcoming', `${upcoming.length} events`],
+                        ].map(([label, value], index, rows) => (
+                          <div
+                            key={label}
+                            className={`flex items-center justify-between py-1.5 ${
+                              index < rows.length - 1
+                                ? 'border-b border-[color:var(--ledger-border-subtle)]'
+                                : ''
+                            }`}
+                          >
+                            <span className="text-[11px] text-[var(--ledger-text-muted)]">
+                              {label}
+                            </span>
+                            <span className="text-[12px] font-medium text-[var(--ledger-text-primary)]">
+                              {value}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="mt-auto space-y-2 pt-3">
+                      {recentNotes[0] && (
+                        <div className="border-t border-[color:var(--ledger-border-subtle)] pt-2.5">
+                          <p className="text-[10px] font-medium text-[var(--ledger-text-muted)]">
+                            Recent note
+                          </p>
+                          <p className="mt-0.5 truncate text-[12px] font-medium text-[var(--ledger-text-primary)]">
+                            {recentNotes[0].title}
+                          </p>
+                        </div>
+                      )}
+                      <div className="pt-2">
+                        <p className="text-[10px] font-medium text-[var(--ledger-text-muted)]">
+                          Try next
+                        </p>
+                        <p className="mt-0.5 truncate text-[12px] font-medium text-[var(--ledger-text-primary)]">
+                          Connect calendar
                         </p>
                       </div>
-                    )}
-                    <div className="pt-4">
-                      <p className="text-[11px] font-medium text-[var(--ledger-text-muted)]">
-                        Try next
-                      </p>
-                      <p className="mt-1 text-[13px] font-medium text-[var(--ledger-text-primary)]">
-                        Connect calendar
-                      </p>
-                      <p className="mt-1 text-[12px] leading-5 text-[var(--ledger-text-muted)]">
-                        Turn meetings into notes and actions.
-                      </p>
                     </div>
                   </>
                 ) : (
                   <>
-                    <div className="border-b border-[color:var(--ledger-border-subtle)] pb-4">
+                    <div className="border-b border-[color:var(--ledger-border-subtle)] pb-3">
                       <p className="text-[11px] font-medium text-[var(--ledger-text-muted)]">
                         {selectedOverviewTypeLabel}
                       </p>
-                      <h3 className="mt-2 text-lg font-semibold leading-6 text-[var(--ledger-text-primary)]">
+                      <h3 className="mt-1.5 text-[17px] font-semibold leading-6 text-[var(--ledger-text-primary)]">
                         {selectedOverviewRow.title}
                       </h3>
-                      <p className="mt-1 text-[12px] leading-5 text-[var(--ledger-text-muted)]">
+                      <p className="mt-1 text-[11px] leading-5 text-[var(--ledger-text-muted)]">
                         {selectedOverviewRow.meta}
                       </p>
-                    </div>
-
-                    <div className="flex flex-wrap gap-1.5">
-                      {selectedOverviewRow.chips.map((chip) => (
-                        <span
-                          key={chip}
-                          className="rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-2 py-0.5 text-[11px] text-[var(--ledger-text-secondary)]"
-                        >
-                          {chip}
-                        </span>
-                      ))}
+                      <div className="mt-2 flex flex-wrap gap-1">
+                        {selectedOverviewRow.chips.map((chip) => (
+                          <span
+                            key={chip}
+                            className="rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-2 py-0.5 text-[10px] text-[var(--ledger-text-secondary)]"
+                          >
+                            {chip}
+                          </span>
+                        ))}
+                      </div>
                     </div>
 
                     {overviewDetailSections.map((section) => (
                       <section
                         key={section.title}
-                        className="space-y-2 border-t border-[color:var(--ledger-border-subtle)] pt-4"
+                        className="space-y-2 border-t border-[color:var(--ledger-border-subtle)] pt-3"
                       >
-                        <p className="text-[11px] font-medium text-[var(--ledger-text-muted)]">
+                        <p className="text-[10px] font-medium text-[var(--ledger-text-muted)]">
                           {section.title}
                         </p>
-                        <div className="space-y-1">
-                          {section.rows.map(([label, value]) => (
-                            <div
-                              key={label}
-                              className="flex items-center justify-between gap-4 rounded-lg px-1 py-1.5"
-                            >
-                              <span className="text-[12px] text-[var(--ledger-text-muted)]">
-                                {label}
-                              </span>
-                              <span className="max-w-44 truncate text-right text-[13px] font-medium capitalize text-[var(--ledger-text-primary)]">
-                                {value}
-                              </span>
-                            </div>
-                          ))}
+                        <div className="space-y-0.5">
+                          {section.rows.map(([label, value]) =>
+                            renderOverviewDetailRow(label, value)
+                          )}
                         </div>
                       </section>
                     ))}
 
-                    <section className="space-y-2 border-t border-[color:var(--ledger-border-subtle)] pt-4">
-                      <p className="text-[11px] font-medium text-[var(--ledger-text-muted)]">
+                    <section className="space-y-2 border-t border-[color:var(--ledger-border-subtle)] pt-3">
+                      <p className="text-[10px] font-medium text-[var(--ledger-text-muted)]">
                         Quick actions
                       </p>
                       <div className="space-y-1">
@@ -4131,7 +4288,7 @@ function DashboardContent() {
                             type="button"
                             onClick={() => action.action()}
                             disabled={action.disabled}
-                            className="flex h-8 w-full items-center justify-between rounded-lg px-2 text-left text-[13px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-card)] hover:text-[var(--ledger-text-primary)] disabled:cursor-not-allowed disabled:opacity-50"
+                            className="flex h-7 w-full items-center justify-between rounded-md px-2 text-left text-[12px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-card)] hover:text-[var(--ledger-text-primary)] disabled:cursor-not-allowed disabled:opacity-50"
                           >
                             <span>{action.label}</span>
                             {action.icon}
@@ -5120,10 +5277,42 @@ function AppShell() {
   const [showAuthenticatedShell, setShowAuthenticatedShell] = useState(false);
   const [isAuthWindowReady, setIsAuthWindowReady] = useState(!window.desktopWindow);
   const authNativeWindowPinnedRef = useRef(false);
+  const [workspaceShellRoute, setWorkspaceShellRoute] = useState<WorkspaceShellRoute>(() =>
+    getWorkspaceShellRouteFromLocation()
+  );
+  const activeModuleKind = isModuleWindow ? workspaceShellRoute.kind : moduleKind;
+  const activeModuleFocusContext = isModuleWindow
+    ? workspaceShellRoute.focusContext?.trim() ?? ''
+    : moduleFocusContext;
 
   // Initialize workspace for authenticated users
   useWorkspaceInit();
   const effectiveUiMode: 'auth' | 'app' = user ? 'app' : uiMode;
+
+  useEffect(() => {
+    if (!isModuleWindow) return;
+
+    const handleWorkspaceRouteChanged = (_event: unknown, route?: ModuleFocusPayload) => {
+      if (!route?.kind) return;
+      const nextRoute: WorkspaceShellRoute = {
+        kind: route.kind,
+        focusDate: route.focusDate ?? null,
+        focusProjectId: route.focusProjectId ?? null,
+        focusNoteId: route.focusNoteId ?? null,
+        focusTaskId: route.focusTaskId ?? null,
+        focusContext: route.focusContext ?? null,
+        focusSection: route.focusSection ?? null,
+      };
+      const nextSearch = buildWorkspaceShellSearch(nextRoute);
+      window.history.replaceState({}, '', `${window.location.pathname}?${nextSearch}`);
+      setWorkspaceShellRoute(nextRoute);
+    };
+
+    window.ipcRenderer?.on('workspace:route-changed', handleWorkspaceRouteChanged as any);
+    return () => {
+      window.ipcRenderer?.off('workspace:route-changed', handleWorkspaceRouteChanged as any);
+    };
+  }, []);
 
   useEffect(() => {
     if (!user || isLoading) return;
@@ -5434,48 +5623,53 @@ function AppShell() {
       );
     }
 
-    if (moduleKind === 'calendar') {
+    if (activeModuleKind === 'calendar') {
       return <CalendarWindow />;
     }
 
-    if (moduleKind === 'notes') {
+    if (activeModuleKind === 'notes') {
       return <NotesWindow />;
     }
 
-    if (moduleKind === 'projects') {
+    if (activeModuleKind === 'projects') {
       return <ProjectsWindow />;
     }
 
-    if (moduleKind === 'teams') {
-      if (moduleFocusContext.startsWith('team-settings:')) {
-        return <TeamSettingsWindow focusContext={moduleFocusContext || undefined} />;
+    if (activeModuleKind === 'teams') {
+      if (activeModuleFocusContext.startsWith('team-settings:')) {
+        return <TeamSettingsWindow focusContext={activeModuleFocusContext || undefined} />;
       }
-      return <TeamsWindow focusContext={moduleFocusContext || undefined} />;
+      return <TeamsWindow focusContext={activeModuleFocusContext || undefined} />;
     }
 
-    if (moduleKind === 'dashboard') {
+    if (activeModuleKind === 'dashboard') {
       return <DashboardContent />;
     }
 
-    if (moduleKind === 'notifications') {
+    if (activeModuleKind === 'notifications') {
       return <NotificationCenterWindow />;
     }
 
-    if (moduleKind === 'inbox') {
+    if (activeModuleKind === 'inbox') {
       return <InboxWindow />;
     }
 
-    if (moduleKind === 'settings') {
+    if (activeModuleKind === 'settings') {
       return <SettingsWindow />;
     }
 
     if (
-      moduleKind === 'quick-follow-up' ||
-      moduleKind === 'quick-task' ||
-      moduleKind === 'quick-note' ||
-      moduleKind === 'quick-event'
+      activeModuleKind === 'quick-follow-up' ||
+      activeModuleKind === 'quick-task' ||
+      activeModuleKind === 'quick-note' ||
+      activeModuleKind === 'quick-event'
     ) {
-      return <QuickCaptureWindow kind={moduleKind} context={moduleFocusContext || undefined} />;
+      return (
+        <QuickCaptureWindow
+          kind={activeModuleKind}
+          context={activeModuleFocusContext || undefined}
+        />
+      );
     }
 
     return (
