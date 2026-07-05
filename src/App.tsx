@@ -933,6 +933,10 @@ function DashboardContent() {
     () => new Map(workspaceTeams.map((team) => [team.id, team])),
     [workspaceTeams]
   );
+  const workspaceTaskById = useMemo(
+    () => new Map(workspaceTasks.map((task) => [task.id, task])),
+    [workspaceTasks]
+  );
   const overviewFilterKeyList = useMemo(
     () =>
       [
@@ -3293,7 +3297,8 @@ function DashboardContent() {
     accent?: string;
     progress?: number;
     assignee?: {
-      initials: string;
+      kind: 'user' | 'team';
+      label: string;
       name: string;
     };
     ownerTeam?: {
@@ -3338,7 +3343,7 @@ function DashboardContent() {
   };
 
   const isOverdueTask = (
-    task: Pick<(typeof todayTasks)[number], 'due_date' | 'due_time' | 'status'>
+    task: { due_date?: string | null; due_time?: string | null; status?: string | null }
   ) => {
     const status = String(task.status ?? '').toLowerCase();
     if (status === 'completed' || status === 'cancelled') return false;
@@ -3424,7 +3429,13 @@ function DashboardContent() {
     overviewFilterKeyList.every((key) => {
       const selected = activeFilters[key];
       if (!selected || selected.length === 0) return true;
-      const candidateValues = rowValues[key] ?? [];
+      const candidateValues =
+        key === 'team'
+          ? [
+              ...(rowValues.team ?? []),
+              ...(rowValues.assignment ?? []).filter((value) => value.startsWith('team:')),
+            ]
+          : rowValues[key] ?? [];
       return candidateValues.some((value) => selected.includes(value));
     });
 
@@ -3442,17 +3453,21 @@ function DashboardContent() {
     group: string,
     chips: string[] = []
   ): OverviewRow => {
-    const dueLabel = formatShortDate(task.due_date);
-    const timeLabel = task.due_time || formatTime(task.remind_at);
-    const isReminder = task.kind === 'reminder';
-    const teamId = task.assigned_to_team_id ?? task.assigned_team_id ?? null;
-    const assigneeUserId = task.assigned_to_user_id ?? task.assigned_to ?? null;
+    const workspaceTask = workspaceTaskById.get(task.id) ?? null;
+    const resolvedTask = workspaceTask ? { ...task, ...workspaceTask } : task;
+    const dueLabel = formatShortDate(resolvedTask.due_date);
+    const timeLabel = resolvedTask.due_time || formatTime(resolvedTask.remind_at);
+    const isReminder = resolvedTask.kind === 'reminder';
+    const teamId = resolvedTask.assigned_to_team_id ?? resolvedTask.assigned_team_id ?? null;
+    const assigneeUserId = resolvedTask.assigned_to_user_id ?? resolvedTask.assigned_to ?? null;
     const assignedMember = assigneeUserId ? workspaceMemberById.get(assigneeUserId) ?? null : null;
     const assigneeName = assignedMember?.full_name?.trim() || assignedMember?.email?.trim() || '';
-    const teamName = teamId ? workspaceTeamById.get(teamId)?.name?.trim() || '' : '';
+    const teamRecord = teamId ? workspaceTeamById.get(teamId) ?? null : null;
+    const teamName = teamRecord?.name?.trim() || '';
+    const teamIdentifier = teamRecord?.identifier?.trim() || teamName;
     const assignmentLabel = teamId
-      ? teamName
-        ? `Team ${teamName}`
+      ? teamIdentifier
+        ? `Assigned to Team ${teamIdentifier}`
         : 'Team'
       : assigneeName
       ? `Assigned to ${assigneeName}`
@@ -3463,9 +3478,9 @@ function DashboardContent() {
       'open',
       isReminder
         ? 'upcoming'
-        : task.is_today_focus
+        : resolvedTask.is_today_focus
         ? 'needs_attention'
-        : task.task_horizon === 'long_term'
+        : resolvedTask.task_horizon === 'long_term'
         ? 'long_term'
         : 'today',
     ];
@@ -3481,11 +3496,13 @@ function DashboardContent() {
       filterValues.assignment.push('assigned', 'my_teams', `team:${teamId}`);
     }
     filterValues.team = teamId ? [`team:${teamId}`] : [];
-    filterValues.project = task.project_id ? [`project:${task.project_id}`] : [];
+    filterValues.project = resolvedTask.project_id ? [`project:${resolvedTask.project_id}`] : [];
     filterValues.date = [
-      getOverviewDateBucket(isReminder ? task.remind_at ?? task.due_date : task.due_date),
+      getOverviewDateBucket(
+        isReminder ? resolvedTask.remind_at ?? resolvedTask.due_date : resolvedTask.due_date
+      ),
     ];
-    filterValues.priority = [normalizeOverviewPriority(task.priority)];
+    filterValues.priority = [normalizeOverviewPriority(resolvedTask.priority)];
     filterValues.noteType = [];
     filterValues.linkedContext = [];
     filterValues.progress = [];
@@ -3494,9 +3511,9 @@ function DashboardContent() {
       id: `${group}:${task.id}`,
       sourceId: task.id,
       kind: isReminder ? 'reminder' : 'task',
-      title: task.title,
+      title: resolvedTask.title,
       meta: [
-        task.project_name || task.workspace_name || activeWorkspace?.name || 'Workspace',
+        resolvedTask.project_name || resolvedTask.workspace_name || activeWorkspace?.name || 'Workspace',
         dueLabel ? `Due ${dueLabel}` : timeLabel,
       ]
         .filter(Boolean)
@@ -3507,9 +3524,9 @@ function DashboardContent() {
           : [
               isReminder
                 ? 'Reminder'
-                : task.is_today_focus
+                : resolvedTask.is_today_focus
                 ? 'Focus'
-                : task.task_horizon === 'long_term'
+                : resolvedTask.task_horizon === 'long_term'
                 ? 'Long-term'
                 : 'Short-term',
             ],
@@ -3527,9 +3544,9 @@ function DashboardContent() {
       ),
       taskIcon: isReminder ? (
         <Bell size={13} />
-      ) : task.is_today_focus ? (
+      ) : resolvedTask.is_today_focus ? (
         <CircleAlert size={13} />
-      ) : task.task_horizon === 'long_term' ? (
+      ) : resolvedTask.task_horizon === 'long_term' ? (
         <MapIcon size={13} />
       ) : (
         <Zap size={13} />
@@ -3537,36 +3554,43 @@ function DashboardContent() {
       accent: isReminder ? 'var(--ledger-accent)' : undefined,
       assignee: assigneeName
         ? {
-            initials: getMemberInitials(assigneeName),
+            kind: 'user',
+            label: getMemberInitials(assigneeName),
             name: assigneeName,
+          }
+        : teamIdentifier
+        ? {
+            kind: 'team',
+            label: teamIdentifier,
+            name: teamName || teamIdentifier,
           }
         : undefined,
       contextIcon: assigneeName ? <UserCheck size={10} /> : teamId ? <Users size={10} /> : undefined,
       contextLabel: assignmentLabel,
       taskTypeLabel: isReminder
         ? 'Reminder'
-        : task.is_today_focus
+        : resolvedTask.is_today_focus
         ? 'Focus'
         : 'Task',
       taskStatusLabel: isReminder
         ? 'Reminder'
-        : task.is_today_focus
+        : resolvedTask.is_today_focus
         ? 'Needs attention'
-        : task.task_horizon === 'long_term'
+        : resolvedTask.task_horizon === 'long_term'
         ? 'Long-term'
         : 'Today',
       dateLabel: isReminder
         ? timeLabel || dueLabel || undefined
-        : task.is_today_focus
+        : resolvedTask.is_today_focus
         ? 'Not set'
-        : task.task_horizon === 'long_term'
+        : resolvedTask.task_horizon === 'long_term'
         ? dueLabel || 'Not set'
         : 'Today',
       linkedContext: [
-        task.project_name ? ['Project', task.project_name] : null,
+        resolvedTask.project_name ? ['Project', resolvedTask.project_name] : null,
         assignmentLabel ? ['Assignment', assignmentLabel] : null,
       ].filter((entry): entry is [string, string] => Boolean(entry)),
-      isOverdue: isOverdueTask(task),
+      isOverdue: isOverdueTask(resolvedTask),
       filterValues,
       open: () => {
         setSelectedOverviewRowId(`${group}:${task.id}`);
@@ -5210,11 +5234,15 @@ function DashboardContent() {
                                     )}
                                     {row.assignee && (
                                       <span
-                                        className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] text-[9px] font-semibold tracking-normal text-[var(--ledger-text-secondary)]"
+                                        className={`inline-flex h-5 shrink-0 items-center justify-center border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] text-[9px] font-semibold tracking-normal text-[var(--ledger-text-secondary)] ${
+                                          row.assignee.kind === 'team'
+                                            ? 'rounded-full px-2 min-w-8'
+                                            : 'w-5 rounded-full'
+                                        }`}
                                         title={row.assignee.name}
                                         aria-label={row.assignee.name}
                                       >
-                                        {row.assignee.initials}
+                                        {row.assignee.label}
                                       </span>
                                     )}
                                     <button
