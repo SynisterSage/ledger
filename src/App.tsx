@@ -7,6 +7,7 @@ import {
   ChevronDown,
   ChevronRight,
   ChevronUp,
+  Check,
   CheckCircle2,
   Circle,
   Code2,
@@ -27,7 +28,9 @@ import {
   Map as MapIcon,
   Zap,
   UserRound,
+  UserCheck,
   X,
+  Users,
 } from 'lucide-react';
 import { ToastProvider } from './components/Common/ToastProvider';
 import { NotificationMonitor } from './components/Common/NotificationMonitor';
@@ -49,8 +52,9 @@ import { useApi } from './hooks/useApi';
 import { useSidebar } from './context/SidebarContext';
 import { MainLayout } from './components/Common/MainLayout';
 import {
-  ModuleHeaderActionButton,
   ModuleHeaderStripAction,
+  ModuleHeaderSegmentedButton,
+  ModuleHeaderSegmentedGroup,
   ModuleWindowHeader,
 } from './components/Common/ModuleWindowHeader';
 import { CloseGuardModal } from './components/Common/CloseGuardModal';
@@ -736,6 +740,7 @@ function DashboardContent() {
       due_date?: string | null;
       due_time?: string | null;
       remind_at?: string | null;
+      priority?: string | null;
       project_id?: string | null;
       project_name?: string | null;
       workspace_id?: string | null;
@@ -761,6 +766,7 @@ function DashboardContent() {
       status?: string | null;
       due_date?: string | null;
       due_time?: string | null;
+      priority?: string | null;
       project_id?: string | null;
       milestone_id?: string | null;
       assigned_to?: string | null;
@@ -860,6 +866,8 @@ function DashboardContent() {
   );
   const [isFocusPickerOpen, setIsFocusPickerOpen] = useState(false);
   const [isOverviewTaskModalOpen, setIsOverviewTaskModalOpen] = useState(false);
+  const [isOverviewViewMenuOpen, setIsOverviewViewMenuOpen] = useState(false);
+  const [isOverviewCreateMenuOpen, setIsOverviewCreateMenuOpen] = useState(false);
   const [isUpcomingQuickCreateOpen, setIsUpcomingQuickCreateOpen] = useState(false);
   const [upcomingQuickCreateKind, setUpcomingQuickCreateKind] = useState<'event' | 'reminder'>(
     'event'
@@ -909,6 +917,9 @@ function DashboardContent() {
   const overviewTaskTitleRef = useRef<HTMLInputElement | null>(null);
   const upcomingQuickTitleRef = useRef<HTMLInputElement | null>(null);
   const overviewProjectNameRef = useRef<HTMLInputElement | null>(null);
+  const overviewFilterMenuRef = useRef<HTMLDivElement | null>(null);
+  const overviewCreateMenuRef = useRef<HTMLDivElement | null>(null);
+  const overviewViewMenuRef = useRef<HTMLDivElement | null>(null);
   const [expandedNoteIds, setExpandedNoteIds] = useState<Set<string>>(new Set());
   const [calendarScope, setCalendarScope] = useState<
     'current_workspace' | 'all_accessible_workspaces'
@@ -921,6 +932,49 @@ function DashboardContent() {
   const workspaceTeamById = useMemo(
     () => new Map(workspaceTeams.map((team) => [team.id, team])),
     [workspaceTeams]
+  );
+  const overviewFilterKeyList = useMemo(
+    () =>
+      [
+        'type',
+        'status',
+        'assignment',
+        'team',
+        'project',
+        'date',
+        'priority',
+        'progress',
+        'has',
+        'noteType',
+        'linkedContext',
+      ] as const,
+    []
+  );
+  const createEmptyOverviewFilterValues = useCallback(
+    () =>
+      overviewFilterKeyList.reduce((values, key) => {
+        values[key] = [];
+        return values;
+      }, {} as OverviewFilterValues),
+    [overviewFilterKeyList]
+  );
+  const createEmptyOverviewFilters = useCallback(
+    () => ({
+      all: createEmptyOverviewFilterValues(),
+      assigned: createEmptyOverviewFilterValues(),
+      today: createEmptyOverviewFilterValues(),
+      projects: createEmptyOverviewFilterValues(),
+      notes: createEmptyOverviewFilterValues(),
+    }),
+    [createEmptyOverviewFilterValues]
+  );
+  const countOverviewFilters = useCallback(
+    (filters: OverviewFilterValues) =>
+      overviewFilterKeyList.reduce(
+        (total, key) => total + (filters[key]?.length ?? 0),
+        0
+      ),
+    [overviewFilterKeyList]
   );
   const getWorkspaceTaskMetadata = () => ({
     workspace_id: activeWorkspaceId ?? null,
@@ -977,16 +1031,99 @@ function DashboardContent() {
   >(null);
   const currentDashboardSection =
     new URLSearchParams(window.location.search).get('section')?.trim() ?? moduleSection;
-  const [overviewTab, setOverviewTab] = useState<
-    'all' | 'assigned' | 'today' | 'projects' | 'notes'
-  >(
+  type OverviewTab = 'all' | 'assigned' | 'today' | 'projects' | 'notes';
+  type OverviewFilterKey =
+    | 'type'
+    | 'status'
+    | 'assignment'
+    | 'team'
+    | 'project'
+    | 'date'
+    | 'priority'
+    | 'progress'
+    | 'has'
+    | 'noteType'
+    | 'linkedContext';
+  type OverviewFilterValues = Record<OverviewFilterKey, string[]>;
+  type OverviewFilters = Record<OverviewTab, OverviewFilterValues>;
+  const [overviewTab, setOverviewTab] = useState<OverviewTab>(
     ['all', 'assigned', 'today', 'projects', 'notes'].includes(currentDashboardSection)
-      ? (currentDashboardSection as 'all' | 'assigned' | 'today' | 'projects' | 'notes')
+      ? (currentDashboardSection as OverviewTab)
       : 'all'
   );
   const [overviewLayout, setOverviewLayout] = useState<'list' | 'compact'>('list');
   const [isOverviewFilterOpen, setIsOverviewFilterOpen] = useState(false);
   const [isOverviewDisplayOpen, setIsOverviewDisplayOpen] = useState(false);
+  const [overviewFilters, setOverviewFilters] = useState<OverviewFilters>(() => ({
+    all: {
+      type: [],
+      status: [],
+      assignment: [],
+      team: [],
+      project: [],
+      date: [],
+      priority: [],
+      progress: [],
+      has: [],
+      noteType: [],
+      linkedContext: [],
+    },
+    assigned: {
+      type: [],
+      status: [],
+      assignment: [],
+      team: [],
+      project: [],
+      date: [],
+      priority: [],
+      progress: [],
+      has: [],
+      noteType: [],
+      linkedContext: [],
+    },
+    today: {
+      type: [],
+      status: [],
+      assignment: [],
+      team: [],
+      project: [],
+      date: [],
+      priority: [],
+      progress: [],
+      has: [],
+      noteType: [],
+      linkedContext: [],
+    },
+    projects: {
+      type: [],
+      status: [],
+      assignment: [],
+      team: [],
+      project: [],
+      date: [],
+      priority: [],
+      progress: [],
+      has: [],
+      noteType: [],
+      linkedContext: [],
+    },
+    notes: {
+      type: [],
+      status: [],
+      assignment: [],
+      team: [],
+      project: [],
+      date: [],
+      priority: [],
+      progress: [],
+      has: [],
+      noteType: [],
+      linkedContext: [],
+    },
+  }));
+  const [overviewFilterOpenSections, setOverviewFilterOpenSections] = useState<Set<string>>(
+    () => new Set()
+  );
   const [selectedOverviewRowId, setSelectedOverviewRowId] = useState<string | null>(null);
   const [collapsedOverviewGroups, setCollapsedOverviewGroups] = useState<Set<string>>(() => {
     try {
@@ -1633,6 +1770,7 @@ function DashboardContent() {
                 notes?: string | null;
                 due_date?: string | null;
                 due_time?: string | null;
+                priority?: string | null;
                 project_id?: string | null;
                 milestone_id?: string | null;
                 assigned_to?: string | null;
@@ -1832,6 +1970,56 @@ function DashboardContent() {
     }
   }, [collapsedOverviewGroups]);
 
+  useEffect(() => {
+    const storageKey = activeWorkspaceId
+      ? `ledger:overview:filters:v1:${activeWorkspaceId}`
+      : null;
+    if (!storageKey) {
+      setOverviewFilters(createEmptyOverviewFilters());
+      return;
+    }
+
+    try {
+      const stored = window.localStorage.getItem(storageKey);
+      if (!stored) {
+        setOverviewFilters(createEmptyOverviewFilters());
+        return;
+      }
+
+      const parsed = JSON.parse(stored) as Partial<OverviewFilters> | null;
+      const nextFilters = createEmptyOverviewFilters();
+      (['all', 'assigned', 'today', 'projects', 'notes'] as OverviewTab[]).forEach((tab) => {
+        const tabFilters = parsed?.[tab];
+        if (!tabFilters || typeof tabFilters !== 'object') return;
+        overviewFilterKeyList.forEach((key) => {
+          const values = Array.isArray(tabFilters[key])
+            ? tabFilters[key].filter((value): value is string => typeof value === 'string')
+            : [];
+          nextFilters[tab][key] = Array.from(new Set(values));
+        });
+      });
+      setOverviewFilters(nextFilters);
+    } catch {
+      setOverviewFilters(createEmptyOverviewFilters());
+    }
+  }, [
+    activeWorkspaceId,
+    createEmptyOverviewFilters,
+    overviewFilterKeyList,
+  ]);
+
+  useEffect(() => {
+    if (!activeWorkspaceId) return;
+    try {
+      window.localStorage.setItem(
+        `ledger:overview:filters:v1:${activeWorkspaceId}`,
+        JSON.stringify(overviewFilters)
+      );
+    } catch {
+      // Keep overview filters as a workspace preference when storage is available.
+    }
+  }, [activeWorkspaceId, overviewFilters]);
+
   const saveDailyAccountability = async (next: {
     focusItems?: Array<{ id: string; text: string; done: boolean }>;
     finished?: string;
@@ -1888,6 +2076,7 @@ function DashboardContent() {
               status: string;
               due_date?: string | null;
               due_time?: string | null;
+              priority?: string | null;
               project_id?: string | null;
               project_name?: string | null;
               workspace_id?: string | null;
@@ -2167,6 +2356,72 @@ function DashboardContent() {
     }, 120);
     return () => window.clearTimeout(timer);
   }, [isUpcomingQuickCreateOpen]);
+
+  useEffect(() => {
+    if (!isOverviewFilterOpen) return;
+
+    const closeFilterMenu = (event: MouseEvent | PointerEvent) => {
+      if (overviewFilterMenuRef.current?.contains(event.target as Node)) return;
+      setIsOverviewFilterOpen(false);
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setIsOverviewFilterOpen(false);
+      }
+    };
+
+    window.addEventListener('pointerdown', closeFilterMenu);
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('pointerdown', closeFilterMenu);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isOverviewFilterOpen]);
+
+  useEffect(() => {
+    if (!isOverviewCreateMenuOpen) return;
+
+    const closeCreateMenu = (event: MouseEvent | PointerEvent) => {
+      if (overviewCreateMenuRef.current?.contains(event.target as Node)) return;
+      setIsOverviewCreateMenuOpen(false);
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setIsOverviewCreateMenuOpen(false);
+      }
+    };
+
+    window.addEventListener('pointerdown', closeCreateMenu);
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('pointerdown', closeCreateMenu);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isOverviewCreateMenuOpen]);
+
+  useEffect(() => {
+    if (!isOverviewViewMenuOpen) return;
+
+    const closeViewMenu = (event: MouseEvent | PointerEvent) => {
+      if (overviewViewMenuRef.current?.contains(event.target as Node)) return;
+      setIsOverviewViewMenuOpen(false);
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setIsOverviewViewMenuOpen(false);
+      }
+    };
+
+    window.addEventListener('pointerdown', closeViewMenu);
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('pointerdown', closeViewMenu);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isOverviewViewMenuOpen]);
 
   const saveUpcomingQuickCreate = async () => {
     const title = upcomingQuickTitle.trim();
@@ -2974,6 +3229,45 @@ function DashboardContent() {
     }
     return map;
   }, [noteProjectLinks]);
+  const noteProjectIdsById = useMemo(() => {
+    const map = new Map<string, string[]>();
+    for (const link of noteProjectLinks) {
+      if (!link.note_id || !link.project_id) continue;
+      const next = map.get(link.note_id) ?? [];
+      if (!next.includes(link.project_id)) next.push(link.project_id);
+      map.set(link.note_id, next);
+    }
+    return map;
+  }, [noteProjectLinks]);
+  const projectById = useMemo(
+    () => new Map(projects.map((project) => [project.id, project])),
+    [projects]
+  );
+  const projectNoteCountById = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const link of noteProjectLinks) {
+      if (!link.project_id) continue;
+      map.set(link.project_id, (map.get(link.project_id) ?? 0) + 1);
+    }
+    return map;
+  }, [noteProjectLinks]);
+  const projectOpenActionCountById = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const task of workspaceTasks) {
+      if (!task.project_id) continue;
+      if (String(task.status ?? '').toLowerCase() === 'completed') continue;
+      map.set(task.project_id, (map.get(task.project_id) ?? 0) + 1);
+    }
+    return map;
+  }, [workspaceTasks]);
+  const projectMilestoneProxyCountById = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const task of workspaceTasks) {
+      if (!task.project_id || !task.milestone_id) continue;
+      map.set(task.project_id, (map.get(task.project_id) ?? 0) + 1);
+    }
+    return map;
+  }, [workspaceTasks]);
   const filteredOverviewLinkableProjects = useMemo(() => {
     const query = overviewLinkProjectSearch.trim().toLowerCase();
     if (!query) return overviewLinkableProjects;
@@ -2995,6 +3289,7 @@ function DashboardContent() {
     dateLabel?: string;
     group: string;
     icon: ReactNode;
+    taskIcon?: ReactNode;
     accent?: string;
     progress?: number;
     assignee?: {
@@ -3007,7 +3302,10 @@ function DashboardContent() {
     };
     leadName?: string;
     linkedContext?: Array<[string, string]>;
+    taskTypeLabel?: string;
+    taskStatusLabel?: string;
     isOverdue?: boolean;
+    filterValues: OverviewFilterValues;
     open: () => void;
   };
 
@@ -3080,6 +3378,56 @@ function DashboardContent() {
     return team?.name?.trim() || '';
   };
 
+  const normalizeOverviewPriority = (priority?: string | null) => {
+    const normalized = String(priority ?? '').trim().toLowerCase();
+    if (normalized === 'urgent') return 'urgent';
+    if (normalized === 'high') return 'high';
+    if (normalized === 'medium') return 'medium';
+    if (normalized === 'low') return 'low';
+    return 'no_priority';
+  };
+
+  const getOverviewDateBucket = (value?: string | null) => {
+    if (!value) return 'no_date';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return 'no_date';
+
+    const now = new Date();
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const target = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    const diffDays = Math.floor((target.getTime() - startOfToday.getTime()) / 86_400_000);
+
+    if (diffDays < 0) return 'overdue';
+    if (diffDays === 0) return 'today';
+    if (diffDays <= 6) return 'this_week';
+    if (date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth()) {
+      return 'this_month';
+    }
+    return 'later';
+  };
+
+  const buildOverviewFilterValues = (
+    values: Partial<OverviewFilterValues>
+  ): OverviewFilterValues => {
+    const next = createEmptyOverviewFilterValues();
+    overviewFilterKeyList.forEach((key) => {
+      const incoming = values[key];
+      if (!Array.isArray(incoming)) return;
+      next[key] = Array.from(
+        new Set(incoming.map((value) => String(value).trim()).filter(Boolean))
+      );
+    });
+    return next;
+  };
+
+  const filterOverviewRow = (rowValues: OverviewFilterValues, activeFilters: OverviewFilterValues) =>
+    overviewFilterKeyList.every((key) => {
+      const selected = activeFilters[key];
+      if (!selected || selected.length === 0) return true;
+      const candidateValues = rowValues[key] ?? [];
+      return candidateValues.some((value) => selected.includes(value));
+    });
+
   const parseAssignmentValue = useCallback((value: string) => {
     if (!value) return { assigned_to_user_id: null, assigned_to_team_id: null };
     const [kind, id] = value.split(':', 2);
@@ -3098,11 +3446,8 @@ function DashboardContent() {
     const timeLabel = task.due_time || formatTime(task.remind_at);
     const isReminder = task.kind === 'reminder';
     const teamId = task.assigned_to_team_id ?? task.assigned_team_id ?? null;
-    const assignedMember = task.assigned_to
-      ? workspaceMemberById.get(task.assigned_to) ?? null
-      : task.assigned_to_user_id
-      ? workspaceMemberById.get(task.assigned_to_user_id) ?? null
-      : null;
+    const assigneeUserId = task.assigned_to_user_id ?? task.assigned_to ?? null;
+    const assignedMember = assigneeUserId ? workspaceMemberById.get(assigneeUserId) ?? null : null;
     const assigneeName = assignedMember?.full_name?.trim() || assignedMember?.email?.trim() || '';
     const teamName = teamId ? workspaceTeamById.get(teamId)?.name?.trim() || '' : '';
     const assignmentLabel = teamId
@@ -3112,6 +3457,39 @@ function DashboardContent() {
       : assigneeName
       ? `Assigned to ${assigneeName}`
       : '';
+    const filterValues = createEmptyOverviewFilterValues();
+    filterValues.type = [isReminder ? 'reminder' : 'task'];
+    filterValues.status = [
+      'open',
+      isReminder
+        ? 'upcoming'
+        : task.is_today_focus
+        ? 'needs_attention'
+        : task.task_horizon === 'long_term'
+        ? 'long_term'
+        : 'today',
+    ];
+    filterValues.assignment = [];
+    if (!assigneeUserId && !teamId) {
+      filterValues.assignment.push('unassigned');
+    }
+    if (assigneeUserId) {
+      filterValues.assignment.push('assigned', `person:${assigneeUserId}`);
+      filterValues.assignment.push(assigneeUserId === user?.id ? 'me' : 'others');
+    }
+    if (teamId) {
+      filterValues.assignment.push('assigned', 'my_teams', `team:${teamId}`);
+    }
+    filterValues.team = teamId ? [`team:${teamId}`] : [];
+    filterValues.project = task.project_id ? [`project:${task.project_id}`] : [];
+    filterValues.date = [
+      getOverviewDateBucket(isReminder ? task.remind_at ?? task.due_date : task.due_date),
+    ];
+    filterValues.priority = [normalizeOverviewPriority(task.priority)];
+    filterValues.noteType = [];
+    filterValues.linkedContext = [];
+    filterValues.progress = [];
+    filterValues.has = [];
     return {
       id: `${group}:${task.id}`,
       sourceId: task.id,
@@ -3135,7 +3513,6 @@ function DashboardContent() {
                 ? 'Long-term'
                 : 'Short-term',
             ],
-      dateLabel: timeLabel || dueLabel || undefined,
       group,
       icon: isReminder ? (
         <Bell size={13} />
@@ -3148,6 +3525,15 @@ function DashboardContent() {
       ) : (
         <Circle size={13} />
       ),
+      taskIcon: isReminder ? (
+        <Bell size={13} />
+      ) : task.is_today_focus ? (
+        <CircleAlert size={13} />
+      ) : task.task_horizon === 'long_term' ? (
+        <MapIcon size={13} />
+      ) : (
+        <Zap size={13} />
+      ),
       accent: isReminder ? 'var(--ledger-accent)' : undefined,
       assignee: assigneeName
         ? {
@@ -3155,12 +3541,33 @@ function DashboardContent() {
             name: assigneeName,
           }
         : undefined,
+      contextIcon: assigneeName ? <UserCheck size={10} /> : teamId ? <Users size={10} /> : undefined,
       contextLabel: assignmentLabel,
+      taskTypeLabel: isReminder
+        ? 'Reminder'
+        : task.is_today_focus
+        ? 'Focus'
+        : 'Task',
+      taskStatusLabel: isReminder
+        ? 'Reminder'
+        : task.is_today_focus
+        ? 'Needs attention'
+        : task.task_horizon === 'long_term'
+        ? 'Long-term'
+        : 'Today',
+      dateLabel: isReminder
+        ? timeLabel || dueLabel || undefined
+        : task.is_today_focus
+        ? 'Not set'
+        : task.task_horizon === 'long_term'
+        ? dueLabel || 'Not set'
+        : 'Today',
       linkedContext: [
         task.project_name ? ['Project', task.project_name] : null,
         assignmentLabel ? ['Assignment', assignmentLabel] : null,
       ].filter((entry): entry is [string, string] => Boolean(entry)),
       isOverdue: isOverdueTask(task),
+      filterValues,
       open: () => {
         setSelectedOverviewRowId(`${group}:${task.id}`);
       },
@@ -3173,6 +3580,44 @@ function DashboardContent() {
     const ProjectTypeIcon = getProjectTypeOption(project.project_type).icon;
     const ownerTeamName = getWorkspaceTeamLabel(project.owner_team_id ?? null);
     const leadName = getWorkspaceMemberLabel(project.lead_id ?? null);
+    const rawStatus = String(project.status ?? '').toLowerCase();
+    const statusKey = rawStatus.includes('complete')
+      ? 'completed'
+      : rawStatus.includes('pause')
+      ? 'paused'
+      : rawStatus.includes('archive')
+      ? 'archived'
+      : progress >= 90
+      ? 'near_done'
+      : 'active';
+    const assignmentValues = [] as string[];
+    if (!project.lead_id && !project.owner_team_id) {
+      assignmentValues.push('unassigned');
+    }
+    if (project.lead_id) {
+      assignmentValues.push('assigned', `person:${project.lead_id}`);
+      assignmentValues.push(project.lead_id === user?.id ? 'me' : 'others');
+    }
+    if (project.owner_team_id) {
+      assignmentValues.push('assigned', 'my_teams', `team:${project.owner_team_id}`);
+    }
+    const filterValues = buildOverviewFilterValues({
+      type: ['project'],
+      status: [statusKey],
+      assignment: assignmentValues,
+      team: project.owner_team_id ? [`team:${project.owner_team_id}`] : [],
+      project: [`project:${project.id}`],
+      date: [getOverviewDateBucket(project.end_date)],
+      priority: ['no_priority'],
+      progress: [
+        progress >= 100 ? 'complete' : progress >= 75 ? '75_99' : progress >= 25 ? '25_75' : '0_25',
+      ],
+      has: [
+        ...(projectNoteCountById.get(project.id) ? ['notes'] : []),
+        ...(projectOpenActionCountById.get(project.id) ? ['open_actions'] : []),
+        ...(projectMilestoneProxyCountById.get(project.id) ? ['milestones'] : []),
+      ],
+    });
     return {
       id: `Active projects:${project.id}`,
       sourceId: project.id,
@@ -3190,6 +3635,7 @@ function DashboardContent() {
       ]
         .filter(Boolean)
         .join(' · '),
+      contextIcon: ownerTeamName ? <Users size={10} /> : leadName ? <UserCheck size={10} /> : undefined,
       ownerTeam: ownerTeamName ? { name: ownerTeamName } : undefined,
       leadName: leadName || undefined,
       dateLabel: dueLabel ? `Due ${dueLabel}` : undefined,
@@ -3202,6 +3648,7 @@ function DashboardContent() {
         leadName ? ['Lead', leadName] : null,
       ].filter((entry): entry is [string, string] => Boolean(entry)),
       isOverdue: isOverdueProject(project),
+      filterValues,
       open: () =>
         openModule('projects', {
           kind: 'projects',
@@ -3236,6 +3683,29 @@ function DashboardContent() {
     dateLabel: formatShortDate(note.updated_at) ?? undefined,
     group: 'Recent notes',
     icon: <StickyNote size={13} />,
+    filterValues: buildOverviewFilterValues({
+      type: ['note'],
+      status: [noteProjectIdsById.get(note.id)?.length ? 'linked_note' : 'regular_note'],
+      assignment: ['unassigned'],
+      team:
+        noteProjectIdsById
+          .get(note.id)
+          ?.flatMap((projectId) => {
+            const project = projectById.get(projectId) ?? null;
+            return project?.owner_team_id ? [`team:${project.owner_team_id}`] : [];
+          })
+          .filter((value): value is string => Boolean(value)) ?? [],
+      project: (noteProjectIdsById.get(note.id) ?? []).map((projectId) => `project:${projectId}`),
+      date: [getOverviewDateBucket(note.updated_at)],
+      priority: ['no_priority'],
+      noteType: [noteProjectIdsById.get(note.id)?.length ? 'linked_note' : 'regular_note'],
+      linkedContext: [
+        noteProjectIdsById.get(note.id)?.length ? 'linked_to_project' : 'unlinked',
+        ...(noteProjectIdsById.get(note.id)?.length ? ['linked_to_team'] : []),
+      ],
+      progress: [],
+      has: [],
+    }),
     open: () => openModule('notes', { kind: 'notes', focusNoteId: note.id }),
   }));
 
@@ -3244,6 +3714,17 @@ function DashboardContent() {
     const isToday = start.toDateString() === new Date().toDateString();
     const dayLabel = isToday ? 'Today' : formatShortDate(event.start_at);
     const timeLabel = formatTime(event.start_at);
+    const filterValues = buildOverviewFilterValues({
+      type: ['event'],
+      status: ['open', 'upcoming'],
+      assignment: ['unassigned'],
+      team: [],
+      project: [],
+      date: [getOverviewDateBucket(event.start_at)],
+      priority: ['no_priority'],
+      progress: [],
+      has: [],
+    });
     return {
       id: `Upcoming:${event.id}`,
       sourceId: event.id,
@@ -3260,6 +3741,7 @@ function DashboardContent() {
       dateLabel: dayLabel ?? undefined,
       group: 'Upcoming',
       icon: <CalendarDays size={13} />,
+      filterValues,
       open: () =>
         openModule('calendar', {
           kind: 'calendar',
@@ -3288,6 +3770,17 @@ function DashboardContent() {
       group: 'Needs attention',
       icon: <CircleAlert size={13} />,
       linkedContext: task.eventTitle ? [['Event', task.eventTitle]] : undefined,
+      filterValues: buildOverviewFilterValues({
+        type: ['task'],
+        status: ['open', 'needs_attention'],
+        assignment: ['unassigned'],
+        team: [],
+        project: [],
+        date: [getOverviewDateBucket(task.updated_at)],
+        priority: ['no_priority'],
+        progress: [],
+        has: [],
+      }),
       open: () => openFollowUpEvent(task.id),
     }));
 
@@ -3296,28 +3789,58 @@ function DashboardContent() {
     ...followUpRows,
     ...activeTodayTasks.slice(0, 6).map((task) => buildTaskRow(task, 'Today')),
     ...longTermTaskRows,
-    ...todayTasks
-      .filter((task) => task.assigned_to || task.project_name)
-      .slice(0, 4)
-      .map((task) => buildTaskRow(task, 'Assigned to me', ['Assigned'])),
     ...projectRows,
     ...noteRows,
     ...eventRows.filter((row) => row.group === 'Upcoming'),
   ];
 
-  const visibleOverviewRows = overviewRows.filter((row) => {
-    if (overviewTab === 'projects') return row.kind === 'project';
-    if (overviewTab === 'notes') return row.kind === 'note';
-    if (overviewTab === 'today') return row.group === 'Today';
-    if (overviewTab === 'assigned') return row.group === 'Assigned to me';
-    return true;
-  });
+  const activeOverviewFilters = overviewFilters[overviewTab];
+
+  const assignedRows = workspaceTasks
+    .filter(
+      (task) =>
+        Boolean(
+          task.assigned_to ||
+            task.assigned_to_user_id ||
+            task.assigned_to_team_id ||
+            task.assigned_team_id
+        ) && String(task.status ?? '').toLowerCase() !== 'completed'
+    )
+    .slice(0, 8)
+    .map<OverviewRow>((task) =>
+      buildTaskRow(
+        task as (typeof todayTasks)[number],
+        task.is_today_focus
+          ? 'Needs attention'
+          : task.task_horizon === 'long_term'
+          ? 'Long-term tasks'
+          : 'Today'
+      )
+    );
+
+  const overviewBaseRows =
+    overviewTab === 'projects'
+      ? projectRows
+      : overviewTab === 'notes'
+      ? noteRows
+      : overviewTab === 'today'
+      ? overviewRows.filter((row) => row.group === 'Today' || row.filterValues.date.includes('today'))
+      : overviewTab === 'assigned'
+      ? assignedRows
+      : overviewRows;
+
+  const visibleOverviewRows = Array.from(
+    new Map(
+      overviewBaseRows
+        .filter((row) => filterOverviewRow(row.filterValues, activeOverviewFilters))
+        .map((row) => [row.id, row])
+    ).values()
+  );
 
   const overviewGroups = [
     'Needs attention',
     'Today',
     'Long-term tasks',
-    'Assigned to me',
     'Active projects',
     'Recent notes',
     'Upcoming',
@@ -3342,7 +3865,7 @@ function DashboardContent() {
     }
     if (overviewTab === 'assigned') {
       return {
-        icon: <Circle size={15} />,
+        icon: <UserCheck size={15} />,
         title: 'Nothing assigned',
         body: 'Assigned work will appear here once it is linked to this workspace.',
       };
@@ -3370,17 +3893,7 @@ function DashboardContent() {
 
   const selectedOverviewTypeLabel = selectedOverviewRow
     ? selectedOverviewRow.kind === 'task'
-      ? selectedOverviewRow.chips.includes('Focus')
-        ? 'Focus'
-        : selectedOverviewRow.group === 'Today'
-        ? 'Today'
-        : selectedOverviewRow.group === 'Long-term tasks'
-        ? 'Long-term'
-        : selectedOverviewRow.group === 'Needs attention'
-        ? selectedOverviewRow.chips.includes('Follow-up')
-          ? 'Follow-up'
-          : 'Needs attention'
-        : 'Task'
+      ? selectedOverviewRow.taskTypeLabel ?? 'Task'
       : selectedOverviewRow.kind === 'project'
       ? 'Project'
       : selectedOverviewRow.kind === 'note'
@@ -3400,7 +3913,7 @@ function DashboardContent() {
             [
               'Type',
               selectedOverviewRow.kind === 'task' || selectedOverviewRow.kind === 'reminder'
-                ? selectedOverviewRow.chips[0] || selectedOverviewTypeLabel
+                ? selectedOverviewRow.taskTypeLabel ?? selectedOverviewTypeLabel
                 : selectedOverviewTypeLabel,
             ],
             [
@@ -3408,7 +3921,7 @@ function DashboardContent() {
               selectedOverviewRow.kind === 'note'
                 ? 'Recent note'
                 : selectedOverviewRow.kind === 'task' || selectedOverviewRow.kind === 'reminder'
-                ? selectedOverviewRow.group
+                ? selectedOverviewRow.taskStatusLabel ?? selectedOverviewRow.group
                 : selectedOverviewRow.group,
             ],
             ['Workspace', activeWorkspace?.name ?? 'Workspace'],
@@ -3434,10 +3947,7 @@ function DashboardContent() {
                 ]
               : selectedOverviewRow.kind === 'task' || selectedOverviewRow.kind === 'reminder'
               ? selectedOverviewRow.linkedContext?.length
-                ? [
-                    ...selectedOverviewRow.linkedContext,
-                    ['Assignment', selectedOverviewRow.contextLabel || 'Unassigned'],
-                  ]
+                ? selectedOverviewRow.linkedContext
                 : [['Linked', 'None']]
               : selectedOverviewRow.kind === 'note'
               ? [
@@ -3631,6 +4141,479 @@ function DashboardContent() {
     });
   };
 
+  const overviewFilterSections: Array<{
+    id: string;
+    label: string;
+    key: OverviewFilterKey;
+    options: Array<{ value: string; label: string }>;
+  }> =
+    overviewTab === 'all'
+      ? [
+          {
+            id: 'type',
+            label: 'Type',
+            key: 'type',
+            options: [
+              ['task', 'Task'],
+              ['milestone', 'Milestone'],
+              ['project', 'Project'],
+              ['note', 'Note'],
+              ['event', 'Event'],
+              ['reminder', 'Reminder'],
+            ].map(([value, label]) => ({ value, label })),
+          },
+          {
+            id: 'status',
+            label: 'Status',
+            key: 'status',
+            options: [
+              ['needs_attention', 'Needs attention'],
+              ['today', 'Today'],
+              ['long_term', 'Long-term'],
+              ['active', 'Active'],
+              ['completed', 'Completed'],
+              ['upcoming', 'Upcoming'],
+            ].map(([value, label]) => ({ value, label })),
+          },
+          {
+            id: 'assignment',
+            label: 'Assignment',
+            key: 'assignment',
+            options: [
+              ['me', 'Assigned to me'],
+              ['my_teams', 'Assigned to my teams'],
+              ['others', 'Assigned to others'],
+              ['unassigned', 'Unassigned'],
+            ].map(([value, label]) => ({ value, label })),
+          },
+          {
+            id: 'team',
+            label: 'Team',
+            key: 'team',
+            options: workspaceTeams.map((team) => ({
+              value: `team:${team.id}`,
+              label: team.name,
+            })),
+          },
+          {
+            id: 'project',
+            label: 'Project',
+            key: 'project',
+            options: projects.map((project) => ({
+              value: `project:${project.id}`,
+              label: project.name,
+            })),
+          },
+          {
+            id: 'date',
+            label: 'Date',
+            key: 'date',
+            options: [
+              ['today', 'Today'],
+              ['this_week', 'This week'],
+              ['overdue', 'Overdue'],
+              ['no_date', 'No date'],
+            ].map(([value, label]) => ({ value, label })),
+          },
+          {
+            id: 'priority',
+            label: 'Priority',
+            key: 'priority',
+            options: [
+              ['urgent', 'Urgent'],
+              ['high', 'High'],
+              ['medium', 'Medium'],
+              ['low', 'Low'],
+              ['no_priority', 'No priority'],
+            ].map(([value, label]) => ({ value, label })),
+          },
+        ]
+      : overviewTab === 'assigned'
+      ? [
+          {
+            id: 'type',
+            label: 'Type',
+            key: 'type',
+            options: [
+              ['task', 'Task'],
+              ['milestone', 'Milestone'],
+            ].map(([value, label]) => ({ value, label })),
+          },
+          {
+            id: 'status',
+            label: 'Status',
+            key: 'status',
+            options: [
+              ['needs_attention', 'Needs attention'],
+              ['active', 'Active'],
+              ['upcoming', 'Upcoming'],
+              ['completed', 'Completed'],
+            ].map(([value, label]) => ({ value, label })),
+          },
+          {
+            id: 'assignment',
+            label: 'Assignment',
+            key: 'assignment',
+            options: [
+              ['me', 'Me'],
+              ['my_teams', 'My teams'],
+              ['unassigned', 'Unassigned'],
+            ].map(([value, label]) => ({ value, label })),
+          },
+          {
+            id: 'people',
+            label: 'Specific person',
+            key: 'assignment',
+            options: workspaceMembers
+              .map((member) => ({
+                value: `person:${member.user_id}`,
+                label: member.full_name?.trim() || member.email?.trim() || 'Member',
+              }))
+              .filter((item) => Boolean(item.label)),
+          },
+          {
+            id: 'teams',
+            label: 'Specific team',
+            key: 'assignment',
+            options: workspaceTeams.map((team) => ({
+              value: `team:${team.id}`,
+              label: team.name,
+            })),
+          },
+          {
+            id: 'project',
+            label: 'Project',
+            key: 'project',
+            options: projects.map((project) => ({
+              value: `project:${project.id}`,
+              label: project.name,
+            })),
+          },
+          {
+            id: 'date',
+            label: 'Date',
+            key: 'date',
+            options: [
+              ['today', 'Today'],
+              ['this_week', 'This week'],
+              ['overdue', 'Overdue'],
+              ['no_date', 'No date'],
+            ].map(([value, label]) => ({ value, label })),
+          },
+          {
+            id: 'priority',
+            label: 'Priority',
+            key: 'priority',
+            options: [
+              ['urgent', 'Urgent'],
+              ['high', 'High'],
+              ['medium', 'Medium'],
+              ['low', 'Low'],
+              ['no_priority', 'No priority'],
+            ].map(([value, label]) => ({ value, label })),
+          },
+        ]
+      : overviewTab === 'today'
+      ? [
+          {
+            id: 'type',
+            label: 'Type',
+            key: 'type',
+            options: [
+              ['task', 'Task'],
+              ['event', 'Event'],
+              ['reminder', 'Reminder'],
+              ['milestone', 'Milestone'],
+            ].map(([value, label]) => ({ value, label })),
+          },
+          {
+            id: 'status',
+            label: 'Status',
+            key: 'status',
+            options: [
+              ['open', 'Open'],
+              ['done', 'Done'],
+              ['needs_attention', 'Needs attention'],
+            ].map(([value, label]) => ({ value, label })),
+          },
+          {
+            id: 'assignment',
+            label: 'Assignment',
+            key: 'assignment',
+            options: [
+              ['me', 'Assigned to me'],
+              ['my_teams', 'Assigned to my teams'],
+              ['unassigned', 'Unassigned'],
+            ].map(([value, label]) => ({ value, label })),
+          },
+          {
+            id: 'team',
+            label: 'Team',
+            key: 'team',
+            options: workspaceTeams.map((team) => ({
+              value: `team:${team.id}`,
+              label: team.name,
+            })),
+          },
+          {
+            id: 'project',
+            label: 'Project',
+            key: 'project',
+            options: projects.map((project) => ({
+              value: `project:${project.id}`,
+              label: project.name,
+            })),
+          },
+          {
+            id: 'priority',
+            label: 'Priority',
+            key: 'priority',
+            options: [
+              ['urgent', 'Urgent'],
+              ['high', 'High'],
+              ['medium', 'Medium'],
+              ['low', 'Low'],
+              ['no_priority', 'No priority'],
+            ].map(([value, label]) => ({ value, label })),
+          },
+        ]
+      : overviewTab === 'projects'
+      ? [
+          {
+            id: 'status',
+            label: 'Project status',
+            key: 'status',
+            options: [
+              ['active', 'Active'],
+              ['near_done', 'Near done'],
+              ['paused', 'Paused'],
+              ['completed', 'Completed'],
+              ['archived', 'Archived'],
+            ].map(([value, label]) => ({ value, label })),
+          },
+          {
+            id: 'assignment',
+            label: 'Assignment',
+            key: 'assignment',
+            options: [
+              ['me', 'Assigned to me'],
+              ['my_teams', 'Assigned to my teams'],
+              ['unassigned', 'Unassigned'],
+            ].map(([value, label]) => ({ value, label })),
+          },
+          {
+            id: 'team',
+            label: 'Owner team',
+            key: 'team',
+            options: workspaceTeams.map((team) => ({
+              value: `team:${team.id}`,
+              label: team.name,
+            })),
+          },
+          {
+            id: 'date',
+            label: 'Date',
+            key: 'date',
+            options: [
+              ['this_week', 'Due this week'],
+              ['this_month', 'Due this month'],
+              ['overdue', 'Overdue'],
+              ['no_date', 'No due date'],
+            ].map(([value, label]) => ({ value, label })),
+          },
+          {
+            id: 'progress',
+            label: 'Progress',
+            key: 'progress',
+            options: [
+              ['0_25', '0-25%'],
+              ['25_75', '25-75%'],
+              ['75_99', '75-99%'],
+              ['complete', 'Complete'],
+            ].map(([value, label]) => ({ value, label })),
+          },
+          {
+            id: 'has',
+            label: 'Has',
+            key: 'has',
+            options: [
+              ['milestones', 'Milestones'],
+              ['notes', 'Notes'],
+              ['open_actions', 'Open actions'],
+            ].map(([value, label]) => ({ value, label })),
+          },
+        ]
+      : [
+          {
+            id: 'noteType',
+            label: 'Note type',
+            key: 'noteType',
+            options: [
+              ['regular_note', 'Regular note'],
+              ['meeting_note', 'Meeting note'],
+              ['quick_note', 'Quick note'],
+              ['linked_note', 'Linked note'],
+            ].map(([value, label]) => ({ value, label })),
+          },
+          {
+            id: 'linkedContext',
+            label: 'Linked context',
+            key: 'linkedContext',
+            options: [
+              ['linked_to_project', 'Linked to project'],
+              ['linked_to_team', 'Linked to team'],
+              ['unlinked', 'Unlinked'],
+            ].map(([value, label]) => ({ value, label })),
+          },
+          {
+            id: 'project',
+            label: 'Project',
+            key: 'project',
+            options: projects.map((project) => ({
+              value: `project:${project.id}`,
+              label: project.name,
+            })),
+          },
+          {
+            id: 'team',
+            label: 'Team',
+            key: 'team',
+            options: workspaceTeams.map((team) => ({
+              value: `team:${team.id}`,
+              label: team.name,
+            })),
+          },
+          {
+            id: 'date',
+            label: 'Date',
+            key: 'date',
+            options: [
+              ['today', 'Today'],
+              ['this_week', 'This week'],
+              ['this_month', 'This month'],
+            ].map(([value, label]) => ({ value, label })),
+          },
+        ];
+
+  const activeOverviewFilterCount = countOverviewFilters(activeOverviewFilters);
+  const overviewFilterButtonLabel =
+    activeOverviewFilterCount > 0 ? `Filter ${activeOverviewFilterCount}` : 'Filter';
+  const openOverviewFilterMenu = () => {
+    const baseSections =
+      overviewTab === 'all'
+        ? ['type']
+        : overviewTab === 'assigned'
+        ? ['assignment']
+        : overviewTab === 'today'
+        ? ['type']
+        : overviewTab === 'projects'
+        ? ['status']
+        : ['noteType'];
+    const activeSections = overviewFilterKeyList.filter(
+      (key) => activeOverviewFilters[key]?.length > 0
+    );
+    setOverviewFilterOpenSections(new Set([...baseSections, ...activeSections]));
+    setIsOverviewFilterOpen((current) => !current);
+    setIsOverviewDisplayOpen(false);
+    setIsOverviewCreateMenuOpen(false);
+    setIsOverviewViewMenuOpen(false);
+  };
+  const clearCurrentOverviewFilters = () => {
+    setOverviewFilters((current) => ({
+      ...current,
+      [overviewTab]: createEmptyOverviewFilterValues(),
+    }));
+  };
+  const toggleOverviewFilterSection = (sectionId: string) => {
+    setOverviewFilterOpenSections((current) => {
+      const next = new Set(current);
+      if (next.has(sectionId)) next.delete(sectionId);
+      else next.add(sectionId);
+      return next;
+    });
+  };
+  const toggleOverviewFilterValue = (
+    key: OverviewFilterKey,
+    value: string,
+    tab: OverviewTab = overviewTab
+  ) => {
+    setOverviewFilters((current) => {
+      const next = { ...current };
+      const tabFilters = { ...next[tab] };
+      const existing = new Set(tabFilters[key]);
+      if (existing.has(value)) existing.delete(value);
+      else existing.add(value);
+      tabFilters[key] = Array.from(existing);
+      next[tab] = tabFilters;
+      return next;
+    });
+  };
+  const renderOverviewFilterSection = (section: {
+    id: string;
+    label: string;
+    key: OverviewFilterKey;
+    options: Array<{ value: string; label: string }>;
+  }) => {
+    const isOpen = overviewFilterOpenSections.has(section.id);
+    const selectedValues = activeOverviewFilters[section.key] ?? [];
+    const selectedCount = section.options.filter((option) =>
+      selectedValues.includes(option.value)
+    ).length;
+    return (
+      <div key={section.id} className="border-b border-[color:var(--ledger-border-subtle)] last:border-b-0">
+        <button
+          type="button"
+          onClick={() => toggleOverviewFilterSection(section.id)}
+          className="flex w-full items-center justify-between px-3 py-2 text-left text-[13px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+        >
+          <span className="min-w-0 truncate">{section.label}</span>
+          <span className="flex items-center gap-2">
+            {selectedCount > 0 && (
+              <span className="rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-1.5 py-0.5 text-[10px] font-medium leading-none text-[var(--ledger-text-muted)]">
+                {selectedCount}
+              </span>
+            )}
+            <ChevronRight
+              size={13}
+              className={`text-[var(--ledger-text-muted)] transition ${isOpen ? 'rotate-90' : ''}`}
+            />
+          </span>
+        </button>
+        {isOpen && (
+          <div className="space-y-0.5 px-2 pb-2">
+            {section.options.map((option) => {
+              const selected = selectedValues.includes(option.value);
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => toggleOverviewFilterValue(section.key, option.value)}
+                  className={`flex h-7 w-full items-center gap-2 rounded-lg px-2 text-left text-[12px] transition ${
+                    selected
+                      ? 'bg-[var(--ledger-surface-hover)] text-[var(--ledger-text-primary)]'
+                      : 'text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]'
+                  }`}
+                >
+                  <span
+                    className={`flex h-4 w-4 items-center justify-center rounded border text-[10px] ${
+                      selected
+                        ? 'border-[color:var(--ledger-accent)] bg-[var(--ledger-accent)] text-white'
+                        : 'border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] text-transparent'
+                    }`}
+                    aria-hidden="true"
+                  >
+                    <Check size={9} />
+                  </span>
+                  <span className="truncate">{option.label}</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   useWorkspaceRouteHistory(
     isModuleWindow ? { kind: 'dashboard', focusSection: overviewTab } : null,
     Boolean(isModuleWindow)
@@ -3642,11 +4625,15 @@ function DashboardContent() {
         isOverviewFilterOpen ||
         isOverviewDisplayOpen ||
         isFocusPickerOpen ||
-        isOverviewTaskModalOpen
+        isOverviewTaskModalOpen ||
+        isOverviewCreateMenuOpen ||
+        isOverviewViewMenuOpen
       ) {
         if (event.key === 'Escape') {
           setIsOverviewFilterOpen(false);
           setIsOverviewDisplayOpen(false);
+          setIsOverviewCreateMenuOpen(false);
+          setIsOverviewViewMenuOpen(false);
         }
         return;
       }
@@ -3680,6 +4667,8 @@ function DashboardContent() {
     isOverviewTaskModalOpen,
     isOverviewDisplayOpen,
     isOverviewFilterOpen,
+    isOverviewCreateMenuOpen,
+    isOverviewViewMenuOpen,
     selectedOverviewRow,
     selectedOverviewRowId,
     visibleOverviewRows,
@@ -3752,40 +4741,264 @@ function DashboardContent() {
           </>
         }
         primaryActions={
-          <>
-            {[
-              {
-                label: 'Task',
-                action: () => window.desktopWindow?.toggleModule('quick-task' as any),
-              },
-              {
-                label: 'Note',
-                action: () => window.desktopWindow?.toggleModule('quick-note' as any),
-              },
-              {
-                label: 'Event',
-                action: () => window.desktopWindow?.toggleModule('quick-event' as any),
-              },
-              {
-                label: 'Project',
-                action: () =>
-                  window.desktopWindow?.toggleModule('projects', {
-                    kind: 'projects',
-                    focusProjectId: '__new__',
-                  }),
-              },
-            ].map(({ label, action }) => (
-              <ModuleHeaderActionButton
-                key={label}
-                onClick={() => void action()}
-                title={`Create ${label.toLowerCase()}`}
-                variant="strip"
+          <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+            <div ref={overviewViewMenuRef} className="relative xl:hidden">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsOverviewViewMenuOpen((current) => !current);
+                  setIsOverviewCreateMenuOpen(false);
+                  setIsOverviewFilterOpen(false);
+                  setIsOverviewDisplayOpen(false);
+                }}
+                className="inline-flex h-7 items-center gap-1.5 rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2.5 text-[12px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+                aria-haspopup="menu"
+                aria-expanded={isOverviewViewMenuOpen}
+                aria-label="Change overview view"
+                title="Change overview view"
               >
-                <Plus size={12} />
-                {label}
-              </ModuleHeaderActionButton>
-            ))}
-          </>
+                View: {overviewTab === 'assigned' ? 'Assigned' : overviewTab === 'today' ? 'Today' : overviewTab === 'projects' ? 'Projects' : overviewTab === 'notes' ? 'Notes' : 'All'}
+                <ChevronDown size={12} />
+              </button>
+              {isOverviewViewMenuOpen && (
+                <div className="absolute left-0 top-full z-40 mt-2 w-44 overflow-hidden rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] py-1 shadow-[var(--ledger-shadow)]">
+                  {[
+                    ['all', 'All'],
+                    ['assigned', 'Assigned'],
+                    ['today', 'Today'],
+                    ['projects', 'Projects'],
+                    ['notes', 'Notes'],
+                  ].map(([id, label]) => (
+                    <button
+                      key={id}
+                      type="button"
+                      onClick={() => {
+                        setOverviewTab(id as OverviewTab);
+                        setIsOverviewViewMenuOpen(false);
+                        setIsOverviewFilterOpen(false);
+                        setIsOverviewDisplayOpen(false);
+                        setIsOverviewCreateMenuOpen(false);
+                      }}
+                      className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+                    >
+                      <span className="flex h-5 w-5 items-center justify-center rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)]">
+                        <Circle size={10} />
+                      </span>
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="hidden xl:block">
+              <ModuleHeaderSegmentedGroup compact>
+                {[
+                  ['all', 'All'],
+                  ['assigned', 'Assigned'],
+                  ['today', 'Today'],
+                  ['projects', 'Projects'],
+                  ['notes', 'Notes'],
+                ].map(([id, label]) => (
+                    <ModuleHeaderSegmentedButton
+                      key={id}
+                      compact
+                      active={overviewTab === id}
+                      onClick={() => {
+                        setOverviewTab(id as OverviewTab);
+                        setIsOverviewFilterOpen(false);
+                        setIsOverviewDisplayOpen(false);
+                        setIsOverviewCreateMenuOpen(false);
+                        setIsOverviewViewMenuOpen(false);
+                      }}
+                      title={label}
+                      ariaLabel={label}
+                    >
+                    {label}
+                  </ModuleHeaderSegmentedButton>
+                ))}
+              </ModuleHeaderSegmentedGroup>
+            </div>
+
+            <div ref={overviewFilterMenuRef} className="relative">
+              <button
+                type="button"
+                onClick={openOverviewFilterMenu}
+                className="relative inline-flex h-7 w-7 items-center justify-center rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+                aria-label={overviewFilterButtonLabel}
+                aria-haspopup="menu"
+                aria-expanded={isOverviewFilterOpen}
+                title={overviewFilterButtonLabel}
+              >
+                <SlidersHorizontal size={13} />
+                {activeOverviewFilterCount > 0 && (
+                  <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full border border-[var(--ledger-background)] bg-[var(--ledger-accent)] px-0.5 text-[9px] font-semibold leading-none text-white">
+                    {activeOverviewFilterCount > 9 ? '9+' : activeOverviewFilterCount}
+                  </span>
+                )}
+              </button>
+              {isOverviewFilterOpen && (
+                <div className="absolute right-0 top-full z-40 mt-2 w-80 overflow-hidden rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] py-1 shadow-[var(--ledger-shadow)]">
+                  <div className="flex items-center justify-between px-3 py-1.5">
+                    <p className="text-[11px] font-medium text-[var(--ledger-text-muted)]">Filter</p>
+                    {activeOverviewFilterCount > 0 && (
+                      <button
+                        type="button"
+                        onClick={clearCurrentOverviewFilters}
+                        className="text-[11px] font-medium text-[var(--ledger-text-secondary)] transition hover:text-[var(--ledger-text-primary)]"
+                      >
+                        Clear filters
+                      </button>
+                    )}
+                  </div>
+                  <div className="max-h-[58vh] overflow-auto">
+                    {overviewFilterSections.map(renderOverviewFilterSection)}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsOverviewDisplayOpen((current) => !current);
+                  setIsOverviewFilterOpen(false);
+                  setIsOverviewCreateMenuOpen(false);
+                  setIsOverviewViewMenuOpen(false);
+                }}
+                className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+                aria-label="Display"
+                title="Display"
+              >
+                <LayoutList size={13} />
+              </button>
+              {isOverviewDisplayOpen && (
+                <div className="absolute right-0 z-30 mt-2 w-72 rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-2 shadow-[var(--ledger-shadow)]">
+                  <p className="px-3 py-1.5 text-[11px] font-medium text-[var(--ledger-text-muted)]">
+                    Layout
+                  </p>
+                  {['List', 'Compact list'].map((item) => (
+                    <button
+                      key={item}
+                      type="button"
+                      onClick={() => setOverviewLayout(item === 'List' ? 'list' : 'compact')}
+                      className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-[13px] text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+                    >
+                      {item}
+                      {overviewLayout === (item === 'List' ? 'list' : 'compact') && (
+                        <CheckCircle2 size={13} />
+                      )}
+                    </button>
+                  ))}
+                  <div className="my-1 h-px bg-[var(--ledger-border-subtle)]" />
+                  <p className="px-3 py-1.5 text-[11px] font-medium text-[var(--ledger-text-muted)]">
+                    Group by
+                  </p>
+                  {['None', 'Status', 'Type', 'Project', 'Due date', 'Assignee'].map((item) => (
+                    <button
+                      key={item}
+                      type="button"
+                      className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-[13px] text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+                    >
+                      {item}
+                      <ChevronRight size={13} className="text-[var(--ledger-text-muted)]" />
+                    </button>
+                  ))}
+                  <div className="my-1 h-px bg-[var(--ledger-border-subtle)]" />
+                  <p className="px-3 py-1.5 text-[11px] font-medium text-[var(--ledger-text-muted)]">
+                    Properties
+                  </p>
+                  <div className="grid grid-cols-2 gap-1 px-1 pb-1">
+                    {[
+                      'Priority',
+                      'Project',
+                      'Due date',
+                      'Assignee',
+                      'Members',
+                      'Progress',
+                      'Linked notes',
+                      'Updated',
+                    ].map((item) => (
+                      <span
+                        key={item}
+                        className="rounded-lg px-2 py-1 text-[12px] text-[var(--ledger-text-muted)]"
+                      >
+                        {item}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="relative" ref={overviewCreateMenuRef}>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsOverviewCreateMenuOpen((current) => !current);
+                  setIsOverviewViewMenuOpen(false);
+                  setIsOverviewFilterOpen(false);
+                  setIsOverviewDisplayOpen(false);
+                }}
+                className="inline-flex h-7 items-center gap-1.5 rounded-full bg-[var(--ledger-accent)] px-3 text-[12px] font-semibold text-white transition hover:bg-[var(--ledger-accent-hover)]"
+                aria-haspopup="menu"
+                aria-expanded={isOverviewCreateMenuOpen}
+                aria-label="Create new item"
+                title="Create new item"
+              >
+                <Plus size={13} />
+                New
+              </button>
+              {isOverviewCreateMenuOpen && (
+                <div className="absolute right-0 top-full z-40 mt-2 w-52 overflow-hidden rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] py-1 shadow-[var(--ledger-shadow)]">
+                  {[
+                    {
+                      label: 'Task',
+                      icon: <Check size={10} />,
+                      action: () => openOverviewTaskModal('focus'),
+                    },
+                    {
+                      label: 'Project',
+                      icon: <FolderKanban size={10} />,
+                      action: () => openOverviewCreateProjectModal(),
+                    },
+                    {
+                      label: 'Note',
+                      icon: <StickyNote size={10} />,
+                      action: () => setIsOverviewCreateNoteOpen(true),
+                    },
+                    {
+                      label: 'Event',
+                      icon: <CalendarDays size={10} />,
+                      action: () => openUpcomingQuickCreate('event'),
+                    },
+                    {
+                      label: 'Reminder',
+                      icon: <Bell size={10} />,
+                      action: () => openUpcomingQuickCreate('reminder'),
+                    },
+                  ].map(({ label, icon, action }) => (
+                    <button
+                      key={label}
+                      type="button"
+                      onClick={() => {
+                        setIsOverviewCreateMenuOpen(false);
+                        action();
+                      }}
+                      className="flex h-8 w-full items-center gap-2 px-3 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+                    >
+                      <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)]">
+                        {icon}
+                      </span>
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+          </div>
         }
         closeLabel="Close overview"
         minimizeLabel="Minimize overview"
@@ -3806,153 +5019,11 @@ function DashboardContent() {
         style={{ scrollbarGutter: 'auto' }}
       >
         <div className="flex h-full min-h-[680px] w-full flex-col rounded-[18px] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-[0_18px_44px_rgba(66,42,24,0.06)]">
-          <header className="flex flex-col gap-3 border-b border-[color:var(--ledger-border-subtle)] px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
+          <header className="border-b border-[color:var(--ledger-border-subtle)] px-4 py-3">
             <div className="min-w-0">
               <p className="mt-1 text-[13px] text-[var(--ledger-text-muted)]">
                 Everything happening across {activeWorkspace?.name ?? 'this workspace'}.
               </p>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="flex rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] p-0.5">
-                {[
-                  ['all', 'All'],
-                  ['assigned', 'Assigned'],
-                  ['today', 'Today'],
-                  ['projects', 'Projects'],
-                  ['notes', 'Notes'],
-                ].map(([id, label]) => (
-                  <button
-                    key={id}
-                    type="button"
-                    onClick={() => setOverviewTab(id as typeof overviewTab)}
-                    className={`rounded-full px-2.5 py-1 text-[12px] font-medium transition ${
-                      overviewTab === id
-                        ? 'bg-[var(--ledger-surface-card)] text-[var(--ledger-text-primary)] shadow-sm'
-                        : 'text-[var(--ledger-text-muted)] hover:text-[var(--ledger-text-primary)]'
-                    }`}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-
-              <div className="relative">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsOverviewFilterOpen((current) => !current);
-                    setIsOverviewDisplayOpen(false);
-                  }}
-                  className="inline-flex h-7 items-center gap-1.5 rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-2.5 text-[12px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
-                >
-                  <SlidersHorizontal size={13} />
-                  Filter
-                </button>
-                {isOverviewFilterOpen && (
-                  <div className="absolute right-0 z-30 mt-2 w-56 rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-2 shadow-[var(--ledger-shadow)]">
-                    {[
-                      'Type',
-                      'Status',
-                      'Project',
-                      'Due date',
-                      'Assignee',
-                      'Priority',
-                      'Workspace',
-                      'Completed',
-                    ].map((item) => (
-                      <button
-                        key={item}
-                        type="button"
-                        className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-[13px] text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
-                      >
-                        {item}
-                        <ChevronRight size={13} className="text-[var(--ledger-text-muted)]" />
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              <div className="relative">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsOverviewDisplayOpen((current) => !current);
-                    setIsOverviewFilterOpen(false);
-                  }}
-                  className="inline-flex h-7 items-center gap-1.5 rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-2.5 text-[12px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
-                >
-                  <LayoutList size={13} />
-                  Display
-                </button>
-                {isOverviewDisplayOpen && (
-                  <div className="absolute right-0 z-30 mt-2 w-72 rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-2 shadow-[var(--ledger-shadow)]">
-                    <p className="px-3 py-1.5 text-[11px] font-medium text-[var(--ledger-text-muted)]">
-                      Layout
-                    </p>
-                    {['List', 'Compact list'].map((item) => (
-                      <button
-                        key={item}
-                        type="button"
-                        onClick={() => setOverviewLayout(item === 'List' ? 'list' : 'compact')}
-                        className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-[13px] text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
-                      >
-                        {item}
-                        {overviewLayout === (item === 'List' ? 'list' : 'compact') && (
-                          <CheckCircle2 size={13} />
-                        )}
-                      </button>
-                    ))}
-                    <div className="my-1 h-px bg-[var(--ledger-border-subtle)]" />
-                    <p className="px-3 py-1.5 text-[11px] font-medium text-[var(--ledger-text-muted)]">
-                      Group by
-                    </p>
-                    {['None', 'Status', 'Type', 'Project', 'Due date', 'Assignee'].map((item) => (
-                      <button
-                        key={item}
-                        type="button"
-                        className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-[13px] text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
-                      >
-                        {item}
-                        <ChevronRight size={13} className="text-[var(--ledger-text-muted)]" />
-                      </button>
-                    ))}
-                    <div className="my-1 h-px bg-[var(--ledger-border-subtle)]" />
-                    <p className="px-3 py-1.5 text-[11px] font-medium text-[var(--ledger-text-muted)]">
-                      Properties
-                    </p>
-                    <div className="grid grid-cols-2 gap-1 px-1 pb-1">
-                      {[
-                        'Priority',
-                        'Project',
-                        'Due date',
-                        'Assignee',
-                        'Members',
-                        'Progress',
-                        'Linked notes',
-                        'Updated',
-                      ].map((item) => (
-                        <span
-                          key={item}
-                          className="rounded-lg px-2 py-1 text-[12px] text-[var(--ledger-text-muted)]"
-                        >
-                          {item}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              <button
-                type="button"
-                onClick={() => openOverviewTaskModal('focus')}
-                className="inline-flex h-7 items-center gap-1.5 rounded-full bg-[var(--ledger-accent)] px-3 text-[12px] font-semibold text-white transition hover:bg-[var(--ledger-accent-hover)]"
-              >
-                <Plus size={13} />
-                New
-              </button>
             </div>
           </header>
 
@@ -3971,19 +5042,41 @@ function DashboardContent() {
                   ))}
                 </div>
               ) : visibleOverviewRows.length === 0 ? (
-                <div className="flex flex-1 items-center justify-center p-6">
-                  <div className="max-w-sm rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-5 py-4 text-center shadow-sm">
-                    <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)]">
-                      {overviewEmptyState.icon}
+                activeOverviewFilterCount > 0 ? (
+                  <div className="flex flex-1 items-center justify-center p-6">
+                    <div className="inline-flex items-center gap-3 rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-4 py-3 shadow-sm">
+                      <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)]">
+                        <SlidersHorizontal size={14} />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-[var(--ledger-text-primary)]">
+                          No results match these filters.
+                        </p>
+                        <button
+                          type="button"
+                          onClick={clearCurrentOverviewFilters}
+                          className="mt-0.5 text-xs font-medium text-[var(--ledger-accent)] transition hover:text-[var(--ledger-accent-hover)]"
+                        >
+                          Clear filters
+                        </button>
+                      </div>
                     </div>
-                    <p className="mt-3 text-sm font-medium text-[var(--ledger-text-primary)]">
-                      {overviewEmptyState.title}
-                    </p>
-                    <p className="mt-1 text-xs leading-5 text-[var(--ledger-text-muted)]">
-                      {overviewEmptyState.body}
-                    </p>
                   </div>
-                </div>
+                ) : (
+                  <div className="flex flex-1 items-center justify-center p-6">
+                    <div className="max-w-sm rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-5 py-4 text-center shadow-sm">
+                      <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)]">
+                        {overviewEmptyState.icon}
+                      </div>
+                      <p className="mt-3 text-sm font-medium text-[var(--ledger-text-primary)]">
+                        {overviewEmptyState.title}
+                      </p>
+                      <p className="mt-1 text-xs leading-5 text-[var(--ledger-text-muted)]">
+                        {overviewEmptyState.body}
+                      </p>
+                    </div>
+                  </div>
+                )
               ) : (
                 <div className="space-y-1.5">
                   {overviewGroups.map((group) => {
@@ -4071,7 +5164,7 @@ function DashboardContent() {
                                   }`}
                                 >
                                   <span className="relative flex h-6 w-6 items-center justify-center overflow-visible rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] text-[13px] text-[var(--ledger-text-secondary)]">
-                                    {row.icon}
+                                    {row.taskIcon ?? row.icon}
                                     {row.isOverdue && (
                                       <span
                                         className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full border border-[color:var(--ledger-surface-card)] bg-[var(--ledger-accent)] text-[8px] font-semibold leading-none text-white shadow-[0_1px_2px_rgba(17,24,39,0.18)]"
