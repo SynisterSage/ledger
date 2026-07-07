@@ -121,3 +121,20 @@ export const SkeletonTaskItem = () => {
     </div>
   );
 };
+
+export const SkeletonCompactRow = () => {
+  return (
+    <div
+      className="grid w-full grid-cols-[28px_minmax(0,1fr)_auto] items-center gap-2 rounded-lg px-3 py-1.5 animate-pulse"
+      style={{ backgroundColor: skeletonSurface }}
+    >
+      <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-[color:var(--ledger-border-subtle)] bg-[color:var(--ledger-background-muted,#FFF4EA)]">
+        <div className="h-3 w-3 rounded-sm" style={{ backgroundColor: skeletonFill }} />
+      </div>
+      <div className="min-w-0">
+        <div className="h-3.5 rounded w-3/5" style={{ backgroundColor: skeletonFill }} />
+      </div>
+      <div className="h-3 rounded w-16" style={{ backgroundColor: skeletonFill }} />
+    </div>
+  );
+};

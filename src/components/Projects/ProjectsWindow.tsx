@@ -54,7 +54,7 @@ import {
 } from '../Common/ModuleWindowHeader';
 import { CloseGuardModal } from '../Common/CloseGuardModal';
 import { ModalCloseButton } from '../Common/ModalCloseButton';
-import { SkeletonProjectCard, SkeletonTaskItem } from '../Common/Skeleton';
+import { SkeletonCompactRow, SkeletonProjectCard } from '../Common/Skeleton';
 import { useViewportWidth } from '../../hooks/useViewportWidth';
 import { useWorkspaceRouteHistory } from '../../hooks/useWorkspaceRouteHistory';
 import {
@@ -131,9 +131,18 @@ type TaskRow = {
 type ProjectStatusFilter = 'all' | 'active' | 'paused' | 'completed';
 type ProjectSemanticStatus = 'not_started' | 'in_progress' | 'paused' | 'completed';
 type ProjectTab = 'overview' | 'actions' | 'notes' | 'calendar' | 'activity';
-type ActionsGroupBy = 'type' | 'due_date' | 'milestone';
 type ProjectsOverviewView = 'timeline' | 'list';
 type ProjectsOverviewRange = 'month' | 'quarter' | 'all';
+type ProjectDocumentSectionId = 'milestones' | 'nextActions' | 'notes' | 'calendar' | 'activity';
+type ProjectDocumentGroupId =
+  | 'actions'
+  | 'milestones'
+  | 'done'
+  | 'calendarUpcoming'
+  | 'calendarPast'
+  | 'activityToday'
+  | 'activityWeek'
+  | 'activityEarlier';
 type ProjectContextMenuState = { x: number; y: number; projectId: string };
 type TimelineContextMenuState =
   | {
@@ -210,6 +219,10 @@ type ProjectMilestoneRow = {
   type: ProjectMilestoneType | string;
   note: string | null;
   completed: boolean;
+  assigned_to?: string | null;
+  assigned_to_user_id?: string | null;
+  assigned_to_team_id?: string | null;
+  assigned_team_id?: string | null;
   linked_note_id?: string | null;
   linked_reminder_id?: string | null;
   linked_event_id?: string | null;
@@ -304,15 +317,6 @@ const taskPriorityLabels: Record<string, string> = {
   medium: 'Medium',
   high: 'High',
   urgent: 'Urgent',
-};
-
-const taskPriorityTone: Record<string, string> = {
-  low: 'border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)]',
-  medium:
-    'border border-[color:rgba(59,130,246,0.18)] bg-[rgba(59,130,246,0.12)] text-[rgb(37,99,235)]',
-  high: 'border border-[color:rgba(245,158,11,0.2)] bg-[rgba(245,158,11,0.14)] text-[rgb(180,83,9)]',
-  urgent:
-    'border border-[color:rgba(255,95,64,0.22)] bg-[rgba(255,95,64,0.14)] text-[rgb(220,77,52)]',
 };
 
 const projectColorOptions = [
@@ -669,7 +673,6 @@ export const ProjectsWindow = () => {
   const [isCreatingTask, setIsCreatingTask] = useState(false);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [isTaskComposerOpen, setIsTaskComposerOpen] = useState(false);
-  const [actionsGroupBy, setActionsGroupBy] = useState<ActionsGroupBy>('type');
   const [expandedActionId, setExpandedActionId] = useState<string | null>(null);
   const [expandedMilestoneId, setExpandedMilestoneId] = useState<string | null>(null);
   const [actionDraft, setActionDraft] = useState({
@@ -722,6 +725,27 @@ export const ProjectsWindow = () => {
   const [showCloseGuardModal, setShowCloseGuardModal] = useState(false);
   const [workspaceRefreshToken, setWorkspaceRefreshToken] = useState(0);
   const [activeTab, setActiveTab] = useState<ProjectTab>('overview');
+  const [collapsedProjectSections, setCollapsedProjectSections] = useState<
+    Record<ProjectDocumentSectionId, boolean>
+  >({
+    milestones: false,
+    nextActions: false,
+    notes: false,
+    calendar: false,
+    activity: false,
+  });
+  const [collapsedProjectGroups, setCollapsedProjectGroups] = useState<
+    Record<ProjectDocumentGroupId, boolean>
+  >({
+    actions: false,
+    milestones: false,
+    done: false,
+    calendarUpcoming: false,
+    calendarPast: false,
+    activityToday: false,
+    activityWeek: false,
+    activityEarlier: false,
+  });
   const [projectsOverviewView, setProjectsOverviewView] = useState<ProjectsOverviewView>(
     parseProjectsSection(initialProjectsSection)?.view ?? 'timeline'
   );
@@ -730,10 +754,12 @@ export const ProjectsWindow = () => {
   );
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [isEditingBrief, setIsEditingBrief] = useState(false);
+  const [briefEditorPlacement, setBriefEditorPlacement] = useState<'header' | 'document' | null>(
+    null
+  );
   const [newProjectOwnerTeamId, setNewProjectOwnerTeamId] = useState('');
   const pendingMilestonePlacementRef = useRef(false);
   const areSidePanelsCollapsed = isLeftPaneCollapsed && isRightPaneCollapsed;
-  const taskComposerRef = useRef<HTMLDivElement | null>(null);
   const taskTitleInputRef = useRef<HTMLInputElement | null>(null);
 
   const handleWorkspaceRefresh = useCallback(() => {
@@ -824,9 +850,14 @@ export const ProjectsWindow = () => {
   const selectedProjectMilestones = useMemo(() => {
     return workspaceMilestones
       .filter((milestone) => milestone.project_id === selectedProjectId)
-      .sort((left, right) =>
-        String(left.milestone_date).localeCompare(String(right.milestone_date))
-      );
+      .sort((left, right) => {
+        const completionDelta = Number(Boolean(left.completed)) - Number(Boolean(right.completed));
+        if (completionDelta !== 0) return completionDelta;
+        const leftDate = left.milestone_date || '9999-12-31';
+        const rightDate = right.milestone_date || '9999-12-31';
+        if (leftDate !== rightDate) return leftDate.localeCompare(rightDate);
+        return left.title.localeCompare(right.title);
+      });
   }, [selectedProjectId, workspaceMilestones]);
 
   const selectedProjectMilestoneById = useMemo(() => {
@@ -915,6 +946,31 @@ export const ProjectsWindow = () => {
       .slice(0, 5);
   }, [completedProjectTasks, projectEvents, projectReminders, selectedProject?.updated_at]);
 
+  const groupedProjectActivity = useMemo(() => {
+    const now = Date.now();
+    const toBucket = (value: string | null) => {
+      if (!value) return 'Earlier';
+      const deltaDays = Math.max(0, Math.floor((now - new Date(value).getTime()) / 86_400_000));
+      if (deltaDays === 0) return 'Today';
+      if (deltaDays <= 7) return 'This week';
+      return 'Earlier';
+    };
+
+    const groups = new Map<string, Array<{ id: string; label: string; at: string | null }>>();
+    for (const item of recentProjectActivity) {
+      const bucket = toBucket(item.at);
+      const current = groups.get(bucket) ?? [];
+      current.push(item);
+      groups.set(bucket, current);
+    }
+
+    return [
+      ['Today', groups.get('Today') ?? []],
+      ['This week', groups.get('This week') ?? []],
+      ['Earlier', groups.get('Earlier') ?? []],
+    ] as const;
+  }, [recentProjectActivity]);
+
   const workspaceMemberById = useMemo(() => {
     return new Map(workspaceMembers.map((member) => [member.user_id, member]));
   }, [workspaceMembers]);
@@ -958,6 +1014,22 @@ export const ProjectsWindow = () => {
     [workspaceMemberById, workspaceTeamById]
   );
 
+  const getMilestoneAssignmentValue = useCallback(
+    (
+      milestone: Pick<
+        ProjectMilestoneRow,
+        'assigned_to' | 'assigned_to_user_id' | 'assigned_to_team_id' | 'assigned_team_id'
+      >
+    ) => {
+      const assignedTeamId = milestone.assigned_to_team_id ?? milestone.assigned_team_id ?? null;
+      if (assignedTeamId) return `team:${assignedTeamId}`;
+      const assignedUserId = milestone.assigned_to_user_id ?? milestone.assigned_to ?? null;
+      if (assignedUserId) return `user:${assignedUserId}`;
+      return '';
+    },
+    []
+  );
+
   const createdByMember = useMemo(() => {
     const id = selectedProject?.created_by ?? null;
     if (!id) return null;
@@ -981,11 +1053,6 @@ export const ProjectsWindow = () => {
 
   const isSharedWorkspace = workspaceMembers.length > 1;
   const workspaceLabel = activeWorkspace?.name?.trim() || 'Current workspace';
-  const projectMetaLine = selectedProject
-    ? `${projectStatusLabels[projectDraft.status]} · ${
-        projectDraft.completeness
-      }% · ${workspaceLabel}`
-    : '';
   const overviewProjectStats = useMemo(() => {
     const total = projects.length;
     const active = projects.filter((project) => {
@@ -1109,6 +1176,9 @@ export const ProjectsWindow = () => {
         : null,
     [milestoneDetail, workspaceMilestones]
   );
+  const milestoneDetailAssignmentValue = milestoneDetailRow
+    ? getMilestoneAssignmentValue(milestoneDetailRow)
+    : '';
   const milestoneDetailProject = milestoneDetailRow
     ? projects.find((project) => project.id === milestoneDetailRow.project_id) ?? null
     : null;
@@ -1135,59 +1205,82 @@ export const ProjectsWindow = () => {
       .sort((left, right) => String(right.at).localeCompare(String(left.at)))
       .slice(0, 4);
   }, [projects, workspaceEvents, workspaceReminders]);
-  const upcomingItems = useMemo(() => {
-    if (!selectedProject) return [];
-    const items: Array<{ id: string; title: string; meta: string; kind: string }> = [];
-    if (projectDraft.endDate) {
-      items.push({
-        id: 'project-deadline',
-        title: `${projectDraft.name || selectedProject.name} deadline`,
-        meta: formatShortDate(projectDraft.endDate),
-        kind: 'Deadline',
-      });
-    }
-    for (const event of projectEvents.slice(0, 3)) {
-      items.push({
-        id: `event-${event.id}`,
-        title: event.title,
-        meta: formatEventDateLabel(event),
-        kind: 'Event',
-      });
-    }
-    for (const reminder of projectReminders.slice(0, 3)) {
-      items.push({
-        id: `reminder-${reminder.id}`,
-        title: reminder.title,
-        meta: formatReminderDateLabel(reminder),
-        kind: 'Reminder',
-      });
-    }
-    for (const task of activeProjectTasks.filter((item) => item.due_date).slice(0, 2)) {
-      items.push({
-        id: `task-${task.id}`,
-        title: task.title,
-        meta: task.due_time
-          ? `${formatTaskDueDateLabel(task.due_date)} · ${task.due_time}`
-          : formatTaskDueDateLabel(task.due_date),
-        kind: 'Action',
-      });
-    }
-    return items.slice(0, 6);
-  }, [
-    activeProjectTasks,
-    projectDraft.endDate,
-    projectDraft.name,
-    projectEvents,
-    projectReminders,
-    selectedProject,
-  ]);
-
   const linkedObjectCounts = {
     notes: linkedNotes.length,
     events: projectEvents.length,
     reminders: projectReminders.length,
     captures: 0,
   };
+
+  const projectCalendarAgenda = useMemo(() => {
+    if (!selectedProject) return { upcoming: [], past: [] };
+
+    const items = [
+      ...(projectDraft.endDate
+        ? [
+            {
+              id: 'project-deadline',
+              title: selectedProject.name || 'Project deadline',
+              meta: `Deadline · ${formatShortDate(projectDraft.endDate)}`,
+              date: projectDraft.endDate,
+              kind: 'deadline' as const,
+            },
+          ]
+        : []),
+      ...projectEvents.map((event) => ({
+        id: `event-${event.id}`,
+        title: event.title,
+        meta: `Event · ${formatEventDateLabel(event)}`,
+        date: event.start_at,
+        kind: 'event' as const,
+      })),
+      ...projectReminders.map((reminder) => ({
+        id: `reminder-${reminder.id}`,
+        title: reminder.title,
+        meta: `Reminder · ${formatReminderDateLabel(reminder)}`,
+        date: reminder.remind_at,
+        kind: 'reminder' as const,
+      })),
+      ...selectedProjectMilestones
+        .filter((milestone) => milestone.milestone_date)
+        .map((milestone) => ({
+          id: `milestone-${milestone.id}`,
+          title: milestone.title,
+          meta: `Milestone · ${milestone.completed ? 'Done' : milestone.type}`,
+          date: milestone.milestone_date,
+          kind: 'milestone' as const,
+        })),
+      ...activeProjectTasks
+        .filter((task) => task.due_date)
+        .map((task) => ({
+          id: `task-${task.id}`,
+          title: task.title,
+          meta: `${
+            task.priority
+              ? `${String(task.priority)[0].toUpperCase()}${String(task.priority).slice(1)}`
+              : 'Task'
+          } · Due ${formatTaskDueDateLabel(task.due_date)}`,
+          date: task.due_date ?? '',
+          kind: 'task' as const,
+        })),
+    ].filter((item) => item.date);
+
+    const upcoming = items
+      .filter((item) => String(item.date) >= todayKey())
+      .sort((a, b) => String(a.date).localeCompare(String(b.date)));
+    const past = items
+      .filter((item) => String(item.date) < todayKey())
+      .sort((a, b) => String(b.date).localeCompare(String(a.date)));
+
+    return { upcoming: upcoming.slice(0, 5), past: past.slice(0, 4) };
+  }, [
+    activeProjectTasks,
+    projectDraft.endDate,
+    projectEvents,
+    projectReminders,
+    selectedProject,
+    selectedProjectMilestones,
+  ]);
 
   const filteredNewProjectNotes = useMemo(() => {
     const term = newProjectNotesSearch.trim().toLowerCase();
@@ -1227,6 +1320,23 @@ export const ProjectsWindow = () => {
       setError(error instanceof Error ? error.message : 'Could not update project owner team.');
     }
   }, [api, projectOwnerTeamDraft, projectOwnerTeamPickerProject]);
+
+  const updateSelectedProjectOwnerTeam = useCallback(
+    async (ownerTeamId: string) => {
+      if (!selectedProject) return;
+      try {
+        const updated = (await api.updateProject(selectedProject.id, {
+          owner_team_id: ownerTeamId || null,
+        })) as ProjectRow;
+        setProjects((prev) =>
+          prev.map((project) => (project.id === updated.id ? updated : project))
+        );
+      } catch (error) {
+        setError(error instanceof Error ? error.message : 'Could not update project owner team.');
+      }
+    },
+    [api, selectedProject]
+  );
 
   const taskMenuPosition = useMemo(() => {
     if (!taskContextMenu) return null;
@@ -1286,6 +1396,8 @@ export const ProjectsWindow = () => {
   );
 
   const isCompactLayout = viewportWidth < modulePaneSizing.projects.right.compactBreakpoint;
+  const isLoadingProjectActivity =
+    isLoadingProjects || isLoadingTasks || isLoadingLinkedNotes || isLoadingProjectCalendarItems;
   const taskNotesTask = useMemo(
     () => tasks.find((task) => task.id === taskNotesTaskId) ?? null,
     [taskNotesTaskId, tasks]
@@ -1442,6 +1554,17 @@ export const ProjectsWindow = () => {
     setTaskError(null);
   }, []);
 
+  const openTaskComposer = useCallback(
+    (options?: { milestoneId?: string }) => {
+      resetTaskComposer();
+      if (options?.milestoneId) {
+        setNewTaskMilestoneId(options.milestoneId);
+      }
+      setIsTaskComposerOpen(true);
+    },
+    [resetTaskComposer]
+  );
+
   const selectProject = useCallback(
     async (project: ProjectRow) => {
       if (selectedProjectId === project.id) return;
@@ -1453,6 +1576,7 @@ export const ProjectsWindow = () => {
       setActiveTab('overview');
       setIsEditingTitle(false);
       setIsEditingBrief(false);
+      setBriefEditorPlacement(null);
       setIsTaskComposerOpen(false);
       resetTaskComposer();
     },
@@ -1469,6 +1593,7 @@ export const ProjectsWindow = () => {
     setProjectsOverviewRange('all');
     setIsEditingTitle(false);
     setIsEditingBrief(false);
+    setBriefEditorPlacement(null);
     setIsTaskComposerOpen(false);
     resetTaskComposer();
     isDirtyRef.current = false;
@@ -1839,8 +1964,11 @@ export const ProjectsWindow = () => {
         setTasks((prev) => [created, ...prev]);
         if (options?.keepOpen) {
           setNewTaskTitle('');
+          setNewTaskPriority('medium');
           setNewTaskDueDate(todayKey());
           setNewTaskDueTime('');
+          setNewTaskAssignee('');
+          setNewTaskMilestoneId('');
           setTaskError(null);
           window.setTimeout(() => taskTitleInputRef.current?.focus(), 0);
         } else {
@@ -1867,24 +1995,10 @@ export const ProjectsWindow = () => {
     ]
   );
 
-  const closeTaskComposer = useCallback(
-    (options?: { preserveDraft?: boolean }) => {
-      setIsTaskComposerOpen(false);
-      if (!options?.preserveDraft) {
-        resetTaskComposer();
-      }
-    },
-    [resetTaskComposer]
-  );
-
-  const taskComposerHasContent = Boolean(
-    newTaskTitle.trim() ||
-      newTaskPriority !== 'medium' ||
-      newTaskDueDate !== todayKey() ||
-      newTaskAssignee ||
-      newTaskMilestoneId ||
-      newTaskDueTime.trim()
-  );
+  const closeTaskComposer = useCallback(() => {
+    setIsTaskComposerOpen(false);
+    resetTaskComposer();
+  }, [resetTaskComposer]);
 
   const updateTaskStatus = useCallback(
     async (task: TaskRow, status: string) => {
@@ -2244,9 +2358,9 @@ export const ProjectsWindow = () => {
     async (projectId: string) => {
       await openProjectById(projectId);
       setActiveTab('actions');
-      setIsTaskComposerOpen(true);
+      openTaskComposer();
     },
-    [openProjectById]
+    [openProjectById, openTaskComposer]
   );
 
   const handleEditDates = useCallback(
@@ -2481,6 +2595,22 @@ export const ProjectsWindow = () => {
     setPendingMilestone(null);
   }, []);
 
+  const handleMilestoneAssigneeChange = useCallback(
+    async (milestoneId: string, assignee: string) => {
+      try {
+        const updated = (await api.updateProjectMilestone(milestoneId, {
+          ...parseAssignmentValue(assignee),
+        })) as ProjectMilestoneRow;
+        setWorkspaceMilestones((prev) =>
+          prev.map((milestone) => (milestone.id === updated.id ? updated : milestone))
+        );
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Could not update milestone assignee.');
+    }
+    },
+    [api, parseAssignmentValue]
+  );
+
   const handleMilestoneCompleteToggle = useCallback(
     async (milestoneId: string) => {
       const current = workspaceMilestones.find((milestone) => milestone.id === milestoneId);
@@ -2656,32 +2786,6 @@ export const ProjectsWindow = () => {
       }
     },
     [api, selectedProjectId]
-  );
-
-  const unlinkCalendarItemFromProject = useCallback(
-    async (kind: CalendarLinkKind, itemId: string) => {
-      if (!selectedProjectId) return;
-      try {
-        if (kind === 'event') {
-          const updated = (await api.updateEvent(itemId, {
-            project_id: null,
-          })) as ProjectCalendarEvent;
-          setProjectEvents((prev) => prev.filter((item) => item.id !== updated.id));
-        } else {
-          const updated = (await api.updateReminder(itemId, {
-            project_id: null,
-          })) as ProjectCalendarReminder;
-          setProjectReminders((prev) => prev.filter((item) => item.id !== updated.id));
-        }
-        void loadLinkableCalendarItems();
-      } catch (error) {
-        setError(error instanceof Error ? error.message : 'Could not unlink calendar item.');
-        if (selectedProjectId) {
-          void loadProjectCalendarItems(selectedProjectId);
-        }
-      }
-    },
-    [api, loadLinkableCalendarItems, loadProjectCalendarItems, selectedProjectId]
   );
 
   const openLinkedNoteInNotesModule = useCallback((noteId: string) => {
@@ -3223,30 +3327,6 @@ export const ProjectsWindow = () => {
   }, [isTaskComposerOpen]);
 
   useEffect(() => {
-    if (!isTaskComposerOpen) return;
-
-    const onPointerDown = (event: MouseEvent) => {
-      if (taskComposerRef.current?.contains(event.target as Node)) return;
-      if (taskComposerHasContent) return;
-      setIsTaskComposerOpen(false);
-    };
-
-    const onEscape = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return;
-      if (taskComposerHasContent) return;
-      setIsTaskComposerOpen(false);
-    };
-
-    window.addEventListener('mousedown', onPointerDown);
-    window.addEventListener('keydown', onEscape);
-
-    return () => {
-      window.removeEventListener('mousedown', onPointerDown);
-      window.removeEventListener('keydown', onEscape);
-    };
-  }, [isTaskComposerOpen, taskComposerHasContent]);
-
-  useEffect(() => {
     if (!expandedActionId && !expandedMilestoneId) return;
     const onEscape = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return;
@@ -3278,7 +3358,7 @@ export const ProjectsWindow = () => {
         id={`task-row-${task.id}`}
         key={task.id}
         onClick={() => {
-          if (interactive && !expanded) openActionInlineEditor(task);
+          if (!expanded) openActionInlineEditor(task);
         }}
         onContextMenu={(e) => {
           e.preventDefault();
@@ -3288,55 +3368,42 @@ export const ProjectsWindow = () => {
             taskId: task.id,
           });
         }}
-        className={`group w-full rounded-lg px-2 py-2.5 text-left transition ${
-          interactive && !expanded ? 'cursor-pointer hover:bg-[var(--ledger-surface-hover)]' : ''
-        } ${expanded ? 'bg-[var(--ledger-background)]' : ''}`}
+        className={`${compactRowClass} ${!expanded ? 'cursor-pointer' : ''} ${
+          expanded ? 'bg-[var(--ledger-surface-muted)]/40' : ''
+        }`}
       >
-        <div className="flex items-center gap-2.5">
-          <button
-            type="button"
-            onClick={(event) => {
-              event.stopPropagation();
-              void updateTaskStatus(task, completed ? 'todo' : 'completed');
-            }}
-            className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border ${
-              completed
-                ? 'border-[color:rgba(50,213,131,0.35)] bg-[color:rgba(50,213,131,0.16)]'
-                : 'border-[color:var(--ledger-border-strong)] bg-[var(--ledger-surface-muted)]'
-            }`}
-            aria-label={completed ? 'Mark task incomplete' : 'Mark task complete'}
-          >
-            {completed && <CheckCircle2 size={10} className="text-[rgb(22,163,74)]" />}
-          </button>
-          <div className="min-w-0 flex-1">
-            <p
-              className={`truncate text-sm font-medium ${
-                completed
-                  ? 'text-[var(--ledger-text-muted)] line-through'
-                  : 'text-[var(--ledger-text-primary)]'
-              }`}
-            >
-              {task.title}
-            </p>
-            <p className="mt-0.5 truncate text-xs text-[var(--ledger-text-muted)]">
-              {task.due_date ? `Due ${formatTaskDueDateLabel(task.due_date)}` : 'No due date'}
-              {' · '}
-              {getAssigneeLabel(task.assigned_to)}
-              {linkedMilestone ? ` · ${linkedMilestone.title}` : ''}
-              {task.notes ? ' · Has notes' : ''}
-            </p>
-          </div>
-          {!completed && (
-            <span
-              className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium shadow-[0_1px_0_rgba(255,255,255,0.45)] ${
-                taskPriorityTone[String(task.priority)] ??
-                'border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)]'
-              }`}
-            >
-              {taskPriorityLabels[String(task.priority)] ?? 'Medium'}
-            </span>
-          )}
-          {interactive && (
+        <button
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation();
+            void updateTaskStatus(task, completed ? 'todo' : 'completed');
+          }}
+          className={`${compactIconClass} mt-0.5 transition ${
+            completed
+              ? 'border-[color:rgba(50,213,131,0.24)] bg-[color:rgba(50,213,131,0.1)] text-[rgb(22,163,74)]'
+              : 'text-[var(--ledger-text-secondary)] hover:text-[var(--ledger-text-primary)]'
+          }`}
+          aria-label={completed ? 'Mark task incomplete' : 'Mark task complete'}
+        >
+          {completed ? <CheckCircle2 size={13} /> : <CircleDot size={13} />}
+        </button>
+        <div className="min-w-0">
+          <p className={completed ? compactGhostTitleClass : 'truncate text-[13px] font-medium leading-5 text-[var(--ledger-text-primary)]'}>
+            {task.title}
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="hidden max-w-72 truncate text-[11px] leading-4 text-[var(--ledger-text-muted)] sm:inline">
+            {[
+              taskPriorityLabels[String(task.priority)] ?? 'Medium',
+              task.due_date ? `Due ${formatTaskDueDateLabel(task.due_date)}` : 'No due date',
+              getAssigneeLabel(task.assigned_to),
+              linkedMilestone?.title ?? null,
+            ]
+              .filter(Boolean)
+              .join(' · ')}
+          </span>
+          {(interactive || expandedActionId === task.id) && (
             <button
               type="button"
               onClick={(event) => {
@@ -3348,10 +3415,10 @@ export const ProjectsWindow = () => {
                   taskId: task.id,
                 });
               }}
-              className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[var(--ledger-text-muted)] opacity-0 transition ${
+              className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-[var(--ledger-text-muted)] opacity-0 transition ${
                 expanded
                   ? 'pointer-events-none'
-                  : 'hover:bg-[var(--ledger-surface-card)] hover:text-[var(--ledger-text-primary)] group-hover:opacity-100'
+                  : 'group-hover:opacity-100 hover:bg-[var(--ledger-surface-card)] hover:text-[var(--ledger-text-primary)]'
               }`}
               aria-label="Action options"
             >
@@ -3361,7 +3428,7 @@ export const ProjectsWindow = () => {
         </div>
         {expanded && (
           <div
-            className="ml-6 mt-2 border-l border-[color:var(--ledger-border-subtle)] pl-3"
+            className="col-span-3 ml-6 mt-2 border-l border-[color:var(--ledger-border-subtle)] pl-3"
             onClick={(event) => event.stopPropagation()}
           >
             <input
@@ -3503,46 +3570,56 @@ export const ProjectsWindow = () => {
     return (
       <div
         key={milestone.id}
-        className={`group rounded-lg px-2 py-2 transition ${
-          interactive && !expanded ? 'cursor-pointer hover:bg-[var(--ledger-surface-hover)]' : ''
-        } ${expanded ? 'bg-[var(--ledger-background)]' : ''}`}
-        onClick={() => {
-          if (interactive && !expanded) openMilestoneInlineEditor(milestone);
+        className={`${compactRowClass} ${interactive && !expanded ? 'cursor-pointer' : ''} ${
+          expanded ? 'bg-[var(--ledger-surface-muted)]/40' : ''
+        }`}
+        onClick={(event) => {
+          if (expanded) return;
+          if (interactive) {
+            openMilestoneInlineEditor(milestone);
+            return;
+          }
+          openMilestoneDetail(milestone.id, event.clientX, event.clientY);
+        }}
+        onContextMenu={(event) => {
+          event.preventDefault();
+          openMilestoneDetail(milestone.id, event.clientX, event.clientY);
         }}
       >
-        <div className="flex w-full items-center gap-2 text-left">
-          <button
-            type="button"
-            onClick={(event) => {
-              event.stopPropagation();
-              void handleMilestoneCompleteToggle(milestone.id);
-            }}
-            className={`flex h-3.5 w-3.5 shrink-0 rotate-45 items-center justify-center rounded-[4px] border transition ${
+        <button
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation();
+            void handleMilestoneCompleteToggle(milestone.id);
+          }}
+          className={`${compactIconClass} transition`}
+          aria-label={milestone.completed ? 'Mark milestone incomplete' : 'Mark milestone complete'}
+        >
+          <span
+            className={`h-2 w-2 rotate-45 rounded-[2px] border ${
               milestone.completed
-                ? 'border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-text-muted)]'
+                ? 'border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-text-muted)]/70'
                 : isOverdue
-                ? 'border-[color:rgba(217,45,32,0.32)] bg-[color:rgba(217,45,32,0.12)]'
+                ? 'border-[color:rgba(217,45,32,0.34)] bg-[color:rgba(217,45,32,0.1)]'
                 : 'border-[color:var(--ledger-accent)] bg-[var(--ledger-surface-card)]'
             }`}
-            aria-label={
-              milestone.completed ? 'Mark milestone incomplete' : 'Mark milestone complete'
-            }
           />
-          <div className="min-w-0 flex-1">
-            <p
-              className={`truncate text-sm font-medium ${
-                milestone.completed
-                  ? 'text-[var(--ledger-text-muted)] line-through'
-                  : 'text-[var(--ledger-text-primary)]'
-              }`}
-            >
-              {milestone.title}
-            </p>
-            <p className="mt-0.5 truncate text-xs text-[var(--ledger-text-muted)]">
-              {milestone.type} · {formatShortDate(milestone.milestone_date)} ·{' '}
-              {linkedActions.length} linked {linkedActions.length === 1 ? 'action' : 'actions'}
-            </p>
-          </div>
+        </button>
+        <div className="min-w-0">
+          <p
+            className={
+              milestone.completed
+                ? compactGhostTitleClass
+                : 'truncate text-[13px] font-medium leading-5 text-[var(--ledger-text-primary)]'
+            }
+          >
+            {milestone.title}
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="shrink-0 text-[11px] leading-4 text-[var(--ledger-text-muted)]">
+            {milestone.completed ? 'Done' : milestone.type} · {formatShortDate(milestone.milestone_date)}
+          </span>
           {interactive && (
             <button
               type="button"
@@ -3563,7 +3640,7 @@ export const ProjectsWindow = () => {
         </div>
         {expanded && (
           <div
-            className="ml-5 mt-3 border-l border-[color:var(--ledger-border-subtle)] pl-3"
+            className="col-span-3 ml-7 mt-2 border-l border-[color:var(--ledger-border-subtle)] pl-3"
             onClick={(event) => event.stopPropagation()}
           >
             <input
@@ -3640,18 +3717,16 @@ export const ProjectsWindow = () => {
               )}
             </div>
             <div className="mt-3 flex items-center justify-between gap-2">
-              <button
-                type="button"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  setNewTaskMilestoneId(milestone.id);
-                  setIsTaskComposerOpen(true);
-                  window.setTimeout(() => taskTitleInputRef.current?.focus(), 0);
-                }}
-                className="rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 py-1.5 text-xs font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
-              >
-                Add linked action
-              </button>
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    openTaskComposer({ milestoneId: milestone.id });
+                  }}
+                  className="rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 py-1.5 text-xs font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+                >
+                  Add linked action
+                </button>
               <div className="flex items-center gap-2">
                 <button
                   type="button"
@@ -3684,342 +3759,390 @@ export const ProjectsWindow = () => {
 
   const renderTaskComposer = () =>
     isTaskComposerOpen ? (
-      <div
-        ref={taskComposerRef}
-        className="mt-3 rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] p-3"
+      <ModalOverlay
+        isOpen={isTaskComposerOpen}
+        onClose={closeTaskComposer}
+        backdropBorderRadius="inherit"
+        disablePortal
+        manageWindowChrome={false}
+        classNameContainer="w-full max-w-[620px] overflow-hidden rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-[var(--ledger-shadow)]"
       >
-        <input
-          ref={taskTitleInputRef}
-          value={newTaskTitle}
-          onChange={(e) => setNewTaskTitle(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') {
-              e.preventDefault();
-              void createTask({ keepOpen: e.metaKey || e.ctrlKey });
-            }
-            if (e.key === 'Escape' && !taskComposerHasContent) {
-              e.preventDefault();
-              closeTaskComposer();
-            }
-          }}
-          placeholder="Add a next action..."
-          className="w-full rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] px-3 py-2 text-sm text-[var(--ledger-text-primary)] outline-none transition placeholder:text-[var(--ledger-placeholder)] focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60"
-        />
-        <div className="mt-2 grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,140px)_minmax(0,140px)] lg:grid-cols-[minmax(0,1fr)_140px_140px_150px_150px_auto_auto]">
-          <div className="relative min-w-0">
-            <select
-              value={newTaskPriority}
-              onChange={(e) => setNewTaskPriority(e.target.value as typeof newTaskPriority)}
-              className="w-full min-w-0 appearance-none rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] py-2 pl-3 pr-9 text-sm text-[var(--ledger-text-secondary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60"
-            >
-              {Object.entries(taskPriorityLabels).map(([key, label]) => (
-                <option key={key} value={key}>
-                  {label}
-                </option>
-              ))}
-            </select>
-            <ChevronDown
-              size={14}
-              className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[var(--ledger-text-muted)]"
-            />
+        <div className="flex items-start justify-between gap-4 border-b border-[color:var(--ledger-border-subtle)] px-5 py-4">
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-[var(--ledger-text-primary)]">Add action</p>
+            <p className="mt-1 text-sm text-[var(--ledger-text-secondary)]">
+              Add a next action to this project.
+            </p>
           </div>
-          <input
-            type="date"
-            value={newTaskDueDate}
-            onChange={(e) => setNewTaskDueDate(e.target.value)}
-            className="w-full min-w-0 rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] px-3 py-2 text-sm text-[var(--ledger-text-secondary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60"
+          <ModalCloseButton
+            onClick={closeTaskComposer}
+            ariaLabel="Close add action modal"
+            className="shrink-0"
           />
-          <div className="relative min-w-0">
-            <select
-              value={newTaskAssignee}
-              onChange={(e) => setNewTaskAssignee(e.target.value)}
-              className="w-full min-w-0 appearance-none rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] px-3 py-2 pr-8 text-sm text-[var(--ledger-text-secondary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60"
-            >
-              <option value="">Unassigned</option>
-              <optgroup label="People">
-                {workspaceMembers.map((member) => (
-                  <option key={member.user_id} value={`user:${member.user_id}`}>
-                    {displayMemberName(member)}
-                  </option>
-                ))}
-              </optgroup>
-              <optgroup label="Teams">
-                {workspaceTeams.map((team) => (
-                  <option key={team.id} value={`team:${team.id}`}>
-                    {team.name}
-                  </option>
-                ))}
-              </optgroup>
-            </select>
-            <ChevronDown
-              size={14}
-              className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[var(--ledger-text-muted)]"
-            />
-          </div>
-          <div className="relative min-w-0">
-            <select
-              value={newTaskMilestoneId}
-              onChange={(e) => setNewTaskMilestoneId(e.target.value)}
-              className="w-full min-w-0 appearance-none rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] px-3 py-2 pr-8 text-sm text-[var(--ledger-text-secondary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60"
-            >
-              <option value="">No milestone</option>
-              {selectedProjectMilestones.map((milestone) => (
-                <option key={milestone.id} value={milestone.id}>
-                  {milestone.title}
-                </option>
-              ))}
-            </select>
-            <ChevronDown
-              size={14}
-              className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[var(--ledger-text-muted)]"
-            />
-          </div>
-          <input
-            type="time"
-            value={newTaskDueTime}
-            onChange={(e) => setNewTaskDueTime(e.target.value)}
-            className="w-full min-w-0 rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] px-3 py-2 text-sm text-[var(--ledger-text-secondary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60"
-          />
-          <button
-            type="button"
-            onClick={() => closeTaskComposer()}
-            className="rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3 py-2 text-sm font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            onClick={() => void createTask()}
-            disabled={!newTaskTitle.trim() || isCreatingTask}
-            className="rounded-lg bg-[var(--ledger-accent)] px-3 py-2 text-sm font-medium text-white transition hover:bg-[var(--ledger-accent-hover)] disabled:opacity-60"
-          >
-            {isCreatingTask ? 'Adding...' : 'Add'}
-          </button>
         </div>
-      </div>
+
+        <div className="space-y-4 px-5 py-5">
+          <input
+            ref={taskTitleInputRef}
+            value={newTaskTitle}
+            onChange={(e) => setNewTaskTitle(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                void createTask({ keepOpen: e.metaKey || e.ctrlKey });
+              }
+              if (e.key === 'Escape') {
+                e.preventDefault();
+                closeTaskComposer();
+              }
+            }}
+            placeholder="Action title"
+            className="h-10 w-full rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 text-sm text-[var(--ledger-text-primary)] outline-none transition placeholder:text-[var(--ledger-placeholder)] focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60"
+          />
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="relative min-w-0">
+              <select
+                value={newTaskPriority}
+                onChange={(e) => setNewTaskPriority(e.target.value as typeof newTaskPriority)}
+                className="h-10 w-full appearance-none rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 pr-9 text-sm text-[var(--ledger-text-secondary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60"
+              >
+                {Object.entries(taskPriorityLabels).map(([key, label]) => (
+                  <option key={key} value={key}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown
+                size={14}
+                className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[var(--ledger-text-muted)]"
+              />
+            </div>
+
+            <input
+              type="date"
+              value={newTaskDueDate}
+              onChange={(e) => setNewTaskDueDate(e.target.value)}
+              className="h-10 w-full rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 text-sm text-[var(--ledger-text-secondary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[var(--ledger-surface-hover)]/60"
+            />
+
+            <div className="relative min-w-0">
+              <select
+                value={newTaskAssignee}
+                onChange={(e) => setNewTaskAssignee(e.target.value)}
+                className="h-10 w-full appearance-none rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 pr-9 text-sm text-[var(--ledger-text-secondary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[var(--ledger-surface-hover)]/60"
+              >
+                <option value="">Unassigned</option>
+                <optgroup label="People">
+                  {workspaceMembers.map((member) => (
+                    <option key={member.user_id} value={`user:${member.user_id}`}>
+                      {displayMemberName(member)}
+                    </option>
+                  ))}
+                </optgroup>
+                <optgroup label="Teams">
+                  {workspaceTeams.map((team) => (
+                    <option key={team.id} value={`team:${team.id}`}>
+                      {team.name}
+                    </option>
+                  ))}
+                </optgroup>
+              </select>
+              <ChevronDown
+                size={14}
+                className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[var(--ledger-text-muted)]"
+              />
+            </div>
+
+            <div className="relative min-w-0">
+              <select
+                value={newTaskMilestoneId}
+                onChange={(e) => setNewTaskMilestoneId(e.target.value)}
+                className="h-10 w-full appearance-none rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 pr-9 text-sm text-[var(--ledger-text-secondary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[var(--ledger-surface-hover)]/60"
+              >
+                <option value="">No milestone</option>
+                {selectedProjectMilestones.map((milestone) => (
+                  <option key={milestone.id} value={milestone.id}>
+                    {milestone.title}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown
+                size={14}
+                className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[var(--ledger-text-muted)]"
+              />
+            </div>
+
+            <input
+              type="time"
+              value={newTaskDueTime}
+              onChange={(e) => setNewTaskDueTime(e.target.value)}
+              className="h-10 w-full rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 text-sm text-[var(--ledger-text-secondary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[var(--ledger-surface-hover)]/60"
+            />
+          </div>
+
+          <div className="flex items-center justify-end gap-2 border-t border-[color:var(--ledger-border-subtle)] pt-4">
+            <button
+              type="button"
+              onClick={closeTaskComposer}
+              className="rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 py-1.5 text-xs font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => void createTask()}
+              disabled={!newTaskTitle.trim() || isCreatingTask}
+              className="inline-flex items-center gap-1.5 rounded-md bg-[var(--ledger-accent)] px-3 py-1.5 text-xs font-medium text-white transition hover:bg-[var(--ledger-accent-hover)] disabled:opacity-60"
+            >
+              {isCreatingTask ? 'Adding...' : 'Add action'}
+            </button>
+          </div>
+        </div>
+      </ModalOverlay>
     ) : null;
 
   const renderSectionShell = (
+    sectionId: ProjectDocumentSectionId,
     title: string,
     action: ReactNode,
     children: ReactNode,
+    count?: number,
     className = ''
-  ) => (
-    <section className={`min-w-0 ${className}`}>
-      <div className="flex items-center justify-between gap-3 border-b border-[color:var(--ledger-border-subtle)] pb-2">
-        <h3 className="text-sm font-medium text-[var(--ledger-text-primary)]">{title}</h3>
-        {action}
-      </div>
-      <div className="pt-2">{children}</div>
-    </section>
-  );
-
-  const renderActionTaskGroup = (
-    label: string,
-    items: TaskRow[],
-    options?: { completed?: boolean; interactive?: boolean }
-  ) =>
-    items.length > 0 ? (
-      <div className="mt-4 first:mt-0">
-        <p className="mb-1 text-xs font-medium text-[var(--ledger-text-muted)]">{label}</p>
-        <div className="space-y-1">
-          {items.map((task) =>
-            renderTaskRow(task, Boolean(options?.completed), Boolean(options?.interactive))
-          )}
+  ) => {
+    const collapsed = collapsedProjectSections[sectionId];
+    return (
+      <section className={`min-w-0 ${className}`}>
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() =>
+            setCollapsedProjectSections((current) => ({
+              ...current,
+              [sectionId]: !current[sectionId],
+            }))
+          }
+          onKeyDown={(event) => {
+            if (event.key !== 'Enter' && event.key !== ' ') return;
+            event.preventDefault();
+            setCollapsedProjectSections((current) => ({
+              ...current,
+              [sectionId]: !current[sectionId],
+            }));
+          }}
+          className="flex h-8 cursor-pointer select-none items-center justify-between rounded-lg bg-[var(--ledger-surface-muted)] px-3"
+        >
+          <div className="flex min-w-0 items-center gap-2 text-left select-none">
+            <ChevronDown
+              size={14}
+              className={`shrink-0 text-[var(--ledger-text-muted)] transition ${
+                collapsed ? '-rotate-90' : 'rotate-0'
+              }`}
+            />
+            <span className="truncate text-[12px] font-medium text-[var(--ledger-text-secondary)]">
+              {title}
+            </span>
+            {typeof count === 'number' && (
+              <span className="rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-1.5 py-0.5 text-[10px] leading-none text-[var(--ledger-text-muted)]">
+                {count}
+              </span>
+            )}
+          </div>
+          <div
+            className="flex items-center gap-2"
+            onMouseDown={(event) => event.stopPropagation()}
+            onClick={(event) => event.stopPropagation()}
+          >
+            {action}
+          </div>
         </div>
-      </div>
-    ) : null;
+        {!collapsed && <div className="pt-1">{children}</div>}
+      </section>
+    );
+  };
 
-  const getDueDateGroups = (items: TaskRow[]) => {
-    const today = todayKey();
-    const weekEnd = formatDateKey(addDays(new Date(today), 7));
-    return {
-      overdue: items.filter((task) => task.due_date && task.due_date < today),
-      today: items.filter((task) => task.due_date === today),
-      week: items.filter(
-        (task) => task.due_date && task.due_date > today && task.due_date <= weekEnd
-      ),
-      later: items.filter((task) => !task.due_date || task.due_date > weekEnd),
-    };
+  const renderGroupShell = (
+    groupId: ProjectDocumentGroupId,
+    title: string,
+    children: ReactNode,
+    count?: number,
+    action?: ReactNode
+  ) => {
+    const isEmpty = typeof count === 'number' && count === 0;
+    const collapsed = isEmpty || collapsedProjectGroups[groupId];
+    return (
+      <div className="min-w-0">
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() =>
+            setCollapsedProjectGroups((current) => ({
+              ...current,
+              [groupId]: !current[groupId],
+            }))
+          }
+          onKeyDown={(event) => {
+            if (event.key !== 'Enter' && event.key !== ' ') return;
+            event.preventDefault();
+            setCollapsedProjectGroups((current) => ({
+              ...current,
+              [groupId]: !current[groupId],
+            }));
+          }}
+          className="flex h-8 cursor-pointer select-none items-center justify-between rounded-lg bg-[var(--ledger-surface-muted)] px-3"
+        >
+          <div className="flex min-w-0 items-center gap-2 text-left select-none">
+            <ChevronDown
+              size={14}
+              className={`shrink-0 text-[var(--ledger-text-muted)] transition ${
+                collapsed ? '-rotate-90' : 'rotate-0'
+              }`}
+            />
+            <span className="truncate text-[12px] font-medium text-[var(--ledger-text-secondary)]">
+              {title}
+            </span>
+            {typeof count === 'number' && (
+              <span className="rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-1.5 py-0.5 text-[10px] leading-none text-[var(--ledger-text-muted)]">
+                {count}
+              </span>
+            )}
+          </div>
+          <div
+            className="flex items-center gap-2"
+            onMouseDown={(event) => event.stopPropagation()}
+            onClick={(event) => event.stopPropagation()}
+          >
+            {action}
+          </div>
+        </div>
+        {!collapsed && <div className="pt-1">{children}</div>}
+      </div>
+    );
   };
 
   const renderActionsContent = (interactive: boolean) => {
     if (isLoadingTasks) {
-      return (
-        <div className="mt-3 space-y-2">
-          {Array.from({ length: 3 }).map((_, i) => (
-            <SkeletonTaskItem key={i} />
-          ))}
-        </div>
-      );
+      return <div className="mt-2">{renderCompactRowSkeletons(3)}</div>;
     }
 
     if (selectedProjectTasks.length === 0 && selectedProjectMilestones.length === 0) {
       return (
-        <div className="mt-3 py-2">
-          <p className="text-sm font-medium text-[var(--ledger-text-primary)]">
-            No next actions yet.
-          </p>
-          <p className="mt-1 text-sm text-[var(--ledger-text-muted)]">
-            Add the first action to keep this project moving.
-          </p>
-        </div>
-      );
-    }
-
-    if (interactive && actionsGroupBy === 'due_date') {
-      const groups = getDueDateGroups(activeProjectTasks);
-      return (
-        <div className="mt-2">
-          {renderActionTaskGroup('Overdue', groups.overdue, { interactive })}
-          {renderActionTaskGroup('Today', groups.today, { interactive })}
-          {renderActionTaskGroup('This week', groups.week, { interactive })}
-          {renderActionTaskGroup('Later', groups.later, { interactive })}
-          {renderActionTaskGroup('Done', completedProjectTasks, { completed: true, interactive })}
-        </div>
-      );
-    }
-
-    if (interactive && actionsGroupBy === 'milestone') {
-      const unlinkedActions = activeProjectTasks.filter((task) => !task.milestone_id);
-      return (
-        <div className="mt-2">
-          {renderActionTaskGroup('Unlinked actions', unlinkedActions, { interactive })}
-          {selectedProjectMilestones.map((milestone) => {
-            const linked = (selectedProjectTasksByMilestone.get(milestone.id) ?? []).filter(
-              (task) => task.status !== 'completed' && task.status !== 'cancelled'
-            );
-            return (
-              <div key={milestone.id} className="mt-4">
-                {renderMilestoneRow(milestone, interactive)}
-                {linked.length > 0 && (
-                  <div className="ml-5 mt-1 space-y-1">
-                    {linked.map((task) => renderTaskRow(task, false, interactive))}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-          {renderActionTaskGroup('Done', completedProjectTasks, { completed: true, interactive })}
-        </div>
+        <div className="py-2 text-sm text-[var(--ledger-text-muted)]">No next actions yet.</div>
       );
     }
 
     const visibleActiveTasks = interactive ? activeProjectTasks : activeProjectTasks.slice(0, 4);
-    const visibleMilestones = interactive
-      ? selectedProjectMilestones
-      : selectedProjectMilestones.slice(0, 4);
+    const visibleActiveMilestones = interactive
+      ? selectedProjectMilestones.filter((milestone) => !milestone.completed)
+      : selectedProjectMilestones.filter((milestone) => !milestone.completed).slice(0, 4);
+    const visibleDoneMilestones = interactive
+      ? selectedProjectMilestones.filter((milestone) => milestone.completed)
+      : selectedProjectMilestones.filter((milestone) => milestone.completed).slice(0, 4);
+    const visibleDoneTasks = interactive ? completedProjectTasks : completedProjectTasks.slice(0, 4);
 
     return (
-      <div className="mt-2 space-y-1">
-        {visibleActiveTasks.length === 0 ? (
-          <p className="px-2 py-2 text-sm text-[var(--ledger-text-muted)]">
-            No active next actions.
-          </p>
-        ) : (
-          <div className="space-y-1">
-            {visibleActiveTasks.map((task) => renderTaskRow(task, false, interactive))}
-          </div>
-        )}
-        {visibleMilestones.length > 0 && (
-          <div className="mt-4">
-            <p className="mb-1 text-xs font-medium text-[var(--ledger-text-muted)]">Milestones</p>
+      <div className="mt-2 space-y-2">
+        {renderGroupShell(
+          'actions',
+          'Actions',
+          visibleActiveTasks.length === 0 ? (
+            <p className="px-2 py-2 text-sm text-[var(--ledger-text-muted)]">
+              No active next actions.
+            </p>
+          ) : (
             <div className="space-y-1">
-              {visibleMilestones.map((milestone) => renderMilestoneRow(milestone, interactive))}
+              {visibleActiveTasks.map((task) => renderTaskRow(task, false, interactive))}
             </div>
-          </div>
+          ),
+          visibleActiveTasks.length,
+          <button
+            type="button"
+            onClick={() => openTaskComposer()}
+            className="text-xs font-medium text-[var(--ledger-text-muted)] transition hover:text-[var(--ledger-text-primary)]"
+          >
+            +
+          </button>
         )}
-        {interactive && completedProjectTasks.length > 0 && (
-          <div className="mt-4">
-            <p className="mb-1 text-xs font-medium text-[var(--ledger-text-muted)]">Done</p>
+        {renderGroupShell(
+          'milestones',
+          'Milestones',
+          visibleActiveMilestones.length === 0 ? (
+            <p className="px-2 py-2 text-sm text-[var(--ledger-text-muted)]">
+              No milestones yet.
+            </p>
+          ) : (
             <div className="space-y-1">
-              {completedProjectTasks.map((task) => renderTaskRow(task, true, interactive))}
+              {visibleActiveMilestones.map((milestone) =>
+                renderMilestoneRow(milestone, interactive)
+              )}
             </div>
-          </div>
+          ),
+          visibleActiveMilestones.length,
+          <button
+            type="button"
+            onClick={() => selectedProject && void handleAddMilestone(selectedProject.id)}
+            className="text-xs font-medium text-[var(--ledger-text-muted)] transition hover:text-[var(--ledger-text-primary)]"
+          >
+            +
+          </button>
         )}
+        {(visibleDoneMilestones.length > 0 || visibleDoneTasks.length > 0) &&
+          renderGroupShell(
+            'done',
+            'Done',
+            <div className="space-y-1">
+              {visibleDoneMilestones.map((milestone) =>
+                renderMilestoneRow(milestone, interactive)
+              )}
+              {visibleDoneTasks.map((task) => renderTaskRow(task, true, interactive))}
+            </div>,
+            visibleDoneMilestones.length + visibleDoneTasks.length
+          )}
       </div>
     );
   };
 
-  const renderNextActionsSection = (showAll = false) =>
-    renderSectionShell(
-      'Next actions',
-      <div className="flex items-center gap-2">
-        {showAll && (
-          <label className="flex items-center gap-1.5 text-xs text-[var(--ledger-text-muted)]">
-            <span>Group by</span>
-            <select
-              value={actionsGroupBy}
-              onChange={(event) => setActionsGroupBy(event.target.value as ActionsGroupBy)}
-              className="h-7 rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2 text-xs text-[var(--ledger-text-secondary)] outline-none"
-            >
-              <option value="type">Type</option>
-              <option value="due_date">Due date</option>
-              <option value="milestone">Milestone</option>
-            </select>
-          </label>
-        )}
-        <span className="hidden text-xs text-[var(--ledger-text-muted)] sm:inline">
-          {taskCounts.active} active · {taskCounts.completed} done
-        </span>
-        <button
-          type="button"
-          onClick={() => {
-            if (isTaskComposerOpen) {
-              closeTaskComposer();
-              return;
-            }
-            setIsTaskComposerOpen(true);
-          }}
-          className="inline-flex items-center gap-1.5 rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2 py-1 text-xs font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
-        >
-          {isTaskComposerOpen ? (
-            <span className="text-xs leading-none">×</span>
-          ) : (
-            <Plus size={12} />
-          )}
-          {isTaskComposerOpen ? 'Cancel' : 'Add action'}
-        </button>
-      </div>,
-      <>
-        {renderTaskComposer()}
-        {taskError && (
-          <div className="mt-3 rounded-lg border border-[color:rgba(217,45,32,0.18)] bg-[color:rgba(217,45,32,0.08)] px-3 py-2 text-sm text-[var(--ledger-danger)]">
-            {taskError}
-          </div>
-        )}
-        {renderActionsContent(showAll)}
-      </>
-    );
+  const renderNextActionsSection = (showAll = false) => (
+    <div className="space-y-2">
+      {taskError && (
+        <div className="rounded-md border border-[color:rgba(217,45,32,0.18)] bg-[color:rgba(217,45,32,0.08)] px-3 py-2 text-sm text-[var(--ledger-danger)]">
+          {taskError}
+        </div>
+      )}
+      {renderActionsContent(showAll)}
+    </div>
+  );
 
   const renderProjectNotesSection = () =>
     renderSectionShell(
-      'Project notes',
+      'notes',
+      'Notes',
       <button
         type="button"
         onClick={() => {
           void openLinkNoteModal();
         }}
-        className="inline-flex items-center gap-1.5 rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2 py-1 text-xs font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+        className="text-xs font-medium text-[var(--ledger-text-muted)] transition hover:text-[var(--ledger-text-primary)]"
       >
-        <Plus size={12} />
         Link note
       </button>,
       <>
         {isLoadingLinkedNotes ? (
-          <p className="mt-2 text-sm text-[var(--ledger-text-muted)]">Loading linked notes...</p>
+          <div className="space-y-1">{renderCompactRowSkeletons(3)}</div>
         ) : linkedNotes.length === 0 ? (
-          <div className="mt-2 py-2">
-            <p className="text-sm font-medium text-[var(--ledger-text-primary)]">
-              No notes linked yet.
-            </p>
-            <p className="mt-1 text-sm text-[var(--ledger-text-muted)]">
-              Attach project notes, captures, or documents.
-            </p>
+          <div className="flex items-center gap-3 py-2 text-sm text-[var(--ledger-text-muted)]">
+            <span>No notes linked yet.</span>
+            <button
+              type="button"
+              onClick={() => void openLinkNoteModal()}
+              className="font-medium text-[var(--ledger-text-secondary)] transition hover:text-[var(--ledger-text-primary)]"
+            >
+              Link note
+            </button>
           </div>
         ) : (
-          <div className="mt-2 space-y-1">
-            {linkedNotes.slice(0, 4).map((link) => (
+          <div className="space-y-1">
+            {linkedNotes.slice(0, 5).map((link) => (
               <button
                 key={link.id}
                 type="button"
@@ -4033,223 +4156,148 @@ export const ProjectsWindow = () => {
                     source: 'center',
                   });
                 }}
-                className="flex w-full items-start justify-between gap-3 rounded-lg px-2 py-2 text-left transition hover:bg-[var(--ledger-surface-hover)]"
+                className={`${compactRowClass} min-h-[44px]`}
               >
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-medium text-[var(--ledger-text-primary)]">
-                    {link.note.title}
-                  </p>
-                  <p className="mt-0.5 truncate text-xs text-[var(--ledger-text-muted)]">
-                    {link.note.preview || 'Linked note'}
-                  </p>
-                </div>
-                <div className="shrink-0 text-right">
-                  <p className="text-xs text-[var(--ledger-text-muted)]">Note</p>
-                  <p className="mt-0.5 text-[11px] text-[var(--ledger-text-muted)]">
-                    {link.note.updated_at ? formatRelativeFromNow(link.note.updated_at) : 'Linked'}
-                  </p>
-                </div>
+                <span className={compactIconClass}>
+                  <FileText size={12} />
+                </span>
+                <p className="min-w-0 truncate text-[13px] font-medium leading-5 text-[var(--ledger-text-primary)]">
+                  {link.note.title}
+                </p>
+                <span className="shrink-0 truncate text-[11px] leading-4 text-[var(--ledger-text-muted)]">
+                  {link.note.updated_at ? formatShortDate(link.note.updated_at) : 'Linked'}
+                </span>
               </button>
             ))}
           </div>
         )}
-      </>
+      </>,
+      linkedNotes.length
     );
-
-  const renderCalendarItemRow = (
-    kind: CalendarLinkKind,
-    item: ProjectCalendarEvent | ProjectCalendarReminder
-  ) => {
-    const dateLabel =
-      kind === 'event'
-        ? formatEventDateLabel(item as ProjectCalendarEvent)
-        : formatReminderDateLabel(item as ProjectCalendarReminder);
-    const notes = item.notes?.trim() || null;
-    return (
-      <div
-        key={item.id}
-        className="flex items-center justify-between gap-3 rounded-lg px-2 py-2 transition hover:bg-[var(--ledger-surface-hover)]"
-      >
-        <div className="min-w-0 py-0.5">
-          <p className="truncate text-sm font-medium text-[var(--ledger-text-primary)]">
-            {item.title}
-          </p>
-          <p className="mt-0.5 truncate text-xs text-[var(--ledger-text-muted)]">
-            {kind === 'event' ? 'Event' : 'Reminder'} · {dateLabel}
-            {notes ? ` · ${notes}` : ''}
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={() => void unlinkCalendarItemFromProject(kind, item.id)}
-          className="shrink-0 text-xs font-medium text-[var(--ledger-text-muted)] transition hover:text-[var(--ledger-danger)]"
-        >
-          Remove
-        </button>
-      </div>
-    );
-  };
 
   const renderCalendarSection = () =>
-    renderSectionShell(
-      'Calendar',
-      <div className="flex items-center gap-2">
+    <div className="space-y-2">
+      <div className="flex items-center justify-end gap-2">
         <button
           type="button"
           onClick={() => void openLinkCalendarModal('event')}
-          className="inline-flex items-center gap-1.5 rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2 py-1 text-xs font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+          className="text-xs font-medium text-[var(--ledger-text-muted)] transition hover:text-[var(--ledger-text-primary)]"
         >
-          <Plus size={12} />
-          Link event
+          + Event
         </button>
         <button
           type="button"
           onClick={() => void openLinkCalendarModal('reminder')}
-          className="inline-flex items-center gap-1.5 rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2 py-1 text-xs font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+          className="text-xs font-medium text-[var(--ledger-text-muted)] transition hover:text-[var(--ledger-text-primary)]"
         >
-          <Plus size={12} />
-          Link reminder
+          + Deadline
         </button>
-      </div>,
-      <>
-        <div className="flex items-center gap-1 rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] p-0.5 text-xs text-[var(--ledger-text-muted)]">
-          <span className="rounded-md bg-[var(--ledger-surface-card)] px-2 py-0.5 text-[var(--ledger-text-primary)]">
-            List
-          </span>
-          <span className="px-2 py-0.5">Timeline</span>
-          <span className="px-2 py-0.5">Calendar</span>
-        </div>
-
-        {isLoadingProjectCalendarItems ? (
-          <p className="mt-3 text-sm text-[var(--ledger-text-muted)]">Loading calendar items...</p>
-        ) : projectEvents.length === 0 && projectReminders.length === 0 ? (
-          <div className="mt-3 py-2">
-            <p className="text-sm font-medium text-[var(--ledger-text-primary)]">
-              No calendar items linked yet.
-            </p>
-            <p className="mt-1 text-sm text-[var(--ledger-text-muted)]">
-              Attach events or reminders that belong to this project.
-            </p>
-          </div>
-        ) : (
-          <div className="mt-3 space-y-5">
-            <section className="space-y-2">
-              <div className="flex items-center justify-between gap-3">
-                <p className="text-xs font-semibold text-[var(--ledger-text-primary)]">Events</p>
-                <span className="text-xs text-[var(--ledger-text-muted)]">
-                  {projectEvents.length}
-                </span>
-              </div>
-              {projectEvents.length === 0 ? (
-                <p className="py-1 text-sm text-[var(--ledger-text-muted)]">No events linked.</p>
-              ) : (
-                <div className="divide-y divide-[color:var(--ledger-border-subtle)]">
-                  {projectEvents
-                    .slice()
-                    .sort((left, right) =>
-                      String(left.start_at).localeCompare(String(right.start_at))
-                    )
-                    .map((event) => renderCalendarItemRow('event', event))}
-                </div>
-              )}
-            </section>
-
-            <section className="space-y-2">
-              <div className="flex items-center justify-between gap-3">
-                <p className="text-xs font-semibold text-[var(--ledger-text-primary)]">Reminders</p>
-                <span className="text-xs text-[var(--ledger-text-muted)]">
-                  {projectReminders.length}
-                </span>
-              </div>
-              {projectReminders.length === 0 ? (
-                <p className="py-1 text-sm text-[var(--ledger-text-muted)]">No reminders linked.</p>
-              ) : (
-                <div className="divide-y divide-[color:var(--ledger-border-subtle)]">
-                  {projectReminders
-                    .slice()
-                    .sort((left, right) =>
-                      String(left.remind_at).localeCompare(String(right.remind_at))
-                    )
-                    .map((reminder) => renderCalendarItemRow('reminder', reminder))}
-                </div>
-              )}
-            </section>
-          </div>
-        )}
-      </>
-    );
-
-  const renderUpcomingSection = () =>
-    renderSectionShell(
-      'Upcoming',
-      <button
-        type="button"
-        onClick={() => setActiveTab('calendar')}
-        className="text-xs font-medium text-[var(--ledger-text-muted)] transition hover:text-[var(--ledger-text-primary)]"
-      >
-        View
-      </button>,
-      upcomingItems.length === 0 ? (
-        <div className="py-2">
-          <p className="text-sm font-medium text-[var(--ledger-text-primary)]">
-            No upcoming dates.
-          </p>
-          <p className="mt-1 text-sm text-[var(--ledger-text-muted)]">
-            Add an event, reminder, or deadline.
-          </p>
+      </div>
+      {isLoadingProjectCalendarItems ? (
+        <div className="space-y-2">
+          {renderCompactRowSkeletons(3)}
         </div>
       ) : (
-        <div className="space-y-1">
-          {upcomingItems.map((item) => (
-            <div key={item.id} className="flex items-center gap-2 rounded-lg px-2 py-2">
-              <CalendarDays
-                size={14}
-                className="shrink-0 self-center text-[var(--ledger-text-muted)]"
-              />
-              <div className="min-w-0 flex-1 py-0.5">
-                <p className="truncate text-sm font-medium text-[var(--ledger-text-primary)]">
-                  {item.title}
-                </p>
-                <p className="mt-0.5 text-xs text-[var(--ledger-text-muted)]">
-                  {item.kind} · {item.meta}
-                </p>
+        <div className="space-y-2">
+          {renderGroupShell(
+            'calendarUpcoming',
+            'Upcoming',
+            projectCalendarAgenda.upcoming.length === 0 ? (
+              <p className="px-2 py-2 text-sm text-[var(--ledger-text-muted)]">
+                No upcoming dates.
+              </p>
+            ) : (
+              <div className="space-y-1">
+                {projectCalendarAgenda.upcoming.map((item) => (
+                  <div key={item.id} className={`${compactRowClass} min-h-[44px]`}>
+                    <span className={compactIconClass}>
+                      <CalendarDays size={12} />
+                    </span>
+                    <p className="min-w-0 truncate text-[13px] font-medium leading-5 text-[var(--ledger-text-primary)]">
+                      {item.title}
+                    </p>
+                    <span className="shrink-0 truncate text-[11px] leading-4 text-[var(--ledger-text-muted)]">
+                      {item.meta}
+                    </span>
+                  </div>
+                ))}
               </div>
-            </div>
-          ))}
+            ),
+            projectCalendarAgenda.upcoming.length
+          )}
+          {renderGroupShell(
+            'calendarPast',
+            'Past',
+            projectCalendarAgenda.past.length === 0 ? (
+              <p className="px-2 py-2 text-sm text-[var(--ledger-text-muted)]">No past dates.</p>
+            ) : (
+              <div className="space-y-1">
+                {projectCalendarAgenda.past.map((item) => (
+                  <div key={item.id} className={`${compactRowClass} min-h-[44px]`}>
+                    <span className={compactIconClass}>
+                      <CalendarDays size={12} />
+                    </span>
+                    <p className={compactGhostTitleClass}>
+                      {item.title}
+                    </p>
+                    <span className="shrink-0 truncate text-[11px] leading-4 text-[var(--ledger-text-muted)]">
+                      {item.meta}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ),
+            projectCalendarAgenda.past.length
+          )}
         </div>
-      )
-    );
+      )}
+    </div>;
 
   const renderRecentActivitySection = () =>
-    renderSectionShell(
-      'Recent updates',
-      <button
-        type="button"
-        onClick={() => setActiveTab('activity')}
-        className="text-xs font-medium text-[var(--ledger-text-muted)] transition hover:text-[var(--ledger-text-primary)]"
-      >
-        View
-      </button>,
-      recentProjectActivity.length === 0 ? (
+    <div className="space-y-2">
+      <div className="flex items-center justify-end">
+        <button
+          type="button"
+          onClick={() => setActiveTab('activity')}
+          className="text-xs font-medium text-[var(--ledger-text-muted)] transition hover:text-[var(--ledger-text-primary)]"
+        >
+        </button>
+      </div>
+      {isLoadingProjectActivity ? (
+        <div className="space-y-1">{renderCompactRowSkeletons(3)}</div>
+      ) : recentProjectActivity.length === 0 ? (
         <p className="py-2 text-sm text-[var(--ledger-text-muted)]">No recent activity.</p>
       ) : (
-        <div className="space-y-1">
-          {recentProjectActivity.map((item) => (
-            <div
-              key={item.id}
-              className="flex items-center justify-between gap-3 rounded-lg px-2 py-2"
-            >
-              <p className="min-w-0 truncate text-sm font-normal text-[var(--ledger-text-secondary)]">
-                {item.label}
-              </p>
-              <span className="shrink-0 text-xs text-[var(--ledger-text-muted)]">
-                {formatRelativeFromNow(item.at)}
-              </span>
-            </div>
-          ))}
+        <div className="space-y-2">
+          {groupedProjectActivity.map(([groupLabel, items], index) =>
+            renderGroupShell(
+              (['activityToday', 'activityWeek', 'activityEarlier'] as const)[index],
+              groupLabel,
+              items.length === 0 ? (
+                <p className="px-2 py-2 text-sm text-[var(--ledger-text-muted)]">No items.</p>
+              ) : (
+                <div className="space-y-1">
+                  {items.map((item) => (
+                    <div key={item.id} className={`${compactRowClass} min-h-[40px]`}>
+                      <span className={compactIconClass}>
+                        <Clock3 size={12} />
+                      </span>
+                      <p className="min-w-0 truncate text-[13px] font-medium leading-5 text-[var(--ledger-text-secondary)]">
+                        {item.label}
+                      </p>
+                      <span className="shrink-0 text-[11px] leading-4 text-[var(--ledger-text-muted)]">
+                        {formatRelativeFromNow(item.at)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              ),
+              items.length
+            )
+          )}
         </div>
-      )
-    );
+      )}
+    </div>;
 
   const renderMemberStack = (size = 'h-5 w-5') =>
     isSharedWorkspace && workspaceMembers.length > 0 ? (
@@ -4277,13 +4325,490 @@ export const ProjectsWindow = () => {
       </div>
     ) : null;
 
-  const renderCreatorBubble = (name: string, size = 'h-5 w-5') => (
-    <span
-      title={name}
-      className={`flex ${size} items-center justify-center rounded-full border border-[color:var(--ledger-surface-card)] bg-[var(--ledger-surface-hover)] text-[9px] font-semibold text-[var(--ledger-text-secondary)]`}
-    >
-      {getInitials(name)}
-    </span>
+  const renderDocumentSection = (
+    sectionId: ProjectDocumentSectionId,
+    title: string,
+    action: ReactNode,
+    children: ReactNode,
+    count?: number,
+    className = ''
+  ) => {
+    const isEmpty = typeof count === 'number' && count === 0;
+    const collapsed = isEmpty || collapsedProjectSections[sectionId];
+    return (
+      <section className={`min-w-0 ${className}`}>
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() =>
+            setCollapsedProjectSections((current) => ({
+              ...current,
+              [sectionId]: !current[sectionId],
+            }))
+          }
+          onKeyDown={(event) => {
+            if (event.key !== 'Enter' && event.key !== ' ') return;
+            event.preventDefault();
+            setCollapsedProjectSections((current) => ({
+              ...current,
+              [sectionId]: !current[sectionId],
+            }));
+          }}
+          className="flex h-8 cursor-pointer select-none items-center justify-between rounded-lg bg-[var(--ledger-surface-muted)] px-3"
+        >
+          <div className="flex min-w-0 items-center gap-2 text-left select-none">
+            <ChevronDown
+              size={14}
+              className={`shrink-0 text-[var(--ledger-text-muted)] transition ${
+                collapsed ? '-rotate-90' : 'rotate-0'
+              }`}
+            />
+            <span className="truncate text-[12px] font-medium text-[var(--ledger-text-secondary)]">
+              {title}
+            </span>
+            {typeof count === 'number' && (
+              <span className="rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-1.5 py-0.5 text-[10px] leading-none text-[var(--ledger-text-muted)]">
+                {count}
+              </span>
+            )}
+          </div>
+          <div
+            className="flex items-center gap-2"
+            onMouseDown={(event) => event.stopPropagation()}
+            onClick={(event) => event.stopPropagation()}
+          >
+            {action}
+          </div>
+        </div>
+        {!collapsed && <div className="pt-1">{children}</div>}
+      </section>
+    );
+  };
+
+  const compactRowClass =
+    'group grid w-full grid-cols-[28px_minmax(0,1fr)_auto] items-center gap-2 rounded-lg px-3 py-1.5 text-left transition hover:bg-[var(--ledger-surface-muted)]';
+  const compactIconClass =
+    'relative flex h-6 w-6 shrink-0 items-center justify-center overflow-visible rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] text-[13px] text-[var(--ledger-text-secondary)]';
+  const compactGhostTitleClass =
+    'min-w-0 truncate text-[13px] font-medium leading-5 text-[var(--ledger-text-secondary)] opacity-80';
+  const renderCompactRowSkeletons = (count = 3) => (
+    <div className="space-y-1">
+      {Array.from({ length: count }).map((_, index) => (
+        <SkeletonCompactRow key={index} />
+      ))}
+    </div>
+  );
+
+  const renderProjectProperties = () => {
+    if (!selectedProject) return null;
+    const ownerTeam = selectedProject.owner_team_id
+      ? workspaceTeamById.get(selectedProject.owner_team_id)?.name ?? 'Team'
+      : 'No team';
+    const leadLabel = projectDraft.leadId
+      ? displayMemberName(workspaceMemberById.get(projectDraft.leadId) ?? null)
+      : 'Unassigned';
+    const propertyLabelClass = 'shrink-0 text-[12px] font-medium text-[var(--ledger-text-muted)]';
+    const inlineControlClass =
+      'inline-flex h-7 min-w-0 appearance-none items-center rounded-md border border-transparent bg-transparent px-1.5 py-0 text-[13px] font-medium text-[var(--ledger-text-primary)] outline-none transition hover:bg-[var(--ledger-surface-hover)] focus:border-[color:var(--ledger-border-subtle)] focus:bg-[var(--ledger-surface-card)]';
+
+    return (
+      <section className="mt-7 space-y-2">
+        <p className="text-[13px] font-medium text-[var(--ledger-text-secondary)]">Properties</p>
+        <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2">
+          <label className="flex min-w-0 items-center gap-2">
+            <span className={propertyLabelClass}>Status</span>
+            <div className="relative min-w-0 flex-1">
+              <select
+                value={projectDraft.status}
+                onChange={(e) =>
+                  void updateProjectStatus(
+                    selectedProject.id,
+                    e.target.value as ProjectSemanticStatus
+                  )
+                }
+                className={`${inlineControlClass} w-auto appearance-none pr-5`}
+              >
+                {(Object.keys(projectStatusLabels) as ProjectSemanticStatus[]).map((status) => (
+                  <option key={status} value={status}>
+                    {projectStatusLabels[status]}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </label>
+
+          <label className="flex min-w-0 items-center gap-2">
+            <span className={propertyLabelClass}>Owner team</span>
+            <div className="relative min-w-0 flex-1">
+              <select
+                value={selectedProject.owner_team_id ?? ''}
+                onChange={(e) => void updateSelectedProjectOwnerTeam(e.target.value)}
+                className={`${inlineControlClass} w-auto appearance-none pr-5`}
+                title={ownerTeam}
+              >
+                <option value="">No team</option>
+                {workspaceTeams.map((team) => (
+                  <option key={team.id} value={team.id}>
+                    {team.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </label>
+
+          <label className="flex min-w-0 items-center gap-2">
+            <span className={propertyLabelClass}>Lead</span>
+            <div className="relative min-w-0 flex-1">
+              <select
+                value={projectDraft.leadId}
+                onChange={(e) => updateProjectDraft({ leadId: e.target.value })}
+                onBlur={() => void flushProjectDraft()}
+                className={`${inlineControlClass} w-auto appearance-none pr-5`}
+                title={leadLabel}
+              >
+                <option value="">Unassigned</option>
+                {workspaceMembers.map((member) => (
+                  <option key={member.user_id} value={member.user_id}>
+                    {displayMemberName(member)}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </label>
+
+          <div className="flex min-w-0 items-center gap-2">
+            <span className={propertyLabelClass}>Dates</span>
+            <div className="flex min-w-0 items-center gap-2">
+              <input
+                type="date"
+                value={projectDraft.startDate}
+                onChange={(e) => updateProjectDraft({ startDate: e.target.value })}
+                onBlur={() => void flushProjectDraft()}
+                className={`${inlineControlClass} w-[126px]`}
+                aria-label="Project start date"
+              />
+              <span className="text-[12px] text-[var(--ledger-text-muted)]">→</span>
+              <input
+                type="date"
+                value={projectDraft.endDate}
+                onChange={(e) => updateProjectDraft({ endDate: e.target.value })}
+                onBlur={() => void flushProjectDraft()}
+                className={`${inlineControlClass} w-[126px]`}
+                aria-label="Project due date"
+              />
+            </div>
+          </div>
+        </div>
+      </section>
+    );
+  };
+
+  const renderProjectProgressStrip = () => {
+    if (!selectedProject) return null;
+
+    return (
+      <div className="mt-4 flex items-center gap-3">
+        <span className="text-[12px] font-medium text-[var(--ledger-text-muted)]">Progress</span>
+        <span className="w-9 shrink-0 text-[13px] font-medium text-[var(--ledger-text-primary)]">
+          {projectDraft.completeness}%
+        </span>
+        <div className="min-w-0 flex-1">
+          <input
+            type="range"
+            min="0"
+            max="100"
+            value={projectDraft.completeness}
+            onPointerDown={() => {
+              isCompletenessDraggingRef.current = true;
+              if (autosaveTimerRef.current) window.clearTimeout(autosaveTimerRef.current);
+            }}
+            onChange={(e) => updateProjectDraft({ completeness: Number(e.target.value) })}
+            onPointerUp={() => {
+              isCompletenessDraggingRef.current = false;
+              void flushProjectDraft();
+            }}
+            onPointerCancel={() => {
+              isCompletenessDraggingRef.current = false;
+              void flushProjectDraft();
+            }}
+            onBlur={() => {
+              isCompletenessDraggingRef.current = false;
+              void flushProjectDraft();
+            }}
+            style={
+              {
+                '--ledger-range-fill': projectDraft.color || '#FF5F40',
+                '--ledger-range-progress': `${Math.max(
+                  0,
+                  Math.min(100, projectDraft.completeness)
+                )}%`,
+              } as any
+            }
+            className="ledger-range h-3.5 w-full min-w-24"
+            aria-label="Project progress"
+          />
+        </div>
+      </div>
+    );
+  };
+
+  const renderProjectResources = () => {
+    const resources = [
+      ...linkedNotes.slice(0, 3).map((link) => ({
+        id: `note-${link.id}`,
+        label: link.note.title || 'Untitled note',
+        meta: 'Note',
+        icon: FileText,
+        action: () => openLinkedNoteInNotesModule(link.note_id),
+      })),
+      ...projectEvents.slice(0, 2).map((event) => ({
+        id: `event-${event.id}`,
+        label: event.title,
+        meta: formatEventDateLabel(event),
+        icon: CalendarDays,
+        action: () => setActiveTab('calendar'),
+      })),
+      ...activeProjectTasks.slice(0, 2).map((task) => ({
+        id: `task-${task.id}`,
+        label: task.title,
+        meta: 'Action',
+        icon: CircleDot,
+        action: () => {
+          setActiveTab('actions');
+          window.setTimeout(
+            () => document.getElementById(`task-row-${task.id}`)?.scrollIntoView(),
+            0
+          );
+        },
+      })),
+      ...selectedProjectMilestones.slice(0, 2).map((milestone) => ({
+        id: `milestone-${milestone.id}`,
+        label: milestone.title,
+        meta: formatShortDate(milestone.milestone_date),
+        icon: Flag,
+        action: () => openMilestoneDetail(milestone.id, window.innerWidth / 2, 220),
+      })),
+    ].slice(0, 8);
+
+    return (
+      <section className="mt-8 space-y-3">
+        <div className="flex items-center gap-4">
+          <p className="text-[13px] font-medium text-[var(--ledger-text-secondary)]">Resources</p>
+          {resources.length === 0 && (
+            <span className="text-[13px] text-[var(--ledger-text-muted)]">
+              No linked context yet.
+            </span>
+          )}
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {resources.map((resource) => {
+            const Icon = resource.icon;
+            return (
+              <button
+                key={resource.id}
+                type="button"
+                onClick={resource.action}
+                title={`${resource.label} · ${resource.meta}`}
+                className="inline-flex h-8 max-w-full items-center gap-1.5 rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2.5 text-[12px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+              >
+                <Icon size={11} className="shrink-0 text-[var(--ledger-text-muted)]" />
+                <span className="max-w-44 truncate">{resource.label}</span>
+              </button>
+            );
+          })}
+          <button
+            type="button"
+            onClick={() => void openLinkNoteModal()}
+            className="inline-flex h-8 items-center gap-1.5 rounded-md px-2 text-[12px] font-medium text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+          >
+            <Plus size={12} />
+            Link
+          </button>
+        </div>
+      </section>
+    );
+  };
+
+  const renderMilestonesDocumentSection = () =>
+    renderDocumentSection(
+      'milestones',
+      'Milestones',
+      <button
+        type="button"
+        onClick={() => selectedProject && void handleAddMilestone(selectedProject.id)}
+        className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+      >
+        +
+      </button>,
+      selectedProjectMilestones.length === 0 ? (
+        <div className="flex items-center gap-3 py-2 text-sm text-[var(--ledger-text-muted)]">
+          <span>No milestones yet.</span>
+          <button
+            type="button"
+            onClick={() => selectedProject && void handleAddMilestone(selectedProject.id)}
+            className="font-medium text-[var(--ledger-text-secondary)] transition hover:text-[var(--ledger-text-primary)]"
+          >
+            Add milestone
+          </button>
+        </div>
+      ) : (
+        <div className="space-y-1">
+          {selectedProjectMilestones.slice(0, 6).map((milestone) => renderMilestoneRow(milestone))}
+        </div>
+      ),
+      selectedProjectMilestones.length
+    );
+
+  const renderNextActionsPreviewSection = () =>
+    renderDocumentSection(
+      'nextActions',
+      'Next actions',
+      <div className="flex items-center gap-3">
+        {activeProjectTasks.length > 4 && (
+          <button
+            type="button"
+            onClick={() => setActiveTab('actions')}
+            className="text-xs font-medium text-[var(--ledger-text-muted)] transition hover:text-[var(--ledger-text-primary)]"
+          >
+            View all
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={() => openTaskComposer()}
+          className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+        >
+          +
+        </button>
+      </div>,
+      <>
+        {taskError && (
+          <div className="mt-3 rounded-lg border border-[color:rgba(217,45,32,0.18)] bg-[color:rgba(217,45,32,0.08)] px-3 py-2 text-sm text-[var(--ledger-danger)]">
+            {taskError}
+          </div>
+        )}
+        {isLoadingTasks ? (
+          <div className="space-y-2">{renderCompactRowSkeletons(3)}</div>
+        ) : activeProjectTasks.length === 0 ? (
+          <div className="flex items-center gap-3 py-2 text-sm text-[var(--ledger-text-muted)]">
+            <span>No next actions yet.</span>
+            <button
+              type="button"
+              onClick={() => openTaskComposer()}
+              className="font-medium text-[var(--ledger-text-secondary)] transition hover:text-[var(--ledger-text-primary)]"
+            >
+              Add action
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-1">
+            {activeProjectTasks.slice(0, 5).map((task) => renderTaskRow(task, false, false))}
+          </div>
+        )}
+      </>,
+      activeProjectTasks.length + completedProjectTasks.length
+    );
+
+  const renderRecentNotesPreviewSection = () =>
+    renderDocumentSection(
+      'notes',
+      'Recent notes',
+      <button
+        type="button"
+        onClick={() => void openLinkNoteModal()}
+        className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+      >
+        +
+      </button>,
+      isLoadingLinkedNotes ? (
+        <div className="space-y-1">{renderCompactRowSkeletons(3)}</div>
+      ) : linkedNotes.length === 0 ? (
+        <div className="flex items-center gap-3 py-2 text-sm text-[var(--ledger-text-muted)]">
+          <span>No notes linked yet.</span>
+          <button
+            type="button"
+            onClick={() => void openLinkNoteModal()}
+            className="font-medium text-[var(--ledger-text-secondary)] transition hover:text-[var(--ledger-text-primary)]"
+          >
+            Link note
+          </button>
+        </div>
+      ) : (
+        <div className="space-y-1">
+          {linkedNotes.slice(0, 4).map((link) => (
+            <button
+              key={link.id}
+              type="button"
+              onClick={() => openLinkedNoteInNotesModule(link.note_id)}
+              onContextMenu={(event) => {
+                event.preventDefault();
+                setLinkedNoteContextMenu({
+                  x: event.clientX,
+                  y: event.clientY,
+                  noteId: link.note_id,
+                  source: 'center',
+                });
+              }}
+              className={`${compactRowClass} min-h-[38px]`}
+            >
+              <span className={compactIconClass}>
+                <FileText size={12} />
+              </span>
+              <span className="min-w-0 truncate text-[13px] font-medium leading-5 text-[var(--ledger-text-primary)]">
+                {link.note.title}
+              </span>
+              <span className="shrink-0 truncate text-[11px] leading-4 text-[var(--ledger-text-muted)]">
+                Note · {link.note.updated_at ? formatShortDate(link.note.updated_at) : 'Linked'}
+              </span>
+            </button>
+          ))}
+        </div>
+      ),
+      linkedNotes.length
+    );
+
+  const renderActivityPreviewSection = () =>
+    renderDocumentSection(
+      'activity',
+      'Activity',
+      <button
+        type="button"
+        onClick={() => setActiveTab('activity')}
+        className="text-xs font-medium text-[var(--ledger-text-muted)] transition hover:text-[var(--ledger-text-primary)]"
+      >
+        View activity
+      </button>,
+      isLoadingProjectActivity ? (
+        <div className="space-y-1">{renderCompactRowSkeletons(3)}</div>
+      ) : recentProjectActivity.length === 0 ? (
+        <p className="py-2 text-sm text-[var(--ledger-text-muted)]">No recent activity.</p>
+      ) : (
+        <div className="space-y-1">
+          {recentProjectActivity.map((item) => (
+            <div key={item.id} className={`${compactRowClass} min-h-[40px]`}>
+              <span className={compactIconClass}>
+                <Clock3 size={12} />
+              </span>
+              <p className="min-w-0 truncate text-[13px] font-medium leading-5 text-[var(--ledger-text-secondary)]">
+                {item.label}
+              </p>
+              <span className="shrink-0 text-[11px] leading-4 text-[var(--ledger-text-muted)]">
+                {formatRelativeFromNow(item.at)}
+              </span>
+            </div>
+          ))}
+        </div>
+      ),
+      recentProjectActivity.length
+    );
+
+  const renderProjectOverviewDocument = () => (
+    <div className="space-y-3">
+      {renderMilestonesDocumentSection()}
+      {renderNextActionsPreviewSection()}
+      {renderRecentNotesPreviewSection()}
+      {renderActivityPreviewSection()}
+    </div>
   );
 
   const renderProjectsTimelineOverview = () => {
@@ -4340,7 +4865,7 @@ export const ProjectsWindow = () => {
           label: `${project.name} has no next actions.`,
           action: 'Add action',
           onClick: () => {
-            void selectProject(project).then(() => setIsTaskComposerOpen(true));
+            void selectProject(project).then(() => openTaskComposer());
           },
         })),
       ...projects
@@ -5048,22 +5573,7 @@ export const ProjectsWindow = () => {
     if (activeTab === 'calendar') return renderCalendarSection();
     if (activeTab === 'activity') return renderRecentActivitySection();
 
-    return (
-      <div
-        className={`grid gap-6 ${
-          isCompactLayout ? 'grid-cols-1' : 'xl:grid-cols-[minmax(0,1.45fr)_minmax(260px,0.8fr)]'
-        }`}
-      >
-        <div className="space-y-6">
-          {renderNextActionsSection(false)}
-          {renderProjectNotesSection()}
-        </div>
-        <div className="space-y-6">
-          {renderUpcomingSection()}
-          {renderRecentActivitySection()}
-        </div>
-      </div>
-    );
+    return renderProjectOverviewDocument();
   };
 
   const attemptCloseProjects = useCallback(() => {
@@ -5073,6 +5583,8 @@ export const ProjectsWindow = () => {
     }
     void window.desktopWindow?.closeModule('projects');
   }, [isSavingProject, isSavingTaskNotes]);
+  const showRightPane = !selectedProjectId && !isRightPaneCollapsed;
+  const showCollapsedRightPane = !selectedProjectId && isRightPaneCollapsed;
 
   return (
     <div
@@ -5483,6 +5995,8 @@ export const ProjectsWindow = () => {
         </div>
       </ModalOverlay>
 
+      {renderTaskComposer()}
+
       <div className="flex-1 flex overflow-hidden">
         {!isLeftPaneCollapsed ? (
           <>
@@ -5684,18 +6198,20 @@ export const ProjectsWindow = () => {
         <main className="flex-1 overflow-hidden bg-[var(--ledger-background)]">
           <div className={`h-full overflow-auto ${isCompactLayout ? 'p-4' : 'p-6'}`}>
             {selectedProject ? (
-              <div className="w-full min-w-0">
-                <section className="border-b border-[color:var(--ledger-border-subtle)] pb-5">
-                  <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+              <div className="mx-auto w-full max-w-5xl min-w-0 px-0 py-4 lg:px-4 lg:py-8">
+                <section className="pb-3">
+                  <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                     <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2 text-xs text-[var(--ledger-text-muted)]">
-                        <span
-                          className="h-2 w-2 rounded-full"
-                          style={{ backgroundColor: projectDraft.color || '#FF5F40' }}
-                        />
-                        <span>{workspaceLabel}</span>
-                        <span className="text-[var(--ledger-text-muted)]">·</span>
-                        {renderCreatorBubble(creatorDisplayName, 'h-5 w-5')}
+                      <div
+                        className="flex h-8 w-8 items-center justify-center rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)]"
+                        style={{ color: projectDraft.color || '#FF5F40' }}
+                      >
+                        {(() => {
+                          const ProjectTypeIcon = getProjectTypeOption(
+                            projectDraft.projectType
+                          ).icon;
+                          return <ProjectTypeIcon size={16} />;
+                        })()}
                       </div>
 
                       {isEditingTitle ? (
@@ -5708,106 +6224,88 @@ export const ProjectsWindow = () => {
                             void flushProjectDraft();
                           }}
                           onKeyDown={(event) => {
+                            if (event.key === 'Escape') {
+                              event.preventDefault();
+                              updateProjectDraft({ name: selectedProject.name });
+                              isDirtyRef.current = false;
+                              setIsEditingTitle(false);
+                            }
                             if (event.key === 'Enter') {
                               event.preventDefault();
                               setIsEditingTitle(false);
                               void flushProjectDraft();
                             }
                           }}
-                          className="mt-2 w-full rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3 py-2 text-[2rem] font-semibold tracking-tight text-[var(--ledger-text-primary)] outline-none shadow-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60"
+                          className="mt-4 w-full rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-2 py-1 text-[30px] font-semibold tracking-tight text-[var(--ledger-text-primary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60"
                         />
                       ) : (
                         <button
                           type="button"
                           onClick={() => setIsEditingTitle(true)}
-                          className="mt-2 block max-w-full rounded-xl text-left transition hover:bg-[var(--ledger-surface-hover)]"
+                          className="group mt-4 block max-w-full rounded-lg text-left transition hover:bg-[var(--ledger-surface-hover)]"
                         >
-                          <h2 className="truncate px-2 py-1 text-[2rem] font-semibold tracking-tight text-[var(--ledger-text-primary)]">
+                          <h2 className="truncate py-1 text-[30px] font-semibold tracking-tight text-[var(--ledger-text-primary)]">
                             {projectDraft.name || 'Untitled project'}
                           </h2>
                         </button>
                       )}
 
-                      <div className="mt-2">
-                        {isEditingBrief ? (
-                          <textarea
-                            autoFocus
-                            value={projectDraft.description}
-                            onClick={(event) => event.stopPropagation()}
-                            onChange={(e) => updateProjectDraft({ description: e.target.value })}
-                            onBlur={() => {
+                      {isEditingBrief && briefEditorPlacement === 'header' ? (
+                        <textarea
+                          autoFocus
+                          value={projectDraft.description}
+                          onChange={(e) => updateProjectDraft({ description: e.target.value })}
+                          onBlur={() => {
+                            setIsEditingBrief(false);
+                            setBriefEditorPlacement(null);
+                            void flushProjectDraft();
+                          }}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Escape') {
+                              event.preventDefault();
+                              updateProjectDraft({
+                                description: selectedProject.description ?? '',
+                              });
+                              isDirtyRef.current = false;
                               setIsEditingBrief(false);
+                              setBriefEditorPlacement(null);
+                            }
+                            if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+                              event.preventDefault();
+                              setIsEditingBrief(false);
+                              setBriefEditorPlacement(null);
                               void flushProjectDraft();
-                            }}
-                            placeholder="Add a brief..."
-                            className="min-h-20 w-full resize-none rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3 py-2 text-sm leading-6 text-[var(--ledger-text-primary)] outline-none transition placeholder:text-[var(--ledger-text-muted)] focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60"
-                          />
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => setIsEditingBrief(true)}
-                            className="block w-full rounded-xl text-left transition hover:bg-[var(--ledger-surface-hover)]"
+                            }
+                          }}
+                          placeholder="Add a short project description..."
+                          className="mt-0.5 min-h-14 w-full resize-y rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] py-1 text-[14px] leading-6 text-[var(--ledger-text-primary)] outline-none transition placeholder:text-[var(--ledger-placeholder)] focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[var(--ledger-surface-hover)]/60"
+                        />
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setBriefEditorPlacement('header');
+                            setIsEditingBrief(true);
+                          }}
+                          className="mt-0.5 block w-full rounded-lg text-left transition hover:bg-[var(--ledger-surface-hover)]"
+                        >
+                          <p
+                            className={`py-1 text-[14px] leading-6 ${
+                              projectDraft.description.trim()
+                                ? 'text-[var(--ledger-text-secondary)]'
+                                : 'text-[var(--ledger-text-muted)]'
+                            }`}
                           >
-                            <p className="px-2 py-1 text-sm leading-6 text-[var(--ledger-text-secondary)]">
-                              {projectDraft.description?.trim() || 'Add a brief...'}
-                            </p>
-                          </button>
-                        )}
-                      </div>
-                      <div className="mt-3 space-y-1 text-xs text-[var(--ledger-text-muted)]">
-                        <div className="min-w-0 truncate">{projectMetaLine}</div>
-                        <div className="min-w-0 truncate">
-                          {formatDateRange(projectDraft.startDate, projectDraft.endDate)}
-                        </div>
-                        <div className="min-w-0 truncate">
-                          {isSavingProject ? 'Saving...' : isDirtyRef.current ? 'Unsaved' : 'Saved'}
-                        </div>
-                      </div>
+                            {projectDraft.description.trim() ||
+                              'Add a short project description...'}
+                          </p>
+                        </button>
+                      )}
+
+                      {renderProjectProgressStrip()}
                     </div>
 
-                    <div className="flex shrink-0 flex-wrap items-center gap-2">
-                      <div className="relative">
-                        <select
-                          value={projectDraft.status}
-                          onChange={(e) =>
-                            void updateProjectStatus(
-                              selectedProject.id,
-                              e.target.value as ProjectSemanticStatus
-                            )
-                          }
-                          className="h-8 appearance-none rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] py-0 pl-2.5 pr-7 text-xs font-medium text-[var(--ledger-text-primary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60"
-                        >
-                          {(Object.keys(projectStatusLabels) as ProjectSemanticStatus[]).map(
-                            (status) => (
-                              <option key={status} value={status}>
-                                {projectStatusLabels[status]}
-                              </option>
-                            )
-                          )}
-                        </select>
-                        <ChevronDown
-                          size={12}
-                          className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[var(--ledger-text-muted)]"
-                        />
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => setIsTaskComposerOpen(true)}
-                        className="inline-flex h-8 items-center gap-1.5 rounded-md bg-[var(--ledger-accent)] px-2.5 text-xs font-medium text-white transition hover:bg-[var(--ledger-accent-hover)]"
-                      >
-                        <Plus size={12} />
-                        Add action
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          void openLinkNoteModal();
-                        }}
-                        className="inline-flex h-8 items-center gap-1.5 rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2.5 text-xs font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
-                      >
-                        <Link2 size={12} />
-                        Link note
-                      </button>
+                    <div className="flex shrink-0 items-center gap-2">
                       <button
                         type="button"
                         onClick={(event) => {
@@ -5826,95 +6324,30 @@ export const ProjectsWindow = () => {
                     </div>
                   </div>
 
-                  <div className="mt-5 grid gap-4 lg:grid-cols-[minmax(0,1fr)_260px]">
-                    <div>
-                      <div className="flex items-center justify-between text-xs text-[var(--ledger-text-muted)]">
-                        <span>Progress</span>
-                        <span>{projectDraft.completeness}%</span>
-                      </div>
-                      <input
-                        type="range"
-                        min="0"
-                        max="100"
-                        value={projectDraft.completeness}
-                        onPointerDown={() => {
-                          isCompletenessDraggingRef.current = true;
-                          if (autosaveTimerRef.current)
-                            window.clearTimeout(autosaveTimerRef.current);
-                        }}
-                        onChange={(e) =>
-                          updateProjectDraft({ completeness: Number(e.target.value) })
-                        }
-                        onPointerUp={() => {
-                          isCompletenessDraggingRef.current = false;
-                          void flushProjectDraft();
-                        }}
-                        onPointerCancel={() => {
-                          isCompletenessDraggingRef.current = false;
-                          void flushProjectDraft();
-                        }}
-                        onBlur={() => {
-                          isCompletenessDraggingRef.current = false;
-                          void flushProjectDraft();
-                        }}
-                        style={
-                          {
-                            '--ledger-range-fill': projectDraft.color || '#FF5F40',
-                            '--ledger-range-progress': `${Math.max(
-                              0,
-                              Math.min(100, projectDraft.completeness)
-                            )}%`,
-                          } as any
-                        }
-                        className="ledger-range mt-2 w-full"
-                      />
-                    </div>
-                    <div className="grid grid-cols-2 gap-2 text-xs text-[var(--ledger-text-secondary)]">
-                      <label>
-                        <span className="mb-1 block text-[var(--ledger-text-muted)]">Start</span>
-                        <input
-                          type="date"
-                          value={projectDraft.startDate}
-                          onChange={(e) => updateProjectDraft({ startDate: e.target.value })}
-                          className="h-8 w-full rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-2 text-xs text-[var(--ledger-text-primary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60"
-                        />
-                      </label>
-                      <label>
-                        <span className="mb-1 block text-[var(--ledger-text-muted)]">Due</span>
-                        <input
-                          type="date"
-                          value={projectDraft.endDate}
-                          onChange={(e) => updateProjectDraft({ endDate: e.target.value })}
-                          className="h-8 w-full rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-2 text-xs text-[var(--ledger-text-primary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60"
-                        />
-                      </label>
-                    </div>
-                  </div>
+                  {renderProjectProperties()}
+                  {renderProjectResources()}
                 </section>
 
-                <div className="mt-4 overflow-x-auto border-b border-[color:var(--ledger-border-subtle)] [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-                  <div className="flex w-max items-center gap-1">
+                <div className="mt-7">
+                  <div className="flex items-center gap-5 overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                     {projectTabs.map((tab) => (
                       <button
                         key={tab.id}
                         type="button"
                         onClick={() => setActiveTab(tab.id)}
-                        className={`relative px-3 py-2 text-sm font-medium transition ${
+                        className={`relative py-2 text-[13px] font-medium transition ${
                           activeTab === tab.id
                             ? 'text-[var(--ledger-text-primary)]'
                             : 'text-[var(--ledger-text-muted)] hover:text-[var(--ledger-text-primary)]'
                         }`}
-                      >
-                        {tab.label}
-                        {activeTab === tab.id && (
-                          <span className="absolute inset-x-3 -bottom-px h-0.5 rounded-full bg-[var(--ledger-accent)]" />
-                        )}
+                        >
+                          {tab.label}
                       </button>
                     ))}
                   </div>
                 </div>
 
-                <div className="py-6">{renderTabContent()}</div>
+                <div className="py-5">{renderTabContent()}</div>
               </div>
             ) : (
               renderProjectsTimelineOverview()
@@ -5922,7 +6355,7 @@ export const ProjectsWindow = () => {
           </div>
         </main>
 
-        {!isRightPaneCollapsed ? (
+        {showRightPane ? (
           <>
             <div
               className="w-1.5 cursor-col-resize bg-[var(--ledger-border-subtle)] transition hover:bg-[var(--ledger-border-strong)] touch-none"
@@ -5973,6 +6406,7 @@ export const ProjectsWindow = () => {
                               onClick={() => {
                                 setIsContextMenuOpen(false);
                                 setActiveTab('overview');
+                                setBriefEditorPlacement('header');
                                 setIsEditingBrief(true);
                               }}
                             >
@@ -6365,7 +6799,9 @@ export const ProjectsWindow = () => {
                       <p className="text-xs font-semibold text-[var(--ledger-text-primary)]">
                         Recent activity
                       </p>
-                      {recentProjectActivity.length === 0 ? (
+                      {isLoadingProjectActivity ? (
+                        <div className="space-y-1">{renderCompactRowSkeletons(3)}</div>
+                      ) : recentProjectActivity.length === 0 ? (
                         <p className="text-sm text-[var(--ledger-text-muted)]">
                           No recent activity.
                         </p>
@@ -6398,7 +6834,7 @@ export const ProjectsWindow = () => {
               </div>
             </aside>
           </>
-        ) : (
+        ) : showCollapsedRightPane ? (
           <div className="flex w-10 shrink-0 items-start justify-center border-l border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] pt-4">
             <button
               onClick={() => setIsRightPaneCollapsed(false)}
@@ -6409,7 +6845,7 @@ export const ProjectsWindow = () => {
               <ChevronLeft size={13} strokeWidth={2.25} />
             </button>
           </div>
-        )}
+        ) : null}
       </div>
 
       {taskNotesTask && (
@@ -6675,6 +7111,9 @@ export const ProjectsWindow = () => {
             <p className="mt-0.5 truncate text-xs text-[var(--ledger-text-muted)]">
               {milestoneDetailProject?.name ?? 'Project'}
             </p>
+            <p className="mt-0.5 truncate text-xs text-[var(--ledger-text-muted)]">
+              Assigned to {milestoneDetailAssignmentValue ? getAssigneeLabel(milestoneDetailAssignmentValue) : 'Unassigned'}
+            </p>
           </div>
           {milestoneDetailRow.note && (
             <p className="border-b border-[color:var(--ledger-border-subtle)] px-4 py-3 text-sm leading-5 text-[var(--ledger-text-secondary)]">
@@ -6701,6 +7140,32 @@ export const ProjectsWindow = () => {
                 }
                 className="h-7 max-w-[132px] rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-1.5 text-xs text-[var(--ledger-text-primary)] outline-none"
               />
+            </label>
+            <label className="block px-4 py-2 text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]">
+              <span className="mb-2 block text-sm">Assign to</span>
+              <select
+                value={milestoneDetailAssignmentValue}
+                onChange={(event) =>
+                  void handleMilestoneAssigneeChange(milestoneDetailRow.id, event.target.value)
+                }
+                className="h-9 w-full rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2 text-sm text-[var(--ledger-text-primary)] outline-none transition focus:border-[color:var(--ledger-border-strong)]"
+              >
+                <option value="">Unassigned</option>
+                <optgroup label="People">
+                  {workspaceMembers.map((member) => (
+                    <option key={member.user_id} value={`user:${member.user_id}`}>
+                      {displayMemberName(member)}
+                    </option>
+                  ))}
+                </optgroup>
+                <optgroup label="Teams">
+                  {workspaceTeams.map((team) => (
+                    <option key={team.id} value={`team:${team.id}`}>
+                      {team.name}
+                    </option>
+                  ))}
+                </optgroup>
+              </select>
             </label>
             <button
               type="button"
@@ -7216,7 +7681,7 @@ export const ProjectsWindow = () => {
                       date: milestone.milestone_date,
                       note: milestone.note ?? '',
                       projectId: milestone.project_id,
-                      assignee: '',
+                      assignee: getMilestoneAssignmentValue(milestone),
                     });
                     setMilestoneDraftTouched(false);
                     setMilestoneDraftError(null);

@@ -2435,6 +2435,12 @@ const buildAssignmentPersistenceFields = (assignmentTarget, actorUserId, nowIso)
   };
 };
 
+const buildMilestoneAssignmentPersistenceFields = (assignmentTarget, actorUserId, nowIso) => {
+  const fields = buildAssignmentPersistenceFields(assignmentTarget, actorUserId, nowIso);
+  delete fields.assigned_to;
+  return fields;
+};
+
 const getRequestedWorkspaceId = (req) => {
   const headerWorkspace = req.headers['x-workspace-id'];
   if (typeof headerWorkspace === 'string' && headerWorkspace.trim()) {
@@ -8273,7 +8279,11 @@ app.post('/api/projects/:id/milestones', authMiddleware, rateLimit('write'), asy
       if (!teamAllowed) return res.status(404).json({ error: 'Team not found' });
     }
     const nowIso = new Date().toISOString();
-    const assignedFields = buildAssignmentPersistenceFields(assignmentTarget, req.authUser.id, nowIso);
+    const assignedFields = buildMilestoneAssignmentPersistenceFields(
+      assignmentTarget,
+      req.authUser.id,
+      nowIso
+    );
 
     const { data, error } = await supabase
       .from('project_milestones')
@@ -8349,7 +8359,11 @@ app.patch('/api/project-milestones/:id', authMiddleware, rateLimit('write'), asy
       }
       Object.assign(
         update,
-        buildAssignmentPersistenceFields(assignmentTarget, req.authUser.id, new Date().toISOString())
+        buildMilestoneAssignmentPersistenceFields(
+          assignmentTarget,
+          req.authUser.id,
+          new Date().toISOString()
+        )
       );
     }
 

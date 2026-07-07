@@ -92,6 +92,9 @@ type CompletedTodayTask = {
   status?: string;
   completed_at?: string | null;
   remind_at?: string | null;
+  is_today_focus?: boolean;
+  show_in_today?: boolean;
+  task_horizon?: 'today' | 'long_term' | null;
   workspace_id?: string | null;
   workspace_name?: string | null;
   workspace_color?: string | null;
@@ -1072,42 +1075,104 @@ export const ExpandedSidebar = ({
   };
 
   const toggleCompleteTodayItem = async (taskId: string) => {
-    const prev = todayItems.slice();
-    const item = prev.find((t) => t.id === taskId);
-    if (!item) return;
+    const activeSnapshot = todayItems.slice();
+    const completedSnapshot = completedToday.slice();
+    const activeItem = activeSnapshot.find((t) => t.id === taskId);
+    const completedItem = completedSnapshot.find((t) => t.id === taskId);
 
-    setTodayItems((s) => s.filter((t) => t.id !== taskId));
-    setCompletedToday((s) => [
+    if (activeItem) {
+      setTodayItems((s) => s.filter((t) => t.id !== taskId));
+      setCompletedToday((s) => [
+        {
+          kind: activeItem.kind,
+          id: activeItem.id,
+          title: activeItem.title,
+          status: 'completed',
+          workspace_id: activeItem.workspace_id ?? null,
+          workspace_name: activeItem.workspace_name ?? null,
+          workspace_color: activeItem.workspace_color ?? null,
+          project_id: activeItem.project_id ?? null,
+          project_name: activeItem.project_name ?? null,
+          note_id: activeItem.note_id ?? null,
+          note_title: activeItem.note_title ?? null,
+          remind_at: activeItem.remind_at ?? null,
+          is_today_focus: activeItem.is_today_focus ?? false,
+          show_in_today: activeItem.show_in_today ?? false,
+          task_horizon: activeItem.task_horizon ?? null,
+          completed_at: new Date().toISOString(),
+        },
+        ...s,
+      ]);
+
+      try {
+        if (activeItem.kind === 'reminder') {
+          await api.updateReminder(taskId, { status: 'completed' });
+        } else if (activeItem.workspace_id) {
+          await api.updateTaskInWorkspace(taskId, activeItem.workspace_id, { status: 'completed' });
+        } else {
+          await api.updateTask(taskId, { status: 'completed' });
+        }
+      } catch (error) {
+        console.error('Failed to complete today item:', error);
+        setTodayItems(activeSnapshot);
+        setCompletedToday(completedSnapshot);
+      }
+      return;
+    }
+
+    if (!completedItem) return;
+
+    setCompletedToday((s) => s.filter((t) => t.id !== taskId));
+    setTodayItems((s) => [
       {
-        kind: item.kind,
-        id: item.id,
-        title: item.title,
-        status: 'completed',
-        workspace_id: item.workspace_id ?? null,
-        workspace_name: item.workspace_name ?? null,
-        workspace_color: item.workspace_color ?? null,
-        project_id: item.project_id ?? null,
-        project_name: item.project_name ?? null,
-        note_id: item.note_id ?? null,
-        note_title: item.note_title ?? null,
-        remind_at: item.remind_at ?? null,
-        completed_at: new Date().toISOString(),
+        kind: completedItem.kind,
+        id: completedItem.id,
+        title: completedItem.title,
+        status: 'todo',
+        workspace_id: completedItem.workspace_id ?? null,
+        workspace_name: completedItem.workspace_name ?? null,
+        workspace_color: completedItem.workspace_color ?? null,
+        project_id: completedItem.project_id ?? null,
+        project_name: completedItem.project_name ?? null,
+        note_id: completedItem.note_id ?? null,
+        note_title: completedItem.note_title ?? null,
+        remind_at: completedItem.remind_at ?? null,
+        is_today_focus: completedItem.is_today_focus ?? false,
+        show_in_today: true,
+        task_horizon: completedItem.task_horizon ?? 'today',
+        created_at: completedItem.completed_at ?? new Date().toISOString(),
       },
       ...s,
     ]);
 
     try {
-      if (item.kind === 'reminder') {
-        await api.updateReminder(taskId, { is_done: true });
-      } else if (item.workspace_id) {
-        await api.updateTaskInWorkspace(taskId, item.workspace_id, { status: 'completed' });
+      if (completedItem.kind === 'reminder') {
+        await api.updateReminder(taskId, {
+          status: 'active',
+          is_done: false,
+          is_today_focus: completedItem.is_today_focus ?? false,
+          show_in_today: true,
+          task_horizon: completedItem.task_horizon ?? 'today',
+        });
+      } else if (completedItem.workspace_id) {
+        await api.updateTaskInWorkspace(taskId, completedItem.workspace_id, {
+          status: 'todo',
+          is_today_focus: completedItem.is_today_focus ?? false,
+          show_in_today: true,
+          task_horizon: completedItem.task_horizon ?? 'today',
+        });
       } else {
-        await api.updateTask(taskId, { status: 'completed' });
+        await api.updateTask(taskId, {
+          status: 'todo',
+          is_today_focus: completedItem.is_today_focus ?? false,
+          show_in_today: true,
+          task_horizon: completedItem.task_horizon ?? 'today',
+        });
       }
     } catch (error) {
-      console.error('Failed to complete today item:', error);
-      setTodayItems(prev);
-      setCompletedToday((s) => s.filter((c) => c.id !== taskId));
+      console.error('Failed to restore today item:', error);
+      setTodayItems(activeSnapshot);
+      setCompletedToday(completedSnapshot);
     }
   };
 
@@ -1171,48 +1236,8 @@ export const ExpandedSidebar = ({
   };
 
   const resetCompletedTodayItem = async (taskId: string) => {
-    const completedSnapshot = completedToday;
-    const activeSnapshot = todayItems;
-    const target = completedSnapshot.find((task) => task.id === taskId);
-    if (!target) return;
-
-    setCompletedToday((list) => list.filter((task) => task.id !== taskId));
-    setTodayItems((list) => [
-      {
-        kind: target.kind,
-        id: target.id,
-        title: target.title,
-        status: 'todo',
-        workspace_id: target.workspace_id ?? null,
-        workspace_name: target.workspace_name ?? null,
-        workspace_color: target.workspace_color ?? null,
-        project_id: target.project_id ?? null,
-        project_name: target.project_name ?? null,
-        note_id: target.note_id ?? null,
-        note_title: target.note_title ?? null,
-        remind_at: target.remind_at ?? null,
-        show_in_today: true,
-      },
-      ...list,
-    ]);
     setContextMenu(null);
-
-    try {
-      if (target.kind === 'reminder') {
-        await api.updateReminder(taskId, { is_done: false });
-      } else if (target.workspace_id) {
-        await api.updateTaskInWorkspace(taskId, target.workspace_id, {
-          status: 'todo',
-          show_in_today: true,
-        });
-      } else {
-        await api.updateTask(taskId, { status: 'todo', show_in_today: true });
-      }
-    } catch (error) {
-      setCompletedToday(completedSnapshot);
-      setTodayItems(activeSnapshot);
-      setSaveError('Could not reset task.');
-    }
+    await toggleCompleteTodayItem(taskId);
   };
 
   const saveCheckin = async () => {

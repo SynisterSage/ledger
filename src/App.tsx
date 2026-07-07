@@ -1582,13 +1582,17 @@ function DashboardContent() {
 
         setTodayTasks(
           sortNewestFirst([
-            ...activeToday.map((item) => ({ ...item, kind: 'task' as const })),
-            ...activeReminders.map((item) => ({
-              ...item,
-              kind: 'reminder' as const,
-              is_today_focus: false,
-              show_in_today: true,
-            })),
+            ...activeToday
+              .filter((item) => !isOverviewDeletePending('task', item.id))
+              .map((item) => ({ ...item, kind: 'task' as const })),
+            ...activeReminders
+              .filter((item) => !isOverviewDeletePending('reminder', item.id))
+              .map((item) => ({
+                ...item,
+                kind: 'reminder' as const,
+                is_today_focus: false,
+                show_in_today: true,
+              })),
           ])
         );
 
@@ -1710,6 +1714,7 @@ function DashboardContent() {
                   updated_at?: string | null;
                 }>
               )
+                .filter((project) => !isOverviewDeletePending('project', project.id))
                 .map((project) => ({
                   ...project,
                   created_at: project.created_at ?? null,
@@ -1739,6 +1744,7 @@ function DashboardContent() {
                   updated_at?: string | null;
                 }>
               )
+                .filter((event) => !isOverviewDeletePending('event', event.id))
                 .filter(isUpcomingEventActive)
                 .sort(
                   (left, right) =>
@@ -1749,9 +1755,11 @@ function DashboardContent() {
             : []
         );
         const mergedNotes = [
-          ...normalizedNotes,
+          ...normalizedNotes.filter((note) => !isOverviewDeletePending('note', note.id)),
           ...optimisticNotesRef.current.filter(
-            (optimistic) => !normalizedNotes.some((note) => note.id === optimistic.id)
+            (optimistic) =>
+              !normalizedNotes.some((note) => note.id === optimistic.id) &&
+              !isOverviewDeletePending('note', optimistic.id)
           ),
         ]
           .sort(
@@ -1792,10 +1800,18 @@ function DashboardContent() {
               }>)
             : [];
         setWorkspaceTasks(
-          rawTasks.filter((task) => String(task.status ?? '').toLowerCase() !== 'completed')
+          rawTasks.filter(
+            (task) =>
+              String(task.status ?? '').toLowerCase() !== 'completed' &&
+              !isOverviewDeletePending('task', task.id)
+          )
         );
         const calendarFollowUps = rawTasks
-          .filter((task) => String(task.description ?? '').startsWith('calendar_followup:'))
+          .filter(
+            (task) =>
+              String(task.description ?? '').startsWith('calendar_followup:') &&
+              !isOverviewDeletePending('task', task.id)
+          )
           .map((task) => {
             const marker = String(task.description ?? '');
             const eventId = marker.startsWith('calendar_followup:')
@@ -2057,12 +2073,25 @@ function DashboardContent() {
   };
 
   const sortedTodayTasks = useMemo(() => sortNewestFirst(todayTasks), [todayTasks]);
-  const focusTasks = sortedTodayTasks.filter((task) => task.is_today_focus);
-  const activeTodayTasks = sortedTodayTasks.filter((task) => !task.is_today_focus);
-  const reminderFocusTasks = sortedTodayTasks.filter(
-    (task) => task.kind === 'reminder' && !task.is_today_focus
+  const isOverviewReminderTask = useCallback(
+    (task: { kind?: string | null; remind_at?: string | null }) =>
+      task.kind === 'reminder' || Boolean(task.remind_at),
+    []
   );
-  const focusTasksForDisplay = focusTasks.length > 0 ? focusTasks : reminderFocusTasks.slice(0, 1);
+  const focusTasks = sortedTodayTasks.filter(
+    (task) => !isOverviewReminderTask(task) && task.is_today_focus
+  );
+  const focusTasksForDisplay = focusTasks.slice(0, 1);
+  const focusTaskIdsForDisplay = useMemo(
+    () => new Set(focusTasksForDisplay.map((task) => task.id)),
+    [focusTasksForDisplay]
+  );
+  const activeTodayTasks = sortedTodayTasks.filter(
+    (task) =>
+      isOverviewReminderTask(task)
+        ? true
+        : !task.is_today_focus && !focusTaskIdsForDisplay.has(task.id)
+  );
   const recentNotes = useMemo(() => sortNewestFirst(notes), [notes]);
   const todayLabel = new Date().toLocaleDateString([], {
     weekday: 'long',
@@ -2121,13 +2150,17 @@ function DashboardContent() {
         ).reminders
       : [];
     setTodayTasks([
-      ...active.map((item) => ({ ...item, kind: 'task' as const })),
-      ...reminders.map((item) => ({
-        ...item,
-        kind: 'reminder' as const,
-        is_today_focus: false,
-        show_in_today: true,
-      })),
+      ...active
+        .filter((item) => !isOverviewDeletePending('task', item.id))
+        .map((item) => ({ ...item, kind: 'task' as const })),
+      ...reminders
+        .filter((item) => !isOverviewDeletePending('reminder', item.id))
+        .map((item) => ({
+          ...item,
+          kind: 'reminder' as const,
+          is_today_focus: false,
+          show_in_today: true,
+        })),
     ]);
   };
 
@@ -2884,7 +2917,7 @@ function DashboardContent() {
 
     try {
       if (row.kind === 'reminder') {
-        await api.updateReminder(row.sourceId, { is_done: true });
+        await api.updateReminder(row.sourceId, { status: 'completed' });
       } else if (target.workspace_id) {
         await api.updateTaskInWorkspace(row.sourceId, target.workspace_id, { status: 'completed' });
       } else {
@@ -2941,6 +2974,7 @@ function DashboardContent() {
     try {
       if (row.kind === 'reminder') {
         await api.updateReminder(row.sourceId, {
+          status: 'active',
           is_done: false,
           show_in_today: true,
           is_today_focus: false,
@@ -3001,6 +3035,7 @@ function DashboardContent() {
     try {
       if (row.kind === 'reminder') {
         await api.updateReminder(row.sourceId, {
+          status: 'active',
           is_done: false,
           show_in_today: false,
           is_today_focus: false,
@@ -3056,6 +3091,8 @@ function DashboardContent() {
     const previousWorkspaceTasks = workspaceTasks;
     const previousFollowUpTasks = followUpTasks;
 
+    markOverviewDeletePending(row.kind, row.sourceId);
+    clearSelectedOverviewRowForSource(row.sourceId);
     setTodayTasks((prev) => prev.filter((item) => item.id !== row.sourceId));
     setWorkspaceTasks((prev) => prev.filter((item) => item.id !== row.sourceId));
     setFollowUpTasks((prev) => prev.filter((item) => item.id !== row.sourceId));
@@ -3074,6 +3111,7 @@ function DashboardContent() {
       void refreshTodayTasks();
     } catch (error) {
       console.error('Failed to delete overview row:', error);
+      clearOverviewDeletePending(row.kind, row.sourceId);
       setTodayTasks(previousTodayTasks);
       setWorkspaceTasks(previousWorkspaceTasks);
       setFollowUpTasks(previousFollowUpTasks);
@@ -3189,35 +3227,71 @@ function DashboardContent() {
     }
   };
 
+  const pendingOverviewDeleteKeysRef = useRef<Set<string>>(new Set());
+  const getOverviewDeleteKey = useCallback((kind: string, sourceId: string) => {
+    return `${kind}:${sourceId}`;
+  }, []);
+  const markOverviewDeletePending = useCallback(
+    (kind: string, sourceId: string) => {
+      pendingOverviewDeleteKeysRef.current.add(getOverviewDeleteKey(kind, sourceId));
+    },
+    [getOverviewDeleteKey]
+  );
+  const clearOverviewDeletePending = useCallback(
+    (kind: string, sourceId: string) => {
+      pendingOverviewDeleteKeysRef.current.delete(getOverviewDeleteKey(kind, sourceId));
+    },
+    [getOverviewDeleteKey]
+  );
+  const isOverviewDeletePending = useCallback(
+    (kind: string, sourceId: string) =>
+      pendingOverviewDeleteKeysRef.current.has(getOverviewDeleteKey(kind, sourceId)),
+    [getOverviewDeleteKey]
+  );
+  const clearSelectedOverviewRowForSource = useCallback((sourceId: string) => {
+    setSelectedOverviewRowId((current) =>
+      current && current.endsWith(`:${sourceId}`) ? null : current
+    );
+  }, []);
+
   const deleteDashboardProject = async (projectId: string) => {
     const previous = projects;
+    markOverviewDeletePending('project', projectId);
+    clearSelectedOverviewRowForSource(projectId);
     setProjects((prev) => prev.filter((project) => project.id !== projectId));
     setDashboardContextMenu(null);
     try {
       await api.deleteProject(projectId);
     } catch {
+      clearOverviewDeletePending('project', projectId);
       setProjects(previous);
     }
   };
 
   const deleteDashboardNote = async (noteId: string) => {
     const previous = notes;
+    markOverviewDeletePending('note', noteId);
+    clearSelectedOverviewRowForSource(noteId);
     setNotes((prev) => prev.filter((note) => note.id !== noteId));
     setDashboardContextMenu(null);
     try {
       await api.deleteNote(noteId);
     } catch {
+      clearOverviewDeletePending('note', noteId);
       setNotes(previous);
     }
   };
 
   const deleteTimelineEvent = async (eventId: string) => {
     const previous = upcoming;
+    markOverviewDeletePending('event', eventId);
+    clearSelectedOverviewRowForSource(eventId);
     setUpcoming((prev) => prev.filter((item) => item.id !== eventId));
     setDashboardContextMenu(null);
     try {
       await api.deleteEvent(eventId);
     } catch {
+      clearOverviewDeletePending('event', eventId);
       setUpcoming(previous);
     }
   };
@@ -3457,7 +3531,7 @@ function DashboardContent() {
     const resolvedTask = workspaceTask ? { ...task, ...workspaceTask } : task;
     const dueLabel = formatShortDate(resolvedTask.due_date);
     const timeLabel = resolvedTask.due_time || formatTime(resolvedTask.remind_at);
-    const isReminder = resolvedTask.kind === 'reminder';
+    const isReminder = isOverviewReminderTask(resolvedTask);
     const teamId = resolvedTask.assigned_to_team_id ?? resolvedTask.assigned_team_id ?? null;
     const assigneeUserId = resolvedTask.assigned_to_user_id ?? resolvedTask.assigned_to ?? null;
     const assignedMember = assigneeUserId ? workspaceMemberById.get(assigneeUserId) ?? null : null;
@@ -3756,6 +3830,7 @@ function DashboardContent() {
       title: event.title,
       meta: [
         'Event',
+        dayLabel,
         timeLabel,
         calendarScope === 'all_accessible_workspaces' ? event.workspace_name : null,
       ]
@@ -6059,6 +6134,9 @@ function DashboardContent() {
                     : row.group === 'Long-term tasks'
                     ? 'Move to Today'
                     : null;
+                const addToFocusIcon = row.kind === 'reminder' ? <Bell size={14} /> : <CircleAlert size={14} />;
+                const moveLabelIcon =
+                  row.group === 'Today' ? <MapIcon size={14} /> : row.group === 'Long-term tasks' ? <Zap size={14} /> : null;
                 const deleteRow = () => {
                   if (row.kind === 'project') void deleteDashboardProject(row.sourceId);
                   else if (row.kind === 'note') void deleteDashboardNote(row.sourceId);
@@ -6115,7 +6193,7 @@ function DashboardContent() {
                             onClick={addToFocus}
                             className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]"
                           >
-                            <Circle size={14} />
+                            {addToFocusIcon}
                             Add to Focus
                           </button>
                         )}
@@ -6131,7 +6209,7 @@ function DashboardContent() {
                             onClick={row.group === 'Today' ? moveToLongTerm : moveToToday}
                             className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]"
                           >
-                            <Circle size={14} />
+                            {moveLabelIcon}
                             {moveLabel}
                           </button>
                         )}
