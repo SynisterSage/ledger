@@ -816,6 +816,9 @@ function DashboardContent() {
       start_at: string;
       end_at: string;
       color?: string;
+      assigned_to_user_id?: string | null;
+      assigned_to_team_id?: string | null;
+      assigned_team_id?: string | null;
       workspace_name?: string | null;
       workspace_color?: string | null;
       created_at?: string | null;
@@ -847,6 +850,10 @@ function DashboardContent() {
       updated_at?: string;
       eventId?: string | null;
       eventTitle?: string | null;
+      assigned_to?: string | null;
+      assigned_to_user_id?: string | null;
+      assigned_to_team_id?: string | null;
+      assigned_team_id?: string | null;
     }>
   >([]);
   const [dashboardRefreshToken, setDashboardRefreshToken] = useState(0);
@@ -1729,7 +1736,7 @@ function DashboardContent() {
             : []
         );
         setUpcoming(
-          upcomingData.status === 'fulfilled'
+      upcomingData.status === 'fulfilled'
             ? (
                 (upcomingData.value ?? []) as Array<{
                   id: string;
@@ -1737,6 +1744,9 @@ function DashboardContent() {
                   start_at: string;
                   end_at: string;
                   color?: string;
+                  assigned_to_user_id?: string | null;
+                  assigned_to_team_id?: string | null;
+                  assigned_team_id?: string | null;
                   status?: string | null;
                   workspace_name?: string | null;
                   workspace_color?: string | null;
@@ -3227,6 +3237,119 @@ function DashboardContent() {
     }
   };
 
+  type OverviewAssignmentTarget =
+    | { kind: 'clear' }
+    | { kind: 'user'; id: string }
+    | { kind: 'team'; id: string };
+
+  const updateOverviewAssignment = async (
+    row: OverviewRow,
+    target: OverviewAssignmentTarget
+  ) => {
+    const assigned_to_user_id = target.kind === 'user' ? target.id : null;
+    const assigned_to_team_id = target.kind === 'team' ? target.id : null;
+
+    setDashboardContextMenu(null);
+
+    if (row.kind === 'project') {
+      const previous = projects;
+      setProjects((prev) =>
+        prev.map((project) =>
+          project.id === row.sourceId
+            ? {
+                ...project,
+                lead_id: assigned_to_user_id,
+                owner_team_id: assigned_to_team_id,
+              }
+            : project
+        )
+      );
+      try {
+        await api.updateProject(row.sourceId, {
+          lead_id: assigned_to_user_id,
+          owner_team_id: assigned_to_team_id,
+        });
+        handleDashboardWorkspaceRefresh();
+      } catch {
+        setProjects(previous);
+      }
+      return;
+    }
+
+    if (row.kind === 'event') {
+      const previous = upcoming;
+      setUpcoming((prev) =>
+        prev.map((event) =>
+          event.id === row.sourceId
+            ? {
+                ...event,
+                assigned_to_user_id,
+                assigned_to_team_id,
+                assigned_team_id: assigned_to_team_id,
+              }
+            : event
+        )
+      );
+      try {
+        await api.updateEvent(row.sourceId, {
+          assigned_to_user_id,
+          assigned_to_team_id,
+        });
+        handleDashboardWorkspaceRefresh();
+      } catch {
+        setUpcoming(previous);
+      }
+      return;
+    }
+
+    if (row.kind !== 'task' && row.kind !== 'reminder') return;
+    const targetTask = findOverviewTaskTarget(row.sourceId);
+    if (!targetTask) return;
+
+    const previousTodayTasks = todayTasks;
+    const previousWorkspaceTasks = workspaceTasks;
+    const previousFollowUpTasks = followUpTasks;
+
+    const applyAssignment = <T extends { id: string; assigned_to?: string | null; assigned_to_user_id?: string | null; assigned_to_team_id?: string | null; assigned_team_id?: string | null }>(
+      item: T
+    ) =>
+      item.id === row.sourceId
+        ? {
+            ...item,
+            assigned_to: assigned_to_user_id,
+            assigned_to_user_id,
+            assigned_to_team_id,
+            assigned_team_id: assigned_to_team_id,
+          }
+        : item;
+
+    setTodayTasks((prev) => prev.map(applyAssignment));
+    setWorkspaceTasks((prev) => prev.map(applyAssignment));
+    setFollowUpTasks((prev) => prev.map(applyAssignment));
+
+    try {
+      const payload = {
+        assigned_to_user_id,
+        assigned_to_team_id,
+      };
+
+      if (row.kind === 'reminder' || targetTask.kind === 'reminder') {
+        await api.updateReminder(row.sourceId, payload);
+      } else if (targetTask.workspace_id) {
+        await api.updateTaskInWorkspace(row.sourceId, targetTask.workspace_id, payload);
+      } else {
+        await api.updateTask(row.sourceId, payload);
+      }
+
+      handleDashboardWorkspaceRefresh();
+      void refreshTodayTasks();
+    } catch {
+      setTodayTasks(previousTodayTasks);
+      setWorkspaceTasks(previousWorkspaceTasks);
+      setFollowUpTasks(previousFollowUpTasks);
+    }
+  };
+
   const pendingOverviewDeleteKeysRef = useRef<Set<string>>(new Set());
   const getOverviewDeleteKey = useCallback((kind: string, sourceId: string) => {
     return `${kind}:${sourceId}`;
@@ -3374,6 +3497,12 @@ function DashboardContent() {
       kind: 'user' | 'team';
       label: string;
       name: string;
+    };
+    assignment?: {
+      userId?: string | null;
+      userLabel?: string | null;
+      teamId?: string | null;
+      teamLabel?: string | null;
     };
     ownerTeam?: {
       name: string;
@@ -3641,6 +3770,12 @@ function DashboardContent() {
         : undefined,
       contextIcon: assigneeName ? <UserCheck size={10} /> : teamId ? <Users size={10} /> : undefined,
       contextLabel: assignmentLabel,
+      assignment: {
+        userId: assigneeUserId,
+        userLabel: assigneeName || null,
+        teamId,
+        teamLabel: teamName || null,
+      },
       taskTypeLabel: isReminder
         ? 'Reminder'
         : resolvedTask.is_today_focus
@@ -3734,8 +3869,27 @@ function DashboardContent() {
         .filter(Boolean)
         .join(' · '),
       contextIcon: ownerTeamName ? <Users size={10} /> : leadName ? <UserCheck size={10} /> : undefined,
+      assignee: leadName
+        ? {
+            kind: 'user',
+            label: getMemberInitials(leadName),
+            name: leadName,
+          }
+        : ownerTeamName
+        ? {
+            kind: 'team',
+            label: ownerTeamName,
+            name: ownerTeamName,
+          }
+        : undefined,
       ownerTeam: ownerTeamName ? { name: ownerTeamName } : undefined,
       leadName: leadName || undefined,
+      assignment: {
+        userId: project.lead_id ?? null,
+        userLabel: leadName || null,
+        teamId: project.owner_team_id ?? null,
+        teamLabel: ownerTeamName || null,
+      },
       dateLabel: dueLabel ? `Due ${dueLabel}` : undefined,
       group: 'Active projects',
       icon: <ProjectTypeIcon size={13} />,
@@ -3812,11 +3966,24 @@ function DashboardContent() {
     const isToday = start.toDateString() === new Date().toDateString();
     const dayLabel = isToday ? 'Today' : formatShortDate(event.start_at);
     const timeLabel = formatTime(event.start_at);
+    const eventTeamId = event.assigned_to_team_id ?? event.assigned_team_id ?? null;
+    const eventUserId = event.assigned_to_user_id ?? null;
+    const eventUserLabel = eventUserId ? getWorkspaceMemberLabel(eventUserId) : '';
+    const eventTeamLabel = eventTeamId ? getWorkspaceTeamLabel(eventTeamId) : '';
+    const eventAssignmentLabel = eventUserLabel
+      ? `Assigned to ${eventUserLabel}`
+      : eventTeamLabel
+      ? `Assigned to Team ${eventTeamLabel}`
+      : '';
     const filterValues = buildOverviewFilterValues({
       type: ['event'],
       status: ['open', 'upcoming'],
-      assignment: ['unassigned'],
-      team: [],
+      assignment: eventUserId
+        ? ['assigned', `person:${eventUserId}`, eventUserId === user?.id ? 'me' : 'others']
+        : eventTeamId
+        ? ['assigned', 'my_teams', `team:${eventTeamId}`]
+        : ['unassigned'],
+      team: eventTeamId ? [`team:${eventTeamId}`] : [],
       project: [],
       date: [getOverviewDateBucket(event.start_at)],
       priority: ['no_priority'],
@@ -3840,6 +4007,27 @@ function DashboardContent() {
       dateLabel: dayLabel ?? undefined,
       group: 'Upcoming',
       icon: <CalendarDays size={13} />,
+      assignee: eventUserLabel
+        ? {
+            kind: 'user',
+            label: getMemberInitials(eventUserLabel),
+            name: eventUserLabel,
+          }
+        : eventTeamLabel
+        ? {
+            kind: 'team',
+            label: eventTeamLabel,
+            name: eventTeamLabel,
+          }
+        : undefined,
+      assignment: {
+        userId: eventUserId,
+        userLabel: eventUserLabel || null,
+        teamId: eventTeamId,
+        teamLabel: eventTeamLabel || null,
+      },
+      contextLabel: eventAssignmentLabel || undefined,
+      contextIcon: eventUserLabel ? <UserCheck size={10} /> : eventTeamId ? <Users size={10} /> : undefined,
       filterValues,
       open: () =>
         openModule('calendar', {
@@ -4003,7 +4191,6 @@ function DashboardContent() {
       ? 'Reminder'
       : selectedOverviewRow.kind
     : '';
-
   const overviewDetailSections = selectedOverviewRow
     ? [
         {
@@ -4048,6 +4235,22 @@ function DashboardContent() {
               ? selectedOverviewRow.linkedContext?.length
                 ? selectedOverviewRow.linkedContext
                 : [['Linked', 'None']]
+              : selectedOverviewRow.kind === 'event'
+              ? [
+                  ...(selectedOverviewRow.assignment?.userLabel || selectedOverviewRow.assignment?.teamLabel
+                    ? [
+                        [
+                          'Assignment',
+                          selectedOverviewRow.assignment?.userLabel
+                            ? `Assigned to ${selectedOverviewRow.assignment.userLabel}`
+                            : `Assigned to Team ${selectedOverviewRow.assignment.teamLabel}`,
+                        ] as [string, string],
+                      ]
+                    : []),
+                  ['Project', 'None'],
+                  ['Actions', '0'],
+                  ['Milestones', '0'],
+                ]
               : selectedOverviewRow.kind === 'note'
               ? [
                   ['Actions', '0'],
@@ -6137,6 +6340,16 @@ function DashboardContent() {
                 const addToFocusIcon = row.kind === 'reminder' ? <Bell size={14} /> : <CircleAlert size={14} />;
                 const moveLabelIcon =
                   row.group === 'Today' ? <MapIcon size={14} /> : row.group === 'Long-term tasks' ? <Zap size={14} /> : null;
+                const canAssign =
+                  row.kind === 'task' ||
+                  row.kind === 'reminder' ||
+                  row.kind === 'project' ||
+                  row.kind === 'event';
+                const assignmentValue = row.assignment?.teamId
+                  ? `team:${row.assignment.teamId}`
+                  : row.assignment?.userId
+                  ? `user:${row.assignment.userId}`
+                  : '';
                 const deleteRow = () => {
                   if (row.kind === 'project') void deleteDashboardProject(row.sourceId);
                   else if (row.kind === 'note') void deleteDashboardNote(row.sourceId);
@@ -6183,7 +6396,7 @@ function DashboardContent() {
                         className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-accent)] hover:bg-[var(--ledger-surface-hover)]"
                       >
                         <ArrowRight size={14} />
-                        Open in new panel
+                        Open
                       </button>
                     )}
                     {isTaskRow && (
@@ -6213,6 +6426,56 @@ function DashboardContent() {
                             {moveLabel}
                           </button>
                         )}
+                      </>
+                    )}
+                    {canAssign && (
+                      <>
+                        <div className="px-4 pt-2 pb-1 text-[10px] font-medium uppercase tracking-[0.16em] text-[var(--ledger-text-muted)]">
+                          Assign to
+                        </div>
+                        <div className="relative px-4 pb-2">
+                          <select
+                            value={assignmentValue}
+                            onChange={(event) => {
+                              const nextValue = event.target.value;
+                              if (!nextValue) {
+                                void updateOverviewAssignment(row, { kind: 'clear' });
+                                return;
+                              }
+                              const [kind, id] = nextValue.split(':', 2);
+                              if (!id) return;
+                              void updateOverviewAssignment(
+                                row,
+                                kind === 'team'
+                                  ? { kind: 'team', id }
+                                  : { kind: 'user', id }
+                              );
+                            }}
+                            className="h-9 w-full appearance-none rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 pr-8 text-sm text-[var(--ledger-text-primary)] outline-none transition focus:border-[color:var(--ledger-border-strong)]"
+                          >
+                            <option value="">Unassigned</option>
+                            <optgroup label="People">
+                              {workspaceMembers.map((member) => (
+                                <option key={member.user_id} value={`user:${member.user_id}`}>
+                                  {member.user_id === user?.id
+                                    ? 'Me'
+                                    : getWorkspaceMemberLabel(member.user_id) || member.user_id}
+                                </option>
+                              ))}
+                            </optgroup>
+                            <optgroup label="Teams">
+                              {workspaceTeams.map((team) => (
+                                <option key={team.id} value={`team:${team.id}`}>
+                                  {team.identifier?.trim() || team.name}
+                                </option>
+                              ))}
+                            </optgroup>
+                          </select>
+                          <ChevronDown
+                            size={12}
+                            className="pointer-events-none absolute right-7 top-1/2 -translate-y-1/2 text-[var(--ledger-text-muted)]"
+                          />
+                        </div>
                       </>
                     )}
                     {row.kind === 'project' && (

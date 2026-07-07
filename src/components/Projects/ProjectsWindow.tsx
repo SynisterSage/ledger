@@ -1014,6 +1014,19 @@ export const ProjectsWindow = () => {
     [workspaceMemberById, workspaceTeamById]
   );
 
+  const getAssigneeInitials = useCallback(
+    (assigneeValue: string | null | undefined) => {
+      if (!assigneeValue) return '';
+      const [kind, id] = String(assigneeValue).split(':', 2);
+      if (kind === 'team') {
+        const team = workspaceTeamById.get(id);
+        return team ? getInitials(team.name) : 'T';
+      }
+      return getInitials(displayMemberName(workspaceMemberById.get(id) ?? null));
+    },
+    [workspaceMemberById, workspaceTeamById]
+  );
+
   const getMilestoneAssignmentValue = useCallback(
     (
       milestone: Pick<
@@ -1028,6 +1041,30 @@ export const ProjectsWindow = () => {
       return '';
     },
     []
+  );
+
+  const renderAssigneeChip = useCallback(
+    (assigneeValue: string | null | undefined) => {
+      if (!assigneeValue) return null;
+      const [kind, id] = String(assigneeValue).split(':', 2);
+      if (kind === 'team') {
+        return (
+          <span className="shrink-0 truncate rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2 py-0.5 text-[10px] font-medium text-[var(--ledger-text-secondary)]">
+            {workspaceTeamById.get(id)?.name ?? 'Team'}
+          </span>
+        );
+      }
+      const initials = getAssigneeInitials(assigneeValue);
+      return (
+        <span
+          className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] text-[8px] font-semibold text-[var(--ledger-text-secondary)]"
+          title={displayMemberName(workspaceMemberById.get(id) ?? null)}
+        >
+          {initials}
+        </span>
+      );
+    },
+    [getAssigneeInitials, workspaceMemberById, workspaceTeamById]
   );
 
   const createdByMember = useMemo(() => {
@@ -1182,6 +1219,8 @@ export const ProjectsWindow = () => {
   const milestoneDetailProject = milestoneDetailRow
     ? projects.find((project) => project.id === milestoneDetailRow.project_id) ?? null
     : null;
+  const milestoneDetailIsOpenProject =
+    Boolean(selectedProjectId) && milestoneDetailRow?.project_id === selectedProjectId;
   const overviewActivity = useMemo(() => {
     const events: Array<{ id: string; label: string; at: string | null }> = [
       ...projects.map((project) => ({
@@ -1342,6 +1381,10 @@ export const ProjectsWindow = () => {
     if (!taskContextMenu) return null;
     return getClampedMenuPosition(taskContextMenu.x, taskContextMenu.y, 256, 520);
   }, [taskContextMenu]);
+  const taskContextTask = useMemo(
+    () => (taskContextMenu ? tasks.find((item) => item.id === taskContextMenu.taskId) ?? null : null),
+    [taskContextMenu, tasks]
+  );
   const linkedNoteMenuPosition = useMemo(() => {
     if (!linkedNoteContextMenu) return null;
     return getClampedMenuPosition(linkedNoteContextMenu.x, linkedNoteContextMenu.y, 208, 144);
@@ -1354,7 +1397,7 @@ export const ProjectsWindow = () => {
 
   const milestoneDetailPosition = useMemo(() => {
     if (!milestoneDetail) return null;
-    return getClampedMenuPosition(milestoneDetail.x + 10, milestoneDetail.y + 10, 280, 320);
+    return getClampedMenuPosition(milestoneDetail.x + 10, milestoneDetail.y + 10, 280, 420);
   }, [milestoneDetail]);
 
   const timelineMenuPosition = useMemo(() => {
@@ -1397,6 +1440,8 @@ export const ProjectsWindow = () => {
 
   const isCompactLayout = viewportWidth < modulePaneSizing.projects.right.compactBreakpoint;
   const isLoadingProjectActivity =
+    isLoadingProjects || isLoadingTasks || isLoadingLinkedNotes || isLoadingProjectCalendarItems;
+  const isLoadingProjectResources =
     isLoadingProjects || isLoadingTasks || isLoadingLinkedNotes || isLoadingProjectCalendarItems;
   const taskNotesTask = useMemo(
     () => tasks.find((task) => task.id === taskNotesTaskId) ?? null,
@@ -3368,8 +3413,8 @@ export const ProjectsWindow = () => {
             taskId: task.id,
           });
         }}
-        className={`${compactRowClass} ${!expanded ? 'cursor-pointer' : ''} ${
-          expanded ? 'bg-[var(--ledger-surface-muted)]/40' : ''
+        className={`${compactRowBaseClass} ${!expanded ? compactRowHoverClass : ''} ${
+          !expanded ? 'cursor-pointer' : ''
         }`}
       >
         <button
@@ -3393,16 +3438,25 @@ export const ProjectsWindow = () => {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <span className="hidden max-w-72 truncate text-[11px] leading-4 text-[var(--ledger-text-muted)] sm:inline">
-            {[
-              taskPriorityLabels[String(task.priority)] ?? 'Medium',
-              task.due_date ? `Due ${formatTaskDueDateLabel(task.due_date)}` : 'No due date',
-              getAssigneeLabel(task.assigned_to),
-              linkedMilestone?.title ?? null,
-            ]
-              .filter(Boolean)
-              .join(' · ')}
-          </span>
+          <div className="hidden max-w-72 items-center gap-1.5 text-[11px] leading-4 text-[var(--ledger-text-muted)] sm:inline-flex">
+            <span>{taskPriorityLabels[String(task.priority)] ?? 'Medium'}</span>
+            <span>·</span>
+            <span className="whitespace-nowrap">
+              {task.due_date ? `Due ${formatTaskDueDateLabel(task.due_date)}` : 'No due date'}
+            </span>
+            {taskAssignmentValue && (
+              <>
+                <span>·</span>
+                {renderAssigneeChip(taskAssignmentValue)}
+              </>
+            )}
+            {linkedMilestone?.title && (
+              <>
+                <span>·</span>
+                <span className="truncate">{linkedMilestone.title}</span>
+              </>
+            )}
+          </div>
           {(interactive || expandedActionId === task.id) && (
             <button
               type="button"
@@ -3560,6 +3614,10 @@ export const ProjectsWindow = () => {
       parseTimelineDate(milestone.milestone_date)!.getTime() < new Date(todayKey()).getTime();
     const linkedActions = selectedProjectTasksByMilestone.get(milestone.id) ?? [];
     const expanded = interactive && expandedMilestoneId === milestone.id;
+    const milestoneAssignmentValue = getMilestoneAssignmentValue(milestone);
+    const milestoneAssignmentLabel = milestoneAssignmentValue
+      ? getAssigneeLabel(milestoneAssignmentValue)
+      : '';
     const draftDirty =
       expanded &&
       (milestoneInlineDraft.title !== milestone.title ||
@@ -3570,8 +3628,8 @@ export const ProjectsWindow = () => {
     return (
       <div
         key={milestone.id}
-        className={`${compactRowClass} ${interactive && !expanded ? 'cursor-pointer' : ''} ${
-          expanded ? 'bg-[var(--ledger-surface-muted)]/40' : ''
+        className={`${compactRowBaseClass} ${!expanded ? compactRowHoverClass : ''} ${
+          interactive && !expanded ? 'cursor-pointer' : ''
         }`}
         onClick={(event) => {
           if (expanded) return;
@@ -3617,9 +3675,17 @@ export const ProjectsWindow = () => {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <span className="shrink-0 text-[11px] leading-4 text-[var(--ledger-text-muted)]">
-            {milestone.completed ? 'Done' : milestone.type} · {formatShortDate(milestone.milestone_date)}
-          </span>
+          <div className="flex items-center gap-1.5 text-[11px] leading-4 text-[var(--ledger-text-muted)]">
+            <span>{milestone.completed ? 'Done' : milestone.type}</span>
+            <span>·</span>
+            <span>{formatShortDate(milestone.milestone_date)}</span>
+            {milestoneAssignmentLabel && (
+              <>
+                <span>·</span>
+                {renderAssigneeChip(milestoneAssignmentValue)}
+              </>
+            )}
+          </div>
           {interactive && (
             <button
               type="button"
@@ -4142,7 +4208,7 @@ export const ProjectsWindow = () => {
           </div>
         ) : (
           <div className="space-y-1">
-            {linkedNotes.slice(0, 5).map((link) => (
+            {linkedNotes.map((link) => (
               <button
                 key={link.id}
                 type="button"
@@ -4156,7 +4222,7 @@ export const ProjectsWindow = () => {
                     source: 'center',
                   });
                 }}
-                className={`${compactRowClass} min-h-[44px]`}
+                className={`${compactRowBaseClass} ${compactRowHoverClass} min-h-[44px]`}
               >
                 <span className={compactIconClass}>
                   <FileText size={12} />
@@ -4209,7 +4275,7 @@ export const ProjectsWindow = () => {
             ) : (
               <div className="space-y-1">
                 {projectCalendarAgenda.upcoming.map((item) => (
-                  <div key={item.id} className={`${compactRowClass} min-h-[44px]`}>
+                  <div key={item.id} className={`${compactRowBaseClass} ${compactRowHoverClass} min-h-[44px]`}>
                     <span className={compactIconClass}>
                       <CalendarDays size={12} />
                     </span>
@@ -4233,7 +4299,7 @@ export const ProjectsWindow = () => {
             ) : (
               <div className="space-y-1">
                 {projectCalendarAgenda.past.map((item) => (
-                  <div key={item.id} className={`${compactRowClass} min-h-[44px]`}>
+                  <div key={item.id} className={`${compactRowBaseClass} ${compactRowHoverClass} min-h-[44px]`}>
                     <span className={compactIconClass}>
                       <CalendarDays size={12} />
                     </span>
@@ -4278,7 +4344,7 @@ export const ProjectsWindow = () => {
               ) : (
                 <div className="space-y-1">
                   {items.map((item) => (
-                    <div key={item.id} className={`${compactRowClass} min-h-[40px]`}>
+                    <div key={item.id} className={`${compactRowBaseClass} ${compactRowHoverClass} min-h-[40px]`}>
                       <span className={compactIconClass}>
                         <Clock3 size={12} />
                       </span>
@@ -4385,8 +4451,9 @@ export const ProjectsWindow = () => {
     );
   };
 
-  const compactRowClass =
-    'group grid w-full grid-cols-[28px_minmax(0,1fr)_auto] items-center gap-2 rounded-lg px-3 py-1.5 text-left transition hover:bg-[var(--ledger-surface-muted)]';
+  const compactRowBaseClass =
+    'group grid w-full grid-cols-[28px_minmax(0,1fr)_auto] items-center gap-2 rounded-lg px-3 py-1.5 text-left transition';
+  const compactRowHoverClass = 'hover:bg-[var(--ledger-surface-muted)]';
   const compactIconClass =
     'relative flex h-6 w-6 shrink-0 items-center justify-center overflow-visible rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] text-[13px] text-[var(--ledger-text-secondary)]';
   const compactGhostTitleClass =
@@ -4594,37 +4661,49 @@ export const ProjectsWindow = () => {
       <section className="mt-8 space-y-3">
         <div className="flex items-center gap-4">
           <p className="text-[13px] font-medium text-[var(--ledger-text-secondary)]">Resources</p>
-          {resources.length === 0 && (
+          {!isLoadingProjectResources && resources.length === 0 && (
             <span className="text-[13px] text-[var(--ledger-text-muted)]">
               No linked context yet.
             </span>
           )}
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {resources.map((resource) => {
-            const Icon = resource.icon;
-            return (
-              <button
-                key={resource.id}
-                type="button"
-                onClick={resource.action}
-                title={`${resource.label} · ${resource.meta}`}
-                className="inline-flex h-8 max-w-full items-center gap-1.5 rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2.5 text-[12px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
-              >
-                <Icon size={11} className="shrink-0 text-[var(--ledger-text-muted)]" />
-                <span className="max-w-44 truncate">{resource.label}</span>
-              </button>
-            );
-          })}
-          <button
-            type="button"
-            onClick={() => void openLinkNoteModal()}
-            className="inline-flex h-8 items-center gap-1.5 rounded-md px-2 text-[12px] font-medium text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
-          >
-            <Plus size={12} />
-            Link
-          </button>
-        </div>
+        {isLoadingProjectResources ? (
+          <div className="flex flex-wrap items-center gap-2">
+            {Array.from({ length: 6 }).map((_, index) => (
+              <div
+                key={index}
+                className="h-8 animate-pulse rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)]"
+                style={{ width: `${72 + (index % 3) * 26}px` }}
+              />
+            ))}
+          </div>
+        ) : (
+          <div className="flex flex-wrap items-center gap-2">
+            {resources.map((resource) => {
+              const Icon = resource.icon;
+              return (
+                <button
+                  key={resource.id}
+                  type="button"
+                  onClick={resource.action}
+                  title={`${resource.label} · ${resource.meta}`}
+                  className="inline-flex h-8 max-w-full items-center gap-1.5 rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2.5 text-[12px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+                >
+                  <Icon size={11} className="shrink-0 text-[var(--ledger-text-muted)]" />
+                  <span className="max-w-44 truncate">{resource.label}</span>
+                </button>
+              );
+            })}
+            <button
+              type="button"
+              onClick={() => void openLinkNoteModal()}
+              className="inline-flex h-8 items-center gap-1.5 rounded-md px-2 text-[12px] font-medium text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+            >
+              <Plus size={12} />
+              Link
+            </button>
+          </div>
+        )}
       </section>
     );
   };
@@ -4749,7 +4828,7 @@ export const ProjectsWindow = () => {
                   source: 'center',
                 });
               }}
-              className={`${compactRowClass} min-h-[38px]`}
+              className={`${compactRowBaseClass} ${compactRowHoverClass} min-h-[38px]`}
             >
               <span className={compactIconClass}>
                 <FileText size={12} />
@@ -4785,7 +4864,7 @@ export const ProjectsWindow = () => {
       ) : (
         <div className="space-y-1">
           {recentProjectActivity.map((item) => (
-            <div key={item.id} className={`${compactRowClass} min-h-[40px]`}>
+            <div key={item.id} className={`${compactRowBaseClass} ${compactRowHoverClass} min-h-[40px]`}>
               <span className={compactIconClass}>
                 <Clock3 size={12} />
               </span>
@@ -7129,6 +7208,8 @@ export const ProjectsWindow = () => {
               <CheckCircle2 size={14} />
               {milestoneDetailRow.completed ? 'Mark incomplete' : 'Mark complete'}
             </button>
+            {!milestoneDetailRow.completed ? (
+              <>
             <label className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]">
               <CalendarDays size={14} />
               <span className="flex-1">Change date</span>
@@ -7193,17 +7274,21 @@ export const ProjectsWindow = () => {
               <Bell size={14} />
               Create reminder
             </button>
-            <button
-              type="button"
-              onClick={() => {
-                setMilestoneDetail(null);
-                void openProjectById(milestoneDetailRow.project_id);
-              }}
-              className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
-            >
-              <Folder size={14} />
-              Open project
-            </button>
+            {!milestoneDetailIsOpenProject && (
+              <button
+                type="button"
+                onClick={() => {
+                  setMilestoneDetail(null);
+                  void openProjectById(milestoneDetailRow.project_id);
+                }}
+                className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+              >
+                <Folder size={14} />
+                Open project
+              </button>
+            )}
+              </>
+            ) : null}
           </div>
         </div>
       )}
@@ -8057,25 +8142,35 @@ export const ProjectsWindow = () => {
           </button>
           {selectedProjectMilestones.length > 0 && (
             <div className="px-4 py-2">
-              <p className="mb-1 text-[11px] font-medium text-[var(--ledger-text-muted)]">
-                Attach to milestone
-              </p>
-              <div className="space-y-0.5">
-                {selectedProjectMilestones.slice(0, 5).map((milestone) => (
-                  <button
-                    key={milestone.id}
-                    type="button"
-                    onClick={() => {
-                      const task = tasks.find((item) => item.id === taskContextMenu.taskId);
-                      if (task) void attachTaskToMilestone(task, milestone.id);
+              <label className="block text-sm text-[var(--ledger-text-secondary)]">
+                <span className="mb-2 flex items-center gap-2">
+                  <Flag size={14} />
+                  Attach to milestone
+                </span>
+                <div className="relative min-w-0">
+                  <select
+                    value={taskContextTask?.milestone_id ?? ''}
+                    onChange={(event) => {
+                      if (taskContextTask) {
+                        void attachTaskToMilestone(taskContextTask, event.target.value);
+                      }
                       setTaskContextMenu(null);
                     }}
-                    className="block w-full truncate rounded-md px-1 py-1 text-left text-xs text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+                    className="h-8 w-full appearance-none rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2 pr-8 text-sm text-[var(--ledger-text-primary)] outline-none transition focus:border-[color:var(--ledger-border-strong)]"
                   >
-                    {milestone.title}
-                  </button>
-                ))}
-              </div>
+                    <option value="">No milestone</option>
+                    {selectedProjectMilestones.map((milestone) => (
+                      <option key={milestone.id} value={milestone.id}>
+                        {milestone.title}
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown
+                    size={12}
+                    className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[var(--ledger-text-muted)]"
+                  />
+                </div>
+              </label>
             </div>
           )}
           <button
