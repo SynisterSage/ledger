@@ -126,10 +126,6 @@ type UpcomingItem = {
   workspace_color?: string | null;
 };
 
-const normalizeProjectNameKey = (value: unknown) =>
-  String(value ?? '')
-    .trim()
-    .toLowerCase();
 type ProjectSemanticStatus = 'not_started' | 'in_progress' | 'paused' | 'completed';
 
 const formatTodayTaskWorkspace = (item: {
@@ -1306,41 +1302,69 @@ export const ExpandedSidebar = ({
     };
   }, [activeWorkspaceId, api, sidebarRefreshToken, user]);
 
-  const saveQuickNote = async () => {
+  const saveQuickNote = async (routeToIntake = false) => {
     const text = noteDraft.trim();
     if (!text || !user || !activeWorkspaceId) return;
 
-    const firstLine =
-      text
-        .split('\n')
-        .find((line) => line.trim())
-        ?.trim() ?? 'Untitled note';
-    const title = firstLine.replace(/^#\s*/, '').slice(0, 72);
+    try {
+      const firstLine =
+        text
+          .split('\n')
+          .find((line) => line.trim())
+          ?.trim() ?? 'Untitled note';
+      const title = firstLine.replace(/^#\s*/, '').slice(0, 72);
 
-    const data = await api.createNote(title, text, { source: 'sidebar_quick_capture' });
+      if (routeToIntake) {
+        const data = await api.createIntakeItem({
+          workspace_id: activeWorkspaceId,
+          source: 'quick_capture',
+          suggested_type: 'note',
+          title,
+          body: text,
+          raw_content: text,
+          reason: 'Quick note capture',
+          source_object_type: 'note',
+        });
 
-    if (!data) {
-      setSaveError('Could not save note.');
-      return;
+        if (!data) {
+          setSaveError('Could not send note to Intake.');
+          return;
+        }
+
+        setNoteDraft('');
+        setQuickCaptureMode('none');
+        setQuickCaptureNotice('Sent to Intake');
+        window.ipcRenderer?.send('inbox:items-updated');
+        return;
+      }
+
+      const data = await api.createNote(title, text, { source: 'sidebar_quick_capture' });
+
+      if (!data) {
+        setSaveError('Could not save note.');
+        return;
+      }
+
+      const row = data as SidebarNote;
+      setSavedNotes((prev) => [
+        {
+          id: row.id,
+          title: row.title,
+          content: row.content ?? text,
+          content_html: row.content_html ?? null,
+          created_at: row.created_at ?? new Date().toISOString(),
+          updated_at: row.updated_at ?? row.created_at ?? new Date().toISOString(),
+          source: row.source ?? 'sidebar_quick_capture',
+        },
+        ...prev.filter((item) => item.id !== row.id),
+      ]);
+      setNoteDraft('');
+      setQuickCaptureMode('none');
+      setSavedNotesExpanded(true);
+      setQuickCaptureNotice('Saved note');
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : 'Could not save note.');
     }
-
-    const row = data as SidebarNote;
-    setSavedNotes((prev) => [
-      {
-        id: row.id,
-        title: row.title,
-        content: row.content ?? text,
-        content_html: row.content_html ?? null,
-        created_at: row.created_at ?? new Date().toISOString(),
-        updated_at: row.updated_at ?? row.created_at ?? new Date().toISOString(),
-        source: row.source ?? 'sidebar_quick_capture',
-      },
-      ...prev.filter((item) => item.id !== row.id),
-    ]);
-    setNoteDraft('');
-    setQuickCaptureMode('none');
-    setSavedNotesExpanded(true);
-    setQuickCaptureNotice('Saved note');
   };
 
   const visibleSavedNotes = savedNotes.slice(0, 6);
@@ -1570,6 +1594,35 @@ export const ExpandedSidebar = ({
     setSaveError(null);
 
     try {
+      const hasTiming = Boolean(eventDate.trim() && eventStartTime.trim());
+      if (!hasTiming) {
+        const data = await api.createIntakeItem({
+          workspace_id: activeWorkspaceId,
+          source: 'quick_capture',
+          suggested_type: 'event',
+          title,
+          body: title,
+          raw_content: title,
+          reason: 'Missing date/time',
+          source_object_type: 'event',
+        });
+
+        if (!data) {
+          setSaveError('Could not send event to Intake.');
+          return;
+        }
+
+        setEventDraft('');
+        setEventDate(todayKey());
+        setEventStartTime('09:00');
+        setEventEndTime('10:00');
+        setQuickCaptureMode('none');
+        setEventsExpanded(true);
+        setQuickCaptureNotice('Sent to Intake');
+        window.ipcRenderer?.send('inbox:items-updated');
+        return;
+      }
+
       const settings = (await api.getUserSettings()) as {
         preferences?: {
           defaultEventStatus?: 'planned' | 'tentative' | 'confirmed';
@@ -1636,8 +1689,13 @@ export const ExpandedSidebar = ({
       }
 
       const startDateTime = new Date(`${eventDate}T${eventStartTime}:00`);
-      let endDateTime = new Date(`${eventDate}T${eventEndTime}:00`);
-      if (endDateTime <= startDateTime) {
+      let endDateTime = eventEndTime.trim()
+        ? new Date(`${eventDate}T${eventEndTime}:00`)
+        : new Date(startDateTime.getTime() + 60 * 60 * 1000);
+      if (Number.isNaN(startDateTime.getTime())) {
+        throw new Error('Could not create a valid event date.');
+      }
+      if (Number.isNaN(endDateTime.getTime()) || endDateTime <= startDateTime) {
         endDateTime = new Date(startDateTime.getTime() + 60 * 60 * 1000);
       }
 
@@ -1722,31 +1780,29 @@ export const ExpandedSidebar = ({
 
     setIsCreatingProject(true);
     try {
-      const data = await api.createProject(name);
-        const createdProject = {
-          ...(data as {
-            id: string;
-            name: string;
-            status: string;
-            completeness: number;
-            color?: string;
-            project_type?: string | null;
-            start_date?: string | null;
-            end_date?: string | null;
-          }),
-          status: normalizeProjectStatus((data as { status: string }).status),
-        };
-      setProjects((prev) => {
-        const next = prev.filter(
-          (project) =>
-            normalizeProjectNameKey(project.name) !== normalizeProjectNameKey(createdProject.name)
-        );
-        return [createdProject, ...next];
+      const data = await api.createIntakeItem({
+        workspace_id: activeWorkspaceId,
+        source: 'quick_capture',
+        suggested_type: 'project',
+        title: name,
+        body: null,
+        raw_content: name,
+        reason: 'Missing brief, dates, owner, or lead',
+        source_object_type: 'project',
       });
+
+      if (!data) {
+        setSaveError('Could not send project to Intake.');
+        return;
+      }
+
       setNewProjectName('');
+      setIsCreatingProject(false);
+      setQuickCaptureNotice('Sent to Intake');
+      window.ipcRenderer?.send('inbox:items-updated');
     } catch (error) {
       console.error('Project creation error:', error);
-      setSaveError(error instanceof Error ? error.message : 'Could not create project.');
+      setSaveError(error instanceof Error ? error.message : 'Could not send project to Intake.');
     } finally {
       setIsCreatingProject(false);
     }
@@ -2611,7 +2667,7 @@ export const ExpandedSidebar = ({
             </button>
             {quickCaptureMode === 'note' && (
               <div className="pl-1">
-                <div className="flex w-full items-center gap-2 rounded-lg px-2 py-2.5 transition hover:bg-[var(--ledger-surface-muted)]">
+                <div className="space-y-2 rounded-lg px-2 py-2.5 transition hover:bg-[var(--ledger-surface-muted)]">
                   <textarea
                     ref={noteCaptureRef}
                     value={noteDraft}
@@ -2620,13 +2676,13 @@ export const ExpandedSidebar = ({
                       if (e.key === 'Enter' && !e.shiftKey && !e.metaKey && !e.ctrlKey) {
                         if (noteDraft.trim() && !noteDraft.includes('\n')) {
                           e.preventDefault();
-                          void saveQuickNote();
+                          void saveQuickNote(false);
                         }
                         return;
                       }
                       if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
                         e.preventDefault();
-                        void saveQuickNote();
+                        void saveQuickNote(false);
                       } else if (e.key === 'Escape') {
                         e.preventDefault();
                         if (!noteDraft.trim()) setQuickCaptureMode('none');
@@ -2634,18 +2690,28 @@ export const ExpandedSidebar = ({
                     }}
                     placeholder="Write a quick note..."
                     rows={2}
-                    className="min-w-0 flex-1 resize-none bg-transparent px-0 py-0.5 text-[12px] leading-5 text-[var(--ledger-text-primary)] placeholder:text-[var(--ledger-placeholder)] focus:outline-none"
+                    className="min-h-[52px] w-full resize-none bg-transparent px-0 py-0.5 text-[12px] leading-5 text-[var(--ledger-text-primary)] placeholder:text-[var(--ledger-placeholder)] focus:outline-none"
                   />
-                  <button
-                    type="button"
-                    onMouseDown={(e) => e.preventDefault()}
-                    onClick={() => void saveQuickNote()}
-                    disabled={!noteDraft.trim()}
-                    className="inline-flex h-6 shrink-0 items-center justify-center rounded-full px-2 text-[11px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] disabled:opacity-60"
-                    aria-label="Save note"
-                  >
-                    +
-                  </button>
+                  <div className="flex items-center justify-end gap-2">
+                    <button
+                      type="button"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => void saveQuickNote(false)}
+                      disabled={!noteDraft.trim()}
+                      className="inline-flex h-7 items-center justify-center rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] px-3 text-[11px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] disabled:opacity-60"
+                    >
+                      Save note
+                    </button>
+                    <button
+                      type="button"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => void saveQuickNote(true)}
+                      disabled={!noteDraft.trim()}
+                      className="inline-flex h-7 items-center justify-center rounded-full bg-[var(--ledger-accent)] px-3 text-[11px] font-medium text-white transition hover:bg-[var(--ledger-accent-hover)] disabled:opacity-60"
+                    >
+                      Send to Intake
+                    </button>
+                  </div>
                 </div>
 
                 {quickCaptureNotice && (
@@ -2788,6 +2854,19 @@ export const ExpandedSidebar = ({
                       onChange={(e) => setEventEndTime(e.target.value)}
                       className={`w-full appearance-none ${eventComposerFieldClass}`}
                     />
+                  </div>
+                  <div className="flex items-center justify-end gap-2">
+                    <button
+                      type="button"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => void saveQuickEvent()}
+                      disabled={!eventDraft.trim()}
+                      className="inline-flex h-7 items-center justify-center rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] px-3 text-[11px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] disabled:opacity-60"
+                    >
+                      {eventDraft.trim() && eventDate.trim() && eventStartTime.trim()
+                        ? 'Create event'
+                        : 'Send to Intake'}
+                    </button>
                   </div>
                 </div>
             {quickCaptureNotice && (
@@ -3073,7 +3152,7 @@ export const ExpandedSidebar = ({
                         disabled={!newProjectName.trim()}
                         className={`w-full h-7 rounded-md text-white text-xs font-medium disabled:opacity-60 ${sidebarTheme.buttonPrimary}`}
                       >
-                        Create Project
+                        Send to Intake
                       </button>
                     </div>
                   ) : (

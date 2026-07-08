@@ -379,6 +379,48 @@ const normalizeCaptureSourcePlatform = (value) => {
   return text ? text.toLowerCase() : null;
 };
 
+const intakeSourceValues = [
+  'quick_capture',
+  'browser',
+  'meeting',
+  'calendar',
+  'manual',
+  'slack later',
+  'email later',
+  'system_suggestion',
+];
+
+const intakeSuggestedTypeValues = [
+  'task',
+  'note',
+  'event',
+  'reminder',
+  'deadline',
+  'project',
+  'milestone',
+  'capture',
+];
+
+const normalizeIntakeSource = (value) => {
+  const source = normalizeNullableText(value)?.toLowerCase();
+  if (!source || !intakeSourceValues.includes(source)) {
+    const error = new Error('Invalid source');
+    error.statusCode = 400;
+    throw error;
+  }
+  return source;
+};
+
+const normalizeIntakeSuggestedType = (value) => {
+  const type = normalizeNullableText(value)?.toLowerCase() ?? 'capture';
+  if (!intakeSuggestedTypeValues.includes(type)) {
+    const error = new Error('Invalid suggested_type');
+    error.statusCode = 400;
+    throw error;
+  }
+  return type;
+};
+
 const normalizeProjectNameKey = (value) =>
   String(value ?? '')
     .trim()
@@ -4839,6 +4881,108 @@ app.post('/api/inbox/browser', extensionAuthMiddleware, rateLimit('write'), asyn
   }
 });
 
+app.post('/api/intake', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const resolvedWorkspaceId = await resolveWorkspaceIdForRequest(req);
+    const requestedWorkspaceId = normalizeNullableText(req.body?.workspace_id);
+    if (requestedWorkspaceId && requestedWorkspaceId !== resolvedWorkspaceId) {
+      return res.status(400).json({ error: 'workspace_id must match the active workspace' });
+    }
+
+    const workspaceId = requestedWorkspaceId || resolvedWorkspaceId;
+    await requireWorkspaceAccess(req.authUser.id, workspaceId, 'member');
+
+    const source = normalizeIntakeSource(req.body?.source);
+    const suggestedType = normalizeIntakeSuggestedType(req.body?.suggested_type);
+    const title = clampText(req.body?.title, 300);
+    if (!title) {
+      return res.status(400).json({ error: 'title is required' });
+    }
+
+    const body = clampMultilineText(req.body?.body ?? req.body?.raw_content, 20_000);
+    const rawContent = clampMultilineText(req.body?.raw_content, 20_000);
+    const reason = clampText(req.body?.reason, 500);
+    const sourceObjectType = normalizeNullableText(req.body?.source_object_type);
+    const sourceObjectId = normalizeNullableText(req.body?.source_object_id);
+    const suggestedProjectId = normalizeNullableText(req.body?.suggested_project_id);
+    const suggestedTeamId = normalizeNullableText(req.body?.suggested_team_id);
+    const suggestedAssigneeId = normalizeNullableText(req.body?.suggested_assignee_id);
+    const suggestedDueDate = normalizeNullableText(req.body?.suggested_due_date);
+    const suggestedStartAt = normalizeNullableText(req.body?.suggested_start_at);
+    const suggestedEndAt = normalizeNullableText(req.body?.suggested_end_at);
+
+    if (suggestedProjectId) {
+      const allowed = await ensureWorkspaceResource('projects', suggestedProjectId, workspaceId);
+      if (!allowed) {
+        return res.status(404).json({ error: 'Project not found' });
+      }
+    }
+    if (suggestedTeamId) {
+      const allowed = await ensureWorkspaceTeam(suggestedTeamId, workspaceId);
+      if (!allowed) {
+        return res.status(404).json({ error: 'Team not found' });
+      }
+    }
+    if (suggestedAssigneeId) {
+      const allowed = await ensureWorkspaceMemberTarget(workspaceId, suggestedAssigneeId);
+      if (!allowed) {
+        return res.status(404).json({ error: 'Assigned user not found' });
+      }
+    }
+    if (suggestedStartAt && Number.isNaN(new Date(suggestedStartAt).getTime())) {
+      return res.status(400).json({ error: 'Invalid suggested_start_at' });
+    }
+    if (suggestedEndAt && Number.isNaN(new Date(suggestedEndAt).getTime())) {
+      return res.status(400).json({ error: 'Invalid suggested_end_at' });
+    }
+
+    const rawPayload = {
+      reason: reason || null,
+      raw_content: rawContent || null,
+      suggested_project_id: suggestedProjectId || null,
+      suggested_team_id: suggestedTeamId || null,
+      suggested_assignee_id: suggestedAssigneeId || null,
+      suggested_due_date: suggestedDueDate || null,
+      suggested_start_at: suggestedStartAt || null,
+      suggested_end_at: suggestedEndAt || null,
+      source_object_type: sourceObjectType || null,
+      source_object_id: sourceObjectId || null,
+      source_platform: 'sidebar',
+    };
+
+    const insertPayload = {
+      workspace_id: workspaceId,
+      user_id: req.authUser.id,
+      source,
+      source_id: sourceObjectId || null,
+      source_url: null,
+      title,
+      body: body || null,
+      raw_payload: rawPayload,
+      suggested_type: suggestedType,
+      status: 'unprocessed',
+      updated_at: new Date().toISOString(),
+    };
+
+    const { data, error } = await supabase
+      .from('inbox_items')
+      .insert(insertPayload)
+      .select(
+        'id, workspace_id, user_id, source, source_id, source_url, title, body, raw_payload, suggested_type, status, converted_type, converted_id, created_at, updated_at'
+      )
+      .single();
+
+    if (error) throw error;
+
+    res.status(201).json({
+      ok: true,
+      item: mapInboxItemResponse(data),
+    });
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
 app.get('/api/integrations/slack/status', authMiddleware, rateLimit('read'), async (req, res) => {
   try {
     const workspaceId = await resolveWorkspaceIdForRequest(req);
@@ -5521,6 +5665,108 @@ app.post('/api/inbox/:id/convert', authMiddleware, rateLimit('write'), async (re
         .update({
           status: 'converted',
           converted_type: 'event',
+          converted_id: createdId,
+          snoozed_until: null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('workspace_id', workspaceId)
+        .eq('id', inboxItem.id)
+        .select(
+          'id, workspace_id, user_id, source, source_id, source_url, title, body, raw_payload, suggested_type, status, converted_type, converted_id, created_at, updated_at'
+        )
+        .single();
+      if (inboxUpdate.error) throw inboxUpdate.error;
+      return res.json({
+        inbox_item: mapInboxItemResponse(inboxUpdate.data),
+        created: data,
+      });
+    }
+
+    if (type === 'project') {
+      const description = normalizeNullableText(req.body?.description ?? body);
+      const startDate = req.body?.start_date
+        ? normalizeNullableDate(req.body.start_date, 'start date')
+        : null;
+      const endDate = req.body?.end_date
+        ? normalizeNullableDate(req.body.end_date, 'end date')
+        : null;
+      const color = normalizeNullableText(req.body?.color) || '#007AFF';
+      const projectType = normalizeProjectType(req.body?.project_type);
+      const leadId = normalizeNullableText(req.body?.lead_id);
+      const ownerTeamId = normalizeNullableText(req.body?.owner_team_id);
+      if (leadId) {
+        const leadAllowed = await ensureWorkspaceMemberTarget(workspaceId, leadId);
+        if (!leadAllowed) {
+          return res.status(404).json({ error: 'Lead not found' });
+        }
+      }
+      if (ownerTeamId) {
+        const teamAllowed = await ensureWorkspaceTeam(ownerTeamId, workspaceId);
+        if (!teamAllowed) {
+          return res.status(404).json({ error: 'Team not found' });
+        }
+      }
+      const status = req.body?.status
+        ? projectStatusAliases[normalizeProjectSemanticStatus(req.body.status)][0]
+        : 'NotStarted';
+
+      const { data: existingProject, error: existingError } = await supabase
+        .from('projects')
+        .select(projectSelectColumns)
+        .eq('workspace_id', workspaceId)
+        .ilike('name', rawTitle)
+        .maybeSingle();
+
+      if (existingError) throw existingError;
+      if (existingProject) {
+        const inboxUpdate = await supabase
+          .from('inbox_items')
+          .update({
+            status: 'converted',
+            converted_type: 'project',
+            converted_id: existingProject.id,
+            snoozed_until: null,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('workspace_id', workspaceId)
+          .eq('id', inboxItem.id)
+          .select(
+            'id, workspace_id, user_id, source, source_id, source_url, title, body, raw_payload, suggested_type, status, converted_type, converted_id, created_at, updated_at'
+          )
+          .single();
+        if (inboxUpdate.error) throw inboxUpdate.error;
+        return res.json({
+          inbox_item: mapInboxItemResponse(inboxUpdate.data),
+          created: existingProject,
+        });
+      }
+
+      const { data, error } = await supabase
+        .from('projects')
+        .insert({
+          workspace_id: workspaceId,
+          created_by: req.authUser.id,
+          name: rawTitle,
+          description,
+          status,
+          completeness: 0,
+          color,
+          start_date: startDate,
+          end_date: endDate,
+          project_type: projectType,
+          lead_id: leadId,
+          owner_team_id: ownerTeamId,
+        })
+        .select(projectSelectColumns)
+        .single();
+
+      if (error) throw error;
+      createdId = data.id;
+      const inboxUpdate = await supabase
+        .from('inbox_items')
+        .update({
+          status: 'converted',
+          converted_type: 'project',
           converted_id: createdId,
           snoozed_until: null,
           updated_at: new Date().toISOString(),

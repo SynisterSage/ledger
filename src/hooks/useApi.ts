@@ -302,7 +302,7 @@ export const useApi = () => {
       convertInboxItem: (
         id: string,
         payload: {
-          type: 'task' | 'note' | 'reminder' | 'event';
+          type: 'task' | 'note' | 'reminder' | 'event' | 'project';
           title?: string;
           body?: string | null;
           project_id?: string | null;
@@ -327,12 +327,39 @@ export const useApi = () => {
           recurrence_rule?: string | null;
           location?: string | null;
           notes?: string | null;
+          description?: string | null;
+          start_date?: string | null;
+          end_date?: string | null;
+          project_type?: string | null;
+          lead_id?: string | null;
+          owner_team_id?: string | null;
         }
       ) =>
         request(`/api/inbox/${id}/convert`, {
           method: 'POST',
           body: JSON.stringify(payload),
           skipWorkspaceHeader: true,
+        }),
+      createIntakeItem: (payload: {
+        workspace_id: string;
+        source: 'quick_capture' | 'browser' | 'meeting' | 'calendar' | 'manual' | 'system_suggestion';
+        suggested_type?: 'task' | 'note' | 'event' | 'reminder' | 'deadline' | 'project' | 'milestone' | 'capture';
+        title: string;
+        body?: string | null;
+        raw_content?: string | null;
+        reason?: string | null;
+        suggested_project_id?: string | null;
+        suggested_team_id?: string | null;
+        suggested_assignee_id?: string | null;
+        suggested_due_date?: string | null;
+        suggested_start_at?: string | null;
+        suggested_end_at?: string | null;
+        source_object_type?: string | null;
+        source_object_id?: string | null;
+      }) =>
+        request('/api/intake', {
+          method: 'POST',
+          body: JSON.stringify(payload),
         }),
 
       // Projects
