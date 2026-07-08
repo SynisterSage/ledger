@@ -67,7 +67,7 @@ const defaultTitle = (item: NotificationCenterItem) => {
   if (item.sourceType === 'reminder') return 'Reminder due';
   if (item.sourceType === 'task') return item.notificationType === 'overdue_item' ? 'Task overdue' : 'Task due';
   if (item.sourceType === 'project') return item.notificationType === 'overdue_item' ? 'Project overdue' : 'Project deadline';
-  return 'Inbox capture';
+  return 'Intake item';
 };
 
 const fallbackBody = (item: NotificationCenterItem, scheduledAt: Date | null) => {
@@ -118,7 +118,7 @@ const iconForItem = (item: NotificationCenterItem) => {
 
 const actionLabel = (item: NotificationCenterItem, action: NotificationCenterItem['actions'][number]) => {
   if (action === 'open') {
-    if (item.sourceType === 'inbox') return 'Open inbox';
+    if (item.sourceType === 'inbox') return 'Open Intake';
     if (item.sourceType === 'project') return 'Open project';
     if (item.sourceType === 'task') return 'Open task';
     if (item.sourceType === 'event') return 'Open event';
@@ -348,13 +348,13 @@ export const NotificationCenterWindow: React.FC = () => {
         onToggleFullscreen={() => window.desktopWindow?.toggleModuleFullscreen('notifications')}
         showWorkspaceNavigation={false}
         stripActions={
-          <ModuleHeaderStripAction
-            icon={<Inbox size={12} />}
-            count={inboxCount}
-            onClick={() => window.desktopWindow?.toggleModule('inbox')}
-            title="Open inbox"
-            ariaLabel="Open inbox"
-          />
+            <ModuleHeaderStripAction
+              icon={<Inbox size={12} />}
+              count={inboxCount}
+              onClick={() => window.desktopWindow?.toggleModule('inbox')}
+              title="Open Intake"
+              ariaLabel="Open Intake"
+            />
         }
         actions={
           <>
@@ -504,7 +504,7 @@ export const NotificationCenterWindow: React.FC = () => {
                                 onClick={() => void applyAction(item, 'open')}
                                 className="text-xs font-medium text-[#FF5F40] transition hover:underline"
                               >
-                                {item.sourceType === 'inbox' ? 'Open inbox' : 'Open'}
+                                {item.sourceType === 'inbox' ? 'Open Intake' : 'Open'}
                               </button>
                               <button
                                 type="button"

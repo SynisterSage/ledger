@@ -113,7 +113,7 @@ const titleCaseLabel = (value) =>
   String(value ?? '')
     .replace(/_/g, ' ')
     .trim()
-    .replace(/\b\w/g, (char) => char.toUpperCase()) || 'Inbox';
+    .replace(/\b\w/g, (char) => char.toUpperCase()) || 'Intake';
 
 const rateLimit = (scope) => (req, res, next) => {
   const now = Date.now();
@@ -354,7 +354,7 @@ const reminderLinkedLabels = {
   event: 'Event',
   note: 'Note',
   project: 'Project',
-  inbox: 'Inbox item',
+  inbox: 'Intake item',
 };
 const workspaceRoleRank = { viewer: 1, member: 2, admin: 3, owner: 4 };
 const workspaceMemberRoles = ['admin', 'member', 'viewer'];
@@ -1543,7 +1543,7 @@ const notificationTypeFallbackLabel = (notificationType, sourceType) => {
   if (normalizedType === 'event_starting') return 'Calendar event';
   if (normalizedType === 'task_due') return 'Task';
   if (normalizedType === 'project_deadline') return 'Project deadline';
-  if (normalizedType === 'inbox_capture') return 'Inbox capture';
+  if (normalizedType === 'inbox_capture') return 'Intake capture';
   if (normalizedType === 'invite.accepted') return 'Workspace invite';
   if (normalizedType === 'overdue_item') {
     if (sourceType === 'project') return 'Project deadline';
@@ -1911,9 +1911,9 @@ const buildDueNotificationCandidates = async (userId, prefs) => {
           source: row.source ?? null,
           source_url: row.source_url ?? null,
         },
-        title: row.title ?? 'Inbox capture',
+        title: row.title ?? 'Intake capture',
         body: row.body ?? row.source_url ?? null,
-        context: row.source ? `Capture from ${String(row.source)}` : 'Inbox capture',
+        context: row.source ? `Capture from ${String(row.source)}` : 'Intake capture',
         moduleKind: 'inbox',
         focusPayload: { kind: 'inbox' },
         actions: ['open', 'dismiss'],
@@ -2128,11 +2128,11 @@ const mapNotificationCenterRow = (row, maps) => {
     actions = actions ?? ['open', 'dismiss'];
   } else if (sourceType === 'inbox') {
     const inbox = maps.inboxById.get(sourceId) ?? null;
-    title = title ?? inbox?.title ?? 'Inbox capture';
-    body = body ?? inbox?.body ?? inbox?.source_url ?? 'Waiting in Inbox';
+    title = title ?? inbox?.title ?? 'Intake capture';
+    body = body ?? inbox?.body ?? inbox?.source_url ?? 'Waiting in Intake';
     moduleKind = moduleKind ?? 'inbox';
     focusPayload = focusPayload ?? { kind: 'inbox' };
-    context = inbox?.source ? `Capture from ${String(inbox.source)}` : 'Inbox capture';
+    context = inbox?.source ? `Capture from ${String(inbox.source)}` : 'Intake capture';
     actions = actions ?? ['open', 'dismiss'];
   } else if (sourceType === 'workspace_invite') {
     title = title ?? 'Invite accepted';
@@ -4014,7 +4014,7 @@ const mapInboxItemResponse = (row) => {
     channel_name: row.channel_name ?? channel.name ?? null,
     author_name:
       row.author_name ?? message.username ?? user.username ?? user.name ?? rawPayload?.user_name ?? null,
-    source_label: row.source ? titleCaseLabel(row.source) : 'Inbox',
+    source_label: row.source ? titleCaseLabel(row.source) : 'Intake',
   };
 };
 
@@ -4030,6 +4030,23 @@ const loadInboxItemForWorkspace = async (workspaceId, id) => {
 
   if (result.error) throw result.error;
   return result.data ?? null;
+};
+
+const resumeDueInboxItemsForWorkspace = async (workspaceId) => {
+  const now = new Date().toISOString();
+  const { error } = await supabase
+    .from('inbox_items')
+    .update({
+      status: 'unprocessed',
+      snoozed_until: null,
+      updated_at: now,
+    })
+    .eq('workspace_id', workspaceId)
+    .eq('status', 'snoozed')
+    .not('snoozed_until', 'is', null)
+    .lte('snoozed_until', now);
+
+  if (error) throw error;
 };
 
 const loadBrowserCapturePayload = (req) => {
@@ -5046,7 +5063,7 @@ app.post('/api/integrations/slack/interactivity', rateLimit('write'), async (req
 
     return res.status(200).json({
       response_type: 'ephemeral',
-      text: 'Saved to Ledger Inbox.',
+      text: 'Saved to Ledger Intake.',
     });
   } catch (error) {
     console.error('Slack capture failed', error);
@@ -5060,6 +5077,7 @@ app.post('/api/integrations/slack/interactivity', rateLimit('write'), async (req
 app.get('/api/inbox/count', authMiddleware, rateLimit('read'), async (req, res) => {
   try {
     const workspaceId = await resolveWorkspaceIdForRequest(req);
+    await resumeDueInboxItemsForWorkspace(workspaceId);
     const { count, error } = await supabase
       .from('inbox_items')
       .select('id', { count: 'exact', head: true })
@@ -5076,6 +5094,7 @@ app.get('/api/inbox/count', authMiddleware, rateLimit('read'), async (req, res) 
 app.get('/api/inbox', authMiddleware, rateLimit('read'), async (req, res) => {
   try {
     const workspaceId = await resolveWorkspaceIdForRequest(req);
+    await resumeDueInboxItemsForWorkspace(workspaceId);
     const status = String(req.query?.status ?? 'unprocessed').trim() || 'unprocessed';
     const source = String(req.query?.source ?? '').trim();
 
@@ -5104,13 +5123,53 @@ app.post('/api/inbox/:id/archive', authMiddleware, rateLimit('write'), async (re
     const workspaceId = await resolveWorkspaceIdForRequest(req);
     const allowed = await loadInboxItemForWorkspace(workspaceId, req.params.id);
     if (!allowed) {
-      return res.status(404).json({ error: 'Inbox item not found' });
+      return res.status(404).json({ error: 'Intake item not found' });
     }
 
     const { data, error } = await supabase
       .from('inbox_items')
       .update({
         status: 'archived',
+        snoozed_until: null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('workspace_id', workspaceId)
+      .eq('id', req.params.id)
+      .select(
+        'id, workspace_id, user_id, source, source_id, source_url, title, body, raw_payload, suggested_type, status, converted_type, converted_id, created_at, updated_at'
+      )
+      .single();
+
+    if (error) throw error;
+    res.json(mapInboxItemResponse(data));
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
+app.post('/api/inbox/:id/snooze', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    const allowed = await loadInboxItemForWorkspace(workspaceId, req.params.id);
+    if (!allowed) {
+      return res.status(404).json({ error: 'Intake item not found' });
+    }
+
+    const snoozedUntilInput = String(req.body?.snoozed_until ?? '').trim();
+    if (!snoozedUntilInput) {
+      return res.status(400).json({ error: 'snoozed_until is required' });
+    }
+
+    const snoozedUntil = new Date(snoozedUntilInput);
+    if (Number.isNaN(snoozedUntil.getTime())) {
+      return res.status(400).json({ error: 'Invalid snoozed_until' });
+    }
+
+    const { data, error } = await supabase
+      .from('inbox_items')
+      .update({
+        status: 'snoozed',
+        snoozed_until: snoozedUntil.toISOString(),
         updated_at: new Date().toISOString(),
       })
       .eq('workspace_id', workspaceId)
@@ -5132,7 +5191,7 @@ app.delete('/api/inbox/:id', authMiddleware, rateLimit('write'), async (req, res
     const workspaceId = await resolveWorkspaceIdForRequest(req);
     const allowed = await loadInboxItemForWorkspace(workspaceId, req.params.id);
     if (!allowed) {
-      return res.status(404).json({ error: 'Inbox item not found' });
+      return res.status(404).json({ error: 'Intake item not found' });
     }
 
     const { error } = await supabase
@@ -5153,10 +5212,10 @@ app.post('/api/inbox/:id/convert', authMiddleware, rateLimit('write'), async (re
     const workspaceId = await resolveWorkspaceIdForRequest(req);
     const inboxItem = await loadInboxItemForWorkspace(workspaceId, req.params.id);
     if (!inboxItem) {
-      return res.status(404).json({ error: 'Inbox item not found' });
+      return res.status(404).json({ error: 'Intake item not found' });
     }
     if (String(inboxItem.status ?? '') === 'converted') {
-      return res.status(409).json({ error: 'Inbox item has already been converted' });
+      return res.status(409).json({ error: 'Intake item has already been accepted' });
     }
 
     const type = String(req.body?.type ?? '').trim().toLowerCase();
@@ -5166,6 +5225,8 @@ app.post('/api/inbox/:id/convert', authMiddleware, rateLimit('write'), async (re
     const inboxNotes = inboxItem.source_url
       ? `${body ? `${body}\n\n` : ''}Source: ${inboxItem.source_url}`
       : body;
+    const assignedToUserId = normalizeNullableText(req.body?.assigned_to_user_id ?? req.body?.assigned_to);
+    const assignedToTeamId = normalizeNullableText(req.body?.assigned_to_team_id ?? req.body?.assigned_team_id);
     let createdId = null;
 
     if (type === 'task') {
@@ -5213,6 +5274,11 @@ app.post('/api/inbox/:id/convert', authMiddleware, rateLimit('write'), async (re
           due_time: req.body?.due_time ? normalizeNullableText(req.body.due_time) : null,
           status: req.body?.status ? String(req.body.status) : 'todo',
           priority: req.body?.priority ? String(req.body.priority) : 'medium',
+          assigned_to_user_id: assignedToUserId,
+          assigned_to_team_id: assignedToTeamId,
+          assigned_team_id: assignedToTeamId,
+          assigned_by_user_id: assignedToUserId || assignedToTeamId ? req.authUser.id : null,
+          assigned_at: assignedToUserId || assignedToTeamId ? new Date().toISOString() : null,
           tags: Array.isArray(req.body?.tags)
             ? req.body.tags.map((tag) => String(tag).trim()).filter(Boolean)
             : [],
@@ -5248,6 +5314,7 @@ app.post('/api/inbox/:id/convert', authMiddleware, rateLimit('write'), async (re
           status: 'converted',
           converted_type: 'task',
           converted_id: createdId,
+          snoozed_until: null,
           updated_at: new Date().toISOString(),
         })
         .eq('workspace_id', workspaceId)
@@ -5301,6 +5368,7 @@ app.post('/api/inbox/:id/convert', authMiddleware, rateLimit('write'), async (re
           status: 'converted',
           converted_type: 'note',
           converted_id: createdId,
+          snoozed_until: null,
           updated_at: new Date().toISOString(),
         })
         .eq('workspace_id', workspaceId)
@@ -5349,6 +5417,10 @@ app.post('/api/inbox/:id/convert', authMiddleware, rateLimit('write'), async (re
         notes: inboxNotes || null,
         project_id: req.body?.project_id || null,
         note_id: req.body?.note_id || null,
+        assigned_to_user_id: assignedToUserId,
+        assigned_to_team_id: assignedToTeamId,
+        assigned_by_user_id: assignedToUserId || assignedToTeamId ? req.authUser.id : null,
+        assigned_at: assignedToUserId || assignedToTeamId ? new Date().toISOString() : null,
       };
       if (reminderPayload.project_id) {
         const projectAllowed = await ensureWorkspaceResource(
@@ -5385,6 +5457,7 @@ app.post('/api/inbox/:id/convert', authMiddleware, rateLimit('write'), async (re
           status: 'converted',
           converted_type: 'reminder',
           converted_id: createdId,
+          snoozed_until: null,
           updated_at: new Date().toISOString(),
         })
         .eq('workspace_id', workspaceId)
@@ -5432,6 +5505,10 @@ app.post('/api/inbox/:id/convert', authMiddleware, rateLimit('write'), async (re
           project_id: req.body?.project_id || null,
           linked_project_id: req.body?.project_id || null,
           note_id: req.body?.note_id || null,
+          assigned_to_user_id: assignedToUserId,
+          assigned_to_team_id: assignedToTeamId,
+          assigned_by_user_id: assignedToUserId || assignedToTeamId ? req.authUser.id : null,
+          assigned_at: assignedToUserId || assignedToTeamId ? new Date().toISOString() : null,
         })
         .select(
           'id, title, start_at, end_at, all_day, calendar_id, color, status, recurrence_rule, notes, project_id, note_id, series_id, series_type'
@@ -5445,6 +5522,7 @@ app.post('/api/inbox/:id/convert', authMiddleware, rateLimit('write'), async (re
           status: 'converted',
           converted_type: 'event',
           converted_id: createdId,
+          snoozed_until: null,
           updated_at: new Date().toISOString(),
         })
         .eq('workspace_id', workspaceId)

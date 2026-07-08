@@ -53,7 +53,7 @@ Invite links should be generated from `INVITE_BASE_URL` or `FRONTEND_URL`, not t
 
 - `GET /api/extension/me` - Validate a browser extension token and return the default workspace
 - `GET /api/extension/workspaces` - Return accessible workspaces for the token user
-- `POST /api/inbox/browser` - Save a browser capture into Ledger Inbox
+- `POST /api/inbox/browser` - Save a browser capture into Ledger Intake
 
 ### Projects
 

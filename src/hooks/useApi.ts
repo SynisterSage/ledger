@@ -288,6 +288,12 @@ export const useApi = () => {
           method: 'POST',
           skipWorkspaceHeader: true,
         }),
+      snoozeInboxItem: (id: string, snoozedUntil: string) =>
+        request(`/api/inbox/${id}/snooze`, {
+          method: 'POST',
+          body: JSON.stringify({ snoozed_until: snoozedUntil }),
+          skipWorkspaceHeader: true,
+        }),
       deleteInboxItem: (id: string) =>
         request(`/api/inbox/${id}`, {
           method: 'DELETE',
@@ -302,6 +308,10 @@ export const useApi = () => {
           project_id?: string | null;
           note_id?: string | null;
           calendar_id?: string | null;
+          assigned_to_user_id?: string | null;
+          assigned_to_team_id?: string | null;
+          assigned_team_id?: string | null;
+          assigned_to?: string | null;
           due_date?: string | null;
           due_time?: string | null;
           remind_at?: string | null;

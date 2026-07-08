@@ -33,7 +33,7 @@ export const defaultSidebarPreferences: SidebarPreferences = {
   opacity: getDefaultSidebarOpacity(),
   blur: true,
   defaultState: 'collapsed',
-  alwaysOnTop: true,
+  alwaysOnTop: false,
   autoHide: false,
   isExpanded: true,
   collapsedRestoreIsExpanded: true,

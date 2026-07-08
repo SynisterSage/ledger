@@ -1,13 +1,21 @@
 import {
+  Calendar,
   Bell,
   CalendarDays,
   CheckSquare,
   FileText,
-  Inbox as InboxIcon,
+  Funnel,
+  Globe,
   Loader2,
+  Mail,
+  MessageSquare,
+  PanelRight,
   RefreshCw,
+  Search,
+  Sparkles,
+  FilePenLine,
 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { useApi } from '../../hooks/useApi';
 import { useAuthContext } from '../../context/AuthContext';
 import { useWorkspaceContext } from '../../context/WorkspaceContext';
@@ -18,8 +26,7 @@ import { ModalOverlay } from '../Common/ModalOverlay';
 import { createPortal } from 'react-dom';
 import { sidebarTheme } from '../Sidebar/sidebarTheme';
 
-type InboxStatus = 'unprocessed' | 'converted' | 'archived';
-type SourceFilter = 'all' | 'slack' | 'browser';
+type InboxStatus = 'unprocessed' | 'converted' | 'snoozed' | 'archived';
 type ConversionType = 'task' | 'note' | 'reminder' | 'event';
 
 type InboxItem = {
@@ -29,12 +36,14 @@ type InboxItem = {
   source_url?: string | null;
   title: string;
   body?: string | null;
+  raw_payload?: Record<string, unknown> | null;
   status: InboxStatus;
   suggested_type?: string | null;
   converted_type?: string | null;
   channel_name?: string | null;
   author_name?: string | null;
   source_label?: string | null;
+  snoozed_until?: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -67,8 +76,9 @@ const conversionTypes: Array<{
 ];
 
 const statusLabels: Array<{ value: InboxStatus; label: string }> = [
-  { value: 'unprocessed', label: 'Unprocessed' },
-  { value: 'converted', label: 'Converted' },
+  { value: 'unprocessed', label: 'Needs review' },
+  { value: 'converted', label: 'Accepted' },
+  { value: 'snoozed', label: 'Snoozed' },
   { value: 'archived', label: 'Archived' },
 ];
 
@@ -85,8 +95,6 @@ const inboxTheme = {
   sectionHeading: 'text-sm font-semibold text-[var(--ledger-text-primary)]',
   mutedText: 'text-[var(--ledger-text-muted)]',
   bodyText: 'text-[var(--ledger-text-secondary)]',
-  headerButton:
-    'inline-flex h-8 w-8 items-center justify-center rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]',
   field:
     'h-10 w-full rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] px-3 text-sm text-[var(--ledger-text-primary)] outline-none transition focus:border-[color:var(--ledger-border-strong)]',
   fieldSoft:
@@ -105,13 +113,6 @@ const formatDateTime = (value?: string | null) => {
     hour: 'numeric',
     minute: '2-digit',
   });
-};
-
-const formatTimeOnly = (value?: string | null) => {
-  if (!value) return '';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '';
-  return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 };
 
 const getDomain = (url: string) => {
@@ -170,7 +171,7 @@ const getDisplayTitle = (item: InboxItem) => {
   if (item.source === 'slack') {
     return stripTrailingSlackLinkLabel(cleanSlackText(raw), raw) || 'Slack message';
   }
-  return cleanSlackText(raw) || 'Inbox capture';
+  return cleanSlackText(raw) || 'Intake item';
 };
 
 const getDisplayPreview = (item: InboxItem) => {
@@ -178,6 +179,9 @@ const getDisplayPreview = (item: InboxItem) => {
   if (item.source === 'slack') return summarizeSlackText(raw);
   return cleanSlackText(raw);
 };
+
+const getStatusLabel = (status: InboxStatus) =>
+  statusLabels.find((entry) => entry.value === status)?.label ?? status;
 
 const getSourceLabel = (item: InboxItem) => {
   if (item.source === 'slack') return 'Slack';
@@ -240,7 +244,296 @@ const buildDefaultBody = (item: InboxItem) => {
   return parts.join('\n');
 };
 
-export default function InboxWindow() {
+type IntakeFilterState = {
+  source: string;
+  type: string;
+  project: string;
+  assignee: string;
+  created: 'all' | 'today' | 'week' | 'older';
+};
+
+type IntakeDisplayState = {
+  order: 'newest' | 'oldest';
+  showSource: boolean;
+  showStatus: boolean;
+  showProject: boolean;
+  showAssignee: boolean;
+  showCreated: boolean;
+};
+
+type IntakeDraftState = {
+  item: InboxItem;
+  type: ConversionType;
+};
+
+type IntakeMenuState = {
+  x: number;
+  y: number;
+  item: InboxItem;
+};
+
+type MenuAnchorState = {
+  x: number;
+  y: number;
+};
+
+type WorkspaceMemberOption = {
+  id: string;
+  name: string;
+  email: string | null;
+};
+
+type WorkspaceTeamOption = {
+  id: string;
+  name: string;
+  identifier: string | null;
+};
+
+const defaultFilters: IntakeFilterState = {
+  source: 'all',
+  type: 'all',
+  project: 'all',
+  assignee: 'all',
+  created: 'all',
+};
+
+const defaultDisplayState: IntakeDisplayState = {
+  order: 'newest',
+  showSource: true,
+  showStatus: true,
+  showProject: false,
+  showAssignee: false,
+  showCreated: true,
+};
+
+const normalizeForSearch = (value: unknown) => String(value ?? '').trim().toLowerCase();
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  Boolean(value && typeof value === 'object' && !Array.isArray(value));
+
+const findDeepString = (value: unknown, keys: string[], depth = 0): string | null => {
+  if (!value || depth > 2) return null;
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return trimmed ? trimmed : null;
+  }
+  if (Array.isArray(value)) {
+    for (const entry of value) {
+      const found = findDeepString(entry, keys, depth + 1);
+      if (found) return found;
+    }
+    return null;
+  }
+  if (!isRecord(value)) return null;
+
+  for (const key of keys) {
+    const candidate = value[key];
+    if (typeof candidate === 'string') {
+      const trimmed = candidate.trim();
+      if (trimmed) return trimmed;
+    }
+  }
+
+  for (const candidate of Object.values(value)) {
+    const found = findDeepString(candidate, keys, depth + 1);
+    if (found) return found;
+  }
+
+  return null;
+};
+
+const formatRelativeTime = (value?: string | null) => {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  const diffMs = date.getTime() - Date.now();
+  const diffMinutes = Math.round(diffMs / 60000);
+  const diffHours = Math.round(diffMs / 3_600_000);
+  const diffDays = Math.round(diffMs / 86_400_000);
+  const absMinutes = Math.abs(diffMinutes);
+  const absHours = Math.abs(diffHours);
+  const absDays = Math.abs(diffDays);
+
+  if (absMinutes < 60) {
+    if (absMinutes <= 1) return diffMinutes >= 0 ? 'in 1m' : '1m ago';
+    return diffMinutes >= 0 ? `in ${absMinutes}m` : `${absMinutes}m ago`;
+  }
+
+  if (absHours < 24) {
+    if (absHours === 1) return diffHours >= 0 ? 'in 1h' : '1h ago';
+    return diffHours >= 0 ? `in ${absHours}h` : `${absHours}h ago`;
+  }
+
+  if (absDays === 1) return diffDays >= 0 ? 'tomorrow' : 'yesterday';
+  return diffDays >= 0 ? `in ${absDays}d` : `${absDays}d ago`;
+};
+
+const getRawPayload = (item: InboxItem) => (isRecord(item.raw_payload) ? item.raw_payload : {});
+
+const getSearchCorpus = (item: InboxItem) =>
+  normalizeForSearch([
+    item.title,
+    item.body,
+    item.source,
+    item.source_label,
+    item.source_id,
+    item.source_url,
+    item.suggested_type,
+    item.converted_type,
+    item.author_name,
+    item.channel_name,
+    JSON.stringify(getRawPayload(item)),
+  ].join(' '));
+
+const getItemSourceBucket = (item: InboxItem) => {
+  const source = normalizeForSearch(item.source);
+  if (source.includes('slack')) return 'slack later';
+  if (source.includes('email')) return 'email later';
+  if (source.includes('calendar') || source.includes('event')) return 'calendar';
+  if (source.includes('meeting')) return 'meeting';
+  if (source.includes('browser')) return 'browser';
+  if (source.includes('manual') || source.includes('quick')) return 'manual';
+  if (source.includes('capture')) return 'quick capture';
+  return source || 'manual';
+};
+
+const getItemTypeBucket = (item: InboxItem) => {
+  const candidates = [
+    item.converted_type,
+    item.suggested_type,
+    findDeepString(getRawPayload(item), ['type', 'suggested_type', 'kind']),
+  ]
+    .map((value) => normalizeForSearch(value))
+    .filter(Boolean);
+
+  if (candidates.some((value) => value.includes('task'))) return 'task';
+  if (candidates.some((value) => value.includes('note'))) return 'note';
+  if (candidates.some((value) => value.includes('event'))) return 'event';
+  if (candidates.some((value) => value.includes('reminder'))) return 'reminder';
+  if (candidates.some((value) => value.includes('deadline'))) return 'deadline';
+  if (candidates.some((value) => value.includes('milestone'))) return 'milestone';
+  if (candidates.some((value) => value.includes('capture'))) return 'capture';
+  return item.source === 'browser' ? 'capture' : 'task';
+};
+
+const getItemProjectLabel = (item: InboxItem) =>
+  findDeepString(getRawPayload(item), [
+    'suggested_project_name',
+    'project_name',
+    'project_title',
+    'linked_project_name',
+    'project',
+    'name',
+  ]);
+
+const getItemAssigneeLabel = (item: InboxItem) =>
+  findDeepString(getRawPayload(item), [
+    'assigned_to_name',
+    'assigned_name',
+    'assignee_name',
+    'owner_name',
+    'user_name',
+    'member_name',
+  ]);
+
+const getItemTeamLabel = (item: InboxItem) =>
+  findDeepString(getRawPayload(item), [
+    'assigned_to_team_name',
+    'team_name',
+    'assigned_team_name',
+    'owner_team_name',
+  ]);
+
+const getItemCreatedByLabel = (item: InboxItem) =>
+  item.author_name ||
+  findDeepString(getRawPayload(item), ['created_by_name', 'created_by', 'author_name', 'user_name']) ||
+  null;
+
+const matchesCreatedFilter = (value: string, createdAt: string) => {
+  const date = new Date(createdAt);
+  if (Number.isNaN(date.getTime())) return true;
+  const now = new Date();
+  const startToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const startWeek = new Date(startToday);
+  startWeek.setDate(startWeek.getDate() - 6);
+
+  if (value === 'today') return date >= startToday;
+  if (value === 'week') return date >= startWeek;
+  if (value === 'older') return date < startWeek;
+  return true;
+};
+
+const getDefaultConversionType = (item: InboxItem): ConversionType => {
+  const sourceBucket = getItemSourceBucket(item);
+  const typeBucket = getItemTypeBucket(item);
+  if (sourceBucket === 'browser' || sourceBucket === 'meeting') return 'note';
+  if (sourceBucket === 'calendar' && typeBucket === 'deadline') return 'event';
+  if (typeBucket === 'note') return 'note';
+  if (typeBucket === 'event' || typeBucket === 'deadline') return 'event';
+  if (typeBucket === 'reminder') return 'reminder';
+  return 'task';
+};
+
+const getTypeDisplayLabel = (item: InboxItem) => {
+  const sourceBucket = getItemSourceBucket(item);
+  const typeBucket = getItemTypeBucket(item);
+
+  if (sourceBucket === 'browser') return 'Browser capture';
+  if (sourceBucket === 'meeting') return 'Meeting output';
+  if (sourceBucket === 'calendar') return typeBucket === 'deadline' ? 'Suggested deadline' : 'Calendar item';
+  if (sourceBucket === 'slack later') return 'Slack import';
+  if (sourceBucket === 'email later') return 'Email import';
+  if (sourceBucket === 'manual') return 'Quick capture';
+  if (typeBucket === 'deadline') return 'Suggested deadline';
+  if (typeBucket === 'note') return 'Suggested note';
+  if (typeBucket === 'event') return 'Suggested event';
+  if (typeBucket === 'reminder') return 'Suggested reminder';
+  if (typeBucket === 'milestone') return 'Suggested milestone';
+  if (typeBucket === 'capture') return 'Capture';
+  return 'Suggested task';
+};
+
+const getRowIcon = (item: InboxItem) => {
+  const sourceBucket = getItemSourceBucket(item);
+  if (sourceBucket === 'browser') return Globe;
+  if (sourceBucket === 'meeting') return Calendar;
+  if (sourceBucket === 'calendar') return CalendarDays;
+  if (sourceBucket === 'slack later') return MessageSquare;
+  if (sourceBucket === 'email later') return Mail;
+  if (sourceBucket === 'manual' || sourceBucket === 'quick capture') return FilePenLine;
+  return Sparkles;
+};
+
+const snoozeOffset = (mode: 'later-today' | 'tomorrow' | 'next-week' | 'pick-date', date?: string | null) => {
+  const now = new Date();
+  if (mode === 'later-today') {
+    const target = new Date(now);
+    target.setHours(17, 0, 0, 0);
+    if (target.getTime() <= now.getTime()) {
+      target.setDate(target.getDate() + 1);
+      target.setHours(9, 0, 0, 0);
+    }
+    return target.toISOString();
+  }
+  if (mode === 'tomorrow') {
+    const target = new Date(now);
+    target.setDate(target.getDate() + 1);
+    target.setHours(9, 0, 0, 0);
+    return target.toISOString();
+  }
+  if (mode === 'next-week') {
+    const target = new Date(now);
+    target.setDate(target.getDate() + 7);
+    target.setHours(9, 0, 0, 0);
+    return target.toISOString();
+  }
+  const picked = date ? new Date(date) : new Date();
+  if (Number.isNaN(picked.getTime())) return null;
+  picked.setHours(9, 0, 0, 0);
+  return picked.toISOString();
+};
+
+export default function IntakeWindow() {
   const { user } = useAuthContext();
   const { activeWorkspaceId, activeWorkspace } = useWorkspaceContext();
   const api = useApi();
@@ -251,34 +544,47 @@ export default function InboxWindow() {
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [activeStatus, setActiveStatus] = useState<InboxStatus>('unprocessed');
-  const [activeSource, setActiveSource] = useState<SourceFilter>('all');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filters, setFilters] = useState<IntakeFilterState>(defaultFilters);
+  const [display, setDisplay] = useState<IntakeDisplayState>(defaultDisplayState);
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
-  const [selectedItem, setSelectedItem] = useState<InboxItem | null>(null);
-  const [conversionType, setConversionType] = useState<ConversionType>('task');
+  const [draft, setDraft] = useState<IntakeDraftState | null>(null);
+  const [isConverting, setIsConverting] = useState(false);
+  const [activeActionId, setActiveActionId] = useState<string | null>(null);
+  const [contextMenu, setContextMenu] = useState<IntakeMenuState | null>(null);
+  const [filterMenu, setFilterMenu] = useState<MenuAnchorState | null>(null);
+  const [displayMenu, setDisplayMenu] = useState<MenuAnchorState | null>(null);
+  const [snoozeMenu, setSnoozeMenu] = useState<{ x: number; y: number; item: InboxItem } | null>(null);
+  const [snoozePicker, setSnoozePicker] = useState<string | null>(null);
+  const [projects, setProjects] = useState<ProjectOption[]>([]);
+  const [calendars, setCalendars] = useState<CalendarOption[]>([]);
+  const [notes, setNotes] = useState<NoteOption[]>([]);
+  const [workspaceMembers, setWorkspaceMembers] = useState<WorkspaceMemberOption[]>([]);
+  const [workspaceTeams, setWorkspaceTeams] = useState<WorkspaceTeamOption[]>([]);
+  const [notificationCount, setNotificationCount] = useState(0);
+
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const filterButtonRef = useRef<HTMLButtonElement | null>(null);
+  const displayButtonRef = useRef<HTMLButtonElement | null>(null);
   const [draftTitle, setDraftTitle] = useState('');
   const [draftBody, setDraftBody] = useState('');
   const [selectedProjectId, setSelectedProjectId] = useState('');
   const [selectedNoteId, setSelectedNoteId] = useState('');
   const [selectedCalendarId, setSelectedCalendarId] = useState('');
+  const [selectedAssigneeId, setSelectedAssigneeId] = useState('');
+  const [selectedTeamId, setSelectedTeamId] = useState('');
   const [showInToday, setShowInToday] = useState(false);
   const [reminderDate, setReminderDate] = useState('');
   const [reminderTime, setReminderTime] = useState('09:00');
   const [eventDate, setEventDate] = useState('');
   const [eventTime, setEventTime] = useState('10:00');
   const [eventDuration, setEventDuration] = useState('30');
-  const [isConverting, setIsConverting] = useState(false);
-  const [activeItemId, setActiveItemId] = useState<string | null>(null);
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; item: InboxItem } | null>(null);
-  const [projects, setProjects] = useState<ProjectOption[]>([]);
-  const [calendars, setCalendars] = useState<CalendarOption[]>([]);
-  const [notes, setNotes] = useState<NoteOption[]>([]);
-  const [notificationCount, setNotificationCount] = useState(0);
 
   const loadInbox = async (showSpinner = false) => {
     if (!activeWorkspaceId) {
       setItems([]);
       setIsLoading(false);
-      setError('Select a workspace to view Inbox items.');
+      setError('Select a workspace to view Intake items.');
       return;
     }
 
@@ -287,28 +593,25 @@ export default function InboxWindow() {
     setError(null);
 
     try {
-      const [unprocessed, converted, archived] = await Promise.all([
+      const [unprocessed, converted, snoozed, archived] = await Promise.all([
         api.getInboxItems({ status: 'unprocessed' }),
         api.getInboxItems({ status: 'converted' }),
+        api.getInboxItems({ status: 'snoozed' }),
         api.getInboxItems({ status: 'archived' }),
       ]);
       setItems(
         [...(Array.isArray(unprocessed) ? unprocessed : []),
           ...(Array.isArray(converted) ? converted : []),
+          ...(Array.isArray(snoozed) ? snoozed : []),
           ...(Array.isArray(archived) ? archived : [])] as InboxItem[]
       );
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Couldn\'t load Inbox.');
+      setError(err instanceof Error ? err.message : "Couldn't load Intake.");
     } finally {
       setIsLoading(false);
       setRefreshing(false);
     }
   };
-
-  useEffect(() => {
-    if (!user) return;
-    void loadInbox();
-  }, [activeWorkspaceId, user]);
 
   const loadNotificationSummary = async () => {
     if (!user) {
@@ -317,9 +620,7 @@ export default function InboxWindow() {
     }
 
     try {
-      const payload = (await api.getNotificationCenterSummary()) as {
-        counts?: { active?: number };
-      };
+      const payload = (await api.getNotificationCenterSummary()) as { counts?: { active?: number } };
       setNotificationCount(Number(payload?.counts?.active ?? 0));
     } catch {
       setNotificationCount(0);
@@ -328,7 +629,11 @@ export default function InboxWindow() {
 
   useEffect(() => {
     if (!user) return;
+    void loadInbox();
+  }, [activeWorkspaceId, user]);
 
+  useEffect(() => {
+    if (!user) return;
     let cancelled = false;
     void loadNotificationSummary();
 
@@ -341,7 +646,7 @@ export default function InboxWindow() {
       if (!cancelled) void loadNotificationSummary();
     };
 
-    const handleRefreshNotifications = () => {
+    const refreshNotifications = () => {
       if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
       if (cancelled) return;
       void loadNotificationSummary();
@@ -349,20 +654,20 @@ export default function InboxWindow() {
 
     window.addEventListener('ledger:notifications-summary', handleNotificationsSummary as EventListener);
     window.addEventListener('ledger:notifications-updated', handleNotificationsUpdated);
-    window.addEventListener('focus', handleRefreshNotifications);
-    document.addEventListener('visibilitychange', handleRefreshNotifications);
+    window.addEventListener('focus', refreshNotifications);
+    document.addEventListener('visibilitychange', refreshNotifications);
 
-    const refreshTimer = window.setInterval(() => {
+    const timer = window.setInterval(() => {
       if (!cancelled) void loadNotificationSummary();
     }, 10_000);
 
     return () => {
       cancelled = true;
-      window.clearInterval(refreshTimer);
+      window.clearInterval(timer);
       window.removeEventListener('ledger:notifications-summary', handleNotificationsSummary as EventListener);
       window.removeEventListener('ledger:notifications-updated', handleNotificationsUpdated);
-      window.removeEventListener('focus', handleRefreshNotifications);
-      document.removeEventListener('visibilitychange', handleRefreshNotifications);
+      window.removeEventListener('focus', refreshNotifications);
+      document.removeEventListener('visibilitychange', refreshNotifications);
     };
   }, [api, user]);
 
@@ -372,20 +677,51 @@ export default function InboxWindow() {
 
     const loadContext = async () => {
       try {
-        const [projectPayload, calendarPayload, notePayload] = await Promise.allSettled([
-          api.getProjects({ includeCompleted: false }),
-          api.getCalendars(),
-          api.getNotes(),
-        ]);
+        const [projectPayload, calendarPayload, notePayload, membersPayload, teamsPayload] =
+          await Promise.allSettled([
+            api.getProjects({ includeCompleted: false }),
+            api.getCalendars(),
+            api.getNotes(),
+            api.getWorkspaceMembers(activeWorkspaceId),
+            api.getTeams(),
+          ]);
+
         if (cancelled) return;
+
         setProjects(projectPayload.status === 'fulfilled' && Array.isArray(projectPayload.value) ? projectPayload.value : []);
         setCalendars(calendarPayload.status === 'fulfilled' && Array.isArray(calendarPayload.value) ? calendarPayload.value : []);
         setNotes(notePayload.status === 'fulfilled' && Array.isArray(notePayload.value) ? notePayload.value : []);
+
+        const mappedMembers =
+          membersPayload.status === 'fulfilled' && Array.isArray((membersPayload.value as { members?: Array<Record<string, unknown>> })?.members)
+            ? ((membersPayload.value as { members?: Array<Record<string, unknown>> }).members ?? []).map((member) => {
+                const name = String(member.full_name ?? '').trim() || String(member.email ?? '').split('@')[0] || 'Workspace member';
+                return {
+                  id: String(member.user_id ?? ''),
+                  name,
+                  email: member.email ? String(member.email) : null,
+                };
+              }).filter((member) => member.id)
+            : [];
+
+        const mappedTeams =
+          teamsPayload.status === 'fulfilled' && Array.isArray(teamsPayload.value)
+            ? teamsPayload.value.map((team: any) => ({
+                id: String(team.id ?? ''),
+                name: String(team.name ?? 'Team'),
+                identifier: team.identifier ? String(team.identifier) : null,
+              })).filter((team) => team.id)
+            : [];
+
+        setWorkspaceMembers(mappedMembers);
+        setWorkspaceTeams(mappedTeams);
       } catch {
         if (!cancelled) {
           setProjects([]);
           setCalendars([]);
           setNotes([]);
+          setWorkspaceMembers([]);
+          setWorkspaceTeams([]);
         }
       }
     };
@@ -394,67 +730,178 @@ export default function InboxWindow() {
     return () => {
       cancelled = true;
     };
-  }, [activeWorkspaceId, user]);
+  }, [activeWorkspaceId, api, user]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
       if (!activeWorkspaceId) return;
       void loadInbox(true);
-    }, 30000);
+    }, 30_000);
     return () => window.clearInterval(timer);
   }, [activeWorkspaceId]);
 
-  const visibleItems = useMemo(() => {
-    return items.filter((item) => {
-      if (item.status !== activeStatus) return false;
-      if (activeSource !== 'all' && item.source !== activeSource) return false;
-      return true;
-    });
-  }, [activeSource, activeStatus, items]);
+  useEffect(() => {
+    if (!contextMenu && !filterMenu && !displayMenu && !snoozeMenu) return;
+    const closeMenus = () => {
+      setContextMenu(null);
+      setFilterMenu(null);
+      setDisplayMenu(null);
+      setSnoozeMenu(null);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        if (snoozePicker) {
+          setSnoozePicker(null);
+          return;
+        }
+        closeMenus();
+      }
+    };
+    window.addEventListener('mousedown', closeMenus);
+    window.addEventListener('scroll', closeMenus, true);
+    window.addEventListener('resize', closeMenus);
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      window.removeEventListener('mousedown', closeMenus);
+      window.removeEventListener('scroll', closeMenus, true);
+      window.removeEventListener('resize', closeMenus);
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, [contextMenu, displayMenu, filterMenu, snoozeMenu, snoozePicker]);
 
-  const selectedCapture = useMemo(() => {
-    if (selectedItemId) {
-      const byId = items.find((item) => item.id === selectedItemId);
-      if (byId) return byId;
-    }
-    return visibleItems[0] ?? null;
-  }, [items, selectedItemId, visibleItems]);
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const isCmdF = (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'f';
+      if (isCmdF) {
+        event.preventDefault();
+        searchInputRef.current?.focus();
+        searchInputRef.current?.select?.();
+        return;
+      }
+
+      if (event.key === 'Escape' && searchQuery) {
+        event.preventDefault();
+        setSearchQuery('');
+      }
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [searchQuery]);
 
   const counts = useMemo(() => {
     const statusCounts = statusLabels.reduce<Record<InboxStatus, number>>((acc, status) => {
-      acc[status.value] = items.filter((item) => {
-        if (item.status !== status.value) return false;
-        if (activeSource !== 'all' && item.source !== activeSource) return false;
-        return true;
-      }).length;
+      acc[status.value] = items.filter((item) => item.status === status.value).length;
       return acc;
-    }, { unprocessed: 0, converted: 0, archived: 0 });
-    const sourceCounts = {
-      all: items.filter((item) => item.status === activeStatus).length,
-      slack: items.filter((item) => item.status === activeStatus && item.source === 'slack').length,
-      browser: items.filter((item) => item.status === activeStatus && item.source === 'browser').length,
-    };
-    return { statusCounts, sourceCounts };
-  }, [activeSource, activeStatus, items]);
+    }, { unprocessed: 0, converted: 0, snoozed: 0, archived: 0 });
+    return statusCounts;
+  }, [items]);
 
-  const headerSubtitle = useMemo(() => {
-    const count = counts.statusCounts.unprocessed;
-    return `${count} ${count === 1 ? 'capture' : 'captures'} waiting`;
-  }, [counts.statusCounts.unprocessed]);
+  const filteredItems = useMemo(() => {
+    const query = normalizeForSearch(searchQuery);
+    const currentUserId = user?.id ?? null;
 
-  const openConversion = (item: InboxItem, type: ConversionType) => {
+    const itemsForStatus = items.filter((item) => item.status === activeStatus);
+    const result = itemsForStatus.filter((item) => {
+      if (query && !getSearchCorpus(item).includes(query)) return false;
+
+      if (filters.source !== 'all' && getItemSourceBucket(item) !== filters.source) return false;
+      if (filters.type !== 'all' && getItemTypeBucket(item) !== filters.type) return false;
+
+      if (filters.project !== 'all') {
+        const project = projects.find((entry) => entry.id === filters.project);
+        const projectText = normalizeForSearch([project?.name, project?.title, project?.id].filter(Boolean).join(' '));
+        if (projectText && !getSearchCorpus(item).includes(projectText)) return false;
+      }
+
+      if (filters.assignee !== 'all') {
+        if (filters.assignee === 'me') {
+          const userMatch = workspaceMembers.find((member) => member.id === currentUserId);
+          const meText = normalizeForSearch([userMatch?.name, userMatch?.email, currentUserId].filter(Boolean).join(' '));
+          if (meText && !getSearchCorpus(item).includes(meText)) return false;
+        } else if (filters.assignee === 'unassigned') {
+          const assigneeText = [getItemAssigneeLabel(item), getItemTeamLabel(item)].filter(Boolean).join(' ');
+          if (assigneeText) return false;
+        } else if (filters.assignee.startsWith('member:')) {
+          const memberId = filters.assignee.slice('member:'.length);
+          const member = workspaceMembers.find((entry) => entry.id === memberId);
+          const memberText = normalizeForSearch([member?.name, member?.email, member?.id].filter(Boolean).join(' '));
+          if (memberText && !getSearchCorpus(item).includes(memberText)) return false;
+        } else if (filters.assignee.startsWith('team:')) {
+          const teamId = filters.assignee.slice('team:'.length);
+          const team = workspaceTeams.find((entry) => entry.id === teamId);
+          const teamText = normalizeForSearch([team?.name, team?.identifier, team?.id].filter(Boolean).join(' '));
+          if (teamText && !getSearchCorpus(item).includes(teamText)) return false;
+        }
+      }
+
+      return matchesCreatedFilter(filters.created, item.created_at);
+    });
+
+    return result.sort((a, b) => {
+      const aTime = new Date(a.created_at).getTime();
+      const bTime = new Date(b.created_at).getTime();
+      return display.order === 'newest' ? bTime - aTime : aTime - bTime;
+    });
+  }, [activeStatus, display.order, filters.assignee, filters.created, filters.project, filters.source, filters.type, items, projects, searchQuery, user?.id, workspaceMembers, workspaceTeams]);
+
+  const selectedItem = useMemo(() => {
+    if (selectedItemId) {
+      const fromAll = items.find((item) => item.id === selectedItemId);
+      if (fromAll) return fromAll;
+    }
+    return filteredItems[0] ?? null;
+  }, [filteredItems, items, selectedItemId]);
+
+  useEffect(() => {
+    if (!filteredItems.length) {
+      if (!selectedItemId) return;
+      if (!items.some((item) => item.id === selectedItemId)) {
+        setSelectedItemId(null);
+      }
+      return;
+    }
+
+    if (!selectedItemId || !items.some((item) => item.id === selectedItemId)) {
+      setSelectedItemId(filteredItems[0].id);
+    }
+  }, [filteredItems, items, selectedItemId]);
+
+  const openConversion = (item: InboxItem, type?: ConversionType) => {
+    const nextType = type ?? getDefaultConversionType(item);
+    const raw = getRawPayload(item);
     const seed = `${item.title}\n${item.body ?? ''}`;
-    setSelectedItem(item);
-    setSelectedItemId(item.id);
-    setConversionType(type);
-    setDraftTitle(getDisplayTitle(item));
-    setDraftBody(buildDefaultBody(item));
-    setSelectedProjectId('');
-    setSelectedNoteId('');
-    setSelectedCalendarId('');
-    setShowInToday(false);
+    const suggestedProject = getItemProjectLabel(item);
+    const projectMatch = projects.find((entry) => {
+      const label = normalizeForSearch([entry.name, entry.title, entry.id].filter(Boolean).join(' '));
+      return suggestedProject ? label.includes(normalizeForSearch(suggestedProject)) : false;
+    });
+    const suggestedAssignee = getItemAssigneeLabel(item) || getItemCreatedByLabel(item);
+    const suggestedMember = workspaceMembers.find((entry) => {
+      const label = normalizeForSearch([entry.name, entry.email, entry.id].filter(Boolean).join(' '));
+      return suggestedAssignee ? label.includes(normalizeForSearch(suggestedAssignee)) : false;
+    });
+    const suggestedTeam = workspaceTeams.find((entry) => {
+      const label = normalizeForSearch([entry.name, entry.identifier, entry.id].filter(Boolean).join(' '));
+      const teamLabel = getItemTeamLabel(item);
+      return teamLabel ? label.includes(normalizeForSearch(teamLabel)) : false;
+    });
     const reminderDefaults = defaultReminderAt(seed);
     const eventDefaults = defaultEventStart(seed);
+    setDraft({
+      item,
+      type: nextType,
+    });
+    setDraftTitle(getDisplayTitle(item));
+    setDraftBody(buildDefaultBody(item));
+    setSelectedProjectId(projectMatch?.id ?? '');
+    setSelectedNoteId(
+      normalizeForSearch(findDeepString(raw, ['note_id', 'linked_note_id']) ?? '') || ''
+    );
+    setSelectedCalendarId('');
+    setSelectedAssigneeId(suggestedMember?.id ?? '');
+    setSelectedTeamId(suggestedTeam?.id ?? '');
+    setShowInToday(false);
     setReminderDate(reminderDefaults.date);
     setReminderTime(reminderDefaults.time);
     setEventDate(eventDefaults.date);
@@ -463,112 +910,125 @@ export default function InboxWindow() {
   };
 
   const closeConversion = () => {
-    setSelectedItem(null);
+    setDraft(null);
   };
 
-  const archiveItem = async (itemId: string) => {
-    setActiveItemId(itemId);
+  const archiveItem = async (item: InboxItem) => {
+    setActiveActionId(item.id);
     try {
-      const updated = (await api.archiveInboxItem(itemId)) as InboxItem;
-      setItems((current) => current.map((item) => (item.id === itemId ? updated : item)));
+      const updated = (await api.archiveInboxItem(item.id)) as InboxItem;
+      setItems((current) => current.map((entry) => (entry.id === item.id ? updated : entry)));
       window.ipcRenderer?.send('inbox:items-updated');
-      toast.show('Archived capture.', { variant: 'success' });
+      toast.show('Archived intake item.', { variant: 'success' });
+      if (selectedItemId === item.id) setSelectedItemId(null);
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Could not archive inbox item.';
+      const message = err instanceof Error ? err.message : 'Could not archive intake item.';
       setError(message);
       toast.show(message, { variant: 'error' });
     } finally {
-      setActiveItemId(null);
+      setActiveActionId(null);
+    }
+  };
+
+  const snoozeItem = async (item: InboxItem, mode: 'later-today' | 'tomorrow' | 'next-week' | 'pick-date', date?: string | null) => {
+    const snoozedUntil = snoozeOffset(mode, date);
+    if (!snoozedUntil) return;
+    setActiveActionId(item.id);
+    try {
+      const updated = (await api.snoozeInboxItem(item.id, snoozedUntil)) as InboxItem;
+      setItems((current) => current.map((entry) => (entry.id === item.id ? updated : entry)));
+      setSnoozeMenu(null);
+      setSnoozePicker(null);
+      toast.show('Snoozed intake item.', { variant: 'success' });
+      window.ipcRenderer?.send('inbox:items-updated');
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Could not snooze intake item.';
+      setError(message);
+      toast.show(message, { variant: 'error' });
+    } finally {
+      setActiveActionId(null);
     }
   };
 
   const deleteItem = async (item: InboxItem) => {
-    setActiveItemId(item.id);
-    setContextMenu(null);
+    setActiveActionId(item.id);
     try {
       await api.deleteInboxItem(item.id);
       setItems((current) => current.filter((entry) => entry.id !== item.id));
-      if (selectedItemId === item.id) {
-        setSelectedItemId(null);
-        setSelectedItem(null);
-      }
-      window.ipcRenderer?.send('inbox:items-updated', {
-        delta: item.status === 'unprocessed' ? -1 : 0,
-      });
-      toast.show('Deleted capture.', { variant: 'success' });
+      if (selectedItemId === item.id) setSelectedItemId(null);
+      window.ipcRenderer?.send('inbox:items-updated', { delta: item.status === 'unprocessed' ? -1 : 0 });
+      toast.show('Deleted intake item.', { variant: 'success' });
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Could not delete inbox item.';
+      const message = err instanceof Error ? err.message : 'Could not delete intake item.';
       setError(message);
       toast.show(message, { variant: 'error' });
     } finally {
-      setActiveItemId(null);
+      setActiveActionId(null);
     }
   };
 
   const submitConversion = async () => {
-    if (!selectedItem) return;
+    if (!draft) return;
     setIsConverting(true);
     try {
       const body = draftBody.trim();
-      const title = draftTitle.trim() || getDisplayTitle(selectedItem);
+      const title = draftTitle.trim() || getDisplayTitle(draft.item);
+      const projectId = selectedProjectId || null;
+      const noteId = selectedNoteId || null;
+      const calendarId = selectedCalendarId || null;
       const basePayload = {
-        type: conversionType,
         title,
         body,
-        project_id: selectedProjectId || null,
+        project_id: projectId,
+        note_id: noteId || null,
+        calendar_id: calendarId || null,
+        assigned_to_user_id: selectedAssigneeId || null,
+        assigned_to_team_id: selectedTeamId || null,
       };
 
-      if (conversionType === 'task') {
-        await api.convertInboxItem(selectedItem.id, {
+      if (draft.type === 'task') {
+        await api.convertInboxItem(draft.item.id, {
           ...basePayload,
           type: 'task',
           notes: body,
           show_in_today: showInToday,
           task_horizon: showInToday ? 'today' : 'long_term',
         });
-      } else if (conversionType === 'note') {
-        await api.convertInboxItem(selectedItem.id, {
+      } else if (draft.type === 'note') {
+        await api.convertInboxItem(draft.item.id, {
           ...basePayload,
           type: 'note',
           body,
         });
-      } else if (conversionType === 'reminder') {
+      } else if (draft.type === 'reminder') {
         if (!reminderDate || !reminderTime) throw new Error('Choose when to be reminded.');
         const remindAt = new Date(`${reminderDate}T${reminderTime}:00`).toISOString();
-        await api.convertInboxItem(selectedItem.id, {
+        await api.convertInboxItem(draft.item.id, {
           ...basePayload,
           type: 'reminder',
           remind_at: remindAt,
-          calendar_id: selectedCalendarId || null,
-          note_id: selectedNoteId || null,
           notes: body,
         });
       } else {
         if (!eventDate || !eventTime) throw new Error('Choose when the event starts.');
         const startAt = new Date(`${eventDate}T${eventTime}:00`).toISOString();
         const durationMinutes = Math.max(15, Number(eventDuration) || 30);
-        const endAt = new Date(
-          new Date(startAt).getTime() + durationMinutes * 60 * 1000
-        ).toISOString();
-        await api.convertInboxItem(selectedItem.id, {
+        const endAt = new Date(new Date(startAt).getTime() + durationMinutes * 60 * 1000).toISOString();
+        await api.convertInboxItem(draft.item.id, {
           ...basePayload,
           type: 'event',
           start_at: startAt,
           end_at: endAt,
-          calendar_id: selectedCalendarId || null,
-          note_id: selectedNoteId || null,
           notes: body,
         });
       }
 
       await loadInbox(true);
-      setSelectedItem(null);
+      setDraft(null);
       window.ipcRenderer?.send('inbox:items-updated');
-      toast.show(`Created ${conversionType} from ${getSourceLabel(selectedItem)} capture.`, {
-        variant: 'success',
-      });
+      toast.show(`Created ${draft.type} from ${getSourceLabel(draft.item)} intake item.`, { variant: 'success' });
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Could not convert inbox item.';
+      const message = err instanceof Error ? err.message : 'Could not convert intake item.';
       setError(message);
       toast.show(message, { variant: 'error' });
     } finally {
@@ -576,131 +1036,691 @@ export default function InboxWindow() {
     }
   };
 
-  const renderCaptureRow = (item: InboxItem) => {
-    const sourceLabel = getSourceLabel(item);
-    const sourceContext = getSourceContext(item);
+  const openFilterMenu = () => {
+    const rect = filterButtonRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    setFilterMenu({ x: rect.left, y: rect.bottom + 8 });
+    setDisplayMenu(null);
+  };
+
+  const openDisplayMenu = () => {
+    const rect = displayButtonRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    setDisplayMenu({ x: rect.left, y: rect.bottom + 8 });
+    setFilterMenu(null);
+  };
+
+  const renderStatusTab = (status: InboxStatus) => (
+    <button
+      key={status}
+      type="button"
+      onClick={() => {
+        setActiveStatus(status);
+        setSelectedItemId(null);
+      }}
+      className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium transition ${
+        activeStatus === status
+          ? 'border-[color:var(--ledger-border-strong)] bg-[var(--ledger-surface-hover)] text-[var(--ledger-text-primary)]'
+          : 'border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]'
+      }`}
+    >
+      <span>{statusLabels.find((entry) => entry.value === status)?.label ?? status}</span>
+      <span className="rounded-full bg-[var(--ledger-surface)] px-1.5 py-0.5 text-[10px] text-[var(--ledger-text-muted)]">
+        {counts[status]}
+      </span>
+    </button>
+  );
+
+  const renderRow = (item: InboxItem) => {
+    const selected = item.id === selectedItem?.id;
+    const sourceLabel = getTypeDisplayLabel(item);
     const title = getDisplayTitle(item);
     const preview = getDisplayPreview(item);
+    const sourceBits = [
+      display.showSource ? getSourceLabel(item) : null,
+      display.showStatus ? getStatusLabel(item.status) : null,
+      display.showProject ? getItemProjectLabel(item) || null : null,
+      display.showAssignee ? getItemAssigneeLabel(item) || getItemTeamLabel(item) || null : null,
+      display.showCreated ? formatRelativeTime(item.created_at) : null,
+    ].filter(Boolean);
+    const RowIcon = getRowIcon(item);
 
     return (
-      <article
+      <div
         key={item.id}
         onClick={() => setSelectedItemId(item.id)}
         onContextMenu={(event) => {
           event.preventDefault();
-          event.stopPropagation();
-          setContextMenu({ x: event.clientX, y: event.clientY, item });
           setSelectedItemId(item.id);
+          setContextMenu({ x: event.clientX, y: event.clientY, item });
         }}
-        className={inboxTheme.row}
+        className={`group flex min-h-[56px] cursor-default items-stretch gap-3 border-b border-[color:var(--ledger-border-subtle)] px-4 py-3 transition ${
+          selected
+            ? 'bg-[var(--ledger-surface-selected)]'
+            : 'hover:bg-[var(--ledger-surface-hover)]'
+        }`}
       >
-        <div className="min-w-0">
-          <div className={`flex flex-wrap items-center gap-1.5 text-xs ${inboxTheme.mutedText}`}>
-            <span className="font-medium">{sourceLabel}</span>
-            {sourceContext && (
-              <>
-                <span className="text-[var(--ledger-border-subtle)]">·</span>
-                <span>{sourceContext}</span>
-              </>
-            )}
-            {item.status !== 'unprocessed' && (
-              <>
-                <span className="text-[var(--ledger-border-subtle)]">·</span>
-                <span className="text-[var(--ledger-text-muted)]">{item.status}</span>
-              </>
-            )}
-          </div>
-          <h3 className="mt-1 truncate text-sm font-semibold text-[var(--ledger-text-primary)]">{title}</h3>
-          {preview && <p className={`mt-1 line-clamp-2 text-xs leading-5 ${inboxTheme.bodyText}`}>{preview}</p>}
-          <p className={`mt-2 text-xs ${inboxTheme.mutedText}`}>
-            {item.author_name || 'Unknown sender'} · {formatDateTime(item.created_at)}
-          </p>
+        <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)]">
+          <RowIcon size={14} />
         </div>
 
-        <div className="mt-2 flex flex-wrap items-center gap-2">
-          {conversionTypes.map(({ value, label }) => (
-            <button
-              key={value}
-              type="button"
-              onClick={(event) => {
-                event.stopPropagation();
-                openConversion(item, value);
-              }}
-              disabled={item.status !== 'unprocessed'}
-              className="text-xs font-medium text-[var(--ledger-text-secondary)] transition hover:text-[var(--ledger-accent)] disabled:cursor-not-allowed disabled:text-[var(--ledger-text-muted)]"
-            >
-              {label}
-            </button>
-          ))}
-          <button
-            type="button"
-            onClick={(event) => {
-              event.stopPropagation();
-              void archiveItem(item.id);
-            }}
-            disabled={activeItemId === item.id || item.status === 'archived'}
-            className="text-xs font-medium text-[var(--ledger-text-muted)] transition hover:text-[var(--ledger-text-primary)] disabled:cursor-not-allowed disabled:text-[var(--ledger-text-muted)]"
-          >
-            {activeItemId === item.id ? <Loader2 size={12} className="animate-spin" /> : 'Archive'}
-          </button>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0">
+              <p className="truncate text-[14px] font-medium text-[var(--ledger-text-primary)]">
+                {title}
+              </p>
+              <p className="mt-0.5 truncate text-[12px] text-[var(--ledger-text-muted)]">
+                {sourceBits.join(' · ') || sourceLabel}
+              </p>
+            </div>
+            <div className="flex shrink-0 items-center gap-2">
+              <span className="text-[11px] text-[var(--ledger-text-muted)]">
+                {formatRelativeTime(item.created_at)}
+              </span>
+              <div className="flex items-center gap-1 opacity-0 transition group-hover:opacity-100">
+                {item.status === 'unprocessed' && (
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      openConversion(item, getDefaultConversionType(item));
+                    }}
+                    className="rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2 py-1 text-[11px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+                  >
+                    Accept
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setSnoozeMenu({ x: event.clientX, y: event.clientY, item });
+                  }}
+                  className="rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2 py-1 text-[11px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+                >
+                  Snooze
+                </button>
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    void archiveItem(item);
+                  }}
+                  disabled={activeActionId === item.id}
+                  className="rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2 py-1 text-[11px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] disabled:opacity-60"
+                >
+                  {activeActionId === item.id ? <Loader2 size={10} className="animate-spin" /> : 'Archive'}
+                </button>
+              </div>
+            </div>
+          </div>
+          {preview && <p className="mt-1 line-clamp-1 text-[12px] text-[var(--ledger-text-secondary)]">{preview}</p>}
         </div>
-      </article>
+      </div>
     );
   };
 
-  const contextMenuElement = contextMenu &&
+  const menuPortal = (state: MenuAnchorState | null, children: ReactNode, width = 260) =>
+    state
+      ? createPortal(
+          <div
+            className="fixed z-260"
+            style={{
+              left: Math.min(state.x, window.innerWidth - width - 12),
+              top: Math.min(state.y, window.innerHeight - 12),
+            }}
+            onMouseDown={(event) => event.stopPropagation()}
+            onContextMenu={(event) => event.preventDefault()}
+          >
+            <div className={sidebarTheme.menu} style={{ width }}>
+              {children}
+            </div>
+          </div>,
+          document.body
+        )
+      : null;
+
+  const contextMenuPortal =
+    contextMenu &&
     createPortal(
       <div
         className="fixed z-260"
-        style={{ left: Math.min(contextMenu.x, window.innerWidth - 180), top: Math.min(contextMenu.y, window.innerHeight - 80) }}
+        style={{
+          left: Math.min(contextMenu.x, window.innerWidth - 220),
+          top: Math.min(contextMenu.y, window.innerHeight - 12),
+        }}
         onMouseDown={(event) => event.stopPropagation()}
         onContextMenu={(event) => event.preventDefault()}
       >
-        <div className={sidebarTheme.menu}>
+        <div className={sidebarTheme.menu} style={{ width: 220 }}>
+          {contextMenu.item.source_url && (
+            <button
+              type="button"
+              onClick={() => window.open(contextMenu.item.source_url ?? '', '_blank', 'noopener,noreferrer')}
+              className={sidebarTheme.menuItem}
+            >
+              Open
+            </button>
+          )}
+          {contextMenu.item.status === 'unprocessed' && (
+            <button
+              type="button"
+              onClick={() => openConversion(contextMenu.item, getDefaultConversionType(contextMenu.item))}
+              className={sidebarTheme.menuItem}
+            >
+              Accept
+            </button>
+          )}
+          <button type="button" onClick={() => openConversion(contextMenu.item, 'task')} className={sidebarTheme.menuItem}>
+            Turn into task
+          </button>
+          <button type="button" onClick={() => openConversion(contextMenu.item, 'note')} className={sidebarTheme.menuItem}>
+            Turn into note
+          </button>
           <button
             type="button"
-            onClick={() => void deleteItem(contextMenu.item)}
-            className={sidebarTheme.menuItemDanger}
+            onClick={() => setSnoozeMenu({ x: contextMenu.x, y: contextMenu.y, item: contextMenu.item })}
+            className={sidebarTheme.menuItem}
           >
-            Delete capture
+            Snooze
+          </button>
+          <button type="button" onClick={() => void archiveItem(contextMenu.item)} className={sidebarTheme.menuItem}>
+            Archive
+          </button>
+          <button type="button" onClick={() => void deleteItem(contextMenu.item)} className={sidebarTheme.menuItemDanger}>
+            Delete
           </button>
         </div>
       </div>,
       document.body
     );
 
-  useEffect(() => {
-    if (!contextMenu) return;
+  const filterMenuPortal = menuPortal(
+    filterMenu,
+    <div className="py-2">
+      <MenuSectionLabel label="Source" />
+      {['all', 'quick capture', 'browser', 'meeting', 'calendar', 'manual', 'slack later', 'email later'].map((value) => (
+        <MenuOption
+          key={value}
+          label={value === 'all' ? 'All sources' : titleCase(value)}
+          active={filters.source === value}
+          onClick={() => setFilters((current) => ({ ...current, source: value }))}
+        />
+      ))}
+      <MenuDivider />
+      <MenuSectionLabel label="Type" />
+      {['all', 'task', 'note', 'event', 'reminder', 'deadline', 'milestone', 'capture'].map((value) => (
+        <MenuOption
+          key={value}
+          label={value === 'all' ? 'All types' : titleCase(value)}
+          active={filters.type === value}
+          onClick={() => setFilters((current) => ({ ...current, type: value }))}
+        />
+      ))}
+      <MenuDivider />
+      <MenuSectionLabel label="Project" />
+      <MenuOption
+        label="All projects"
+        active={filters.project === 'all'}
+        onClick={() => setFilters((current) => ({ ...current, project: 'all' }))}
+      />
+      {projects.map((project) => (
+        <MenuOption
+          key={project.id}
+          label={project.name || project.title || 'Untitled project'}
+          active={filters.project === project.id}
+          onClick={() => setFilters((current) => ({ ...current, project: project.id }))}
+        />
+      ))}
+      <MenuDivider />
+      <MenuSectionLabel label="Assignee" />
+      <MenuOption
+        label="All assignees"
+        active={filters.assignee === 'all'}
+        onClick={() => setFilters((current) => ({ ...current, assignee: 'all' }))}
+      />
+      <MenuOption
+        label="Me"
+        active={filters.assignee === 'me'}
+        onClick={() => setFilters((current) => ({ ...current, assignee: 'me' }))}
+      />
+      <MenuOption
+        label="Unassigned"
+        active={filters.assignee === 'unassigned'}
+        onClick={() => setFilters((current) => ({ ...current, assignee: 'unassigned' }))}
+      />
+      {workspaceMembers.map((member) => (
+        <MenuOption
+          key={member.id}
+          label={member.name}
+          active={filters.assignee === `member:${member.id}`}
+          onClick={() => setFilters((current) => ({ ...current, assignee: `member:${member.id}` }))}
+        />
+      ))}
+      {workspaceTeams.map((team) => (
+        <MenuOption
+          key={team.id}
+          label={team.name}
+          active={filters.assignee === `team:${team.id}`}
+          onClick={() => setFilters((current) => ({ ...current, assignee: `team:${team.id}` }))}
+        />
+      ))}
+      <MenuDivider />
+      <MenuSectionLabel label="Created" />
+      {(['all', 'today', 'week', 'older'] as const).map((value) => (
+        <MenuOption
+          key={value}
+          label={value === 'all' ? 'Any time' : titleCase(value)}
+          active={filters.created === value}
+          onClick={() => setFilters((current) => ({ ...current, created: value }))}
+        />
+      ))}
+      <div className="mt-2 border-t border-[color:var(--ledger-border-subtle)] px-3 pt-2">
+        <button
+          type="button"
+          onClick={() => setFilters(defaultFilters)}
+          className="w-full rounded-md px-2 py-1.5 text-left text-xs text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+        >
+          Clear filters
+        </button>
+      </div>
+    </div>
+  );
 
-    const closeMenu = () => setContextMenu(null);
-    const onScroll = () => setContextMenu(null);
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') closeMenu();
-    };
+  const displayMenuPortal = menuPortal(
+    displayMenu,
+    <div className="py-2">
+      <MenuSectionLabel label="Ordering" />
+      <MenuOption
+        label="Newest"
+        active={display.order === 'newest'}
+        onClick={() => setDisplay((current) => ({ ...current, order: 'newest' }))}
+      />
+      <MenuOption
+        label="Oldest"
+        active={display.order === 'oldest'}
+        onClick={() => setDisplay((current) => ({ ...current, order: 'oldest' }))}
+      />
+      <MenuDivider />
+      <MenuSectionLabel label="Show" />
+      <ToggleOption
+        label="Source"
+        checked={display.showSource}
+        onToggle={() => setDisplay((current) => ({ ...current, showSource: !current.showSource }))}
+      />
+      <ToggleOption
+        label="Status"
+        checked={display.showStatus}
+        onToggle={() => setDisplay((current) => ({ ...current, showStatus: !current.showStatus }))}
+      />
+      <ToggleOption
+        label="Project"
+        checked={display.showProject}
+        onToggle={() => setDisplay((current) => ({ ...current, showProject: !current.showProject }))}
+      />
+      <ToggleOption
+        label="Assignee"
+        checked={display.showAssignee}
+        onToggle={() => setDisplay((current) => ({ ...current, showAssignee: !current.showAssignee }))}
+      />
+      <ToggleOption
+        label="Created"
+        checked={display.showCreated}
+        onToggle={() => setDisplay((current) => ({ ...current, showCreated: !current.showCreated }))}
+      />
+      <div className="mt-2 border-t border-[color:var(--ledger-border-subtle)] px-3 pt-2">
+        <button
+          type="button"
+          onClick={() => setDisplay(defaultDisplayState)}
+          className="w-full rounded-md px-2 py-1.5 text-left text-xs text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+        >
+          Reset display
+        </button>
+      </div>
+    </div>
+  );
 
-    window.addEventListener('mousedown', closeMenu);
-    window.addEventListener('scroll', onScroll, true);
-    window.addEventListener('keydown', onKeyDown);
+  const snoozeMenuPortal =
+    snoozeMenu &&
+    createPortal(
+      <div
+        className="fixed z-260"
+        style={{
+          left: Math.min(snoozeMenu.x, window.innerWidth - 240),
+          top: Math.min(snoozeMenu.y, window.innerHeight - 12),
+        }}
+        onMouseDown={(event) => event.stopPropagation()}
+        onContextMenu={(event) => event.preventDefault()}
+      >
+        <div className={sidebarTheme.menu} style={{ width: 240 }}>
+          <button type="button" className={sidebarTheme.menuItem} onClick={() => void snoozeItem(snoozeMenu.item, 'later-today')}>
+            Later today
+          </button>
+          <button type="button" className={sidebarTheme.menuItem} onClick={() => void snoozeItem(snoozeMenu.item, 'tomorrow')}>
+            Tomorrow
+          </button>
+          <button type="button" className={sidebarTheme.menuItem} onClick={() => void snoozeItem(snoozeMenu.item, 'next-week')}>
+            Next week
+          </button>
+          <button
+            type="button"
+            className={sidebarTheme.menuItem}
+            onClick={() => setSnoozePicker(snoozePicker === snoozeMenu.item.id ? null : snoozeMenu.item.id)}
+          >
+            Pick date
+          </button>
+          {snoozePicker === snoozeMenu.item.id && (
+            <div className="border-t border-[color:var(--ledger-border-subtle)] px-3 py-3">
+              <input
+                type="date"
+                className={inboxTheme.fieldSoft}
+                onChange={(event) => void snoozeItem(snoozeMenu.item, 'pick-date', event.target.value)}
+              />
+            </div>
+          )}
+        </div>
+      </div>,
+      document.body
+    );
 
-    return () => {
-      window.removeEventListener('mousedown', closeMenu);
-      window.removeEventListener('scroll', onScroll, true);
-      window.removeEventListener('keydown', onKeyDown);
-    };
-  }, [contextMenu]);
+  const conversionModal = draft &&
+    createPortal(
+      <ModalOverlay
+        isOpen
+        onClose={closeConversion}
+        classNameContainer={`flex max-h-[88vh] w-full max-w-3xl overflow-hidden ${sidebarTheme.surface}`}
+      >
+        <div className="flex min-h-0 w-full flex-col">
+          <div className="flex items-start justify-between gap-4 border-b border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-6 py-5">
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-[var(--ledger-text-primary)]">Review item</p>
+              <h2 className="mt-2 truncate text-lg font-semibold text-[var(--ledger-text-primary)]">
+                {getDisplayTitle(draft.item)}
+              </h2>
+              <p className={`mt-1 text-sm ${inboxTheme.bodyText}`}>
+                {[getSourceLabel(draft.item), getSourceContext(draft.item), draft.item.author_name].filter(Boolean).join(' · ')}
+              </p>
+            </div>
+            <ModalCloseButton onClick={closeConversion} ariaLabel="Close convert modal" className="shrink-0" />
+          </div>
+
+          <div className="min-h-0 flex-1 overflow-y-auto p-5">
+            <div className="grid gap-4">
+              <div className="grid grid-cols-4 gap-1 rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] p-1">
+                {conversionTypes.map(({ value, label, icon: Icon }) => (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => setDraft((current) => (current ? { ...current, type: value } : current))}
+                    className={`inline-flex h-8 items-center justify-center gap-1.5 rounded-full px-2 text-xs font-semibold transition ${
+                      draft.type === value
+                        ? 'bg-[var(--ledger-accent)] text-white'
+                        : 'text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]'
+                    }`}
+                  >
+                    <Icon size={13} />
+                    {label}
+                  </button>
+                ))}
+              </div>
+
+              <label className="block space-y-1">
+                <span className={`text-xs font-medium ${inboxTheme.mutedText}`}>Title</span>
+                <input value={draftTitle} onChange={(event) => setDraftTitle(event.target.value)} className={inboxTheme.field} />
+              </label>
+
+              <label className="block space-y-1">
+                <span className={`text-xs font-medium ${inboxTheme.mutedText}`}>{draft.type === 'note' ? 'Content' : 'Notes'}</span>
+                <textarea
+                  value={draftBody}
+                  onChange={(event) => setDraftBody(event.target.value)}
+                  rows={draft.type === 'note' ? 5 : 4}
+                  className="w-full resize-y rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] px-3 py-2.5 text-sm leading-6 text-[var(--ledger-text-primary)] outline-none transition focus:border-[color:var(--ledger-border-strong)]"
+                />
+              </label>
+
+              <div className="grid grid-cols-2 gap-3">
+                <label className="block space-y-1">
+                  <span className={`text-xs font-medium ${inboxTheme.mutedText}`}>Workspace</span>
+                  <input
+                    value={activeWorkspace?.name ?? 'Current workspace'}
+                    readOnly
+                    className="h-10 w-full rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 text-sm text-[var(--ledger-text-secondary)] outline-none"
+                  />
+                </label>
+                <label className="block space-y-1">
+                  <span className={`text-xs font-medium ${inboxTheme.mutedText}`}>Project</span>
+                  <select value={selectedProjectId} onChange={(event) => setSelectedProjectId(event.target.value)} className={inboxTheme.field}>
+                    <option value="">No project</option>
+                    {projects.map((project) => (
+                      <option key={project.id} value={project.id}>
+                        {project.name || project.title || 'Untitled project'}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <label className="block space-y-1">
+                  <span className={`text-xs font-medium ${inboxTheme.mutedText}`}>Assignee</span>
+                  <select value={selectedAssigneeId} onChange={(event) => setSelectedAssigneeId(event.target.value)} className={inboxTheme.field}>
+                    <option value="">No assignee</option>
+                    {workspaceMembers.map((member) => (
+                      <option key={member.id} value={member.id}>
+                        {member.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="block space-y-1">
+                  <span className={`text-xs font-medium ${inboxTheme.mutedText}`}>Team</span>
+                  <select value={selectedTeamId} onChange={(event) => setSelectedTeamId(event.target.value)} className={inboxTheme.field}>
+                    <option value="">No team</option>
+                    {workspaceTeams.map((team) => (
+                      <option key={team.id} value={team.id}>
+                        {team.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+
+              {(draft.type === 'reminder' || draft.type === 'event') && (
+                <div className="grid grid-cols-2 gap-3">
+                  <label className="block space-y-1">
+                    <span className={`text-xs font-medium ${inboxTheme.mutedText}`}>Calendar</span>
+                    <select value={selectedCalendarId} onChange={(event) => setSelectedCalendarId(event.target.value)} className={inboxTheme.field}>
+                      <option value="">Default calendar</option>
+                      {calendars.map((calendar) => (
+                        <option key={calendar.id} value={calendar.id}>
+                          {calendar.name || 'Calendar'}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="block space-y-1">
+                    <span className={`text-xs font-medium ${inboxTheme.mutedText}`}>Linked note</span>
+                    <select value={selectedNoteId} onChange={(event) => setSelectedNoteId(event.target.value)} className={inboxTheme.field}>
+                      <option value="">No note</option>
+                      {notes.map((note) => (
+                        <option key={note.id} value={note.id}>
+                          {note.title || 'Untitled note'}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+              )}
+
+              {draft.type === 'task' && (
+                <label className="inline-flex items-center gap-2 text-sm font-medium text-[var(--ledger-text-secondary)]">
+                  <input
+                    type="checkbox"
+                    checked={showInToday}
+                    onChange={(event) => setShowInToday(event.target.checked)}
+                    className="h-4 w-4 rounded border-[color:var(--ledger-border-subtle)] text-[var(--ledger-accent)] focus:ring-[var(--ledger-accent)]"
+                  />
+                  Mark as Today
+                </label>
+              )}
+
+              {draft.type === 'reminder' && (
+                <div className="grid grid-cols-2 gap-3">
+                  <label className="block space-y-1">
+                    <span className={`text-xs font-medium ${inboxTheme.mutedText}`}>Remind on</span>
+                    <input type="date" value={reminderDate} onChange={(event) => setReminderDate(event.target.value)} className={inboxTheme.field} />
+                  </label>
+                  <label className="block space-y-1">
+                    <span className={`text-xs font-medium ${inboxTheme.mutedText}`}>Time</span>
+                    <input type="time" value={reminderTime} onChange={(event) => setReminderTime(event.target.value)} className={inboxTheme.field} />
+                  </label>
+                </div>
+              )}
+
+              {draft.type === 'event' && (
+                <div className="grid grid-cols-3 gap-3">
+                  <label className="block space-y-1">
+                    <span className={`text-xs font-medium ${inboxTheme.mutedText}`}>Date</span>
+                    <input type="date" value={eventDate} onChange={(event) => setEventDate(event.target.value)} className={inboxTheme.field} />
+                  </label>
+                  <label className="block space-y-1">
+                    <span className={`text-xs font-medium ${inboxTheme.mutedText}`}>Start</span>
+                    <input type="time" value={eventTime} onChange={(event) => setEventTime(event.target.value)} className={inboxTheme.field} />
+                  </label>
+                  <label className="block space-y-1">
+                    <span className={`text-xs font-medium ${inboxTheme.mutedText}`}>Minutes</span>
+                    <input type="number" min="15" step="15" value={eventDuration} onChange={(event) => setEventDuration(event.target.value)} className={inboxTheme.field} />
+                  </label>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className={inboxTheme.footer}>
+            <p className={`text-xs ${inboxTheme.mutedText}`}>
+              {draft.type === 'reminder'
+                ? 'Date and time are required for reminders.'
+                : draft.type === 'event'
+                  ? 'Date and start time are required for events.'
+                  : 'Source context stays attached in the notes.'}
+            </p>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={closeConversion}
+                className="rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] px-4 py-2 text-sm font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => void submitConversion()}
+                disabled={isConverting}
+                className="rounded-full bg-[var(--ledger-accent)] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[var(--ledger-accent-hover)] disabled:opacity-60"
+              >
+                {isConverting ? 'Creating...' : `Create ${draft.type}`}
+              </button>
+            </div>
+          </div>
+        </div>
+      </ModalOverlay>,
+      document.body
+    );
+
+  const inspectorActions = selectedItem
+    ? (() => {
+        const actions: Array<{
+          label: string;
+          loading?: boolean;
+          tone?: 'default' | 'danger';
+          disabled?: boolean;
+          onClick: () => void;
+        }> = [];
+
+        if (selectedItem.status === 'unprocessed') {
+          actions.push({
+            label: `Accept ${titleCase(getDefaultConversionType(selectedItem))}`,
+            onClick: () => openConversion(selectedItem, getDefaultConversionType(selectedItem)),
+          });
+        }
+
+        const typeBucket = getItemTypeBucket(selectedItem);
+        if (typeBucket === 'capture' || getItemSourceBucket(selectedItem) === 'browser') {
+          actions.push({
+            label: 'Save as note',
+            onClick: () => openConversion(selectedItem, 'note'),
+          });
+        }
+
+        if (selectedItem.status === 'unprocessed' || selectedItem.status === 'snoozed') {
+          actions.push({
+            label: 'Turn into task',
+            onClick: () => openConversion(selectedItem, 'task'),
+          });
+        }
+
+        if (selectedItem.status === 'unprocessed') {
+          actions.push({
+            label: 'Link to project',
+            onClick: () => openConversion(selectedItem, getDefaultConversionType(selectedItem)),
+          });
+          actions.push({
+            label: 'Assign',
+            onClick: () => openConversion(selectedItem, 'task'),
+          });
+          actions.push({
+            label: 'Snooze',
+            onClick: () =>
+              setSnoozeMenu({
+                x: window.innerWidth - 340,
+                y: 220,
+                item: selectedItem,
+              }),
+          });
+        }
+
+        actions.push({
+          label: 'Archive',
+          onClick: () => void archiveItem(selectedItem),
+          disabled: activeActionId === selectedItem.id,
+          loading: activeActionId === selectedItem.id,
+        });
+
+        actions.push({
+          label: 'Delete',
+          tone: 'danger',
+          onClick: () => void deleteItem(selectedItem),
+          disabled: activeActionId === selectedItem.id,
+          loading: activeActionId === selectedItem.id,
+        });
+
+        return actions;
+      })()
+    : [];
 
   return (
     <div className={inboxTheme.shell}>
       <ModuleWindowHeader
         eyebrow="Ledger"
-        title="Inbox"
-        subtitle={headerSubtitle}
-        icon={<InboxIcon size={20} className="text-[var(--ledger-accent)]" />}
+        title="Intake"
+        stripTitle="Intake"
+        icon={<Funnel size={20} className="text-[var(--ledger-accent)]" />}
         onClose={() => window.desktopWindow?.closeModule('inbox')}
         onMinimize={() => window.desktopWindow?.minimizeModule('inbox')}
         onToggleFullscreen={() => window.desktopWindow?.toggleModuleFullscreen('inbox')}
-        showWorkspaceNavigation={false}
-        stripActions={
+        compact
+        showBodyHeader={false}
+        viewControls={
+          <ModuleHeaderStripAction
+            icon={refreshing ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+            onClick={() => void loadInbox(true)}
+            title="Refresh Intake"
+            ariaLabel="Refresh Intake"
+          />
+        }
+        globalActions={
           <ModuleHeaderStripAction
             icon={<Bell size={12} />}
             count={notificationCount}
@@ -709,34 +1729,55 @@ export default function InboxWindow() {
             ariaLabel="Open notifications center"
           />
         }
-        actions={
-          <button
-            type="button"
-            onClick={() => void loadInbox(true)}
-            className={inboxTheme.headerButton}
-            title="Refresh inbox"
-            aria-label="Refresh inbox"
-          >
-            {refreshing ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
-          </button>
-        }
       />
 
-      <div className={`grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_300px] overflow-hidden ${inboxTheme.contentShell}`}>
-        <section className="min-h-0 overflow-hidden px-7 py-6">
-          <div className="border-b border-[color:var(--ledger-border-subtle)] pb-4">
-            <p className={inboxTheme.sectionHeading}>Queue</p>
-            <p className={`mt-1 text-sm ${inboxTheme.bodyText}`}>
-              Turn saved messages into tasks, notes, reminders, or events.
-            </p>
+      <div className={`min-h-0 flex-1 overflow-hidden ${inboxTheme.contentShell}`}>
+        <div className="flex h-full min-h-0 flex-col px-6 py-5">
+          <div className="flex flex-col gap-4 border-b border-[color:var(--ledger-border-subtle)] pb-4">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <Funnel size={16} className="text-[var(--ledger-accent)]" />
+                  <h1 className="text-lg font-semibold text-[var(--ledger-text-primary)]">Intake</h1>
+                </div>
+                <p className="mt-1 text-sm text-[var(--ledger-text-secondary)]">
+                  Captured and incoming work waits here until you place it.
+                </p>
+              </div>
+
+              <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
+                <label className="flex h-9 min-w-[220px] items-center gap-2 rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3">
+                  <Search size={13} className="text-[var(--ledger-text-muted)]" />
+                  <input
+                    ref={searchInputRef}
+                    value={searchQuery}
+                    onChange={(event) => setSearchQuery(event.target.value)}
+                    placeholder="Search intake..."
+                    className="min-w-0 flex-1 bg-transparent text-xs text-[var(--ledger-text-primary)] placeholder:text-[var(--ledger-text-muted)] focus:outline-none"
+                  />
+                </label>
+                <button ref={filterButtonRef} type="button" onClick={openFilterMenu} className={headerButtonClass}>
+                  <Funnel size={13} />
+                  Filter
+                </button>
+                <button ref={displayButtonRef} type="button" onClick={openDisplayMenu} className={headerButtonClass}>
+                  <PanelRight size={13} />
+                  Display
+                </button>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              {statusLabels.map((status) => renderStatusTab(status.value))}
+            </div>
           </div>
 
-          <div className="min-h-0 h-[calc(100%-65px)] overflow-y-auto">
+          <div className="min-h-0 flex-1 overflow-hidden pt-5">
             {isLoading ? (
               <div className="flex h-full items-center justify-center">
                 <div className="text-center">
                   <Loader2 size={20} className="mx-auto mb-2 animate-spin text-[var(--ledger-text-muted)]" />
-                  <p className={`text-sm ${inboxTheme.mutedText}`}>Loading captures...</p>
+                  <p className={`text-sm ${inboxTheme.mutedText}`}>Loading Intake...</p>
                 </div>
               </div>
             ) : error ? (
@@ -744,6 +1785,7 @@ export default function InboxWindow() {
                 <div className="text-center">
                   <p className={`text-sm ${inboxTheme.bodyText}`}>{error}</p>
                   <button
+                    type="button"
                     onClick={() => void loadInbox()}
                     className="mt-2 text-xs font-medium text-[var(--ledger-accent)] transition hover:text-[var(--ledger-accent-hover)]"
                   >
@@ -751,365 +1793,149 @@ export default function InboxWindow() {
                   </button>
                 </div>
               </div>
-            ) : visibleItems.length === 0 ? (
-              <div className="flex h-full items-center justify-center">
-                <div className="max-w-xs text-center">
-                  <p className="text-sm font-semibold text-[var(--ledger-text-primary)]">
-                    {activeStatus === 'unprocessed'
-                      ? activeSource === 'slack'
-                        ? 'No Slack captures waiting.'
-                        : activeSource === 'browser'
-                          ? 'No browser captures waiting.'
-                        : 'Inbox is clear.'
-                      : `No ${activeStatus} captures.`}
-                  </p>
-                  <p className={`mt-1 text-xs leading-5 ${inboxTheme.mutedText}`}>
-                    Saved messages and captures will appear here when they need review.
-                  </p>
-                </div>
-              </div>
             ) : (
-              <div>{visibleItems.map(renderCaptureRow)}</div>
+              <div className="grid h-full min-h-0 grid-cols-[minmax(0,1fr)_320px] gap-5">
+                <section className="min-h-0 overflow-hidden rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)]">
+                  <div className="flex items-center justify-between border-b border-[color:var(--ledger-border-subtle)] px-4 py-3">
+                    <div className="flex items-baseline gap-2">
+                      <span className="text-sm font-medium text-[var(--ledger-text-primary)]">Queue</span>
+                      <span className="text-sm text-[var(--ledger-text-muted)]">{filteredItems.length}</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setSearchQuery('')}
+                      className="text-xs font-medium text-[var(--ledger-text-muted)] transition hover:text-[var(--ledger-text-primary)]"
+                    >
+                      Clear search
+                    </button>
+                  </div>
+                  <div className="min-h-0 overflow-y-auto">
+                    {filteredItems.length > 0 ? (
+                      filteredItems.map(renderRow)
+                    ) : (
+                      <div className="flex min-h-[280px] items-center justify-center px-6 text-center">
+                        <div className="max-w-sm">
+                          <p className="text-sm font-medium text-[var(--ledger-text-primary)]">
+                            {activeStatus === 'unprocessed'
+                              ? 'No items need review.'
+                              : `No ${getStatusLabel(activeStatus).toLowerCase()} items.`}
+                          </p>
+                          <p className="mt-1 text-sm text-[var(--ledger-text-muted)]">
+                            Captured notes, imports, and suggested actions appear here before they enter the workspace.
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </section>
+
+                <aside className="min-h-0 overflow-hidden rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)]">
+                  <div className="flex items-center justify-between border-b border-[color:var(--ledger-border-subtle)] px-4 py-3">
+                    <span className="text-sm font-medium text-[var(--ledger-text-primary)]">Selected item</span>
+                    {selectedItem && <span className="text-xs text-[var(--ledger-text-muted)]">{getStatusLabel(selectedItem.status)}</span>}
+                  </div>
+                  <div className="min-h-0 overflow-y-auto px-4 py-4">
+                    {selectedItem ? (
+                      <div className="space-y-5">
+                        <div>
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--ledger-text-muted)]">
+                            {getTypeDisplayLabel(selectedItem)}
+                          </p>
+                          <h2 className="mt-1 text-lg font-semibold text-[var(--ledger-text-primary)]">
+                            {getDisplayTitle(selectedItem)}
+                          </h2>
+                          <p className="mt-1 text-xs text-[var(--ledger-text-muted)]">
+                            {[getSourceLabel(selectedItem), getSourceContext(selectedItem), getItemCreatedByLabel(selectedItem), formatDateTime(selectedItem.created_at)]
+                              .filter(Boolean)
+                              .join(' · ')}
+                          </p>
+                        </div>
+
+                        <section className="space-y-2">
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--ledger-text-muted)]">
+                            Preview
+                          </p>
+                          <p className="text-sm leading-6 text-[var(--ledger-text-secondary)]">
+                            {getDisplayPreview(selectedItem) || 'No preview available.'}
+                          </p>
+                        </section>
+
+                        <section className="space-y-2">
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--ledger-text-muted)]">
+                            Suggested placement
+                          </p>
+                          <div className="space-y-1 text-sm text-[var(--ledger-text-secondary)]">
+                            <InspectorRow label="Project" value={getItemProjectLabel(selectedItem) || 'Unlinked'} />
+                            <InspectorRow label="Owner" value={getItemAssigneeLabel(selectedItem) || 'Unassigned'} />
+                            <InspectorRow label="Team" value={getItemTeamLabel(selectedItem) || 'None'} />
+                          </div>
+                        </section>
+
+                        <section className="space-y-2">
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--ledger-text-muted)]">
+                            Actions
+                          </p>
+                          <div className="space-y-2">
+                            {inspectorActions.map((action) => (
+                              <button
+                                key={action.label}
+                                type="button"
+                                onClick={action.onClick}
+                                disabled={action.disabled}
+                                className={`flex w-full items-center justify-between rounded-xl border px-3 py-2 text-left text-sm transition ${
+                                  action.tone === 'danger'
+                                    ? 'border-[color:rgba(217,45,32,0.18)] bg-[color:rgba(217,45,32,0.08)] text-[var(--ledger-danger)] hover:bg-[color:rgba(217,45,32,0.12)]'
+                                    : 'border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]'
+                                } disabled:cursor-not-allowed disabled:opacity-60`}
+                              >
+                                <span>{action.label}</span>
+                                {action.loading ? <Loader2 size={12} className="animate-spin" /> : null}
+                              </button>
+                            ))}
+                          </div>
+                        </section>
+                      </div>
+                    ) : (
+                      <div className="flex h-full min-h-[240px] items-center justify-center text-center">
+                        <div className="max-w-xs">
+                          <p className="text-sm font-medium text-[var(--ledger-text-primary)]">Select an item to review.</p>
+                          <p className="mt-1 text-sm text-[var(--ledger-text-muted)]">
+                            The inspector shows the selected item, its likely placement, and the actions that fit it.
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </aside>
+              </div>
             )}
           </div>
-        </section>
-
-        <aside className="min-h-0 overflow-y-auto border-l border-[color:var(--ledger-border-subtle)] px-6 py-6">
-          <div className="space-y-7">
-            <section>
-              <p className={inboxTheme.sectionHeading}>Sources</p>
-              <div className="mt-2 space-y-1">
-                <FilterButton
-                  label="All"
-                  count={counts.sourceCounts.all}
-                  active={activeSource === 'all'}
-                  onClick={() => setActiveSource('all')}
-                />
-                <FilterButton
-                  label="Slack"
-                  count={counts.sourceCounts.slack}
-                  active={activeSource === 'slack'}
-                  onClick={() => setActiveSource('slack')}
-                />
-                <FilterButton
-                  label="Browser"
-                  count={counts.sourceCounts.browser}
-                  active={activeSource === 'browser'}
-                  onClick={() => setActiveSource('browser')}
-                />
-              </div>
-            </section>
-
-            <section>
-              <p className={inboxTheme.sectionHeading}>Status</p>
-              <div className="mt-2 space-y-1">
-                {statusLabels.map((status) => (
-                  <FilterButton
-                    key={status.value}
-                    label={status.label}
-                    count={counts.statusCounts[status.value]}
-                    active={activeStatus === status.value}
-                    onClick={() => setActiveStatus(status.value)}
-                  />
-                ))}
-              </div>
-            </section>
-
-            <section className="border-t border-[color:var(--ledger-border-subtle)] pt-5">
-              <p className={inboxTheme.sectionHeading}>Selected</p>
-              {selectedCapture ? (
-                <div className="mt-3 space-y-3">
-                  <div>
-                    <p className="line-clamp-2 text-sm font-semibold text-[var(--ledger-text-primary)]">
-                      {getDisplayTitle(selectedCapture)}
-                    </p>
-                    <p className={`mt-1 text-xs ${inboxTheme.mutedText}`}>
-                      {[getSourceLabel(selectedCapture), getSourceContext(selectedCapture), selectedCapture.author_name]
-                        .filter(Boolean)
-                        .join(' · ')}
-                    </p>
-                    <p className={`mt-1 text-xs ${inboxTheme.mutedText}`}>{formatTimeOnly(selectedCapture.created_at)}</p>
-                  </div>
-                  {selectedCapture.status === 'unprocessed' && (
-                    <div>
-                      <p className={`mb-2 text-xs font-medium ${inboxTheme.mutedText}`}>Save as</p>
-                      <div className="flex flex-wrap gap-x-2 gap-y-1">
-                        {conversionTypes.map(({ value, label }) => (
-                          <button
-                            key={value}
-                            type="button"
-                            onClick={() => openConversion(selectedCapture, value)}
-                            className="text-xs font-medium text-[var(--ledger-text-secondary)] transition hover:text-[var(--ledger-accent)]"
-                          >
-                            {label}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <p className={`mt-2 text-sm leading-5 ${inboxTheme.mutedText}`}>Select a capture to inspect it.</p>
-              )}
-            </section>
-          </div>
-        </aside>
+        </div>
       </div>
 
-      {contextMenuElement}
-
-      <ModalOverlay
-        isOpen={!!selectedItem}
-        onClose={closeConversion}
-        classNameContainer={`flex max-h-[88vh] w-full max-w-2xl overflow-hidden ${sidebarTheme.surface}`}
-      >
-        {selectedItem && (
-                <div className="flex min-h-0 w-full flex-col" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
-                  <div className="flex items-start justify-between gap-4 border-b border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-6 py-5" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
-                    <div className="min-w-0">
-                      <p className="text-sm font-semibold text-[var(--ledger-text-primary)]">Convert capture</p>
-                      <h2 className="mt-2 truncate text-lg font-semibold text-[var(--ledger-text-primary)]">
-                        {getDisplayTitle(selectedItem)}
-                      </h2>
-                      <p className={`mt-1 text-sm ${inboxTheme.bodyText}`}>
-                        {[getSourceLabel(selectedItem), getSourceContext(selectedItem), selectedItem.author_name]
-                          .filter(Boolean)
-                          .join(' · ')}
-                      </p>
-                    </div>
-                    <ModalCloseButton
-                      onClick={closeConversion}
-                      ariaLabel="Close convert modal"
-                      className="shrink-0"
-                    />
-                  </div>
-
-                  <div className="min-h-0 flex-1 overflow-y-auto p-5">
-                <div className="border-b border-[color:var(--ledger-border-subtle)] pb-4">
-                  <p className="text-sm font-medium text-[var(--ledger-text-primary)]">{getDisplayTitle(selectedItem)}</p>
-                  {getSlackLinkLabels(selectedItem.body || selectedItem.title).length > 0 && (
-                    <p className={`mt-1 text-xs ${inboxTheme.mutedText}`}>
-                      {getSlackLinkLabels(selectedItem.body || selectedItem.title).join(' · ')}
-                    </p>
-                  )}
-                </div>
-  
-                <div className="mt-5">
-                  <p className="mb-2 text-sm font-semibold text-[var(--ledger-text-primary)]">Save as</p>
-                  <div className="grid grid-cols-4 gap-1 rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] p-1">
-                    {conversionTypes.map(({ value, label, icon: Icon }) => (
-                      <button
-                        key={value}
-                        type="button"
-                        onClick={() => setConversionType(value)}
-                        className={`inline-flex h-8 items-center justify-center gap-1.5 rounded-full px-2 text-xs font-semibold transition ${
-                          conversionType === value
-                            ? 'bg-[var(--ledger-accent)] text-white'
-                            : 'text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]'
-                        }`}
-                      >
-                        <Icon size={13} />
-                        {label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-  
-                <div className="mt-5 grid gap-4">
-                  <label className="block space-y-1">
-                    <span className={`text-xs font-medium ${inboxTheme.mutedText}`}>Title</span>
-                    <input
-                      value={draftTitle}
-                      onChange={(event) => setDraftTitle(event.target.value)}
-                      className={inboxTheme.field}
-                    />
-                  </label>
-  
-                  <label className="block space-y-1">
-                    <span className={`text-xs font-medium ${inboxTheme.mutedText}`}>
-                      {conversionType === 'note' ? 'Content' : 'Notes'}
-                    </span>
-                    <textarea
-                      value={draftBody}
-                      onChange={(event) => setDraftBody(event.target.value)}
-                      rows={conversionType === 'note' ? 5 : 4}
-                      className="w-full resize-y rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] px-3 py-2.5 text-sm leading-6 text-[var(--ledger-text-primary)] outline-none transition focus:border-[color:var(--ledger-border-strong)]"
-                    />
-                  </label>
-  
-                  <div className="grid grid-cols-2 gap-3">
-                    <label className="block space-y-1">
-                      <span className={`text-xs font-medium ${inboxTheme.mutedText}`}>Workspace</span>
-                      <input
-                        value={activeWorkspace?.name ?? 'Current workspace'}
-                        readOnly
-                        className="h-10 w-full rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 text-sm text-[var(--ledger-text-secondary)] outline-none"
-                      />
-                    </label>
-                    <label className="block space-y-1">
-                      <span className={`text-xs font-medium ${inboxTheme.mutedText}`}>Project</span>
-                      <select
-                        value={selectedProjectId}
-                        onChange={(event) => setSelectedProjectId(event.target.value)}
-                        className={inboxTheme.field}
-                      >
-                        <option value="">No project</option>
-                        {projects.map((project) => (
-                          <option key={project.id} value={project.id}>
-                            {project.name || project.title || 'Untitled project'}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                  </div>
-  
-                  {conversionType === 'task' && (
-                    <label className="inline-flex items-center gap-2 text-sm font-medium text-[var(--ledger-text-secondary)]">
-                      <input
-                        type="checkbox"
-                        checked={showInToday}
-                        onChange={(event) => setShowInToday(event.target.checked)}
-                        className="h-4 w-4 rounded border-[color:var(--ledger-border-subtle)] text-[var(--ledger-accent)] focus:ring-[var(--ledger-accent)]"
-                      />
-                      Mark as Today
-                    </label>
-                  )}
-  
-                  {conversionType === 'reminder' && (
-                    <div className="grid grid-cols-2 gap-3">
-                      <label className="block space-y-1">
-                        <span className={`text-xs font-medium ${inboxTheme.mutedText}`}>Remind on</span>
-                        <input
-                          type="date"
-                          value={reminderDate}
-                          onChange={(event) => setReminderDate(event.target.value)}
-                          className={inboxTheme.field}
-                        />
-                      </label>
-                      <label className="block space-y-1">
-                        <span className={`text-xs font-medium ${inboxTheme.mutedText}`}>Time</span>
-                        <input
-                          type="time"
-                          value={reminderTime}
-                          onChange={(event) => setReminderTime(event.target.value)}
-                          className={inboxTheme.field}
-                        />
-                      </label>
-                    </div>
-                  )}
-  
-                  {(conversionType === 'reminder' || conversionType === 'event') && (
-                    <div className="grid grid-cols-2 gap-3">
-                      <label className="block space-y-1">
-                        <span className={`text-xs font-medium ${inboxTheme.mutedText}`}>Calendar</span>
-                        <select
-                          value={selectedCalendarId}
-                          onChange={(event) => setSelectedCalendarId(event.target.value)}
-                          className={inboxTheme.field}
-                        >
-                          <option value="">Default calendar</option>
-                          {calendars.map((calendar) => (
-                            <option key={calendar.id} value={calendar.id}>
-                              {calendar.name || 'Calendar'}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                      <label className="block space-y-1">
-                        <span className={`text-xs font-medium ${inboxTheme.mutedText}`}>Linked note</span>
-                        <select
-                          value={selectedNoteId}
-                          onChange={(event) => setSelectedNoteId(event.target.value)}
-                          className={inboxTheme.field}
-                        >
-                          <option value="">No note</option>
-                          {notes.map((note) => (
-                            <option key={note.id} value={note.id}>
-                              {note.title || 'Untitled note'}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                    </div>
-                  )}
-  
-                  {conversionType === 'event' && (
-                    <div className="grid grid-cols-3 gap-3">
-                      <label className="block space-y-1">
-                        <span className={`text-xs font-medium ${inboxTheme.mutedText}`}>Date</span>
-                        <input
-                          type="date"
-                          value={eventDate}
-                          onChange={(event) => setEventDate(event.target.value)}
-                          className={inboxTheme.field}
-                        />
-                      </label>
-                      <label className="block space-y-1">
-                        <span className={`text-xs font-medium ${inboxTheme.mutedText}`}>Start</span>
-                        <input
-                          type="time"
-                          value={eventTime}
-                          onChange={(event) => setEventTime(event.target.value)}
-                          className={inboxTheme.field}
-                        />
-                      </label>
-                      <label className="block space-y-1">
-                        <span className={`text-xs font-medium ${inboxTheme.mutedText}`}>Minutes</span>
-                        <input
-                          type="number"
-                          min="15"
-                          step="15"
-                          value={eventDuration}
-                          onChange={(event) => setEventDuration(event.target.value)}
-                          className={inboxTheme.field}
-                        />
-                      </label>
-                    </div>
-                  )}
-                </div>
-                  </div>
-
-                  <div className={inboxTheme.footer}>
-                    <p className={`text-xs ${inboxTheme.mutedText}`}>
-                      {conversionType === 'reminder'
-                        ? 'Date and time are required for reminders.'
-                        : conversionType === 'event'
-                          ? 'Date and start time are required for events.'
-                          : 'Source context stays attached in the notes.'}
-                    </p>
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={closeConversion}
-                        className="rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] px-4 py-2 text-sm font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => void submitConversion()}
-                        disabled={isConverting}
-                        className="rounded-full bg-[var(--ledger-accent)] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[var(--ledger-accent-hover)] disabled:opacity-60"
-                      >
-                        {isConverting ? 'Creating...' : `Create ${conversionType}`}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-        )}
-      </ModalOverlay>
+      {filterMenuPortal}
+      {displayMenuPortal}
+      {snoozeMenuPortal}
+      {contextMenuPortal}
+      {conversionModal}
     </div>
   );
 }
 
-function FilterButton({
+function MenuSectionLabel({ label }: { label: string }) {
+  return <div className="px-3 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--ledger-text-muted)]">{label}</div>;
+}
+
+function MenuDivider() {
+  return <div className="my-2 border-t border-[color:var(--ledger-border-subtle)]" />;
+}
+
+function MenuOption({
   label,
-  count,
   active,
   onClick,
 }: {
   label: string;
-  count: number;
   active: boolean;
   onClick: () => void;
 }) {
@@ -1117,22 +1943,67 @@ function FilterButton({
     <button
       type="button"
       onClick={onClick}
-      className={`flex w-full items-center justify-between rounded-2xl border px-2.5 py-2 text-sm transition ${
+      className={`flex w-full items-center justify-between px-3 py-2 text-left text-sm transition ${
         active
-          ? 'border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-hover)] text-[var(--ledger-text-primary)]'
-          : 'border-transparent text-[var(--ledger-text-secondary)] hover:border-[color:var(--ledger-border-subtle)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]'
+          ? 'bg-[var(--ledger-surface-hover)] text-[var(--ledger-text-primary)]'
+          : 'text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]'
       }`}
     >
-      <span className="font-medium">{label}</span>
+      <span>{label}</span>
+      {active ? <span className="h-1.5 w-1.5 rounded-full bg-[var(--ledger-accent)]" /> : null}
+    </button>
+  );
+}
+
+function ToggleOption({
+  label,
+  checked,
+  onToggle,
+}: {
+  label: string;
+  checked: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      className="flex w-full items-center justify-between px-3 py-2 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+    >
+      <span>{label}</span>
       <span
-        className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
-          active
-            ? 'bg-[var(--ledger-surface)] text-[var(--ledger-text-secondary)]'
-            : 'bg-[var(--ledger-surface-hover)] text-[var(--ledger-text-muted)]'
+        className={`inline-flex h-4 w-7 items-center rounded-full border px-0.5 transition ${
+          checked
+            ? 'border-[color:var(--ledger-accent)] bg-[var(--ledger-accent)]'
+            : 'border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)]'
         }`}
       >
-        {count}
+        <span
+          className={`h-2.5 w-2.5 rounded-full bg-white transition ${
+            checked ? 'translate-x-2.5' : 'translate-x-0'
+          }`}
+        />
       </span>
     </button>
   );
 }
+
+function InspectorRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-center justify-between gap-4 border-b border-[color:var(--ledger-border-subtle)] py-1.5 last:border-b-0">
+      <span className="text-[12px] text-[var(--ledger-text-muted)]">{label}</span>
+      <span className="min-w-0 truncate text-[12px] text-[var(--ledger-text-secondary)]">{value}</span>
+    </div>
+  );
+}
+
+function titleCase(value: string) {
+  return value
+    .split(/[\s_-]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
+}
+
+const headerButtonClass =
+  'inline-flex h-9 items-center gap-1.5 rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 text-xs font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]';

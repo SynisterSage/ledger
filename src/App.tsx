@@ -14,12 +14,12 @@ import {
   Folder,
   FolderKanban,
   Link2,
-  Inbox,
   LayoutList,
   Loader2,
   MoreHorizontal,
   Plus,
   Palette,
+  Funnel,
   SlidersHorizontal,
   StickyNote,
   Trash2,
@@ -66,7 +66,7 @@ import NotesWindow from './components/Notes/NotesWindow';
 import ProjectsWindow from './components/Projects/ProjectsWindow';
 import TeamsWindow from './components/Teams/TeamsWindow';
 import TeamSettingsWindow from './components/Teams/TeamSettingsWindow';
-import InboxWindow from './components/Inbox/InboxWindow';
+import IntakeWindow from './components/Inbox/InboxWindow';
 import { NotificationCenterWindow } from './components/Notifications/NotificationCenterWindow';
 import SettingsWindow from './components/Settings/SettingsWindow';
 import { SearchModal } from './components/Search/SearchModal';
@@ -98,8 +98,12 @@ type ModuleKind =
   | null;
 
 const windowParams = new URLSearchParams(window.location.search);
-const isModuleWindow = windowParams.get('window') === 'module';
-const moduleKind = (windowParams.get('module') as ModuleKind) ?? null;
+const pathnameModuleKind =
+  window.location.pathname === '/intake' || window.location.pathname === '/inbox'
+    ? ('inbox' as const)
+    : null;
+const isModuleWindow = windowParams.get('window') === 'module' || pathnameModuleKind !== null;
+const moduleKind = (windowParams.get('module') as ModuleKind) ?? pathnameModuleKind ?? null;
 const moduleFocusContext = windowParams.get('focusContext')?.trim() ?? '';
 const moduleSection = windowParams.get('section')?.trim() ?? '';
 type WorkspaceShellRoute = Omit<ModuleFocusPayload, 'kind'> & { kind: ModuleKind | null };
@@ -5027,11 +5031,11 @@ function DashboardContent() {
         globalActions={
           <>
             <ModuleHeaderStripAction
-              icon={<Inbox size={12} />}
+              icon={<Funnel size={12} />}
               count={inboxCount}
               onClick={() => window.desktopWindow?.openModule('inbox')}
-              title="Open inbox"
-              ariaLabel="Open inbox"
+              title="Open Intake"
+              ariaLabel="Open Intake"
             />
             <ModuleHeaderStripAction
               icon={<Bell size={12} />}
@@ -6747,6 +6751,11 @@ function AppShell() {
     ? workspaceShellRoute.focusContext?.trim() ?? ''
     : moduleFocusContext;
 
+  useEffect(() => {
+    if (window.location.pathname !== '/inbox') return;
+    window.history.replaceState({}, '', `/intake${window.location.search}${window.location.hash}`);
+  }, []);
+
   // Initialize workspace for authenticated users
   useWorkspaceInit();
   const effectiveUiMode: 'auth' | 'app' = user ? 'app' : uiMode;
@@ -7113,7 +7122,7 @@ function AppShell() {
     }
 
     if (activeModuleKind === 'inbox') {
-      return <InboxWindow />;
+      return <IntakeWindow />;
     }
 
     if (activeModuleKind === 'settings') {

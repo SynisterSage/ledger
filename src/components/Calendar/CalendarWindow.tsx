@@ -3360,8 +3360,8 @@ export const CalendarWindow = () => {
               icon={<Inbox size={12} />}
               count={inboxCount}
               onClick={() => window.desktopWindow?.toggleModule('inbox')}
-              title="Open inbox"
-              ariaLabel="Open inbox"
+              title="Open Intake"
+              ariaLabel="Open Intake"
             />
             <ModuleHeaderStripAction
               icon={<BellRing size={12} />}

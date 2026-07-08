@@ -52,7 +52,7 @@ const getToastFallbackTitle = (item: NotificationItem) => {
     case 'project':
       return workspacePart ? `Project deadline - ${workspacePart}` : 'Project deadline';
     case 'inbox':
-      return workspacePart ? `Inbox capture - ${workspacePart}` : 'Inbox capture';
+      return workspacePart ? `Intake item - ${workspacePart}` : 'Intake item';
     default:
       return 'Ledger notification';
   }

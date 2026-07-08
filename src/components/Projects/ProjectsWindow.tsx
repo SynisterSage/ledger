@@ -578,6 +578,7 @@ export const ProjectsWindow = () => {
   const milestoneDetailRef = useRef<HTMLDivElement | null>(null);
   const milestoneNameInputRef = useRef<HTMLInputElement | null>(null);
   const createProjectInputRef = useRef<HTMLInputElement | null>(null);
+  const briefTextareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   const [projects, setProjects] = useState<ProjectRow[]>([]);
   const [tasks, setTasks] = useState<TaskRow[]>([]);
@@ -910,7 +911,7 @@ export const ProjectsWindow = () => {
     [selectedProjectTasks]
   );
 
-  const recentProjectActivity = useMemo(() => {
+  const fullProjectActivity = useMemo(() => {
     const events: Array<{ id: string; label: string; at: string | null }> = [];
     if (selectedProject?.updated_at) {
       events.push({
@@ -943,8 +944,10 @@ export const ProjectsWindow = () => {
     return events
       .filter((event) => event.at)
       .sort((a, b) => String(b.at).localeCompare(String(a.at)))
-      .slice(0, 5);
+      ;
   }, [completedProjectTasks, projectEvents, projectReminders, selectedProject?.updated_at]);
+
+  const recentProjectActivity = useMemo(() => fullProjectActivity.slice(0, 5), [fullProjectActivity]);
 
   const groupedProjectActivity = useMemo(() => {
     const now = Date.now();
@@ -957,7 +960,7 @@ export const ProjectsWindow = () => {
     };
 
     const groups = new Map<string, Array<{ id: string; label: string; at: string | null }>>();
-    for (const item of recentProjectActivity) {
+    for (const item of fullProjectActivity) {
       const bucket = toBucket(item.at);
       const current = groups.get(bucket) ?? [];
       current.push(item);
@@ -969,7 +972,7 @@ export const ProjectsWindow = () => {
       ['This week', groups.get('This week') ?? []],
       ['Earlier', groups.get('Earlier') ?? []],
     ] as const;
-  }, [recentProjectActivity]);
+  }, [fullProjectActivity]);
 
   const workspaceMemberById = useMemo(() => {
     return new Map(workspaceMembers.map((member) => [member.user_id, member]));
@@ -2575,6 +2578,30 @@ export const ProjectsWindow = () => {
     [getProjectById, openMilestoneEditor]
   );
 
+  const startMilestonePlacement = useCallback(() => {
+    if (isMilestonePlacementActive || pendingMilestone) {
+      cancelMilestonePlacement();
+      return;
+    }
+    if (selectedProjectId) {
+      pendingMilestonePlacementRef.current = true;
+      void selectProjectsTimeline();
+      return;
+    }
+    if (projectsOverviewView !== 'timeline') {
+      setProjectsOverviewView('timeline');
+    }
+    enterMilestonePlacementMode();
+  }, [
+    cancelMilestonePlacement,
+    enterMilestonePlacementMode,
+    isMilestonePlacementActive,
+    pendingMilestone,
+    projectsOverviewView,
+    selectProjectsTimeline,
+    selectedProjectId,
+  ]);
+
   const handleAddMilestoneAtDate = useCallback(
     (date: string | null, position?: { x: number; y: number }) => {
       const nextDate = date || todayKey();
@@ -3364,6 +3391,17 @@ export const ProjectsWindow = () => {
   }, [taskNotesTask]);
 
   useEffect(() => {
+    if (!isEditingBrief || briefEditorPlacement !== 'header') return;
+    const textarea = briefTextareaRef.current;
+    if (!textarea) return;
+    window.requestAnimationFrame(() => {
+      textarea.focus();
+      const end = textarea.value.length;
+      textarea.setSelectionRange(end, end);
+    });
+  }, [briefEditorPlacement, isEditingBrief]);
+
+  useEffect(() => {
     if (!isTaskComposerOpen) return;
 
     window.setTimeout(() => {
@@ -4107,7 +4145,7 @@ export const ProjectsWindow = () => {
     const visibleDoneTasks = interactive ? completedProjectTasks : completedProjectTasks.slice(0, 4);
 
     return (
-      <div className="mt-2 space-y-2">
+      <div className="space-y-2">
         {renderGroupShell(
           'actions',
           'Actions',
@@ -4146,7 +4184,7 @@ export const ProjectsWindow = () => {
           visibleActiveMilestones.length,
           <button
             type="button"
-            onClick={() => selectedProject && void handleAddMilestone(selectedProject.id)}
+            onClick={startMilestonePlacement}
             className="text-xs font-medium text-[var(--ledger-text-muted)] transition hover:text-[var(--ledger-text-primary)]"
           >
             +
@@ -4243,22 +4281,6 @@ export const ProjectsWindow = () => {
 
   const renderCalendarSection = () =>
     <div className="space-y-2">
-      <div className="flex items-center justify-end gap-2">
-        <button
-          type="button"
-          onClick={() => void openLinkCalendarModal('event')}
-          className="text-xs font-medium text-[var(--ledger-text-muted)] transition hover:text-[var(--ledger-text-primary)]"
-        >
-          + Event
-        </button>
-        <button
-          type="button"
-          onClick={() => void openLinkCalendarModal('reminder')}
-          className="text-xs font-medium text-[var(--ledger-text-muted)] transition hover:text-[var(--ledger-text-primary)]"
-        >
-          + Deadline
-        </button>
-      </div>
       {isLoadingProjectCalendarItems ? (
         <div className="space-y-2">
           {renderCompactRowSkeletons(3)}
@@ -4289,7 +4311,23 @@ export const ProjectsWindow = () => {
                 ))}
               </div>
             ),
-            projectCalendarAgenda.upcoming.length
+            projectCalendarAgenda.upcoming.length,
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => void openLinkCalendarModal('event')}
+                className={sectionHeaderPlusButtonClass}
+              >
+                + Event
+              </button>
+              <button
+                type="button"
+                onClick={() => void openLinkCalendarModal('reminder')}
+                className={sectionHeaderPlusButtonClass}
+              >
+                + Deadline
+              </button>
+            </div>
           )}
           {renderGroupShell(
             'calendarPast',
@@ -4321,17 +4359,9 @@ export const ProjectsWindow = () => {
 
   const renderRecentActivitySection = () =>
     <div className="space-y-2">
-      <div className="flex items-center justify-end">
-        <button
-          type="button"
-          onClick={() => setActiveTab('activity')}
-          className="text-xs font-medium text-[var(--ledger-text-muted)] transition hover:text-[var(--ledger-text-primary)]"
-        >
-        </button>
-      </div>
       {isLoadingProjectActivity ? (
         <div className="space-y-1">{renderCompactRowSkeletons(3)}</div>
-      ) : recentProjectActivity.length === 0 ? (
+      ) : fullProjectActivity.length === 0 ? (
         <p className="py-2 text-sm text-[var(--ledger-text-muted)]">No recent activity.</p>
       ) : (
         <div className="space-y-2">
@@ -4458,6 +4488,8 @@ export const ProjectsWindow = () => {
     'relative flex h-6 w-6 shrink-0 items-center justify-center overflow-visible rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] text-[13px] text-[var(--ledger-text-secondary)]';
   const compactGhostTitleClass =
     'min-w-0 truncate text-[13px] font-medium leading-5 text-[var(--ledger-text-secondary)] opacity-80';
+  const sectionHeaderPlusButtonClass =
+    'text-xs font-medium text-[var(--ledger-text-muted)] transition hover:text-[var(--ledger-text-primary)]';
   const renderCompactRowSkeletons = (count = 3) => (
     <div className="space-y-1">
       {Array.from({ length: count }).map((_, index) => (
@@ -4714,8 +4746,8 @@ export const ProjectsWindow = () => {
       'Milestones',
       <button
         type="button"
-        onClick={() => selectedProject && void handleAddMilestone(selectedProject.id)}
-        className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+        onClick={startMilestonePlacement}
+        className={sectionHeaderPlusButtonClass}
       >
         +
       </button>,
@@ -4724,7 +4756,7 @@ export const ProjectsWindow = () => {
           <span>No milestones yet.</span>
           <button
             type="button"
-            onClick={() => selectedProject && void handleAddMilestone(selectedProject.id)}
+            onClick={startMilestonePlacement}
             className="font-medium text-[var(--ledger-text-secondary)] transition hover:text-[var(--ledger-text-primary)]"
           >
             Add milestone
@@ -4732,7 +4764,9 @@ export const ProjectsWindow = () => {
         </div>
       ) : (
         <div className="space-y-1">
-          {selectedProjectMilestones.slice(0, 6).map((milestone) => renderMilestoneRow(milestone))}
+          {selectedProjectMilestones
+            .slice(0, 6)
+            .map((milestone) => renderMilestoneRow(milestone, true))}
         </div>
       ),
       selectedProjectMilestones.length
@@ -4747,7 +4781,7 @@ export const ProjectsWindow = () => {
           <button
             type="button"
             onClick={() => setActiveTab('actions')}
-            className="text-xs font-medium text-[var(--ledger-text-muted)] transition hover:text-[var(--ledger-text-primary)]"
+            className={sectionHeaderPlusButtonClass}
           >
             View all
           </button>
@@ -4755,7 +4789,7 @@ export const ProjectsWindow = () => {
         <button
           type="button"
           onClick={() => openTaskComposer()}
-          className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+          className={sectionHeaderPlusButtonClass}
         >
           +
         </button>
@@ -4781,7 +4815,7 @@ export const ProjectsWindow = () => {
           </div>
         ) : (
           <div className="space-y-1">
-            {activeProjectTasks.slice(0, 5).map((task) => renderTaskRow(task, false, false))}
+            {activeProjectTasks.slice(0, 5).map((task) => renderTaskRow(task, false, true))}
           </div>
         )}
       </>,
@@ -4795,7 +4829,7 @@ export const ProjectsWindow = () => {
       <button
         type="button"
         onClick={() => void openLinkNoteModal()}
-        className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+        className={sectionHeaderPlusButtonClass}
       >
         +
       </button>,
@@ -4853,7 +4887,7 @@ export const ProjectsWindow = () => {
       <button
         type="button"
         onClick={() => setActiveTab('activity')}
-        className="text-xs font-medium text-[var(--ledger-text-muted)] transition hover:text-[var(--ledger-text-primary)]"
+        className={sectionHeaderPlusButtonClass}
       >
         View activity
       </button>,
@@ -5722,8 +5756,8 @@ export const ProjectsWindow = () => {
               icon={<Inbox size={12} />}
               count={inboxCount}
               onClick={() => window.desktopWindow?.toggleModule('inbox')}
-              title="Open inbox"
-              ariaLabel="Open inbox"
+              title="Open Intake"
+              ariaLabel="Open Intake"
             />
             <ModuleHeaderStripAction
               icon={<Bell size={12} />}
@@ -5736,7 +5770,8 @@ export const ProjectsWindow = () => {
         }
         primaryActions={
           <div className="flex items-center gap-2">
-            <ModuleHeaderActionButton
+            <button
+              type="button"
               onClick={() => {
                 if (isCreatingProject) {
                   closeCreateProjectComposer();
@@ -5745,26 +5780,14 @@ export const ProjectsWindow = () => {
                 openCreateProjectComposer();
               }}
               title={isCreatingProject ? 'Cancel new project' : 'Create a new project'}
-              variant="strip"
+              aria-label={isCreatingProject ? 'Cancel new project' : 'Create a new project'}
+              className="inline-flex h-8 items-center gap-1.5 rounded-full bg-[var(--ledger-accent)] px-3 text-xs font-medium text-white transition hover:bg-[var(--ledger-accent-hover)]"
             >
-              {isCreatingProject ? 'New project' : 'New project'}
-            </ModuleHeaderActionButton>
+              {isCreatingProject ? <X size={12} /> : <Plus size={12} />}
+              <span>{isCreatingProject ? 'Cancel' : 'New'}</span>
+            </button>
             <ModuleHeaderActionButton
-              onClick={() => {
-                if (isMilestonePlacementActive || pendingMilestone) {
-                  cancelMilestonePlacement();
-                  return;
-                }
-                if (selectedProjectId) {
-                  pendingMilestonePlacementRef.current = true;
-                  void selectProjectsTimeline();
-                  return;
-                }
-                if (projectsOverviewView !== 'timeline') {
-                  setProjectsOverviewView('timeline');
-                }
-                enterMilestonePlacementMode();
-              }}
+              onClick={startMilestonePlacement}
               title={
                 isMilestonePlacementActive ? 'Cancel milestone placement' : 'Place a milestone'
               }
@@ -6331,6 +6354,7 @@ export const ProjectsWindow = () => {
 
                       {isEditingBrief && briefEditorPlacement === 'header' ? (
                         <textarea
+                          ref={briefTextareaRef}
                           autoFocus
                           value={projectDraft.description}
                           onChange={(e) => updateProjectDraft({ description: e.target.value })}
@@ -7572,19 +7596,6 @@ export const ProjectsWindow = () => {
           style={{ left: `${projectMenuPosition.x}px`, top: `${projectMenuPosition.y}px` }}
           onClick={(e) => e.stopPropagation()}
         >
-          <button
-            onClick={async () => {
-              const project = projects.find((item) => item.id === projectContextMenu.projectId);
-              if (project) {
-                await selectProject(project);
-              }
-              setProjectContextMenu(null);
-            }}
-            className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
-          >
-            <Folder size={14} />
-            Open
-          </button>
           <button
             onClick={() => {
               void updateProjectStatus(projectContextMenu.projectId, 'in_progress');

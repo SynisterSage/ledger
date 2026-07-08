@@ -3872,7 +3872,7 @@ export const SettingsWindow = () => {
                           />
                         </PreferenceRow>
                         <PreferenceRow
-                          label="Inbox captures"
+                          label="Intake captures"
                           help="New captures from Slack, browser, or other integrations."
                         >
                           <InlineSwitch
@@ -3883,7 +3883,7 @@ export const SettingsWindow = () => {
                                 inboxCapturesEnabled: !prev.inboxCapturesEnabled,
                               }))
                             }
-                            label="Inbox captures"
+                            label="Intake captures"
                           />
                         </PreferenceRow>
                         <PreferenceRow
@@ -4075,7 +4075,7 @@ export const SettingsWindow = () => {
                           <div className="min-w-0">
                             <h3 className={settingsTheme.sectionTitle}>Slack</h3>
                             <p className={settingsTheme.sectionSubtitle + ' mt-1'}>
-                              Save Slack messages to Inbox.
+                              Save Slack messages to Intake.
                             </p>
                             <p className={settingsTheme.sectionStatus + ' mt-1'}>
                               {isLoadingSlackStatus
@@ -4246,7 +4246,7 @@ export const SettingsWindow = () => {
                         ' pt-4 text-xs leading-5 text-[var(--ledger-text-muted)]'
                       }
                     >
-                      Connected tools send captures to Inbox. You decide later whether they become
+                      Connected tools send captures to Intake. You decide later whether they become
                       tasks, notes, reminders, or events.
                     </p>
                   </div>

@@ -1089,8 +1089,8 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
               type="button"
               onClick={() => window.desktopWindow?.toggleModule('inbox')}
               className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]"
-              title="Inbox"
-              aria-label="Open inbox"
+              title="Intake"
+              aria-label="Open Intake"
             >
               <Inbox size={14} />
             </button>

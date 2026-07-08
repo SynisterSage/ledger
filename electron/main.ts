@@ -903,10 +903,6 @@ const MODULE_DEFAULT_WIDTH = 1440;
 const MODULE_DEFAULT_HEIGHT = 860;
 const MODULE_MIN_WIDTH = 1100;
 const MODULE_MIN_HEIGHT = 720;
-const INBOX_DEFAULT_WIDTH = 960;
-const INBOX_DEFAULT_HEIGHT = 720;
-const INBOX_MIN_WIDTH = 860;
-const INBOX_MIN_HEIGHT = 620;
 const NOTIFICATION_CENTER_WIDTH = 480;
 const NOTIFICATION_CENTER_HEIGHT = 680;
 const NOTIFICATION_CENTER_MIN_WIDTH = 420;
@@ -1101,7 +1097,7 @@ const getTrayNotificationLabel = () =>
     : 'Open Notifications';
 
 const getTrayInboxLabel = () =>
-  trayState.inboxCount > 0 ? `Open Inbox (${trayState.inboxCount})` : 'Open Inbox';
+  trayState.inboxCount > 0 ? `Open Intake (${trayState.inboxCount})` : 'Open Intake';
 
 const syncTray = () => {
   if (!trayState.showTrayIcon) {
@@ -1238,7 +1234,7 @@ const getNotificationFallbackTitle = (item: NotificationSchedulerItem) => {
     case 'project':
       return 'Project deadline';
     case 'inbox':
-      return 'Inbox capture';
+      return 'Intake item';
     default:
       return 'Ledger notification';
   }
@@ -4608,10 +4604,10 @@ function isRectInsideWorkArea(rect: Electron.Rectangle, workArea: Electron.Recta
 }
 
 function resolveModuleBounds(kind: ModuleWindowKind): Electron.Rectangle {
-  const defaultWidth = kind === 'inbox' ? INBOX_DEFAULT_WIDTH : MODULE_DEFAULT_WIDTH;
-  const defaultHeight = kind === 'inbox' ? INBOX_DEFAULT_HEIGHT : MODULE_DEFAULT_HEIGHT;
-  const minWidth = kind === 'inbox' ? INBOX_MIN_WIDTH : MODULE_MIN_WIDTH;
-  const minHeight = kind === 'inbox' ? INBOX_MIN_HEIGHT : MODULE_MIN_HEIGHT;
+  const defaultWidth = MODULE_DEFAULT_WIDTH;
+  const defaultHeight = MODULE_DEFAULT_HEIGHT;
+  const minWidth = MODULE_MIN_WIDTH;
+  const minHeight = MODULE_MIN_HEIGHT;
 
   if (kind === 'notifications') {
     const sidebarBounds = sidebarWin?.getBounds() ?? getDockedBounds(RAIL_SIZE);
@@ -5228,7 +5224,8 @@ function isWorkspaceModuleKind(kind: ModuleWindowKind) {
     kind === 'notes' ||
     kind === 'projects' ||
     kind === 'teams' ||
-    kind === 'settings'
+    kind === 'settings' ||
+    kind === 'inbox'
   );
 }
 
@@ -5536,7 +5533,6 @@ function openModuleWindow(
   // Quick capture modules use smaller dimensions
   const isQuickCapture = kind === 'quick-task' || kind === 'quick-note' || kind === 'quick-event';
   const isNotificationCenter = kind === 'notifications';
-  const isInbox = kind === 'inbox';
   holdCurrentFloatingDockTarget();
   let initialBounds =
     isWorkspaceModuleKind(kind) && shouldAttachWorkspaceWindowToSidebar()
@@ -5557,15 +5553,11 @@ function openModuleWindow(
     ? QUICK_CAPTURE_WIDTH
     : isNotificationCenter
     ? NOTIFICATION_CENTER_MIN_WIDTH
-    : isInbox
-    ? INBOX_MIN_WIDTH
     : MODULE_MIN_WIDTH;
   const minHeight = isQuickCapture
     ? QUICK_CAPTURE_HEIGHT
     : isNotificationCenter
     ? NOTIFICATION_CENTER_MIN_HEIGHT
-    : isInbox
-    ? INBOX_MIN_HEIGHT
     : MODULE_MIN_HEIGHT;
 
   const moduleWin = new BrowserWindow({

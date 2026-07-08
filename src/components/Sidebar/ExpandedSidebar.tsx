@@ -10,11 +10,11 @@ import {
   Folder,
   LogOut,
   Plus,
+  Funnel,
   RotateCcw,
   StickyNote,
   Trash2,
   Search,
-  Inbox,
   CheckSquare2,
   FileText,
   FolderKanban,
@@ -1883,7 +1883,6 @@ export const ExpandedSidebar = ({
 
           <div className="flex items-center gap-1 shrink-0">
             {[
-              { label: 'Inbox', icon: Inbox, action: () => window.desktopWindow?.toggleModule('inbox') },
               { label: 'Notifications', icon: Bell, action: () => window.desktopWindow?.openModule('notifications') },
               { label: 'Overview', icon: BarChart3, action: () => window.desktopWindow?.toggleModule('dashboard') },
               { label: 'Projects', icon: Folder, action: () => window.desktopWindow?.toggleModule('projects') },
@@ -1899,11 +1898,6 @@ export const ExpandedSidebar = ({
                 aria-label={item.label}
               >
                 <item.icon size={14} />
-                {item.label === 'Inbox' && inboxCount > 0 && (
-                  <span className="absolute -right-1 -top-1 inline-flex min-w-4 items-center justify-center rounded-full bg-[var(--ledger-accent)] px-1 py-0.5 text-[9px] font-semibold leading-none text-white">
-                    {inboxCount > 9 ? '9+' : inboxCount}
-                  </span>
-                )}
                 {item.label === 'Notifications' && notificationCount > 0 && (
                   <span className="absolute -right-1 -top-1 inline-flex min-w-4 items-center justify-center rounded-full bg-[var(--ledger-accent)] px-1 py-0.5 text-[9px] font-semibold leading-none text-white">
                     {notificationCount > 9 ? '9+' : notificationCount}
@@ -2132,20 +2126,6 @@ export const ExpandedSidebar = ({
             <WorkspaceSwitcher compact />
           </div>
           <div className="flex shrink-0 items-center gap-1">
-            <button
-              onClick={() => window.desktopWindow?.toggleModule('inbox')}
-              onMouseDown={(e) => e.stopPropagation()}
-              className="relative inline-flex h-7 w-7 items-center justify-center rounded-lg text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]"
-              title="Inbox"
-              aria-label="Open inbox"
-            >
-              <Inbox size={14} />
-              {inboxCount > 0 && (
-                <span className="absolute -right-1 -top-1 inline-flex min-w-4 items-center justify-center rounded-full border border-[color:var(--ledger-surface)] bg-[var(--ledger-accent)] px-1 py-0.5 text-[9px] font-semibold leading-none text-white shadow-sm">
-                  {inboxCount > 99 ? '99+' : inboxCount}
-                </span>
-              )}
-            </button>
             <button
               onClick={() => window.desktopWindow?.openModule('notifications')}
               onMouseDown={(e) => e.stopPropagation()}
@@ -3118,6 +3098,23 @@ export const ExpandedSidebar = ({
             >
               <Users size={15} className="shrink-0 text-[var(--ledger-text-muted)]" />
               <span>Teams</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => window.desktopWindow?.toggleModule('inbox')}
+              className="relative flex h-9 w-full items-center justify-between gap-3 rounded-xl px-2.5 text-left text-[13px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]"
+              title="Intake"
+              aria-label="Open intake"
+            >
+              <span className="flex min-w-0 items-center gap-2.5">
+                <Funnel size={15} className="shrink-0 text-[var(--ledger-text-muted)]" />
+                <span className="truncate">Intake</span>
+              </span>
+              {inboxCount > 0 && (
+                <span className="flex shrink-0 items-center gap-2 text-[11px] text-[var(--ledger-text-muted)]">
+                  <span>{inboxCount > 99 ? '99+' : inboxCount}</span>
+                </span>
+              )}
             </button>
           </section>
 
