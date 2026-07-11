@@ -631,7 +631,11 @@ export const useApi = () => {
         }),
 
       // Circle
-      getPeople: () => request('/api/people'),
+      getPeople: (query?: string) => {
+        const normalizedQuery = String(query ?? '').trim();
+        const searchParam = normalizedQuery ? `?query=${encodeURIComponent(normalizedQuery)}` : '';
+        return request(`/api/people${searchParam}`);
+      },
       getPerson: (personId: string) => request(`/api/people/${personId}`),
       getPersonWork: (personId: string) => request(`/api/people/${personId}/work`),
       getPersonProjects: (personId: string) => request(`/api/people/${personId}/projects`),

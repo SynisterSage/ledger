@@ -8387,11 +8387,78 @@ app.get('/api/people', authMiddleware, rateLimit('read'), async (req, res) => {
     const workspaceId = await resolveWorkspaceIdForRequest(req);
     await requireWorkspaceAccess(req.authUser.id, workspaceId, 'member');
     const data = await loadCircleWorkspacePeople(workspaceId, req.authUser.id);
+    const query = String(req.query?.query ?? req.query?.q ?? '').trim().toLowerCase();
+    const projectNameById = new Map(data.projectRows.map((project) => [project.id, project.name ?? 'Project']));
+
+    const buildPersonSearchText = (person) => {
+      const sections = [
+        person.name,
+        person.email,
+        person.role,
+        person.workspace_role,
+        person.team_labels?.join(' '),
+        ...person.teams.map((team) => [team.name, team.role].filter(Boolean).join(' ')),
+        ...data.taskRows
+          .filter(
+            (task) =>
+              task.assigned_to_user_id === person.id || task.assigned_by_user_id === person.id
+          )
+          .map((task) =>
+            [
+              task.title,
+              formatCircleTaskStatus(task.status),
+              task.project_id ? projectNameById.get(task.project_id) : null,
+            ]
+              .filter(Boolean)
+              .join(' ')
+          ),
+        ...data.projectRows
+          .filter(
+            (project) =>
+              project.lead_id === person.id ||
+              project.created_by === person.id ||
+              data.taskRows.some(
+                (task) => task.project_id === project.id && task.assigned_to_user_id === person.id
+              )
+          )
+          .map((project) =>
+            [project.name ?? 'Project', formatCircleProjectStatus(project.status), project.color]
+              .filter(Boolean)
+              .join(' ')
+          ),
+        ...data.auditRows
+          .filter((row) => row.actor_user_id === person.id)
+          .map((row) =>
+            [
+              circleActivityActionLabels[row.action] ?? titleCaseLabel(row.action),
+              row.target_type,
+              row.metadata?.role,
+              row.metadata?.next_role,
+            ]
+              .filter(Boolean)
+              .join(' ')
+          ),
+      ];
+
+      return sections.filter(Boolean).join(' ').toLowerCase();
+    };
+
+    const people = query
+      ? data.people.filter((person) => {
+          const text = buildPersonSearchText(person);
+          if (!text) return false;
+          return query
+            .split(/\s+/)
+            .filter(Boolean)
+            .every((term) => text.includes(term));
+        })
+      : data.people;
+
     res.json({
       workspace_id: workspaceId,
       workspace_name: data.workspace?.name ?? 'Workspace',
       current_user_id: req.authUser.id,
-      people: data.people,
+      people,
     });
   } catch (error) {
     return respondWithError(res, error);

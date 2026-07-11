@@ -1,7 +1,6 @@
 import {
   BarChart3,
   CalendarDays,
-  CircleUserRound,
   LogOut,
   ChevronRight,
   ChevronUp,
@@ -88,14 +87,6 @@ export const MinimizedSidebar = ({
             className={neutralIcon}
           >
             <BarChart3 size={18} />
-          </button>
-          <button
-            aria-label="Open circle"
-            onClick={() => window.desktopWindow?.toggleModule('circle')}
-            onMouseDown={(e) => e.stopPropagation()}
-            className={neutralIcon}
-          >
-            <CircleUserRound size={18} />
           </button>
           <button
             aria-label="Open calendar"

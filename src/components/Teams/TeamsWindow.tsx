@@ -299,17 +299,9 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
   const openTeamDetail = (teamId: string) => {
     setSelectedTeamId(teamId);
     setOpenedTeamId(teamId);
-    void window.desktopWindow?.openModule('teams', {
-      kind: 'teams',
-      focusContext: `team:${teamId}`,
-    });
   };
 
   const goBackToTeamsList = () => {
-    if (window.desktopWindow?.goBackWorkspaceWindow) {
-      void window.desktopWindow.goBackWorkspaceWindow();
-      return;
-    }
     setOpenedTeamId(null);
   };
 

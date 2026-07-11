@@ -1,7 +1,9 @@
 import {
   ArrowRight,
+  Copy,
   CheckCircle2,
   Clock3,
+  ChevronDown,
   Filter,
   Folder,
   MoreHorizontal,
@@ -18,6 +20,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type ReactNode,
 } from 'react';
 import { ModuleHeaderActionButton, ModuleHeaderSegmentedButton, ModuleHeaderSegmentedGroup, ModuleWindowHeader } from '../Common/ModuleWindowHeader';
@@ -128,6 +131,13 @@ type CirclePersonActivityPayload = {
 
 type CircleListTab = 'all' | 'active' | 'waiting_on' | 'shared_work' | 'pinned';
 type CircleDetailTab = 'overview' | 'assigned' | 'projects' | 'followups' | 'activity';
+type CircleWorkspaceSectionId =
+  | 'needs_attention'
+  | 'assigned_work'
+  | 'shared_projects'
+  | 'follow_ups'
+  | 'recent_activity'
+  | 'pinned_people';
 type CircleDisplayMode =
   | 'name'
   | 'team'
@@ -164,7 +174,7 @@ const circleTheme = {
   content: 'min-w-0 flex-1 overflow-y-auto px-5 py-5 lg:px-6',
   contentInner: 'mx-auto flex min-h-full w-full max-w-5xl flex-col gap-5',
   panel:
-    'rounded-[22px] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)]',
+    'overflow-hidden rounded-[22px] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-[0_18px_44px_rgba(66,42,24,0.06)]',
   sectionTitle: 'text-xs font-medium text-[var(--ledger-text-primary)]',
   sectionLabel:
     'text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--ledger-text-muted)]',
@@ -175,17 +185,19 @@ const circleTheme = {
     'inline-flex h-6 items-center rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2.5 text-[11px] font-medium text-[var(--ledger-text-secondary)]',
   headerMeta: 'text-[11px] text-[var(--ledger-text-muted)]',
   subtleButton:
-    'inline-flex h-7 items-center gap-1.5 rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-2.5 text-[11px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]',
+    'inline-flex h-7 items-center gap-1.5 rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] px-2.5 text-[11px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]',
   compactButton:
-    'inline-flex h-7 items-center gap-1.5 rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3 text-[11px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]',
+    'inline-flex h-7 items-center gap-1.5 rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] px-3 text-[11px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]',
   actionButton:
-    'inline-flex h-7 items-center gap-1.5 rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3 text-[11px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]',
+    'inline-flex h-7 items-center gap-1.5 rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] px-3 text-[11px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]',
   primaryButton:
     'inline-flex h-7 items-center gap-1.5 rounded-full bg-[var(--ledger-accent)] px-3 text-[11px] font-semibold text-white transition hover:bg-[var(--ledger-accent-hover)]',
   mutedButton:
     'inline-flex h-7 items-center gap-1.5 rounded-full border border-[color:var(--ledger-border-subtle)] px-3 text-[11px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]',
+  sectionActionText:
+    'inline-flex h-7 items-center text-[11px] font-medium text-[var(--ledger-text-muted)] transition hover:text-[var(--ledger-text-primary)]',
   sectionRow:
-    'group flex w-full items-start justify-between gap-3 rounded-2xl border-b border-[color:var(--ledger-border-subtle)] px-3 py-3 text-left transition last:border-b-0 hover:bg-[var(--ledger-surface-hover)]',
+    'group grid w-full grid-cols-[22px_minmax(0,1fr)_auto] items-center gap-3 px-3 py-2 text-left transition hover:bg-[var(--ledger-surface-hover)]',
 };
 
 const circleTabs: Array<{ id: CircleListTab; label: string }> = [
@@ -248,6 +260,11 @@ const formatRelativeActive = (value?: string | null) => {
   return `${diffDays}d ago`;
 };
 
+const parseCircleTimestamp = (value?: string | null) => {
+  const parsed = Date.parse(value ?? '');
+  return Number.isNaN(parsed) ? 0 : parsed;
+};
+
 const formatTaskPriority = (value?: string | null) => {
   const normalized = String(value ?? '').toLowerCase();
   if (normalized === 'urgent') return 'Urgent';
@@ -280,7 +297,7 @@ const CircleAvatar = ({ person }: { person: CirclePersonSummary }) => {
   );
 };
 
-const CompactStat = ({
+const SummaryCell = ({
   label,
   value,
   active = false,
@@ -291,10 +308,14 @@ const CompactStat = ({
   active?: boolean;
   onClick?: () => void;
 }) => {
+  const classes = `flex min-h-[42px] min-w-0 items-center justify-between gap-3 px-3 py-2.5 text-left transition ${
+    active ? 'bg-[var(--ledger-surface-hover)]' : 'hover:bg-[var(--ledger-surface-muted)]'
+  }`;
+
   const content = (
     <>
-      <span className="text-[11px] text-[var(--ledger-text-muted)]">{label}</span>
-      <span className={`text-xs font-semibold ${active ? 'text-[var(--ledger-accent)]' : 'text-[var(--ledger-text-primary)]'}`}>
+      <span className="min-w-0 truncate text-[11px] font-medium leading-4 text-[var(--ledger-text-muted)]">{label}</span>
+      <span className={`shrink-0 text-[12px] font-medium leading-4 ${active ? 'text-[var(--ledger-text-primary)]' : 'text-[var(--ledger-text-secondary)]'}`}>
         {value}
       </span>
     </>
@@ -302,40 +323,135 @@ const CompactStat = ({
 
   if (onClick) {
     return (
-      <button
-        type="button"
-        onClick={onClick}
-        className="flex min-w-[110px] flex-col items-start rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3 py-2 text-left transition hover:bg-[var(--ledger-surface-hover)]"
-      >
+      <button type="button" onClick={onClick} className={classes}>
         {content}
       </button>
     );
   }
 
-  return (
-    <div className="flex min-w-[110px] flex-col items-start rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3 py-2">
-      {content}
-    </div>
-  );
+  return <div className={classes}>{content}</div>;
 };
 
-const SectionCard = ({
+const SummaryStrip = ({
+  items,
+}: {
+  items: Array<{
+    label: string;
+    value: string | number;
+    active?: boolean;
+    onClick?: () => void;
+  }>;
+}) => (
+  <div className="overflow-hidden rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)]">
+    <div className="grid grid-cols-2 divide-x divide-[color:var(--ledger-border-subtle)] md:grid-cols-4">
+      {items.map((item) => (
+        <SummaryCell key={item.label} label={item.label} value={item.value} active={item.active} onClick={item.onClick} />
+      ))}
+    </div>
+  </div>
+);
+
+const WorkspaceSection = ({
   title,
   action,
   children,
+  collapsed,
+  count,
+  onToggle,
 }: {
   title: string;
   action?: ReactNode;
   children: ReactNode;
+  collapsed: boolean;
+  count?: number;
+  onToggle: () => void;
 }) => (
-  <section className={circleTheme.panel}>
-    <div className="flex items-center justify-between gap-3 border-b border-[color:var(--ledger-border-subtle)] px-4 py-3">
-      <h3 className={circleTheme.sectionTitle}>{title}</h3>
-      {action}
+  <section className="space-y-2">
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={onToggle}
+      onKeyDown={(event) => {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        event.preventDefault();
+        onToggle();
+      }}
+      className="flex h-8 cursor-pointer select-none items-center justify-between rounded-lg bg-[var(--ledger-surface-muted)] px-3"
+    >
+      <div className="flex min-w-0 items-center gap-2 text-left select-none">
+        <ChevronDown
+          size={14}
+          className={`shrink-0 text-[var(--ledger-text-muted)] transition ${collapsed ? '-rotate-90' : 'rotate-0'}`}
+        />
+        <span className="truncate text-[12px] font-medium text-[var(--ledger-text-secondary)]">{title}</span>
+        {typeof count === 'number' && (
+          <span className="rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-1.5 py-0.5 text-[10px] leading-none text-[var(--ledger-text-muted)]">
+            {count}
+          </span>
+        )}
+      </div>
+      <div
+        className="flex items-center gap-2"
+        onMouseDown={(event) => event.stopPropagation()}
+        onClick={(event) => event.stopPropagation()}
+      >
+        {action}
+      </div>
     </div>
-    <div>{children}</div>
+    {!collapsed && <div className="space-y-1">{children}</div>}
   </section>
 );
+
+const CompactWorkRow = ({
+  title,
+  meta,
+  right,
+  onClick,
+  selected = false,
+  icon,
+  compact = false,
+}: {
+  title: string;
+  meta?: string | ReactNode;
+  right?: ReactNode;
+  onClick?: () => void;
+  selected?: boolean;
+  icon?: ReactNode;
+  compact?: boolean;
+}) => {
+  const classes = `${circleTheme.sectionRow} rounded-lg border border-transparent bg-transparent ${
+    selected ? 'border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-hover)]' : 'hover:bg-[var(--ledger-surface-muted)]'
+  } ${onClick ? 'cursor-pointer' : ''} ${compact ? 'min-h-[38px]' : 'min-h-[42px]'}`;
+  const content = (
+    <>
+      <div className="flex h-5 w-5 shrink-0 items-center justify-center self-center text-[var(--ledger-text-muted)]">
+        {icon}
+      </div>
+      <div className="min-w-0">
+        <div className="flex min-w-0 items-center gap-2">
+          <p className="min-w-0 truncate text-[13px] font-medium leading-5 text-[var(--ledger-text-primary)]">{title}</p>
+          {meta &&
+            (typeof meta === 'string' ? (
+              <p className="hidden min-w-0 truncate text-[11px] leading-4 text-[var(--ledger-text-muted)] sm:block">{meta}</p>
+            ) : (
+              <div className="hidden min-w-0 sm:block">{meta}</div>
+            ))}
+        </div>
+      </div>
+      {right && <div className="flex shrink-0 items-center justify-end gap-2 text-right">{right}</div>}
+    </>
+  );
+
+  if (onClick) {
+    return (
+      <button type="button" onClick={onClick} className={classes}>
+        {content}
+      </button>
+    );
+  }
+
+  return <div className={classes}>{content}</div>;
+};
 
 const Row = ({
   title,
@@ -399,6 +515,15 @@ export const CircleWindow = () => {
   const [listTab, setListTab] = useState<CircleListTab>('all');
   const [displayMode, setDisplayMode] = useState<CircleDisplayMode>('newest_active');
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
+  const [collapsedCircleSections, setCollapsedCircleSections] = useState<Record<CircleWorkspaceSectionId, boolean>>({
+    needs_attention: false,
+    assigned_work: false,
+    shared_projects: false,
+    follow_ups: false,
+    recent_activity: false,
+    pinned_people: false,
+  });
   const [filters, setFilters] = useState<CircleFilters>({
     teamId: null,
     role: null,
@@ -413,13 +538,15 @@ export const CircleWindow = () => {
   const [showFilterMenu, setShowFilterMenu] = useState(false);
   const [showDisplayMenu, setShowDisplayMenu] = useState(false);
   const [showMoreMenu, setShowMoreMenu] = useState(false);
+  const [moreMenuStyle, setMoreMenuStyle] = useState<CSSProperties | null>(null);
 
   const loadTokenRef = useRef(0);
   const filterMenuRef = useRef<HTMLDivElement | null>(null);
   const displayMenuRef = useRef<HTMLDivElement | null>(null);
   const moreMenuRef = useRef<HTMLDivElement | null>(null);
+  const moreMenuButtonRef = useRef<HTMLButtonElement | null>(null);
 
-  const loadPeople = async () => {
+  const loadPeople = async (query?: string) => {
     if (!activeWorkspaceId) {
       setPeople([]);
       setSelectedPersonId(null);
@@ -436,7 +563,7 @@ export const CircleWindow = () => {
     setError(null);
 
     try {
-      const payload = (await api.getPeople()) as { people?: CirclePersonSummary[] };
+      const payload = (await api.getPeople(query)) as { people?: CirclePersonSummary[] };
       if (loadTokenRef.current !== token) return;
 
       const nextPeople = Array.isArray(payload?.people) ? payload.people : [];
@@ -515,6 +642,14 @@ export const CircleWindow = () => {
     setSelectedActivity(null);
     setActiveTab('overview');
     setSearchQuery('');
+    setCollapsedCircleSections({
+      needs_attention: false,
+      assigned_work: false,
+      shared_projects: false,
+      follow_ups: false,
+      recent_activity: false,
+      pinned_people: false,
+    });
     setFilters({
       teamId: null,
       role: null,
@@ -527,9 +662,17 @@ export const CircleWindow = () => {
   }, [activeWorkspaceId]);
 
   useEffect(() => {
-    void loadPeople();
+    const timer = window.setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery.trim());
+    }, 180);
+
+    return () => window.clearTimeout(timer);
+  }, [searchQuery]);
+
+  useEffect(() => {
+    void loadPeople(debouncedSearchQuery);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeWorkspaceId, api]);
+  }, [activeWorkspaceId, api, debouncedSearchQuery]);
 
   useEffect(() => {
     if (!selectedPersonId) return;
@@ -542,7 +685,7 @@ export const CircleWindow = () => {
     tables: ['tasks', 'projects', 'workspace_audit_logs', 'workspace_team_members', 'workspace_members', 'person_preferences'],
     enabled: Boolean(activeWorkspaceId),
     onChange: () => {
-      void loadPeople();
+      void loadPeople(debouncedSearchQuery);
       if (selectedPersonId) {
         void loadSelectedPerson(selectedPersonId);
       }
@@ -576,6 +719,27 @@ export const CircleWindow = () => {
     };
   }, [showDisplayMenu, showFilterMenu, showMoreMenu]);
 
+  useEffect(() => {
+    if (!showMoreMenu) return;
+    const viewportPadding = 12;
+    const menuWidth = 240;
+    const buttonRect = moreMenuButtonRef.current?.getBoundingClientRect();
+    if (!buttonRect) return;
+
+    const left = Math.max(
+      viewportPadding,
+      Math.min(buttonRect.right - menuWidth, window.innerWidth - menuWidth - viewportPadding)
+    );
+    const top = Math.min(buttonRect.bottom + 8, window.innerHeight - viewportPadding - 180);
+
+    setMoreMenuStyle({
+      position: 'fixed',
+      left,
+      top,
+      width: menuWidth,
+    });
+  }, [showMoreMenu]);
+
   const currentWorkspaceName = activeWorkspace?.name ?? 'Workspace';
   const selectedPersonDetails = selectedPerson ?? people.find((person) => person.id === selectedPersonId) ?? null;
   const selectedPersonTasks = selectedWork?.assigned_tasks ?? [];
@@ -585,23 +749,63 @@ export const CircleWindow = () => {
 
   const selectedPersonPrimaryTeam = selectedPersonDetails?.teams?.[0]?.name ?? null;
   const selectedPersonDisplayRole = titleCase(selectedPersonDetails?.role ?? 'member');
+  const circleOverviewRows = useMemo(() => {
+    const now = Date.now();
+    const weekThreshold = now - 1000 * 60 * 60 * 24 * 7;
 
-  const personSearchText = useMemo(() => {
-    const query = searchQuery.trim().toLowerCase();
-    return query;
-  }, [searchQuery]);
+    const peopleCount = people.length;
+    const activeThisWeek = people.filter((person) => parseCircleTimestamp(person.last_active_at) >= weekThreshold).length;
+    const waitingOnPeople = people.filter((person) => person.waiting_on_count > 0).length;
+    const openFollowUps = people.reduce((total, person) => total + Math.max(0, person.follow_up_count), 0);
+
+    const needsAttention = [...people]
+      .filter((person) => person.waiting_on_count > 0 || person.open_task_count > 0)
+      .sort((a, b) => {
+        const aAgeDays = Math.floor((now - parseCircleTimestamp(a.last_active_at)) / (1000 * 60 * 60 * 24));
+        const bAgeDays = Math.floor((now - parseCircleTimestamp(b.last_active_at)) / (1000 * 60 * 60 * 24));
+        const aScore = (a.waiting_on_count > 0 ? 1000 : 0) + a.open_task_count + Math.max(0, 7 - aAgeDays);
+        const bScore = (b.waiting_on_count > 0 ? 1000 : 0) + b.open_task_count + Math.max(0, 7 - bAgeDays);
+        return bScore - aScore || String(a.name).localeCompare(String(b.name));
+      })
+      .slice(0, 5);
+
+    const recentlyActive = [...people]
+      .filter((person) => parseCircleTimestamp(person.last_active_at) >= weekThreshold)
+      .sort((a, b) => parseCircleTimestamp(b.last_active_at) - parseCircleTimestamp(a.last_active_at))
+      .slice(0, 5);
+
+    const sharedWork = [...people]
+      .filter((person) => person.shared_project_count > 0 || person.open_task_count > 0)
+      .sort((a, b) => {
+        const sharedDelta = b.shared_project_count - a.shared_project_count;
+        if (sharedDelta !== 0) return sharedDelta;
+        return b.open_task_count - a.open_task_count || String(a.name).localeCompare(String(b.name));
+      })
+      .slice(0, 5);
+
+    const pinnedPeople = [...people]
+      .filter((person) => person.is_pinned)
+      .sort((a, b) => String(a.name).localeCompare(String(b.name)))
+      .slice(0, 5);
+
+    return {
+      summary: [
+        { label: 'People', value: peopleCount },
+        { label: 'Active this week', value: activeThisWeek },
+        { label: 'Waiting on', value: waitingOnPeople },
+        { label: 'Open follow-ups', value: openFollowUps },
+      ],
+      needsAttention,
+      recentlyActive,
+      sharedWork,
+      pinnedPeople,
+    };
+  }, [people]);
 
   const visiblePeople = useMemo(() => {
-    const query = personSearchText;
     const todayThreshold = Date.now() - 1000 * 60 * 60 * 24 * 14;
 
     const matchesFilters = (person: CirclePersonSummary) => {
-      if (query) {
-        const teamText = person.teams.map((team) => team.name).join(' ').toLowerCase();
-        const searchText = [person.name, person.email, person.role, teamText].filter(Boolean).join(' ').toLowerCase();
-        if (!searchText.includes(query)) return false;
-      }
-
       if (filters.teamId && !person.teams.some((team) => team.id === filters.teamId)) return false;
       if (filters.role && String(person.role ?? '').toLowerCase() !== filters.role) return false;
       if (filters.hasOpenTasks && person.open_task_count <= 0) return false;
@@ -647,7 +851,7 @@ export const CircleWindow = () => {
     };
 
     return [...people].filter(matchesFilters).sort(sortPeople);
-  }, [displayMode, filters, listTab, people, personSearchText]);
+  }, [displayMode, filters, listTab, people]);
 
   const sharedProjectFromWork = selectedProjectsRows[0] ?? null;
 
@@ -712,14 +916,183 @@ export const CircleWindow = () => {
     }
   };
 
-  const renderEmptySelection = () => (
-    <div className="flex min-h-full flex-col items-center justify-center px-6 py-12 text-center">
-      <p className="text-sm font-medium text-[var(--ledger-text-primary)]">Select a person to view their work and shared context.</p>
-      <p className="mt-2 max-w-sm text-sm text-[var(--ledger-text-muted)]">
-        Circle shows who you are working with, what you are waiting on, and what changed recently.
-      </p>
-    </div>
+  const openPersonWorkspace = (personId: string) => {
+    setSelectedPersonId(personId);
+    setShowFilterMenu(false);
+    setShowDisplayMenu(false);
+    setShowMoreMenu(false);
+  };
+
+  const renderCircleOverviewHeader = () => (
+    <section className={circleTheme.panel}>
+      <div className="px-4 py-4">
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <p className="mt-1 max-w-2xl text-[13px] leading-5 text-[var(--ledger-text-muted)]">
+              People connected to your work, follow-ups, and shared context.
+            </p>
+            <p className="mt-1 text-[11px] text-[var(--ledger-text-muted)]">{currentWorkspaceName}</p>
+          </div>
+        </div>
+      </div>
+      <div className="border-t border-[color:var(--ledger-border-subtle)] px-4 py-3">
+        <SummaryStrip
+          items={circleOverviewRows.summary.map((item) => ({
+            label: item.label,
+            value: item.value,
+          }))}
+        />
+      </div>
+    </section>
   );
+
+  const renderOverviewPersonRow = (
+    person: CirclePersonSummary,
+    meta: string,
+    right: ReactNode,
+    onClickPerson?: () => void
+  ) => (
+    <CompactWorkRow
+      key={person.id}
+      title={person.name}
+      meta={meta}
+      right={right}
+      icon={<CircleAvatar person={person} />}
+      onClick={onClickPerson ?? (() => openPersonWorkspace(person.id))}
+    />
+  );
+
+  const renderCircleOverview = () => {
+    const needsAttention = circleOverviewRows.needsAttention;
+    const recentlyActive = circleOverviewRows.recentlyActive;
+    const sharedWork = circleOverviewRows.sharedWork;
+    const pinnedPeople = circleOverviewRows.pinnedPeople;
+    const isCollapsed = (sectionId: CircleWorkspaceSectionId) => collapsedCircleSections[sectionId];
+    const toggleSection = (sectionId: CircleWorkspaceSectionId, count: number) => {
+      if (count === 0) return;
+      setCollapsedCircleSections((current) => ({
+        ...current,
+        [sectionId]: !current[sectionId],
+      }));
+    };
+
+    return (
+      <div className="space-y-4">
+        {renderCircleOverviewHeader()}
+
+        {isLoadingPeople ? (
+          <section className={circleTheme.panel}>
+            <div className="space-y-1 p-3">
+              <div className="h-8 rounded-lg bg-[var(--ledger-surface-muted)]/70" />
+              <div className="h-8 rounded-lg bg-[var(--ledger-surface-muted)]/70" />
+              <div className="h-8 rounded-lg bg-[var(--ledger-surface-muted)]/70" />
+            </div>
+          </section>
+        ) : (
+          <div className="space-y-4">
+            <WorkspaceSection
+              title="Needs attention"
+              collapsed={needsAttention.length === 0 || isCollapsed('needs_attention')}
+              onToggle={() => toggleSection('needs_attention', needsAttention.length)}
+              count={needsAttention.length}
+              action={<button type="button" onClick={() => setListTab('waiting_on')} className={circleTheme.sectionActionText}>View all</button>}
+            >
+              {needsAttention.length > 0 ? (
+                needsAttention.map((person) =>
+                  renderOverviewPersonRow(
+                    person,
+                    person.waiting_on_count > 0
+                      ? `Waiting on ${person.waiting_on_count}${person.open_task_count > 0 ? ` · ${person.open_task_count} open` : ''}`
+                      : `${person.open_task_count} open`,
+                    <div className="flex items-center gap-2 text-[11px] leading-4 text-[var(--ledger-text-secondary)]">
+                      <span>{person.teams[0]?.name ?? 'No team'}</span>
+                      <span className="text-[var(--ledger-text-muted)]">·</span>
+                      <span>{formatRelativeActive(person.last_active_at)}</span>
+                    </div>
+                  )
+                )
+              ) : (
+                <p className="px-3 py-3 text-sm text-[var(--ledger-text-muted)]">No people-related items need attention.</p>
+              )}
+            </WorkspaceSection>
+
+            <WorkspaceSection
+              title="Recently active"
+              collapsed={recentlyActive.length === 0 || isCollapsed('recent_activity')}
+              onToggle={() => toggleSection('recent_activity', recentlyActive.length)}
+              count={recentlyActive.length}
+              action={<button type="button" onClick={() => setListTab('active')} className={circleTheme.sectionActionText}>View all</button>}
+            >
+              {recentlyActive.length > 0 ? (
+                recentlyActive.map((person) =>
+                  renderOverviewPersonRow(
+                    person,
+                    person.role,
+                    <p className="text-[11px] leading-4 text-[var(--ledger-text-secondary)]">{formatRelativeActive(person.last_active_at)}</p>
+                  )
+                )
+              ) : (
+                <p className="px-3 py-3 text-sm text-[var(--ledger-text-muted)]">No recent activity.</p>
+              )}
+            </WorkspaceSection>
+
+            <WorkspaceSection
+              title="Shared work"
+              collapsed={sharedWork.length === 0 || isCollapsed('shared_projects')}
+              onToggle={() => toggleSection('shared_projects', sharedWork.length)}
+              count={sharedWork.length}
+              action={<button type="button" onClick={() => setListTab('shared_work')} className={circleTheme.sectionActionText}>View all</button>}
+            >
+              {sharedWork.length > 0 ? (
+                sharedWork.map((person) =>
+                  renderOverviewPersonRow(
+                    person,
+                    person.teams[0]?.name ?? 'No team',
+                    <div className="flex items-center gap-2 text-[11px] leading-4 text-[var(--ledger-text-secondary)]">
+                      <span>{person.shared_project_count} shared</span>
+                      <span className="text-[var(--ledger-text-muted)]">·</span>
+                      <span>{person.open_task_count} open</span>
+                    </div>
+                  )
+                )
+              ) : (
+                <p className="px-3 py-3 text-sm text-[var(--ledger-text-muted)]">No shared work yet.</p>
+              )}
+            </WorkspaceSection>
+
+            <WorkspaceSection
+              title="Pinned people"
+              collapsed={pinnedPeople.length === 0 || isCollapsed('pinned_people')}
+              onToggle={() => toggleSection('pinned_people', pinnedPeople.length)}
+              count={pinnedPeople.length}
+              action={<button type="button" onClick={() => setListTab('pinned')} className={circleTheme.sectionActionText}>View all</button>}
+            >
+              {pinnedPeople.length > 0 ? (
+                pinnedPeople.map((person) =>
+                  renderOverviewPersonRow(
+                    person,
+                    person.role,
+                    <div className="flex items-center gap-2 text-[11px] leading-4 text-[var(--ledger-text-secondary)]">
+                      <span>{person.waiting_on_count} waiting</span>
+                      <span className="text-[var(--ledger-text-muted)]">·</span>
+                      <span>{person.open_task_count} open</span>
+                    </div>
+                  )
+                )
+              ) : (
+                <div className="px-3 py-3">
+                  <p className="text-sm text-[var(--ledger-text-muted)]">No pinned people yet.</p>
+                  <button type="button" onClick={() => setListTab('all')} className="mt-2 text-[11px] font-medium text-[var(--ledger-text-secondary)] transition hover:text-[var(--ledger-text-primary)]">
+                    Browse people
+                  </button>
+                </div>
+              )}
+            </WorkspaceSection>
+          </div>
+        )}
+      </div>
+    );
+  };
 
   const renderPersonHeader = () => {
     if (!selectedPersonDetails) return null;
@@ -734,12 +1107,6 @@ export const CircleWindow = () => {
                 <h2 className="truncate text-[20px] font-medium text-[var(--ledger-text-primary)]">
                   {selectedPersonDetails.name}
                 </h2>
-                {selectedPersonDetails.is_pinned && (
-                  <span className={circleTheme.chip}>
-                    <Pin size={11} className="mr-1" />
-                    Pinned
-                  </span>
-                )}
               </div>
               <p className={circleTheme.headerMeta}>
                 {selectedPersonDisplayRole}
@@ -766,6 +1133,7 @@ export const CircleWindow = () => {
               {selectedPersonDetails.is_pinned ? 'Unpin' : 'Pin'}
             </button>
             <button
+              ref={moreMenuButtonRef}
               type="button"
               onClick={() => setShowMoreMenu((current) => !current)}
               className={circleTheme.mutedButton}
@@ -796,40 +1164,36 @@ export const CircleWindow = () => {
             <Folder size={11} />
             Open shared project
           </button>
-          <button
-            type="button"
-            onClick={() => void pinPerson(selectedPersonDetails)}
-            className={circleTheme.subtleButton}
-          >
-            <Pin size={11} />
-            {selectedPersonDetails.is_pinned ? 'Pinned' : 'Pin'}
-          </button>
         </div>
 
-        <div className="grid gap-2 border-t border-[color:var(--ledger-border-subtle)] px-4 py-3 sm:grid-cols-2 xl:grid-cols-4">
-          <CompactStat
-            label="Open tasks"
-            value={selectedWork?.summary.open_task_count ?? selectedPersonDetails.open_task_count}
-            active={activeTab === 'assigned'}
-            onClick={() => setActiveTab('assigned')}
-          />
-          <CompactStat
-            label="Shared projects"
-            value={selectedWork?.summary.shared_project_count ?? selectedPersonDetails.shared_project_count}
-            active={activeTab === 'projects'}
-            onClick={() => setActiveTab('projects')}
-          />
-          <CompactStat
-            label="Follow-ups"
-            value={selectedWork?.summary.follow_up_count ?? selectedPersonDetails.follow_up_count}
-            active={activeTab === 'followups'}
-            onClick={() => setActiveTab('followups')}
-          />
-          <CompactStat
-            label="Waiting on"
-            value={selectedWork?.summary.waiting_on_count ?? selectedPersonDetails.waiting_on_count}
-            active={activeTab === 'overview'}
-            onClick={() => setActiveTab('overview')}
+        <div className="border-t border-[color:var(--ledger-border-subtle)] px-4 py-3">
+          <SummaryStrip
+            items={[
+              {
+                label: 'Open tasks',
+                value: selectedWork?.summary.open_task_count ?? selectedPersonDetails.open_task_count,
+                active: activeTab === 'assigned',
+                onClick: () => setActiveTab('assigned'),
+              },
+              {
+                label: 'Shared projects',
+                value: selectedWork?.summary.shared_project_count ?? selectedPersonDetails.shared_project_count,
+                active: activeTab === 'projects',
+                onClick: () => setActiveTab('projects'),
+              },
+              {
+                label: 'Follow-ups',
+                value: selectedWork?.summary.follow_up_count ?? selectedPersonDetails.follow_up_count,
+                active: activeTab === 'followups',
+                onClick: () => setActiveTab('followups'),
+              },
+              {
+                label: 'Waiting on',
+                value: selectedWork?.summary.waiting_on_count ?? selectedPersonDetails.waiting_on_count,
+                active: activeTab === 'overview',
+                onClick: () => setActiveTab('overview'),
+              },
+            ]}
           />
         </div>
       </section>
@@ -837,21 +1201,22 @@ export const CircleWindow = () => {
   };
 
   const renderTaskRow = (task: CirclePersonTask) => (
-    <Row
+    <CompactWorkRow
       key={task.id}
       title={task.title}
-      meta={
-        <p className={circleTheme.rowMeta}>
-          {task.status_label}
-          {task.project_name ? ` · ${task.project_name}` : ''}
-          {task.due_date ? ` · Due ${formatShortDate(task.due_date)}` : ''}
-          {task.is_overdue ? ' · Overdue' : ''}
-        </p>
-      }
+      meta={[
+        task.status_label,
+        task.project_name,
+        task.due_date ? `Due ${formatShortDate(task.due_date)}` : null,
+        task.is_overdue ? 'Overdue' : null,
+      ]
+        .filter(Boolean)
+        .join(' · ')}
       right={
-        <div className="space-y-1 text-right">
-          <p className={circleTheme.rowMetaStrong}>{formatTaskPriority(task.priority)}</p>
-          <p className={circleTheme.rowMeta}>{task.project_status ?? 'Task'}</p>
+        <div className="flex items-center gap-2 text-[11px] leading-4 text-[var(--ledger-text-secondary)]">
+          <span className="font-medium">{formatTaskPriority(task.priority)}</span>
+          <span className="text-[var(--ledger-text-muted)]">·</span>
+          <span>{task.project_status ?? 'Task'}</span>
         </div>
       }
       icon={<CheckCircle2 size={13} className={task.is_open ? 'text-[var(--ledger-text-muted)]' : 'text-[var(--ledger-accent)]'} />}
@@ -860,20 +1225,22 @@ export const CircleWindow = () => {
   );
 
   const renderProjectRow = (project: CirclePersonProject) => (
-    <Row
+    <CompactWorkRow
       key={project.id}
       title={project.title}
-      meta={
-        <p className={circleTheme.rowMeta}>
-          {project.status}
-          {project.due_date ? ` · Due ${formatShortDate(project.due_date)}` : ''}
-          {project.next_action_count ? ` · ${project.next_action_count} next` : ''}
-        </p>
-      }
+      meta={[
+        project.status,
+        project.due_date ? `Due ${formatShortDate(project.due_date)}` : null,
+        project.next_action_count ? `${project.next_action_count} next` : null,
+      ]
+        .filter(Boolean)
+        .join(' · ')}
       right={
-        <div className="flex flex-col items-end gap-1">
-          <p className={circleTheme.rowMetaStrong}>{project.role}</p>
-          <div className="h-1.5 w-24 rounded-full bg-[var(--ledger-surface-muted)]">
+        <div className="flex items-center gap-2 text-[11px] leading-4 text-[var(--ledger-text-secondary)]">
+          <span className="font-medium">{project.role}</span>
+          <span className="text-[var(--ledger-text-muted)]">·</span>
+          <span>{Math.round(project.progress)}%</span>
+          <div className="hidden h-1.5 w-14 rounded-full bg-[var(--ledger-surface-muted)] sm:block">
             <div
               className="h-1.5 rounded-full"
               style={{ width: `${Math.max(4, Math.min(100, project.progress))}%`, backgroundColor: project.color }}
@@ -881,22 +1248,17 @@ export const CircleWindow = () => {
           </div>
         </div>
       }
-      icon={<div className="mt-0.5 h-2.5 w-2.5 rounded-full" style={{ backgroundColor: project.color }} />}
+      icon={<div className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: project.color }} />}
       onClick={() => openSharedProject(project.id)}
     />
   );
 
   const renderActivityRow = (activity: CirclePersonActivity) => (
-    <Row
+    <CompactWorkRow
       key={activity.id}
       title={activity.title}
-      meta={
-        <p className={circleTheme.rowMeta}>
-          {activity.detail}
-          {activity.timestamp ? ` · ${formatActivityDate(activity.timestamp)}` : ''}
-        </p>
-      }
-      right={<p className={circleTheme.rowMetaStrong}>{formatRelativeActive(activity.timestamp)}</p>}
+      meta={[activity.detail, activity.timestamp ? formatActivityDate(activity.timestamp) : null].filter(Boolean).join(' · ')}
+      right={<p className="text-[11px] leading-4 text-[var(--ledger-text-secondary)]">{formatRelativeActive(activity.timestamp)}</p>}
       icon={<Clock3 size={13} className="text-[var(--ledger-text-muted)]" />}
       onClick={
         activity.project_id
@@ -913,64 +1275,102 @@ export const CircleWindow = () => {
     const sharedProjects = selectedProjectsRows.slice(0, 4);
     const tasks = selectedPersonTasks.slice(0, 4);
     const activity = selectedActivityRows.slice(0, 4);
+    const isCollapsed = (sectionId: CircleWorkspaceSectionId) => collapsedCircleSections[sectionId];
+    const toggleSection = (sectionId: CircleWorkspaceSectionId, count: number) => {
+      if (count === 0) return;
+      setCollapsedCircleSections((current) => ({
+        ...current,
+        [sectionId]: !current[sectionId],
+      }));
+    };
 
     return (
       <div className="space-y-4">
-        <SectionCard title="Needs attention" action={<button type="button" onClick={() => setActiveTab('assigned')} className={circleTheme.subtleButton}>View all</button>}>
+        <WorkspaceSection
+          title="Needs attention"
+          collapsed={needsAttention.length === 0 || isCollapsed('needs_attention')}
+          onToggle={() => toggleSection('needs_attention', needsAttention.length)}
+          count={needsAttention.length}
+          action={<button type="button" onClick={() => setActiveTab('assigned')} className={circleTheme.sectionActionText}>View all</button>}
+        >
           {needsAttention.length > 0 ? (
             needsAttention.map(renderTaskRow)
           ) : (
-            <p className="px-4 py-4 text-sm text-[var(--ledger-text-muted)]">No urgent work right now.</p>
+            <p className="px-3 py-3 text-sm text-[var(--ledger-text-muted)]">No urgent work right now.</p>
           )}
-        </SectionCard>
+        </WorkspaceSection>
 
-        <SectionCard title="Assigned work" action={<button type="button" onClick={() => setActiveTab('assigned')} className={circleTheme.subtleButton}>View all</button>}>
-          {tasks.length > 0 ? tasks.map(renderTaskRow) : <p className="px-4 py-4 text-sm text-[var(--ledger-text-muted)]">No open work assigned.</p>}
-        </SectionCard>
+        <WorkspaceSection
+          title="Assigned work"
+          collapsed={tasks.length === 0 || isCollapsed('assigned_work')}
+          onToggle={() => toggleSection('assigned_work', tasks.length)}
+          count={tasks.length}
+          action={<button type="button" onClick={() => setActiveTab('assigned')} className={circleTheme.sectionActionText}>View all</button>}
+        >
+          {tasks.length > 0 ? tasks.map(renderTaskRow) : <p className="px-3 py-3 text-sm text-[var(--ledger-text-muted)]">No open work assigned.</p>}
+        </WorkspaceSection>
 
-        <SectionCard title="Shared projects" action={<button type="button" onClick={() => setActiveTab('projects')} className={circleTheme.subtleButton}>View all</button>}>
-          {sharedProjects.length > 0 ? sharedProjects.map(renderProjectRow) : <p className="px-4 py-4 text-sm text-[var(--ledger-text-muted)]">No shared projects yet.</p>}
-        </SectionCard>
+        <WorkspaceSection
+          title="Shared projects"
+          collapsed={sharedProjects.length === 0 || isCollapsed('shared_projects')}
+          onToggle={() => toggleSection('shared_projects', sharedProjects.length)}
+          count={sharedProjects.length}
+          action={<button type="button" onClick={() => setActiveTab('projects')} className={circleTheme.sectionActionText}>View all</button>}
+        >
+          {sharedProjects.length > 0 ? sharedProjects.map(renderProjectRow) : <p className="px-3 py-3 text-sm text-[var(--ledger-text-muted)]">No shared projects yet.</p>}
+        </WorkspaceSection>
 
-        <SectionCard title="Follow-ups" action={<button type="button" onClick={() => setActiveTab('followups')} className={circleTheme.subtleButton}>View all</button>}>
-          {selectedFollowUpItems.length > 0 ? (
-            <p className="px-4 py-4 text-sm text-[var(--ledger-text-muted)]">Follow-up records will appear here once that system is available.</p>
-          ) : (
-            <div className="px-4 py-4">
+        <WorkspaceSection
+          title="Follow-ups"
+          collapsed={selectedFollowUpItems.length === 0 || isCollapsed('follow_ups')}
+          onToggle={() => toggleSection('follow_ups', selectedFollowUpItems.length)}
+          count={selectedFollowUpItems.length}
+          action={<button type="button" onClick={() => setActiveTab('followups')} className={circleTheme.sectionActionText}>View all</button>}
+        >
+          <div className="px-3 py-3">
+            {selectedFollowUpItems.length > 0 ? (
+              <p className="text-sm text-[var(--ledger-text-muted)]">Follow-up records will appear here once that system is available.</p>
+            ) : (
               <p className="text-sm text-[var(--ledger-text-muted)]">No follow-ups with this person yet.</p>
-            </div>
-          )}
-        </SectionCard>
+            )}
+          </div>
+        </WorkspaceSection>
 
-        <SectionCard title="Recent activity" action={<button type="button" onClick={() => setActiveTab('activity')} className={circleTheme.subtleButton}>View all</button>}>
-          {activity.length > 0 ? activity.map(renderActivityRow) : <p className="px-4 py-4 text-sm text-[var(--ledger-text-muted)]">No recent activity.</p>}
-        </SectionCard>
+        <WorkspaceSection
+          title="Recent activity"
+          collapsed={activity.length === 0 || isCollapsed('recent_activity')}
+          onToggle={() => toggleSection('recent_activity', activity.length)}
+          count={activity.length}
+          action={<button type="button" onClick={() => setActiveTab('activity')} className={circleTheme.sectionActionText}>View all</button>}
+        >
+          {activity.length > 0 ? activity.map(renderActivityRow) : <p className="px-3 py-3 text-sm text-[var(--ledger-text-muted)]">No recent activity.</p>}
+        </WorkspaceSection>
       </div>
     );
   };
 
   const renderAssignedWork = () => (
-    <div>
+    <div className="space-y-1">
       {selectedPersonTasks.length > 0 ? (
         selectedPersonTasks.map(renderTaskRow)
       ) : (
-        <p className="px-4 py-4 text-sm text-[var(--ledger-text-muted)]">No open work assigned.</p>
+        <p className="px-3 py-3 text-sm text-[var(--ledger-text-muted)]">No open work assigned.</p>
       )}
     </div>
   );
 
   const renderProjects = () => (
-    <div>
+    <div className="space-y-1">
       {selectedProjectsRows.length > 0 ? (
         selectedProjectsRows.map(renderProjectRow)
       ) : (
-        <p className="px-4 py-4 text-sm text-[var(--ledger-text-muted)]">No shared projects yet.</p>
+        <p className="px-3 py-3 text-sm text-[var(--ledger-text-muted)]">No shared projects yet.</p>
       )}
     </div>
   );
 
   const renderFollowUps = () => (
-    <div className="space-y-3 px-4 py-4">
+    <div className="space-y-3 px-3 py-3">
       <div className="flex items-center justify-between gap-3">
         <p className="text-sm text-[var(--ledger-text-muted)]">No follow-ups with this person yet.</p>
         <button
@@ -991,11 +1391,11 @@ export const CircleWindow = () => {
   );
 
   const renderActivity = () => (
-    <div>
+    <div className="space-y-1">
       {selectedActivityRows.length > 0 ? (
         selectedActivityRows.map(renderActivityRow)
       ) : (
-        <p className="px-4 py-4 text-sm text-[var(--ledger-text-muted)]">No recent activity.</p>
+        <p className="px-3 py-3 text-sm text-[var(--ledger-text-muted)]">No recent activity.</p>
       )}
     </div>
   );
@@ -1049,7 +1449,7 @@ export const CircleWindow = () => {
               <input
                 value={searchQuery}
                 onChange={(event) => setSearchQuery(event.target.value)}
-                placeholder="Search people"
+                placeholder="Search Circle"
                 className="w-full bg-transparent text-[11px] text-[var(--ledger-text-primary)] outline-none placeholder:text-[var(--ledger-text-muted)]"
               />
             </div>
@@ -1215,10 +1615,7 @@ export const CircleWindow = () => {
                     key={person.id}
                     selected={selectedPersonId === person.id}
                     onClick={() => {
-                      setSelectedPersonId(person.id);
-                      setShowFilterMenu(false);
-                      setShowDisplayMenu(false);
-                      setShowMoreMenu(false);
+                      openPersonWorkspace(person.id);
                     }}
                     icon={<CircleAvatar person={person} />}
                     title={person.name}
@@ -1262,9 +1659,9 @@ export const CircleWindow = () => {
               <>
                 {renderPersonHeader()}
 
-                <SectionCard
-                  title="Person workspace"
-                  action={
+                <section className={circleTheme.panel}>
+                  <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[color:var(--ledger-border-subtle)] px-4 py-3">
+                    <h3 className={circleTheme.sectionTitle}>Person workspace</h3>
                     <ModuleHeaderSegmentedGroup compact>
                       {detailTabs.map((tab) => (
                         <ModuleHeaderSegmentedButton
@@ -1278,25 +1675,26 @@ export const CircleWindow = () => {
                         </ModuleHeaderSegmentedButton>
                       ))}
                     </ModuleHeaderSegmentedGroup>
-                  }
-                >
-                  {isLoadingSelected ? (
-                    <p className="px-4 py-5 text-sm text-[var(--ledger-text-muted)]">Loading person details…</p>
-                  ) : activeTab === 'overview' ? (
-                    <div className="space-y-4 px-0 py-0">{renderOverview()}</div>
-                  ) : activeTab === 'assigned' ? (
-                    renderAssignedWork()
-                  ) : activeTab === 'projects' ? (
-                    renderProjects()
-                  ) : activeTab === 'followups' ? (
-                    renderFollowUps()
-                  ) : (
-                    renderActivity()
-                  )}
-                </SectionCard>
+                  </div>
+                  <div className="px-4 py-4">
+                    {isLoadingSelected ? (
+                      <p className="text-sm text-[var(--ledger-text-muted)]">Loading person details…</p>
+                    ) : activeTab === 'overview' ? (
+                      <div className="space-y-4">{renderOverview()}</div>
+                    ) : activeTab === 'assigned' ? (
+                      renderAssignedWork()
+                    ) : activeTab === 'projects' ? (
+                      renderProjects()
+                    ) : activeTab === 'followups' ? (
+                      renderFollowUps()
+                    ) : (
+                      renderActivity()
+                    )}
+                  </div>
+                </section>
               </>
             ) : (
-              <section className={circleTheme.panel}>{renderEmptySelection()}</section>
+              renderCircleOverview()
             )}
           </div>
         </main>
@@ -1305,7 +1703,8 @@ export const CircleWindow = () => {
       {showMoreMenu && selectedPersonDetails && (
         <div
           ref={moreMenuRef}
-          className="absolute right-6 top-20 z-50 w-56 rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-2 shadow-[0_10px_30px_rgba(15,23,42,0.08)]"
+          style={moreMenuStyle ?? undefined}
+          className="z-50 overflow-hidden rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] shadow-[0_10px_30px_rgba(15,23,42,0.08)]"
         >
           <button
             type="button"
@@ -1313,8 +1712,9 @@ export const CircleWindow = () => {
               void copyPersonEmail(selectedPersonDetails);
               setShowMoreMenu(false);
             }}
-            className={circleTheme.subtleButton}
+            className="flex min-h-9 w-full items-center gap-2 px-3 py-2 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]"
           >
+            <Copy size={14} className="shrink-0" />
             Copy email
           </button>
           <button
@@ -1323,8 +1723,9 @@ export const CircleWindow = () => {
               openActivity();
               setShowMoreMenu(false);
             }}
-            className={circleTheme.subtleButton}
+            className="flex min-h-9 w-full items-center gap-2 px-3 py-2 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]"
           >
+            <Clock3 size={14} className="shrink-0" />
             Open activity
           </button>
           <button
@@ -1333,8 +1734,9 @@ export const CircleWindow = () => {
               if (sharedProjectFromWork) openSharedProject(sharedProjectFromWork.id);
               setShowMoreMenu(false);
             }}
-            className={circleTheme.subtleButton}
+            className="flex min-h-9 w-full items-center gap-2 px-3 py-2 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]"
           >
+            <Folder size={14} className="shrink-0" />
             Open shared project
           </button>
         </div>
