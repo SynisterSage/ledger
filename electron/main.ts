@@ -649,6 +649,8 @@ type SidebarPreferencesPayload = {
   opacity?: number;
   blur?: boolean;
   defaultState?: 'expanded' | 'collapsed' | 'remember';
+  alwaysOnTop?: boolean;
+  shellFullscreen?: boolean;
   autoHide?: boolean;
   isExpanded?: boolean;
   collapsedRestoreIsExpanded?: boolean;
@@ -724,6 +726,7 @@ let currentSidebarMode: SidebarWindowMode = 'auth';
 let currentSidebarPosition: SidebarPosition = 'right';
 let currentFloatingPosition = { ...defaultSidebarPreferences.floatingPosition };
 let currentSidebarPreferences = { ...defaultSidebarPreferences };
+let currentSidebarShellFullscreen = false;
 let currentFloatingDockTarget: FloatingDockTarget | null = null;
 let currentFloatingDockBounds: Rect | null = null;
 let currentFloatingDockAttachmentStatus: FloatingDockAttachmentStatus = 'detached';
@@ -874,21 +877,6 @@ function suspendWorkspaceWindowDockTarget() {
   currentFloatingDockAttachmentStatus = 'suspended_minimized';
 }
 
-function syncWorkspaceWindowAttachment(kindOverride?: ModuleWindowKind) {
-  if (!shouldAttachWorkspaceWindowToSidebar()) return;
-  if (!workspaceModuleWin || workspaceModuleWin.isDestroyed()) return;
-  if (floatingDockDragActive) return;
-  if (isWorkspaceDockTarget()) return;
-
-  const kind = kindOverride ?? workspaceModuleKind;
-  if (!kind || !isWorkspaceModuleKind(kind)) return;
-
-  const nextBounds = resolveWorkspaceModuleBounds(kind);
-  const currentBounds = workspaceModuleWin.getBounds();
-  if (rectsMatch(currentBounds, nextBounds)) return;
-
-  workspaceModuleWin.setBounds(nextBounds, false);
-}
 const FLOATING_RAIL_HEIGHT = 520;
 const MIN_DOCK_HEIGHT = {
   expanded: 640,
@@ -4827,7 +4815,8 @@ function applySidebarWindowMode(mode: SidebarWindowMode, animate = true) {
       : mode === 'minimized'
       ? getDockedBounds(RAIL_SIZE)
       : getDockedBounds(EXPANDED_WIDTH);
-  sidebarWin.setAlwaysOnTop(sidebarAlwaysOnTop, 'screen-saver');
+  const shouldAlwaysOnTop = sidebarAlwaysOnTop || currentSidebarShellFullscreen;
+  sidebarWin.setAlwaysOnTop(shouldAlwaysOnTop, 'screen-saver');
   sidebarWin.setResizable(false);
   setWindowButtonVisibility(sidebarWin, false);
   const isOpeningSidebar = mode === 'expanded' && previousMode !== 'expanded';
@@ -5347,7 +5336,6 @@ function navigateWorkspaceModuleWindow(route: WorkspaceModuleRoute, pushHistory 
   }
 
   registerWorkspaceModuleKind(route.kind, moduleWin, route);
-  syncWorkspaceWindowAttachment(route.kind);
   setWorkspaceWindowAsFloatingDockTarget(route.kind);
 
   const shouldKeepFullscreen =
@@ -5420,7 +5408,6 @@ function updateWorkspaceModuleRoute(route: WorkspaceModuleRoute) {
   workspaceModuleForwardStack.length = 0;
 
   registerWorkspaceModuleKind(route.kind, moduleWin, route);
-  syncWorkspaceWindowAttachment(route.kind);
   setWorkspaceWindowAsFloatingDockTarget(route.kind);
   if (
     isWorkspaceModuleKind(route.kind) &&
@@ -5479,10 +5466,7 @@ function openModuleWindow(
     workspaceModuleKind !== kind
   ) {
     holdCurrentFloatingDockTarget();
-    if (shouldAttachWorkspaceWindowToSidebar() && !workspaceShellFullscreenRestoreBounds) {
-      workspaceModuleWin.setBounds(resolveWorkspaceModuleBounds(kind), false);
-      setWorkspaceWindowAsFloatingDockTarget(kind);
-    }
+    setWorkspaceWindowAsFloatingDockTarget(kind);
     navigateWorkspaceModuleWindow(workspaceRoute);
     return;
   }
@@ -5955,6 +5939,12 @@ ipcMain.handle(
     }
     if (typeof preferences.opacity === 'number') {
       applySidebarOpacity(preferences.opacity);
+    }
+    if (typeof preferences.alwaysOnTop === 'boolean') {
+      applySidebarAlwaysOnTop(preferences.alwaysOnTop);
+    }
+    if (typeof preferences.shellFullscreen === 'boolean') {
+      currentSidebarShellFullscreen = preferences.shellFullscreen;
     }
     if (preferences.floatingPosition) {
       currentFloatingPosition = {

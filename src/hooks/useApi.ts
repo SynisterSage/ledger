@@ -343,6 +343,7 @@ export const useApi = () => {
       createIntakeItem: (payload: {
         workspace_id: string;
         source: 'quick_capture' | 'browser' | 'meeting' | 'calendar' | 'manual' | 'system_suggestion';
+        source_provider?: string | null;
         suggested_type?: 'task' | 'note' | 'event' | 'reminder' | 'deadline' | 'project' | 'milestone' | 'capture';
         title: string;
         body?: string | null;
@@ -351,7 +352,11 @@ export const useApi = () => {
         suggested_project_id?: string | null;
         suggested_team_id?: string | null;
         suggested_assignee_id?: string | null;
+        suggested_calendar_id?: string | null;
+        suggested_note_section_id?: string | null;
+        suggested_date?: string | null;
         suggested_due_date?: string | null;
+        suggested_due_at?: string | null;
         suggested_start_at?: string | null;
         suggested_end_at?: string | null;
         source_object_type?: string | null;

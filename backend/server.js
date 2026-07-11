@@ -115,6 +115,49 @@ const titleCaseLabel = (value) =>
     .trim()
     .replace(/\b\w/g, (char) => char.toUpperCase()) || 'Intake';
 
+const inboxItemSelectColumns = [
+  'id',
+  'workspace_id',
+  'user_id',
+  'updated_by',
+  'source',
+  'source_provider',
+  'source_id',
+  'source_url',
+  'title',
+  'body',
+  'raw_payload',
+  'suggested_type',
+  'suggested_project_id',
+  'suggested_assignee_id',
+  'suggested_calendar_id',
+  'suggested_note_section_id',
+  'suggested_date',
+  'suggested_due_at',
+  'status',
+  'converted_type',
+  'converted_id',
+  'converted_at',
+  'converted_by',
+  'archived_at',
+  'archived_by',
+  'snoozed_until',
+  'created_at',
+  'updated_at',
+].join(', ');
+
+const normalizeSourceUrl = (value) => {
+  const text = clampText(value, 2_000);
+  if (!text) return null;
+  try {
+    const parsed = new URL(text);
+    if (!['http:', 'https:'].includes(parsed.protocol)) return null;
+    return parsed.toString();
+  } catch {
+    return null;
+  }
+};
+
 const rateLimit = (scope) => (req, res, next) => {
   const now = Date.now();
   const bucketKey = getBucketKey(scope, req, req.authUser?.id);
@@ -3132,9 +3175,7 @@ const loadMobileTodayData = async ({ userId, scope, dateKey }) => {
         .eq('status', 'unprocessed'),
       supabase
         .from('inbox_items')
-        .select(
-          'id, workspace_id, user_id, source, source_id, source_url, title, body, raw_payload, suggested_type, status, converted_type, converted_id, created_at, updated_at'
-        )
+        .select(inboxItemSelectColumns)
         .in('workspace_id', workspaceIds)
         .eq('status', 'unprocessed')
         .order('created_at', { ascending: false })
@@ -4023,7 +4064,9 @@ const saveSlackMessageCapture = async (payload) => {
       {
         workspace_id: account.workspace_id,
         user_id: account?.installed_by ?? null,
+        updated_by: account?.installed_by ?? null,
         source: 'slack',
+        source_provider: 'slack',
         source_id: sourceId,
         source_url: externalUrl,
         title,
@@ -4063,9 +4106,7 @@ const mapInboxItemResponse = (row) => {
 const loadInboxItemForWorkspace = async (workspaceId, id) => {
   const result = await supabase
     .from('inbox_items')
-    .select(
-      'id, workspace_id, user_id, source, source_id, source_url, title, body, raw_payload, suggested_type, status, converted_type, converted_id, created_at, updated_at'
-    )
+    .select(inboxItemSelectColumns)
     .eq('workspace_id', workspaceId)
     .eq('id', id)
     .maybeSingle();
@@ -4841,6 +4882,11 @@ app.post('/api/inbox/browser', extensionAuthMiddleware, rateLimit('write'), asyn
       }
     }
 
+    const normalizedSourceUrl = normalizeSourceUrl(sourceUrl);
+    if (sourceUrl && !normalizedSourceUrl) {
+      return res.status(400).json({ error: 'source_url must be an http or https URL' });
+    }
+
     const fallbackTitle =
       captureType === 'selection'
         ? 'Selected text'
@@ -4851,23 +4897,29 @@ app.post('/api/inbox/browser', extensionAuthMiddleware, rateLimit('write'), asyn
     const insertPayload = {
       workspace_id: workspaceId,
       user_id: req.authUser.id,
+      updated_by: req.authUser.id,
       source: 'browser',
+      source_provider: 'browser',
       source_id: null,
-      source_url: sourceUrl,
+      source_url: normalizedSourceUrl,
       title: title || fallbackTitle,
       body,
       raw_payload: rawPayload ?? {},
       suggested_type: 'unknown',
       status: 'unprocessed',
+      converted_type: null,
+      converted_id: null,
+      converted_at: null,
+      converted_by: null,
+      archived_at: null,
+      archived_by: null,
       updated_at: new Date().toISOString(),
     };
 
     const { data, error } = await supabase
       .from('inbox_items')
       .insert(insertPayload)
-      .select(
-        'id, workspace_id, user_id, source, source_id, source_url, title, body, raw_payload, suggested_type, status, converted_type, converted_id, created_at, updated_at'
-      )
+      .select(inboxItemSelectColumns)
       .single();
 
     if (error) throw error;
@@ -4893,6 +4945,7 @@ app.post('/api/intake', authMiddleware, rateLimit('write'), async (req, res) => 
     await requireWorkspaceAccess(req.authUser.id, workspaceId, 'member');
 
     const source = normalizeIntakeSource(req.body?.source);
+    const sourceProvider = normalizeNullableText(req.body?.source_provider);
     const suggestedType = normalizeIntakeSuggestedType(req.body?.suggested_type);
     const title = clampText(req.body?.title, 300);
     if (!title) {
@@ -4953,7 +5006,9 @@ app.post('/api/intake', authMiddleware, rateLimit('write'), async (req, res) => 
     const insertPayload = {
       workspace_id: workspaceId,
       user_id: req.authUser.id,
+      updated_by: req.authUser.id,
       source,
+      source_provider: sourceProvider || null,
       source_id: sourceObjectId || null,
       source_url: null,
       title,
@@ -4961,15 +5016,19 @@ app.post('/api/intake', authMiddleware, rateLimit('write'), async (req, res) => 
       raw_payload: rawPayload,
       suggested_type: suggestedType,
       status: 'unprocessed',
+      converted_type: null,
+      converted_id: null,
+      converted_at: null,
+      converted_by: null,
+      archived_at: null,
+      archived_by: null,
       updated_at: new Date().toISOString(),
     };
 
     const { data, error } = await supabase
       .from('inbox_items')
       .insert(insertPayload)
-      .select(
-        'id, workspace_id, user_id, source, source_id, source_url, title, body, raw_payload, suggested_type, status, converted_type, converted_id, created_at, updated_at'
-      )
+      .select(inboxItemSelectColumns)
       .single();
 
     if (error) throw error;
@@ -5244,9 +5303,7 @@ app.get('/api/inbox', authMiddleware, rateLimit('read'), async (req, res) => {
 
     let query = supabase
       .from('inbox_items')
-      .select(
-        'id, workspace_id, user_id, source, source_id, source_url, title, body, raw_payload, suggested_type, status, converted_type, converted_id, created_at, updated_at'
-      )
+      .select(inboxItemSelectColumns)
       .eq('workspace_id', workspaceId)
       .order('created_at', { ascending: false })
       .limit(100);
@@ -5275,13 +5332,14 @@ app.post('/api/inbox/:id/archive', authMiddleware, rateLimit('write'), async (re
       .update({
         status: 'archived',
         snoozed_until: null,
+        archived_at: new Date().toISOString(),
+        archived_by: req.authUser.id,
+        updated_by: req.authUser.id,
         updated_at: new Date().toISOString(),
       })
       .eq('workspace_id', workspaceId)
       .eq('id', req.params.id)
-      .select(
-        'id, workspace_id, user_id, source, source_id, source_url, title, body, raw_payload, suggested_type, status, converted_type, converted_id, created_at, updated_at'
-      )
+      .select(inboxItemSelectColumns)
       .single();
 
     if (error) throw error;
@@ -5314,13 +5372,12 @@ app.post('/api/inbox/:id/snooze', authMiddleware, rateLimit('write'), async (req
       .update({
         status: 'snoozed',
         snoozed_until: snoozedUntil.toISOString(),
+        updated_by: req.authUser.id,
         updated_at: new Date().toISOString(),
       })
       .eq('workspace_id', workspaceId)
       .eq('id', req.params.id)
-      .select(
-        'id, workspace_id, user_id, source, source_id, source_url, title, body, raw_payload, suggested_type, status, converted_type, converted_id, created_at, updated_at'
-      )
+      .select(inboxItemSelectColumns)
       .single();
 
     if (error) throw error;
@@ -5371,6 +5428,8 @@ app.post('/api/inbox/:id/convert', authMiddleware, rateLimit('write'), async (re
       : body;
     const assignedToUserId = normalizeNullableText(req.body?.assigned_to_user_id ?? req.body?.assigned_to);
     const assignedToTeamId = normalizeNullableText(req.body?.assigned_to_team_id ?? req.body?.assigned_team_id);
+    const convertedAt = new Date().toISOString();
+    const convertedBy = req.authUser.id;
     let createdId = null;
 
     if (type === 'task') {
@@ -5458,14 +5517,17 @@ app.post('/api/inbox/:id/convert', authMiddleware, rateLimit('write'), async (re
           status: 'converted',
           converted_type: 'task',
           converted_id: createdId,
+          converted_at: convertedAt,
+          converted_by: convertedBy,
           snoozed_until: null,
+          archived_at: null,
+          archived_by: null,
+          updated_by: convertedBy,
           updated_at: new Date().toISOString(),
         })
         .eq('workspace_id', workspaceId)
         .eq('id', inboxItem.id)
-        .select(
-          'id, workspace_id, user_id, source, source_id, source_url, title, body, raw_payload, suggested_type, status, converted_type, converted_id, created_at, updated_at'
-        )
+        .select(inboxItemSelectColumns)
         .single();
       if (inboxUpdate.error) throw inboxUpdate.error;
       return res.json({
@@ -5512,14 +5574,17 @@ app.post('/api/inbox/:id/convert', authMiddleware, rateLimit('write'), async (re
           status: 'converted',
           converted_type: 'note',
           converted_id: createdId,
+          converted_at: convertedAt,
+          converted_by: convertedBy,
           snoozed_until: null,
+          archived_at: null,
+          archived_by: null,
+          updated_by: convertedBy,
           updated_at: new Date().toISOString(),
         })
         .eq('workspace_id', workspaceId)
         .eq('id', inboxItem.id)
-        .select(
-          'id, workspace_id, user_id, source, source_id, source_url, title, body, raw_payload, suggested_type, status, converted_type, converted_id, created_at, updated_at'
-        )
+        .select(inboxItemSelectColumns)
         .single();
       if (inboxUpdate.error) throw inboxUpdate.error;
       return res.json({
@@ -5601,14 +5666,17 @@ app.post('/api/inbox/:id/convert', authMiddleware, rateLimit('write'), async (re
           status: 'converted',
           converted_type: 'reminder',
           converted_id: createdId,
+          converted_at: convertedAt,
+          converted_by: convertedBy,
           snoozed_until: null,
+          archived_at: null,
+          archived_by: null,
+          updated_by: convertedBy,
           updated_at: new Date().toISOString(),
         })
         .eq('workspace_id', workspaceId)
         .eq('id', inboxItem.id)
-        .select(
-          'id, workspace_id, user_id, source, source_id, source_url, title, body, raw_payload, suggested_type, status, converted_type, converted_id, created_at, updated_at'
-        )
+        .select(inboxItemSelectColumns)
         .single();
       if (inboxUpdate.error) throw inboxUpdate.error;
       return res.json({
@@ -5666,14 +5734,17 @@ app.post('/api/inbox/:id/convert', authMiddleware, rateLimit('write'), async (re
           status: 'converted',
           converted_type: 'event',
           converted_id: createdId,
+          converted_at: convertedAt,
+          converted_by: convertedBy,
           snoozed_until: null,
+          archived_at: null,
+          archived_by: null,
+          updated_by: convertedBy,
           updated_at: new Date().toISOString(),
         })
         .eq('workspace_id', workspaceId)
         .eq('id', inboxItem.id)
-        .select(
-          'id, workspace_id, user_id, source, source_id, source_url, title, body, raw_payload, suggested_type, status, converted_type, converted_id, created_at, updated_at'
-        )
+        .select(inboxItemSelectColumns)
         .single();
       if (inboxUpdate.error) throw inboxUpdate.error;
       return res.json({
@@ -5725,14 +5796,17 @@ app.post('/api/inbox/:id/convert', authMiddleware, rateLimit('write'), async (re
             status: 'converted',
             converted_type: 'project',
             converted_id: existingProject.id,
+            converted_at: convertedAt,
+            converted_by: convertedBy,
             snoozed_until: null,
+            archived_at: null,
+            archived_by: null,
+            updated_by: convertedBy,
             updated_at: new Date().toISOString(),
           })
           .eq('workspace_id', workspaceId)
           .eq('id', inboxItem.id)
-          .select(
-            'id, workspace_id, user_id, source, source_id, source_url, title, body, raw_payload, suggested_type, status, converted_type, converted_id, created_at, updated_at'
-          )
+          .select(inboxItemSelectColumns)
           .single();
         if (inboxUpdate.error) throw inboxUpdate.error;
         return res.json({
@@ -5768,14 +5842,17 @@ app.post('/api/inbox/:id/convert', authMiddleware, rateLimit('write'), async (re
           status: 'converted',
           converted_type: 'project',
           converted_id: createdId,
+          converted_at: convertedAt,
+          converted_by: convertedBy,
           snoozed_until: null,
+          archived_at: null,
+          archived_by: null,
+          updated_by: convertedBy,
           updated_at: new Date().toISOString(),
         })
         .eq('workspace_id', workspaceId)
         .eq('id', inboxItem.id)
-        .select(
-          'id, workspace_id, user_id, source, source_id, source_url, title, body, raw_payload, suggested_type, status, converted_type, converted_id, created_at, updated_at'
-        )
+        .select(inboxItemSelectColumns)
         .single();
       if (inboxUpdate.error) throw inboxUpdate.error;
       return res.json({

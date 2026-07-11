@@ -1,8 +1,10 @@
 import {
+  Archive,
   Calendar,
   Bell,
   CalendarDays,
   CheckSquare,
+  ChevronDown,
   FileText,
   Funnel,
   Globe,
@@ -16,12 +18,19 @@ import {
   Search,
   Sparkles,
   FilePenLine,
+  Clock3,
 } from 'lucide-react';
 import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { useApi } from '../../hooks/useApi';
 import { useAuthContext } from '../../context/AuthContext';
 import { useWorkspaceContext } from '../../context/WorkspaceContext';
-import { ModuleHeaderStripAction, ModuleWindowHeader } from '../Common/ModuleWindowHeader';
+import {
+  ModuleHeaderActionButton,
+  ModuleHeaderSegmentedButton,
+  ModuleHeaderSegmentedGroup,
+  ModuleHeaderStripAction,
+  ModuleWindowHeader,
+} from '../Common/ModuleWindowHeader';
 import { useToast } from '../Common/ToastProvider';
 import { ModalCloseButton } from '../Common/ModalCloseButton';
 import { ModalOverlay } from '../Common/ModalOverlay';
@@ -34,14 +43,27 @@ type ConversionType = 'task' | 'note' | 'reminder' | 'event' | 'project';
 type InboxItem = {
   id: string;
   source: string;
+  source_provider?: string | null;
   source_id?: string | null;
   source_url?: string | null;
   title: string;
   body?: string | null;
   raw_payload?: Record<string, unknown> | null;
+  updated_by?: string | null;
   status: InboxStatus;
   suggested_type?: string | null;
+  suggested_project_id?: string | null;
+  suggested_assignee_id?: string | null;
+  suggested_calendar_id?: string | null;
+  suggested_note_section_id?: string | null;
+  suggested_date?: string | null;
+  suggested_due_at?: string | null;
   converted_type?: string | null;
+  converted_id?: string | null;
+  converted_at?: string | null;
+  converted_by?: string | null;
+  archived_at?: string | null;
+  archived_by?: string | null;
   channel_name?: string | null;
   author_name?: string | null;
   source_label?: string | null;
@@ -87,7 +109,7 @@ const statusLabels: Array<{ value: InboxStatus; label: string }> = [
 
 const inboxTheme = {
   shell:
-    'flex h-screen flex-col overflow-hidden rounded-3xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] text-[var(--ledger-text-primary)] shadow-none',
+    'relative flex h-screen flex-col overflow-hidden rounded-3xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] text-[var(--ledger-text-primary)] shadow-none',
   contentShell: 'bg-[var(--ledger-background)]',
   iconButton:
     'inline-flex h-8 w-8 items-center justify-center rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]',
@@ -105,6 +127,8 @@ const inboxTheme = {
   footer:
     'flex shrink-0 items-center justify-between gap-3 border-t border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-5 py-4',
   inspectorLabel: 'text-[11px] font-semibold text-[var(--ledger-text-muted)]',
+  select:
+    'h-10 w-full appearance-none rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 pr-9 text-sm text-[var(--ledger-text-primary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60',
 };
 
 const formatDateTime = (value?: string | null) => {
@@ -315,6 +339,13 @@ const normalizeForSearch = (value: unknown) => String(value ?? '').trim().toLowe
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   Boolean(value && typeof value === 'object' && !Array.isArray(value));
 
+const getArrayFromPayload = (payload: unknown, key: string) => {
+  if (Array.isArray(payload)) return payload;
+  if (!isRecord(payload)) return [];
+  const candidate = payload[key];
+  return Array.isArray(candidate) ? candidate : [];
+};
+
 const findDeepString = (value: unknown, keys: string[], depth = 0): string | null => {
   if (!value || depth > 2) return null;
   if (typeof value === 'string') {
@@ -375,19 +406,34 @@ const formatRelativeTime = (value?: string | null) => {
 const getRawPayload = (item: InboxItem) => (isRecord(item.raw_payload) ? item.raw_payload : {});
 
 const getSearchCorpus = (item: InboxItem) =>
-  normalizeForSearch([
-    item.title,
-    item.body,
-    item.source,
-    item.source_label,
-    item.source_id,
-    item.source_url,
-    item.suggested_type,
-    item.converted_type,
-    item.author_name,
-    item.channel_name,
-    JSON.stringify(getRawPayload(item)),
-  ].join(' '));
+  normalizeForSearch(
+    [
+      item.title,
+      getDisplayTitle(item),
+      getDisplayPreview(item),
+      item.body,
+      item.source,
+      getSourceLabel(item),
+      getSourceContext(item),
+      item.source_label,
+      item.source_id,
+      item.source_url,
+      item.suggested_type,
+      item.converted_type,
+      getTypeDisplayLabel(item),
+      item.author_name,
+      getItemCreatedByLabel(item),
+      item.channel_name,
+      getItemProjectLabel(item),
+      getItemAssigneeLabel(item),
+      getItemTeamLabel(item),
+      getItemReason(item),
+      formatDateTime(item.created_at),
+      JSON.stringify(getRawPayload(item)),
+    ]
+      .filter(Boolean)
+      .join(' ')
+  );
 
 const getItemSourceBucket = (item: InboxItem) => {
   const source = normalizeForSearch(item.source);
@@ -738,8 +784,8 @@ export default function IntakeWindow() {
             : [];
 
         const mappedTeams =
-          teamsPayload.status === 'fulfilled' && Array.isArray(teamsPayload.value)
-            ? teamsPayload.value.map((team: any) => ({
+          teamsPayload.status === 'fulfilled'
+            ? getArrayFromPayload(teamsPayload.value, 'teams').map((team: any) => ({
                 id: String(team.id ?? ''),
                 name: String(team.name ?? 'Team'),
                 identifier: team.identifier ? String(team.identifier) : null,
@@ -1126,32 +1172,90 @@ export default function IntakeWindow() {
     setFilterMenu(null);
   };
 
-  const renderStatusTab = (status: InboxStatus) => (
-    <button
-      key={status}
-      type="button"
-      onClick={() => {
-        setActiveStatus(status);
-        setSelectedItemId(null);
-      }}
-      className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium transition ${
-        activeStatus === status
-          ? 'border-[color:var(--ledger-border-strong)] bg-[var(--ledger-surface-hover)] text-[var(--ledger-text-primary)]'
-          : 'border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]'
-      }`}
-    >
-      <span>{statusLabels.find((entry) => entry.value === status)?.label ?? status}</span>
-      <span className="rounded-full bg-[var(--ledger-surface)] px-1.5 py-0.5 text-[10px] text-[var(--ledger-text-muted)]">
-        {counts[status]}
-      </span>
-    </button>
+  const intakeStatusTabs = (
+    <ModuleHeaderSegmentedGroup compact>
+      {statusLabels.map((status) => {
+        const active = activeStatus === status.value;
+        const StatusIcon =
+          status.value === 'unprocessed'
+            ? Inbox
+            : status.value === 'converted'
+              ? CheckSquare
+              : status.value === 'snoozed'
+                ? Clock3
+                : Archive;
+        return (
+          <ModuleHeaderSegmentedButton
+            key={status.value}
+            compact
+            pill
+            active={active}
+            onClick={() => {
+              setActiveStatus(status.value);
+              setSelectedItemId(null);
+            }}
+            title={status.label}
+            ariaLabel={status.label}
+          >
+            <StatusIcon size={11} />
+            <span>{status.label}</span>
+            <span className="ml-1 rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-1.5 py-0.5 text-[10px] leading-none text-[var(--ledger-text-muted)]">
+              {counts[status.value]}
+            </span>
+          </ModuleHeaderSegmentedButton>
+        );
+      })}
+    </ModuleHeaderSegmentedGroup>
+  );
+
+  const intakeSearchControls = (
+    <div className="flex items-center gap-1.5">
+      <label className="hidden h-7 min-w-[170px] items-center gap-2 rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] px-2.5 text-xs text-[var(--ledger-text-muted)] shadow-[0_1px_2px_rgba(15,23,42,0.04)] md:flex lg:min-w-[210px]">
+        <Search size={12} className="shrink-0" />
+        <input
+          ref={searchInputRef}
+          value={searchQuery}
+          onChange={(event) => setSearchQuery(event.target.value)}
+          placeholder="Search intake..."
+          className="min-w-0 flex-1 bg-transparent text-xs text-[var(--ledger-text-primary)] placeholder:text-[var(--ledger-text-muted)] focus:outline-none"
+        />
+      </label>
+      <button
+        type="button"
+        onClick={() => searchInputRef.current?.focus()}
+        className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] md:hidden"
+        aria-label="Search intake"
+        title="Search intake"
+      >
+        <Search size={12} />
+      </button>
+      <ModuleHeaderActionButton
+        variant="strip"
+        iconOnly
+        icon={<Funnel size={12} />}
+        onClick={openFilterMenu}
+        title="Filter intake"
+        ariaLabel="Filter intake"
+      >
+        <></>
+      </ModuleHeaderActionButton>
+      <ModuleHeaderActionButton
+        variant="strip"
+        iconOnly
+        icon={<PanelRight size={12} />}
+        onClick={openDisplayMenu}
+        title="Display intake"
+        ariaLabel="Display intake"
+      >
+        <></>
+      </ModuleHeaderActionButton>
+    </div>
   );
 
   const renderRow = (item: InboxItem) => {
     const selected = item.id === selectedItem?.id;
     const sourceLabel = getTypeDisplayLabel(item);
     const title = getDisplayTitle(item);
-    const preview = getDisplayPreview(item);
     const sourceBits = [
       display.showSource ? getSourceLabel(item) : null,
       display.showStatus ? getStatusLabel(item.status) : null,
@@ -1170,68 +1274,61 @@ export default function IntakeWindow() {
           setSelectedItemId(item.id);
           setContextMenu({ x: event.clientX, y: event.clientY, item });
         }}
-        className={`group flex min-h-[56px] cursor-default items-stretch gap-3 border-b border-[color:var(--ledger-border-subtle)] px-4 py-3 transition ${
+        className={`group flex min-h-[44px] cursor-default items-center gap-3 border-b border-[color:var(--ledger-border-subtle)] px-3 py-2 transition ${
           selected
-            ? 'bg-[var(--ledger-surface-selected)]'
+            ? 'bg-[var(--ledger-surface-hover)]'
             : 'hover:bg-[var(--ledger-surface-hover)]'
         }`}
       >
-        <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)]">
-          <RowIcon size={14} />
+        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)]">
+          <RowIcon size={13} />
         </div>
 
         <div className="min-w-0 flex-1">
-          <div className="flex items-start justify-between gap-4">
-            <div className="min-w-0">
-              <p className="truncate text-[14px] font-medium text-[var(--ledger-text-primary)]">
+          <div className="flex min-w-0 items-center gap-2">
+            <p className="min-w-0 truncate text-[13px] font-medium leading-5 text-[var(--ledger-text-primary)]">
                 {title}
               </p>
-              <p className="mt-0.5 truncate text-[12px] text-[var(--ledger-text-muted)]">
-                {sourceBits.join(' · ') || sourceLabel}
-              </p>
-            </div>
-            <div className="flex shrink-0 items-center gap-2">
-              <span className="text-[11px] text-[var(--ledger-text-muted)]">
-                {formatRelativeTime(item.created_at)}
-              </span>
-              <div className="flex items-center gap-1 opacity-0 transition group-hover:opacity-100">
-                {item.status === 'unprocessed' && (
-                  <button
-                    type="button"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      openConversion(item, getDefaultConversionType(item));
-                    }}
-                    className="rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2 py-1 text-[11px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
-                  >
-                    Accept
-                  </button>
-                )}
-                <button
-                  type="button"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    setSnoozeMenu({ x: event.clientX, y: event.clientY, item });
-                  }}
-                  className="rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2 py-1 text-[11px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
-                >
-                  Snooze
-                </button>
-                <button
-                  type="button"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    void archiveItem(item);
-                  }}
-                  disabled={activeActionId === item.id}
-                  className="rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2 py-1 text-[11px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] disabled:opacity-60"
-                >
-                  {activeActionId === item.id ? <Loader2 size={10} className="animate-spin" /> : 'Archive'}
-                </button>
-              </div>
-            </div>
+            <p className="min-w-0 truncate text-[11px] leading-5 text-[var(--ledger-text-muted)]">
+              {sourceBits.join(' · ') || sourceLabel}
+            </p>
           </div>
-          {preview && <p className="mt-1 line-clamp-1 text-[12px] text-[var(--ledger-text-secondary)]">{preview}</p>}
+        </div>
+
+        <div className="flex shrink-0 items-center gap-1 opacity-0 transition group-hover:opacity-100">
+          {item.status === 'unprocessed' && (
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                openConversion(item, getDefaultConversionType(item));
+              }}
+              className="rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2 py-1 text-[11px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+            >
+              Accept
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              setSnoozeMenu({ x: event.clientX, y: event.clientY, item });
+            }}
+            className="rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2 py-1 text-[11px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+          >
+            Snooze
+          </button>
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              void archiveItem(item);
+            }}
+            disabled={activeActionId === item.id}
+            className="rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2 py-1 text-[11px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] disabled:opacity-60"
+          >
+            {activeActionId === item.id ? <Loader2 size={10} className="animate-spin" /> : 'Archive'}
+          </button>
         </div>
       </div>
     );
@@ -1505,18 +1602,20 @@ export default function IntakeWindow() {
       document.body
     );
 
-  const conversionModal = draft &&
-    createPortal(
+  const conversionModal = draft && (
       <ModalOverlay
         isOpen
         onClose={closeConversion}
-        classNameContainer={`flex max-h-[88vh] w-full max-w-3xl overflow-hidden ${sidebarTheme.surface}`}
+        backdropBorderRadius="inherit"
+        disablePortal
+        manageWindowChrome={false}
+        classNameContainer="w-full max-w-[620px] overflow-hidden rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-[var(--ledger-shadow)]"
       >
-        <div className="flex min-h-0 w-full flex-col">
-          <div className="flex items-start justify-between gap-4 border-b border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-6 py-5">
+        <div className="flex h-[min(calc(100vh-4rem),700px)] min-h-0 w-full flex-col overflow-hidden">
+          <div className="flex items-start justify-between gap-4 border-b border-[color:var(--ledger-border-subtle)] px-5 py-4">
             <div className="min-w-0">
               <p className="text-sm font-semibold text-[var(--ledger-text-primary)]">Review item</p>
-              <h2 className="mt-2 truncate text-lg font-semibold text-[var(--ledger-text-primary)]">
+              <h2 className="mt-1.5 truncate text-[15px] font-semibold text-[var(--ledger-text-primary)]">
                 {getDisplayTitle(draft.item)}
               </h2>
               <p className={`mt-1 text-sm ${inboxTheme.bodyText}`}>
@@ -1526,8 +1625,8 @@ export default function IntakeWindow() {
             <ModalCloseButton onClick={closeConversion} ariaLabel="Close convert modal" className="shrink-0" />
           </div>
 
-          <div className="min-h-0 flex-1 overflow-y-auto p-5">
-            <div className="grid gap-4">
+          <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">
+            <div className="grid gap-3">
               <div className="grid grid-cols-5 gap-1 rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] p-1">
                 {conversionTypes.map(({ value, label, icon: Icon }) => (
                   <button
@@ -1553,7 +1652,7 @@ export default function IntakeWindow() {
 
               {draft.type === 'project' ? (
                 <div className="grid gap-3">
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid gap-3 sm:grid-cols-2">
                     <label className="block space-y-1">
                       <span className={`text-xs font-medium ${inboxTheme.mutedText}`}>Workspace</span>
                       <input
@@ -1564,16 +1663,22 @@ export default function IntakeWindow() {
                     </label>
                     <label className="block space-y-1">
                       <span className={`text-xs font-medium ${inboxTheme.mutedText}`}>Status</span>
-                      <select
-                        value={projectStatus}
-                        onChange={(event) => setProjectStatus(event.target.value)}
-                        className={inboxTheme.field}
-                      >
-                        <option value="not_started">Not started</option>
-                        <option value="in_progress">In progress</option>
-                        <option value="paused">Paused</option>
-                        <option value="completed">Completed</option>
-                      </select>
+                      <div className="relative">
+                        <select
+                          value={projectStatus}
+                          onChange={(event) => setProjectStatus(event.target.value)}
+                          className={inboxTheme.select}
+                        >
+                          <option value="not_started">Not started</option>
+                          <option value="in_progress">In progress</option>
+                          <option value="paused">Paused</option>
+                          <option value="completed">Completed</option>
+                        </select>
+                        <ChevronDown
+                          size={14}
+                          className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[var(--ledger-text-muted)]"
+                        />
+                      </div>
                     </label>
                   </div>
 
@@ -1583,11 +1688,11 @@ export default function IntakeWindow() {
                       value={projectBrief}
                       onChange={(event) => setProjectBrief(event.target.value)}
                       rows={4}
-                      className="w-full resize-y rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] px-3 py-2.5 text-sm leading-6 text-[var(--ledger-text-primary)] outline-none transition focus:border-[color:var(--ledger-border-strong)]"
+                      className="w-full resize-y rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] px-3 py-2.5 text-sm leading-6 text-[var(--ledger-text-primary)] outline-none transition focus:border-[color:var(--ledger-border-strong)]"
                     />
                   </label>
 
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid gap-3 sm:grid-cols-2">
                     <label className="block space-y-1">
                       <span className={`text-xs font-medium ${inboxTheme.mutedText}`}>Start date</span>
                       <input
@@ -1608,36 +1713,48 @@ export default function IntakeWindow() {
                     </label>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid gap-3 sm:grid-cols-2">
                     <label className="block space-y-1">
                       <span className={`text-xs font-medium ${inboxTheme.mutedText}`}>Owner team</span>
-                      <select
-                        value={projectOwnerTeamId}
-                        onChange={(event) => setProjectOwnerTeamId(event.target.value)}
-                        className={inboxTheme.field}
-                      >
-                        <option value="">No team</option>
-                        {workspaceTeams.map((team) => (
-                          <option key={team.id} value={team.id}>
-                            {team.name}
-                          </option>
-                        ))}
-                      </select>
+                      <div className="relative">
+                        <select
+                          value={projectOwnerTeamId}
+                          onChange={(event) => setProjectOwnerTeamId(event.target.value)}
+                          className={inboxTheme.select}
+                        >
+                          <option value="">No team</option>
+                          {workspaceTeams.map((team) => (
+                            <option key={team.id} value={team.id}>
+                              {team.name}
+                            </option>
+                          ))}
+                        </select>
+                        <ChevronDown
+                          size={14}
+                          className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[var(--ledger-text-muted)]"
+                        />
+                      </div>
                     </label>
                     <label className="block space-y-1">
                       <span className={`text-xs font-medium ${inboxTheme.mutedText}`}>Lead</span>
-                      <select
-                        value={projectLeadId}
-                        onChange={(event) => setProjectLeadId(event.target.value)}
-                        className={inboxTheme.field}
-                      >
-                        <option value="">No lead</option>
-                        {workspaceMembers.map((member) => (
-                          <option key={member.id} value={member.id}>
-                            {member.name}
-                          </option>
-                        ))}
-                      </select>
+                      <div className="relative">
+                        <select
+                          value={projectLeadId}
+                          onChange={(event) => setProjectLeadId(event.target.value)}
+                          className={inboxTheme.select}
+                        >
+                          <option value="">No lead</option>
+                          {workspaceMembers.map((member) => (
+                            <option key={member.id} value={member.id}>
+                              {member.name}
+                            </option>
+                          ))}
+                        </select>
+                        <ChevronDown
+                          size={14}
+                          className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[var(--ledger-text-muted)]"
+                        />
+                      </div>
                     </label>
                   </div>
                 </div>
@@ -1653,7 +1770,7 @@ export default function IntakeWindow() {
                     />
                   </label>
 
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid gap-3 sm:grid-cols-2">
                     <label className="block space-y-1">
                       <span className={`text-xs font-medium ${inboxTheme.mutedText}`}>Workspace</span>
                       <input
@@ -1664,65 +1781,115 @@ export default function IntakeWindow() {
                     </label>
                     <label className="block space-y-1">
                       <span className={`text-xs font-medium ${inboxTheme.mutedText}`}>Project</span>
-                      <select value={selectedProjectId} onChange={(event) => setSelectedProjectId(event.target.value)} className={inboxTheme.field}>
-                        <option value="">No project</option>
-                        {projects.map((project) => (
-                          <option key={project.id} value={project.id}>
-                            {project.name || project.title || 'Untitled project'}
-                          </option>
-                        ))}
-                      </select>
+                      <div className="relative">
+                        <select
+                          value={selectedProjectId}
+                          onChange={(event) => setSelectedProjectId(event.target.value)}
+                          className={inboxTheme.select}
+                        >
+                          <option value="">No project</option>
+                          {projects.map((project) => (
+                            <option key={project.id} value={project.id}>
+                              {project.name || project.title || 'Untitled project'}
+                            </option>
+                          ))}
+                        </select>
+                        <ChevronDown
+                          size={14}
+                          className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[var(--ledger-text-muted)]"
+                        />
+                      </div>
                     </label>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid gap-3 sm:grid-cols-2">
                     <label className="block space-y-1">
                       <span className={`text-xs font-medium ${inboxTheme.mutedText}`}>Assignee</span>
-                      <select value={selectedAssigneeId} onChange={(event) => setSelectedAssigneeId(event.target.value)} className={inboxTheme.field}>
-                        <option value="">No assignee</option>
-                        {workspaceMembers.map((member) => (
-                          <option key={member.id} value={member.id}>
-                            {member.name}
-                          </option>
-                        ))}
-                      </select>
+                      <div className="relative">
+                        <select
+                          value={selectedAssigneeId}
+                          onChange={(event) => setSelectedAssigneeId(event.target.value)}
+                          className={inboxTheme.select}
+                        >
+                          <option value="">No assignee</option>
+                          {workspaceMembers.map((member) => (
+                            <option key={member.id} value={member.id}>
+                              {member.name}
+                            </option>
+                          ))}
+                        </select>
+                        <ChevronDown
+                          size={14}
+                          className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[var(--ledger-text-muted)]"
+                        />
+                      </div>
                     </label>
                     <label className="block space-y-1">
                       <span className={`text-xs font-medium ${inboxTheme.mutedText}`}>Team</span>
-                      <select value={selectedTeamId} onChange={(event) => setSelectedTeamId(event.target.value)} className={inboxTheme.field}>
-                        <option value="">No team</option>
-                        {workspaceTeams.map((team) => (
-                          <option key={team.id} value={team.id}>
-                            {team.name}
-                          </option>
-                        ))}
-                      </select>
+                      <div className="relative">
+                        <select
+                          value={selectedTeamId}
+                          onChange={(event) => setSelectedTeamId(event.target.value)}
+                          className={inboxTheme.select}
+                        >
+                          <option value="">No team</option>
+                          {workspaceTeams.map((team) => (
+                            <option key={team.id} value={team.id}>
+                              {team.name}
+                            </option>
+                          ))}
+                        </select>
+                        <ChevronDown
+                          size={14}
+                          className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[var(--ledger-text-muted)]"
+                        />
+                      </div>
                     </label>
                   </div>
 
                   {(draft.type === 'reminder' || draft.type === 'event') && (
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="grid gap-3 sm:grid-cols-2">
                       <label className="block space-y-1">
                         <span className={`text-xs font-medium ${inboxTheme.mutedText}`}>Calendar</span>
-                        <select value={selectedCalendarId} onChange={(event) => setSelectedCalendarId(event.target.value)} className={inboxTheme.field}>
-                          <option value="">Default calendar</option>
-                          {calendars.map((calendar) => (
-                            <option key={calendar.id} value={calendar.id}>
-                              {calendar.name || 'Calendar'}
-                            </option>
-                          ))}
-                        </select>
+                        <div className="relative">
+                          <select
+                            value={selectedCalendarId}
+                            onChange={(event) => setSelectedCalendarId(event.target.value)}
+                            className={inboxTheme.select}
+                          >
+                            <option value="">Default calendar</option>
+                            {calendars.map((calendar) => (
+                              <option key={calendar.id} value={calendar.id}>
+                                {calendar.name || 'Calendar'}
+                              </option>
+                            ))}
+                          </select>
+                          <ChevronDown
+                            size={14}
+                            className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[var(--ledger-text-muted)]"
+                          />
+                        </div>
                       </label>
                       <label className="block space-y-1">
                         <span className={`text-xs font-medium ${inboxTheme.mutedText}`}>Linked note</span>
-                        <select value={selectedNoteId} onChange={(event) => setSelectedNoteId(event.target.value)} className={inboxTheme.field}>
-                          <option value="">No note</option>
-                          {notes.map((note) => (
-                            <option key={note.id} value={note.id}>
-                              {note.title || 'Untitled note'}
-                            </option>
-                          ))}
-                        </select>
+                        <div className="relative">
+                          <select
+                            value={selectedNoteId}
+                            onChange={(event) => setSelectedNoteId(event.target.value)}
+                            className={inboxTheme.select}
+                          >
+                            <option value="">No note</option>
+                            {notes.map((note) => (
+                              <option key={note.id} value={note.id}>
+                                {note.title || 'Untitled note'}
+                              </option>
+                            ))}
+                          </select>
+                          <ChevronDown
+                            size={14}
+                            className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[var(--ledger-text-muted)]"
+                          />
+                        </div>
                       </label>
                     </div>
                   )}
@@ -1753,7 +1920,7 @@ export default function IntakeWindow() {
                   )}
 
                   {draft.type === 'event' && (
-                    <div className="grid grid-cols-3 gap-3">
+                    <div className="grid gap-3 sm:grid-cols-3">
                       <label className="block space-y-1">
                         <span className={`text-xs font-medium ${inboxTheme.mutedText}`}>Date</span>
                         <input type="date" value={eventDate} onChange={(event) => setEventDate(event.target.value)} className={inboxTheme.field} />
@@ -1802,8 +1969,7 @@ export default function IntakeWindow() {
             </div>
           </div>
         </div>
-      </ModalOverlay>,
-      document.body
+      </ModalOverlay>
     );
 
   const inspectorActions = selectedItem
@@ -1815,97 +1981,22 @@ export default function IntakeWindow() {
           disabled?: boolean;
           onClick: () => void;
         }> = [];
-        const typeBucket = getItemTypeBucket(selectedItem);
-
-        if (typeBucket === 'project') {
-          if (selectedItem.status === 'unprocessed') {
-            actions.push({
-              label: 'Create project',
-              onClick: () => openConversion(selectedItem, 'project'),
-            });
-            actions.push({
-              label: 'Add brief',
-              onClick: () => openConversion(selectedItem, 'project'),
-            });
-            actions.push({
-              label: 'Set dates',
-              onClick: () => openConversion(selectedItem, 'project'),
-            });
-            actions.push({
-              label: 'Set owner team',
-              onClick: () => openConversion(selectedItem, 'project'),
-            });
-            actions.push({
-              label: 'Set lead',
-              onClick: () => openConversion(selectedItem, 'project'),
-            });
-            actions.push({
-              label: 'Snooze',
-              onClick: () =>
-                setSnoozeMenu({
-                  x: window.innerWidth - 340,
-                  y: 220,
-                  item: selectedItem,
-                }),
-            });
-          }
-
-          actions.push({
-            label: 'Archive',
-            onClick: () => void archiveItem(selectedItem),
-            disabled: activeActionId === selectedItem.id,
-            loading: activeActionId === selectedItem.id,
-          });
-          actions.push({
-            label: 'Delete',
-            tone: 'danger',
-            onClick: () => void deleteItem(selectedItem),
-            disabled: activeActionId === selectedItem.id,
-            loading: activeActionId === selectedItem.id,
-          });
-          return actions;
-        }
-
         if (selectedItem.status === 'unprocessed') {
           actions.push({
-            label: `Accept ${titleCase(getDefaultConversionType(selectedItem))}`,
+            label: 'Accept',
             onClick: () => openConversion(selectedItem, getDefaultConversionType(selectedItem)),
           });
         }
 
-        if (typeBucket === 'capture' || getItemSourceBucket(selectedItem) === 'browser') {
-          actions.push({
-            label: 'Save as note',
-            onClick: () => openConversion(selectedItem, 'note'),
-          });
-        }
-
-        if (selectedItem.status === 'unprocessed' || selectedItem.status === 'snoozed') {
-          actions.push({
-            label: 'Turn into task',
-            onClick: () => openConversion(selectedItem, 'task'),
-          });
-        }
-
-        if (selectedItem.status === 'unprocessed') {
-          actions.push({
-            label: 'Link to project',
-            onClick: () => openConversion(selectedItem, getDefaultConversionType(selectedItem)),
-          });
-          actions.push({
-            label: 'Assign',
-            onClick: () => openConversion(selectedItem, 'task'),
-          });
-          actions.push({
-            label: 'Snooze',
-            onClick: () =>
-              setSnoozeMenu({
-                x: window.innerWidth - 340,
-                y: 220,
-                item: selectedItem,
-              }),
-          });
-        }
+        actions.push({
+          label: 'Snooze',
+          onClick: () =>
+            setSnoozeMenu({
+              x: window.innerWidth - 340,
+              y: 220,
+              item: selectedItem,
+            }),
+        });
 
         actions.push({
           label: 'Archive',
@@ -1927,7 +2018,7 @@ export default function IntakeWindow() {
     : [];
 
   return (
-    <div className={inboxTheme.shell}>
+    <div className={inboxTheme.shell} style={{ scrollbarGutter: draft ? 'auto' : 'stable' }}>
       <ModuleWindowHeader
         eyebrow="Ledger"
         title="Intake"
@@ -1938,57 +2029,34 @@ export default function IntakeWindow() {
         onToggleFullscreen={() => window.desktopWindow?.toggleModuleFullscreen('inbox')}
         compact
         showBodyHeader={false}
-        viewControls={
-          <ModuleHeaderStripAction
-            icon={refreshing ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
-                    onClick={() => void loadInbox(true, { force: true })}
-            title="Refresh Intake"
-            ariaLabel="Refresh Intake"
-          />
-        }
+        stripLeadingActions={(
+          <div className="flex min-w-0 items-center gap-2">
+            {intakeStatusTabs}
+            {intakeSearchControls}
+          </div>
+        )}
         globalActions={
-          <ModuleHeaderStripAction
-            icon={<Bell size={12} />}
-            count={notificationCount}
-            onClick={() => window.desktopWindow?.openModule('notifications')}
-            title="Open notifications center"
-            ariaLabel="Open notifications center"
-          />
+          <div className="flex items-center gap-1.5">
+            <ModuleHeaderStripAction
+              icon={refreshing ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+              onClick={() => void loadInbox(true, { force: true })}
+              title="Refresh Intake"
+              ariaLabel="Refresh Intake"
+            />
+            <ModuleHeaderStripAction
+              icon={<Bell size={12} />}
+              count={notificationCount}
+              onClick={() => window.desktopWindow?.openModule('notifications')}
+              title="Open notifications center"
+              ariaLabel="Open notifications center"
+            />
+          </div>
         }
       />
 
       <div className={`min-h-0 flex-1 overflow-hidden ${inboxTheme.contentShell}`}>
         <div className="flex h-full min-h-0 flex-col px-6 py-5">
-          <div className="border-b border-[color:var(--ledger-border-subtle)] pb-4">
-            <div className="flex flex-wrap items-center justify-between gap-4">
-              <div className="flex flex-wrap items-center gap-2">
-                {statusLabels.map((status) => renderStatusTab(status.value))}
-              </div>
-
-              <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
-                <label className="flex h-9 min-w-[220px] items-center gap-2 rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3">
-                  <Search size={13} className="text-[var(--ledger-text-muted)]" />
-                  <input
-                    ref={searchInputRef}
-                    value={searchQuery}
-                    onChange={(event) => setSearchQuery(event.target.value)}
-                    placeholder="Search intake..."
-                    className="min-w-0 flex-1 bg-transparent text-xs text-[var(--ledger-text-primary)] placeholder:text-[var(--ledger-text-muted)] focus:outline-none"
-                  />
-                </label>
-                <button ref={filterButtonRef} type="button" onClick={openFilterMenu} className={headerButtonClass}>
-                  <Funnel size={13} />
-                  Filter
-                </button>
-                <button ref={displayButtonRef} type="button" onClick={openDisplayMenu} className={headerButtonClass}>
-                  <PanelRight size={13} />
-                  Display
-                </button>
-              </div>
-            </div>
-          </div>
-
-          <div className="min-h-0 flex-1 overflow-hidden pt-5">
+          <div className="min-h-0 flex-1 overflow-hidden">
             {isLoading ? (
               <div className="flex h-full items-center justify-center">
                 <div className="text-center">
@@ -2010,20 +2078,13 @@ export default function IntakeWindow() {
                 </div>
               </div>
             ) : (
-              <div className="grid h-full min-h-0 grid-cols-[minmax(0,1fr)_320px] gap-5">
-                <section className="min-h-0 overflow-hidden rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)]">
-                  <div className="flex items-center justify-between border-b border-[color:var(--ledger-border-subtle)] px-4 py-3">
+              <div className="grid h-full min-h-0 grid-cols-[minmax(0,1fr)_320px] overflow-hidden rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] shadow-none">
+                <section className="min-h-0 overflow-hidden bg-[var(--ledger-background)]">
+                  <div className="flex items-center justify-between border-b border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] px-4 py-3">
                     <div className="flex items-baseline gap-2">
                       <span className="text-sm font-medium text-[var(--ledger-text-primary)]">Queue</span>
                       <span className="text-sm text-[var(--ledger-text-muted)]">{filteredItems.length}</span>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => setSearchQuery('')}
-                      className="text-xs font-medium text-[var(--ledger-text-muted)] transition hover:text-[var(--ledger-text-primary)]"
-                    >
-                      Clear search
-                    </button>
                   </div>
                   <div className="min-h-0 overflow-y-auto">
                     {filteredItems.length > 0 ? (
@@ -2048,8 +2109,8 @@ export default function IntakeWindow() {
                   </div>
                 </section>
 
-                <aside className="min-h-0 overflow-hidden rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] flex flex-col">
-                  <div className="flex items-center justify-between border-b border-[color:var(--ledger-border-subtle)] px-4 py-3">
+                <aside className="flex min-h-0 flex-col overflow-hidden border-l border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] shadow-none">
+                  <div className="flex items-center justify-between border-b border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] px-4 py-3">
                     <span className="text-sm font-medium text-[var(--ledger-text-primary)]">Selected item</span>
                     {selectedItem && <span className="text-xs text-[var(--ledger-text-muted)]">{getStatusLabel(selectedItem.status)}</span>}
                   </div>
@@ -2223,6 +2284,3 @@ function titleCase(value: string) {
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(' ');
 }
-
-const headerButtonClass =
-  'inline-flex h-9 items-center gap-1.5 rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 text-xs font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]';

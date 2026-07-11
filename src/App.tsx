@@ -6703,6 +6703,7 @@ function AppShell() {
     isVisible,
     setIsVisible,
     sidebarPreferences,
+    workspaceShellLayout,
     collapseSidebar,
     collapseToRail,
     restoreSidebarView,
@@ -7492,9 +7493,14 @@ function AppShell() {
     if (isModuleWindow) return;
     if (isLoading) return;
     const { opacity: _opacity, ...restPreferences } = sidebarPreferences;
-    void window.desktopWindow?.applySidebarPreferences(restPreferences).catch(() => {
+    void window.desktopWindow
+      ?.applySidebarPreferences({
+        ...restPreferences,
+        shellFullscreen: workspaceShellLayout.shellFullscreen,
+      })
+      .catch(() => {
       // No-op outside Electron (browser dev mode)
-    });
+      });
   }, [
     isLoading,
     sidebarPreferences.position,
@@ -7511,6 +7517,7 @@ function AppShell() {
     sidebarPreferences.floatingDockEnabled,
     sidebarPreferences.floatingDockThreshold,
     sidebarPreferences.lastState,
+    workspaceShellLayout.shellFullscreen,
   ]);
 
   useEffect(() => {

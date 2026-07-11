@@ -913,12 +913,6 @@ export const SettingsWindow = () => {
     };
   }, [api]);
 
-  useEffect(() => {
-    void window.desktopWindow?.setAlwaysOnTop(alwaysOnTop).catch(() => {
-      // No-op outside Electron (browser dev mode)
-    });
-  }, [alwaysOnTop]);
-
   // Sync structural sidebar preferences separately from opacity so the range slider does not
   // trigger window-mode reapplication on every pointer move.
   useEffect(() => {
@@ -928,9 +922,14 @@ export const SettingsWindow = () => {
     }
 
     const { opacity: _opacity, ...restPreferences } = sidebarPreferences;
-    void window.desktopWindow?.applySidebarPreferences(restPreferences).catch(() => {
-      // No-op outside Electron (browser dev mode)
-    });
+    void window.desktopWindow
+      ?.applySidebarPreferences({
+        ...restPreferences,
+        shellFullscreen: workspaceShellLayout.shellFullscreen,
+      })
+      .catch(() => {
+        // No-op outside Electron (browser dev mode)
+      });
   }, [
     sidebarPreferences.position,
     sidebarPreferences.blur,
@@ -946,6 +945,7 @@ export const SettingsWindow = () => {
     sidebarPreferences.floatingDockEnabled,
     sidebarPreferences.floatingDockThreshold,
     sidebarPreferences.lastState,
+    workspaceShellLayout.shellFullscreen,
   ]);
 
   useEffect(() => {

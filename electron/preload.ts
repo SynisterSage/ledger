@@ -114,6 +114,8 @@ contextBridge.exposeInMainWorld('desktopWindow', {
     opacity?: number;
     blur?: boolean;
     defaultState?: 'expanded' | 'collapsed' | 'remember';
+    alwaysOnTop?: boolean;
+    shellFullscreen?: boolean;
     autoHide?: boolean;
     isExpanded?: boolean;
     collapsedRestoreIsExpanded?: boolean;

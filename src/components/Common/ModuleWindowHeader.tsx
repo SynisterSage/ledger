@@ -26,6 +26,7 @@ type ModuleWindowHeaderProps = {
   title: string;
   subtitle?: string;
   stripTitle?: string;
+  stripLeadingActions?: ReactNode;
   icon: ReactNode;
   onClose: () => void;
   onMinimize?: () => void;
@@ -343,6 +344,7 @@ export const ModuleWindowHeader = ({
   syncStatus,
   globalActions,
   stripActions,
+  stripLeadingActions,
   actions,
   compact = false,
   stripTitle,
@@ -606,6 +608,9 @@ export const ModuleWindowHeader = ({
               </p>
             </div>
           ) : null}
+          {stripLeadingActions && (
+            <div className="flex min-w-0 flex-wrap items-center gap-1.5">{stripLeadingActions}</div>
+          )}
         </div>
 
         <div className="flex items-center gap-3" style={noDragRegionStyle}>
