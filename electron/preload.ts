@@ -25,6 +25,7 @@ contextBridge.exposeInMainWorld('ipcRenderer', {
 
 type SidebarWindowMode = 'auth' | 'minimized' | 'compact' | 'expanded' | 'fullscreen';
 type ModuleWindowKind =
+  | 'circle'
   | 'calendar'
   | 'notes'
   | 'projects'

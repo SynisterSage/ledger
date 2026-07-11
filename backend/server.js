@@ -7704,6 +7704,320 @@ const loadWorkspaceTeams = async (workspaceId, currentUserId, options = {}) => {
   });
 };
 
+const personPreferenceSelectColumns =
+  'workspace_id, user_id, person_user_id, is_pinned, sort_order, created_at, updated_at';
+const personTaskSelectColumns =
+  'id, workspace_id, project_id, title, status, priority, due_date, due_time, completed_at, assigned_to, assigned_to_user_id, assigned_to_team_id, assigned_team_id, assigned_by_user_id, assigned_at, created_at, updated_at';
+const personProjectSelectColumns =
+  'id, workspace_id, name, status, completeness, color, end_date, lead_id, created_by, created_at, updated_at';
+const personAuditSelectColumns =
+  'id, workspace_id, actor_user_id, action, target_type, target_id, metadata, created_at';
+
+const normalizeCirclePersonName = (user) =>
+  normalizeNullableText(user?.full_name) || normalizeNullableText(user?.email?.split('@')?.[0]) || 'Member';
+
+const circleActivityActionLabels = {
+  'member.joined': 'Joined workspace',
+  'member.role_updated': 'Updated membership',
+  'member.removed': 'Removed member',
+  'workspace.updated': 'Updated workspace',
+  'workspace.deleted': 'Deleted workspace',
+  'invite.accepted': 'Accepted invite',
+  'invite.created': 'Created invite',
+  'invite.revoked': 'Revoked invite',
+};
+
+const getMostRecentIso = (...values) => {
+  let latest = null;
+  for (const value of values.flat()) {
+    if (!value) continue;
+    const normalized = String(value);
+    if (!latest || normalized > latest) {
+      latest = normalized;
+    }
+  }
+  return latest;
+};
+
+const formatCircleProjectStatus = (status) => {
+  const normalized = normalizeProjectSemanticStatus(status);
+  if (normalized === 'completed') return 'Completed';
+  if (normalized === 'paused') return 'Paused';
+  if (normalized === 'in_progress') return 'In progress';
+  return 'Not started';
+};
+
+const formatCircleTaskStatus = (status) => {
+  const normalized = String(status ?? '').toLowerCase();
+  if (normalized === 'completed') return 'Completed';
+  if (normalized === 'cancelled') return 'Cancelled';
+  if (normalized === 'in_progress') return 'In progress';
+  return 'Open';
+};
+
+const isCircleOpenTask = (task) => !['completed', 'cancelled'].includes(String(task?.status ?? '').toLowerCase());
+
+const buildCircleTeamLabels = (teamMembershipRows, teamMap) => {
+  const teamsByUserId = new Map();
+
+  for (const row of teamMembershipRows ?? []) {
+    if (!row?.user_id || !row?.team_id) continue;
+    const team = teamMap.get(row.team_id);
+    if (!team) continue;
+    const nextTeam = {
+      id: team.id,
+      name: team.name,
+      role: String(row.role ?? 'member').toLowerCase(),
+      sortRole: row.role === 'lead' ? 0 : row.role === 'member' ? 1 : 2,
+    };
+    if (!teamsByUserId.has(row.user_id)) {
+      teamsByUserId.set(row.user_id, []);
+    }
+    teamsByUserId.get(row.user_id).push(nextTeam);
+  }
+
+  for (const teams of teamsByUserId.values()) {
+    teams.sort((a, b) => a.sortRole - b.sortRole || String(a.name).localeCompare(String(b.name)));
+  }
+
+  return teamsByUserId;
+};
+
+const loadCircleWorkspacePeople = async (workspaceId, currentUserId) => {
+  const access = await requireWorkspaceAccess(currentUserId, workspaceId, 'member');
+  const workspace = access.workspace;
+  const nowIso = new Date().toISOString();
+  const [memberRowsResult, teamRowsResult, teamMemberRowsResult, taskRowsResult, projectRowsResult, auditRowsResult, preferenceRowsResult] = await Promise.all([
+    supabase
+      .from('workspace_members')
+      .select('user_id, role, joined_at')
+      .eq('workspace_id', workspaceId),
+    supabase
+      .from('workspace_teams')
+      .select('id, workspace_id, name, identifier, color, created_by, archived_at')
+      .eq('workspace_id', workspaceId)
+      .order('created_at', { ascending: true }),
+    supabase
+      .from('workspace_team_members')
+      .select('workspace_id, team_id, user_id, role, created_at')
+      .eq('workspace_id', workspaceId),
+    supabase
+      .from('tasks')
+      .select(personTaskSelectColumns)
+      .eq('workspace_id', workspaceId),
+    supabase
+      .from('projects')
+      .select(personProjectSelectColumns)
+      .eq('workspace_id', workspaceId),
+    supabase
+      .from('workspace_audit_logs')
+      .select(personAuditSelectColumns)
+      .eq('workspace_id', workspaceId)
+      .order('created_at', { ascending: false })
+      .limit(200),
+    supabase
+      .from('person_preferences')
+      .select(personPreferenceSelectColumns)
+      .eq('workspace_id', workspaceId)
+      .eq('user_id', currentUserId),
+  ]);
+
+  if (memberRowsResult.error) throw memberRowsResult.error;
+  if (teamRowsResult.error) throw teamRowsResult.error;
+  if (teamMemberRowsResult.error) throw teamMemberRowsResult.error;
+  if (taskRowsResult.error) throw taskRowsResult.error;
+  if (projectRowsResult.error) throw projectRowsResult.error;
+  if (auditRowsResult.error) throw auditRowsResult.error;
+  if (preferenceRowsResult.error) throw preferenceRowsResult.error;
+
+  const memberRows = memberRowsResult.data ?? [];
+  const teamRows = teamRowsResult.data ?? [];
+  const teamMemberRows = teamMemberRowsResult.data ?? [];
+  const taskRows = taskRowsResult.data ?? [];
+  const projectRows = projectRowsResult.data ?? [];
+  const auditRows = auditRowsResult.data ?? [];
+  const preferenceRows = preferenceRowsResult.data ?? [];
+
+  const userIds = [
+    workspace.owner_id,
+    ...memberRows.map((row) => row.user_id),
+    currentUserId,
+  ].filter(Boolean);
+  const uniqueUserIds = [...new Set(userIds)];
+
+  const usersResult =
+    uniqueUserIds.length > 0
+      ? await supabase
+          .from('users')
+          .select('id, email, full_name, avatar_url, created_at, updated_at')
+          .in('id', uniqueUserIds)
+      : { data: [], error: null };
+
+  if (usersResult.error) throw usersResult.error;
+
+  const userMap = new Map((usersResult.data ?? []).map((user) => [user.id, user]));
+  const teamMap = new Map(teamRows.map((team) => [team.id, team]));
+  const teamMembershipsByUserId = buildCircleTeamLabels(teamMemberRows, teamMap);
+  const preferenceByPersonId = new Map(
+    preferenceRows.map((row) => [row.person_user_id, row])
+  );
+
+  const membersByUserId = new Map(memberRows.map((row) => [row.user_id, row]));
+  const allPeople = [];
+
+  const addPerson = (userId, { roleOverride = null, isOwner = false } = {}) => {
+    if (!userId || allPeople.some((person) => person.id === userId)) return;
+    const user = userMap.get(userId);
+    if (!user) return;
+
+    const memberRow = membersByUserId.get(userId);
+    const teamMemberships = (teamMembershipsByUserId.get(userId) ?? []).map((team) => ({
+      id: team.id,
+      name: team.name,
+      role: team.role,
+    }));
+    const role = roleOverride || (isOwner ? 'owner' : String(memberRow?.role ?? 'member').toLowerCase());
+    const personTasks = taskRows.filter((task) => task.assigned_to_user_id === userId);
+    const openTasks = personTasks.filter(isCircleOpenTask);
+    const assignedByCurrentUser = openTasks.filter((task) => task.assigned_by_user_id === currentUserId);
+    const currentUserTasks = taskRows.filter((task) => task.assigned_to_user_id === currentUserId);
+    const projectIdsForPerson = new Set([
+      ...personTasks.map((task) => task.project_id).filter(Boolean),
+      ...projectRows
+        .filter((project) => project.lead_id === userId || project.created_by === userId)
+        .map((project) => project.id)
+        .filter(Boolean),
+    ]);
+    const projectIdsForCurrentUser = new Set([
+      ...currentUserTasks.map((task) => task.project_id).filter(Boolean),
+      ...projectRows
+        .filter((project) => project.lead_id === currentUserId || project.created_by === currentUserId)
+        .map((project) => project.id)
+        .filter(Boolean),
+    ]);
+    const sharedProjectIds = [...projectIdsForPerson].filter((projectId) =>
+      projectIdsForCurrentUser.has(projectId)
+    );
+    const latestTaskTimestamp = getMostRecentIso(
+      ...personTasks.map((task) => task.completed_at ?? task.updated_at ?? task.assigned_at ?? task.created_at)
+    );
+    const latestProjectTimestamp = getMostRecentIso(
+      ...projectRows
+        .filter(
+          (project) =>
+            project.lead_id === userId ||
+            project.created_by === userId ||
+            sharedProjectIds.includes(project.id)
+        )
+        .map((project) => project.updated_at ?? project.created_at)
+    );
+    const latestAuditTimestamp = getMostRecentIso(
+      ...auditRows.filter((row) => row.actor_user_id === userId).map((row) => row.created_at)
+    );
+
+    allPeople.push({
+      id: userId,
+      name: normalizeCirclePersonName(user),
+      email: user.email ?? null,
+      avatar_url: user.avatar_url ?? null,
+      role,
+      teams: teamMemberships,
+      team_labels: teamMemberships.map((team) => team.name).filter(Boolean),
+      open_task_count: openTasks.length,
+      shared_project_count: sharedProjectIds.length,
+      follow_up_count: 0,
+      waiting_on_count: assignedByCurrentUser.length,
+      is_pinned: Boolean(preferenceByPersonId.get(userId)?.is_pinned),
+      last_active_at:
+        latestAuditTimestamp || latestTaskTimestamp || latestProjectTimestamp || memberRow?.joined_at || workspace.created_at || nowIso,
+      joined_at: memberRow?.joined_at ?? workspace.created_at ?? null,
+      workspace_role: role,
+      is_owner: isOwner,
+    });
+  };
+
+  addPerson(workspace.owner_id, { isOwner: true, roleOverride: 'owner' });
+  for (const memberRow of memberRows) {
+    addPerson(memberRow.user_id, {});
+  }
+
+  const peopleById = new Map(allPeople.map((person) => [person.id, person]));
+
+  const buildTaskRow = (task) => {
+    const project = projectRows.find((entry) => entry.id === task.project_id) ?? null;
+    return {
+      id: task.id,
+      title: task.title ?? 'Untitled task',
+      status: task.status ?? 'todo',
+      status_label: formatCircleTaskStatus(task.status),
+      priority: task.priority ?? 'medium',
+      due_date: task.due_date ?? null,
+      due_time: task.due_time ?? null,
+      project_id: task.project_id ?? null,
+      project_name: project?.name ?? null,
+      project_status: project ? formatCircleProjectStatus(project.status) : null,
+      project_color: project?.color ?? null,
+      assigned_by_user_id: task.assigned_by_user_id ?? null,
+      assigned_at: task.assigned_at ?? null,
+      completed_at: task.completed_at ?? null,
+      updated_at: task.updated_at ?? null,
+      created_at: task.created_at ?? null,
+      is_open: isCircleOpenTask(task),
+      is_overdue:
+        isCircleOpenTask(task) &&
+        Boolean(task.due_date) &&
+        String(task.due_date) < nowIso.slice(0, 10),
+    };
+  };
+
+  const buildProjectRow = (project, personId) => {
+    const personTasks = taskRows.filter(
+      (task) => task.project_id === project.id && task.assigned_to_user_id === personId
+    );
+    const currentUserTasks = taskRows.filter(
+      (task) => task.project_id === project.id && task.assigned_to_user_id === currentUserId
+    );
+    const role = project.lead_id === personId ? 'Lead' : project.created_by === personId ? 'Owner' : 'Shared';
+    return {
+      id: project.id,
+      title: project.name ?? 'Untitled project',
+      status: formatCircleProjectStatus(project.status),
+      progress: Number(project.completeness ?? 0),
+      color: project.color ?? '#FF5F40',
+      role,
+      due_date: project.end_date ?? null,
+      next_action_count: [...personTasks, ...currentUserTasks].filter(isCircleOpenTask).length,
+      updated_at: project.updated_at ?? project.created_at ?? null,
+      created_at: project.created_at ?? null,
+    };
+  };
+
+  const buildActivityRow = (item) => ({
+    id: item.id,
+    kind: item.kind,
+    title: item.title,
+    detail: item.detail,
+    timestamp: item.timestamp,
+    project_id: item.project_id ?? null,
+    task_id: item.task_id ?? null,
+  });
+
+  return {
+    workspace,
+    people: allPeople.sort((a, b) => String(a.name).localeCompare(String(b.name))),
+    peopleById,
+    teamMap,
+    taskRows,
+    projectRows,
+    auditRows,
+    preferenceByPersonId,
+    buildTaskRow,
+    buildProjectRow,
+    buildActivityRow,
+    nowIso,
+  };
+};
+
 const ensureTeamManageAccess = async ({ userId, teamId, workspaceId }) => {
   const access = await requireWorkspaceAccess(userId, workspaceId, 'member');
   if (access.role === 'owner' || access.role === 'admin') {
@@ -8063,6 +8377,294 @@ app.delete('/api/teams/:teamId', authMiddleware, rateLimit('write'), async (req,
     const deleted = await supabase.from('workspace_teams').delete().eq('workspace_id', workspaceId).eq('id', teamId);
     if (deleted.error) throw deleted.error;
     res.json({ success: true });
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
+app.get('/api/people', authMiddleware, rateLimit('read'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    await requireWorkspaceAccess(req.authUser.id, workspaceId, 'member');
+    const data = await loadCircleWorkspacePeople(workspaceId, req.authUser.id);
+    res.json({
+      workspace_id: workspaceId,
+      workspace_name: data.workspace?.name ?? 'Workspace',
+      current_user_id: req.authUser.id,
+      people: data.people,
+    });
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
+app.get('/api/people/:id', authMiddleware, rateLimit('read'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    await requireWorkspaceAccess(req.authUser.id, workspaceId, 'member');
+    const personId = String(req.params.id);
+    const data = await loadCircleWorkspacePeople(workspaceId, req.authUser.id);
+    const person = data.peopleById.get(personId);
+    if (!person) {
+      return res.status(404).json({ error: 'Person not found' });
+    }
+
+    res.json({
+      workspace_id: workspaceId,
+      workspace_name: data.workspace?.name ?? 'Workspace',
+      current_user_id: req.authUser.id,
+      person,
+    });
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
+app.get('/api/people/:id/work', authMiddleware, rateLimit('read'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    await requireWorkspaceAccess(req.authUser.id, workspaceId, 'member');
+    const personId = String(req.params.id);
+    const data = await loadCircleWorkspacePeople(workspaceId, req.authUser.id);
+    const person = data.peopleById.get(personId);
+    if (!person) {
+      return res.status(404).json({ error: 'Person not found' });
+    }
+
+    const assignedTasks = data.taskRows
+      .filter((task) => task.assigned_to_user_id === personId)
+      .map(data.buildTaskRow)
+      .sort((a, b) => String(b.updated_at ?? b.created_at ?? '').localeCompare(String(a.updated_at ?? a.created_at ?? '')));
+    const waitingOnThem = data.taskRows
+      .filter(
+        (task) =>
+          task.assigned_to_user_id === personId &&
+          task.assigned_by_user_id === req.authUser.id &&
+          isCircleOpenTask(task)
+      )
+      .map(data.buildTaskRow)
+      .sort((a, b) => String(b.updated_at ?? b.created_at ?? '').localeCompare(String(a.updated_at ?? a.created_at ?? '')));
+    const waitingOnMe = data.taskRows
+      .filter(
+        (task) =>
+          task.assigned_to_user_id === req.authUser.id &&
+          task.assigned_by_user_id === personId &&
+          isCircleOpenTask(task)
+      )
+      .map(data.buildTaskRow)
+      .sort((a, b) => String(b.updated_at ?? b.created_at ?? '').localeCompare(String(a.updated_at ?? a.created_at ?? '')));
+    const needsAttention = [
+      ...assignedTasks.filter((task) => task.is_overdue),
+      ...waitingOnThem,
+      ...waitingOnMe.filter((task) => task.is_overdue),
+    ]
+      .filter((item, index, array) => array.findIndex((entry) => entry.id === item.id) === index)
+      .slice(0, 10);
+
+    res.json({
+      person,
+      summary: {
+        open_task_count: person.open_task_count,
+        shared_project_count: person.shared_project_count,
+        follow_up_count: person.follow_up_count,
+        waiting_on_count: person.waiting_on_count,
+        waiting_on_me_count: waitingOnMe.length,
+        waiting_on_them_count: waitingOnThem.length,
+      },
+      assigned_tasks: assignedTasks,
+      waiting_on_me: waitingOnMe,
+      waiting_on_them: waitingOnThem,
+      needs_attention: needsAttention,
+    });
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
+app.get('/api/people/:id/projects', authMiddleware, rateLimit('read'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    await requireWorkspaceAccess(req.authUser.id, workspaceId, 'member');
+    const personId = String(req.params.id);
+    const data = await loadCircleWorkspacePeople(workspaceId, req.authUser.id);
+    const person = data.peopleById.get(personId);
+    if (!person) {
+      return res.status(404).json({ error: 'Person not found' });
+    }
+
+    const currentUserProjectIds = new Set(
+      data.taskRows
+        .filter((task) => task.assigned_to_user_id === req.authUser.id && task.project_id)
+        .map((task) => task.project_id)
+    );
+    for (const project of data.projectRows) {
+      if (project.lead_id === req.authUser.id || project.created_by === req.authUser.id) {
+        currentUserProjectIds.add(project.id);
+      }
+    }
+
+    const personProjectIds = new Set(
+      data.taskRows
+        .filter((task) => task.assigned_to_user_id === personId && task.project_id)
+        .map((task) => task.project_id)
+    );
+    for (const project of data.projectRows) {
+      if (project.lead_id === personId || project.created_by === personId) {
+        personProjectIds.add(project.id);
+      }
+    }
+
+    const sharedProjectIds = [...personProjectIds].filter((projectId) => currentUserProjectIds.has(projectId));
+    const projects = data.projectRows
+      .filter((project) => sharedProjectIds.includes(project.id))
+      .map((project) => data.buildProjectRow(project, personId))
+      .sort((a, b) => String(b.updated_at ?? b.created_at ?? '').localeCompare(String(a.updated_at ?? a.created_at ?? '')));
+
+    res.json({
+      person,
+      shared_projects: projects,
+    });
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
+app.get('/api/people/:id/follow-ups', authMiddleware, rateLimit('read'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    await requireWorkspaceAccess(req.authUser.id, workspaceId, 'member');
+    const personId = String(req.params.id);
+    const data = await loadCircleWorkspacePeople(workspaceId, req.authUser.id);
+    if (!data.peopleById.has(personId)) {
+      return res.status(404).json({ error: 'Person not found' });
+    }
+
+    res.json({
+      available: false,
+      items: [],
+      message: 'Follow-ups are not enabled yet.',
+    });
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
+app.get('/api/people/:id/activity', authMiddleware, rateLimit('read'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    await requireWorkspaceAccess(req.authUser.id, workspaceId, 'member');
+    const personId = String(req.params.id);
+    const data = await loadCircleWorkspacePeople(workspaceId, req.authUser.id);
+    const person = data.peopleById.get(personId);
+    if (!person) {
+      return res.status(404).json({ error: 'Person not found' });
+    }
+
+    const projectNameById = new Map(data.projectRows.map((project) => [project.id, project.name ?? 'Project']));
+    const activity = [];
+
+    for (const task of data.taskRows) {
+      if (task.assigned_to_user_id !== personId && task.assigned_by_user_id !== personId) continue;
+      const projectName = task.project_id ? projectNameById.get(task.project_id) ?? 'Project' : null;
+      const taskLabel = task.title ?? 'Untitled task';
+      const timestamp = task.completed_at ?? task.updated_at ?? task.assigned_at ?? task.created_at;
+      let title = 'Updated task';
+      if (task.completed_at) {
+        title = 'Completed task';
+      } else if (task.assigned_by_user_id === personId) {
+        title = 'Assigned task';
+      } else if (task.assigned_to_user_id === personId) {
+        title = 'Received task';
+      }
+
+      activity.push({
+        id: `task:${task.id}`,
+        kind: 'task',
+        title,
+        detail: [taskLabel, projectName].filter(Boolean).join(' · '),
+        timestamp,
+        task_id: task.id,
+        project_id: task.project_id ?? null,
+      });
+    }
+
+    for (const project of data.projectRows) {
+      if (project.created_by !== personId && project.lead_id !== personId) continue;
+      activity.push({
+        id: `project:${project.id}`,
+        kind: 'project',
+        title: project.created_by === personId ? 'Created project' : 'Updated project',
+        detail: project.name ?? 'Untitled project',
+        timestamp: project.updated_at ?? project.created_at ?? null,
+        project_id: project.id,
+      });
+    }
+
+    for (const row of data.auditRows) {
+      if (row.actor_user_id !== personId) continue;
+      activity.push({
+        id: `audit:${row.id}`,
+        kind: 'audit',
+        title: circleActivityActionLabels[row.action] ?? titleCaseLabel(row.action),
+        detail: [row.target_type, row.metadata?.role ?? row.metadata?.next_role ?? null]
+          .filter(Boolean)
+          .join(' · '),
+        timestamp: row.created_at,
+      });
+    }
+
+    activity.sort((a, b) => String(b.timestamp ?? '').localeCompare(String(a.timestamp ?? '')));
+
+    res.json({
+      person,
+      activity: activity.slice(0, 50),
+    });
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
+app.patch('/api/people/:id/preferences', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    await requireWorkspaceAccess(req.authUser.id, workspaceId, 'member');
+    const personId = String(req.params.id);
+    const data = await loadCircleWorkspacePeople(workspaceId, req.authUser.id);
+    if (!data.peopleById.has(personId)) {
+      return res.status(404).json({ error: 'Person not found' });
+    }
+
+    const existing = data.preferenceByPersonId.get(personId) ?? null;
+    const nextPinned =
+      req.body?.is_pinned === undefined ? existing?.is_pinned ?? false : Boolean(req.body.is_pinned);
+    const nextSortOrder =
+      req.body?.sort_order === undefined
+        ? existing?.sort_order ?? 0
+        : Math.max(0, Number(req.body.sort_order) || 0);
+    const nowIso = new Date().toISOString();
+
+    const { data: updated, error } = await supabase
+      .from('person_preferences')
+      .upsert(
+        {
+          workspace_id: workspaceId,
+          user_id: req.authUser.id,
+          person_user_id: personId,
+          is_pinned: nextPinned,
+          sort_order: nextSortOrder,
+          updated_at: nowIso,
+          created_at: existing?.created_at ?? nowIso,
+        },
+        { onConflict: 'workspace_id,user_id,person_user_id' }
+      )
+      .select(personPreferenceSelectColumns)
+      .single();
+
+    if (error) throw error;
+
+    res.json({
+      preference: updated,
+    });
   } catch (error) {
     return respondWithError(res, error);
   }

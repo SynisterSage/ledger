@@ -24,6 +24,7 @@ import {
   Map as MapIcon,
   Plug2,
   UserPlus,
+  CircleUserRound,
   Users,
   Zap,
 } from 'lucide-react';
@@ -1938,6 +1939,7 @@ export const ExpandedSidebar = ({
             {[
               { label: 'Notifications', icon: Bell, action: () => window.desktopWindow?.openModule('notifications') },
               { label: 'Overview', icon: BarChart3, action: () => window.desktopWindow?.toggleModule('dashboard') },
+              { label: 'Circle', icon: CircleUserRound, action: () => window.desktopWindow?.toggleModule('circle') },
               { label: 'Projects', icon: Folder, action: () => window.desktopWindow?.toggleModule('projects') },
               { label: 'Notes', icon: StickyNote, action: () => window.desktopWindow?.toggleModule('notes') },
               { label: 'Calendar', icon: CalendarDays, action: () => window.desktopWindow?.openModule('calendar') },
@@ -3176,6 +3178,14 @@ export const ExpandedSidebar = ({
             >
               <Users size={15} className="shrink-0 text-[var(--ledger-text-muted)]" />
               <span>Teams</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => window.desktopWindow?.toggleModule('circle')}
+              className="flex h-9 w-full items-center gap-2.5 rounded-xl px-2.5 text-left text-[13px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]"
+            >
+              <CircleUserRound size={15} className="shrink-0 text-[var(--ledger-text-muted)]" />
+              <span>Circle</span>
             </button>
             <button
               type="button"

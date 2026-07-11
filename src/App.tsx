@@ -62,6 +62,7 @@ import { ModalCloseButton } from './components/Common/ModalCloseButton';
 import { ModalOverlay } from './components/Common/ModalOverlay';
 import LoginForm from './components/Common/LoginForm';
 import CalendarWindow from './components/Calendar/CalendarWindow';
+import CircleWindow from './components/Circle/CircleWindow';
 import NotesWindow from './components/Notes/NotesWindow';
 import ProjectsWindow from './components/Projects/ProjectsWindow';
 import TeamsWindow from './components/Teams/TeamsWindow';
@@ -83,6 +84,7 @@ type PostAuthStage = 'idle' | 'loading' | 'onboarding' | 'ready';
 type OnboardingStep = 'welcome' | 'workspace' | 'position';
 type OnboardingWorkspaceMode = 'create' | 'join';
 type ModuleKind =
+  | 'circle'
   | 'calendar'
   | 'notes'
   | 'projects'
@@ -7112,6 +7114,10 @@ function AppShell() {
 
     if (activeModuleKind === 'calendar') {
       return <CalendarWindow />;
+    }
+
+    if (activeModuleKind === 'circle') {
+      return <CircleWindow />;
     }
 
     if (activeModuleKind === 'notes') {

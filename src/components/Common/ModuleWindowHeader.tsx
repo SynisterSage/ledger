@@ -37,6 +37,7 @@ type ModuleWindowHeaderProps = {
   showPanelToggle?: boolean;
   panelToggleLabel?: string;
   onTogglePanels?: () => void;
+  onGoBack?: () => void;
   primaryActions?: ReactNode;
   secondaryActions?: ReactNode;
   viewControls?: ReactNode;
@@ -338,6 +339,7 @@ export const ModuleWindowHeader = ({
   showPanelToggle,
   panelToggleLabel,
   onTogglePanels,
+  onGoBack,
   primaryActions,
   secondaryActions,
   viewControls,
@@ -436,6 +438,10 @@ export const ModuleWindowHeader = ({
   };
 
   const handleGoBack = () => {
+    if (onGoBack) {
+      onGoBack();
+      return;
+    }
     if (!workspaceNavigationState.canGoBack) return;
     void window.desktopWindow?.goBackWorkspaceWindow?.();
   };

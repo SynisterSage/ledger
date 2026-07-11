@@ -1,6 +1,6 @@
 import type React from 'react';
 import { useSidebar } from '../../context/SidebarContext';
-import { Search, BarChart3, CalendarDays, Folder, StickyNote, Funnel, ChevronUp, ChevronDown, LogOut } from 'lucide-react';
+import { CircleUserRound, Search, BarChart3, CalendarDays, Folder, StickyNote, Funnel, ChevronUp, ChevronDown, LogOut } from 'lucide-react';
 import { useSearch } from '../../context/SearchContext';
 import { useAuthContext } from '../../context/AuthContext';
 import { sidebarTheme } from './sidebarTheme';
@@ -73,6 +73,14 @@ export const CollapsedSidebar = ({
               className={iconButtonClass}
             >
               <BarChart3 size={18} />
+            </button>
+            <button
+              aria-label="Open circle"
+              onClick={() => window.desktopWindow?.toggleModule('circle')}
+              onMouseDown={(e) => e.stopPropagation()}
+              className={iconButtonClass}
+            >
+              <CircleUserRound size={18} />
             </button>
             <button
               aria-label="Open Intake"

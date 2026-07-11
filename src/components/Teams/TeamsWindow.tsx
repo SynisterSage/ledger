@@ -21,6 +21,7 @@ import { useApi } from '../../hooks/useApi';
 import { useAuthContext } from '../../context/AuthContext';
 import { useSidebar } from '../../context/SidebarContext';
 import { useWorkspaceContext } from '../../context/WorkspaceContext';
+import { useWorkspaceRouteHistory } from '../../hooks/useWorkspaceRouteHistory';
 
 type TeamMember = {
   id: string;
@@ -133,8 +134,8 @@ const tabs = ['Assigned', 'Projects', 'Milestones', 'Notes', 'Members'] as const
 const teamsTheme = {
   shell:
     'relative flex h-screen flex-col overflow-hidden rounded-3xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] shadow-none',
-  content: 'flex-1 min-h-0 overflow-auto bg-[var(--ledger-background)] px-6 py-7',
-  page: 'mx-auto flex min-h-full w-full max-w-7xl flex-col gap-7',
+  content: 'flex-1 min-h-0 overflow-auto bg-[var(--ledger-background)] px-4 py-4 lg:px-5 lg:py-5',
+  page: 'flex min-h-full w-full flex-col gap-4',
   pageTitle:
     'text-[32px] font-normal leading-tight tracking-tight text-[var(--ledger-text-primary)]',
   subtitle: 'text-sm font-light text-[var(--ledger-text-muted)]',
@@ -143,8 +144,8 @@ const teamsTheme = {
   primaryAction:
     'inline-flex h-8 items-center gap-2 rounded-full border border-[color:var(--ledger-accent)] bg-[var(--ledger-accent)] px-3 text-xs font-semibold text-white transition hover:bg-[var(--ledger-accent-hover)]',
   panel:
-    'rounded-[22px] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)]',
-  row: 'group grid w-full grid-cols-[minmax(220px,1.4fr)_minmax(170px,1fr)_90px_34px] items-center gap-4 border-b border-[color:var(--ledger-border-subtle)] px-4 py-3 text-left last:border-b-0 transition hover:bg-[var(--ledger-surface-hover)]',
+    'overflow-hidden rounded-[18px] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-none',
+  row: 'group grid w-full grid-cols-[minmax(220px,1.4fr)_minmax(170px,1fr)_90px_34px] items-center gap-4 border-b border-[color:var(--ledger-border-subtle)] px-3 py-2.5 text-left last:border-b-0 transition hover:bg-[var(--ledger-surface-hover)]',
   rowSelected: 'bg-[var(--ledger-surface-hover)] hover:bg-[var(--ledger-surface-hover)]',
   label: 'text-[11px] font-medium text-[var(--ledger-text-muted)]',
   title: 'text-[13px] font-medium text-[var(--ledger-text-primary)]',
@@ -295,11 +296,35 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
   const [noteLinkSearch, setNoteLinkSearch] = useState('');
   const [noteLinkTitleDraft, setNoteLinkTitleDraft] = useState('');
 
+  const openTeamDetail = (teamId: string) => {
+    setSelectedTeamId(teamId);
+    setOpenedTeamId(teamId);
+    void window.desktopWindow?.openModule('teams', {
+      kind: 'teams',
+      focusContext: `team:${teamId}`,
+    });
+  };
+
+  const goBackToTeamsList = () => {
+    if (window.desktopWindow?.goBackWorkspaceWindow) {
+      void window.desktopWindow.goBackWorkspaceWindow();
+      return;
+    }
+    setOpenedTeamId(null);
+  };
+
   useEffect(() => {
-    if (!focusTeamId) return;
     setSelectedTeamId(focusTeamId);
     setOpenedTeamId(focusTeamId);
   }, [focusTeamId]);
+
+  useWorkspaceRouteHistory(
+    {
+      kind: 'teams',
+      focusContext: openedTeamId ? `team:${openedTeamId}` : null,
+    },
+    true
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -455,11 +480,7 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
           if (focusTeamId && nextTeams.some((team) => team.id === focusTeamId)) return focusTeamId;
           return null;
         });
-        setOpenedTeamId((current) => {
-          if (current && nextTeams.some((team) => team.id === current)) return current;
-          if (focusTeamId && nextTeams.some((team) => team.id === focusTeamId)) return focusTeamId;
-          return null;
-        });
+        setOpenedTeamId(focusTeamId && nextTeams.some((team) => team.id === focusTeamId) ? focusTeamId : null);
       } catch {
         if (!cancelled) {
           setTeams([]);
@@ -1039,7 +1060,7 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
         </div>
         <div className="space-y-1">
           <p className={teamsTheme.sectionTitle}>Quick actions</p>
-          <CompactButton onClick={() => setOpenedTeamId(selectedTeam.id)}>Open team</CompactButton>
+          <CompactButton onClick={() => openTeamDetail(selectedTeam.id)}>Open team</CompactButton>
           <CompactButton onClick={() => openInviteForTeam(selectedTeam.id)}>
             Invite member
           </CompactButton>
@@ -1058,6 +1079,8 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
         title="Teams"
         icon={<Users size={17} />}
         compact
+        showBodyHeader={false}
+        onGoBack={goBackToTeamsList}
         onClose={() => window.desktopWindow?.closeModule('teams')}
         onMinimize={() => window.desktopWindow?.minimizeModule('teams')}
         onToggleFullscreen={() => window.desktopWindow?.toggleModuleFullscreen('teams')}
@@ -1111,133 +1134,126 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
         <div className={teamsTheme.page}>
           {!openedTeam ? (
             <>
-              <div className="flex min-h-0 flex-1 flex-col">
-                <section className="min-h-0 flex-1">
-                  <div className={`${teamsTheme.panel} flex h-full flex-col overflow-hidden`}>
-                    <div className="flex items-center justify-between gap-3 border-b border-[color:var(--ledger-border-subtle)] px-4 py-3">
-                      <div className="flex items-baseline gap-2">
-                        <h2 className="text-sm font-medium text-[var(--ledger-text-primary)]">
-                          Teams
-                        </h2>
-                        <span className="text-sm text-[var(--ledger-text-muted)]">
-                          {filteredTeams.length}
-                        </span>
-                      </div>
-                      <div className="flex w-full max-w-xl items-center gap-2">
-                        <button type="button" className={teamsTheme.action}>
-                          <Filter size={13} />
-                          Filter
-                        </button>
-                        <label className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] px-3">
-                          <Search size={13} className="text-[var(--ledger-text-muted)]" />
-                          <input
-                            value={query}
-                            onChange={(event) => setQuery(event.target.value)}
-                            placeholder="Filter teams..."
-                            className="min-w-0 flex-1 bg-transparent text-xs text-[var(--ledger-text-primary)] placeholder:text-[var(--ledger-placeholder)] focus:outline-none"
-                          />
-                        </label>
-                      </div>
-                    </div>
-                    <div className="grid grid-cols-[minmax(220px,1.4fr)_minmax(170px,1fr)_90px_34px] gap-4 border-b border-[color:var(--ledger-border-subtle)] px-4 py-2 text-[11px] font-medium text-[var(--ledger-text-muted)]">
-                      <span>Name</span>
-                      <span>Members</span>
-                      <span>Identifier</span>
-                      <span />
-                    </div>
-                    <div className="flex-1 min-h-0 overflow-auto">
-                      {filteredTeams.length > 0 ? (
-                        filteredTeams.map((team) => (
-                          <button
-                            key={team.id}
-                            type="button"
-                            onClick={() => setSelectedTeamId(team.id)}
-                            onDoubleClick={() => setOpenedTeamId(team.id)}
-                            onContextMenu={(event) => {
-                              event.preventDefault();
-                              setSelectedTeamId(team.id);
+              <div className="flex min-h-0 flex-1 flex-col gap-3">
+                <div className="flex flex-wrap items-center justify-between gap-2 px-1">
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-xs font-medium text-[var(--ledger-text-muted)]">
+                      Teams
+                    </span>
+                    <span className="text-xs text-[var(--ledger-text-secondary)]">
+                      {filteredTeams.length}
+                    </span>
+                  </div>
+                  <div className="flex min-w-0 flex-1 items-center justify-end gap-2">
+                    <button type="button" className={teamsTheme.action}>
+                      <Filter size={13} />
+                      Filter
+                    </button>
+                    <label className="flex h-8 min-w-0 w-full max-w-[280px] items-center gap-2 rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3">
+                      <Search size={13} className="text-[var(--ledger-text-muted)]" />
+                      <input
+                        value={query}
+                        onChange={(event) => setQuery(event.target.value)}
+                        placeholder="Search teams..."
+                        className="min-w-0 flex-1 bg-transparent text-xs text-[var(--ledger-text-primary)] placeholder:text-[var(--ledger-placeholder)] focus:outline-none"
+                      />
+                    </label>
+                  </div>
+                </div>
+                <section className={teamsTheme.panel}>
+                  <div className="grid grid-cols-[minmax(220px,1.4fr)_minmax(170px,1fr)_90px_34px] gap-4 border-b border-[color:var(--ledger-border-subtle)] px-3 py-2 text-[11px] font-medium text-[var(--ledger-text-muted)]">
+                    <span>Name</span>
+                    <span>Members</span>
+                    <span>Identifier</span>
+                    <span />
+                  </div>
+                  <div className="overflow-auto">
+                    {filteredTeams.length > 0 ? (
+                      filteredTeams.map((team) => (
+                        <button
+                          key={team.id}
+                          type="button"
+                          onClick={() => setSelectedTeamId(team.id)}
+                        onDoubleClick={() => openTeamDetail(team.id)}
+                          onContextMenu={(event) => {
+                            event.preventDefault();
+                            setSelectedTeamId(team.id);
+                            setContextMenu({
+                              teamId: team.id,
+                              x: event.clientX,
+                              y: event.clientY,
+                            });
+                          }}
+                          className={`${teamsTheme.row} ${
+                            selectedTeamId === team.id ? teamsTheme.rowSelected : ''
+                          }`}
+                        >
+                          <span className="flex min-w-0 items-center gap-3">
+                            <TeamBadge team={team} />
+                            <span className="min-w-0">
+                              <span className={teamsTheme.title}>{team.name}</span>
+                              <span className="mt-0.5 block truncate text-[11px] text-[var(--ledger-text-muted)]">
+                                {team.description ||
+                                  `${team.members.length} members · ${team.assignedCount} assigned`}
+                              </span>
+                            </span>
+                          </span>
+                          <span className="flex min-w-0 flex-wrap items-center gap-1.5">
+                            {team.currentUserRole ? (
+                              <span className={teamsTheme.chip}>
+                                <Check size={11} className="mr-1" />
+                                {team.currentUserRole === 'lead' ? 'Lead' : 'Joined'}
+                              </span>
+                            ) : null}
+                            <span className={teamsTheme.meta}>{team.members.length} members</span>
+                            <span className={teamsTheme.meta}>· {team.assignedCount} assigned</span>
+                          </span>
+                          <span className="font-mono text-xs font-semibold text-[var(--ledger-text-muted)]">
+                            {team.identifier}
+                          </span>
+                          <span
+                            className="flex h-7 w-7 items-center justify-center rounded-lg opacity-0 transition group-hover:opacity-100 hover:bg-[var(--ledger-surface-muted)]"
+                            onClick={(event) => {
+                              event.stopPropagation();
                               setContextMenu({
                                 teamId: team.id,
                                 x: event.clientX,
                                 y: event.clientY,
                               });
                             }}
-                            className={`${teamsTheme.row} ${
-                              selectedTeamId === team.id ? teamsTheme.rowSelected : ''
-                            }`}
                           >
-                            <span className="flex min-w-0 items-center gap-3">
-                              <TeamBadge team={team} />
-                              <span className="min-w-0">
-                                <span className={teamsTheme.title}>{team.name}</span>
-                                <span className="mt-0.5 block truncate text-[11px] text-[var(--ledger-text-muted)]">
-                                  {team.description ||
-                                    `${team.members.length} members · ${team.assignedCount} assigned`}
-                                </span>
-                              </span>
-                            </span>
-                            <span className="flex min-w-0 flex-wrap items-center gap-1.5">
-                              {team.currentUserRole ? (
-                                <span className={teamsTheme.chip}>
-                                  <Check size={11} className="mr-1" />
-                                  {team.currentUserRole === 'lead' ? 'Lead' : 'Joined'}
-                                </span>
-                              ) : null}
-                              <span className={teamsTheme.meta}>{team.members.length} members</span>
-                              <span className={teamsTheme.meta}>
-                                · {team.assignedCount} assigned
-                              </span>
-                            </span>
-                            <span className="font-mono text-xs font-semibold text-[var(--ledger-text-muted)]">
-                              {team.identifier}
-                            </span>
-                            <span
-                              className="flex h-7 w-7 items-center justify-center rounded-lg opacity-0 transition group-hover:opacity-100 hover:bg-[var(--ledger-surface-muted)]"
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                setContextMenu({
-                                  teamId: team.id,
-                                  x: event.clientX,
-                                  y: event.clientY,
-                                });
-                              }}
+                            <MoreHorizontal size={14} className="text-[var(--ledger-text-muted)]" />
+                          </span>
+                        </button>
+                      ))
+                    ) : (
+                      <div className="flex min-h-[240px] items-center justify-center px-4 py-8">
+                        <div className="max-w-sm text-center">
+                          <p className="text-sm font-medium text-[var(--ledger-text-primary)]">
+                            No teams yet.
+                          </p>
+                          <p className="mt-1 text-sm text-[var(--ledger-text-muted)]">
+                            Create teams to group people and assign work inside this workspace.
+                          </p>
+                          <div className="mt-4 flex justify-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setIsNewTeamOpen(true)}
+                              className={teamsTheme.primaryAction}
                             >
-                              <MoreHorizontal
-                                size={14}
-                                className="text-[var(--ledger-text-muted)]"
-                              />
-                            </span>
-                          </button>
-                        ))
-                      ) : (
-                        <div className="flex min-h-[280px] items-center justify-center px-4 py-8">
-                          <div className="max-w-sm text-center">
-                            <p className="text-sm font-medium text-[var(--ledger-text-primary)]">
-                              No teams yet.
-                            </p>
-                            <p className="mt-1 text-sm text-[var(--ledger-text-muted)]">
-                              Create teams to group people and assign work inside this workspace.
-                            </p>
-                            <div className="mt-4 flex justify-center gap-2">
-                              <button
-                                type="button"
-                                onClick={() => setIsNewTeamOpen(true)}
-                                className={teamsTheme.primaryAction}
-                              >
-                                Create team
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => openInviteForTeam(null)}
-                                className={teamsTheme.action}
-                              >
-                                Invite member
-                              </button>
-                            </div>
+                              Create team
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => openInviteForTeam(null)}
+                              className={teamsTheme.action}
+                            >
+                              Invite member
+                            </button>
                           </div>
                         </div>
-                      )}
-                    </div>
+                      </div>
+                    )}
                   </div>
                 </section>
               </div>
@@ -1247,7 +1263,7 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
               <div className="min-w-0 space-y-6">
                 <button
                   type="button"
-                  onClick={() => setOpenedTeamId(null)}
+                  onClick={goBackToTeamsList}
                   className="text-xs font-medium text-[var(--ledger-text-muted)] transition hover:text-[var(--ledger-text-primary)]"
                 >
                   Back to teams
@@ -2263,7 +2279,7 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
           }}
           onClick={(event) => event.stopPropagation()}
         >
-          <CompactButton onClick={() => setOpenedTeamId(contextMenu.teamId)}>
+          <CompactButton onClick={() => openTeamDetail(contextMenu.teamId)}>
             Open team
           </CompactButton>
           <CompactButton

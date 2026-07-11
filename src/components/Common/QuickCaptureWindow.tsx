@@ -15,6 +15,11 @@ type FollowUpContext = {
   linkedProjectFollowUps?: 'project_and_today' | 'project_only' | 'today_only';
 };
 
+type PersonContext = {
+  userId: string;
+  displayName: string;
+};
+
 type QuickCapturePreferences = {
   defaultEventMinutes?: number;
   defaultEventStatus?: 'planned' | 'tentative' | 'confirmed';
@@ -51,6 +56,17 @@ const parseFollowUpContext = (value?: string): FollowUpContext | null => {
     noteId: noteId || null,
     defaultTime: defaultTime as FollowUpContext['defaultTime'],
     linkedProjectFollowUps: linkedProjectFollowUps as FollowUpContext['linkedProjectFollowUps'],
+  };
+};
+
+const parsePersonContext = (value?: string): PersonContext | null => {
+  if (!value) return null;
+  if (!value.startsWith('ledger-person|')) return null;
+  const [, userId = '', displayName = ''] = value.split('|');
+  if (!userId) return null;
+  return {
+    userId,
+    displayName: decodeURIComponent(displayName || ''),
   };
 };
 
@@ -239,8 +255,11 @@ export const QuickCaptureWindow = ({
     'min-h-0 overflow-y-auto overflow-x-hidden p-4 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden';
   const contextText = context?.trim();
   const followUpContext = parseFollowUpContext(contextText);
+  const personContext = parsePersonContext(contextText);
   const displayContext = followUpContext?.eventTitle
     ? `Follow-up: ${followUpContext.eventTitle}`
+    : personContext?.displayName
+      ? `Person: ${personContext.displayName}`
     : contextText;
   const truncatedContext = displayContext
     ? displayContext.length > 80
@@ -284,9 +303,12 @@ export const QuickCaptureWindow = ({
         status: 'todo',
         priority: 'medium',
         task_horizon: 'long_term',
+        assigned_to_user_id: personContext?.userId ?? null,
         project_id: followUpContext?.projectId ?? null,
         notes: followUpContext?.eventTitle
           ? `Follow-up from calendar: ${followUpContext.eventTitle}`
+          : personContext?.displayName
+            ? `Assigned from Circle: ${personContext.displayName}`
           : null,
         due_date: followUpDueDate,
         due_time: followUpDueTime,

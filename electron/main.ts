@@ -661,6 +661,7 @@ type SidebarPreferencesPayload = {
   lastState?: 'expanded' | 'collapsed';
 };
 type ModuleWindowKind =
+  | 'circle'
   | 'calendar'
   | 'notes'
   | 'projects'
@@ -5283,6 +5284,7 @@ function sendModuleFocus(
 function isWorkspaceModuleKind(kind: ModuleWindowKind) {
   return (
     kind === 'dashboard' ||
+    kind === 'circle' ||
     kind === 'calendar' ||
     kind === 'notes' ||
     kind === 'projects' ||

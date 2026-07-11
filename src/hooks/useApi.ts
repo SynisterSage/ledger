@@ -630,6 +630,22 @@ export const useApi = () => {
           method: 'DELETE',
         }),
 
+      // Circle
+      getPeople: () => request('/api/people'),
+      getPerson: (personId: string) => request(`/api/people/${personId}`),
+      getPersonWork: (personId: string) => request(`/api/people/${personId}/work`),
+      getPersonProjects: (personId: string) => request(`/api/people/${personId}/projects`),
+      getPersonFollowUps: (personId: string) => request(`/api/people/${personId}/follow-ups`),
+      getPersonActivity: (personId: string) => request(`/api/people/${personId}/activity`),
+      updatePersonPreferences: (
+        personId: string,
+        payload: { is_pinned?: boolean; sort_order?: number }
+      ) =>
+        request(`/api/people/${personId}/preferences`, {
+          method: 'PATCH',
+          body: JSON.stringify(payload),
+        }),
+
       // Calendars
       getCalendars: (options?: { scope?: 'current_workspace' | 'all_accessible_workspaces' }) => {
         const params = new URLSearchParams();
