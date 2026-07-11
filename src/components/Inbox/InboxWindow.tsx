@@ -25,6 +25,7 @@ import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { useApi } from '../../hooks/useApi';
 import { useAuthContext } from '../../context/AuthContext';
 import { useWorkspaceContext } from '../../context/WorkspaceContext';
+import { useSidebar } from '../../context/SidebarContext';
 import {
   ModuleHeaderActionButton,
   ModuleHeaderSegmentedGroup,
@@ -629,6 +630,7 @@ const snoozeOffset = (mode: 'later-today' | 'tomorrow' | 'next-week' | 'pick-dat
 export default function IntakeWindow() {
   const { user } = useAuthContext();
   const { activeWorkspaceId, activeWorkspace } = useWorkspaceContext();
+  const { workspaceShellLayout } = useSidebar();
   const api = useApi();
   const toast = useToast();
 
@@ -2392,7 +2394,10 @@ export default function IntakeWindow() {
     : [];
 
   return (
-    <div className={inboxTheme.shell} style={{ scrollbarGutter: 'auto' }}>
+    <div
+      className={inboxTheme.shell}
+      style={{ scrollbarGutter: 'auto', ...workspaceShellLayout.workspaceShellStyle }}
+    >
       <ModuleWindowHeader
         eyebrow="Ledger"
         title="Intake"
