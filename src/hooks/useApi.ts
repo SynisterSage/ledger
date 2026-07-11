@@ -283,23 +283,28 @@ export const useApi = () => {
         const query = params.toString();
         return request(`/api/inbox${query ? `?${query}` : ''}`, { skipWorkspaceHeader: true });
       },
-      archiveInboxItem: (id: string) =>
+      archiveIntakeItem: (id: string) =>
         request(`/api/inbox/${id}/archive`, {
           method: 'POST',
           skipWorkspaceHeader: true,
         }),
-      snoozeInboxItem: (id: string, snoozedUntil: string) =>
+      restoreIntakeItem: (id: string) =>
+        request(`/api/inbox/${id}/restore`, {
+          method: 'POST',
+          skipWorkspaceHeader: true,
+        }),
+      snoozeIntakeItem: (id: string, snoozedUntil: string) =>
         request(`/api/inbox/${id}/snooze`, {
           method: 'POST',
           body: JSON.stringify({ snoozed_until: snoozedUntil }),
           skipWorkspaceHeader: true,
         }),
-      deleteInboxItem: (id: string) =>
+      deleteIntakeItem: (id: string) =>
         request(`/api/inbox/${id}`, {
           method: 'DELETE',
           skipWorkspaceHeader: true,
         }),
-      convertInboxItem: (
+      convertIntakeItem: (
         id: string,
         payload: {
           type: 'task' | 'note' | 'reminder' | 'event' | 'project';
@@ -330,6 +335,7 @@ export const useApi = () => {
           description?: string | null;
           start_date?: string | null;
           end_date?: string | null;
+          section_id?: string | null;
           project_type?: string | null;
           lead_id?: string | null;
           owner_team_id?: string | null;

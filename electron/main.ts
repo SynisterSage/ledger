@@ -906,7 +906,7 @@ const NOTIFICATION_SCHEDULER_429_MAX_BACKOFF_MS = 5 * 60_000;
 
 type NotificationSchedulerItem = {
   id: string;
-  sourceType: 'reminder' | 'event' | 'task' | 'project' | 'inbox';
+  sourceType: 'reminder' | 'event' | 'task' | 'project' | 'inbox' | 'workspace_invite';
   sourceId: string;
   notificationType: string;
   title: string | null;
@@ -1223,6 +1223,8 @@ const getNotificationFallbackTitle = (item: NotificationSchedulerItem) => {
       return 'Project deadline';
     case 'inbox':
       return 'Intake item';
+    case 'workspace_invite':
+      return 'Workspace invite';
     default:
       return 'Ledger notification';
   }
@@ -1248,6 +1250,9 @@ const isGenericNotificationTitle = (title: string | null | undefined, sourceType
   }
   if (sourceType === 'inbox') {
     return /^inbox(?:\s*capture)?$/.test(normalized);
+  }
+  if (sourceType === 'workspace_invite') {
+    return /^workspace invite$|^invite accepted$/.test(normalized);
   }
 
   return false;
@@ -2278,6 +2283,42 @@ function sendModuleFullscreenState(
   } catch {}
 }
 
+function setSidebarAboveWorkspaceWindow(enabled: boolean) {
+  if (!sidebarWin || sidebarWin.isDestroyed()) return;
+  const parent = sidebarWin.getParentWindow();
+  const workspaceWin =
+    workspaceModuleWin && !workspaceModuleWin.isDestroyed() ? workspaceModuleWin : null;
+
+  if (enabled && workspaceWin && currentSidebarMode !== 'auth' && currentSidebarMode !== 'fullscreen') {
+    if (parent !== workspaceWin) {
+      sidebarWin.setParentWindow(workspaceWin);
+    }
+    if (sidebarWin.isVisible()) {
+      sidebarWin.moveTop();
+    }
+    return;
+  }
+
+  if (parent) {
+    sidebarWin.setParentWindow(null);
+    const shouldAlwaysOnTop =
+      currentSidebarMode !== 'auth' &&
+      currentSidebarMode !== 'fullscreen' &&
+      (sidebarAlwaysOnTop || currentSidebarShellFullscreen);
+    sidebarWin.setAlwaysOnTop(shouldAlwaysOnTop, 'screen-saver');
+  }
+}
+
+function syncSidebarWorkspaceFullscreenLayer(kind: ModuleWindowKind, win: BrowserWindow) {
+  const isWorkspaceShell = win === workspaceModuleWin && isWorkspaceModuleKind(kind);
+  const shouldLayer =
+    isWorkspaceShell &&
+    (Boolean(workspaceShellFullscreenRestoreBounds) ||
+      win.isFullScreen() ||
+      isFullscreenLikeBounds(win.getBounds()));
+  setSidebarAboveWorkspaceWindow(shouldLayer);
+}
+
 function restoreModuleWindowBounds(kind: ModuleWindowKind, win: BrowserWindow) {
   const shouldRestoreWorkspaceDock =
     kind === workspaceModuleKind && shouldAttachWorkspaceWindowToSidebar();
@@ -2288,6 +2329,9 @@ function restoreModuleWindowBounds(kind: ModuleWindowKind, win: BrowserWindow) {
   const restoredBounds = isWorkspaceShell
     ? workspaceShellFullscreenRestoreBounds
     : moduleWindowFullscreenBoundsMemory.get(kind);
+  if (isWorkspaceShell) {
+    setSidebarAboveWorkspaceWindow(false);
+  }
   if (restoredBounds) {
     const workArea = screen.getDisplayMatching(restoredBounds).workArea;
     win.setBounds(clampRectToWorkArea(restoredBounds, workArea), false);
@@ -2316,6 +2360,7 @@ function enterModuleWindowFullscreen(kind: ModuleWindowKind, win: BrowserWindow)
     ? Boolean(workspaceShellFullscreenRestoreBounds)
     : moduleWindowFullscreenBoundsMemory.has(kind);
   if (isPseudoFullscreen) {
+    syncSidebarWorkspaceFullscreenLayer(kind, win);
     sendModuleFullscreenState(kind, win, true);
     return;
   }
@@ -2341,6 +2386,7 @@ function enterModuleWindowFullscreen(kind: ModuleWindowKind, win: BrowserWindow)
   }
   win.show();
   win.focus();
+  syncSidebarWorkspaceFullscreenLayer(kind, win);
   sendModuleFullscreenState(kind, win, true);
 }
 
@@ -2587,9 +2633,17 @@ function applyWorkspaceDockTargetBounds(targetBoundsOverride?: Rect) {
     workspaceModuleWin.isFullScreen();
   if (isWorkspaceFullscreen) {
     const nextBounds = getSidebarBoundsInsideFullscreenTarget(targetBounds);
-    if (!nextBounds || rectsMatch(sidebarWin.getBounds(), nextBounds)) return;
+    if (!nextBounds || rectsMatch(sidebarWin.getBounds(), nextBounds)) {
+      if (workspaceModuleKind) {
+        syncSidebarWorkspaceFullscreenLayer(workspaceModuleKind, workspaceModuleWin);
+      }
+      return;
+    }
     if (!setSidebarBounds(nextBounds, false)) return;
     currentFloatingPosition = { x: nextBounds.x, y: nextBounds.y };
+    if (workspaceModuleKind) {
+      syncSidebarWorkspaceFullscreenLayer(workspaceModuleKind, workspaceModuleWin);
+    }
     return;
   }
 
@@ -5607,6 +5661,9 @@ function openModuleWindow(
   });
 
   moduleWin.on('closed', () => {
+    if (moduleWin === workspaceModuleWin) {
+      setSidebarAboveWorkspaceWindow(false);
+    }
     const shouldRestoreFloatingSidebar =
       moduleWin === workspaceModuleWin &&
       currentSidebarPosition === 'floating' &&
@@ -5765,6 +5822,7 @@ function openModuleWindow(
         }
         moduleWin.show();
         moduleWin.focus();
+        syncSidebarWorkspaceFullscreenLayer(kind, moduleWin);
         sendModuleFullscreenState(kind, moduleWin, true);
       }
     } catch (err) {}
@@ -5785,6 +5843,9 @@ function openModuleWindow(
         }
         moduleWin.show();
         moduleWin.focus();
+        if (moduleWin === workspaceModuleWin) {
+          setSidebarAboveWorkspaceWindow(false);
+        }
         sendModuleFullscreenState(kind, moduleWin, false);
       }
     } catch (err) {}

@@ -5,6 +5,7 @@ import {
   CalendarDays,
   CheckSquare,
   ChevronDown,
+  ExternalLink,
   FileText,
   Funnel,
   Globe,
@@ -26,7 +27,6 @@ import { useAuthContext } from '../../context/AuthContext';
 import { useWorkspaceContext } from '../../context/WorkspaceContext';
 import {
   ModuleHeaderActionButton,
-  ModuleHeaderSegmentedButton,
   ModuleHeaderSegmentedGroup,
   ModuleHeaderStripAction,
   ModuleWindowHeader,
@@ -86,6 +86,11 @@ type CalendarOption = {
 type NoteOption = {
   id: string;
   title?: string | null;
+};
+
+type NoteSectionOption = {
+  id: string;
+  name?: string | null;
 };
 
 const conversionTypes: Array<{
@@ -272,6 +277,29 @@ const buildDefaultBody = (item: InboxItem) => {
   return parts.join('\n');
 };
 
+const isValidExternalUrl = (value?: string | null) => {
+  if (!value) return false;
+  try {
+    const parsed = new URL(value);
+    return ['http:', 'https:'].includes(parsed.protocol);
+  } catch {
+    return false;
+  }
+};
+
+const getResolvedOptionLabel = <T extends { id: string }>(
+  id: string | null | undefined,
+  optionsById: Map<string, T>,
+  resolveLabel: (entry: T) => string | null | undefined,
+  fallback = 'Not suggested'
+) => {
+  const requestedId = String(id ?? '').trim();
+  if (!requestedId) return fallback;
+  const entry = optionsById.get(requestedId);
+  if (!entry) return 'Unavailable';
+  return resolveLabel(entry)?.trim() || 'Unavailable';
+};
+
 type IntakeFilterState = {
   source: string;
   type: string;
@@ -303,6 +331,13 @@ type IntakeMenuState = {
 type MenuAnchorState = {
   x: number;
   y: number;
+};
+
+type InspectorAction = {
+  label: string;
+  onClick: () => void;
+  loading?: boolean;
+  disabled?: boolean;
 };
 
 type WorkspaceMemberOption = {
@@ -617,6 +652,7 @@ export default function IntakeWindow() {
   const [projects, setProjects] = useState<ProjectOption[]>([]);
   const [calendars, setCalendars] = useState<CalendarOption[]>([]);
   const [notes, setNotes] = useState<NoteOption[]>([]);
+  const [noteSections, setNoteSections] = useState<NoteSectionOption[]>([]);
   const [workspaceMembers, setWorkspaceMembers] = useState<WorkspaceMemberOption[]>([]);
   const [workspaceTeams, setWorkspaceTeams] = useState<WorkspaceTeamOption[]>([]);
   const [notificationCount, setNotificationCount] = useState(0);
@@ -631,6 +667,7 @@ export default function IntakeWindow() {
   const [draftBody, setDraftBody] = useState('');
   const [selectedProjectId, setSelectedProjectId] = useState('');
   const [selectedNoteId, setSelectedNoteId] = useState('');
+  const [selectedNoteSectionId, setSelectedNoteSectionId] = useState('');
   const [selectedCalendarId, setSelectedCalendarId] = useState('');
   const [selectedAssigneeId, setSelectedAssigneeId] = useState('');
   const [selectedTeamId, setSelectedTeamId] = useState('');
@@ -646,6 +683,31 @@ export default function IntakeWindow() {
   const [projectStatus, setProjectStatus] = useState('not_started');
   const [projectOwnerTeamId, setProjectOwnerTeamId] = useState('');
   const [projectLeadId, setProjectLeadId] = useState('');
+
+  const projectsById = useMemo(
+    () => new Map(projects.map((project) => [project.id, project] as const)),
+    [projects]
+  );
+  const membersById = useMemo(
+    () => new Map(workspaceMembers.map((member) => [member.id, member] as const)),
+    [workspaceMembers]
+  );
+  const teamsById = useMemo(
+    () => new Map(workspaceTeams.map((team) => [team.id, team] as const)),
+    [workspaceTeams]
+  );
+  const calendarsById = useMemo(
+    () => new Map(calendars.map((calendar) => [calendar.id, calendar] as const)),
+    [calendars]
+  );
+  const notesById = useMemo(
+    () => new Map(notes.map((note) => [note.id, note] as const)),
+    [notes]
+  );
+  const noteSectionsById = useMemo(
+    () => new Map(noteSections.map((section) => [section.id, section] as const)),
+    [noteSections]
+  );
 
   const loadInbox = async (showSpinner = false, opts?: { force?: boolean }) => {
     if (!activeWorkspaceId) {
@@ -756,11 +818,12 @@ export default function IntakeWindow() {
 
     const loadContext = async () => {
       try {
-        const [projectPayload, calendarPayload, notePayload, membersPayload, teamsPayload] =
+        const [projectPayload, calendarPayload, notePayload, sectionPayload, membersPayload, teamsPayload] =
           await Promise.allSettled([
             api.getProjects({ includeCompleted: false }),
             api.getCalendars(),
             api.getNotes(),
+            api.getSections(),
             api.getWorkspaceMembers(activeWorkspaceId),
             api.getTeams(),
           ]);
@@ -770,6 +833,16 @@ export default function IntakeWindow() {
         setProjects(projectPayload.status === 'fulfilled' && Array.isArray(projectPayload.value) ? projectPayload.value : []);
         setCalendars(calendarPayload.status === 'fulfilled' && Array.isArray(calendarPayload.value) ? calendarPayload.value : []);
         setNotes(notePayload.status === 'fulfilled' && Array.isArray(notePayload.value) ? notePayload.value : []);
+        setNoteSections(
+          sectionPayload.status === 'fulfilled' && Array.isArray(sectionPayload.value)
+            ? sectionPayload.value
+                .map((section: any) => ({
+                  id: String(section.id ?? ''),
+                  name: String(section.name ?? section.title ?? '').trim() || null,
+                }))
+                .filter((section: NoteSectionOption) => section.id)
+            : []
+        );
 
         const mappedMembers =
           membersPayload.status === 'fulfilled' && Array.isArray((membersPayload.value as { members?: Array<Record<string, unknown>> })?.members)
@@ -799,6 +872,7 @@ export default function IntakeWindow() {
           setProjects([]);
           setCalendars([]);
           setNotes([]);
+          setNoteSections([]);
           setWorkspaceMembers([]);
           setWorkspaceTeams([]);
         }
@@ -881,7 +955,7 @@ export default function IntakeWindow() {
     const query = normalizeForSearch(searchQuery);
     const currentUserId = user?.id ?? null;
 
-    const itemsForStatus = items.filter((item) => item.status === activeStatus);
+    const itemsForStatus = query ? items : items.filter((item) => item.status === activeStatus);
     const result = itemsForStatus.filter((item) => {
       if (query && !getSearchCorpus(item).includes(query)) return false;
 
@@ -928,69 +1002,146 @@ export default function IntakeWindow() {
   const selectedItem = useMemo(() => {
     if (selectedItemId) {
       const fromAll = items.find((item) => item.id === selectedItemId);
-      if (fromAll) return fromAll;
+      if (fromAll && filteredItems.some((item) => item.id === fromAll.id)) return fromAll;
     }
     return filteredItems[0] ?? null;
   }, [filteredItems, items, selectedItemId]);
 
   useEffect(() => {
     if (!filteredItems.length) {
-      if (!selectedItemId) return;
-      if (!items.some((item) => item.id === selectedItemId)) {
+      if (selectedItemId && !items.some((item) => item.id === selectedItemId)) {
         setSelectedItemId(null);
       }
       return;
     }
 
-    if (!selectedItemId || !items.some((item) => item.id === selectedItemId)) {
+    if (!selectedItemId || !filteredItems.some((item) => item.id === selectedItemId)) {
       setSelectedItemId(filteredItems[0].id);
     }
   }, [filteredItems, items, selectedItemId]);
+
+  const getProjectOptionLabel = (id?: string | null) =>
+    getResolvedOptionLabel(id, projectsById, (project) => project.name || project.title || null);
+  const getMemberOptionLabel = (id?: string | null) =>
+    getResolvedOptionLabel(id, membersById, (member) => member.name || member.email || null);
+  const getTeamOptionLabel = (id?: string | null) =>
+    getResolvedOptionLabel(id, teamsById, (team) => team.name || team.identifier || null);
+  const getCalendarOptionLabel = (id?: string | null) =>
+    getResolvedOptionLabel(id, calendarsById, (calendar) => calendar.name || null);
+  const getNoteSectionOptionLabel = (id?: string | null) =>
+    getResolvedOptionLabel(id, noteSectionsById, (section) => section.name || null);
+
+  const getInspectorSourceLabel = (item: InboxItem) => {
+    const explicitLabel = String(item.source_label ?? '').trim();
+    if (explicitLabel) return explicitLabel;
+    const source = normalizeForSearch(item.source);
+    const provider = normalizeForSearch(item.source_provider);
+    if (source.includes('slack') || provider === 'slack') return 'Slack import';
+    if (source.includes('browser')) return 'Browser save';
+    if (source.includes('meeting') || provider === 'zoom' || provider === 'meet') return 'Meeting output';
+    if (source.includes('calendar')) return 'Calendar import';
+    if (source.includes('quick') || source.includes('manual')) return 'Quick capture';
+    if (source.includes('team')) return 'Team submission';
+    if (source.includes('email')) return 'Email import';
+    if (source.includes('suggest')) return 'Suggested item';
+    if (source) return titleCase(source.replace(/_/g, ' '));
+    return '';
+  };
+
+  const getInspectorMetadata = (item: InboxItem) => {
+    const parts: string[] = [];
+    const source = normalizeForSearch(item.source);
+    if (source.includes('slack') || item.source_provider === 'slack') {
+      if (item.channel_name) parts.push(`#${item.channel_name}`);
+      if (item.author_name) parts.push(item.author_name);
+    } else if (source.includes('browser')) {
+      if (item.source_url && isValidExternalUrl(item.source_url)) parts.push(getDomain(item.source_url));
+      if (item.author_name) parts.push(item.author_name);
+    } else if (source.includes('meeting')) {
+      if (item.author_name) parts.push(item.author_name);
+    } else if (item.author_name) {
+      parts.push(item.author_name);
+    }
+
+    const createdAt = formatDateTime(item.created_at);
+    if (createdAt) parts.push(createdAt);
+    return parts;
+  };
+
+  const getInspectorPlacement = (item: InboxItem) => {
+    const raw = getRawPayload(item);
+    const fallback = 'Not suggested';
+
+    const projectId =
+      item.suggested_project_id ||
+      findDeepString(raw, ['suggested_project_id', 'project_id', 'linked_project_id']);
+    const ownerId =
+      item.suggested_assignee_id ||
+      findDeepString(raw, ['suggested_assignee_id', 'assigned_to_user_id', 'owner_id', 'assignee_id']);
+    const teamId =
+      findDeepString(raw, [
+        'suggested_team_id',
+        'suggested_owner_team_id',
+        'assigned_to_team_id',
+        'owner_team_id',
+        'team_id',
+      ]);
+    const calendarId =
+      item.suggested_calendar_id || findDeepString(raw, ['suggested_calendar_id', 'calendar_id']);
+    const sectionId =
+      item.suggested_note_section_id || findDeepString(raw, ['suggested_note_section_id', 'section_id', 'note_section_id']);
+    const dueDate =
+      item.suggested_due_at ||
+      item.suggested_date ||
+      findDeepString(raw, ['suggested_due_at', 'due_at', 'due_date', 'date']);
+    const startDate = findDeepString(raw, ['start_date', 'project_start_date', 'start_at']);
+    const targetDate = findDeepString(raw, ['end_date', 'project_end_date', 'target_date', 'end_at']);
+    const projectName =
+      findDeepString(raw, ['project_name', 'project_title', 'linked_project_name', 'project_label']) || fallback;
+    const ownerName =
+      findDeepString(raw, ['owner_name', 'assigned_to_name', 'assignee_name', 'user_name']) || fallback;
+    const teamName =
+      findDeepString(raw, ['team_name', 'owner_team_name', 'assigned_team_name']) || fallback;
+    const calendarName =
+      findDeepString(raw, ['calendar_name', 'calendar_title']) || fallback;
+    const sectionName =
+      findDeepString(raw, ['section_name', 'note_section_name']) || fallback;
+
+    return {
+      project: projectId ? getProjectOptionLabel(projectId) : projectName,
+      owner: ownerId ? getMemberOptionLabel(ownerId) : ownerName,
+      team: teamId ? getTeamOptionLabel(teamId) : teamName,
+      calendar: calendarId ? getCalendarOptionLabel(calendarId) : calendarName,
+      section: sectionId ? getNoteSectionOptionLabel(sectionId) : sectionName,
+      dueDate: dueDate ? formatDateTime(dueDate) || dueDate : fallback,
+      startDate: startDate ? formatDateTime(startDate) || startDate : fallback,
+      targetDate: targetDate ? formatDateTime(targetDate) || targetDate : fallback,
+    };
+  };
 
   const openConversion = (item: InboxItem, type?: ConversionType) => {
     const nextType = type ?? getDefaultConversionType(item);
     const raw = getRawPayload(item);
     const seed = `${item.title}\n${item.body ?? ''}`;
-    const suggestedProject = getItemProjectLabel(item);
-    const projectMatch = projects.find((entry) => {
-      const label = normalizeForSearch([entry.name, entry.title, entry.id].filter(Boolean).join(' '));
-      return suggestedProject ? label.includes(normalizeForSearch(suggestedProject)) : false;
-    });
-    const suggestedAssignee = getItemAssigneeLabel(item) || getItemCreatedByLabel(item);
-    const suggestedMember = workspaceMembers.find((entry) => {
-      const label = normalizeForSearch([entry.name, entry.email, entry.id].filter(Boolean).join(' '));
-      return suggestedAssignee ? label.includes(normalizeForSearch(suggestedAssignee)) : false;
-    });
-    const suggestedTeam = workspaceTeams.find((entry) => {
-      const label = normalizeForSearch([entry.name, entry.identifier, entry.id].filter(Boolean).join(' '));
-      const teamLabel = getItemTeamLabel(item);
-      return teamLabel ? label.includes(normalizeForSearch(teamLabel)) : false;
-    });
     const reminderDefaults = defaultReminderAt(seed);
     const eventDefaults = defaultEventStart(seed);
-    const suggestedTeamLabel = getItemTeamLabel(item);
-    const suggestedAssigneeLabel = suggestedAssignee || '';
+    const projectId =
+      item.suggested_project_id ||
+      findDeepString(raw, ['suggested_project_id', 'project_id', 'linked_project_id']);
+    const assigneeId =
+      item.suggested_assignee_id ||
+      findDeepString(raw, ['suggested_assignee_id', 'assigned_to_user_id', 'assignee_id', 'owner_id']);
+    const teamId = findDeepString(raw, ['suggested_team_id', 'suggested_owner_team_id', 'assigned_to_team_id', 'owner_team_id']);
+    const calendarId = item.suggested_calendar_id || findDeepString(raw, ['suggested_calendar_id', 'calendar_id']);
+    const sectionId =
+      item.suggested_note_section_id || findDeepString(raw, ['suggested_note_section_id', 'section_id', 'note_section_id']);
     const projectDefaults = {
       brief: cleanSlackText(item.body ?? '') || getItemReason(item) || '',
       startDate: findDeepString(raw, ['start_date', 'project_start_date']) || '',
       endDate: findDeepString(raw, ['end_date', 'project_end_date']) || '',
       status: normalizeForSearch(findDeepString(raw, ['status', 'project_status']) ?? '') || 'not_started',
-      ownerTeamId:
-        suggestedTeamLabel
-          ? workspaceTeams.find((entry) =>
-              normalizeForSearch([entry.name, entry.identifier, entry.id].filter(Boolean).join(' ')).includes(
-                normalizeForSearch(suggestedTeamLabel)
-              )
-            )?.id ?? ''
-          : '',
-      leadId:
-        suggestedAssigneeLabel
-          ? workspaceMembers.find((entry) =>
-              normalizeForSearch([entry.name, entry.email, entry.id].filter(Boolean).join(' ')).includes(
-                normalizeForSearch(suggestedAssigneeLabel)
-              )
-            )?.id ?? ''
-          : '',
+      ownerTeamId: teamId && teamsById.has(teamId) ? teamId : '',
+      leadId: assigneeId && membersById.has(assigneeId) ? assigneeId : '',
     };
     setDraft({
       item,
@@ -998,13 +1149,13 @@ export default function IntakeWindow() {
     });
     setDraftTitle(getDisplayTitle(item));
     setDraftBody(buildDefaultBody(item));
-    setSelectedProjectId(projectMatch?.id ?? '');
-    setSelectedNoteId(
-      normalizeForSearch(findDeepString(raw, ['note_id', 'linked_note_id']) ?? '') || ''
-    );
-    setSelectedCalendarId('');
-    setSelectedAssigneeId(suggestedMember?.id ?? '');
-    setSelectedTeamId(suggestedTeam?.id ?? '');
+    setSelectedProjectId(projectId && projectsById.has(projectId) ? projectId : '');
+    const noteId = findDeepString(raw, ['note_id', 'linked_note_id']) || '';
+    setSelectedNoteId(noteId && notesById.has(noteId) ? noteId : '');
+    setSelectedNoteSectionId(sectionId && noteSectionsById.has(sectionId) ? sectionId : '');
+    setSelectedCalendarId(calendarId && calendarsById.has(calendarId) ? calendarId : '');
+    setSelectedAssigneeId(assigneeId && membersById.has(assigneeId) ? assigneeId : '');
+    setSelectedTeamId(teamId && teamsById.has(teamId) ? teamId : '');
     setShowInToday(false);
     setReminderDate(reminderDefaults.date);
     setReminderTime(reminderDefaults.time);
@@ -1023,12 +1174,20 @@ export default function IntakeWindow() {
     setDraft(null);
   };
 
+  const emitInboxItemsUpdated = (delta?: number) => {
+    if (typeof delta === 'number' && Number.isFinite(delta)) {
+      window.ipcRenderer?.send('inbox:items-updated', { delta });
+      return;
+    }
+    window.ipcRenderer?.send('inbox:items-updated');
+  };
+
   const archiveItem = async (item: InboxItem) => {
     setActiveActionId(item.id);
     try {
-      const updated = (await api.archiveInboxItem(item.id)) as InboxItem;
+      const updated = (await api.archiveIntakeItem(item.id)) as InboxItem;
       setItems((current) => current.map((entry) => (entry.id === item.id ? updated : entry)));
-      window.ipcRenderer?.send('inbox:items-updated');
+      emitInboxItemsUpdated(item.status === 'unprocessed' ? -1 : 0);
       toast.show('Archived intake item.', { variant: 'success' });
       if (selectedItemId === item.id) setSelectedItemId(null);
     } catch (err) {
@@ -1045,12 +1204,12 @@ export default function IntakeWindow() {
     if (!snoozedUntil) return;
     setActiveActionId(item.id);
     try {
-      const updated = (await api.snoozeInboxItem(item.id, snoozedUntil)) as InboxItem;
+      const updated = (await api.snoozeIntakeItem(item.id, snoozedUntil)) as InboxItem;
       setItems((current) => current.map((entry) => (entry.id === item.id ? updated : entry)));
       setSnoozeMenu(null);
       setSnoozePicker(null);
       toast.show('Snoozed intake item.', { variant: 'success' });
-      window.ipcRenderer?.send('inbox:items-updated');
+      emitInboxItemsUpdated(item.status === 'unprocessed' ? -1 : 0);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Could not snooze intake item.';
       setError(message);
@@ -1063,13 +1222,31 @@ export default function IntakeWindow() {
   const deleteItem = async (item: InboxItem) => {
     setActiveActionId(item.id);
     try {
-      await api.deleteInboxItem(item.id);
+      await api.deleteIntakeItem(item.id);
       setItems((current) => current.filter((entry) => entry.id !== item.id));
       if (selectedItemId === item.id) setSelectedItemId(null);
-      window.ipcRenderer?.send('inbox:items-updated', { delta: item.status === 'unprocessed' ? -1 : 0 });
+      emitInboxItemsUpdated(item.status === 'unprocessed' ? -1 : 0);
       toast.show('Deleted intake item.', { variant: 'success' });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Could not delete intake item.';
+      setError(message);
+      toast.show(message, { variant: 'error' });
+    } finally {
+      setActiveActionId(null);
+    }
+  };
+
+  const restoreItem = async (item: InboxItem) => {
+    setActiveActionId(item.id);
+    try {
+      const updated = (await api.restoreIntakeItem(item.id)) as InboxItem;
+      setItems((current) => current.map((entry) => (entry.id === item.id ? updated : entry)));
+      setActiveStatus('unprocessed');
+      setSelectedItemId(item.id);
+      emitInboxItemsUpdated(item.status === 'archived' ? 1 : 0);
+      toast.show('Restored intake item.', { variant: 'success' });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Could not restore intake item.';
       setError(message);
       toast.show(message, { variant: 'error' });
     } finally {
@@ -1098,7 +1275,7 @@ export default function IntakeWindow() {
 
       if (draft.type === 'project') {
         const projectDescription = projectBrief.trim() || body || null;
-        await api.convertInboxItem(draft.item.id, {
+        await api.convertIntakeItem(draft.item.id, {
           ...basePayload,
           type: 'project',
           description: projectDescription,
@@ -1109,7 +1286,7 @@ export default function IntakeWindow() {
           owner_team_id: projectOwnerTeamId || null,
         });
       } else if (draft.type === 'task') {
-        await api.convertInboxItem(draft.item.id, {
+        await api.convertIntakeItem(draft.item.id, {
           ...basePayload,
           type: 'task',
           notes: body,
@@ -1117,15 +1294,16 @@ export default function IntakeWindow() {
           task_horizon: showInToday ? 'today' : 'long_term',
         });
       } else if (draft.type === 'note') {
-        await api.convertInboxItem(draft.item.id, {
+        await api.convertIntakeItem(draft.item.id, {
           ...basePayload,
           type: 'note',
           body,
+          section_id: selectedNoteSectionId || null,
         });
       } else if (draft.type === 'reminder') {
         if (!reminderDate || !reminderTime) throw new Error('Choose when to be reminded.');
         const remindAt = new Date(`${reminderDate}T${reminderTime}:00`).toISOString();
-        await api.convertInboxItem(draft.item.id, {
+        await api.convertIntakeItem(draft.item.id, {
           ...basePayload,
           type: 'reminder',
           remind_at: remindAt,
@@ -1136,7 +1314,7 @@ export default function IntakeWindow() {
         const startAt = new Date(`${eventDate}T${eventTime}:00`).toISOString();
         const durationMinutes = Math.max(15, Number(eventDuration) || 30);
         const endAt = new Date(new Date(startAt).getTime() + durationMinutes * 60 * 1000).toISOString();
-        await api.convertInboxItem(draft.item.id, {
+        await api.convertIntakeItem(draft.item.id, {
           ...basePayload,
           type: 'event',
           start_at: startAt,
@@ -1147,7 +1325,7 @@ export default function IntakeWindow() {
 
       await loadInbox(true, { force: true });
       setDraft(null);
-      window.ipcRenderer?.send('inbox:items-updated');
+      emitInboxItemsUpdated(draft.item.status === 'unprocessed' ? -1 : 0);
       toast.show(`Created ${draft.type} from ${getSourceLabel(draft.item)} intake item.`, { variant: 'success' });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Could not convert intake item.';
@@ -1180,35 +1358,37 @@ export default function IntakeWindow() {
           status.value === 'unprocessed'
             ? Inbox
             : status.value === 'converted'
-              ? CheckSquare
-              : status.value === 'snoozed'
-                ? Clock3
-                : Archive;
+            ? CheckSquare
+            : status.value === 'snoozed'
+              ? Clock3
+              : Archive;
         return (
-          <ModuleHeaderSegmentedButton
+          <button
             key={status.value}
-            compact
-            pill
-            active={active}
+            type="button"
             onClick={() => {
               setActiveStatus(status.value);
               setSelectedItemId(null);
             }}
-            title={status.label}
-            ariaLabel={status.label}
+            title={`${status.label} (${counts[status.value]})`}
+            aria-label={`${status.label} (${counts[status.value]})`}
+            className={`relative inline-flex h-7 w-7 items-center justify-center rounded-full border transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-accent)]/20 ${
+              active
+                ? 'border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] text-[var(--ledger-text-primary)] shadow-[0_1px_2px_rgba(15,23,42,0.08)]'
+                : 'border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]'
+            }`}
           >
             <StatusIcon size={11} />
-            <span>{status.label}</span>
-            <span className="ml-1 rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-1.5 py-0.5 text-[10px] leading-none text-[var(--ledger-text-muted)]">
+            <span className="absolute -right-1 -top-1 inline-flex min-w-4 items-center justify-center rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] px-1 text-[9px] font-medium leading-4 text-[var(--ledger-text-muted)] shadow-[0_1px_1px_rgba(15,23,42,0.06)]">
               {counts[status.value]}
             </span>
-          </ModuleHeaderSegmentedButton>
+          </button>
         );
       })}
     </ModuleHeaderSegmentedGroup>
   );
 
-  const intakeSearchControls = (
+  const intakeSearchControl = (
     <div className="flex items-center gap-1.5">
       <label className="hidden h-7 min-w-[170px] items-center gap-2 rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] px-2.5 text-xs text-[var(--ledger-text-muted)] shadow-[0_1px_2px_rgba(15,23,42,0.04)] md:flex lg:min-w-[210px]">
         <Search size={12} className="shrink-0" />
@@ -1229,6 +1409,11 @@ export default function IntakeWindow() {
       >
         <Search size={12} />
       </button>
+    </div>
+  );
+
+  const intakeFilterDisplayControls = (
+    <div className="flex items-center gap-1.5">
       <ModuleHeaderActionButton
         variant="strip"
         iconOnly
@@ -1256,6 +1441,7 @@ export default function IntakeWindow() {
     const selected = item.id === selectedItem?.id;
     const sourceLabel = getTypeDisplayLabel(item);
     const title = getDisplayTitle(item);
+    const isArchived = item.status === 'archived';
     const sourceBits = [
       display.showSource ? getSourceLabel(item) : null,
       display.showStatus ? getStatusLabel(item.status) : null,
@@ -1276,8 +1462,8 @@ export default function IntakeWindow() {
         }}
         className={`group flex min-h-[44px] cursor-default items-center gap-3 border-b border-[color:var(--ledger-border-subtle)] px-3 py-2 transition ${
           selected
-            ? 'bg-[var(--ledger-surface-hover)]'
-            : 'hover:bg-[var(--ledger-surface-hover)]'
+            ? 'bg-[var(--ledger-surface-muted)]'
+            : 'hover:bg-[var(--ledger-surface-muted)]'
         }`}
       >
         <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)]">
@@ -1296,39 +1482,68 @@ export default function IntakeWindow() {
         </div>
 
         <div className="flex shrink-0 items-center gap-1 opacity-0 transition group-hover:opacity-100">
-          {item.status === 'unprocessed' && (
-            <button
-              type="button"
-              onClick={(event) => {
-                event.stopPropagation();
-                openConversion(item, getDefaultConversionType(item));
-              }}
-              className="rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2 py-1 text-[11px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
-            >
-              Accept
-            </button>
+          {isArchived ? (
+            <>
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  void restoreItem(item);
+                }}
+                disabled={activeActionId === item.id}
+                className="rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2 py-1 text-[11px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] disabled:opacity-60"
+              >
+                {activeActionId === item.id ? <Loader2 size={10} className="animate-spin" /> : 'Restore'}
+              </button>
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  void deleteItem(item);
+                }}
+                disabled={activeActionId === item.id}
+                className="rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2 py-1 text-[11px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] disabled:opacity-60"
+              >
+                {activeActionId === item.id ? <Loader2 size={10} className="animate-spin" /> : 'Delete'}
+              </button>
+            </>
+          ) : (
+            <>
+              {item.status === 'unprocessed' && (
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    openConversion(item, getDefaultConversionType(item));
+                  }}
+                  className="rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2 py-1 text-[11px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+                >
+                  Accept
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setSnoozeMenu({ x: event.clientX, y: event.clientY, item });
+                }}
+                className="rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2 py-1 text-[11px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+              >
+                Snooze
+              </button>
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  void archiveItem(item);
+                }}
+                disabled={activeActionId === item.id}
+                className="rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2 py-1 text-[11px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] disabled:opacity-60"
+              >
+                {activeActionId === item.id ? <Loader2 size={10} className="animate-spin" /> : 'Archive'}
+              </button>
+            </>
           )}
-          <button
-            type="button"
-            onClick={(event) => {
-              event.stopPropagation();
-              setSnoozeMenu({ x: event.clientX, y: event.clientY, item });
-            }}
-            className="rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2 py-1 text-[11px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
-          >
-            Snooze
-          </button>
-          <button
-            type="button"
-            onClick={(event) => {
-              event.stopPropagation();
-              void archiveItem(item);
-            }}
-            disabled={activeActionId === item.id}
-            className="rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2 py-1 text-[11px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] disabled:opacity-60"
-          >
-            {activeActionId === item.id ? <Loader2 size={10} className="animate-spin" /> : 'Archive'}
-          </button>
         </div>
       </div>
     );
@@ -1390,22 +1605,30 @@ export default function IntakeWindow() {
               Accept
             </button>
           )}
-          <button type="button" onClick={() => openConversion(contextMenu.item, 'task')} className={sidebarTheme.menuItem}>
-            Turn into task
-          </button>
-          <button type="button" onClick={() => openConversion(contextMenu.item, 'note')} className={sidebarTheme.menuItem}>
-            Turn into note
-          </button>
-          <button
-            type="button"
-            onClick={() => setSnoozeMenu({ x: contextMenu.x, y: contextMenu.y, item: contextMenu.item })}
-            className={sidebarTheme.menuItem}
-          >
-            Snooze
-          </button>
-          <button type="button" onClick={() => void archiveItem(contextMenu.item)} className={sidebarTheme.menuItem}>
-            Archive
-          </button>
+          {contextMenu.item.status === 'archived' ? (
+            <button type="button" onClick={() => void restoreItem(contextMenu.item)} className={sidebarTheme.menuItem}>
+              Restore
+            </button>
+          ) : (
+            <>
+              <button type="button" onClick={() => openConversion(contextMenu.item, 'task')} className={sidebarTheme.menuItem}>
+                Turn into task
+              </button>
+              <button type="button" onClick={() => openConversion(contextMenu.item, 'note')} className={sidebarTheme.menuItem}>
+                Turn into note
+              </button>
+              <button
+                type="button"
+                onClick={() => setSnoozeMenu({ x: contextMenu.x, y: contextMenu.y, item: contextMenu.item })}
+                className={sidebarTheme.menuItem}
+              >
+                Snooze
+              </button>
+              <button type="button" onClick={() => void archiveItem(contextMenu.item)} className={sidebarTheme.menuItem}>
+                Archive
+              </button>
+            </>
+          )}
           <button type="button" onClick={() => void deleteItem(contextMenu.item)} className={sidebarTheme.menuItemDanger}>
             Delete
           </button>
@@ -1802,6 +2025,32 @@ export default function IntakeWindow() {
                     </label>
                   </div>
 
+                  {draft.type === 'note' && (
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <label className="block space-y-1">
+                        <span className={`text-xs font-medium ${inboxTheme.mutedText}`}>Section</span>
+                        <div className="relative">
+                          <select
+                            value={selectedNoteSectionId}
+                            onChange={(event) => setSelectedNoteSectionId(event.target.value)}
+                            className={inboxTheme.select}
+                          >
+                            <option value="">No section</option>
+                            {noteSections.map((section) => (
+                              <option key={section.id} value={section.id}>
+                                {section.name || 'Section'}
+                              </option>
+                            ))}
+                          </select>
+                          <ChevronDown
+                            size={14}
+                            className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[var(--ledger-text-muted)]"
+                          />
+                        </div>
+                      </label>
+                    </div>
+                  )}
+
                   <div className="grid gap-3 sm:grid-cols-2">
                     <label className="block space-y-1">
                       <span className={`text-xs font-medium ${inboxTheme.mutedText}`}>Assignee</span>
@@ -1972,53 +2221,178 @@ export default function IntakeWindow() {
       </ModalOverlay>
     );
 
-  const inspectorActions = selectedItem
+  const selectedItemSourceLabel = selectedItem ? getInspectorSourceLabel(selectedItem) : '';
+  const selectedItemMetadata = selectedItem ? getInspectorMetadata(selectedItem) : [];
+  const selectedItemPlacement = selectedItem ? getInspectorPlacement(selectedItem) : null;
+  const selectedItemSourceUrl =
+    selectedItem && isValidExternalUrl(selectedItem.source_url) ? selectedItem.source_url : null;
+  const selectedItemStatusLabel = selectedItem ? getStatusLabel(selectedItem.status) : '';
+  const selectedItemTypeLabel = selectedItem ? getTypeDisplayLabel(selectedItem) : '';
+  const selectedItemOpenAction = selectedItem && selectedItem.status === 'converted'
     ? (() => {
-        const actions: Array<{
-          label: string;
-          loading?: boolean;
-          tone?: 'default' | 'danger';
-          disabled?: boolean;
-          onClick: () => void;
-        }> = [];
-        if (selectedItem.status === 'unprocessed') {
-          actions.push({
-            label: 'Accept',
-            onClick: () => openConversion(selectedItem, getDefaultConversionType(selectedItem)),
-          });
+        const convertedType = (selectedItem.converted_type || selectedItem.suggested_type || getDefaultConversionType(selectedItem)) as ConversionType;
+        const convertedId = selectedItem.converted_id ?? '';
+        if (!convertedId) return null;
+        if (convertedType === 'project') {
+          return {
+            label: 'Open created item',
+            onClick: () => void window.desktopWindow?.toggleModule('projects', { focusProjectId: convertedId }),
+          };
         }
-
-        actions.push({
-          label: 'Snooze',
-          onClick: () =>
-            setSnoozeMenu({
-              x: window.innerWidth - 340,
-              y: 220,
-              item: selectedItem,
-            }),
-        });
-
-        actions.push({
-          label: 'Archive',
-          onClick: () => void archiveItem(selectedItem),
-          disabled: activeActionId === selectedItem.id,
+        if (convertedType === 'note') {
+          return {
+            label: 'Open created item',
+            onClick: () => void window.desktopWindow?.toggleModule('notes', { focusNoteId: convertedId }),
+          };
+        }
+        if (convertedType === 'task') {
+          return {
+            label: 'Open created item',
+            onClick: () => void window.desktopWindow?.toggleModule('dashboard', { focusTaskId: convertedId }),
+          };
+        }
+        if (convertedType === 'event') {
+          return {
+            label: 'Open created item',
+            onClick: () =>
+              void window.desktopWindow?.openModule('calendar', {
+                kind: 'calendar',
+                focusContext: `focus-event:${convertedId}`,
+              } as any),
+          };
+        }
+        if (convertedType === 'reminder') {
+          return {
+            label: 'Open created item',
+            onClick: () =>
+              void window.desktopWindow?.openModule('calendar', {
+                kind: 'calendar',
+                focusContext: `focus-reminder:${convertedId}`,
+              } as any),
+          };
+        }
+        return null;
+      })()
+    : null;
+  const selectedItemPrimaryAction: InspectorAction | null = selectedItem
+    ? selectedItem.status === 'archived'
+      ? {
+          label: 'Restore',
+          onClick: () => void restoreItem(selectedItem),
           loading: activeActionId === selectedItem.id,
-        });
-
-        actions.push({
-          label: 'Delete',
-          tone: 'danger',
-          onClick: () => void deleteItem(selectedItem),
           disabled: activeActionId === selectedItem.id,
-          loading: activeActionId === selectedItem.id,
-        });
-
-        return actions;
+        }
+      : selectedItem.status === 'converted'
+      ? selectedItemOpenAction ?? {
+          label: 'Open created item',
+          onClick: () => undefined,
+          disabled: true,
+        }
+      : {
+          label: 'Accept',
+          onClick: () => openConversion(selectedItem, getDefaultConversionType(selectedItem)),
+        }
+    : null;
+  const selectedItemSecondaryActions: InspectorAction[] = selectedItem
+    ? selectedItem.status === 'unprocessed'
+      ? [
+          {
+            label: 'Snooze',
+            onClick: () =>
+              setSnoozeMenu({
+                x: window.innerWidth - 340,
+                y: 220,
+                item: selectedItem,
+              }),
+          },
+          {
+            label: 'Archive',
+            onClick: () => void archiveItem(selectedItem),
+            loading: activeActionId === selectedItem.id,
+            disabled: activeActionId === selectedItem.id,
+          },
+        ]
+      : selectedItem.status === 'snoozed'
+      ? [
+          {
+            label: 'Change snooze',
+            onClick: () =>
+              setSnoozeMenu({
+                x: window.innerWidth - 340,
+                y: 220,
+                item: selectedItem,
+              }),
+          },
+          {
+            label: 'Archive',
+            onClick: () => void archiveItem(selectedItem),
+            loading: activeActionId === selectedItem.id,
+            disabled: activeActionId === selectedItem.id,
+          },
+        ]
+      : []
+    : [];
+  const selectedItemDangerAction: InspectorAction | null = selectedItem
+    ? {
+        label: 'Delete',
+        onClick: () => void deleteItem(selectedItem),
+        loading: activeActionId === selectedItem.id,
+        disabled: activeActionId === selectedItem.id,
+      }
+    : null;
+  const selectedItemPrimaryLoading = Boolean(
+    selectedItemPrimaryAction && 'loading' in selectedItemPrimaryAction && selectedItemPrimaryAction.loading
+  );
+  const selectedItemPrimaryDisabled = Boolean(
+    selectedItemPrimaryAction && 'disabled' in selectedItemPrimaryAction && selectedItemPrimaryAction.disabled
+  );
+  const selectedItemTypeBucket = selectedItem ? getItemTypeBucket(selectedItem) : null;
+  const selectedItemPlacementRows = selectedItem
+    ? (() => {
+        const rows: Array<{ label: string; value: string }> = [{ label: 'Type', value: selectedItemTypeLabel }];
+        if (selectedItemTypeBucket === 'project') {
+          rows.push(
+            { label: 'Owner', value: selectedItemPlacement?.owner ?? 'Not suggested' },
+            { label: 'Team', value: selectedItemPlacement?.team ?? 'Not suggested' },
+            { label: 'Start date', value: selectedItemPlacement?.startDate ?? 'Not suggested' },
+            { label: 'Target date', value: selectedItemPlacement?.targetDate ?? 'Not suggested' }
+          );
+          return rows;
+        }
+        if (selectedItemTypeBucket === 'event') {
+          rows.push(
+            { label: 'Calendar', value: selectedItemPlacement?.calendar ?? 'Not suggested' },
+            { label: 'Project', value: selectedItemPlacement?.project ?? 'Not suggested' },
+            { label: 'Date', value: selectedItemPlacement?.dueDate ?? 'Not suggested' }
+          );
+          return rows;
+        }
+        if (selectedItemTypeBucket === 'note') {
+          rows.push(
+            { label: 'Section', value: selectedItemPlacement?.section ?? 'Not suggested' },
+            { label: 'Project', value: selectedItemPlacement?.project ?? 'Not suggested' }
+          );
+          return rows;
+        }
+        if (selectedItemTypeBucket === 'reminder') {
+          rows.push(
+            { label: 'Project', value: selectedItemPlacement?.project ?? 'Not suggested' },
+            { label: 'Due date', value: selectedItemPlacement?.dueDate ?? 'Not suggested' }
+          );
+          return rows;
+        }
+        rows.push(
+          { label: 'Project', value: selectedItemPlacement?.project ?? 'Not suggested' },
+          { label: 'Owner', value: selectedItemPlacement?.owner ?? 'Not suggested' },
+          { label: 'Team', value: selectedItemPlacement?.team ?? 'Not suggested' },
+          { label: 'Due date', value: selectedItemPlacement?.dueDate ?? 'Not suggested' }
+        );
+        return rows;
       })()
     : [];
 
   return (
-    <div className={inboxTheme.shell} style={{ scrollbarGutter: draft ? 'auto' : 'stable' }}>
+    <div className={inboxTheme.shell} style={{ scrollbarGutter: 'auto' }}>
       <ModuleWindowHeader
         eyebrow="Ledger"
         title="Intake"
@@ -2032,7 +2406,7 @@ export default function IntakeWindow() {
         stripLeadingActions={(
           <div className="flex min-w-0 items-center gap-2">
             {intakeStatusTabs}
-            {intakeSearchControls}
+            {intakeFilterDisplayControls}
           </div>
         )}
         globalActions={
@@ -2078,13 +2452,14 @@ export default function IntakeWindow() {
                 </div>
               </div>
             ) : (
-              <div className="grid h-full min-h-0 grid-cols-[minmax(0,1fr)_320px] overflow-hidden rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] shadow-none">
-                <section className="min-h-0 overflow-hidden bg-[var(--ledger-background)]">
-                  <div className="flex items-center justify-between border-b border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] px-4 py-3">
+              <div className="grid h-full min-h-0 grid-cols-[minmax(0,1fr)_320px] overflow-hidden rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-none">
+                <section className="min-h-0 overflow-hidden bg-[var(--ledger-surface-card)]">
+                  <div className="flex h-12 items-center justify-between gap-3 border-b border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-4">
                     <div className="flex items-baseline gap-2">
                       <span className="text-sm font-medium text-[var(--ledger-text-primary)]">Queue</span>
                       <span className="text-sm text-[var(--ledger-text-muted)]">{filteredItems.length}</span>
                     </div>
+                    {intakeSearchControl}
                   </div>
                   <div className="min-h-0 overflow-y-auto">
                     {filteredItems.length > 0 ? (
@@ -2096,12 +2471,16 @@ export default function IntakeWindow() {
                             <Inbox size={16} />
                           </div>
                           <p className="text-sm font-medium text-[var(--ledger-text-primary)]">
-                            {activeStatus === 'unprocessed'
-                              ? 'No items need review.'
-                              : `No ${getStatusLabel(activeStatus).toLowerCase()} items.`}
+                            {searchQuery.trim()
+                              ? 'No search results.'
+                              : activeStatus === 'unprocessed'
+                                ? 'No items need review.'
+                                : `No ${getStatusLabel(activeStatus).toLowerCase()} items.`}
                           </p>
                           <p className="mt-1 text-sm text-[var(--ledger-text-muted)]">
-                            Captured notes, imports, and suggested actions appear here before they enter the workspace.
+                            {searchQuery.trim()
+                              ? 'Try a different keyword or clear the search to return to the current tab.'
+                              : 'Captured notes, imports, and suggested actions appear here before they enter the workspace.'}
                           </p>
                         </div>
                       </div>
@@ -2109,68 +2488,52 @@ export default function IntakeWindow() {
                   </div>
                 </section>
 
-                <aside className="flex min-h-0 flex-col overflow-hidden border-l border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] shadow-none">
-                  <div className="flex items-center justify-between border-b border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] px-4 py-3">
+                <aside className="flex min-h-0 flex-col overflow-hidden border-l border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-none">
+                  <div className="sticky top-0 z-10 flex h-12 items-center justify-between border-b border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-4">
                     <span className="text-sm font-medium text-[var(--ledger-text-primary)]">Selected item</span>
-                    {selectedItem && <span className="text-xs text-[var(--ledger-text-muted)]">{getStatusLabel(selectedItem.status)}</span>}
+                    {selectedItem && <span className="text-xs text-[var(--ledger-text-muted)]">{selectedItemStatusLabel}</span>}
                   </div>
+
                   <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
                     {selectedItem ? (
                       <div className="space-y-5">
                         <div>
-                          <p className={inboxTheme.inspectorLabel}>
-                            {getTypeDisplayLabel(selectedItem)}
-                          </p>
-                          <h2 className="mt-1 text-lg font-semibold text-[var(--ledger-text-primary)]">
-                            {getDisplayTitle(selectedItem)}
-                          </h2>
-                          <p className="mt-1 text-xs text-[var(--ledger-text-muted)]">
-                            {[getSourceLabel(selectedItem), getSourceContext(selectedItem), getItemCreatedByLabel(selectedItem), formatDateTime(selectedItem.created_at)]
-                              .filter(Boolean)
-                              .join(' · ')}
-                          </p>
+                          <p className={inboxTheme.inspectorLabel}>{selectedItemSourceLabel || 'Intake item'}</p>
+                          <div className="mt-1 flex items-start justify-between gap-3">
+                            <h2 className="min-w-0 flex-1 text-[15px] font-semibold leading-6 text-[var(--ledger-text-primary)]">
+                              {getDisplayTitle(selectedItem)}
+                            </h2>
+                            <span className="shrink-0 rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2 py-0.5 text-[11px] font-medium text-[var(--ledger-text-secondary)]">
+                              {selectedItemTypeLabel}
+                            </span>
+                          </div>
+                          {selectedItemMetadata.length > 0 && (
+                            <p className="mt-1 text-xs text-[var(--ledger-text-muted)]">{selectedItemMetadata.join(' · ')}</p>
+                          )}
                         </div>
 
                         <section className="space-y-2">
-                          <p className={inboxTheme.inspectorLabel}>
-                            Preview
-                          </p>
-                          <p className="text-sm leading-6 text-[var(--ledger-text-secondary)]">
+                          <p className={inboxTheme.inspectorLabel}>Preview</p>
+                          <p className="whitespace-pre-wrap text-sm leading-6 text-[var(--ledger-text-secondary)]">
                             {getDisplayPreview(selectedItem) || 'No preview available.'}
                           </p>
+                          {selectedItemSourceUrl ? (
+                            <button
+                              type="button"
+                              onClick={() => window.open(selectedItemSourceUrl, '_blank', 'noopener,noreferrer')}
+                              className="inline-flex items-center gap-1.5 text-xs font-medium text-[var(--ledger-accent)] transition hover:text-[var(--ledger-accent-hover)]"
+                            >
+                              <ExternalLink size={12} />
+                              Open source
+                            </button>
+                          ) : null}
                         </section>
 
                         <section className="space-y-2">
-                          <p className={inboxTheme.inspectorLabel}>
-                            Suggested placement
-                          </p>
-                          <div className="space-y-1 text-sm text-[var(--ledger-text-secondary)]">
-                            <InspectorRow label="Project" value={getItemProjectLabel(selectedItem) || 'Unlinked'} />
-                            <InspectorRow label="Owner" value={getItemAssigneeLabel(selectedItem) || 'Unassigned'} />
-                            <InspectorRow label="Team" value={getItemTeamLabel(selectedItem) || 'None'} />
-                          </div>
-                        </section>
-
-                        <section className="space-y-2">
-                          <p className={inboxTheme.inspectorLabel}>
-                            Actions
-                          </p>
-                          <div className="space-y-2">
-                            {inspectorActions.map((action) => (
-                              <button
-                                key={action.label}
-                                type="button"
-                                onClick={action.onClick}
-                                disabled={action.disabled}
-                                className={`flex w-full items-center justify-between rounded-xl border px-3 py-2 text-left text-sm transition ${
-                                  action.tone === 'danger'
-                                    ? 'border-[color:rgba(217,45,32,0.18)] bg-[color:rgba(217,45,32,0.08)] text-[var(--ledger-danger)] hover:bg-[color:rgba(217,45,32,0.12)]'
-                                    : 'border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]'
-                                } disabled:cursor-not-allowed disabled:opacity-60`}
-                              >
-                                <span>{action.label}</span>
-                                {action.loading ? <Loader2 size={12} className="animate-spin" /> : null}
-                              </button>
+                          <p className={inboxTheme.inspectorLabel}>Suggested placement</p>
+                          <div className="space-y-1">
+                            {selectedItemPlacementRows.map((row) => (
+                              <InspectorRow key={row.label} label={row.label} value={row.value} />
                             ))}
                           </div>
                         </section>
@@ -2184,6 +2547,55 @@ export default function IntakeWindow() {
                           <p className="text-sm font-medium text-[var(--ledger-text-primary)]">Select an item to review.</p>
                         </div>
                       </div>
+                    )}
+                  </div>
+
+                  <div className="sticky bottom-0 z-10 border-t border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-4 py-3">
+                    {selectedItem ? (
+                      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                        <div className="flex flex-wrap items-center gap-2">
+                          {selectedItemSecondaryActions.map((action) => (
+                            <button
+                              key={action.label}
+                              type="button"
+                              onClick={action.onClick}
+                              disabled={action.disabled}
+                              className="inline-flex h-8 items-center justify-center rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] px-3 text-xs font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              {action.loading ? <Loader2 size={11} className="animate-spin" /> : action.label}
+                            </button>
+                          ))}
+                          {selectedItemDangerAction && (
+                            <button
+                              type="button"
+                              onClick={selectedItemDangerAction.onClick}
+                              disabled={selectedItemDangerAction.disabled}
+                              className="inline-flex h-8 items-center justify-center rounded-full border border-[color:rgba(217,45,32,0.18)] bg-[color:rgba(217,45,32,0.08)] px-3 text-xs font-medium text-[var(--ledger-danger)] transition hover:bg-[color:rgba(217,45,32,0.12)] disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              {selectedItemDangerAction.loading ? <Loader2 size={11} className="animate-spin" /> : selectedItemDangerAction.label}
+                            </button>
+                          )}
+                        </div>
+
+                        <div className="flex items-center justify-end gap-2">
+                          {selectedItemPrimaryAction && (
+                            <button
+                              type="button"
+                              onClick={selectedItemPrimaryAction.onClick}
+                              disabled={selectedItemPrimaryDisabled}
+                              className={`inline-flex h-8 items-center justify-center rounded-full px-4 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                                selectedItem.status === 'archived'
+                                  ? 'border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]'
+                                  : 'bg-[var(--ledger-accent)] text-white hover:bg-[var(--ledger-accent-hover)]'
+                              }`}
+                            >
+                              {selectedItemPrimaryLoading ? <Loader2 size={11} className="animate-spin" /> : selectedItemPrimaryAction.label}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="text-xs text-[var(--ledger-text-muted)]">Select an item to review.</div>
                     )}
                   </div>
                 </aside>

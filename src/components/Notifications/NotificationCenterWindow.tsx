@@ -6,7 +6,7 @@ import { ModuleHeaderStripAction, ModuleWindowHeader } from '../Common/ModuleWin
 
 type NotificationCenterItem = {
   id: string;
-  sourceType: 'reminder' | 'event' | 'task' | 'project' | 'inbox';
+  sourceType: 'reminder' | 'event' | 'task' | 'project' | 'inbox' | 'workspace_invite';
   sourceId: string;
   notificationType: string;
   title: string | null;
@@ -30,6 +30,7 @@ const isGenericTitle = (title: string | null | undefined, sourceType: Notificati
   if (sourceType === 'task') return /^task(?:\s*due)?$/.test(normalized);
   if (sourceType === 'project') return /^project(?:\s*deadline)?$/.test(normalized);
   if (sourceType === 'inbox') return /^inbox(?:\s*capture)?$/.test(normalized);
+  if (sourceType === 'workspace_invite') return /^workspace invite$|^invite accepted$/.test(normalized);
 
   return false;
 };
@@ -59,6 +60,7 @@ const sourceLabel = (item: NotificationCenterItem) => {
   if (item.sourceType === 'reminder') return 'Reminder';
   if (item.sourceType === 'task') return item.notificationType === 'overdue_item' ? 'Overdue task' : 'Task';
   if (item.sourceType === 'project') return item.notificationType === 'overdue_item' ? 'Overdue project' : 'Project';
+  if (item.sourceType === 'workspace_invite') return 'Workspace invite';
   return 'Inbox';
 };
 
@@ -67,6 +69,7 @@ const defaultTitle = (item: NotificationCenterItem) => {
   if (item.sourceType === 'reminder') return 'Reminder due';
   if (item.sourceType === 'task') return item.notificationType === 'overdue_item' ? 'Task overdue' : 'Task due';
   if (item.sourceType === 'project') return item.notificationType === 'overdue_item' ? 'Project overdue' : 'Project deadline';
+  if (item.sourceType === 'workspace_invite') return 'Workspace invite';
   return 'Intake item';
 };
 
@@ -110,6 +113,7 @@ const iconForItem = (item: NotificationCenterItem) => {
     case 'project':
       return Folder;
     case 'inbox':
+    case 'workspace_invite':
       return Inbox;
     default:
       return Bell;
@@ -122,6 +126,7 @@ const actionLabel = (item: NotificationCenterItem, action: NotificationCenterIte
     if (item.sourceType === 'project') return 'Open project';
     if (item.sourceType === 'task') return 'Open task';
     if (item.sourceType === 'event') return 'Open event';
+    if (item.sourceType === 'workspace_invite') return 'Open workspace';
     return 'Open';
   }
   if (action === 'complete') return 'Complete';

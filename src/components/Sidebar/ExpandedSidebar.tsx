@@ -39,6 +39,7 @@ import { SkeletonList } from '../Common/Skeleton';
 import { WorkspaceSwitcherMenu } from '../Common/WorkspaceSwitcherMenu';
 import { sidebarTheme } from './sidebarTheme';
 import { getProjectTypeOption } from '../../utils/projectTypes';
+import { resolveIntakeRouting } from '../../utils/intakeRouting';
 
 type FocusItem = {
   id: string;
@@ -1314,7 +1315,13 @@ export const ExpandedSidebar = ({
           ?.trim() ?? 'Untitled note';
       const title = firstLine.replace(/^#\s*/, '').slice(0, 72);
 
-      if (routeToIntake) {
+      const routing = resolveIntakeRouting({
+        source: 'sidebar',
+        requestedType: 'note',
+        explicitSendToIntake: routeToIntake,
+      });
+
+      if (routing === 'intake') {
         const data = await api.createIntakeItem({
           workspace_id: activeWorkspaceId,
           source: 'quick_capture',
@@ -1595,31 +1602,14 @@ export const ExpandedSidebar = ({
 
     try {
       const hasTiming = Boolean(eventDate.trim() && eventStartTime.trim());
-      if (!hasTiming) {
-        const data = await api.createIntakeItem({
-          workspace_id: activeWorkspaceId,
-          source: 'quick_capture',
-          suggested_type: 'event',
-          title,
-          body: title,
-          raw_content: title,
-          reason: 'Missing date/time',
-          source_object_type: 'event',
-        });
+      const routing = resolveIntakeRouting({
+        source: 'sidebar',
+        requestedType: 'event',
+        requiredFieldsValid: hasTiming,
+      });
 
-        if (!data) {
-          setSaveError('Could not send event to Intake.');
-          return;
-        }
-
-        setEventDraft('');
-        setEventDate(todayKey());
-        setEventStartTime('09:00');
-        setEventEndTime('10:00');
-        setQuickCaptureMode('none');
-        setEventsExpanded(true);
-        setQuickCaptureNotice('Sent to Intake');
-        window.ipcRenderer?.send('inbox:items-updated');
+      if (routing === 'validate') {
+        setSaveError('Date and start time are required to create an event.');
         return;
       }
 
@@ -1764,7 +1754,7 @@ export const ExpandedSidebar = ({
       setEventEndTime('10:00');
       setQuickCaptureMode('none');
       setEventsExpanded(true);
-      setQuickCaptureNotice('Saved event');
+      setQuickCaptureNotice('Created event');
     } catch (error) {
       console.error('Failed to create event from sidebar:', error);
       setSaveError(error instanceof Error ? error.message : 'Could not save event.');
@@ -1780,29 +1770,36 @@ export const ExpandedSidebar = ({
 
     setIsCreatingProject(true);
     try {
-      const data = await api.createIntakeItem({
-        workspace_id: activeWorkspaceId,
-        source: 'quick_capture',
-        suggested_type: 'project',
-        title: name,
-        body: null,
-        raw_content: name,
-        reason: 'Missing brief, dates, owner, or lead',
-        source_object_type: 'project',
+      const routing = resolveIntakeRouting({
+        source: 'sidebar',
+        requestedType: 'project',
+        requiredFieldsValid: Boolean(name),
       });
 
-      if (!data) {
-        setSaveError('Could not send project to Intake.');
+      if (routing === 'validate') {
+        setSaveError('Project name is required.');
         return;
       }
 
+      const created = await api.createProject({
+        name,
+        status: 'NotStarted',
+      });
+
+      if (!created) {
+        setSaveError('Could not create project.');
+        return;
+      }
+
+      const createdProject = created as (typeof projects)[number];
+      setProjects((prev) => [createdProject, ...prev.filter((item) => item.id !== createdProject.id)]);
       setNewProjectName('');
       setIsCreatingProject(false);
-      setQuickCaptureNotice('Sent to Intake');
-      window.ipcRenderer?.send('inbox:items-updated');
+      setQuickCaptureNotice('Created project');
+      handleSidebarWorkspaceRefresh();
     } catch (error) {
       console.error('Project creation error:', error);
-      setSaveError(error instanceof Error ? error.message : 'Could not send project to Intake.');
+      setSaveError(error instanceof Error ? error.message : 'Could not create project.');
     } finally {
       setIsCreatingProject(false);
     }
@@ -2813,7 +2810,7 @@ export const ExpandedSidebar = ({
                       value={eventDraft}
                       onChange={(e) => setEventDraft(e.target.value)}
                       onKeyDown={(e) => {
-                        if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+                        if (e.key === 'Enter' || e.key === '+') {
                           e.preventDefault();
                           void saveQuickEvent();
                         } else if (e.key === 'Escape') {
@@ -2830,7 +2827,7 @@ export const ExpandedSidebar = ({
                       onClick={() => void saveQuickEvent()}
                       disabled={!eventDraft.trim()}
                       className="inline-flex h-6 shrink-0 items-center justify-center rounded-full px-2 text-[11px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] disabled:opacity-60"
-                      aria-label="Save event"
+                      aria-label="Add event"
                     >
                       +
                     </button>
@@ -2854,19 +2851,6 @@ export const ExpandedSidebar = ({
                       onChange={(e) => setEventEndTime(e.target.value)}
                       className={`w-full appearance-none ${eventComposerFieldClass}`}
                     />
-                  </div>
-                  <div className="flex items-center justify-end gap-2">
-                    <button
-                      type="button"
-                      onMouseDown={(e) => e.preventDefault()}
-                      onClick={() => void saveQuickEvent()}
-                      disabled={!eventDraft.trim()}
-                      className="inline-flex h-7 items-center justify-center rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] px-3 text-[11px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] disabled:opacity-60"
-                    >
-                      {eventDraft.trim() && eventDate.trim() && eventStartTime.trim()
-                        ? 'Create event'
-                        : 'Send to Intake'}
-                    </button>
                   </div>
                 </div>
             {quickCaptureNotice && (
@@ -3133,26 +3117,41 @@ export const ExpandedSidebar = ({
                     </button>
                   )}
                   {isCreatingProject ? (
-                    <div className={`space-y-2 overflow-hidden p-3 ${sidebarTheme.surfaceSoft}`}>
+                    <div className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 transition hover:bg-[var(--ledger-surface-muted)]">
                       <input
                         value={newProjectName}
                         onChange={(e) => setNewProjectName(e.target.value)}
                         onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
+                          if (e.key === 'Enter' || e.key === '+') {
                             e.preventDefault();
                             void createProject();
                           }
+                          if (e.key === 'Escape' && !newProjectName.trim()) {
+                            e.preventDefault();
+                            setNewProjectName('');
+                            setIsCreatingProject(false);
+                          }
                         }}
-                        placeholder="Project name"
-                        className={`w-full h-8 px-2 text-xs rounded-md ${sidebarTheme.fieldMuted}`}
+                        onBlur={(e) => {
+                          const nextFocus = e.relatedTarget;
+                          if (!newProjectName.trim() && !nextFocus) {
+                            setNewProjectName('');
+                            setIsCreatingProject(false);
+                          }
+                        }}
+                        placeholder="Project name..."
+                        className="min-w-0 flex-1 bg-transparent px-0 py-0.5 text-[12px] leading-4 text-[var(--ledger-text-primary)] placeholder:text-[var(--ledger-placeholder)] focus:outline-none"
                         autoFocus
                       />
                       <button
+                        type="button"
+                        onMouseDown={(e) => e.preventDefault()}
                         onClick={() => void createProject()}
-                        disabled={!newProjectName.trim()}
-                        className={`w-full h-7 rounded-md text-white text-xs font-medium disabled:opacity-60 ${sidebarTheme.buttonPrimary}`}
+                        disabled={isCreatingProject || !newProjectName.trim()}
+                        className="inline-flex h-6 items-center justify-center rounded-full px-2 text-[11px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] disabled:opacity-60"
+                        aria-label="Add project"
                       >
-                        Send to Intake
+                        +
                       </button>
                     </div>
                   ) : (
@@ -3164,7 +3163,7 @@ export const ExpandedSidebar = ({
                       <Plus size={13} className="shrink-0" />
                       <span className="truncate">Add Project</span>
                     </button>
-                    )}
+                  )}
                   </>
                 )}
               </div>

@@ -7,11 +7,12 @@ type NotificationAction = 'open' | 'dismiss' | 'complete' | 'snooze';
 
 type NotificationItem = {
   id: string;
-  sourceType: 'reminder' | 'event' | 'task' | 'project' | 'inbox';
+  sourceType: 'reminder' | 'event' | 'task' | 'project' | 'inbox' | 'workspace_invite';
   sourceId: string;
   notificationType: string;
   title: string | null;
   body: string | null;
+  context: string | null;
   workspaceName: string | null;
   workspaceColor: string | null;
   workspaceId?: string | null;
@@ -53,10 +54,27 @@ const getToastFallbackTitle = (item: NotificationItem) => {
       return workspacePart ? `Project deadline - ${workspacePart}` : 'Project deadline';
     case 'inbox':
       return workspacePart ? `Intake item - ${workspacePart}` : 'Intake item';
+    case 'workspace_invite':
+      return workspacePart ? `Workspace invite - ${workspacePart}` : 'Workspace invite';
     default:
       return 'Ledger notification';
   }
 };
+
+const isGenericNotificationTitle = (title: string | null | undefined, sourceType: NotificationItem['sourceType']) => {
+  const normalized = String(title ?? '').trim().toLowerCase();
+  if (!normalized) return true;
+  if (sourceType === 'reminder') return /^reminder(?:\s*[:\-]\s*due)?$/.test(normalized);
+  if (sourceType === 'event') return /^event(?:\s*(?:soon|starting))?$/.test(normalized);
+  if (sourceType === 'task') return /^task(?:\s*due)?$/.test(normalized);
+  if (sourceType === 'project') return /^project(?:\s*deadline)?$/.test(normalized);
+  if (sourceType === 'inbox') return /^inbox(?:\s*capture)?$|^intake item$/.test(normalized);
+  if (sourceType === 'workspace_invite') return /^workspace invite$|^invite accepted$/.test(normalized);
+  return false;
+};
+
+const joinToastDetail = (parts: Array<string | null | undefined>) =>
+  parts.map((part) => part?.trim()).filter(Boolean).join(' · ') || undefined;
 
 export const NotificationMonitor: React.FC = () => {
   const api = useApi();
@@ -93,8 +111,11 @@ export const NotificationMonitor: React.FC = () => {
 
       unseenItems.forEach((item) => {
         const snoozeMinutes = 10;
-        const title = item.title ?? getToastFallbackTitle(item);
-        const detail = item.body ?? (item.workspaceName ? `${item.workspaceName}` : undefined);
+        const title =
+          item.title && !isGenericNotificationTitle(item.title, item.sourceType)
+            ? item.title
+            : getToastFallbackTitle(item);
+        const detail = item.body?.trim() || joinToastDetail([item.context, item.workspaceName]);
         const toastId = toast.show(title, {
           detail,
           variant: 'info',

@@ -608,12 +608,12 @@ export const ModuleWindowHeader = ({
               </p>
             </div>
           ) : null}
-          {stripLeadingActions && (
-            <div className="flex min-w-0 flex-wrap items-center gap-1.5">{stripLeadingActions}</div>
-          )}
         </div>
 
         <div className="flex items-center gap-3" style={noDragRegionStyle}>
+          {stripLeadingActions && (
+            <div className="flex min-w-0 flex-wrap items-center gap-1.5">{stripLeadingActions}</div>
+          )}
           {compact && stripPageActions.length > 0 && (
             <div className="flex min-w-0 flex-wrap items-center gap-1.5">{stripPageActions}</div>
           )}

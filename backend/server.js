@@ -1748,6 +1748,146 @@ const getNotificationSourcePayload = async (userId, candidates) => {
   };
 };
 
+const formatNotificationRelativeTime = (dateLike, now = new Date()) => {
+  const date = new Date(dateLike);
+  if (Number.isNaN(date.getTime())) return null;
+  const diffMs = date.getTime() - now.getTime();
+  const absMinutes = Math.round(Math.abs(diffMs) / 60_000);
+  if (absMinutes < 1) return diffMs >= 0 ? 'now' : 'just now';
+  if (absMinutes < 60) return diffMs >= 0 ? `in ${absMinutes} min` : `${absMinutes} min ago`;
+  const absHours = Math.round(absMinutes / 60);
+  if (absHours < 24) return diffMs >= 0 ? `in ${absHours} hr` : `${absHours} hr ago`;
+  const absDays = Math.round(absHours / 24);
+  return diffMs >= 0 ? `in ${absDays} days` : `${absDays} days ago`;
+};
+
+const joinNotificationParts = (parts) =>
+  parts.map((part) => normalizeNullableText(part)).filter(Boolean).join(' · ') || null;
+
+const buildNotificationLedgerContext = (candidate, sourceMaps) => {
+  const metadata = safeJson(candidate?.metadata, {}) ?? {};
+  const calendar = sourceMaps.calendarById.get(candidate.calendar_id ?? metadata.calendar_id ?? '') ?? null;
+  const project = sourceMaps.projectById.get(candidate.project_id ?? metadata.project_id ?? '') ?? null;
+  const note = sourceMaps.noteById.get(candidate.note_id ?? metadata.note_id ?? '') ?? null;
+  const workspace =
+    sourceMaps.workspaceById.get(
+      candidate.workspace_id ?? candidate.workspace_id_for_fetch ?? metadata.workspace_id ?? ''
+    ) ?? null;
+
+  return joinNotificationParts([
+    calendar?.name ? `Calendar: ${calendar.name}` : null,
+    project?.name ? `Project: ${project.name}` : null,
+    note?.title ? `Note: ${note.title}` : null,
+    workspace?.name ? `Workspace: ${workspace.name}` : null,
+  ]);
+};
+
+const enrichDueNotificationCandidate = (candidate, sourceMaps, now = new Date()) => {
+  const metadata = safeJson(candidate?.metadata, {}) ?? {};
+  const sourceType = String(candidate?.source_type ?? '');
+  const context = buildNotificationLedgerContext(candidate, sourceMaps) ?? candidate.context ?? null;
+  const title = pickSpecificNotificationTitle(candidate?.title, sourceType) ?? candidate.title ?? null;
+
+  if (sourceType === 'event') {
+    const startAt = metadata.start_at ?? null;
+    const startLabel = startAt ? formatNotificationDateTime(startAt) : null;
+    const relativeLabel = startAt ? formatNotificationRelativeTime(startAt, now) : null;
+    return {
+      ...candidate,
+      title: title ?? 'Event starting',
+      body: joinNotificationParts([
+        startLabel ? `Starts ${startLabel}` : null,
+        relativeLabel,
+        context,
+      ]),
+      context: context ?? candidate.context ?? 'Event',
+    };
+  }
+
+  if (sourceType === 'reminder') {
+    const remindAt = metadata.remind_at ?? null;
+    const dueLabel = remindAt ? formatNotificationDateTime(remindAt) : null;
+    const relativeLabel = remindAt ? formatNotificationRelativeTime(remindAt, now) : null;
+    const notesLabel = normalizeNullableText(metadata.notes ?? candidate.notes);
+    return {
+      ...candidate,
+      title: title ?? 'Reminder due',
+      body: joinNotificationParts([
+        dueLabel ? `Due ${dueLabel}` : null,
+        relativeLabel,
+        context,
+        notesLabel,
+      ]),
+      context: context ?? candidate.context ?? 'Reminder',
+    };
+  }
+
+  if (sourceType === 'task') {
+    const dueAt = metadata.due_at ?? null;
+    const dueLabel = dueAt ? formatNotificationDateTime(dueAt) : null;
+    const relativeLabel = dueAt ? formatNotificationRelativeTime(dueAt, now) : null;
+    return {
+      ...candidate,
+      title: title ?? 'Task due',
+      body: joinNotificationParts([
+        candidate.notification_type === 'overdue_item' && dueLabel
+          ? `Overdue since ${dueLabel}`
+          : dueLabel
+          ? `Due ${dueLabel}`
+          : null,
+        relativeLabel,
+        context,
+      ]),
+      context: context ?? candidate.context ?? 'Task',
+    };
+  }
+
+  if (sourceType === 'project') {
+    const deadlineAt = metadata.deadline_at ?? null;
+    const deadlineLabel = deadlineAt ? formatNotificationDate(deadlineAt) : null;
+    const relativeLabel = deadlineAt ? formatNotificationRelativeTime(deadlineAt, now) : null;
+    return {
+      ...candidate,
+      title: title ?? 'Project deadline',
+      body: joinNotificationParts([
+        candidate.notification_type === 'overdue_item' && deadlineLabel
+          ? `Deadline passed ${deadlineLabel}`
+          : deadlineLabel
+          ? `Deadline ${deadlineLabel}`
+          : 'Project deadline',
+        relativeLabel,
+        context,
+      ]),
+      context: context ?? candidate.context ?? 'Project deadline',
+    };
+  }
+
+  if (sourceType === 'inbox') {
+    return {
+      ...candidate,
+      title: title ?? 'Intake item',
+      body: joinNotificationParts([candidate.body, context]),
+      context: context ?? candidate.context ?? 'Intake capture',
+    };
+  }
+
+  if (sourceType === 'workspace_invite') {
+    return {
+      ...candidate,
+      title: title ?? 'Invite accepted',
+      body: joinNotificationParts([candidate.body, context]),
+      context: context ?? candidate.context ?? 'Workspace invite',
+    };
+  }
+
+  return {
+    ...candidate,
+    title: title ?? candidate.title ?? notificationTypeFallbackLabel(candidate.notification_type, sourceType),
+    body: joinNotificationParts([candidate.body, context]),
+    context: context ?? candidate.context ?? notificationTypeFallbackLabel(candidate.notification_type, sourceType),
+  };
+};
+
 const buildDueNotificationCandidates = async (userId, prefs) => {
   const workspaceIds = Array.from(await getUserWorkspaceIds(userId));
   if (!workspaceIds.length) return [];
@@ -1791,6 +1931,8 @@ const buildDueNotificationCandidates = async (userId, prefs) => {
         scheduled_for: notificationScheduledBucket(row.remind_at),
         metadata: {
           reminder_id: row.id,
+          remind_at: row.remind_at ?? null,
+          notes: notesLabel ?? null,
           project_id: row.project_id ?? null,
           note_id: row.note_id ?? null,
           calendar_id: row.calendar_id ?? null,
@@ -1846,6 +1988,8 @@ const buildDueNotificationCandidates = async (userId, prefs) => {
         scheduled_for: notificationScheduledBucket(scheduledFor.toISOString()),
         metadata: {
           event_id: row.id,
+          start_at: row.start_at ?? null,
+          end_at: row.end_at ?? null,
           calendar_id: row.calendar_id ?? null,
           project_id: row.project_id ?? null,
           note_id: row.note_id ?? null,
@@ -1909,6 +2053,9 @@ const buildDueNotificationCandidates = async (userId, prefs) => {
         ),
         metadata: {
           task_id: row.id,
+          due_date: row.due_date ?? null,
+          due_time: dueTime ?? null,
+          due_at: taskDueAt ? taskDueAt.toISOString() : null,
           project_id: row.project_id ?? null,
         },
         title: taskTitle,
@@ -1957,6 +2104,7 @@ const buildDueNotificationCandidates = async (userId, prefs) => {
         ),
         metadata: {
           project_id: row.id,
+          deadline_at: row.end_date ? `${String(row.end_date)}T00:00:00` : null,
         },
         title: projectName || 'Project deadline',
         body: dueLabel ? `Project deadline · Due ${dueLabel}` : 'Project deadline',
@@ -2042,7 +2190,8 @@ const buildDueNotificationCandidates = async (userId, prefs) => {
     });
   }
 
-  return candidates;
+  const sourceMaps = await getNotificationSourcePayload(userId, candidates);
+  return candidates.map((candidate) => enrichDueNotificationCandidate(candidate, sourceMaps, now));
 };
 
 const buildNotificationCenterSourceMaps = async (rows) => {
@@ -5349,6 +5498,42 @@ app.post('/api/inbox/:id/archive', authMiddleware, rateLimit('write'), async (re
   }
 });
 
+app.post('/api/inbox/:id/restore', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    const inboxItem = await loadInboxItemForWorkspace(workspaceId, req.params.id);
+    if (!inboxItem) {
+      return res.status(404).json({ error: 'Intake item not found' });
+    }
+    if (String(inboxItem.status ?? '') === 'converted') {
+      return res.status(409).json({ error: 'Item has already been converted' });
+    }
+    if (String(inboxItem.status ?? '') !== 'archived') {
+      return res.status(409).json({ error: 'Only archived intake items can be restored' });
+    }
+
+    const { data, error } = await supabase
+      .from('inbox_items')
+      .update({
+        status: 'unprocessed',
+        snoozed_until: null,
+        archived_at: null,
+        archived_by: null,
+        updated_by: req.authUser.id,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('workspace_id', workspaceId)
+      .eq('id', req.params.id)
+      .select(inboxItemSelectColumns)
+      .single();
+
+    if (error) throw error;
+    res.json(mapInboxItemResponse(data));
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
 app.post('/api/inbox/:id/snooze', authMiddleware, rateLimit('write'), async (req, res) => {
   try {
     const workspaceId = await resolveWorkspaceIdForRequest(req);
@@ -5415,8 +5600,8 @@ app.post('/api/inbox/:id/convert', authMiddleware, rateLimit('write'), async (re
     if (!inboxItem) {
       return res.status(404).json({ error: 'Intake item not found' });
     }
-    if (String(inboxItem.status ?? '') === 'converted') {
-      return res.status(409).json({ error: 'Intake item has already been accepted' });
+    if (String(inboxItem.status ?? '') === 'converted' || (inboxItem.converted_type && inboxItem.converted_id)) {
+      return res.status(409).json({ error: 'Item has already been converted' });
     }
 
     const type = String(req.body?.type ?? '').trim().toLowerCase();
@@ -5431,6 +5616,19 @@ app.post('/api/inbox/:id/convert', authMiddleware, rateLimit('write'), async (re
     const convertedAt = new Date().toISOString();
     const convertedBy = req.authUser.id;
     let createdId = null;
+
+    if (assignedToUserId) {
+      const targetAllowed = await ensureWorkspaceMemberTarget(workspaceId, assignedToUserId);
+      if (!targetAllowed) {
+        return res.status(404).json({ error: 'Assigned user not found' });
+      }
+    }
+    if (assignedToTeamId) {
+      const teamAllowed = await ensureWorkspaceTeam(assignedToTeamId, workspaceId);
+      if (!teamAllowed) {
+        return res.status(404).json({ error: 'Team not found' });
+      }
+    }
 
     if (type === 'task') {
       const showInToday = Boolean(req.body?.show_in_today ?? false);
@@ -5540,6 +5738,15 @@ app.post('/api/inbox/:id/convert', authMiddleware, rateLimit('write'), async (re
       const noteDate = req.body?.date
         ? normalizeNullableDate(req.body.date, 'date')
         : new Date().toISOString().slice(0, 10);
+      const requestedSectionId = normalizeNullableText(req.body?.section_id);
+      let sectionId = null;
+      if (requestedSectionId) {
+        const sectionAllowed = await ensureWorkspaceResource('note_sections', requestedSectionId, workspaceId);
+        if (!sectionAllowed) {
+          return res.status(404).json({ error: 'Section not found' });
+        }
+        sectionId = requestedSectionId;
+      }
       const contentHtml = normalizeNoteHtml(
         req.body?.content_html ?? plainTextToParagraphHtml(body || rawTitle)
       );
@@ -5558,7 +5765,7 @@ app.post('/api/inbox/:id/convert', authMiddleware, rateLimit('write'), async (re
           mode: 'text',
           mind_map_structure: null,
           parent_id: null,
-          section_id: null,
+          section_id: sectionId,
           sort_order: 0,
           depth: 0,
         })
@@ -5602,10 +5809,11 @@ app.post('/api/inbox/:id/convert', authMiddleware, rateLimit('write'), async (re
       let calendarId = null;
       let calendarColor = null;
       if (requestedCalendarId) {
-        const calendar = await getCalendarById(requestedCalendarId);
-        if (!calendar) {
+        const calendarAllowed = await ensureWorkspaceResource('calendars', requestedCalendarId, workspaceId);
+        if (!calendarAllowed) {
           return res.status(404).json({ error: 'Calendar not found' });
         }
+        const calendar = await getCalendarById(requestedCalendarId);
         calendarId = calendar.id;
         calendarColor = calendar.color ?? null;
       } else {
@@ -5691,7 +5899,14 @@ app.post('/api/inbox/:id/convert', authMiddleware, rateLimit('write'), async (re
         return res.status(400).json({ error: 'start_at is required' });
       }
       const endAt = normalizeEventEndAt(startAt, String(req.body?.end_at ?? '').trim() || null);
-      const calendarId = req.body?.calendar_id || (await getCalendarId(workspaceId, req.authUser.id));
+      const requestedCalendarId = normalizeNullableText(req.body?.calendar_id);
+      const calendarId = requestedCalendarId || (await getCalendarId(workspaceId, req.authUser.id));
+      if (requestedCalendarId) {
+        const calendarAllowed = await ensureWorkspaceResource('calendars', requestedCalendarId, workspaceId);
+        if (!calendarAllowed) {
+          return res.status(404).json({ error: 'Calendar not found' });
+        }
+      }
       const calendarColorInput = normalizeNullableText(req.body?.color);
       const calendarColorResult = calendarColorInput
         ? { data: { color: calendarColorInput }, error: null }
@@ -6250,6 +6465,7 @@ app.post('/api/notifications/check', authMiddleware, rateLimit('read'), async (r
         return mapNotificationEventRow(row, {
           title: candidate?.title ?? null,
           body: candidate?.body ?? null,
+          context: candidate?.context ?? null,
           workspaceName: workspace?.name ?? null,
           workspaceColor: workspace?.color ?? null,
           moduleKind: candidate?.moduleKind ?? null,
