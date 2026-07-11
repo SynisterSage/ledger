@@ -2235,7 +2235,10 @@ function DashboardContent() {
       created_at: new Date().toISOString(),
       ...getWorkspaceTaskMetadata(),
     };
-    setTodayTasks((prev) => sortNewestFirst([optimisticTask, ...prev]));
+    if (showInToday) {
+      setTodayTasks((prev) => sortNewestFirst([optimisticTask, ...prev]));
+    }
+    setWorkspaceTasks((prev) => sortNewestFirst([optimisticTask, ...prev]));
     setIsSavingOverviewTask(true);
     try {
       const created = await api.createTask({
@@ -2256,14 +2259,25 @@ function DashboardContent() {
           workspace_color?: string | null;
         };
         const createdId = createdTask.id ?? tempId;
-        setTodayTasks((prev) =>
+        const mergedTask = {
+          ...optimisticTask,
+          ...createdTask,
+          id: createdId,
+          ...getWorkspaceTaskMetadata(),
+        };
+        if (showInToday) {
+          setTodayTasks((prev) =>
+            sortNewestFirst([
+              mergedTask,
+              ...prev.filter((item) => item.id !== tempId && item.id !== createdId),
+            ])
+          );
+        } else {
+          setTodayTasks((prev) => prev.filter((item) => item.id !== tempId && item.id !== createdId));
+        }
+        setWorkspaceTasks((prev) =>
           sortNewestFirst([
-            {
-              ...optimisticTask,
-              ...createdTask,
-              id: createdId,
-              ...getWorkspaceTaskMetadata(),
-            },
+            mergedTask,
             ...prev.filter((item) => item.id !== tempId && item.id !== createdId),
           ])
         );
@@ -2276,6 +2290,7 @@ function DashboardContent() {
       await refreshTodayTasks();
     } catch (error) {
       setTodayTasks((prev) => prev.filter((item) => item.id !== tempId));
+      setWorkspaceTasks((prev) => prev.filter((item) => item.id !== tempId));
       setDashboardError(error instanceof Error ? error.message : 'Could not create task.');
     } finally {
       setIsSavingOverviewTask(false);
@@ -5069,12 +5084,12 @@ function DashboardContent() {
               {isOverviewViewMenuOpen && (
                 <div className="absolute left-0 top-full z-40 mt-2 w-44 overflow-hidden rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] py-1 shadow-[var(--ledger-shadow)]">
                   {[
-                    ['all', 'All'],
-                    ['assigned', 'Assigned'],
-                    ['today', 'Today'],
-                    ['projects', 'Projects'],
-                    ['notes', 'Notes'],
-                  ].map(([id, label]) => (
+                    { id: 'all', label: 'All', icon: <LayoutList size={10} /> },
+                    { id: 'assigned', label: 'Assigned', icon: <UserCheck size={10} /> },
+                    { id: 'today', label: 'Today', icon: <MapIcon size={10} /> },
+                    { id: 'projects', label: 'Projects', icon: <FolderKanban size={10} /> },
+                    { id: 'notes', label: 'Notes', icon: <StickyNote size={10} /> },
+                  ].map(({ id, label, icon }) => (
                     <button
                       key={id}
                       type="button"
@@ -5088,7 +5103,7 @@ function DashboardContent() {
                       className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
                     >
                       <span className="flex h-5 w-5 items-center justify-center rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)]">
-                        <Circle size={10} />
+                        {icon}
                       </span>
                       {label}
                     </button>

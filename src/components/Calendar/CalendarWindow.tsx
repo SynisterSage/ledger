@@ -5782,7 +5782,7 @@ export const CalendarWindow = () => {
 
       {contextMenu && (
         <div
-          className="fixed z-50 min-w-44 overflow-hidden rounded-xl border border-[#E2D4C4] bg-[#FFF8F2] py-1 shadow-xl"
+          className="fixed z-50 min-w-44 overflow-hidden rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] py-1 text-[var(--ledger-text-primary)] shadow-[var(--ledger-shadow)]"
           style={{
             left: Math.max(8, Math.min(contextMenu.x, window.innerWidth - 188)),
             top: Math.max(8, Math.min(contextMenu.y, window.innerHeight - 138)),
@@ -5795,9 +5795,9 @@ export const CalendarWindow = () => {
               openComposerAtSlot(contextMenu.dateKey, contextMenu.hour);
               setContextMenu(null);
             }}
-            className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-700 hover:bg-[#FFF1E3]"
+            className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
           >
-            <CalendarPlus size={14} className="shrink-0 text-gray-500" />
+            <CalendarPlus size={14} className="shrink-0 text-[var(--ledger-text-muted)]" />
             <span className="text-[14px] font-medium tracking-tight">New Event</span>
           </button>
           <button
@@ -5805,16 +5805,16 @@ export const CalendarWindow = () => {
               openComposerAtSlot(contextMenu.dateKey, contextMenu.hour, 'Reminder', 'reminder');
               setContextMenu(null);
             }}
-            className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-700 hover:bg-[#FFF1E3]"
+            className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
           >
-            <BellRing size={14} className="shrink-0 text-gray-500" />
+            <BellRing size={14} className="shrink-0 text-[var(--ledger-text-muted)]" />
             <span className="text-[14px] font-medium tracking-tight">New Reminder</span>
           </button>
           <button
             disabled
-            className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-400 cursor-not-allowed"
+            className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm cursor-not-allowed text-[var(--ledger-text-muted)]/50"
           >
-            <ClipboardPaste size={14} className="shrink-0 text-gray-400" />
+            <ClipboardPaste size={14} className="shrink-0 text-[var(--ledger-text-muted)]/50" />
             <span className="text-[14px] font-medium tracking-tight">Paste Event</span>
           </button>
         </div>
@@ -5987,7 +5987,7 @@ export const CalendarWindow = () => {
 
           return (
             <div
-              className="fixed z-50 overflow-hidden rounded-2xl border border-[#E2D4C4] bg-[#FFF8F2] shadow-[0_16px_40px_rgba(15,23,42,0.14)]"
+              className="fixed z-50 overflow-hidden rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] text-[var(--ledger-text-primary)] shadow-[var(--ledger-shadow)]"
               style={{
                 left,
                 top,
@@ -5996,8 +5996,8 @@ export const CalendarWindow = () => {
               onClick={(e) => e.stopPropagation()}
               onMouseDown={(e) => e.stopPropagation()}
             >
-              <div className="border-b border-[#E8DDD4] px-3 py-2.5">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-gray-400">
+              <div className="border-b border-[color:var(--ledger-border-subtle)] px-3 py-2.5">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--ledger-text-muted)]">
                   {listContextMenu.kind === 'event' ? 'Event' : 'Reminder'}
                 </p>
                 <div className="mt-1 min-w-0">
@@ -6007,12 +6007,12 @@ export const CalendarWindow = () => {
                         <Check size={12} strokeWidth={2.5} />
                       </span>
                     )}
-                    <p className="truncate text-[14px] font-semibold leading-5 text-gray-900">
+                    <p className="truncate text-[14px] font-semibold leading-5 text-[var(--ledger-text-primary)]">
                       {menuTitle}
                     </p>
                   </div>
                   {menuTime ? (
-                    <p className="mt-0.5 text-[11px] leading-4 text-gray-500">{menuTime}</p>
+                    <p className="mt-0.5 text-[11px] leading-4 text-[var(--ledger-text-muted)]">{menuTime}</p>
                   ) : null}
                 </div>
               </div>
@@ -6026,20 +6026,20 @@ export const CalendarWindow = () => {
 
                     return (
                       <button
-                        onClick={() => {
-                          if (!canEditMenuEvent || !event) return;
-                          openEventEditor(event);
-                          setListContextMenu(null);
-                        }}
-                        disabled={!canEditMenuEvent}
-                        className={`flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm ${
-                          canEditMenuEvent
-                            ? 'text-gray-700 hover:bg-[#FFF1E3]'
-                            : 'cursor-not-allowed text-gray-300'
+                      onClick={() => {
+                        if (!canEditMenuEvent || !event) return;
+                        openEventEditor(event);
+                        setListContextMenu(null);
+                      }}
+                      disabled={!canEditMenuEvent}
+                      className={`flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm ${
+                        canEditMenuEvent
+                            ? 'text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]'
+                            : 'cursor-not-allowed text-[var(--ledger-text-muted)]/60'
                         }`}
-                        title={canEditMenuEvent ? 'Edit Event' : 'Past events are read-only here'}
-                      >
-                        <PencilLine size={14} className="shrink-0 text-gray-500" />
+                      title={canEditMenuEvent ? 'Edit Event' : 'Past events are read-only here'}
+                    >
+                        <PencilLine size={14} className="shrink-0 text-[var(--ledger-text-muted)]" />
                         <span className="min-w-0 truncate text-[14px] font-medium tracking-tight">
                           Edit Event
                         </span>
@@ -6053,9 +6053,9 @@ export const CalendarWindow = () => {
                       if (reminder) openReminderEditor(reminder);
                       setListContextMenu(null);
                     }}
-                    className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm text-gray-700 hover:bg-[#FFF1E3]"
+                    className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
                   >
-                    <PencilLine size={14} className="shrink-0 text-gray-500" />
+                    <PencilLine size={14} className="shrink-0 text-[var(--ledger-text-muted)]" />
                     <span className="min-w-0 truncate text-[14px] font-medium tracking-tight">
                       Edit Reminder
                     </span>
@@ -6064,9 +6064,9 @@ export const CalendarWindow = () => {
 
                 <button
                   onClick={() => openNewItemFromListContextMenu('event')}
-                  className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm text-gray-700 hover:bg-[#FFF1E3]"
+                  className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
                 >
-                  <CalendarPlus size={14} className="shrink-0 text-gray-500" />
+                  <CalendarPlus size={14} className="shrink-0 text-[var(--ledger-text-muted)]" />
                   <span className="min-w-0 truncate text-[14px] font-medium tracking-tight">
                     New Event Here
                   </span>
@@ -6074,9 +6074,9 @@ export const CalendarWindow = () => {
 
                 <button
                   onClick={() => openNewItemFromListContextMenu('reminder')}
-                  className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm text-gray-700 hover:bg-[#FFF1E3]"
+                  className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
                 >
-                  <BellRing size={14} className="shrink-0 text-gray-500" />
+                  <BellRing size={14} className="shrink-0 text-[var(--ledger-text-muted)]" />
                   <span className="min-w-0 truncate text-[14px] font-medium tracking-tight">
                     New Reminder Here
                   </span>
@@ -6104,9 +6104,9 @@ export const CalendarWindow = () => {
                       }
                       setListContextMenu(null);
                     }}
-                    className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm text-gray-700 hover:bg-[#FFF1E3]"
+                    className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
                   >
-                    <BellRing size={14} className="shrink-0 text-gray-500" />
+                    <BellRing size={14} className="shrink-0 text-[var(--ledger-text-muted)]" />
                     <span className="min-w-0 truncate text-[14px] font-medium tracking-tight">
                       Mark{' '}
                       {events.find((item) => item.id === baseEventId(listContextMenu.id))
@@ -6122,16 +6122,16 @@ export const CalendarWindow = () => {
                       if (reminder) void toggleReminderDone(reminder);
                       setListContextMenu(null);
                     }}
-                    className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm text-gray-700 hover:bg-[#FFF1E3]"
+                    className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
                   >
-                    <BellRing size={14} className="shrink-0 text-gray-500" />
+                    <BellRing size={14} className="shrink-0 text-[var(--ledger-text-muted)]" />
                     <span className="min-w-0 truncate text-[14px] font-medium tracking-tight">
                       Toggle Done
                     </span>
                   </button>
                 )}
 
-                <div className="my-1.5 border-t border-[#E8DDD4]" />
+                <div className="my-1.5 border-t border-[color:var(--ledger-border-subtle)]" />
 
                 <button
                   onClick={() => {
@@ -6142,9 +6142,9 @@ export const CalendarWindow = () => {
                     }
                     setListContextMenu(null);
                   }}
-                  className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm text-red-600 hover:bg-red-50"
+                  className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm text-[#D33C2D] hover:bg-[rgba(255,95,64,0.12)]"
                 >
-                  <Trash2 size={14} className="shrink-0 text-red-500" />
+                  <Trash2 size={14} className="shrink-0 text-[#E0523E]" />
                   <span className="min-w-0 truncate text-[14px] font-medium tracking-tight">
                     Delete {listContextMenu.kind === 'event' ? 'Event' : 'Reminder'}
                   </span>

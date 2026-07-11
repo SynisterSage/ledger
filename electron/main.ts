@@ -746,6 +746,7 @@ let floatingDragStart: {
   cursor: Electron.Point;
   bounds: Electron.Rectangle;
 } | null = null;
+let workspaceSidebarMinimizedWithShell = false;
 const headerDragStarts = new Map<
   number,
   {
@@ -2317,6 +2318,25 @@ function syncSidebarWorkspaceFullscreenLayer(kind: ModuleWindowKind, win: Browse
       win.isFullScreen() ||
       isFullscreenLikeBounds(win.getBounds()));
   setSidebarAboveWorkspaceWindow(shouldLayer);
+}
+
+function minimizeSidebarWithWorkspaceShell() {
+  if (!sidebarWin || sidebarWin.isDestroyed()) return;
+  if (sidebarWin.isMinimized()) {
+    workspaceSidebarMinimizedWithShell = true;
+    return;
+  }
+  workspaceSidebarMinimizedWithShell = true;
+  sidebarWin.minimize();
+}
+
+function restoreSidebarAfterWorkspaceShellMinimize() {
+  if (!workspaceSidebarMinimizedWithShell) return;
+  workspaceSidebarMinimizedWithShell = false;
+  if (!sidebarWin || sidebarWin.isDestroyed()) return;
+  if (sidebarWin.isMinimized()) {
+    sidebarWin.restore();
+  }
 }
 
 function restoreModuleWindowBounds(kind: ModuleWindowKind, win: BrowserWindow) {
@@ -5649,6 +5669,7 @@ function openModuleWindow(
 
   moduleWin.on('minimize', () => {
     if (moduleWin === workspaceModuleWin && isWorkspaceDockTarget()) {
+      minimizeSidebarWithWorkspaceShell();
       suspendWorkspaceWindowDockTarget();
     } else {
       suspendCurrentFloatingDockTarget('suspended_minimized');
@@ -5663,6 +5684,7 @@ function openModuleWindow(
   moduleWin.on('closed', () => {
     if (moduleWin === workspaceModuleWin) {
       setSidebarAboveWorkspaceWindow(false);
+      workspaceSidebarMinimizedWithShell = false;
     }
     const shouldRestoreFloatingSidebar =
       moduleWin === workspaceModuleWin &&
@@ -5736,6 +5758,7 @@ function openModuleWindow(
   });
   moduleWin.on('restore', () => {
     if (moduleWin === workspaceModuleWin && shouldAttachWorkspaceWindowToSidebar()) {
+      restoreSidebarAfterWorkspaceShellMinimize();
       setWorkspaceWindowAsFloatingDockTarget(kind);
     }
   });
@@ -5924,6 +5947,24 @@ app.on('will-quit', () => {
 
 app.on('activate', () => {
   if (allLedgerWindowsHidden) return;
+
+  const workspaceWin =
+    workspaceModuleWin && !workspaceModuleWin.isDestroyed() ? workspaceModuleWin : null;
+  const workspaceShellCanRestore =
+    workspaceWin &&
+    workspaceWin.isMinimized() &&
+    (workspaceSidebarMinimizedWithShell || isWorkspaceDockTarget());
+
+  if (workspaceShellCanRestore) {
+    workspaceWin.restore();
+    workspaceWin.show();
+    workspaceWin.focus();
+    return;
+  }
+
+  if (workspaceSidebarMinimizedWithShell) {
+    workspaceSidebarMinimizedWithShell = false;
+  }
 
   if (!sidebarWin || sidebarWin.isDestroyed()) {
     createSidebarWindow();
@@ -6234,6 +6275,7 @@ ipcMain.handle('window:toggle-module', (_event, payload: ModuleWindowKind | Modu
       if (existing.isMinimized()) {
         existing.restore();
         if (isWorkspaceModuleKind(kind)) {
+          restoreSidebarAfterWorkspaceShellMinimize();
           setWorkspaceWindowAsFloatingDockTarget(kind);
         }
       }
@@ -6254,6 +6296,7 @@ ipcMain.handle('window:toggle-module', (_event, payload: ModuleWindowKind | Modu
     if (existing.isMinimized()) {
       existing.restore();
       if (isWorkspaceModuleKind(kind)) {
+        restoreSidebarAfterWorkspaceShellMinimize();
         setWorkspaceWindowAsFloatingDockTarget(kind);
       }
       existing.focus();
@@ -6294,6 +6337,9 @@ ipcMain.handle('window:open-module', (_event, payload: ModuleWindowKind | Module
   if (existing && !existing.isDestroyed()) {
     if (existing.isMinimized()) {
       existing.restore();
+      if (existing === workspaceModuleWin) {
+        restoreSidebarAfterWorkspaceShellMinimize();
+      }
     }
     existing.show();
     // Delay focus slightly to prevent sidebar from stealing focus back
@@ -6336,6 +6382,9 @@ ipcMain.handle('window:minimize-module', (_event, kind: ModuleWindowKind) => {
   if (!existing || existing.isDestroyed()) return;
   suspendCurrentFloatingDockTarget('suspended_minimized');
   existing.minimize();
+  if (existing === workspaceModuleWin && isWorkspaceDockTarget()) {
+    minimizeSidebarWithWorkspaceShell();
+  }
 });
 
 ipcMain.handle('window:toggle-module-fullscreen', (_event, kind: ModuleWindowKind) => {
@@ -6343,6 +6392,9 @@ ipcMain.handle('window:toggle-module-fullscreen', (_event, kind: ModuleWindowKin
   if (!existing || existing.isDestroyed()) return false;
   if (existing.isMinimized()) {
     existing.restore();
+    if (existing === workspaceModuleWin) {
+      restoreSidebarAfterWorkspaceShellMinimize();
+    }
   }
   const isPseudoFullscreen = moduleWindowFullscreenBoundsMemory.has(kind);
   const isWorkspacePseudoFullscreen =
