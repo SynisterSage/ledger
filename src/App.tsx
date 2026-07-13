@@ -1068,6 +1068,11 @@ function DashboardContent() {
       ? (currentDashboardSection as OverviewTab)
       : 'all'
   );
+  const [overviewTeamScopeId, setOverviewTeamScopeId] = useState<string | null>(() => {
+    const raw = String(moduleFocusContext ?? '').trim();
+    if (!raw.startsWith('team:')) return null;
+    return raw.slice('team:'.length).trim() || null;
+  });
   const [overviewLayout, setOverviewLayout] = useState<'list' | 'compact'>('list');
   const [isOverviewFilterOpen, setIsOverviewFilterOpen] = useState(false);
   const [isOverviewDisplayOpen, setIsOverviewDisplayOpen] = useState(false);
@@ -2055,6 +2060,42 @@ function DashboardContent() {
       // Keep overview filters as a workspace preference when storage is available.
     }
   }, [activeWorkspaceId, overviewFilters]);
+
+  useEffect(() => {
+    const applyTeamFocusContext = (focusContext: string | null | undefined) => {
+      const raw = String(focusContext ?? '').trim();
+      if (!raw.startsWith('team:')) return;
+      const teamId = raw.slice('team:'.length).trim();
+      if (!teamId) return;
+
+      setOverviewTeamScopeId(teamId);
+      setOverviewTab('assigned');
+      setOverviewFilters((current) => ({
+        ...current,
+        assigned: {
+          ...current.assigned,
+          assignment: ['assigned', 'my_teams', `team:${teamId}`],
+          team: [`team:${teamId}`],
+        },
+      }));
+      setSelectedOverviewRowId(null);
+    };
+
+    applyTeamFocusContext(moduleFocusContext);
+
+    const focusContextListener = (
+      _event: unknown,
+      payload: { kind?: string; focusContext?: string | null }
+    ) => {
+      if (payload?.kind !== 'dashboard') return;
+      applyTeamFocusContext(payload.focusContext);
+    };
+
+    window.ipcRenderer?.on('module:focus-context', focusContextListener);
+    return () => {
+      window.ipcRenderer?.off('module:focus-context', focusContextListener);
+    };
+  }, []);
 
   const saveDailyAccountability = async (next: {
     focusItems?: Array<{ id: string; text: string; done: boolean }>;
@@ -4150,8 +4191,8 @@ function DashboardContent() {
     'Today',
     'Long-term tasks',
     'Active projects',
-    'Recent notes',
     'Upcoming',
+    'Recent notes',
   ]
     .map((group) => ({
       id: group,
@@ -4938,7 +4979,13 @@ function DashboardContent() {
   };
 
   useWorkspaceRouteHistory(
-    isModuleWindow ? { kind: 'dashboard', focusSection: overviewTab } : null,
+    isModuleWindow
+      ? {
+          kind: 'dashboard',
+          focusSection: overviewTab,
+          focusContext: overviewTeamScopeId ? `team:${overviewTeamScopeId}` : null,
+        }
+      : null,
     Boolean(isModuleWindow)
   );
 

@@ -38,6 +38,7 @@ import { useApi } from '../../hooks/useApi';
 import { useWorkspaceRealtimeRefresh } from '../../hooks/useWorkspaceRealtimeRefresh';
 import { SkeletonList } from '../Common/Skeleton';
 import { WorkspaceSwitcherMenu } from '../Common/WorkspaceSwitcherMenu';
+import { SkeletonCompactRow } from '../Common/Skeleton';
 import { sidebarTheme } from './sidebarTheme';
 import { getProjectTypeOption } from '../../utils/projectTypes';
 import { resolveIntakeRouting } from '../../utils/intakeRouting';
@@ -79,6 +80,8 @@ type TodayTask = {
   created_by?: string | null;
   created_by_name?: string | null;
   assigned_to?: string | null;
+  assigned_to_team_id?: string | null;
+  assigned_team_id?: string | null;
   task_horizon?: 'today' | 'long_term' | null;
   is_today_focus?: boolean;
   show_in_today?: boolean;
@@ -129,6 +132,21 @@ type UpcomingItem = {
 };
 
 type ProjectSemanticStatus = 'not_started' | 'in_progress' | 'paused' | 'completed';
+type MyTeamRouteKind = 'team' | 'intake' | 'tasks' | 'projects';
+
+type SidebarTeam = {
+  id: string;
+  name: string;
+  identifier?: string | null;
+  color?: string | null;
+  archivedAt?: string | null;
+  currentUserRole?: 'lead' | 'member' | 'viewer' | null;
+};
+
+type SidebarTeamRoute = {
+  teamId: string;
+  kind: MyTeamRouteKind;
+} | null;
 
 const formatTodayTaskWorkspace = (item: {
   workspace_name?: string | null;
@@ -194,6 +212,45 @@ const sortTodayTasks = <T extends { kind?: 'task' | 'reminder'; title?: string }
     if (diff !== 0) return diff;
     return String(a.title ?? '').localeCompare(String(b.title ?? ''));
   });
+
+const getSidebarTeamInitials = (team: { name?: string | null; identifier?: string | null }) => {
+  const identifier = String(team.identifier ?? '').trim();
+  if (identifier) {
+    return identifier.slice(0, 2).toUpperCase();
+  }
+
+  const words = String(team.name ?? '')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  if (words.length === 0) return 'T';
+  if (words.length === 1) return words[0].slice(0, 2).toUpperCase();
+  return `${words[0][0] ?? ''}${words[1][0] ?? ''}`.toUpperCase();
+};
+
+const getInboxItemTeamId = (item: {
+  suggested_team_id?: string | null;
+  raw_payload?: Record<string, unknown> | null;
+}) => {
+  const raw = item.raw_payload ?? {};
+  const direct = String(item.suggested_team_id ?? '').trim();
+  if (direct) return direct;
+
+  const nestedValues = [
+    (raw as { suggested_team_id?: unknown })?.suggested_team_id,
+    (raw as { suggested_owner_team_id?: unknown })?.suggested_owner_team_id,
+    (raw as { assigned_to_team_id?: unknown })?.assigned_to_team_id,
+    (raw as { owner_team_id?: unknown })?.owner_team_id,
+    (raw as { team_id?: unknown })?.team_id,
+  ];
+
+  for (const value of nestedValues) {
+    const next = String(value ?? '').trim();
+    if (next) return next;
+  }
+
+  return null;
+};
 
 const isUpcomingEventActive = (event: {
   status?: string | null;
@@ -315,9 +372,18 @@ export const ExpandedSidebar = ({
       project_type?: string | null;
       start_date?: string | null;
       end_date?: string | null;
+      owner_team_id?: string | null;
     }>
   >([]);
+  const [myTeams, setMyTeams] = useState<SidebarTeam[]>([]);
+  const [isLoadingMyTeams, setIsLoadingMyTeams] = useState(true);
+  const [myTeamsCollapsed, setMyTeamsCollapsed] = useState(true);
+  const [expandedMyTeamIds, setExpandedMyTeamIds] = useState<Set<string>>(new Set());
+  const [myTeamsActiveRoute, setMyTeamsActiveRoute] = useState<SidebarTeamRoute>(null);
   const [inboxCount, setInboxCount] = useState(0);
+  const [teamIntakeItems, setTeamIntakeItems] = useState<
+    Array<{ id: string; teamId: string | null }>
+  >([]);
   const [notificationCount, setNotificationCount] = useState(0);
   const [isLoadingProjects, setIsLoadingProjects] = useState(true);
   const [newProjectName, setNewProjectName] = useState('');
@@ -336,6 +402,10 @@ export const ExpandedSidebar = ({
   const CHECKIN_COLLAPSE_STORAGE_KEY = 'ledger:sidebar:checkin-collapsed:v1';
   const PROJECTS_COLLAPSE_STORAGE_KEY = 'ledger:sidebar:projects-collapsed:v1';
   const EVENTS_COLLAPSE_STORAGE_KEY = 'ledger:sidebar:events-collapsed:v1';
+  const WORKSPACE_SECTION_COLLAPSE_STORAGE_KEY = 'ledger:sidebar:workspace-section-collapsed:v1';
+  const MY_TEAMS_COLLAPSE_STORAGE_KEY = 'ledger:sidebar:my-teams-collapsed:v1';
+  const MY_TEAMS_EXPANDED_STORAGE_KEY = 'ledger:sidebar:my-teams-expanded:v1';
+  const MY_TEAMS_ACTIVE_STORAGE_KEY = 'ledger:sidebar:my-teams-active:v1';
   const loadCollapsedPreference = (key: string, fallback = true) => {
     try {
       const saved = window.localStorage.getItem(key);
@@ -352,6 +422,7 @@ export const ExpandedSidebar = ({
   const [projectsCollapsed, setProjectsCollapsed] = useState<boolean>(() =>
     loadCollapsedPreference(PROJECTS_COLLAPSE_STORAGE_KEY, false)
   );
+  const [workspaceSectionCollapsed, setWorkspaceSectionCollapsed] = useState(false);
   const [completedTodayExpanded, setCompletedTodayExpanded] = useState(false);
   const [todayDockPopoverOpen, setTodayDockPopoverOpen] = useState(false);
   const [todayDockPopoverStyle, setTodayDockPopoverStyle] = useState<React.CSSProperties | null>(
@@ -381,6 +452,81 @@ export const ExpandedSidebar = ({
     setEventsExpanded(!loadCollapsedPreference(EVENTS_COLLAPSE_STORAGE_KEY, false));
   }, []);
 
+  useEffect(() => {
+    const storageScope = user?.id && activeWorkspaceId ? `${user.id}:${activeWorkspaceId}` : null;
+    if (!storageScope) {
+      setWorkspaceSectionCollapsed(false);
+      return;
+    }
+
+    try {
+      const collapsedRaw = window.localStorage.getItem(
+        `${WORKSPACE_SECTION_COLLAPSE_STORAGE_KEY}:${storageScope}`
+      );
+      setWorkspaceSectionCollapsed(collapsedRaw === '1');
+    } catch {
+      setWorkspaceSectionCollapsed(false);
+    }
+
+  }, [activeWorkspaceId, user?.id]);
+
+  useEffect(() => {
+    const storageScope = user?.id && activeWorkspaceId ? `${user.id}:${activeWorkspaceId}` : null;
+    if (!storageScope) {
+      setMyTeamsCollapsed(true);
+      setExpandedMyTeamIds(new Set());
+      setMyTeamsActiveRoute(null);
+      return;
+    }
+
+    try {
+      const collapsedRaw = window.localStorage.getItem(
+        `${MY_TEAMS_COLLAPSE_STORAGE_KEY}:${storageScope}`
+      );
+      setMyTeamsCollapsed(collapsedRaw === null ? true : collapsedRaw === '1');
+    } catch {
+      setMyTeamsCollapsed(true);
+    }
+
+    try {
+      const expandedRaw = window.localStorage.getItem(
+        `${MY_TEAMS_EXPANDED_STORAGE_KEY}:${storageScope}`
+      );
+      const parsed = expandedRaw ? (JSON.parse(expandedRaw) as unknown) : [];
+      const nextExpanded = new Set(
+        Array.isArray(parsed)
+          ? parsed
+              .map((value) => String(value ?? '').trim())
+              .filter((value): value is string => Boolean(value))
+          : []
+      );
+      setExpandedMyTeamIds(nextExpanded);
+    } catch {
+      setExpandedMyTeamIds(new Set());
+    }
+
+    try {
+      const activeRaw = window.localStorage.getItem(`${MY_TEAMS_ACTIVE_STORAGE_KEY}:${storageScope}`);
+      const parsed = activeRaw ? (JSON.parse(activeRaw) as unknown) : null;
+      if (
+        parsed &&
+        typeof parsed === 'object' &&
+        typeof (parsed as { teamId?: unknown }).teamId === 'string' &&
+        typeof (parsed as { kind?: unknown }).kind === 'string'
+      ) {
+        const teamId = String((parsed as { teamId?: string }).teamId ?? '').trim();
+        const kind = String((parsed as { kind?: string }).kind ?? '').trim() as MyTeamRouteKind;
+        if (teamId && ['team', 'intake', 'tasks', 'projects'].includes(kind)) {
+          setMyTeamsActiveRoute({ teamId, kind });
+          return;
+        }
+      }
+      setMyTeamsActiveRoute(null);
+    } catch {
+      setMyTeamsActiveRoute(null);
+    }
+  }, [activeWorkspaceId, user?.id]);
+
   const [contextMenu, setContextMenu] = useState<{
     type: 'project' | 'today-active' | 'today-completed';
     id: string;
@@ -398,7 +544,7 @@ export const ExpandedSidebar = ({
 
   useWorkspaceRealtimeRefresh({
     workspaceId: activeWorkspaceId,
-    tables: ['notes', 'projects', 'tasks', 'events', 'reminders'],
+    tables: ['notes', 'projects', 'tasks', 'events', 'reminders', 'workspace_teams', 'workspace_team_members', 'inbox_items'],
     enabled: Boolean(user && activeWorkspaceId),
     onChange: handleSidebarWorkspaceRefresh,
   });
@@ -672,6 +818,7 @@ export const ExpandedSidebar = ({
               project_type?: string | null;
               start_date?: string | null;
               end_date?: string | null;
+              owner_team_id?: string | null;
             }>
           )
             .filter((project) => normalizeProjectStatus(project.status) !== 'completed')
@@ -702,37 +849,214 @@ export const ExpandedSidebar = ({
   }, [user?.id, activeWorkspaceId, sidebarRefreshToken]);
 
   useEffect(() => {
+    let cancelled = false;
+
+    const loadMyTeams = async () => {
+      if (!user || !activeWorkspaceId) {
+        setMyTeams([]);
+        setIsLoadingMyTeams(false);
+        return;
+      }
+
+      setIsLoadingMyTeams(true);
+
+      try {
+        const [teamsPayload, inboxPayload] = await Promise.allSettled([
+          api.getTeams(),
+          api.getInboxItems({ status: 'unprocessed' }),
+        ]);
+
+        if (cancelled) return;
+
+        const normalizedTeams =
+          teamsPayload.status === 'fulfilled'
+            ? Array.isArray(teamsPayload.value)
+              ? (teamsPayload.value as Array<{
+                  id: string;
+                  name: string;
+                  identifier?: string | null;
+                  color?: string | null;
+                  archivedAt?: string | null;
+                  currentUserRole?: 'lead' | 'member' | 'viewer' | null;
+                }>)
+              : Array.isArray(
+                  (
+                    teamsPayload.value as {
+                      teams?: Array<{
+                        id: string;
+                        name: string;
+                        identifier?: string | null;
+                        color?: string | null;
+                        archivedAt?: string | null;
+                        currentUserRole?: 'lead' | 'member' | 'viewer' | null;
+                      }> | null;
+                    } | null
+                  )?.teams
+                )
+              ? (
+                  teamsPayload.value as {
+                    teams: Array<{
+                      id: string;
+                      name: string;
+                      identifier?: string | null;
+                      color?: string | null;
+                      archivedAt?: string | null;
+                      currentUserRole?: 'lead' | 'member' | 'viewer' | null;
+                    }>;
+                  }
+                ).teams ?? []
+              : []
+            : [];
+
+        const visibleTeams = normalizedTeams
+          .map((team) => ({
+            id: team.id,
+            name: team.name,
+            identifier: team.identifier ?? null,
+            color: team.color ?? null,
+            archivedAt: team.archivedAt ?? null,
+            currentUserRole: team.currentUserRole ?? null,
+          }))
+          .filter((team) => Boolean(team.id && team.name))
+          .filter((team) => team.currentUserRole !== null)
+          .filter((team) => !team.archivedAt);
+
+        const inboxItems =
+          inboxPayload.status === 'fulfilled'
+            ? Array.isArray(inboxPayload.value)
+              ? (inboxPayload.value as Array<{
+                  id: string;
+                  suggested_team_id?: string | null;
+                  raw_payload?: Record<string, unknown> | null;
+                }>)
+              : Array.isArray(
+                  (
+                    inboxPayload.value as {
+                      items?: Array<{
+                        id: string;
+                        suggested_team_id?: string | null;
+                        raw_payload?: Record<string, unknown> | null;
+                      }> | null;
+                    } | null
+                  )?.items
+                )
+              ? (
+                  inboxPayload.value as {
+                    items: Array<{
+                      id: string;
+                      suggested_team_id?: string | null;
+                      raw_payload?: Record<string, unknown> | null;
+                    }>;
+                  }
+                ).items ?? []
+              : []
+            : [];
+
+        setMyTeams(visibleTeams);
+        setTeamIntakeItems(
+          inboxItems
+            .map((item) => ({
+              id: item.id,
+              teamId: getInboxItemTeamId(item),
+            }))
+            .filter((item) => Boolean(item.id))
+        );
+      } catch (error) {
+        if (!cancelled) {
+          console.error('Failed to load sidebar teams:', error);
+          setMyTeams([]);
+          setTeamIntakeItems([]);
+        }
+      } finally {
+        if (!cancelled) setIsLoadingMyTeams(false);
+      }
+    };
+
+    void loadMyTeams();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeWorkspaceId, api, sidebarRefreshToken, user]);
+
+  useEffect(() => {
     if (!user || !activeWorkspaceId) {
       setInboxCount(0);
+      setTeamIntakeItems([]);
       return;
     }
 
     let cancelled = false;
 
-    const loadInboxCount = async () => {
+    const loadInboxState = async () => {
       try {
-        const payload = (await api.getInboxCount()) as { count?: number };
+        const [countPayload, itemsPayload] = await Promise.allSettled([
+          api.getInboxCount(),
+          api.getInboxItems({ status: 'unprocessed' }),
+        ]);
         if (!cancelled) {
-          setInboxCount(Math.max(0, Number(payload?.count ?? 0)));
+          const count =
+            countPayload.status === 'fulfilled' ? (countPayload.value as { count?: number }) : null;
+          setInboxCount(Math.max(0, Number(count?.count ?? 0)));
+
+          const items =
+            itemsPayload.status === 'fulfilled'
+              ? Array.isArray(itemsPayload.value)
+                ? (itemsPayload.value as Array<{
+                    id: string;
+                    suggested_team_id?: string | null;
+                    raw_payload?: Record<string, unknown> | null;
+                  }>)
+                : Array.isArray(
+                    (
+                      itemsPayload.value as {
+                        items?: Array<{
+                          id: string;
+                          suggested_team_id?: string | null;
+                          raw_payload?: Record<string, unknown> | null;
+                        }> | null;
+                      } | null
+                    )?.items
+                  )
+                ? (
+                    itemsPayload.value as {
+                      items: Array<{
+                        id: string;
+                        suggested_team_id?: string | null;
+                        raw_payload?: Record<string, unknown> | null;
+                      }>;
+                    }
+                  ).items ?? []
+                : []
+              : [];
+          setTeamIntakeItems(
+            items
+              .map((item) => ({
+                id: item.id,
+                teamId: getInboxItemTeamId(item),
+              }))
+              .filter((item) => Boolean(item.id))
+          );
         }
       } catch (error) {
         console.error('Failed to load inbox count:', error);
       }
     };
 
-    void loadInboxCount();
+    void loadInboxState();
 
     const handleRefreshInboxCount = () => {
       if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
-      void loadInboxCount();
+      void loadInboxState();
     };
 
     const handleInboxItemsUpdated = (_event: unknown, payload?: { delta?: number }) => {
       if (typeof payload?.delta === 'number' && Number.isFinite(payload.delta)) {
         setInboxCount((current) => Math.max(0, current + payload.delta!));
+        void loadInboxState();
         return;
       }
-      void loadInboxCount();
+      void loadInboxState();
     };
 
     window.ipcRenderer?.on('inbox:items-updated', handleInboxItemsUpdated);
@@ -740,7 +1064,7 @@ export const ExpandedSidebar = ({
     document.addEventListener('visibilitychange', handleRefreshInboxCount);
 
     const refreshTimer = window.setInterval(() => {
-      void loadInboxCount();
+      void loadInboxState();
     }, 10_000);
 
     return () => {
@@ -1550,6 +1874,70 @@ export const ExpandedSidebar = ({
     }
   };
 
+  const persistScopedCollapsedState = (key: string, value: boolean) => {
+    const scope = user?.id && activeWorkspaceId ? `${user.id}:${activeWorkspaceId}` : null;
+    if (!scope) return;
+    try {
+      window.localStorage.setItem(`${key}:${scope}`, value ? '1' : '0');
+    } catch {
+      // No-op when storage is unavailable.
+    }
+  };
+
+  const getMyTeamsStorageScope = () =>
+    user?.id && activeWorkspaceId ? `${user.id}:${activeWorkspaceId}` : null;
+
+  const persistMyTeamsCollapsed = (value: boolean) => {
+    const scope = getMyTeamsStorageScope();
+    if (!scope) return;
+    try {
+      window.localStorage.setItem(`${MY_TEAMS_COLLAPSE_STORAGE_KEY}:${scope}`, value ? '1' : '0');
+    } catch {
+      // No-op when storage is unavailable.
+    }
+  };
+
+  const persistMyTeamExpandedState = (teamId: string, value: boolean) => {
+    const scope = getMyTeamsStorageScope();
+    if (!scope) return;
+
+    setExpandedMyTeamIds((current) => {
+      const next = new Set(current);
+      if (value) next.add(teamId);
+      else next.delete(teamId);
+
+      try {
+        window.localStorage.setItem(
+          `${MY_TEAMS_EXPANDED_STORAGE_KEY}:${scope}`,
+          JSON.stringify([...next])
+        );
+      } catch {
+        // No-op when storage is unavailable.
+      }
+
+      return next;
+    });
+  };
+
+  const persistMyTeamsActiveRoute = (route: SidebarTeamRoute) => {
+    const scope = getMyTeamsStorageScope();
+    setMyTeamsActiveRoute(route);
+    if (!scope) return;
+
+    try {
+      if (!route) {
+        window.localStorage.removeItem(`${MY_TEAMS_ACTIVE_STORAGE_KEY}:${scope}`);
+        return;
+      }
+      window.localStorage.setItem(
+        `${MY_TEAMS_ACTIVE_STORAGE_KEY}:${scope}`,
+        JSON.stringify(route)
+      );
+    } catch {
+      // No-op when storage is unavailable.
+    }
+  };
+
   const closeWorkspaceSections = (next?: 'tasks' | 'today' | 'note' | 'event' | 'events' | 'checkin' | 'projects') => {
     setTasksCollapsed(next !== 'tasks');
     setTodayCollapsed(next !== 'today');
@@ -1827,6 +2215,26 @@ export const ExpandedSidebar = ({
   const activeProjectCount = projects.filter(
     (project) => normalizeProjectStatus(String(project.status)) !== 'completed'
   ).length;
+  const myTeamTaskCountById = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const task of workspaceTasks) {
+      const teamId = String(task.assigned_to_team_id ?? task.assigned_team_id ?? '').trim();
+      if (!teamId) continue;
+      const status = String(task.status ?? '').toLowerCase();
+      if (status === 'completed' || status === 'done') continue;
+      counts.set(teamId, (counts.get(teamId) ?? 0) + 1);
+    }
+    return counts;
+  }, [workspaceTasks]);
+  const myTeamProjectCountById = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const project of projects) {
+      const teamId = String(project.owner_team_id ?? '').trim();
+      if (!teamId) continue;
+      counts.set(teamId, (counts.get(teamId) ?? 0) + 1);
+    }
+    return counts;
+  }, [projects]);
   const horizontalTodaySummary =
     todayTotalCount > 0 ? `${completedToday.length}/${todayTotalCount} complete` : 'Nothing yet';
   const openSettingsSection = (focusContext: 'workspace' | 'integrations' | 'shortcuts') => {
@@ -1897,6 +2305,35 @@ export const ExpandedSidebar = ({
           ...trySectionItems.slice(trySectionRotationStart),
           ...trySectionItems.slice(0, trySectionRotationStart),
         ].slice(0, 4);
+  const myTeamIntakeCountById = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const item of teamIntakeItems) {
+      if (!item.teamId) continue;
+      counts.set(item.teamId, (counts.get(item.teamId) ?? 0) + 1);
+    }
+    return counts;
+  }, [teamIntakeItems]);
+  const visibleMyTeams = useMemo(
+    () =>
+      myTeams.filter((team) => Boolean(team.id && team.name) && team.currentUserRole !== null && !team.archivedAt),
+    [myTeams]
+  );
+  const myTeamsHeaderCount = visibleMyTeams.length;
+  const showMyTeamsSection = isLoadingMyTeams || visibleMyTeams.length > 0;
+  const activeMyTeamRoute = useMemo(() => {
+    if (!myTeamsActiveRoute?.teamId) return null;
+    if (!visibleMyTeams.some((team) => team.id === myTeamsActiveRoute.teamId)) {
+      return null;
+    }
+    return myTeamsActiveRoute;
+  }, [myTeamsActiveRoute, visibleMyTeams]);
+
+  useEffect(() => {
+    if (!activeWorkspaceId || !user?.id) return;
+    if (!myTeamsActiveRoute?.teamId) return;
+    if (visibleMyTeams.some((team) => team.id === myTeamsActiveRoute.teamId)) return;
+    persistMyTeamsActiveRoute(null);
+  }, [activeWorkspaceId, myTeamsActiveRoute, user?.id, visibleMyTeams]);
 
   if (isHorizontal) {
     const isTopDock = position === 'top';
@@ -1943,7 +2380,6 @@ export const ExpandedSidebar = ({
               { label: 'Projects', icon: Folder, action: () => window.desktopWindow?.toggleModule('projects') },
               { label: 'Notes', icon: StickyNote, action: () => window.desktopWindow?.toggleModule('notes') },
               { label: 'Calendar', icon: CalendarDays, action: () => window.desktopWindow?.openModule('calendar') },
-              { label: 'Teams', icon: Users, action: () => window.desktopWindow?.toggleModule('teams') },
             ].map((item) => (
               <button
                 key={item.label}
@@ -2232,8 +2668,35 @@ export const ExpandedSidebar = ({
         </section>
 
         <section ref={workspaceCaptureRef} className="order-2 space-y-3">
-          <p className={sidebarTheme.sectionLabel}>Workspace</p>
-          <div className="space-y-1.5">
+            <button
+              type="button"
+              onClick={() => {
+                const next = !workspaceSectionCollapsed;
+                setWorkspaceSectionCollapsed(next);
+                persistScopedCollapsedState(WORKSPACE_SECTION_COLLAPSE_STORAGE_KEY, next);
+              }}
+              className="flex w-full items-center justify-between gap-3 px-0.5 text-left text-[12px] font-medium text-[var(--ledger-text-secondary)] transition hover:text-[var(--ledger-text-primary)]"
+            >
+              <span className="flex min-w-0 items-center gap-1.5">
+                <span className="truncate">Workspace</span>
+                <ChevronDown
+                  size={12}
+                  className={`shrink-0 text-[var(--ledger-text-muted)] transition-transform ${
+                    workspaceSectionCollapsed ? 'rotate-180' : ''
+                  }`}
+                />
+              </span>
+            </button>
+
+          <div hidden={workspaceSectionCollapsed} className="space-y-1.5">
+            <button
+              type="button"
+              onClick={() => window.desktopWindow?.toggleModule('teams')}
+              className="flex h-9 w-full items-center gap-2.5 rounded-xl px-2.5 text-left text-[13px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]"
+            >
+              <Users size={15} className="shrink-0 text-[var(--ledger-text-muted)]" />
+              <span className="truncate">All Teams</span>
+            </button>
             <button
               type="button"
               onClick={() => {
@@ -2637,6 +3100,93 @@ export const ExpandedSidebar = ({
               )}
             </section>
 
+                <section ref={checkinSectionRef} className="space-y-1.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (isCheckinExpanded) {
+                        setIsCheckinExpanded(false);
+                        persistCollapsedState(CHECKIN_COLLAPSE_STORAGE_KEY, true);
+                      } else {
+                        closeWorkspaceSections('checkin');
+                      }
+                    }}
+                    className={`flex h-9 w-full items-center justify-between gap-3 rounded-xl px-2.5 text-left text-[13px] font-medium transition ${
+                      isCheckinExpanded
+                        ? 'bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-primary)]'
+                        : 'text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]'
+                    }`}
+                  >
+                    <span className="flex min-w-0 items-center gap-2.5">
+                      <ClipboardCheck size={15} className="shrink-0 text-[var(--ledger-text-muted)]" />
+                      <span className="truncate">Daily Check-in</span>
+                    </span>
+                    <span className="flex shrink-0 items-center gap-2 text-[11px] text-[var(--ledger-text-muted)]">
+                      <span>{checkinStatusLabel}</span>
+                      {isCheckinExpanded ? (
+                        <ChevronUp size={14} className="text-[var(--ledger-text-muted)]" />
+                      ) : (
+                        <ChevronDown size={14} className="text-[var(--ledger-text-muted)]" />
+                      )}
+                    </span>
+                  </button>
+
+                  {isCheckinExpanded && (
+                    <div className="pl-1">
+                      <div className="space-y-2">
+                        <div className="grid grid-cols-[84px_minmax(0,1fr)] items-center gap-2">
+                          <label className="text-[10px] font-medium text-[var(--ledger-text-muted)]">Finished</label>
+                          <input
+                            data-checkin-input="finished"
+                            value={checkin.finished}
+                            onChange={(e) => {
+                              setCheckin((prev) => ({ ...prev, finished: e.target.value }));
+                            }}
+                            placeholder="What did you finish?"
+                            className={checkinFieldClass}
+                            disabled={isLoadingDaily}
+                          />
+                        </div>
+                        <div className="grid grid-cols-[84px_minmax(0,1fr)] items-center gap-2">
+                          <label className="text-[10px] font-medium text-[var(--ledger-text-muted)]">Blocked</label>
+                          <input
+                            value={checkin.blocked}
+                            onChange={(e) => {
+                              setCheckin((prev) => ({ ...prev, blocked: e.target.value }));
+                            }}
+                            placeholder="Anything blocked?"
+                            className={checkinFieldClass}
+                            disabled={isLoadingDaily}
+                          />
+                        </div>
+                        <div className="grid grid-cols-[84px_minmax(0,1fr)] items-center gap-2">
+                          <label className="text-[10px] font-medium text-[var(--ledger-text-muted)]">Tomorrow</label>
+                          <input
+                            value={checkin.firstTaskTomorrow}
+                            onChange={(e) => {
+                              setCheckin((prev) => ({ ...prev, firstTaskTomorrow: e.target.value }));
+                            }}
+                            placeholder="First task tomorrow?"
+                            className={checkinFieldClass}
+                            disabled={isLoadingDaily}
+                          />
+                        </div>
+
+                        <div className="flex items-center justify-end gap-2 pt-0.5">
+                          <button
+                            onClick={() => void saveCheckin()}
+                            className="inline-flex h-6 shrink-0 items-center justify-center rounded-full px-2 text-[11px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] disabled:opacity-60"
+                            disabled={isLoadingDaily}
+                            aria-label="Save check-in"
+                          >
+                            +
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </section>
+
             <button
               type="button"
               onClick={() => {
@@ -2697,18 +3247,22 @@ export const ExpandedSidebar = ({
                       onMouseDown={(e) => e.preventDefault()}
                       onClick={() => void saveQuickNote(false)}
                       disabled={!noteDraft.trim()}
-                      className="inline-flex h-7 items-center justify-center rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] px-3 text-[11px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] disabled:opacity-60"
+                      className="inline-flex h-6 items-center justify-center rounded-full px-2 text-[11px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] disabled:opacity-60"
+                      aria-label="Save note"
+                      title="Save note"
                     >
-                      Save note
+                      <Plus size={13} />
                     </button>
                     <button
                       type="button"
                       onMouseDown={(e) => e.preventDefault()}
                       onClick={() => void saveQuickNote(true)}
                       disabled={!noteDraft.trim()}
-                      className="inline-flex h-7 items-center justify-center rounded-full bg-[var(--ledger-accent)] px-3 text-[11px] font-medium text-white transition hover:bg-[var(--ledger-accent-hover)] disabled:opacity-60"
+                      className="inline-flex h-6 items-center justify-center rounded-full px-2 text-[11px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] disabled:opacity-60"
+                      aria-label="Send to Intake"
+                      title="Send to Intake"
                     >
-                      Send to Intake
+                      <Funnel size={13} />
                     </button>
                   </div>
                 </div>
@@ -2928,303 +3482,391 @@ export const ExpandedSidebar = ({
                     </div>
                   )}
                 </div>
+
               </div>
             )}
+
+                <section className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (projectsCollapsed) {
+                          closeWorkspaceSections('projects');
+                        } else {
+                          setProjectsCollapsed(true);
+                        }
+                      }}
+                      className={`flex h-9 min-w-0 flex-1 items-center justify-between gap-3 rounded-xl px-2.5 text-left text-[13px] font-medium transition ${
+                        projectsCollapsed
+                          ? 'text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]'
+                          : 'bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-primary)]'
+                      }`}
+                    >
+                      <span className="flex min-w-0 items-center gap-2.5">
+                        <Folder size={15} className="shrink-0 text-[var(--ledger-text-muted)]" />
+                        <span className="truncate">Projects</span>
+                      </span>
+                      <span className="flex shrink-0 items-center gap-2 text-[11px] text-[var(--ledger-text-muted)]">
+                        <span>{projects.length}</span>
+                        <ChevronDown
+                          size={14}
+                          className={`transition-transform ${projectsCollapsed ? 'rotate-180' : ''}`}
+                        />
+                      </span>
+                    </button>
+                  </div>
+
+                  {!projectsCollapsed && (
+                    <div className="space-y-1">
+                      {isLoadingProjects ? (
+                        <SkeletonList count={2} />
+                      ) : projects.length === 0 ? (
+                        <p className="px-0.5 text-xs text-[var(--ledger-text-muted)]">No active projects</p>
+                      ) : (
+                        <>
+                          {projects.slice(0, 4).map((project) => {
+                            const displayCompleteness = Math.max(0, Math.min(100, Number(project.completeness) || 0));
+                            const projectAccent = project.color || 'var(--ledger-accent)';
+                            const ProjectTypeIcon = getProjectTypeOption(project.project_type).icon;
+
+                            return (
+                              <button
+                                key={project.id}
+                                type="button"
+                                onClick={() => {
+                                  void window.desktopWindow?.toggleModule('projects', {
+                                    kind: 'projects',
+                                    focusProjectId: project.id,
+                                  });
+                                }}
+                                onContextMenu={(e) => {
+                                  e.preventDefault();
+                                  setContextMenu({
+                                    type: 'project',
+                                    id: project.id,
+                                    x: e.clientX,
+                                    y: e.clientY,
+                                  });
+                                }}
+                                className="group w-full rounded-xl px-2 py-2 text-left transition hover:bg-[var(--ledger-surface-muted)]"
+                              >
+                                <div className="flex items-center justify-between gap-2">
+                                  <div className="flex min-w-0 items-center gap-2">
+                                    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] text-[var(--ledger-text-secondary)]">
+                                      <ProjectTypeIcon size={11} style={{ color: projectAccent }} />
+                                    </span>
+                                    <p className="truncate text-xs font-medium text-[var(--ledger-text-primary)]">
+                                      {project.name}
+                                    </p>
+                                  </div>
+                                  <span className="shrink-0 text-[11px] font-medium text-[var(--ledger-text-muted)]">
+                                    {displayCompleteness}%
+                                  </span>
+                                </div>
+                                <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-[var(--ledger-border-subtle)]">
+                                  <div
+                                    className="h-full rounded-full transition-all"
+                                    style={{
+                                      width: `${displayCompleteness}%`,
+                                      backgroundColor: projectAccent,
+                                    }}
+                                  />
+                                </div>
+                              </button>
+                            );
+                          })}
+                          {projects.length > 4 && (
+                            <button
+                              type="button"
+                              onClick={() => window.desktopWindow?.toggleModule('projects')}
+                              className="w-full rounded-lg px-2 py-1 text-left text-[11px] font-medium text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]"
+                            >
+                              +{projects.length - 4} more projects
+                            </button>
+                          )}
+                          {isCreatingProject ? (
+                            <div className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 transition hover:bg-[var(--ledger-surface-muted)]">
+                              <input
+                                value={newProjectName}
+                                onChange={(e) => setNewProjectName(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter' || e.key === '+') {
+                                    e.preventDefault();
+                                    void createProject();
+                                  }
+                                  if (e.key === 'Escape' && !newProjectName.trim()) {
+                                    e.preventDefault();
+                                    setNewProjectName('');
+                                    setIsCreatingProject(false);
+                                  }
+                                }}
+                                onBlur={(e) => {
+                                  const nextFocus = e.relatedTarget;
+                                  if (!newProjectName.trim() && !nextFocus) {
+                                    setNewProjectName('');
+                                    setIsCreatingProject(false);
+                                  }
+                                }}
+                                placeholder="Project name..."
+                                className="min-w-0 flex-1 bg-transparent px-0 py-0.5 text-[12px] leading-4 text-[var(--ledger-text-primary)] placeholder:text-[var(--ledger-placeholder)] focus:outline-none"
+                                autoFocus
+                              />
+                              <button
+                                type="button"
+                                onMouseDown={(e) => e.preventDefault()}
+                                onClick={() => void createProject()}
+                                disabled={isCreatingProject || !newProjectName.trim()}
+                                className="inline-flex h-6 items-center justify-center rounded-full px-2 text-[11px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] disabled:opacity-60"
+                                aria-label="Add project"
+                              >
+                                +
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => setIsCreatingProject(true)}
+                              className="flex h-8 w-full items-center gap-2 rounded-xl px-2 text-left text-[12px] text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]"
+                            >
+                              <Plus size={13} className="shrink-0" />
+                              <span className="truncate">Add Project</span>
+                            </button>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  )}
+                </section>
+
+                <button
+                  type="button"
+                  onClick={() => window.desktopWindow?.toggleModule('circle')}
+                  className="flex h-9 w-full items-center gap-2.5 rounded-xl px-2.5 text-left text-[13px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]"
+                >
+                  <CircleUserRound size={15} className="shrink-0 text-[var(--ledger-text-muted)]" />
+                  <span>Circle</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => window.desktopWindow?.toggleModule('inbox')}
+                  className="relative flex h-9 w-full items-center justify-between gap-3 rounded-xl px-2.5 text-left text-[13px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]"
+                  title="Intake"
+                  aria-label="Open intake"
+                >
+                  <span className="flex min-w-0 items-center gap-2.5">
+                    <Funnel size={15} className="shrink-0 text-[var(--ledger-text-muted)]" />
+                    <span className="truncate">Intake</span>
+                  </span>
+                  {inboxCount > 0 && (
+                    <span className="flex shrink-0 items-center gap-2 text-[11px] text-[var(--ledger-text-muted)]">
+                      <span>{inboxCount > 99 ? '99+' : inboxCount}</span>
+                    </span>
+                  )}
+                </button>
           </div>
 
-        <section ref={checkinSectionRef} className="order-5 space-y-1.5">
-          <button
-            type="button"
-            onClick={() => {
-              if (isCheckinExpanded) {
-                setIsCheckinExpanded(false);
-                persistCollapsedState(CHECKIN_COLLAPSE_STORAGE_KEY, true);
-              } else {
-                closeWorkspaceSections('checkin');
-              }
-            }}
-            className={`flex h-9 w-full items-center justify-between gap-3 rounded-xl px-2.5 text-left text-[13px] font-medium transition ${
-              isCheckinExpanded
-                ? 'bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-primary)]'
-                : 'text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]'
-            }`}
-          >
-            <span className="flex min-w-0 items-center gap-2.5">
-              <ClipboardCheck size={15} className="shrink-0 text-[var(--ledger-text-muted)]" />
-              <span className="truncate">Daily Check-in</span>
-            </span>
-            <span className="flex shrink-0 items-center gap-2 text-[11px] text-[var(--ledger-text-muted)]">
-              <span>{checkinStatusLabel}</span>
-              {isCheckinExpanded ? (
-                <ChevronUp size={14} className="text-[var(--ledger-text-muted)]" />
-              ) : (
-                <ChevronDown size={14} className="text-[var(--ledger-text-muted)]" />
-              )}
-            </span>
-          </button>
-
-          {isCheckinExpanded && (
-            <div className="pl-1">
-              <div className="space-y-2">
-                <div className="grid grid-cols-[84px_minmax(0,1fr)] items-center gap-2">
-                  <label className="text-[10px] font-medium text-[var(--ledger-text-muted)]">Finished</label>
-                  <input
-                    data-checkin-input="finished"
-                    value={checkin.finished}
-                    onChange={(e) => {
-                      setCheckin((prev) => ({ ...prev, finished: e.target.value }));
-                    }}
-                    placeholder="What did you finish?"
-                    className={checkinFieldClass}
-                    disabled={isLoadingDaily}
-                  />
-                </div>
-                <div className="grid grid-cols-[84px_minmax(0,1fr)] items-center gap-2">
-                  <label className="text-[10px] font-medium text-[var(--ledger-text-muted)]">Blocked</label>
-                  <input
-                    value={checkin.blocked}
-                    onChange={(e) => {
-                      setCheckin((prev) => ({ ...prev, blocked: e.target.value }));
-                    }}
-                    placeholder="Anything blocked?"
-                    className={checkinFieldClass}
-                    disabled={isLoadingDaily}
-                  />
-                </div>
-                <div className="grid grid-cols-[84px_minmax(0,1fr)] items-center gap-2">
-                  <label className="text-[10px] font-medium text-[var(--ledger-text-muted)]">Tomorrow</label>
-                  <input
-                    value={checkin.firstTaskTomorrow}
-                    onChange={(e) => {
-                      setCheckin((prev) => ({ ...prev, firstTaskTomorrow: e.target.value }));
-                    }}
-                    placeholder="First task tomorrow?"
-                    className={checkinFieldClass}
-                    disabled={isLoadingDaily}
-                  />
-                </div>
-
-                <div className="flex items-center justify-end gap-2 pt-0.5">
-                  <button
-                    onClick={() => void saveCheckin()}
-                    className="inline-flex h-6 shrink-0 items-center justify-center rounded-full px-2 text-[11px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] disabled:opacity-60"
-                    disabled={isLoadingDaily}
-                    aria-label="Save check-in"
-                  >
-                    +
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-        </section>
-
-        <section className="order-4 space-y-2">
-          <div className="flex items-center gap-2">
+        {showMyTeamsSection && (
+          <section className="order-3 space-y-2">
             <button
               type="button"
               onClick={() => {
-                if (projectsCollapsed) {
-                  closeWorkspaceSections('projects');
-                } else {
-                  setProjectsCollapsed(true);
-                }
+                const next = !myTeamsCollapsed;
+                setMyTeamsCollapsed(next);
+                persistMyTeamsCollapsed(next);
               }}
-              className={`flex h-9 min-w-0 flex-1 items-center justify-between gap-3 rounded-xl px-2.5 text-left text-[13px] font-medium transition ${
-                projectsCollapsed
-                  ? 'text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]'
-                  : 'bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-primary)]'
-              }`}
+              className="flex w-full items-center justify-between gap-3 px-0.5 text-left text-[12px] font-medium text-[var(--ledger-text-secondary)] transition hover:text-[var(--ledger-text-primary)]"
             >
-              <span className="flex min-w-0 items-center gap-2.5">
-                <Folder size={15} className="shrink-0 text-[var(--ledger-text-muted)]" />
-                <span className="truncate">Projects</span>
-              </span>
-              <span className="flex shrink-0 items-center gap-2 text-[11px] text-[var(--ledger-text-muted)]">
-                <span>{projects.length}</span>
+              <span className="flex min-w-0 items-center gap-1.5">
+                <span className="truncate">Teamspace</span>
                 <ChevronDown
-                  size={14}
-                  className={`transition-transform ${projectsCollapsed ? 'rotate-180' : ''}`}
+                  size={12}
+                  className={`shrink-0 text-[var(--ledger-text-muted)] transition-transform ${
+                    myTeamsCollapsed ? 'rotate-180' : ''
+                  }`}
                 />
               </span>
-            </button>
-          </div>
-
-          {!projectsCollapsed && (
-            <div className="space-y-1">
-              {isLoadingProjects ? (
-                <SkeletonList count={2} />
-              ) : projects.length === 0 ? (
-                <p className="px-0.5 text-xs text-[var(--ledger-text-muted)]">No active projects</p>
-              ) : (
-                <>
-                  {projects.slice(0, 4).map((project) => {
-                    const displayCompleteness = Math.max(0, Math.min(100, Number(project.completeness) || 0));
-                    const projectAccent = project.color || 'var(--ledger-accent)';
-                    const ProjectTypeIcon = getProjectTypeOption(project.project_type).icon;
-
-                    return (
-                      <button
-                        key={project.id}
-                        type="button"
-                        onClick={() => {
-                          void window.desktopWindow?.toggleModule('projects', {
-                            kind: 'projects',
-                            focusProjectId: project.id,
-                          });
-                        }}
-                        onContextMenu={(e) => {
-                          e.preventDefault();
-                          setContextMenu({
-                            type: 'project',
-                            id: project.id,
-                            x: e.clientX,
-                            y: e.clientY,
-                          });
-                        }}
-                        className="group w-full rounded-xl px-2 py-2 text-left transition hover:bg-[var(--ledger-surface-muted)]"
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="flex min-w-0 items-center gap-2">
-                            <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] text-[var(--ledger-text-secondary)]">
-                              <ProjectTypeIcon size={11} style={{ color: projectAccent }} />
-                            </span>
-                            <p className="truncate text-xs font-medium text-[var(--ledger-text-primary)]">
-                              {project.name}
-                            </p>
-                          </div>
-                          <span className="shrink-0 text-[11px] font-medium text-[var(--ledger-text-muted)]">
-                            {displayCompleteness}%
-                          </span>
-                        </div>
-                        <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-[var(--ledger-border-subtle)]">
-                          <div
-                            className="h-full rounded-full transition-all"
-                            style={{
-                              width: `${displayCompleteness}%`,
-                              backgroundColor: projectAccent,
-                            }}
-                          />
-                        </div>
-                      </button>
-                    );
-                  })}
-                  {projects.length > 4 && (
-                    <button
-                      type="button"
-                      onClick={() => window.desktopWindow?.toggleModule('projects')}
-                      className="w-full rounded-lg px-2 py-1 text-left text-[11px] font-medium text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]"
-                    >
-                      +{projects.length - 4} more projects
-                    </button>
-                  )}
-                  {isCreatingProject ? (
-                    <div className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 transition hover:bg-[var(--ledger-surface-muted)]">
-                      <input
-                        value={newProjectName}
-                        onChange={(e) => setNewProjectName(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' || e.key === '+') {
-                            e.preventDefault();
-                            void createProject();
-                          }
-                          if (e.key === 'Escape' && !newProjectName.trim()) {
-                            e.preventDefault();
-                            setNewProjectName('');
-                            setIsCreatingProject(false);
-                          }
-                        }}
-                        onBlur={(e) => {
-                          const nextFocus = e.relatedTarget;
-                          if (!newProjectName.trim() && !nextFocus) {
-                            setNewProjectName('');
-                            setIsCreatingProject(false);
-                          }
-                        }}
-                        placeholder="Project name..."
-                        className="min-w-0 flex-1 bg-transparent px-0 py-0.5 text-[12px] leading-4 text-[var(--ledger-text-primary)] placeholder:text-[var(--ledger-placeholder)] focus:outline-none"
-                        autoFocus
-                      />
-                      <button
-                        type="button"
-                        onMouseDown={(e) => e.preventDefault()}
-                        onClick={() => void createProject()}
-                        disabled={isCreatingProject || !newProjectName.trim()}
-                        className="inline-flex h-6 items-center justify-center rounded-full px-2 text-[11px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] disabled:opacity-60"
-                        aria-label="Add project"
-                      >
-                        +
-                      </button>
-                    </div>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => setIsCreatingProject(true)}
-                      className="flex h-8 w-full items-center gap-2 rounded-xl px-2 text-left text-[12px] text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]"
-                    >
-                      <Plus size={13} className="shrink-0" />
-                      <span className="truncate">Add Project</span>
-                    </button>
-                  )}
-                  </>
-                )}
-              </div>
-            )}
-
-            <button
-              type="button"
-              onClick={() => window.desktopWindow?.toggleModule('teams')}
-              className="flex h-9 w-full items-center gap-2.5 rounded-xl px-2.5 text-left text-[13px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]"
-            >
-              <Users size={15} className="shrink-0 text-[var(--ledger-text-muted)]" />
-              <span>Teams</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => window.desktopWindow?.toggleModule('circle')}
-              className="flex h-9 w-full items-center gap-2.5 rounded-xl px-2.5 text-left text-[13px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]"
-            >
-              <CircleUserRound size={15} className="shrink-0 text-[var(--ledger-text-muted)]" />
-              <span>Circle</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => window.desktopWindow?.toggleModule('inbox')}
-              className="relative flex h-9 w-full items-center justify-between gap-3 rounded-xl px-2.5 text-left text-[13px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]"
-              title="Intake"
-              aria-label="Open intake"
-            >
-              <span className="flex min-w-0 items-center gap-2.5">
-                <Funnel size={15} className="shrink-0 text-[var(--ledger-text-muted)]" />
-                <span className="truncate">Intake</span>
-              </span>
-              {inboxCount > 0 && (
-                <span className="flex shrink-0 items-center gap-2 text-[11px] text-[var(--ledger-text-muted)]">
-                  <span>{inboxCount > 99 ? '99+' : inboxCount}</span>
+              {myTeamsHeaderCount > 0 && (
+                <span className="shrink-0 text-[11px] text-[var(--ledger-text-muted)]">
+                  {myTeamsHeaderCount}
                 </span>
               )}
             </button>
-          </section>
 
-        <section className="order-6 space-y-2">
-          <p className={sidebarTheme.sectionLabel}>Try</p>
-          <div className="space-y-1">
-            {trySectionVisibleItems.map((item) => (
-              <button
-                key={item.title}
-                type="button"
-                onClick={item.action}
-                className="flex h-9 w-full items-center gap-2.5 rounded-xl px-2.5 text-left text-[13px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]"
-              >
-                <item.icon size={15} className="shrink-0 text-[var(--ledger-text-muted)]" />
-                <span className="truncate">{item.title}</span>
-              </button>
-            ))}
-          </div>
-        </section>
+            {!myTeamsCollapsed && (
+              <div className="space-y-1.5 pl-1">
+                {isLoadingMyTeams && visibleMyTeams.length === 0 ? (
+                  <div className="space-y-1.5">
+                    <SkeletonCompactRow />
+                    <SkeletonCompactRow />
+                  </div>
+                ) : (
+                  visibleMyTeams.map((team) => {
+                    const isTeamExpanded = expandedMyTeamIds.has(team.id);
+                    const teamIntakeCount = myTeamIntakeCountById.get(team.id) ?? 0;
+                    const teamTaskCount = myTeamTaskCountById.get(team.id) ?? 0;
+                    const teamProjectCount = myTeamProjectCountById.get(team.id) ?? 0;
+
+                    return (
+                      <div key={team.id} className="space-y-0.5">
+                        <div
+                          className={`flex h-8 items-center gap-2 rounded-lg px-2 transition ${
+                            isTeamExpanded
+                              ? 'bg-[var(--ledger-surface-muted)]'
+                              : 'hover:bg-[var(--ledger-surface-muted)]'
+                          }`}
+                        >
+                          <button
+                            type="button"
+                            onClick={() => {
+                              persistMyTeamsActiveRoute({ teamId: team.id, kind: 'team' });
+                              void window.desktopWindow?.openModule('teams', {
+                                kind: 'teams',
+                                focusContext: `team:${team.id}`,
+                              });
+                            }}
+                            className="flex min-w-0 flex-1 items-center gap-2 rounded-lg text-left text-[12px] font-medium text-[var(--ledger-text-secondary)] transition hover:text-[var(--ledger-text-primary)]"
+                          >
+                            <span
+                              className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[8px] font-semibold leading-none text-white"
+                              style={{ backgroundColor: team.color || 'var(--ledger-accent)' }}
+                            >
+                              {getSidebarTeamInitials(team)}
+                            </span>
+                            <span className="truncate">{team.name}</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const next = !isTeamExpanded;
+                              persistMyTeamExpandedState(team.id, next);
+                            }}
+                            className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+                            aria-label={`${isTeamExpanded ? 'Collapse' : 'Expand'} ${team.name}`}
+                          >
+                            <ChevronDown
+                              size={13}
+                              className={`transition-transform ${isTeamExpanded ? '' : 'rotate-180'}`}
+                            />
+                          </button>
+                        </div>
+
+                        {isTeamExpanded && (
+                          <div className="mt-1.5 space-y-0.5 pl-5">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                persistMyTeamsActiveRoute({ teamId: team.id, kind: 'intake' });
+                                void window.desktopWindow?.toggleModule('inbox', {
+                                  kind: 'inbox',
+                                  focusContext: `team:${team.id}`,
+                                });
+                              }}
+                              className={`flex h-8 w-full items-center justify-between rounded-lg px-2 text-left text-[12px] transition ${
+                                activeMyTeamRoute?.teamId === team.id &&
+                                activeMyTeamRoute?.kind === 'intake'
+                                  ? sidebarTheme.mutedSurface
+                                  : 'text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]'
+                              }`}
+                            >
+                              <span className="flex min-w-0 items-center gap-2">
+                                <Funnel size={13} className="shrink-0 text-[var(--ledger-text-muted)]" />
+                                <span className="truncate">Intake</span>
+                              </span>
+                              {teamIntakeCount > 0 && (
+                                <span className="shrink-0 text-[10px] text-[var(--ledger-text-muted)]">
+                                  {teamIntakeCount > 99 ? '99+' : teamIntakeCount}
+                                </span>
+                              )}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                persistMyTeamsActiveRoute({ teamId: team.id, kind: 'tasks' });
+                                void window.desktopWindow?.toggleModule('dashboard', {
+                                  kind: 'dashboard',
+                                  focusContext: `team:${team.id}`,
+                                });
+                              }}
+                              className={`flex h-8 w-full items-center justify-between rounded-lg px-2 text-left text-[12px] transition ${
+                                activeMyTeamRoute?.teamId === team.id &&
+                                activeMyTeamRoute?.kind === 'tasks'
+                                  ? sidebarTheme.mutedSurface
+                                  : 'text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]'
+                              }`}
+                            >
+                              <span className="flex min-w-0 items-center gap-2">
+                                <CheckSquare2
+                                  size={13}
+                                  className="shrink-0 text-[var(--ledger-text-muted)]"
+                                />
+                                <span className="truncate">Tasks</span>
+                              </span>
+                              {teamTaskCount > 0 && (
+                                <span className="shrink-0 text-[10px] text-[var(--ledger-text-muted)]">
+                                  {teamTaskCount > 99 ? '99+' : teamTaskCount}
+                                </span>
+                              )}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                persistMyTeamsActiveRoute({ teamId: team.id, kind: 'projects' });
+                                void window.desktopWindow?.toggleModule('projects', {
+                                  kind: 'projects',
+                                  focusContext: `team:${team.id}`,
+                                });
+                              }}
+                              className={`flex h-8 w-full items-center justify-between rounded-lg px-2 text-left text-[12px] transition ${
+                                activeMyTeamRoute?.teamId === team.id &&
+                                activeMyTeamRoute?.kind === 'projects'
+                                  ? sidebarTheme.mutedSurface
+                                  : 'text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]'
+                              }`}
+                            >
+                              <span className="flex min-w-0 items-center gap-2">
+                                <FolderKanban
+                                  size={13}
+                                  className="shrink-0 text-[var(--ledger-text-muted)]"
+                                />
+                                <span className="truncate">Projects</span>
+                              </span>
+                              {teamProjectCount > 0 && (
+                                <span className="shrink-0 text-[10px] text-[var(--ledger-text-muted)]">
+                                  {teamProjectCount > 99 ? '99+' : teamProjectCount}
+                                </span>
+                              )}
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            )}
+          </section>
+        )}
 
         {saveError && <p className="text-[11px] text-[var(--ledger-danger)]">{saveError}</p>}
         </section>
+      </div>
+
+      <div className="shrink-0 border-t border-[color:var(--ledger-border-subtle)] px-3.5 pb-3 pt-2">
+        <p className={sidebarTheme.sectionLabel}>Try</p>
+        <div className="space-y-1">
+          {trySectionVisibleItems.map((item) => (
+            <button
+              key={item.title}
+              type="button"
+              onClick={item.action}
+              className="flex h-9 w-full items-center gap-2.5 rounded-xl px-2.5 text-left text-[13px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]"
+            >
+              <item.icon size={15} className="shrink-0 text-[var(--ledger-text-muted)]" />
+              <span className="truncate">{item.title}</span>
+            </button>
+          ))}
+        </div>
       </div>
 
       {contextMenu &&

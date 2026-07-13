@@ -633,6 +633,7 @@ export default function IntakeWindow() {
   const { workspaceShellLayout } = useSidebar();
   const api = useApi();
   const toast = useToast();
+  const initialFocusContext = new URLSearchParams(window.location.search).get('focusContext')?.trim() ?? '';
 
   const [items, setItems] = useState<InboxItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -886,6 +887,33 @@ export default function IntakeWindow() {
       cancelled = true;
     };
   }, [activeWorkspaceId, api, user]);
+
+  useEffect(() => {
+    const applyTeamFocusContext = (focusContext: string | null | undefined) => {
+      const raw = String(focusContext ?? '').trim();
+      if (!raw.startsWith('team:')) return;
+      const teamId = raw.slice('team:'.length).trim();
+      if (!teamId) return;
+      setActiveStatus('unprocessed');
+      setFilters((current) => ({ ...current, assignee: `team:${teamId}` }));
+      setSelectedItemId(null);
+    };
+
+    applyTeamFocusContext(initialFocusContext);
+
+    const focusContextListener = (
+      _event: unknown,
+      payload: { kind?: string; focusContext?: string | null }
+    ) => {
+      if (payload?.kind !== 'inbox') return;
+      applyTeamFocusContext(payload.focusContext);
+    };
+
+    window.ipcRenderer?.on('module:focus-context', focusContextListener);
+    return () => {
+      window.ipcRenderer?.off('module:focus-context', focusContextListener);
+    };
+  }, [initialFocusContext]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {

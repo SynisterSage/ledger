@@ -562,7 +562,9 @@ export const ProjectsWindow = () => {
   const initialProjectsSection =
     new URLSearchParams(window.location.search).get('section')?.trim() ?? '';
   const initialFocusHandledRef = useRef(false);
+  const initialTeamFocusHandledRef = useRef(false);
   const initialFocusTaskId = new URLSearchParams(window.location.search).get('focusTaskId');
+  const initialFocusContext = new URLSearchParams(window.location.search).get('focusContext')?.trim() ?? '';
   const autosaveTimerRef = useRef<number | null>(null);
   const isDirtyRef = useRef(false);
   const isCompletenessDraggingRef = useRef(false);
@@ -585,6 +587,10 @@ export const ProjectsWindow = () => {
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(() =>
     initialFocusProjectId === '__new__' ? null : initialFocusProjectId
   );
+  const [focusedTeamId, setFocusedTeamId] = useState<string | null>(() => {
+    if (!initialFocusContext.startsWith('team:')) return null;
+    return initialFocusContext.slice('team:'.length).trim() || null;
+  });
   const [isLoadingProjects, setIsLoadingProjects] = useState(true);
   const [isLoadingTasks, setIsLoadingTasks] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -820,6 +826,10 @@ export const ProjectsWindow = () => {
     const term = search.trim().toLowerCase();
 
     return statusFilteredProjects.filter((project) => {
+      if (focusedTeamId && project.owner_team_id !== focusedTeamId) {
+        return false;
+      }
+
       const matchesSearch =
         !term ||
         [
@@ -835,7 +845,16 @@ export const ProjectsWindow = () => {
 
       return matchesSearch;
     });
-  }, [search, statusFilteredProjects]);
+  }, [focusedTeamId, search, statusFilteredProjects]);
+
+  useEffect(() => {
+    if (!focusedTeamId) return;
+    if (!visibleProjects.length) return;
+    if (selectedProjectId && visibleProjects.some((project) => project.id === selectedProjectId)) {
+      return;
+    }
+    setSelectedProjectId(visibleProjects[0].id);
+  }, [focusedTeamId, selectedProjectId, visibleProjects]);
 
   const selectedProjectTasks = useMemo(() => {
     return tasks
@@ -3134,6 +3153,39 @@ export const ProjectsWindow = () => {
   }, [focusProjectById, openCreateProjectComposer]);
 
   useEffect(() => {
+    const applyTeamFocusContext = (focusContext: string | null | undefined) => {
+      const raw = String(focusContext ?? '').trim();
+      if (!raw.startsWith('team:')) return;
+      const teamId = raw.slice('team:'.length).trim();
+      if (!teamId) return;
+      setFocusedTeamId(teamId);
+      setProjectsOverviewView('timeline');
+      setProjectsOverviewRange('all');
+      setSearch('');
+      setStatusFilter('all');
+      setSelectedProjectId(null);
+    };
+
+    if (!initialTeamFocusHandledRef.current) {
+      applyTeamFocusContext(initialFocusContext);
+      initialTeamFocusHandledRef.current = true;
+    }
+
+    const focusContextListener = (
+      _event: unknown,
+      payload: { kind?: string; focusContext?: string | null }
+    ) => {
+      if (payload?.kind !== 'projects') return;
+      applyTeamFocusContext(payload.focusContext);
+    };
+
+    window.ipcRenderer?.on('module:focus-context', focusContextListener);
+    return () => {
+      window.ipcRenderer?.off('module:focus-context', focusContextListener);
+    };
+  }, [initialFocusContext]);
+
+  useEffect(() => {
     if (!initialFocusTaskId) return;
     if (!tasks.length) return;
     const task = tasks.find((item) => item.id === initialFocusTaskId);
@@ -3148,6 +3200,7 @@ export const ProjectsWindow = () => {
       kind: 'projects',
       focusProjectId: selectedProjectId,
       focusSection: formatProjectsSection(projectsOverviewView, projectsOverviewRange),
+      focusContext: focusedTeamId ? `team:${focusedTeamId}` : null,
     },
     true
   );
