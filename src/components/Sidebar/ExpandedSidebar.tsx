@@ -428,6 +428,7 @@ export const ExpandedSidebar = ({
   const [todayDockPopoverStyle, setTodayDockPopoverStyle] = useState<React.CSSProperties | null>(
     null
   );
+  const [tryRotationTick, setTryRotationTick] = useState(0);
   const [todayAddRowOpen, setTodayAddRowOpen] = useState(false);
   const todayAddInputRef = useRef<HTMLInputElement | null>(null);
   const [tasksCollapsed, setTasksCollapsed] = useState(true);
@@ -450,6 +451,14 @@ export const ExpandedSidebar = ({
 
   useEffect(() => {
     setEventsExpanded(!loadCollapsedPreference(EVENTS_COLLAPSE_STORAGE_KEY, false));
+  }, []);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setTryRotationTick((current) => current + 1);
+    }, 1000 * 60 * 30);
+
+    return () => window.clearInterval(timer);
   }, []);
 
   useEffect(() => {
@@ -2295,7 +2304,7 @@ export const ExpandedSidebar = ({
       action: () => openSettingsSection('shortcuts'),
     },
   ];
-  const trySectionRotationSeed = Number(todayKey().replace(/-/g, ''));
+  const trySectionRotationSeed = Number(todayKey().replace(/-/g, '')) + tryRotationTick;
   const trySectionRotationStart =
     trySectionItems.length > 0 ? trySectionRotationSeed % trySectionItems.length : 0;
   const trySectionVisibleItems =
@@ -2646,7 +2655,9 @@ export const ExpandedSidebar = ({
 
       <div className="flex flex-1 min-h-0 flex-col overflow-y-auto px-3.5 py-3 gap-3">
         <section className="order-1 space-y-2">
-          <p className={sidebarTheme.sectionLabel}>Navigation</p>
+          <p className="flex w-full items-center justify-between gap-3 px-0.5 text-left text-[12px] font-medium text-[var(--ledger-text-secondary)]">
+            <span className="truncate">Navigation</span>
+          </p>
           <div className="space-y-1">
             {[
               { label: 'Overview', icon: BarChart3, action: () => window.desktopWindow?.toggleModule('dashboard') },
@@ -3706,6 +3717,7 @@ export const ExpandedSidebar = ({
                     const teamIntakeCount = myTeamIntakeCountById.get(team.id) ?? 0;
                     const teamTaskCount = myTeamTaskCountById.get(team.id) ?? 0;
                     const teamProjectCount = myTeamProjectCountById.get(team.id) ?? 0;
+                    const teamProjectsLabel = `${team.name} Projects`;
 
                     return (
                       <div key={team.id} className="space-y-0.5">
@@ -3829,7 +3841,7 @@ export const ExpandedSidebar = ({
                                   size={13}
                                   className="shrink-0 text-[var(--ledger-text-muted)]"
                                 />
-                                <span className="truncate">Projects</span>
+                                <span className="truncate">{teamProjectsLabel}</span>
                               </span>
                               {teamProjectCount > 0 && (
                                 <span className="shrink-0 text-[10px] text-[var(--ledger-text-muted)]">
@@ -3853,7 +3865,9 @@ export const ExpandedSidebar = ({
       </div>
 
       <div className="shrink-0 border-t border-[color:var(--ledger-border-subtle)] px-3.5 pb-3 pt-2">
-        <p className={sidebarTheme.sectionLabel}>Try</p>
+        <p className="flex w-full items-center justify-between gap-3 px-0.5 text-left text-[12px] font-medium text-[var(--ledger-text-secondary)]">
+          <span className="truncate">Try</span>
+        </p>
         <div className="space-y-1">
           {trySectionVisibleItems.map((item) => (
             <button

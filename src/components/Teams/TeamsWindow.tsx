@@ -2,13 +2,20 @@ import {
   Bell,
   Check,
   Circle,
+  ChevronDown,
   Diamond,
+  FileText,
   Filter,
   Hash,
   Inbox,
+  CalendarDays,
+  Link2,
+  ListTodo,
   MoreHorizontal,
   Plus,
   Search,
+  Sparkles,
+  Star,
   Trash2,
   UserPlus,
   Users,
@@ -17,6 +24,7 @@ import {
 import { type FormEvent, type ReactNode, useEffect, useMemo, useState } from 'react';
 import { ModuleHeaderActionButton, ModuleWindowHeader } from '../Common/ModuleWindowHeader';
 import { ModalOverlay } from '../Common/ModalOverlay';
+import { ModalCloseButton } from '../Common/ModalCloseButton';
 import { useApi } from '../../hooks/useApi';
 import { useAuthContext } from '../../context/AuthContext';
 import { useSidebar } from '../../context/SidebarContext';
@@ -29,6 +37,19 @@ type TeamMember = {
   email?: string | null;
   role?: 'lead' | 'member';
   initials: string;
+};
+
+type TeamDisplayMember = {
+  id: string;
+  name: string;
+  email?: string | null;
+  role?: 'lead' | 'member' | string | null;
+  initials: string;
+  avatar?: string | null;
+  team_role?: string | null;
+  is_lead?: boolean;
+  open_task_count?: number | null;
+  active_project_count?: number | null;
 };
 
 type Team = {
@@ -59,6 +80,117 @@ type Team = {
   }>;
   notes: string[];
   currentUserRole?: 'lead' | 'member' | 'viewer' | null;
+};
+
+type TeamOverviewResponse = {
+  team: {
+    id: string;
+    name: string;
+    identifier: string;
+    color: string;
+    workspace_id: string;
+    member_count: number;
+    lead_count: number;
+    created_at?: string | null;
+    updated_at?: string | null;
+  };
+  summary: {
+    open_task_count: number;
+    overdue_task_count: number;
+    active_project_count: number;
+    milestone_count: number;
+    note_count: number;
+    upcoming_event_count: number;
+    intake_needs_review_count: number;
+  };
+  quick_links: Array<{ key: string; team_id: string; count: number | null }>;
+  needs_attention: {
+    overdue_tasks: Array<{
+      id: string;
+      title: string;
+      status?: string | null;
+      task_type?: string | null;
+      priority?: string | null;
+      due_date?: string | null;
+      assignee?: string | null;
+      project?: { id: string; name?: string | null } | null;
+      blocked?: boolean;
+    }>;
+    overdue_milestones: Array<{
+      id: string;
+      title: string;
+      project?: string | null;
+      due_date?: string | null;
+    }>;
+    intake_items: Array<{
+      id: string;
+      title: string;
+      status?: string | null;
+      source?: string | null;
+    }>;
+  };
+  active_projects: Array<{
+    id: string;
+    title: string;
+    status?: string | null;
+    progress?: number | null;
+    lead?: string | null;
+    due_date?: string | null;
+    next_action_count?: number | null;
+  }>;
+  assigned_work: Array<{
+    id: string;
+    title: string;
+    status?: string | null;
+    task_type?: string | null;
+    priority?: string | null;
+    due_date?: string | null;
+    assignee?: string | null;
+    project?: { id: string; name?: string | null } | null;
+    blocked?: boolean;
+    created_at?: string | null;
+    updated_at?: string | null;
+  }>;
+  recent_notes: Array<{
+    id: string;
+    title: string;
+    updatedAt?: string | null;
+    projectId?: string | null;
+    projectName?: string | null;
+  }>;
+  upcoming: Array<{
+    id: string;
+    title: string;
+    type: 'event' | 'reminder' | 'milestone';
+    start?: string | null;
+    end?: string | null;
+    project?: { id: string; name?: string | null } | null;
+    note_id?: string | null;
+    owner?: string | null;
+    status?: string | null;
+  }>;
+  members: Array<{
+    id: string;
+    name: string;
+    avatar?: string | null;
+    role?: string | null;
+    team_role?: string | null;
+    is_lead?: boolean;
+    open_task_count?: number | null;
+    active_project_count?: number | null;
+    joined_at?: string | null;
+    last_active_at?: string | null;
+  }>;
+  recent_activity: Array<{
+    id: string;
+    actor?: string | null;
+    action: string;
+    object_type?: string | null;
+    object_id?: string | null;
+    object_title?: string | null;
+    timestamp?: string | null;
+    metadata?: Record<string, unknown> | null;
+  }>;
 };
 
 type WorkspaceProjectRow = {
@@ -128,32 +260,42 @@ type TeamContextMenu = {
   y: number;
 } | null;
 
+type TeamSectionId =
+  | 'pinnedResources'
+  | 'teamNotes'
+  | 'needsAttention'
+  | 'activeProjects'
+  | 'upcoming'
+  | 'recentActivity';
+
 const teamColors = ['#FF5F40', '#D97706', '#0F766E', '#2563EB', '#7C3AED', '#475569'];
-const tabs = ['Assigned', 'Projects', 'Milestones', 'Notes', 'Members'] as const;
+const tabs = ['Overview', 'Notes', 'Members'] as const;
 
 const teamsTheme = {
   shell:
     'relative flex h-screen flex-col overflow-hidden rounded-3xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] shadow-none',
   content: 'flex-1 min-h-0 overflow-auto bg-[var(--ledger-background)] px-4 py-4 lg:px-5 lg:py-5',
-  page: 'flex min-h-full w-full flex-col gap-4',
+  page: 'mx-auto flex min-h-full w-full max-w-[1280px] flex-col gap-4',
   pageTitle:
-    'text-[32px] font-normal leading-tight tracking-tight text-[var(--ledger-text-primary)]',
-  subtitle: 'text-sm font-light text-[var(--ledger-text-muted)]',
+    'text-[26px] font-medium leading-tight tracking-tight text-[var(--ledger-text-primary)]',
+  subtitle: 'text-sm text-[var(--ledger-text-muted)]',
   action:
     'inline-flex h-8 items-center gap-2 rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3 text-xs font-medium text-[var(--ledger-text-secondary)] transition hover:border-[color:var(--ledger-border-strong)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]',
   primaryAction:
     'inline-flex h-8 items-center gap-2 rounded-full border border-[color:var(--ledger-accent)] bg-[var(--ledger-accent)] px-3 text-xs font-semibold text-white transition hover:bg-[var(--ledger-accent-hover)]',
   panel:
-    'overflow-hidden rounded-[18px] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-none',
-  row: 'group grid w-full grid-cols-[minmax(220px,1.4fr)_minmax(170px,1fr)_90px_34px] items-center gap-4 border-b border-[color:var(--ledger-border-subtle)] px-3 py-2.5 text-left last:border-b-0 transition hover:bg-[var(--ledger-surface-hover)]',
+    'overflow-hidden rounded-[20px] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-none',
+  section:
+    'overflow-hidden rounded-[20px] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-none',
+  row: 'group grid w-full grid-cols-[minmax(220px,1.6fr)_minmax(170px,1.1fr)_92px_36px] items-center gap-3 border-b border-[color:var(--ledger-border-subtle)] px-3 py-2.5 text-left last:border-b-0 transition hover:bg-[var(--ledger-surface-hover)]',
   rowSelected: 'bg-[var(--ledger-surface-hover)] hover:bg-[var(--ledger-surface-hover)]',
   label: 'text-[11px] font-medium text-[var(--ledger-text-muted)]',
   title: 'text-[13px] font-medium text-[var(--ledger-text-primary)]',
   meta: 'text-[11px] leading-4 text-[var(--ledger-text-muted)]',
   chip: 'inline-flex h-5 items-center rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2 text-[10px] font-medium text-[var(--ledger-text-secondary)]',
   rightPanel:
-    'space-y-5 border-t border-[color:var(--ledger-border-subtle)] pt-6 lg:sticky lg:top-0 lg:self-start lg:border-l lg:border-t-0 lg:pl-8 lg:pt-0',
-  sectionTitle: 'text-xs font-medium text-[var(--ledger-text-primary)]',
+    'space-y-4 lg:sticky lg:top-0 lg:self-start',
+  sectionTitle: 'text-[11px] font-medium uppercase tracking-[0.08em] text-[var(--ledger-text-muted)]',
   modalInput:
     'h-9 w-full rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] px-3 text-sm text-[var(--ledger-text-primary)] outline-none transition placeholder:text-[var(--ledger-placeholder)] focus:border-[color:var(--ledger-border-strong)]',
 };
@@ -195,7 +337,7 @@ const makeIdentifier = (name: string) => {
     .toUpperCase();
 };
 
-const MemberAvatar = ({ member }: { member: TeamMember }) => (
+const MemberAvatar = ({ member }: { member: { initials: string } }) => (
   <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[10px] font-semibold text-[var(--ledger-text-secondary)]">
     {member.initials}
   </span>
@@ -232,6 +374,54 @@ const CompactButton = ({
   </button>
 );
 
+const AvatarStack = ({ members }: { members: Array<{ id: string; name: string; avatar?: string | null }> }) => {
+  const visible = members.slice(0, 4);
+  return (
+    <div className="flex items-center">
+      {visible.map((member, index) => (
+        <span
+          key={member.id}
+          className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-[color:var(--ledger-surface-card)] bg-[var(--ledger-surface-muted)] text-[9px] font-semibold text-[var(--ledger-text-secondary)]"
+          style={{ marginLeft: index === 0 ? 0 : -6 }}
+          title={member.name}
+        >
+          {member.avatar ? (
+            <img src={member.avatar} alt={member.name} className="h-full w-full rounded-full object-cover" />
+          ) : (
+            member.name
+              .split(' ')
+              .filter(Boolean)
+              .slice(0, 2)
+              .map((part) => part[0])
+              .join('')
+              .slice(0, 2)
+              .toUpperCase()
+          )}
+        </span>
+      ))}
+      {members.length > visible.length ? (
+        <span className="ml-1 inline-flex h-6 items-center rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2 text-[10px] font-medium text-[var(--ledger-text-secondary)]">
+          +{members.length - visible.length}
+        </span>
+      ) : null}
+    </div>
+  );
+};
+
+const formatRelativeTime = (value?: string | null) => {
+  if (!value) return 'just now';
+  const time = new Date(value).getTime();
+  if (Number.isNaN(time)) return 'just now';
+  const deltaSeconds = Math.max(0, Math.floor((Date.now() - time) / 1000));
+  if (deltaSeconds < 60) return `${deltaSeconds}s ago`;
+  const deltaMinutes = Math.floor(deltaSeconds / 60);
+  if (deltaMinutes < 60) return `${deltaMinutes}m ago`;
+  const deltaHours = Math.floor(deltaMinutes / 60);
+  if (deltaHours < 24) return `${deltaHours}h ago`;
+  const deltaDays = Math.floor(deltaHours / 24);
+  return `${deltaDays}d ago`;
+};
+
 export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) => {
   const api = useApi();
   const { user } = useAuthContext();
@@ -254,18 +444,21 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
   const [teams, setTeams] = useState<Team[]>([]);
   const [selectedTeamId, setSelectedTeamId] = useState<string | null>(null);
   const [openedTeamId, setOpenedTeamId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<(typeof tabs)[number]>('Assigned');
+  const [activeTab, setActiveTab] = useState<(typeof tabs)[number]>('Overview');
   const [query, setQuery] = useState('');
   const [isNewTeamOpen, setIsNewTeamOpen] = useState(false);
   const [isInviteOpen, setIsInviteOpen] = useState(false);
   const [inviteTeamId, setInviteTeamId] = useState<string | null>(null);
   const [addMemberTeamId, setAddMemberTeamId] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<TeamContextMenu>(null);
+  const [resourceMenu, setResourceMenu] = useState<{ x: number; y: number } | null>(null);
 
   const [teamNameDraft, setTeamNameDraft] = useState('');
   const [teamIdentifierDraft, setTeamIdentifierDraft] = useState('');
   const [teamDescriptionDraft, setTeamDescriptionDraft] = useState('');
   const [teamColorDraft, setTeamColorDraft] = useState(teamColors[0]);
+  const [newTeamMemberToAddId, setNewTeamMemberToAddId] = useState('');
+  const [newTeamMemberIds, setNewTeamMemberIds] = useState<string[]>([]);
   const [inviteEmailDraft, setInviteEmailDraft] = useState('');
   const [inviteRoleDraft, setInviteRoleDraft] = useState<'member' | 'admin'>('member');
   const [memberSearchDraft, setMemberSearchDraft] = useState('');
@@ -295,10 +488,28 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
   const [isNoteLinkOpen, setIsNoteLinkOpen] = useState(false);
   const [noteLinkSearch, setNoteLinkSearch] = useState('');
   const [noteLinkTitleDraft, setNoteLinkTitleDraft] = useState('');
+  const [teamOverview, setTeamOverview] = useState<TeamOverviewResponse | null>(null);
+  const [teamOverviewLoading, setTeamOverviewLoading] = useState(false);
+  const [teamOverviewError, setTeamOverviewError] = useState<string | null>(null);
+  const [teamNotes, setTeamNotes] = useState<TeamOverviewResponse['recent_notes']>([]);
+  const [teamNotesLoading, setTeamNotesLoading] = useState(false);
+  const [teamNotesQuery, setTeamNotesQuery] = useState('');
+  const [collapsedTeamSections, setCollapsedTeamSections] = useState<Record<TeamSectionId, boolean>>(
+    {
+      pinnedResources: false,
+      teamNotes: false,
+      needsAttention: false,
+      activeProjects: false,
+      upcoming: false,
+      recentActivity: false,
+    }
+  );
 
   const openTeamDetail = (teamId: string) => {
     setSelectedTeamId(teamId);
     setOpenedTeamId(teamId);
+    setActiveTab('Overview');
+    setTeamNotesQuery('');
   };
 
   const goBackToTeamsList = () => {
@@ -490,6 +701,79 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
   }, [activeWorkspaceId, api, focusTeamId]);
 
   useEffect(() => {
+    if (!openedTeamId) {
+      setTeamOverview(null);
+      setTeamOverviewError(null);
+      setTeamOverviewLoading(false);
+      setTeamNotes([]);
+      setTeamNotesLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setTeamOverviewLoading(true);
+    setTeamOverviewError(null);
+
+    const loadOverview = async () => {
+      try {
+        const payload = (await api.getTeamOverview(openedTeamId)) as TeamOverviewResponse;
+        if (cancelled) return;
+        setTeamOverview(payload);
+      } catch (error) {
+        if (!cancelled) {
+          setTeamOverview(null);
+          setTeamOverviewError(error instanceof Error ? error.message : 'Could not load team.');
+        }
+      } finally {
+        if (!cancelled) setTeamOverviewLoading(false);
+      }
+    };
+
+    void loadOverview();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [api, openedTeamId]);
+
+  useEffect(() => {
+    if (!openedTeamId || activeTab !== 'Notes') {
+      if (!openedTeamId) setTeamNotes([]);
+      return;
+    }
+
+    let cancelled = false;
+    setTeamNotesLoading(true);
+
+    const loadNotes = async () => {
+      try {
+        const payload = (await api.getTeamNotes(openedTeamId, {
+          recent: true,
+          limit: 50,
+          search: teamNotesQuery.trim() || undefined,
+        })) as { notes?: TeamOverviewResponse['recent_notes'] } | TeamOverviewResponse['recent_notes'];
+        if (cancelled) return;
+        const nextNotes = Array.isArray(payload)
+          ? payload
+          : Array.isArray(payload?.notes)
+          ? payload.notes
+          : [];
+        setTeamNotes(nextNotes);
+      } catch {
+        if (!cancelled) setTeamNotes([]);
+      } finally {
+        if (!cancelled) setTeamNotesLoading(false);
+      }
+    };
+
+    void loadNotes();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTab, api, openedTeamId, teamNotesQuery]);
+
+  useEffect(() => {
     if (!assignWorkTeamId) {
       setAssignWorkSearch('');
       setAssignWorkMode('search');
@@ -541,8 +825,32 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
   }, [contextMenu]);
 
   useEffect(() => {
+    if (!resourceMenu) return;
+    const close = () => setResourceMenu(null);
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setResourceMenu(null);
+    };
+    window.addEventListener('click', close);
+    window.addEventListener('scroll', close, true);
+    window.addEventListener('resize', close);
+    window.addEventListener('keydown', closeOnEscape);
+    return () => {
+      window.removeEventListener('click', close);
+      window.removeEventListener('scroll', close, true);
+      window.removeEventListener('resize', close);
+      window.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [resourceMenu]);
+
+  useEffect(() => {
     setTeamIdentifierDraft(makeIdentifier(teamNameDraft));
   }, [teamNameDraft]);
+
+  useEffect(() => {
+    if (!openedTeamId) return;
+    setActiveTab('Overview');
+    setTeamNotesQuery('');
+  }, [openedTeamId]);
 
   const filteredTeams = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -557,8 +865,136 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
 
   const selectedTeam = teams.find((team) => team.id === selectedTeamId) ?? null;
   const openedTeam = teams.find((team) => team.id === openedTeamId) ?? null;
+  const currentTeam = openedTeam ?? selectedTeam;
   const addMemberTeam = teams.find((team) => team.id === addMemberTeamId) ?? null;
   const inviteTeam = teams.find((team) => team.id === inviteTeamId) ?? null;
+  const overviewTeam = teamOverview?.team ?? null;
+  const teamDisplayName = overviewTeam?.name ?? openedTeam?.name ?? selectedTeam?.name ?? 'Team';
+  const teamDisplayIdentifier =
+    overviewTeam?.identifier ?? openedTeam?.identifier ?? selectedTeam?.identifier ?? '';
+  const teamMembers = useMemo<TeamDisplayMember[]>(() => {
+    if (teamOverview?.members?.length) {
+      return teamOverview.members.map((member) => ({
+        ...member,
+        initials: getInitials(member.name),
+      }));
+    }
+
+    return (selectedTeam?.members ?? []).map((member) => ({
+      ...member,
+      initials: member.initials,
+    }));
+  }, [selectedTeam?.members, teamOverview?.members]);
+  const teamQuickLinkCounts = new Map(
+    (teamOverview?.quick_links ?? []).map((item) => [item.key, item.count ?? null])
+  );
+  const teamPinnedResources = useMemo(() => {
+    const resources: Array<
+      | {
+          id: string;
+          kind: 'project';
+          title: string;
+          meta: string;
+          onClick: () => void;
+        }
+      | {
+          id: string;
+          kind: 'note';
+          title: string;
+          meta: string;
+          onClick: () => void;
+        }
+    > = [];
+
+    (openedTeam?.ownedProjects ?? []).slice(0, 4).forEach((project) => {
+      resources.push({
+        id: `project-${project.id}`,
+        kind: 'project',
+        title: project.name,
+        meta: `${project.noteCount ?? 0} notes · ${project.milestoneCount ?? 0} milestones`,
+        onClick: () =>
+          void window.desktopWindow?.toggleModule('projects', {
+            focusProjectId: project.id,
+          }),
+      });
+    });
+
+    (openedTeam?.linkedNotes ?? []).slice(0, 4).forEach((note) => {
+      resources.push({
+        id: `note-${note.id}`,
+        kind: 'note',
+        title: note.title,
+        meta: note.projectName ? `${note.projectName} · project note` : 'Linked note',
+        onClick: () =>
+          void window.desktopWindow?.toggleModule('notes', {
+            focusNoteId: note.id,
+          }),
+      });
+    });
+
+    return resources.slice(0, 6);
+  }, [openedTeam?.linkedNotes, openedTeam?.ownedProjects]);
+
+  const teamNeedAttentionItems = useMemo(() => {
+    const overdueTasks = teamOverview?.needs_attention.overdue_tasks ?? [];
+    const overdueMilestones = teamOverview?.needs_attention.overdue_milestones ?? [];
+    const intakeItems = teamOverview?.needs_attention.intake_items ?? [];
+
+    return [
+      ...overdueTasks.map((item) => ({
+        id: `task-${item.id}`,
+        kind: 'task' as const,
+        icon: <Circle size={12} />,
+        title: item.title,
+        meta: [
+          item.status ? item.status.replace(/_/g, ' ') : null,
+          item.project?.name ?? null,
+          item.due_date ? formatShortDate(item.due_date) : null,
+        ]
+          .filter(Boolean)
+          .join(' · '),
+        right: [item.assignee ?? null, item.task_type ? item.task_type : 'Task']
+          .filter(Boolean)
+          .join(' · '),
+        onClick: () =>
+          void window.desktopWindow?.toggleModule('inbox', {
+            focusContext: `team:${openedTeam?.id ?? ''}`,
+          }),
+      })),
+      ...overdueMilestones.map((item) => ({
+        id: `milestone-${item.id}`,
+        kind: 'milestone' as const,
+        icon: <Diamond size={12} />,
+        title: item.title,
+        meta: [
+          'Milestone',
+          item.project ?? null,
+          item.due_date ? formatShortDate(item.due_date) : null,
+        ]
+          .filter(Boolean)
+          .join(' · '),
+        right: 'Milestone',
+        onClick: () =>
+          void window.desktopWindow?.toggleModule('projects', {
+            focusContext: `team:${openedTeam?.id ?? ''}`,
+          }),
+      })),
+      ...intakeItems.map((item) => ({
+        id: `intake-${item.id}`,
+        kind: 'intake' as const,
+        icon: <Inbox size={12} />,
+        title: item.title,
+        meta: ['Intake', item.status ?? null, item.source ?? null].filter(Boolean).join(' · '),
+        right: 'Review',
+        onClick: () => void window.desktopWindow?.toggleModule('inbox'),
+      })),
+    ];
+  }, [openedTeam?.id, teamOverview?.needs_attention.intake_items, teamOverview?.needs_attention.overdue_milestones, teamOverview?.needs_attention.overdue_tasks]);
+
+  const teamActiveProjects = teamOverview?.active_projects ?? [];
+  const teamUpcomingItems = teamOverview?.upcoming ?? [];
+  const teamRecentActivity = teamOverview?.recent_activity ?? [];
+  const teamOverviewNotes = teamOverview?.recent_notes ?? openedTeam?.linkedNotes ?? [];
 
   const availableMembers = useMemo(() => {
     if (!addMemberTeam) return [];
@@ -573,11 +1009,22 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
     });
   }, [addMemberTeam, memberSearchDraft, workspaceMembers]);
 
+  const newTeamMemberOptions = useMemo(() => {
+    return workspaceMembers.filter((member) => member.id !== user?.id);
+  }, [user?.id, workspaceMembers]);
+
   const resetNewTeamForm = () => {
     setTeamNameDraft('');
     setTeamIdentifierDraft('');
     setTeamDescriptionDraft('');
     setTeamColorDraft(teamColors[0]);
+    setNewTeamMemberToAddId('');
+    setNewTeamMemberIds([]);
+  };
+
+  const closeNewTeamComposer = () => {
+    setIsNewTeamOpen(false);
+    resetNewTeamForm();
   };
 
   const handleCreateTeam = async (event: FormEvent) => {
@@ -591,9 +1038,9 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
         identifier,
         description: teamDescriptionDraft.trim() || null,
         color: teamColorDraft,
+        member_ids: newTeamMemberIds,
       })) as { team?: Team };
-      setIsNewTeamOpen(false);
-      resetNewTeamForm();
+      closeNewTeamComposer();
       await reloadTeams(created.team?.id ?? null);
     } catch (error) {
       console.error(error);
@@ -650,15 +1097,6 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
       setAddMemberTeamId(null);
       setMemberSearchDraft('');
       await reloadTeams(addMemberTeamId);
-    } catch (error) {
-      console.error(error);
-    }
-  };
-
-  const removeMemberFromTeam = async (teamId: string, memberId: string) => {
-    try {
-      await api.removeTeamMember(teamId, memberId);
-      await reloadTeams(teamId);
     } catch (error) {
       console.error(error);
     }
@@ -774,7 +1212,6 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
 
   const recentAssignableItems = useMemo(() => workspaceWorkItems.slice(0, 6), [workspaceWorkItems]);
 
-  const assignedRows = openedTeam?.assignedWork ?? [];
   const hasAssignWorkQuery = assignWorkSearch.trim().length > 0;
   const visibleAssignWorkItems = hasAssignWorkQuery
     ? filteredAssignableItems
@@ -970,96 +1407,213 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
     }
   };
 
+  const teamRowBaseClass =
+    'group grid w-full grid-cols-[24px_minmax(0,1fr)_auto] items-center gap-2 rounded-lg px-3 py-1.5 text-left transition';
+  const teamRowHoverClass = 'hover:bg-[var(--ledger-surface-hover)]';
+  const teamRowIconClass =
+    'flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] text-[12px] text-[var(--ledger-text-secondary)]';
+  const teamRowTitleClass =
+    'min-w-0 truncate text-[13px] font-medium leading-5 text-[var(--ledger-text-primary)]';
+  const teamRowMetaClass =
+    'shrink-0 truncate text-[11px] leading-4 text-[var(--ledger-text-muted)]';
+  const teamSectionActionClass =
+    'text-xs font-medium text-[var(--ledger-text-muted)] transition hover:text-[var(--ledger-text-primary)]';
+
+  const renderTeamSectionShell = (
+    sectionId: TeamSectionId,
+    title: string,
+    action: ReactNode,
+    children: ReactNode,
+    count?: number
+  ) => {
+    const collapsed = typeof count === 'number' && count === 0 ? true : collapsedTeamSections[sectionId];
+    return (
+      <section className="min-w-0">
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() =>
+            setCollapsedTeamSections((current) => ({
+              ...current,
+              [sectionId]: !current[sectionId],
+            }))
+          }
+          onKeyDown={(event) => {
+            if (event.key !== 'Enter' && event.key !== ' ') return;
+            event.preventDefault();
+            setCollapsedTeamSections((current) => ({
+              ...current,
+              [sectionId]: !current[sectionId],
+            }));
+          }}
+          className="flex h-8 w-full items-center justify-between rounded-lg bg-[var(--ledger-surface-muted)] px-3 text-left transition hover:bg-[var(--ledger-surface-hover)]"
+        >
+          <div className="flex min-w-0 items-center gap-2">
+            <ChevronDown
+              size={14}
+              className={`shrink-0 text-[var(--ledger-text-muted)] transition ${
+                collapsed ? '-rotate-90' : 'rotate-0'
+              }`}
+            />
+            <span className="truncate text-[12px] font-medium text-[var(--ledger-text-secondary)]">
+              {title}
+            </span>
+            {typeof count === 'number' ? (
+              <span className="rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-1.5 py-0.5 text-[10px] leading-none text-[var(--ledger-text-muted)]">
+                {count}
+              </span>
+            ) : null}
+          </div>
+          <div
+            className="flex items-center gap-2"
+            onMouseDown={(event) => event.stopPropagation()}
+            onClick={(event) => event.stopPropagation()}
+          >
+            {action}
+          </div>
+        </div>
+        {!collapsed ? <div className="pt-1">{children}</div> : null}
+      </section>
+    );
+  };
+
   const renderRightPanel = () => {
-    if (!selectedTeam) return null;
+    if (!currentTeam) return null;
 
     return (
       <aside className={teamsTheme.rightPanel}>
-        <div>
-          <p className={teamsTheme.label}>Team</p>
-          <div className="mt-2 flex items-center gap-3">
-            <TeamBadge team={selectedTeam} />
+        <div className="space-y-2">
+          <p className={teamsTheme.sectionTitle}>Members</p>
+          <button
+            type="button"
+            onClick={() => setActiveTab('Members')}
+            className="flex w-full items-center justify-between rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3 py-2.5 text-left transition hover:bg-[var(--ledger-surface-hover)]"
+          >
             <div className="min-w-0">
-              <h2 className="truncate text-lg font-medium text-[var(--ledger-text-primary)]">
-                {selectedTeam.name}
-              </h2>
+              <AvatarStack members={teamMembers} />
+              <p className="mt-2 text-sm font-medium text-[var(--ledger-text-primary)]">
+                {teamOverview?.team.member_count ?? currentTeam.members.length} members
+              </p>
               <p className="text-xs text-[var(--ledger-text-muted)]">
-                {selectedTeam.members.length} members · {workspaceName}
+                {teamOverview?.team.lead_count ??
+                  currentTeam.members.filter((member) => member.role === 'lead').length}{' '}
+                lead
+                {(teamOverview?.team.lead_count ??
+                  currentTeam.members.filter((member) => member.role === 'lead').length) === 1
+                  ? ''
+                  : 's'}
+              </p>
+            </div>
+            <span className="text-xs font-medium text-[var(--ledger-text-muted)]">Open</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setAddMemberTeamId(currentTeam.id)}
+            className={teamsTheme.action}
+          >
+            <UserPlus size={13} />
+            Add member
+          </button>
+        </div>
+
+        <div className="space-y-2">
+          <p className={teamsTheme.sectionTitle}>Go to</p>
+          <div className="space-y-1">
+            {[
+              {
+                label: 'Tasks',
+                icon: <ListTodo size={13} />,
+                action: () =>
+                  void window.desktopWindow?.toggleModule('inbox', {
+                    focusContext: `team:${currentTeam.id}`,
+                  }),
+                count: teamQuickLinkCounts.get('tasks'),
+              },
+              {
+                label: 'Projects',
+                icon: <Sparkles size={13} />,
+                action: () =>
+                  void window.desktopWindow?.toggleModule('projects', {
+                    focusContext: `team:${currentTeam.id}`,
+                  }),
+                count: teamQuickLinkCounts.get('projects'),
+              },
+              {
+                label: 'Notes',
+                icon: <FileText size={13} />,
+                action: () => void window.desktopWindow?.toggleModule('notes'),
+                count: teamQuickLinkCounts.get('notes'),
+              },
+              {
+                label: 'Calendar',
+                icon: <CalendarDays size={13} />,
+                action: () => void window.desktopWindow?.openModule('calendar'),
+                count: teamQuickLinkCounts.get('calendar'),
+              },
+              {
+                label: 'Intake',
+                icon: <Inbox size={13} />,
+                action: () =>
+                  void window.desktopWindow?.toggleModule('inbox', {
+                    focusContext: `team:${currentTeam.id}`,
+                  }),
+                count: teamQuickLinkCounts.get('intake'),
+              },
+              {
+                label: 'Team settings',
+                icon: <Link2 size={13} />,
+                action: () =>
+                  void window.desktopWindow?.openModule('teams', {
+                    focusContext: `team-settings:${currentTeam.id}`,
+                  } as any),
+              },
+            ].map((item) => (
+              <button
+                key={item.label}
+                type="button"
+                onClick={item.action}
+                className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-xs text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+              >
+                <span className="flex min-w-0 items-center gap-2">
+                  <span className="text-[var(--ledger-text-muted)]">{item.icon}</span>
+                  <span className="truncate">{item.label}</span>
+                </span>
+                {typeof item.count === 'number' ? (
+                  <span className="text-[10px] text-[var(--ledger-text-muted)]">{item.count}</span>
+                ) : null}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="space-y-2">
+          <p className={teamsTheme.sectionTitle}>Team details</p>
+          <div className="overflow-hidden rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)]">
+            <div className="border-b border-[color:var(--ledger-border-subtle)] px-3 py-2">
+              <p className="text-[11px] text-[var(--ledger-text-muted)]">Identifier</p>
+              <p className="mt-0.5 font-mono text-xs font-semibold text-[var(--ledger-text-secondary)]">
+                {teamDisplayIdentifier}
+              </p>
+            </div>
+            <div className="border-b border-[color:var(--ledger-border-subtle)] px-3 py-2">
+              <p className="text-[11px] text-[var(--ledger-text-muted)]">Workspace</p>
+              <p className="mt-0.5 truncate text-xs font-medium text-[var(--ledger-text-secondary)]">
+                {workspaceName}
+              </p>
+            </div>
+            <div className="border-b border-[color:var(--ledger-border-subtle)] px-3 py-2">
+              <p className="text-[11px] text-[var(--ledger-text-muted)]">Created</p>
+              <p className="mt-0.5 text-xs font-medium text-[var(--ledger-text-secondary)]">
+                {formatShortDate(teamOverview?.team.created_at ?? null) ?? 'Unknown'}
+              </p>
+            </div>
+            <div className="px-3 py-2">
+              <p className="text-[11px] text-[var(--ledger-text-muted)]">Updated</p>
+              <p className="mt-0.5 text-xs font-medium text-[var(--ledger-text-secondary)]">
+                {formatShortDate(teamOverview?.team.updated_at ?? null) ?? 'Unknown'}
               </p>
             </div>
           </div>
-        </div>
-        <div className="space-y-1">
-          <p className={teamsTheme.sectionTitle}>Identifier</p>
-          <p className="font-mono text-xs font-semibold text-[var(--ledger-text-secondary)]">
-            {selectedTeam.identifier}
-          </p>
-        </div>
-        <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <p className={teamsTheme.sectionTitle}>Members</p>
-            <button
-              type="button"
-              onClick={() => setAddMemberTeamId(selectedTeam.id)}
-              className="text-xs font-medium text-[var(--ledger-text-muted)] transition hover:text-[var(--ledger-text-primary)]"
-            >
-              + Add
-            </button>
-          </div>
-          <div className="space-y-1">
-            {selectedTeam.members.map((member) => (
-              <div key={member.id} className="group flex items-center gap-2 rounded-xl px-2 py-1.5">
-                <MemberAvatar member={member} />
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-xs font-medium text-[var(--ledger-text-secondary)]">
-                    {member.name}
-                  </p>
-                  {member.role === 'lead' ? <p className={teamsTheme.meta}>Lead</p> : null}
-                </div>
-                <button
-                  type="button"
-                  onClick={() => removeMemberFromTeam(selectedTeam.id, member.id)}
-                  className="opacity-0 transition group-hover:opacity-100"
-                  title="Remove member"
-                  aria-label={`Remove ${member.name}`}
-                >
-                  <X size={13} className="text-[var(--ledger-text-muted)]" />
-                </button>
-              </div>
-            ))}
-            {selectedTeam.members.length === 0 ? (
-              <p className={teamsTheme.meta}>No members yet.</p>
-            ) : null}
-          </div>
-        </div>
-        <div className="space-y-2">
-          <p className={teamsTheme.sectionTitle}>Assigned work</p>
-          <p className={teamsTheme.meta}>
-            {selectedTeam.assignedCount} tasks · {selectedTeam.milestoneCount} milestones
-          </p>
-        </div>
-        <div className="space-y-2">
-          <p className={teamsTheme.sectionTitle}>Active projects</p>
-          {selectedTeam.activeProjects.length > 0 ? (
-            selectedTeam.activeProjects.map((project) => (
-              <p key={project} className="text-xs font-medium text-[var(--ledger-text-secondary)]">
-                {project}
-              </p>
-            ))
-          ) : (
-            <p className={teamsTheme.meta}>No linked projects yet.</p>
-          )}
-        </div>
-        <div className="space-y-1">
-          <p className={teamsTheme.sectionTitle}>Quick actions</p>
-          <CompactButton onClick={() => openTeamDetail(selectedTeam.id)}>Open team</CompactButton>
-          <CompactButton onClick={() => openInviteForTeam(selectedTeam.id)}>
-            Invite member
-          </CompactButton>
-          <CompactButton onClick={() => setIsNewTeamOpen(true)}>Create team</CompactButton>
-          <CompactButton onClick={() => deleteTeam(selectedTeam.id)} destructive>
-            Delete team
-          </CompactButton>
         </div>
       </aside>
     );
@@ -1184,10 +1738,11 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                             <TeamBadge team={team} />
                             <span className="min-w-0">
                               <span className={teamsTheme.title}>{team.name}</span>
-                              <span className="mt-0.5 block truncate text-[11px] text-[var(--ledger-text-muted)]">
-                                {team.description ||
-                                  `${team.members.length} members · ${team.assignedCount} assigned`}
-                              </span>
+                              {team.description ? (
+                                <span className="mt-0.5 block truncate text-[11px] text-[var(--ledger-text-muted)]">
+                                  {team.description}
+                                </span>
+                              ) : null}
                             </span>
                           </span>
                           <span className="flex min-w-0 flex-wrap items-center gap-1.5">
@@ -1251,332 +1806,616 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
               </div>
             </>
           ) : (
-            <section className="grid min-h-0 gap-8 lg:grid-cols-[minmax(0,1fr)_300px]">
-              <div className="min-w-0 space-y-6">
-                <button
-                  type="button"
-                  onClick={goBackToTeamsList}
-                  className="text-xs font-medium text-[var(--ledger-text-muted)] transition hover:text-[var(--ledger-text-primary)]"
-                >
-                  Back to teams
-                </button>
-                <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+            <section className="grid min-h-0 gap-4 lg:grid-cols-[minmax(0,1fr)_300px]">
+              <div className="min-w-0 space-y-4">
+                <header className="flex items-center justify-between gap-3 px-1">
                   <div className="flex min-w-0 items-center gap-3">
                     <TeamBadge team={openedTeam} />
                     <div className="min-w-0">
-                      <h1 className={teamsTheme.pageTitle}>{openedTeam.name}</h1>
-                      <p className={teamsTheme.subtitle}>
-                        {openedTeam.members.length} members · {workspaceName}
-                      </p>
+                      <div className="flex min-w-0 items-center gap-2">
+                        <h1 className="truncate text-[20px] font-semibold leading-tight text-[var(--ledger-text-primary)]">
+                          {teamDisplayName}
+                        </h1>
+                        <button
+                          type="button"
+                          className="inline-flex h-6 w-6 items-center justify-center rounded-full text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]"
+                          title="Favorite team"
+                          aria-label="Favorite team"
+                        >
+                          <Star size={12} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            setContextMenu({
+                              teamId: openedTeam.id,
+                              x: event.clientX,
+                              y: event.clientY,
+                            });
+                          }}
+                          className="inline-flex h-6 w-6 items-center justify-center rounded-full text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]"
+                          title="Team actions"
+                          aria-label="Team actions"
+                        >
+                          <MoreHorizontal size={12} />
+                        </button>
+                      </div>
                     </div>
                   </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setAddMemberTeamId(openedTeam.id)}
-                      className={teamsTheme.action}
-                    >
-                      <Plus size={13} />
-                      Add member
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => openInviteForTeam(openedTeam.id)}
-                      className={teamsTheme.action}
-                    >
-                      <UserPlus size={13} />
-                      Invite member
-                    </button>
-                  </div>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      void navigator.clipboard
+                        ?.writeText(`${window.location.origin}/teams/${openedTeam.id}`)
+                        .catch(() => undefined)
+                    }
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+                    title="Copy team link"
+                    aria-label="Copy team link"
+                  >
+                    <Link2 size={13} />
+                  </button>
                 </header>
-                <div className="flex gap-1 overflow-x-auto border-b border-[color:var(--ledger-border-subtle)]">
+                <div className="flex items-center justify-between gap-3 px-1">
+                  <div className="flex min-w-0 gap-1 overflow-x-auto">
                   {tabs.map((tab) => (
                     <button
                       key={tab}
                       type="button"
                       onClick={() => setActiveTab(tab)}
-                      className={`h-9 whitespace-nowrap border-b px-3 text-xs font-medium transition ${
+                      className={`inline-flex h-8 shrink-0 items-center rounded-full border px-3 text-xs font-medium transition ${
                         activeTab === tab
-                          ? 'border-[color:var(--ledger-accent)] text-[var(--ledger-text-primary)]'
-                          : 'border-transparent text-[var(--ledger-text-muted)] hover:text-[var(--ledger-text-primary)]'
+                          ? 'border-[color:var(--ledger-border-strong)] bg-[var(--ledger-surface-hover)] text-[var(--ledger-text-primary)]'
+                          : 'border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] text-[var(--ledger-text-muted)] hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]'
                       }`}
                     >
                       {tab}
                     </button>
                   ))}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      const rect = event.currentTarget.getBoundingClientRect();
+                      setResourceMenu({ x: rect.right, y: rect.bottom + 8 });
+                    }}
+                    className="inline-flex h-8 items-center gap-2 rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3 text-xs font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]"
+                  >
+                    <Plus size={13} />
+                    Add resources
+                  </button>
                 </div>
-                <div className={teamsTheme.panel}>
-                  {activeTab === 'Assigned' ? (
-                    <div>
-                      <div className="border-b border-[color:var(--ledger-border-subtle)] px-4 py-3">
-                        <p className="text-sm font-medium text-[var(--ledger-text-primary)]">
-                          Needs attention
-                        </p>
-                      </div>
-                      {openedTeam.assignedCount > 0 ? (
-                        assignedRows.map((row) => (
-                          <div
-                            key={workItemKey(row)}
-                            className="flex items-center gap-3 border-b border-[color:var(--ledger-border-subtle)] px-4 py-3 last:border-b-0"
-                          >
-                            {row.kind === 'task' ? (
-                              <Circle size={14} className="text-[var(--ledger-text-muted)]" />
-                            ) : (
-                              <Diamond size={14} className="text-[var(--ledger-text-muted)]" />
-                            )}
-                            <div className="min-w-0">
-                              <p className={teamsTheme.title}>{row.title}</p>
-                              <p className={teamsTheme.meta}>{row.detail}</p>
-                            </div>
-                          </div>
-                        ))
-                      ) : (
-                        <div className="flex min-h-[240px] items-center justify-center px-4 py-10">
-                          <div className="max-w-sm text-center">
-                            <p className="text-sm font-medium text-[var(--ledger-text-primary)]">
-                              No assigned work yet.
-                            </p>
-                            <p className="mt-1 text-sm text-[var(--ledger-text-muted)]">
-                              Assign a task or milestone to this team.
-                            </p>
-                            <button
-                              type="button"
-                              onClick={openAssignWorkToCurrentTeam}
-                              className={`mt-4 ${teamsTheme.action}`}
-                            >
-                              Assign work
-                            </button>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  ) : activeTab === 'Projects' ? (
-                    <div>
-                      <div className="flex items-center justify-between gap-3 border-b border-[color:var(--ledger-border-subtle)] px-4 py-3">
-                        <p className="text-sm font-medium text-[var(--ledger-text-primary)]">
-                          Owner team projects
-                        </p>
+                {teamOverviewLoading ? (
+                  <p className="px-1 text-xs text-[var(--ledger-text-muted)]">
+                    Loading team overview...
+                  </p>
+                ) : null}
+                {teamOverviewError ? (
+                  <p className="px-1 text-xs text-[color:#B42318]">{teamOverviewError}</p>
+                ) : null}
+                <div className="space-y-4">
+                  {activeTab === 'Overview' ? (
+                    <>
+                      {renderTeamSectionShell(
+                        'pinnedResources',
+                        'Pinned resources',
                         <button
                           type="button"
-                          onClick={openProjectLinkModal}
-                          className="text-xs font-medium text-[var(--ledger-text-muted)] hover:text-[var(--ledger-text-primary)]"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            setResourceMenu({
+                              x: event.currentTarget.getBoundingClientRect().right,
+                              y: event.currentTarget.getBoundingClientRect().bottom + 8,
+                            });
+                          }}
+                          className={teamSectionActionClass}
                         >
-                          + Add project
-                        </button>
-                      </div>
-                      {openedTeam.ownedProjects && openedTeam.ownedProjects.length > 0 ? (
-                        openedTeam.ownedProjects.map((project) => (
-                          <button
-                            key={project.id}
-                            type="button"
-                            onClick={() =>
-                              void window.desktopWindow?.toggleModule('projects', {
-                                focusProjectId: project.id,
-                              })
-                            }
-                            className="flex w-full items-center justify-between gap-3 border-b border-[color:var(--ledger-border-subtle)] px-4 py-3 text-left transition hover:bg-[var(--ledger-surface-hover)] last:border-b-0"
-                          >
-                            <div className="min-w-0">
-                              <p className={teamsTheme.title}>{project.name}</p>
-                              <p className={teamsTheme.meta}>
-                                Owner team · {project.noteCount ?? 0} notes ·{' '}
-                                {project.milestoneCount ?? 0} milestones
-                              </p>
-                            </div>
-                          </button>
-                        ))
-                      ) : (
-                        <div className="flex min-h-[220px] items-center justify-center px-4 py-10">
-                          <div className="max-w-sm text-center">
-                            <p className="text-sm font-medium text-[var(--ledger-text-primary)]">
-                              No team projects yet.
-                            </p>
-                            <p className="mt-1 text-sm text-[var(--ledger-text-muted)]">
-                              Set an existing project owner or create a project for this team.
-                            </p>
-                            <button
-                              type="button"
-                              onClick={openProjectLinkModal}
-                              className={`mt-4 ${teamsTheme.action}`}
-                            >
-                              Add project
-                            </button>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  ) : activeTab === 'Milestones' ? (
-                    <div>
-                      <div className="flex items-center justify-between gap-3 border-b border-[color:var(--ledger-border-subtle)] px-4 py-3">
-                        <p className="text-sm font-medium text-[var(--ledger-text-primary)]">
-                          Team milestones
-                        </p>
-                        <button
-                          type="button"
-                          onClick={() => openAssignWorkForTeam(openedTeam.id)}
-                          className="text-xs font-medium text-[var(--ledger-text-muted)] hover:text-[var(--ledger-text-primary)]"
-                        >
-                          + Assign milestone
-                        </button>
-                      </div>
-                      <div className="border-b border-[color:var(--ledger-border-subtle)]">
-                        <div className="px-4 py-2">
-                          <p className="text-xs font-medium text-[var(--ledger-text-muted)]">
-                            Assigned to this team
-                          </p>
-                        </div>
-                        {assignedRows.filter((row) => row.kind === 'milestone').length > 0 ? (
-                          assignedRows
-                            .filter((row) => row.kind === 'milestone')
-                            .map((row) => (
-                              <div
-                                key={workItemKey(row)}
-                                className="flex items-center gap-3 border-t border-[color:var(--ledger-border-subtle)] px-4 py-3 first:border-t-0"
+                          Add resource
+                        </button>,
+                        teamPinnedResources.length > 0 ? (
+                          <div className="space-y-1">
+                            {teamPinnedResources.map((resource) => (
+                              <button
+                                key={resource.id}
+                                type="button"
+                                onClick={resource.onClick}
+                                className={`${teamRowBaseClass} ${teamRowHoverClass}`}
                               >
-                                <Diamond size={14} className="text-[var(--ledger-text-muted)]" />
-                                <div className="min-w-0">
-                                  <p className={teamsTheme.title}>{row.title}</p>
-                                  <p className={teamsTheme.meta}>{row.detail}</p>
-                                </div>
-                              </div>
-                            ))
+                                <span className={teamRowIconClass}>
+                                  {resource.kind === 'project' ? (
+                                    <Sparkles size={12} />
+                                  ) : (
+                                    <FileText size={12} />
+                                  )}
+                                </span>
+                                <span className="min-w-0">
+                                  <span className={teamRowTitleClass}>{resource.title}</span>
+                                </span>
+                                <span className={teamRowMetaClass}>{resource.meta}</span>
+                              </button>
+                            ))}
+                          </div>
                         ) : (
-                          <p className="px-4 py-4 text-sm text-[var(--ledger-text-muted)]">
-                            No direct team milestones yet.
-                          </p>
-                        )}
-                      </div>
-                      <div>
-                        <div className="px-4 py-2">
-                          <p className="text-xs font-medium text-[var(--ledger-text-muted)]">
-                            From owned projects
-                          </p>
-                        </div>
-                        {openedTeam.projectMilestones && openedTeam.projectMilestones.length > 0 ? (
-                          openedTeam.projectMilestones.map((row) => (
-                            <div
-                              key={row.sourceId}
-                              className="flex items-center gap-3 border-t border-[color:var(--ledger-border-subtle)] px-4 py-3 first:border-t-0"
+                          <div className="px-3 py-2 text-sm text-[var(--ledger-text-muted)]">
+                            No pinned resources yet.{' '}
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                setResourceMenu({
+                                  x: event.currentTarget.getBoundingClientRect().right,
+                                  y: event.currentTarget.getBoundingClientRect().bottom + 8,
+                                });
+                              }}
+                              className="font-medium text-[var(--ledger-text-secondary)] transition hover:text-[var(--ledger-text-primary)]"
                             >
-                              <Diamond size={14} className="text-[var(--ledger-text-muted)]" />
-                              <div className="min-w-0">
-                                <p className={teamsTheme.title}>{row.title}</p>
-                                <p className={teamsTheme.meta}>{row.detail}</p>
-                              </div>
-                            </div>
-                          ))
-                        ) : (
-                          <p className="px-4 py-4 text-sm text-[var(--ledger-text-muted)]">
-                            No project milestones yet.
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                  ) : activeTab === 'Notes' ? (
-                    <div>
-                      <div className="flex items-center justify-between gap-3 border-b border-[color:var(--ledger-border-subtle)] px-4 py-3">
-                        <p className="text-sm font-medium text-[var(--ledger-text-primary)]">
-                          Linked notes
-                        </p>
+                              Add resource
+                            </button>
+                          </div>
+                        ),
+                        teamPinnedResources.length
+                      )}
+
+                      {renderTeamSectionShell(
+                        'teamNotes',
+                        'Team notes',
                         <button
                           type="button"
                           onClick={openNoteLinkModal}
-                          className="text-xs font-medium text-[var(--ledger-text-muted)] hover:text-[var(--ledger-text-primary)]"
+                          className={teamSectionActionClass}
                         >
-                          + Link note
-                        </button>
-                      </div>
-                      {openedTeam.linkedNotes && openedTeam.linkedNotes.length > 0 ? (
-                        openedTeam.linkedNotes.map((note) => (
-                          <button
-                            key={note.id}
-                            type="button"
-                            onClick={() =>
-                              void window.desktopWindow?.toggleModule('notes', {
-                                focusNoteId: note.id,
-                              })
-                            }
-                            className="flex w-full items-center justify-between gap-3 border-b border-[color:var(--ledger-border-subtle)] px-4 py-3 text-left transition hover:bg-[var(--ledger-surface-hover)] last:border-b-0"
-                          >
-                            <div className="min-w-0">
-                              <p className={teamsTheme.title}>{note.title}</p>
-                              <p className={teamsTheme.meta}>
-                                {note.projectName
-                                  ? `${note.projectName} · project note`
-                                  : note.updatedAt
-                                  ? `Updated ${formatShortDate(note.updatedAt)}`
-                                  : 'Linked note'}
-                              </p>
-                            </div>
-                          </button>
-                        ))
-                      ) : (
-                        <div className="flex min-h-[220px] items-center justify-center px-4 py-10">
-                          <div className="max-w-sm text-center">
-                            <p className="text-sm font-medium text-[var(--ledger-text-primary)]">
-                              No team notes yet.
-                            </p>
-                            <p className="mt-1 text-sm text-[var(--ledger-text-muted)]">
-                              Link meeting notes, captures, or project context.
-                            </p>
+                          Link note
+                        </button>,
+                        teamOverviewNotes.length > 0 ? (
+                          <div className="space-y-1">
+                            {teamOverviewNotes.slice(0, 5).map((note) => (
+                              <button
+                                key={note.id}
+                                type="button"
+                                onClick={() =>
+                                  void window.desktopWindow?.toggleModule('notes', {
+                                    focusNoteId: note.id,
+                                  })
+                                }
+                                className={`${teamRowBaseClass} ${teamRowHoverClass}`}
+                              >
+                                <span className={teamRowIconClass}>
+                                  <FileText size={12} />
+                                </span>
+                                <span className="min-w-0">
+                                  <span className={teamRowTitleClass}>{note.title}</span>
+                                </span>
+                                <span className={teamRowMetaClass}>
+                                  {note.projectName
+                                    ? `${note.projectName} · project note`
+                                    : note.updatedAt
+                                    ? `Updated ${formatShortDate(note.updatedAt)}`
+                                    : 'Linked note'}
+                                </span>
+                              </button>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="px-3 py-2 text-sm text-[var(--ledger-text-muted)]">
+                            No team notes yet.{' '}
                             <button
                               type="button"
                               onClick={openNoteLinkModal}
-                              className={`mt-4 ${teamsTheme.action}`}
+                              className="font-medium text-[var(--ledger-text-secondary)] transition hover:text-[var(--ledger-text-primary)]"
                             >
                               Link note
                             </button>
                           </div>
-                        </div>
+                        ),
+                        teamOverviewNotes.length
+                      )}
+
+                      {renderTeamSectionShell(
+                        'needsAttention',
+                        'Needs attention',
+                        <button
+                          type="button"
+                          onClick={openAssignWorkToCurrentTeam}
+                          className={teamSectionActionClass}
+                        >
+                          Assign work
+                        </button>,
+                        teamNeedAttentionItems.length > 0 ? (
+                          <div className="space-y-1">
+                            {teamNeedAttentionItems.map((item) => (
+                              <button
+                                key={item.id}
+                                type="button"
+                                onClick={item.onClick}
+                                className={`${teamRowBaseClass} ${teamRowHoverClass}`}
+                              >
+                                <span className={teamRowIconClass}>{item.icon}</span>
+                                <span className="min-w-0">
+                                  <span className={teamRowTitleClass}>{item.title}</span>
+                                </span>
+                                <span className={teamRowMetaClass}>
+                                  <span className="inline-flex min-w-0 items-center gap-1.5">
+                                    <span className="truncate">{item.meta || 'Needs review'}</span>
+                                    {item.right ? (
+                                      <>
+                                        <span>·</span>
+                                        <span className="truncate">{item.right}</span>
+                                      </>
+                                    ) : null}
+                                  </span>
+                                </span>
+                              </button>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="px-3 py-2 text-sm text-[var(--ledger-text-muted)]">
+                            Nothing needs attention.
+                          </div>
+                        ),
+                        teamNeedAttentionItems.length
+                      )}
+
+                      {renderTeamSectionShell(
+                        'activeProjects',
+                        'Active projects',
+                        <button
+                          type="button"
+                          onClick={openProjectLinkModal}
+                          className={teamSectionActionClass}
+                        >
+                          Add project
+                        </button>,
+                        teamActiveProjects.length > 0 ? (
+                          <div className="space-y-1">
+                            {teamActiveProjects.slice(0, 6).map((project) => (
+                              <button
+                                key={project.id}
+                                type="button"
+                                onClick={() =>
+                                  void window.desktopWindow?.toggleModule('projects', {
+                                    focusProjectId: project.id,
+                                  })
+                                }
+                                className={`${teamRowBaseClass} ${teamRowHoverClass}`}
+                              >
+                                <span className={teamRowIconClass}>
+                                  <Sparkles size={12} />
+                                </span>
+                                <span className="min-w-0">
+                                  <span className={teamRowTitleClass}>{project.title}</span>
+                                </span>
+                                <span className="flex items-center gap-2">
+                                  <span className={teamRowMetaClass}>
+                                    {[
+                                      project.status ?? 'Active',
+                                      project.lead ?? null,
+                                      project.due_date ? formatShortDate(project.due_date) : null,
+                                    ]
+                                      .filter(Boolean)
+                                      .join(' · ')}
+                                  </span>
+                                  {typeof project.progress === 'number' ? (
+                                    <span className="flex items-center gap-1.5">
+                                      <span className="text-[10px] text-[var(--ledger-text-muted)]">
+                                        {project.progress}%
+                                      </span>
+                                      <span className="h-1.5 w-12 overflow-hidden rounded-full bg-[var(--ledger-surface-muted)]">
+                                        <span
+                                          className="block h-full rounded-full bg-[var(--ledger-accent)]"
+                                          style={{ width: `${Math.max(4, Math.min(100, project.progress))}%` }}
+                                        />
+                                      </span>
+                                    </span>
+                                  ) : null}
+                                </span>
+                              </button>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="px-3 py-2 text-sm text-[var(--ledger-text-muted)]">
+                            No active projects.
+                          </div>
+                        ),
+                        teamActiveProjects.length
+                      )}
+
+                      {renderTeamSectionShell(
+                        'upcoming',
+                        'Upcoming',
+                        <button
+                          type="button"
+                          onClick={() => void window.desktopWindow?.openModule('calendar')}
+                          className={teamSectionActionClass}
+                        >
+                          Calendar
+                        </button>,
+                        teamUpcomingItems.length > 0 ? (
+                          <div className="space-y-1">
+                            {teamUpcomingItems.slice(0, 6).map((item) => (
+                              <button
+                                key={item.id}
+                                type="button"
+                                onClick={() => void window.desktopWindow?.openModule('calendar')}
+                                className={`${teamRowBaseClass} ${teamRowHoverClass}`}
+                              >
+                                <span className={teamRowIconClass}>
+                                  <CalendarDays size={12} />
+                                </span>
+                                <span className="min-w-0">
+                                  <span className={teamRowTitleClass}>{item.title}</span>
+                                </span>
+                                <span className={teamRowMetaClass}>
+                                  {[
+                                    item.type === 'event'
+                                      ? 'Event'
+                                      : item.type === 'reminder'
+                                      ? 'Reminder'
+                                      : 'Milestone',
+                                    item.start
+                                      ? formatShortDate(item.start)
+                                      : item.project?.name ?? null,
+                                    item.end ? formatShortDate(item.end) : null,
+                                  ]
+                                    .filter(Boolean)
+                                    .join(' · ')}
+                                </span>
+                              </button>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="px-3 py-2 text-sm text-[var(--ledger-text-muted)]">
+                            Nothing upcoming.
+                          </div>
+                        ),
+                        teamUpcomingItems.length
+                      )}
+
+                      {renderTeamSectionShell(
+                        'recentActivity',
+                        'Recent activity',
+                        <button
+                          type="button"
+                          onClick={() => setActiveTab('Notes')}
+                          className={teamSectionActionClass}
+                        >
+                          Notes
+                        </button>,
+                        teamRecentActivity.length > 0 ? (
+                          <div className="space-y-1">
+                            {teamRecentActivity.slice(0, 6).map((item) => (
+                              <div key={item.id} className={`${teamRowBaseClass} ${teamRowHoverClass}`}>
+                                <span className={teamRowIconClass}>
+                                  <Users size={12} />
+                                </span>
+                                <span className="min-w-0">
+                                  <span className={teamRowTitleClass}>
+                                    {(item.actor ? `${item.actor} ` : '') +
+                                      item.action +
+                                      (item.object_title ? ` ${item.object_title}` : '')}
+                                  </span>
+                                </span>
+                                <span className={teamRowMetaClass}>
+                                  {formatRelativeTime(item.timestamp)}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="px-3 py-2 text-sm text-[var(--ledger-text-muted)]">
+                            No recent activity.
+                          </div>
+                        ),
+                        teamRecentActivity.length
+                      )}
+                    </>
+                  ) : activeTab === 'Notes' ? (
+                    <div className="space-y-4">
+                      <div className="flex flex-wrap items-center gap-2 px-1">
+                        <label className="flex h-8 min-w-0 w-full max-w-[320px] items-center gap-2 rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3">
+                          <Search size={13} className="text-[var(--ledger-text-muted)]" />
+                          <input
+                            value={teamNotesQuery}
+                            onChange={(event) => setTeamNotesQuery(event.target.value)}
+                            placeholder="Search notes..."
+                            className="min-w-0 flex-1 bg-transparent text-xs text-[var(--ledger-text-primary)] placeholder:text-[var(--ledger-placeholder)] focus:outline-none"
+                          />
+                        </label>
+                        {teamNotesQuery.trim() ? (
+                          <button
+                            type="button"
+                            onClick={() => setTeamNotesQuery('')}
+                            className={teamsTheme.action}
+                          >
+                            Clear
+                          </button>
+                        ) : null}
+                      </div>
+                      {teamNotesLoading ? (
+                        <p className="px-1 text-xs text-[var(--ledger-text-muted)]">
+                          Loading notes...
+                        </p>
+                      ) : null}
+                      {renderTeamSectionShell(
+                        'teamNotes',
+                        'Meeting notes',
+                        null,
+                        teamNotes.filter((note) =>
+                          /meeting|sync|standup|review|planning/i.test(note.title)
+                        ).length > 0 ? (
+                          <div className="space-y-1">
+                            {teamNotes
+                              .filter((note) => /meeting|sync|standup|review|planning/i.test(note.title))
+                              .slice(0, 5)
+                              .map((note) => (
+                                <button
+                                  key={note.id}
+                                  type="button"
+                                  onClick={() =>
+                                    void window.desktopWindow?.toggleModule('notes', {
+                                      focusNoteId: note.id,
+                                    })
+                                  }
+                                  className={`${teamRowBaseClass} ${teamRowHoverClass}`}
+                                >
+                                  <span className={teamRowIconClass}>
+                                    <FileText size={12} />
+                                  </span>
+                                  <span className="min-w-0">
+                                    <span className={teamRowTitleClass}>{note.title}</span>
+                                  </span>
+                                  <span className={teamRowMetaClass}>
+                                    {note.updatedAt
+                                      ? `Updated ${formatShortDate(note.updatedAt)}`
+                                      : 'Meeting note'}
+                                  </span>
+                                </button>
+                              ))}
+                          </div>
+                        ) : (
+                          <div className="px-3 py-2 text-sm text-[var(--ledger-text-muted)]">
+                            No meeting notes yet.
+                          </div>
+                        ),
+                        teamNotes.filter((note) =>
+                          /meeting|sync|standup|review|planning/i.test(note.title)
+                        ).length
+                      )}
+                      {renderTeamSectionShell(
+                        'pinnedResources',
+                        'Shared references',
+                        null,
+                        teamNotes.filter((note) => Boolean(note.projectName)).length > 0 ? (
+                          <div className="space-y-1">
+                            {teamNotes
+                              .filter((note) => Boolean(note.projectName))
+                              .slice(0, 5)
+                              .map((note) => (
+                                <button
+                                  key={note.id}
+                                  type="button"
+                                  onClick={() =>
+                                    void window.desktopWindow?.toggleModule('notes', {
+                                      focusNoteId: note.id,
+                                    })
+                                  }
+                                  className={`${teamRowBaseClass} ${teamRowHoverClass}`}
+                                >
+                                  <span className={teamRowIconClass}>
+                                    <Link2 size={12} />
+                                  </span>
+                                  <span className="min-w-0">
+                                    <span className={teamRowTitleClass}>{note.title}</span>
+                                  </span>
+                                  <span className={teamRowMetaClass}>
+                                    {note.projectName ?? 'Shared reference'}
+                                  </span>
+                                </button>
+                              ))}
+                          </div>
+                        ) : (
+                          <div className="px-3 py-2 text-sm text-[var(--ledger-text-muted)]">
+                            No shared references yet.
+                          </div>
+                        ),
+                        teamNotes.filter((note) => Boolean(note.projectName)).length
+                      )}
+                      {renderTeamSectionShell(
+                        'recentActivity',
+                        'Recent notes',
+                        null,
+                        teamNotes.length > 0 ? (
+                          <div className="space-y-1">
+                            {teamNotes.slice(0, 8).map((note) => (
+                              <button
+                                key={note.id}
+                                type="button"
+                                onClick={() =>
+                                  void window.desktopWindow?.toggleModule('notes', {
+                                    focusNoteId: note.id,
+                                  })
+                                }
+                                className={`${teamRowBaseClass} ${teamRowHoverClass}`}
+                              >
+                                <span className={teamRowIconClass}>
+                                  <FileText size={12} />
+                                </span>
+                                <span className="min-w-0">
+                                  <span className={teamRowTitleClass}>{note.title}</span>
+                                </span>
+                                <span className={teamRowMetaClass}>
+                                  {note.updatedAt
+                                    ? `Updated ${formatShortDate(note.updatedAt)}`
+                                    : 'Recent note'}
+                                </span>
+                              </button>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="px-3 py-2 text-sm text-[var(--ledger-text-muted)]">
+                            No team notes yet.
+                          </div>
+                        ),
+                        teamNotes.length
                       )}
                     </div>
                   ) : activeTab === 'Members' ? (
-                    <div>
-                      <div className="flex items-center justify-between border-b border-[color:var(--ledger-border-subtle)] px-4 py-3">
-                        <p className="text-sm font-medium text-[var(--ledger-text-primary)]">
-                          Members
-                        </p>
+                    <div className="space-y-4">
+                      {renderTeamSectionShell(
+                        'activeProjects',
+                        'Members',
                         <button
                           type="button"
                           onClick={() => setAddMemberTeamId(openedTeam.id)}
-                          className="text-xs font-medium text-[var(--ledger-text-muted)] hover:text-[var(--ledger-text-primary)]"
+                          className={teamSectionActionClass}
                         >
-                          + Add member
-                        </button>
-                      </div>
-                      {openedTeam.members.map((member) => (
-                        <div
-                          key={member.id}
-                          className="flex items-center gap-3 border-b border-[color:var(--ledger-border-subtle)] px-4 py-3 last:border-b-0"
-                        >
-                          <MemberAvatar member={member} />
-                          <div className="min-w-0 flex-1">
-                            <p className={teamsTheme.title}>{member.name}</p>
-                            <p className={teamsTheme.meta}>
-                              {member.email ?? (member.role === 'lead' ? 'Lead' : 'Member')}
-                            </p>
+                          Add member
+                        </button>,
+                        teamMembers.length > 0 ? (
+                          <div className="space-y-1">
+                            {teamMembers.map((member) => (
+                              <button
+                                key={member.id}
+                                type="button"
+                                onClick={() => setAddMemberTeamId(openedTeam.id)}
+                                className={`${teamRowBaseClass} ${teamRowHoverClass}`}
+                              >
+                                <span className={teamRowIconClass}>{member.initials}</span>
+                                <span className="min-w-0">
+                                  <span className={teamRowTitleClass}>{member.name}</span>
+                                </span>
+                                <span className="flex items-center gap-2">
+                                  <span className={teamRowMetaClass}>
+                                    {[
+                                      member.role === 'lead' ? 'Lead' : 'Member',
+                                      member.email ?? null,
+                                    ]
+                                      .filter(Boolean)
+                                      .join(' · ')}
+                                  </span>
+                                  <span className={teamRowMetaClass}>
+                                    {typeof member.open_task_count === 'number'
+                                      ? `${member.open_task_count} open`
+                                      : '0 open'}
+                                  </span>
+                                  <span className={teamRowMetaClass}>
+                                    {typeof member.active_project_count === 'number'
+                                      ? `${member.active_project_count} projects`
+                                      : '0 projects'}
+                                  </span>
+                                </span>
+                              </button>
+                            ))}
                           </div>
-                          <button
-                            type="button"
-                            onClick={() => removeMemberFromTeam(openedTeam.id, member.id)}
-                            className="text-xs text-[var(--ledger-text-muted)] hover:text-[color:#B42318]"
-                          >
-                            Remove
-                          </button>
-                        </div>
-                      ))}
+                        ) : (
+                          <div className="px-3 py-2 text-sm text-[var(--ledger-text-muted)]">
+                            No members yet.
+                          </div>
+                        ),
+                        teamMembers.length
+                      )}
                     </div>
-                  ) : (
-                    <div className="px-4 py-10">
-                      <p className="text-sm font-medium text-[var(--ledger-text-primary)]">
-                        {activeTab} will use team-owned work.
-                      </p>
-                      <p className="mt-1 text-sm text-[var(--ledger-text-muted)]">
-                        This tab is ready for the team assignment API when tasks, milestones, notes,
-                        and projects support team ownership.
-                      </p>
-                    </div>
-                  )}
+                  ) : null}
                 </div>
               </div>
               {renderRightPanel()}
@@ -1587,70 +2426,133 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
 
       <ModalOverlay
         isOpen={isNewTeamOpen}
-        onClose={() => setIsNewTeamOpen(false)}
+        onClose={closeNewTeamComposer}
         backdropBorderRadius="inherit"
         disablePortal
         manageWindowChrome={false}
-        classNameContainer="w-full max-w-md rounded-2xl border p-5"
+        classNameContainer="w-full max-w-[560px] overflow-hidden rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-[var(--ledger-shadow)]"
       >
-        <form onSubmit={handleCreateTeam} className="space-y-4">
-          <div>
-            <h2 className="text-lg font-medium text-[var(--ledger-text-primary)]">New team</h2>
-            <p className="mt-1 text-sm text-[var(--ledger-text-muted)]">
-              Create a group for shared ownership.
-            </p>
+        <form onSubmit={handleCreateTeam}>
+          <div className="flex items-start justify-between gap-4 border-b border-[color:var(--ledger-border-subtle)] px-4 py-3.5">
+            <div className="min-w-0">
+              <h2 className="text-sm font-semibold text-[var(--ledger-text-primary)]">New team</h2>
+              <p className="mt-1 text-sm text-[var(--ledger-text-secondary)]">
+                Create a group for shared ownership.
+              </p>
+            </div>
+            <ModalCloseButton onClick={closeNewTeamComposer} ariaLabel="Close new team modal" />
           </div>
-          <label className="block space-y-1.5">
-            <span className={teamsTheme.label}>Team name</span>
-            <input
-              value={teamNameDraft}
-              onChange={(event) => setTeamNameDraft(event.target.value)}
-              className={teamsTheme.modalInput}
-              placeholder="Main Room"
-              autoFocus
-            />
-          </label>
-          <label className="block space-y-1.5">
-            <span className={teamsTheme.label}>Identifier</span>
-            <input
-              value={teamIdentifierDraft}
-              onChange={(event) => setTeamIdentifierDraft(event.target.value.toUpperCase())}
-              className={teamsTheme.modalInput}
-              placeholder="MAIN"
-            />
-          </label>
-          <label className="block space-y-1.5">
-            <span className={teamsTheme.label}>Description</span>
-            <input
-              value={teamDescriptionDraft}
-              onChange={(event) => setTeamDescriptionDraft(event.target.value)}
-              className={teamsTheme.modalInput}
-              placeholder="Optional"
-            />
-          </label>
-          <div className="space-y-2">
-            <span className={teamsTheme.label}>Color</span>
-            <div className="flex gap-2">
-              {teamColors.map((color) => (
-                <button
-                  key={color}
-                  type="button"
-                  onClick={() => setTeamColorDraft(color)}
-                  className={`h-7 w-7 rounded-full border-2 ${
-                    teamColorDraft === color
-                      ? 'border-[var(--ledger-text-primary)]'
-                      : 'border-transparent'
-                  }`}
-                  style={{ backgroundColor: color }}
-                  aria-label={`Use ${color}`}
+
+          <div className="space-y-3 px-4 py-4">
+            <div className="grid grid-cols-[minmax(0,1.6fr)_minmax(140px,0.9fr)] gap-3">
+              <label className="block space-y-1.5">
+                <span className={teamsTheme.label}>Team name</span>
+                <input
+                  value={teamNameDraft}
+                  onChange={(event) => setTeamNameDraft(event.target.value)}
+                  className={teamsTheme.modalInput}
+                  placeholder="Main Room"
+                  autoFocus
                 />
-              ))}
+              </label>
+              <label className="block space-y-1.5">
+                <span className={teamsTheme.label}>Identifier</span>
+                <input
+                  value={teamIdentifierDraft}
+                  onChange={(event) => setTeamIdentifierDraft(event.target.value.toUpperCase())}
+                  className={teamsTheme.modalInput}
+                  placeholder="MAIN"
+                />
+              </label>
+            </div>
+            <label className="block space-y-1.5">
+              <span className={teamsTheme.label}>Description</span>
+              <input
+                value={teamDescriptionDraft}
+                onChange={(event) => setTeamDescriptionDraft(event.target.value)}
+                className={teamsTheme.modalInput}
+                placeholder="Optional"
+              />
+            </label>
+            <div className="flex flex-wrap items-end gap-3">
+              <div className="space-y-2">
+                <span className={teamsTheme.label}>Color</span>
+                <div className="flex gap-2">
+                  {teamColors.map((color) => (
+                    <button
+                      key={color}
+                      type="button"
+                      onClick={() => setTeamColorDraft(color)}
+                      className={`h-7 w-7 rounded-full border-2 ${
+                        teamColorDraft === color
+                          ? 'border-[var(--ledger-text-primary)]'
+                          : 'border-transparent'
+                      }`}
+                      style={{ backgroundColor: color }}
+                      aria-label={`Use ${color}`}
+                    />
+                  ))}
+                </div>
+              </div>
+
+              <div className="min-w-[240px] flex-1 space-y-2">
+                <span className={teamsTheme.label}>Members</span>
+                <div className="flex items-center gap-2">
+                  <select
+                    value={newTeamMemberToAddId}
+                    onChange={(event) => {
+                      const nextMemberId = event.target.value;
+                      if (!nextMemberId) return;
+                      setNewTeamMemberIds((current) =>
+                        current.includes(nextMemberId) ? current : [...current, nextMemberId]
+                      );
+                      setNewTeamMemberToAddId('');
+                    }}
+                    className="inline-flex h-8 min-w-[190px] flex-1 items-center rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2.5 text-xs font-medium text-[var(--ledger-text-secondary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60"
+                  >
+                    <option value="">Add workspace members</option>
+                    {newTeamMemberOptions
+                      .filter((member) => !newTeamMemberIds.includes(member.id))
+                      .map((member) => (
+                        <option key={member.id} value={member.id}>
+                          {member.name}
+                        </option>
+                      ))}
+                  </select>
+                </div>
+                {newTeamMemberIds.length > 0 && (
+                  <div className="flex flex-wrap gap-2">
+                    {newTeamMemberIds.map((memberId) => {
+                      const member = workspaceMembers.find((item) => item.id === memberId);
+                      if (!member) return null;
+                      return (
+                        <button
+                          key={member.id}
+                          type="button"
+                          onClick={() => {
+                            setNewTeamMemberIds((current) => current.filter((id) => id !== member.id));
+                          }}
+                          className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2.5 py-1 text-xs font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+                          title={member.name}
+                        >
+                          <span className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] text-[9px] font-semibold text-[var(--ledger-text-secondary)]">
+                            {member.initials}
+                          </span>
+                          <span className="max-w-[160px] truncate">{member.name}</span>
+                          <X size={10} />
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
-          <div className="flex justify-end gap-2 pt-2">
+
+          <div className="flex items-center justify-end gap-2 border-t border-[color:var(--ledger-border-subtle)] px-4 py-3.5">
             <button
               type="button"
-              onClick={() => setIsNewTeamOpen(false)}
+              onClick={closeNewTeamComposer}
               className={teamsTheme.action}
             >
               Cancel
@@ -2304,6 +3206,78 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
             <span className="inline-flex items-center gap-2">
               <Trash2 size={13} />
               Delete team
+            </span>
+          </CompactButton>
+        </div>
+      ) : null}
+
+      {resourceMenu ? (
+        <div
+          className="fixed z-[9999] w-56 rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-1.5 shadow-[0_18px_50px_rgba(17,24,39,0.16)]"
+          style={{
+            left: Math.max(8, Math.min(resourceMenu.x - 224, window.innerWidth - 240)),
+            top: Math.max(8, Math.min(resourceMenu.y, window.innerHeight - 280)),
+          }}
+          onClick={(event) => event.stopPropagation()}
+        >
+          <CompactButton
+            onClick={() => {
+              setResourceMenu(null);
+              setIsNoteLinkOpen(true);
+            }}
+          >
+            <span className="inline-flex items-center gap-2">
+              <FileText size={13} />
+              Existing note
+            </span>
+          </CompactButton>
+          <CompactButton
+            onClick={() => {
+              setResourceMenu(null);
+              setIsNoteLinkOpen(true);
+            }}
+          >
+            <span className="inline-flex items-center gap-2">
+              <Plus size={13} />
+              New team note
+            </span>
+          </CompactButton>
+          <CompactButton
+            onClick={() => {
+              setResourceMenu(null);
+              openProjectLinkModal();
+            }}
+          >
+            <span className="inline-flex items-center gap-2">
+              <Sparkles size={13} />
+              Project
+            </span>
+          </CompactButton>
+          <CompactButton
+            onClick={() => {
+              setResourceMenu(null);
+              if (openedTeam) {
+                openAssignWorkForTeam(openedTeam.id);
+                setAssignWorkMode('new-task');
+              }
+            }}
+          >
+            <span className="inline-flex items-center gap-2">
+              <ListTodo size={13} />
+              Task
+            </span>
+          </CompactButton>
+          <CompactButton
+            onClick={() => {
+              setResourceMenu(null);
+              void window.desktopWindow?.openModule('calendar', {
+                focusDate: todayKey(),
+              });
+            }}
+          >
+            <span className="inline-flex items-center gap-2">
+              <CalendarDays size={13} />
+              Calendar event
             </span>
           </CompactButton>
         </div>

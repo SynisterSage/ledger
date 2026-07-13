@@ -565,8 +565,138 @@ export const useApi = () => {
         const query = params.toString();
         return request(`/api/teams${query ? `?${query}` : ''}`);
       },
+      getTeamOverview: (teamId: string) => request(`/api/teams/${teamId}/overview`),
       getTeam: (teamId: string) => request(`/api/teams/${teamId}`),
-      getTeamNotes: (teamId: string) => request(`/api/teams/${teamId}/notes`),
+      getTeamMembers: (teamId: string) => request(`/api/teams/${teamId}/members`),
+      updateTeamMember: (
+        teamId: string,
+        userId: string,
+        payload: { role?: 'lead' | 'member' | 'viewer' }
+      ) =>
+        request(`/api/teams/${teamId}/members/${userId}`, {
+          method: 'PATCH',
+          body: JSON.stringify(payload),
+        }),
+      getTeamTasks: (
+        teamId: string,
+        options?: {
+          status?: string;
+          task_type?: string;
+          assignee?: string;
+          project_id?: string;
+          priority?: string;
+          due?: string;
+          search?: string;
+          sort?: string;
+          limit?: number;
+          page?: number;
+          cursor?: string;
+        }
+      ) => {
+        const params = new URLSearchParams();
+        for (const [key, value] of Object.entries(options ?? {})) {
+          if (value === undefined || value === null || value === '') continue;
+          params.set(key, String(value));
+        }
+        const query = params.toString();
+        return request(`/api/teams/${teamId}/tasks${query ? `?${query}` : ''}`);
+      },
+      getTeamProjects: (
+        teamId: string,
+        options?: { status?: string; lead?: string; search?: string; sort?: string }
+      ) => {
+        const params = new URLSearchParams();
+        for (const [key, value] of Object.entries(options ?? {})) {
+          if (value === undefined || value === null || value === '') continue;
+          params.set(key, String(value));
+        }
+        const query = params.toString();
+        return request(`/api/teams/${teamId}/projects${query ? `?${query}` : ''}`);
+      },
+      getTeamMilestones: (
+        teamId: string,
+        options?: { status?: string; project_id?: string; date_from?: string; date_to?: string }
+      ) => {
+        const params = new URLSearchParams();
+        for (const [key, value] of Object.entries(options ?? {})) {
+          if (value === undefined || value === null || value === '') continue;
+          params.set(key, String(value));
+        }
+        const query = params.toString();
+        return request(`/api/teams/${teamId}/milestones${query ? `?${query}` : ''}`);
+      },
+      getTeamNotes: (
+        teamId: string,
+        options?: {
+          search?: string;
+          project_id?: string;
+          created_by?: string;
+          section?: string;
+          recent?: boolean;
+          updated_after?: string;
+          limit?: number;
+        }
+      ) => {
+        const params = new URLSearchParams();
+        if (options?.search) params.set('search', options.search);
+        if (options?.project_id) params.set('project_id', options.project_id);
+        if (options?.created_by) params.set('created_by', options.created_by);
+        if (options?.section) params.set('section', options.section);
+        if (options?.recent) params.set('recent', 'true');
+        if (options?.updated_after) params.set('updated_after', options.updated_after);
+        if (options?.limit) params.set('limit', String(options.limit));
+        const query = params.toString();
+        return request(`/api/teams/${teamId}/notes${query ? `?${query}` : ''}`);
+      },
+      getTeamCalendar: (
+        teamId: string,
+        options?: {
+          start?: string;
+          end?: string;
+          event_type?: string;
+          project_id?: string;
+          assignee?: string;
+          owner?: string;
+        }
+      ) => {
+        const params = new URLSearchParams();
+        for (const [key, value] of Object.entries(options ?? {})) {
+          if (value === undefined || value === null || value === '') continue;
+          params.set(key, String(value));
+        }
+        const query = params.toString();
+        return request(`/api/teams/${teamId}/calendar${query ? `?${query}` : ''}`);
+      },
+      getTeamIntake: (
+        teamId: string,
+        options?: {
+          status?: string;
+          source?: string;
+          suggested_type?: string;
+          assignee?: string;
+          search?: string;
+          created_after?: string;
+        }
+      ) => {
+        const params = new URLSearchParams();
+        for (const [key, value] of Object.entries(options ?? {})) {
+          if (value === undefined || value === null || value === '') continue;
+          params.set(key, String(value));
+        }
+        const query = params.toString();
+        return request(`/api/teams/${teamId}/intake${query ? `?${query}` : ''}`);
+      },
+      getTeamActivity: (
+        teamId: string,
+        options?: { limit?: number; page?: number; cursor?: string }
+      ) => {
+        const params = new URLSearchParams();
+        if (options?.limit) params.set('limit', String(options.limit));
+        if (options?.page) params.set('page', String(options.page));
+        if (options?.cursor) params.set('cursor', options.cursor);
+        const query = params.toString();
+        return request(`/api/teams/${teamId}/activity${query ? `?${query}` : ''}`);
+      },
       linkTeamNote: (teamId: string, noteId: string) =>
         request(`/api/teams/${teamId}/notes`, {
           method: 'POST',
@@ -581,6 +711,7 @@ export const useApi = () => {
         identifier?: string | null;
         description?: string | null;
         color?: string | null;
+        member_ids?: string[];
         default_task_scope?: 'long_term' | 'today';
         default_project_visibility?: 'workspace' | 'team';
         default_assignee_behavior?: 'team' | 'lead';

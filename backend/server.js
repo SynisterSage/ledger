@@ -7431,7 +7431,11 @@ const buildTeamWorkItem = ({
     detail,
     dueDate,
     priority: kind === 'task' ? row.priority ?? null : null,
+    status: kind === 'task' ? row.status ?? null : row.completed ? 'completed' : 'open',
     typeLabel: kind === 'milestone' ? row.type ?? 'Custom' : null,
+    assignedToUserId: row.assigned_to_user_id ?? row.assigned_to ?? null,
+    assignedToTeamId: row.assigned_to_team_id ?? row.assigned_team_id ?? null,
+    taskType: kind === 'task' ? row.task_horizon ?? null : null,
     searchText: [row.title, projectName, detail, row.priority, row.type].filter(Boolean).join(' ').toLowerCase(),
     assignedAt: row.updated_at ?? row.created_at ?? new Date().toISOString(),
   };
@@ -7456,7 +7460,7 @@ const loadWorkspaceTeams = async (workspaceId, currentUserId, options = {}) => {
       .eq('workspace_id', workspaceId),
     supabase
       .from('tasks')
-      .select(taskSelectColumns)
+      .select(taskSelectWithHorizonColumns)
       .eq('workspace_id', workspaceId)
       .or('assigned_team_id.not.is.null,assigned_to_team_id.not.is.null'),
     supabase
@@ -8060,6 +8064,176 @@ const ensureTeamManageAccess = async ({ userId, teamId, workspaceId }) => {
   throw error;
 };
 
+const loadWorkspaceTeamById = async (teamId, workspaceId = null) => {
+  let query = supabase.from('workspace_teams').select(workspaceTeamSelectColumns).eq('id', teamId);
+  if (workspaceId) {
+    query = query.eq('workspace_id', workspaceId);
+  }
+
+  const result = await query.maybeSingle();
+  if (result.error) throw result.error;
+  return result.data ?? null;
+};
+
+const requireTeamAccess = async (userId, teamId, workspaceId = null) => {
+  const team = await loadWorkspaceTeamById(teamId, workspaceId);
+  if (!team) {
+    const error = new Error('Team not found');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const access = await requireWorkspaceMember(userId, team.workspace_id);
+  return { team, workspaceId: team.workspace_id, access };
+};
+
+const requireTeamMember = async (userId, teamId, workspaceId = null) => {
+  const context = await requireTeamAccess(userId, teamId, workspaceId);
+  const membership = await supabase
+    .from('workspace_team_members')
+    .select('id, team_id, user_id, role, created_at, updated_at')
+    .eq('workspace_id', context.workspaceId)
+    .eq('team_id', teamId)
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  if (membership.error) throw membership.error;
+  if (!membership.data?.id) {
+    const error = new Error('Team not found');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  return {
+    ...context,
+    membership: membership.data,
+  };
+};
+
+const requireTeamAdmin = async (userId, teamId, workspaceId = null) => {
+  const context = await requireTeamAccess(userId, teamId, workspaceId);
+  await ensureTeamManageAccess({ userId, teamId, workspaceId: context.workspaceId });
+  return context;
+};
+
+const loadUsersByIds = async (userIds) => {
+  const ids = [...new Set((userIds ?? []).map((id) => String(id ?? '').trim()).filter(Boolean))];
+  if (!ids.length) {
+    return new Map();
+  }
+
+  const result = await supabase
+    .from('users')
+    .select('id, email, full_name, avatar_url, created_at, updated_at')
+    .in('id', ids);
+
+  if (result.error) throw result.error;
+  return new Map((result.data ?? []).map((user) => [user.id, user]));
+};
+
+const isTeamOpenTask = (task) => !['completed', 'cancelled'].includes(String(task?.status ?? '').toLowerCase());
+
+const isTeamActiveProject = (project) => !['completed', 'paused'].includes(
+  normalizeProjectSemanticStatus(project?.status)
+);
+
+const getTeamTaskAssignmentId = (task) => task.assigned_to_user_id ?? task.assigned_to ?? null;
+
+const getTeamTaskOwnerTeamId = (task) => task.assigned_to_team_id ?? task.assigned_team_id ?? null;
+
+const getTeamTaskDueValue = (task) => task.due_date ?? null;
+
+const getTeamProjectStatus = (project) => normalizeProjectSemanticStatus(project?.status);
+
+const detachTeamReferences = async ({ workspaceId, teamId }) => {
+  const updates = [
+    supabase
+      .from('tasks')
+      .update({
+        assigned_to_team_id: null,
+        assigned_team_id: null,
+        assigned_by_user_id: null,
+        assigned_at: null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('workspace_id', workspaceId)
+      .or(`assigned_to_team_id.eq.${teamId},assigned_team_id.eq.${teamId}`),
+    supabase
+      .from('project_milestones')
+      .update({
+        assigned_to_team_id: null,
+        assigned_team_id: null,
+        assigned_by_user_id: null,
+        assigned_at: null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('workspace_id', workspaceId)
+      .or(`assigned_to_team_id.eq.${teamId},assigned_team_id.eq.${teamId}`),
+    supabase
+      .from('projects')
+      .update({
+        owner_team_id: null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('workspace_id', workspaceId)
+      .eq('owner_team_id', teamId),
+    supabase
+      .from('events')
+      .update({
+        assigned_to_team_id: null,
+        assigned_by_user_id: null,
+        assigned_at: null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('workspace_id', workspaceId)
+      .eq('assigned_to_team_id', teamId),
+    supabase
+      .from('reminders')
+      .update({
+        assigned_to_team_id: null,
+        assigned_by_user_id: null,
+        assigned_at: null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('workspace_id', workspaceId)
+      .eq('assigned_to_team_id', teamId),
+    supabase
+      .from('note_team_links')
+      .delete()
+      .eq('workspace_id', workspaceId)
+      .eq('team_id', teamId),
+    supabase
+      .from('workspace_team_members')
+      .delete()
+      .eq('workspace_id', workspaceId)
+      .eq('team_id', teamId),
+  ];
+
+  const results = await Promise.all(updates);
+  const firstError = results.find((result) => result?.error)?.error ?? null;
+  if (firstError) throw firstError;
+};
+
+const loadTeamRouteContext = async (req, teamId) => {
+  const workspaceId = await resolveWorkspaceIdForRequest(req);
+  const { team, access } = await requireTeamAccess(req.authUser.id, teamId, workspaceId);
+  const teams = await loadWorkspaceTeams(workspaceId, req.authUser.id, { includeArchived: true });
+  const teamData = teams.find((item) => item.id === teamId) ?? null;
+  if (!teamData) {
+    const error = new Error('Team not found');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  return {
+    workspaceId,
+    team,
+    access,
+    teamData,
+    teams,
+  };
+};
+
 app.get('/api/teams', authMiddleware, rateLimit('read'), async (req, res) => {
   try {
     const workspaceId = await resolveWorkspaceIdForRequest(req);
@@ -8106,6 +8280,24 @@ app.post('/api/teams', authMiddleware, rateLimit('write'), async (req, res) => {
 
     const description = normalizeNullableText(req.body?.description);
     const color = normalizeNullableText(req.body?.color) || '#FF5F40';
+    const requestedMemberIds = Array.isArray(req.body?.member_ids)
+      ? [...new Set(req.body.member_ids.map((memberId) => String(memberId).trim()).filter(Boolean))]
+      : [];
+    const selectedMemberIds = requestedMemberIds.filter((memberId) => memberId !== req.authUser.id);
+    if (selectedMemberIds.length > 0) {
+      const memberLookup = await supabase
+        .from('workspace_members')
+        .select('user_id')
+        .eq('workspace_id', workspaceId)
+        .in('user_id', selectedMemberIds);
+      if (memberLookup.error) throw memberLookup.error;
+
+      const validMemberIds = new Set((memberLookup.data ?? []).map((row) => String(row.user_id)));
+      const invalidMemberIds = selectedMemberIds.filter((memberId) => !validMemberIds.has(memberId));
+      if (invalidMemberIds.length > 0) {
+        return res.status(400).json({ error: 'Selected members must belong to the workspace' });
+      }
+    }
 
     let identifier = identifierSource;
     for (let suffix = 0; suffix < 20; suffix += 1) {
@@ -8150,6 +8342,33 @@ app.post('/api/teams', authMiddleware, rateLimit('write'), async (req, res) => {
       created_by: req.authUser.id,
     });
     if (memberInsert.error) throw memberInsert.error;
+
+    if (selectedMemberIds.length > 0) {
+      const teamMemberInsert = await supabase.from('workspace_team_members').insert(
+        selectedMemberIds.map((userId) => ({
+          workspace_id: workspaceId,
+          team_id: teamInsert.data.id,
+          user_id: userId,
+          role: 'member',
+          created_by: req.authUser.id,
+        }))
+      );
+      if (teamMemberInsert.error) throw teamMemberInsert.error;
+    }
+
+    await writeWorkspaceAuditLog({
+      workspaceId,
+      actorUserId: req.authUser.id,
+      action: 'team.created',
+      targetType: 'workspace_team',
+      targetId: teamInsert.data.id,
+      metadata: {
+        name,
+        identifier,
+        color,
+        member_count: selectedMemberIds.length + 1,
+      },
+    });
 
     const teams = await loadWorkspaceTeams(workspaceId, req.authUser.id, { includeArchived: true });
     const createdTeam = teams.find((team) => team.id === teamInsert.data.id) ?? null;
@@ -8211,6 +8430,27 @@ app.patch('/api/teams/:teamId', authMiddleware, rateLimit('write'), async (req, 
       .single();
 
     if (updated.error) throw updated.error;
+    const changedFields = Object.keys(req.body ?? {}).filter((key) =>
+      [
+        'name',
+        'identifier',
+        'description',
+        'color',
+        'default_task_scope',
+        'default_project_visibility',
+        'default_assignee_behavior',
+      ].includes(key)
+    );
+    await writeWorkspaceAuditLog({
+      workspaceId,
+      actorUserId: req.authUser.id,
+      action: 'team.updated',
+      targetType: 'workspace_team',
+      targetId: teamId,
+      metadata: {
+        changed_fields: changedFields,
+      },
+    });
     const teams = await loadWorkspaceTeams(workspaceId, req.authUser.id, { includeArchived: true });
     const team = teams.find((item) => item.id === teamId) ?? null;
     res.json({ team: team ?? updated.data });
@@ -8223,13 +8463,13 @@ app.post('/api/teams/:teamId/members', authMiddleware, rateLimit('write'), async
   try {
     const workspaceId = await resolveWorkspaceIdForRequest(req);
     const teamId = String(req.params.teamId);
-    await ensureTeamManageAccess({ userId: req.authUser.id, teamId, workspaceId });
+    await requireTeamAdmin(req.authUser.id, teamId, workspaceId);
 
     const userId = normalizeNullableText(req.body?.user_id);
     if (!userId) return res.status(400).json({ error: 'Member user id is required' });
 
-    const teamAllowed = await ensureWorkspaceTeam(teamId, workspaceId);
-    if (!teamAllowed) return res.status(404).json({ error: 'Team not found' });
+    const teamRecord = await loadWorkspaceTeamById(teamId, workspaceId);
+    if (!teamRecord) return res.status(404).json({ error: 'Team not found' });
 
     const workspaceMember = await supabase
       .from('workspace_members')
@@ -8261,9 +8501,93 @@ app.post('/api/teams/:teamId/members', authMiddleware, rateLimit('write'), async
       .single();
 
     if (insert.error) throw insert.error;
+    await writeWorkspaceAuditLog({
+      workspaceId,
+      actorUserId: req.authUser.id,
+      action: 'team.member_added',
+      targetType: 'workspace_team_member',
+      targetId: insert.data.id,
+      metadata: {
+        team_id: teamId,
+        user_id: userId,
+        role,
+      },
+    });
     const teams = await loadWorkspaceTeams(workspaceId, req.authUser.id, { includeArchived: true });
     const team = teams.find((item) => item.id === teamId) ?? null;
     res.json({ team });
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
+app.patch('/api/teams/:teamId/members/:userId', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    const teamId = String(req.params.teamId);
+    const userId = String(req.params.userId);
+    await requireTeamAdmin(req.authUser.id, teamId, workspaceId);
+
+    const requestedRole = String(req.body?.role ?? '').toLowerCase();
+    if (!teamRoleValues.includes(requestedRole)) {
+      return res.status(400).json({ error: 'Invalid team role' });
+    }
+
+    const membership = await supabase
+      .from('workspace_team_members')
+      .select('id, role, created_at')
+      .eq('workspace_id', workspaceId)
+      .eq('team_id', teamId)
+      .eq('user_id', userId)
+      .maybeSingle();
+    if (membership.error) throw membership.error;
+    if (!membership.data?.id) {
+      return res.status(404).json({ error: 'Member not found' });
+    }
+
+    const previousRole = String(membership.data.role ?? 'member').toLowerCase();
+    const leadCountResult = await supabase
+      .from('workspace_team_members')
+      .select('id', { count: 'exact', head: true })
+      .eq('workspace_id', workspaceId)
+      .eq('team_id', teamId)
+      .eq('role', 'lead');
+    if (leadCountResult.error) throw leadCountResult.error;
+
+    if (previousRole === 'lead' && requestedRole !== 'lead' && Number(leadCountResult.count ?? 0) <= 1) {
+      return res.status(409).json({ error: 'Assign another lead before changing the final lead role.' });
+    }
+
+    const updated = await supabase
+      .from('workspace_team_members')
+      .update({
+        role: requestedRole,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('workspace_id', workspaceId)
+      .eq('team_id', teamId)
+      .eq('user_id', userId)
+      .select('id, workspace_id, team_id, user_id, role, created_by, created_at, updated_at')
+      .single();
+
+    if (updated.error) throw updated.error;
+
+    await writeWorkspaceAuditLog({
+      workspaceId,
+      actorUserId: req.authUser.id,
+      action: 'team.member_role_updated',
+      targetType: 'workspace_team_member',
+      targetId: userId,
+      metadata: {
+        team_id: teamId,
+        previous_role: previousRole,
+        next_role: requestedRole,
+      },
+    });
+
+    const teams = await loadWorkspaceTeams(workspaceId, req.authUser.id, { includeArchived: true });
+    const team = teams.find((item) => item.id === teamId) ?? null;
+    res.json({ member: updated.data, team });
   } catch (error) {
     return respondWithError(res, error);
   }
@@ -8274,7 +8598,31 @@ app.delete('/api/teams/:teamId/members/:userId', authMiddleware, rateLimit('writ
     const workspaceId = await resolveWorkspaceIdForRequest(req);
     const teamId = String(req.params.teamId);
     const userId = String(req.params.userId);
-    await ensureTeamManageAccess({ userId: req.authUser.id, teamId, workspaceId });
+    await requireTeamAdmin(req.authUser.id, teamId, workspaceId);
+
+    const membership = await supabase
+      .from('workspace_team_members')
+      .select('id, role, created_at')
+      .eq('workspace_id', workspaceId)
+      .eq('team_id', teamId)
+      .eq('user_id', userId)
+      .maybeSingle();
+    if (membership.error) throw membership.error;
+    if (!membership.data?.id) {
+      return res.status(404).json({ error: 'Member not found' });
+    }
+
+    const leadCountResult = await supabase
+      .from('workspace_team_members')
+      .select('id', { count: 'exact', head: true })
+      .eq('workspace_id', workspaceId)
+      .eq('team_id', teamId)
+      .eq('role', 'lead');
+    if (leadCountResult.error) throw leadCountResult.error;
+
+    if (String(membership.data.role ?? '').toLowerCase() === 'lead' && Number(leadCountResult.count ?? 0) <= 1) {
+      return res.status(409).json({ error: 'Assign another lead before removing the final lead.' });
+    }
 
     const deleted = await supabase
       .from('workspace_team_members')
@@ -8284,6 +8632,17 @@ app.delete('/api/teams/:teamId/members/:userId', authMiddleware, rateLimit('writ
       .eq('user_id', userId);
 
     if (deleted.error) throw deleted.error;
+    await writeWorkspaceAuditLog({
+      workspaceId,
+      actorUserId: req.authUser.id,
+      action: 'team.member_removed',
+      targetType: 'workspace_team_member',
+      targetId: userId,
+      metadata: {
+        team_id: teamId,
+        removed_role: String(membership.data.role ?? 'member').toLowerCase(),
+      },
+    });
     const teams = await loadWorkspaceTeams(workspaceId, req.authUser.id, { includeArchived: true });
     const team = teams.find((item) => item.id === teamId) ?? null;
     res.json({ team });
@@ -8296,7 +8655,7 @@ app.post('/api/teams/:teamId/archive', authMiddleware, rateLimit('write'), async
   try {
     const workspaceId = await resolveWorkspaceIdForRequest(req);
     const teamId = String(req.params.teamId);
-    await ensureTeamManageAccess({ userId: req.authUser.id, teamId, workspaceId });
+    await requireTeamAdmin(req.authUser.id, teamId, workspaceId);
 
     const update = {
       archived_at: new Date().toISOString(),
@@ -8314,6 +8673,14 @@ app.post('/api/teams/:teamId/archive', authMiddleware, rateLimit('write'), async
       .single();
 
     if (archived.error) throw archived.error;
+    await writeWorkspaceAuditLog({
+      workspaceId,
+      actorUserId: req.authUser.id,
+      action: 'team.archived',
+      targetType: 'workspace_team',
+      targetId: teamId,
+      metadata: {},
+    });
     res.json({ team: archived.data });
   } catch (error) {
     return respondWithError(res, error);
@@ -8324,7 +8691,7 @@ app.post('/api/teams/:teamId/unarchive', authMiddleware, rateLimit('write'), asy
   try {
     const workspaceId = await resolveWorkspaceIdForRequest(req);
     const teamId = String(req.params.teamId);
-    await ensureTeamManageAccess({ userId: req.authUser.id, teamId, workspaceId });
+    await requireTeamAdmin(req.authUser.id, teamId, workspaceId);
 
     const update = {
       archived_at: null,
@@ -8342,6 +8709,14 @@ app.post('/api/teams/:teamId/unarchive', authMiddleware, rateLimit('write'), asy
       .single();
 
     if (restored.error) throw restored.error;
+    await writeWorkspaceAuditLog({
+      workspaceId,
+      actorUserId: req.authUser.id,
+      action: 'team.unarchived',
+      targetType: 'workspace_team',
+      targetId: teamId,
+      metadata: {},
+    });
     res.json({ team: restored.data });
   } catch (error) {
     return respondWithError(res, error);
@@ -8352,27 +8727,34 @@ app.delete('/api/teams/:teamId', authMiddleware, rateLimit('write'), async (req,
   try {
     const workspaceId = await resolveWorkspaceIdForRequest(req);
     const teamId = String(req.params.teamId);
-    await ensureTeamManageAccess({ userId: req.authUser.id, teamId, workspaceId });
+    const context = await requireTeamAdmin(req.authUser.id, teamId, workspaceId);
 
-    const [teamAssignments, milestoneAssignments] = await Promise.all([
-      supabase
-        .from('tasks')
-        .select('id', { count: 'exact', head: true })
-        .eq('workspace_id', workspaceId)
-        .or(`assigned_team_id.eq.${teamId},assigned_to_team_id.eq.${teamId}`),
-      supabase
-        .from('project_milestones')
-        .select('id', { count: 'exact', head: true })
-        .eq('workspace_id', workspaceId)
-        .or(`assigned_team_id.eq.${teamId},assigned_to_team_id.eq.${teamId}`),
-    ]);
+    const archiveResult = await supabase
+      .from('workspace_teams')
+      .update({
+        archived_at: context.team.archived_at ?? new Date().toISOString(),
+        archived_by: context.team.archived_by ?? req.authUser.id,
+        updated_at: new Date().toISOString(),
+        updated_by: req.authUser.id,
+      })
+      .eq('workspace_id', workspaceId)
+      .eq('id', teamId)
+      .select(workspaceTeamSelectColumns)
+      .maybeSingle();
+    if (archiveResult.error) throw archiveResult.error;
 
-    if (teamAssignments.error) throw teamAssignments.error;
-    if (milestoneAssignments.error) throw milestoneAssignments.error;
-    const totalAssignments = Number(teamAssignments.count ?? 0) + Number(milestoneAssignments.count ?? 0);
-    if (totalAssignments > 0) {
-      return res.status(400).json({ error: 'Reassign assigned work before deleting this team.' });
-    }
+    await detachTeamReferences({ workspaceId, teamId });
+
+    await writeWorkspaceAuditLog({
+      workspaceId,
+      actorUserId: req.authUser.id,
+      action: 'team.deleted',
+      targetType: 'workspace_team',
+      targetId: teamId,
+      metadata: {
+        archived_at: context.team.archived_at ?? new Date().toISOString(),
+      },
+    });
 
     const deleted = await supabase.from('workspace_teams').delete().eq('workspace_id', workspaceId).eq('id', teamId);
     if (deleted.error) throw deleted.error;
@@ -9350,61 +9732,6 @@ app.delete(
   }
 );
 
-app.get('/api/teams/:teamId/notes', authMiddleware, rateLimit('read'), async (req, res) => {
-  try {
-    const workspaceId = await resolveWorkspaceIdForRequest(req);
-    const teamId = String(req.params.teamId);
-    const teamAllowed = await ensureWorkspaceTeam(teamId, workspaceId);
-    if (!teamAllowed) {
-      return res.status(404).json({ error: 'Team not found' });
-    }
-
-    const { data, error } = await supabase
-      .from('note_team_links')
-      .select('id, note_id, created_at')
-      .eq('workspace_id', workspaceId)
-      .eq('team_id', teamId)
-      .order('created_at', { ascending: false });
-
-    if (error) throw error;
-
-    const noteIds = (data ?? []).map((row) => row.note_id).filter(Boolean);
-    let noteById = new Map();
-    if (noteIds.length > 0) {
-      const notesResult = await supabase
-        .from('notes')
-        .select('id, title, content, content_html, updated_at')
-        .eq('workspace_id', workspaceId)
-        .in('id', noteIds);
-      if (notesResult.error) throw notesResult.error;
-      noteById = new Map((notesResult.data ?? []).map((note) => [note.id, note]));
-    }
-
-    const links = (data ?? [])
-      .map((row) => {
-        const note = noteById.get(row.note_id);
-        if (!note) return null;
-        const previewSource = note.content_html || plainTextToParagraphHtml(note.content ?? '');
-        return {
-          id: row.id,
-          note_id: row.note_id,
-          created_at: row.created_at,
-          note: {
-            id: note.id,
-            title: note.title || 'Untitled note',
-            preview: htmlToPlainText(previewSource).slice(0, 160),
-            updated_at: note.updated_at ?? null,
-          },
-        };
-      })
-      .filter(Boolean);
-
-    res.json({ links });
-  } catch (error) {
-    return respondWithError(res, error);
-  }
-});
-
 app.post('/api/teams/:teamId/notes', authMiddleware, rateLimit('write'), async (req, res) => {
   try {
     const workspaceId = await resolveWorkspaceIdForRequest(req);
@@ -9497,6 +9824,1225 @@ app.delete('/api/teams/:teamId/notes/:noteId', authMiddleware, rateLimit('write'
 
     if (error) throw error;
     res.json({ success: true });
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
+app.get('/api/teams/:teamId/overview', authMiddleware, rateLimit('read'), async (req, res) => {
+  try {
+    const teamId = String(req.params.teamId);
+    const { workspaceId, team, teamData } = await loadTeamRouteContext(req, teamId);
+    await resumeDueInboxItemsForWorkspace(workspaceId);
+
+    const teamProjectRows = await supabase
+      .from('projects')
+      .select(projectSelectColumns)
+      .eq('workspace_id', workspaceId)
+      .eq('owner_team_id', teamId)
+      .order('updated_at', { ascending: false })
+      .limit(50);
+    if (teamProjectRows.error) throw teamProjectRows.error;
+
+    const teamProjects = teamProjectRows.data ?? [];
+    const teamProjectIds = teamProjects.map((project) => project.id).filter(Boolean);
+
+    const [memberRowsResult, workspaceMembersResult, userLookup, taskRowsResult, noteRowsResult, projectNoteRowsResult, eventRowsResult, reminderRowsResult, inboxRowsResult, auditRowsResult] =
+      await Promise.all([
+        supabase
+          .from('workspace_team_members')
+          .select('team_id, user_id, role, created_at')
+          .eq('workspace_id', workspaceId)
+          .eq('team_id', teamId)
+          .order('created_at', { ascending: true }),
+        supabase
+          .from('workspace_members')
+          .select('user_id, role, joined_at')
+          .eq('workspace_id', workspaceId),
+        loadUsersByIds([
+          team.created_by,
+          ...teamData.members.map((member) => member.id),
+          ...teamProjects.map((project) => project.lead_id ?? project.created_by ?? null).filter(Boolean),
+        ]),
+        supabase
+          .from('tasks')
+          .select(taskSelectWithHorizonColumns)
+          .eq('workspace_id', workspaceId)
+          .or(`assigned_to_team_id.eq.${teamId},assigned_team_id.eq.${teamId}`)
+          .order('updated_at', { ascending: false })
+          .limit(100),
+        supabase
+          .from('note_team_links')
+          .select('id, note_id, created_at')
+          .eq('workspace_id', workspaceId)
+          .eq('team_id', teamId)
+          .order('created_at', { ascending: false }),
+        teamProjectIds.length
+          ? supabase
+              .from('project_note_links')
+              .select('id, project_id, note_id, created_at')
+              .eq('workspace_id', workspaceId)
+              .in('project_id', teamProjectIds)
+              .order('created_at', { ascending: false })
+          : Promise.resolve({ data: [], error: null }),
+        supabase
+          .from('events')
+          .select('id, workspace_id, title, start_at, end_at, all_day, calendar_id, status, notes, location, project_id, note_id, assigned_to_user_id, assigned_to_team_id, assigned_by_user_id, assigned_at, created_at, updated_at')
+          .eq('workspace_id', workspaceId)
+          .or(`assigned_to_team_id.eq.${teamId}${teamProjectIds.length ? `,project_id.in.(${teamProjectIds.join(',')})` : ''}`)
+          .order('start_at', { ascending: true })
+          .limit(50),
+        supabase
+          .from('reminders')
+          .select('id, workspace_id, title, body, remind_at, status, project_id, note_id, calendar_id, notes, is_done, assigned_to_user_id, assigned_to_team_id, assigned_by_user_id, assigned_at, created_at, updated_at')
+          .eq('workspace_id', workspaceId)
+          .or(`assigned_to_team_id.eq.${teamId}${teamProjectIds.length ? `,project_id.in.(${teamProjectIds.join(',')})` : ''}`)
+          .order('remind_at', { ascending: true })
+          .limit(50),
+        supabase
+          .from('inbox_items')
+          .select(inboxItemSelectColumns)
+          .eq('workspace_id', workspaceId)
+          .order('created_at', { ascending: false })
+          .limit(200),
+        supabase
+          .from('workspace_audit_logs')
+          .select('id, workspace_id, actor_user_id, action, target_type, target_id, metadata, created_at')
+          .eq('workspace_id', workspaceId)
+          .order('created_at', { ascending: false })
+          .limit(50),
+      ]);
+
+    if (memberRowsResult.error) throw memberRowsResult.error;
+    if (workspaceMembersResult.error) throw workspaceMembersResult.error;
+    if (taskRowsResult.error) throw taskRowsResult.error;
+    if (noteRowsResult.error) throw noteRowsResult.error;
+    if (projectNoteRowsResult.error) throw projectNoteRowsResult.error;
+    if (eventRowsResult.error) throw eventRowsResult.error;
+    if (reminderRowsResult.error) throw reminderRowsResult.error;
+    if (inboxRowsResult.error) throw inboxRowsResult.error;
+    if (auditRowsResult.error) throw auditRowsResult.error;
+
+    const workspaceMemberByUserId = new Map(
+      (workspaceMembersResult.data ?? []).map((row) => [row.user_id, row])
+    );
+
+    const taskRows = (taskRowsResult.data ?? []).filter((row) => {
+      const projectId = row.project_id ?? null;
+      return row.assigned_to_team_id === teamId || row.assigned_team_id === teamId || (projectId && teamProjectIds.includes(projectId));
+    });
+    const openTaskRows = taskRows.filter(isTeamOpenTask);
+    const overdueTaskRows = openTaskRows.filter(
+      (task) => task.due_date && String(task.due_date) < new Date().toISOString().slice(0, 10)
+    );
+
+    const projectById = new Map(teamProjects.map((project) => [project.id, project]));
+    const noteLinks = [
+      ...(noteRowsResult.data ?? []).map((row) => ({
+        note_id: row.note_id,
+        project_id: null,
+        created_at: row.created_at,
+      })),
+      ...(projectNoteRowsResult.data ?? []).map((row) => ({
+        note_id: row.note_id,
+        project_id: row.project_id,
+        created_at: row.created_at,
+      })),
+    ];
+    const noteIds = [...new Set(noteLinks.map((row) => row.note_id).filter(Boolean))];
+    const notesResult = noteIds.length
+      ? await supabase
+          .from('notes')
+          .select('id, workspace_id, user_id, updated_by, title, content, content_html, section_id, parent_id, updated_at, created_at')
+          .eq('workspace_id', workspaceId)
+          .in('id', noteIds)
+      : { data: [], error: null };
+    if (notesResult.error) throw notesResult.error;
+
+    const noteById = new Map((notesResult.data ?? []).map((note) => [note.id, note]));
+    const linkedNotes = noteLinks
+      .map((link) => {
+        const note = noteById.get(link.note_id);
+        if (!note) return null;
+        return {
+          id: note.id,
+          title: note.title || 'Untitled note',
+          preview: htmlToPlainText(note.content_html || plainTextToParagraphHtml(note.content ?? '')).slice(0, 160),
+          created_by: note.user_id ?? null,
+          updated_by: note.updated_by ?? null,
+          linked_project: link.project_id ? { id: link.project_id, title: projectById.get(link.project_id)?.name ?? 'Untitled project' } : null,
+          updated_at: note.updated_at ?? null,
+          created_at: note.created_at ?? null,
+        };
+      })
+      .filter(Boolean)
+      .sort((a, b) => String(b.updated_at ?? b.created_at ?? '').localeCompare(String(a.updated_at ?? a.created_at ?? '')))
+      .slice(0, 10);
+    const noteCount = new Set(noteLinks.map((row) => row.note_id)).size;
+    const activeProjectRows = teamProjects.filter((project) => isTeamActiveProject(project));
+    const leadCount = teamData.members.filter((member) => member.role === 'lead').length;
+
+    const memberRows = teamData.members.map((member) => {
+      const user = userLookup.get(member.id) ?? null;
+      const workspaceMember = workspaceMemberByUserId.get(member.id) ?? null;
+      const memberTasks = openTaskRows.filter(
+        (task) => getTeamTaskAssignmentId(task) === member.id
+      );
+      const memberProjects = activeProjectRows.filter(
+        (project) => project.lead_id === member.id || project.created_by === member.id
+      );
+      return {
+        id: member.id,
+        name: member.name,
+        avatar: user?.avatar_url ?? null,
+        role: workspaceMember?.role ?? 'member',
+        team_role: member.role,
+        open_work_count: memberTasks.length,
+        joined_at: workspaceMember?.joined_at ?? null,
+        last_active_at: memberTasks[0]?.updated_at ?? memberProjects[0]?.updated_at ?? null,
+      };
+    });
+
+    const upcomingWindowEnd = new Date();
+    upcomingWindowEnd.setDate(upcomingWindowEnd.getDate() + 30);
+    const upcomingItems = [
+      ...(eventRowsResult.data ?? [])
+        .filter((event) => new Date(event.start_at).getTime() >= Date.now() && new Date(event.start_at).getTime() <= upcomingWindowEnd.getTime())
+        .map((event) => ({
+          id: event.id,
+          title: event.title,
+          type: 'event',
+          start: event.start_at,
+          end: event.end_at,
+          project: event.project_id ? projectById.get(event.project_id) ?? null : null,
+          note_id: event.note_id ?? null,
+          owner: event.assigned_by_user_id ?? null,
+          status: event.status ?? null,
+        })),
+      ...(reminderRowsResult.data ?? [])
+        .filter((reminder) => new Date(reminder.remind_at).getTime() >= Date.now() && new Date(reminder.remind_at).getTime() <= upcomingWindowEnd.getTime())
+        .map((reminder) => ({
+          id: reminder.id,
+          title: reminder.title,
+          type: 'reminder',
+          start: reminder.remind_at,
+          end: reminder.remind_at,
+          project: reminder.project_id ? projectById.get(reminder.project_id) ?? null : null,
+        note_id: reminder.note_id ?? null,
+        owner: reminder.assigned_by_user_id ?? null,
+        status: reminder.is_done ? 'done' : reminder.status ?? 'active',
+        })),
+    ]
+      .sort((a, b) => String(a.start ?? '').localeCompare(String(b.start ?? '')))
+      .slice(0, 10);
+
+    const intakeRows = (inboxRowsResult.data ?? []).filter((item) => {
+      const raw = item.raw_payload ?? {};
+      const routedTeamId = String(raw.suggested_team_id ?? raw.team_id ?? '').trim();
+      return (
+        item.status !== 'converted' &&
+        item.status !== 'archived' &&
+        routedTeamId === teamId
+      );
+    });
+
+    const overviewActivity = (auditRowsResult.data ?? [])
+      .filter((row) => row.target_type === 'workspace_team_member' || row.target_type === 'workspace_team')
+      .map((row) => ({
+        id: row.id,
+        actor: row.actor_user_id,
+        action: titleCaseLabel(row.action),
+        object_type: row.target_type,
+        object_id: row.target_id ?? null,
+        object_title: team.name,
+        timestamp: row.created_at,
+        metadata: row.metadata ?? null,
+      }))
+      .slice(0, 5);
+
+    res.json({
+      team: {
+        id: team.id,
+        name: team.name,
+        identifier: team.identifier,
+        color: team.color ?? '#FF5F40',
+        workspace_id: workspaceId,
+        member_count: teamData.members.length,
+        lead_count: leadCount,
+        created_at: team.created_at ?? null,
+        updated_at: team.updated_at ?? null,
+      },
+      summary: {
+        open_task_count: openTaskRows.length,
+        overdue_task_count: overdueTaskRows.length,
+        active_project_count: activeProjectRows.length,
+        milestone_count: teamData.projectMilestones.length,
+        note_count: noteCount,
+        upcoming_event_count: upcomingItems.length,
+        intake_needs_review_count: intakeRows.length,
+      },
+      quick_links: [
+        { key: 'overview', team_id: team.id, count: null },
+        { key: 'members', team_id: team.id, count: teamData.members.length },
+        { key: 'tasks', team_id: team.id, count: openTaskRows.length },
+        { key: 'projects', team_id: team.id, count: activeProjectRows.length },
+        { key: 'notes', team_id: team.id, count: noteCount },
+        { key: 'calendar', team_id: team.id, count: upcomingItems.length },
+        { key: 'intake', team_id: team.id, count: intakeRows.length },
+        { key: 'activity', team_id: team.id, count: overviewActivity.length },
+      ],
+      needs_attention: {
+        overdue_tasks: overdueTaskRows.map((task) => ({
+          id: task.id,
+          title: task.title,
+          status: task.status,
+          task_type: task.task_horizon ?? null,
+          priority: task.priority ?? null,
+          due_date: task.due_date ?? null,
+          assignee: task.assigned_to_user_id ?? null,
+          project: task.project_id ? projectById.get(task.project_id) ?? null : null,
+          blocked: false,
+        })),
+        overdue_milestones: teamData.projectMilestones
+          .filter((milestone) => milestone.status !== 'completed' && milestone.dueDate && String(milestone.dueDate) < new Date().toISOString().slice(0, 10))
+          .map((milestone) => ({
+            id: milestone.sourceId,
+            title: milestone.title,
+            project: milestone.projectId ?? null,
+            due_date: milestone.dueDate ?? null,
+          })),
+        intake_items: intakeRows.slice(0, 5).map((item) => ({
+          id: item.id,
+          title: item.title,
+          status: item.status,
+          source: item.source,
+        })),
+      },
+      active_projects: activeProjectRows
+        .map((project) => ({
+          id: project.id,
+          title: project.name ?? 'Untitled project',
+          status: project.status ?? null,
+          progress: project.completeness ?? 0,
+          lead: project.lead_id ?? null,
+          due_date: project.end_date ?? null,
+          next_action_count: openTaskRows.filter((task) => task.project_id === project.id).length,
+        }))
+        .slice(0, 10),
+      assigned_work: openTaskRows.slice(0, 10).map((task) => ({
+        id: task.id,
+        title: task.title,
+        status: task.status,
+        task_type: task.task_horizon ?? null,
+        priority: task.priority ?? null,
+        due_date: task.due_date ?? null,
+        assignee: task.assigned_to_user_id ?? null,
+        project: task.project_id ? projectById.get(task.project_id) ?? null : null,
+        blocked: false,
+        created_at: task.created_at ?? null,
+        updated_at: task.updated_at ?? null,
+      })),
+      recent_notes: linkedNotes,
+      upcoming: upcomingItems,
+      members: memberRows,
+      recent_activity: overviewActivity,
+    });
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
+app.get('/api/teams/:teamId/members', authMiddleware, rateLimit('read'), async (req, res) => {
+  try {
+    const teamId = String(req.params.teamId);
+    const { workspaceId, team, teamData } = await loadTeamRouteContext(req, teamId);
+    const [workspaceMembersResult, userMap, projectsResult, taskRowsResult] = await Promise.all([
+      supabase
+        .from('workspace_members')
+        .select('user_id, role, joined_at')
+        .eq('workspace_id', workspaceId),
+      loadUsersByIds(teamData.members.map((member) => member.id)),
+      supabase
+        .from('projects')
+        .select(projectSelectColumns)
+        .eq('workspace_id', workspaceId)
+        .eq('owner_team_id', teamId),
+      supabase
+        .from('tasks')
+        .select(taskSelectWithHorizonColumns)
+        .eq('workspace_id', workspaceId)
+        .or(`assigned_to_team_id.eq.${teamId},assigned_team_id.eq.${teamId}`),
+    ]);
+
+    if (workspaceMembersResult.error) throw workspaceMembersResult.error;
+    if (projectsResult.error) throw projectsResult.error;
+    if (taskRowsResult.error) throw taskRowsResult.error;
+
+    const workspaceMemberById = new Map(
+      (workspaceMembersResult.data ?? []).map((row) => [row.user_id, row])
+    );
+    const projects = projectsResult.data ?? [];
+    const openTasks = (taskRowsResult.data ?? []).filter(isTeamOpenTask);
+
+    const members = teamData.members.map((member) => {
+      const user = userMap.get(member.id) ?? null;
+      const workspaceMember = workspaceMemberById.get(member.id) ?? null;
+      const memberTasks = openTasks.filter((task) => getTeamTaskAssignmentId(task) === member.id);
+      const memberProjects = projects.filter(
+        (project) => project.lead_id === member.id || project.created_by === member.id
+      );
+      const lastActiveAt = [
+        workspaceMember?.joined_at ?? null,
+        ...memberTasks.map((task) => task.updated_at ?? task.created_at ?? null),
+        ...memberProjects.map((project) => project.updated_at ?? project.created_at ?? null),
+      ]
+        .filter(Boolean)
+        .sort()
+        .at(-1) ?? null;
+
+      return {
+        id: member.id,
+        name: member.name,
+        email: user?.email ?? member.email ?? null,
+        avatar: user?.avatar_url ?? null,
+        workspace_role: workspaceMember?.role ?? null,
+        team_role: member.role,
+        is_lead: member.role === 'lead',
+        open_task_count: memberTasks.length,
+        active_project_count: memberProjects.filter((project) => isTeamActiveProject(project)).length,
+        joined_at: workspaceMember?.joined_at ?? null,
+        last_active_at: lastActiveAt,
+      };
+    });
+
+    res.json({ team: { id: team.id, name: team.name, identifier: team.identifier }, members });
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
+app.get('/api/teams/:teamId/tasks', authMiddleware, rateLimit('read'), async (req, res) => {
+  try {
+    const teamId = String(req.params.teamId);
+    const { workspaceId, team, teamData } = await loadTeamRouteContext(req, teamId);
+    const statusFilter = String(req.query?.status ?? '').trim().toLowerCase();
+    const taskTypeFilter = String(req.query?.task_type ?? '').trim().toLowerCase();
+    const assigneeFilter = String(req.query?.assignee ?? '').trim();
+    const projectFilter = String(req.query?.project_id ?? '').trim();
+    const priorityFilter = String(req.query?.priority ?? '').trim().toLowerCase();
+    const dueFilter = String(req.query?.due ?? '').trim().toLowerCase();
+    const search = String(req.query?.search ?? '').trim().toLowerCase();
+    const sort = String(req.query?.sort ?? 'updated_at').trim().toLowerCase();
+    const limit = Math.min(100, Math.max(1, Number(req.query?.limit ?? 50) || 50));
+    const page = Math.max(1, Number(req.query?.page ?? 1) || 1);
+    const cursor = String(req.query?.cursor ?? '').trim();
+    const teamProjectsResult = await supabase
+      .from('projects')
+      .select('id, name, status, completeness, color, start_date, end_date, lead_id, owner_team_id, created_by, created_at, updated_at')
+      .eq('workspace_id', workspaceId)
+      .eq('owner_team_id', teamId);
+    if (teamProjectsResult.error) throw teamProjectsResult.error;
+    const teamProjects = teamProjectsResult.data ?? [];
+    const teamProjectIds = teamProjects.map((project) => project.id).filter(Boolean);
+    const [taskRowsResult, userLookup] = await Promise.all([
+      supabase
+        .from('tasks')
+        .select(taskSelectWithHorizonColumns)
+        .eq('workspace_id', workspaceId)
+        .or(`assigned_to_team_id.eq.${teamId},assigned_team_id.eq.${teamId}${teamProjectIds.length ? `,project_id.in.(${teamProjectIds.join(',')})` : ''}`)
+        .order('updated_at', { ascending: false })
+        .limit(500),
+      loadUsersByIds(
+        [
+          ...teamData.members.map((member) => member.id),
+          ...teamProjects.map((project) => project.lead_id ?? project.created_by ?? null).filter(Boolean),
+        ].filter(Boolean)
+      ),
+    ]);
+    if (taskRowsResult.error) throw taskRowsResult.error;
+
+    const projectById = new Map(teamProjects.map((project) => [project.id, project]));
+    const rawTasks = (taskRowsResult.data ?? []).filter((task) => {
+      if (projectFilter && task.project_id !== projectFilter) return false;
+      if (taskTypeFilter && String(task.task_horizon ?? '').toLowerCase() !== taskTypeFilter) return false;
+      if (priorityFilter && String(task.priority ?? '').toLowerCase() !== priorityFilter) return false;
+      if (assigneeFilter.startsWith('team:')) {
+        if (getTeamTaskOwnerTeamId(task) !== assigneeFilter.slice('team:'.length)) return false;
+      } else if (assigneeFilter && getTeamTaskAssignmentId(task) !== assigneeFilter) {
+        return false;
+      }
+      if (statusFilter === 'active' && !isTeamOpenTask(task)) return false;
+      if (statusFilter === 'backlog' && String(task.task_horizon ?? '').toLowerCase() !== 'long_term') return false;
+      if (statusFilter === 'assigned' && !getTeamTaskAssignmentId(task) && !getTeamTaskOwnerTeamId(task)) return false;
+      if (statusFilter === 'completed' && String(task.status ?? '').toLowerCase() !== 'completed') return false;
+      if (dueFilter === 'overdue') {
+        if (!task.due_date || String(task.due_date) >= new Date().toISOString().slice(0, 10)) return false;
+      } else if (dueFilter === 'today') {
+        if (!task.due_date || String(task.due_date) !== new Date().toISOString().slice(0, 10)) return false;
+      } else if (dueFilter === 'upcoming') {
+        if (!task.due_date || String(task.due_date) <= new Date().toISOString().slice(0, 10)) return false;
+      } else if (dueFilter && /^\d{4}-\d{2}-\d{2}$/.test(dueFilter) && String(task.due_date ?? '') !== dueFilter) {
+        return false;
+      }
+      if (search) {
+        const projectName = task.project_id ? projectById.get(task.project_id)?.name ?? '' : '';
+        const text = [task.title, task.description, task.notes, task.priority, task.status, task.task_horizon, projectName]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase();
+        if (!text.includes(search)) return false;
+      }
+      return true;
+    });
+
+    const sortRows = [...rawTasks].sort((a, b) => {
+      const desc = !sort.endsWith(':asc');
+      const key = sort.replace(/:(asc|desc)$/i, '');
+      const aValue =
+        key === 'due'
+          ? a.due_date ?? ''
+          : key === 'created'
+          ? a.created_at ?? ''
+          : key === 'priority'
+          ? a.priority ?? ''
+          : a.updated_at ?? '';
+      const bValue =
+        key === 'due'
+          ? b.due_date ?? ''
+          : key === 'created'
+          ? b.created_at ?? ''
+          : key === 'priority'
+          ? b.priority ?? ''
+          : b.updated_at ?? '';
+      return desc ? String(bValue).localeCompare(String(aValue)) : String(aValue).localeCompare(String(bValue));
+    });
+
+    const cursorFiltered = cursor
+      ? sortRows.filter((task) => {
+          const value =
+            sort.includes('due')
+              ? task.due_date ?? ''
+              : sort.includes('created')
+              ? task.created_at ?? ''
+              : task.updated_at ?? '';
+          return String(value) < cursor;
+        })
+      : sortRows;
+
+    const pageRows = cursor ? cursorFiltered.slice(0, limit) : cursorFiltered.slice((page - 1) * limit, (page - 1) * limit + limit);
+    const nextCursor = pageRows.length ? (sort.includes('due') ? pageRows[pageRows.length - 1].due_date ?? null : sort.includes('created') ? pageRows[pageRows.length - 1].created_at ?? null : pageRows[pageRows.length - 1].updated_at ?? null) : null;
+
+    const tasks = pageRows.map((task) => {
+      const assigneeUser = getTeamTaskAssignmentId(task) ? userLookup.get(getTeamTaskAssignmentId(task)) ?? null : null;
+      const assigneeTeam = getTeamTaskOwnerTeamId(task) === teamId ? { id: team.id, name: team.name, identifier: team.identifier } : null;
+      return {
+        id: task.id,
+        title: task.title,
+        status: task.status ?? null,
+        task_type: task.task_horizon ?? null,
+        priority: task.priority ?? null,
+        due_date: task.due_date ?? null,
+        assignee: assigneeUser
+          ? { id: assigneeUser.id, name: assigneeUser.full_name ?? assigneeUser.email ?? 'Member', avatar: assigneeUser.avatar_url ?? null }
+          : assigneeTeam,
+        project: task.project_id ? projectById.get(task.project_id) ?? null : null,
+        blocked: false,
+        created_at: task.created_at ?? null,
+        updated_at: task.updated_at ?? null,
+      };
+    });
+
+    res.json({ tasks, next_cursor: nextCursor, total_count: rawTasks.length });
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
+app.get('/api/teams/:teamId/projects', authMiddleware, rateLimit('read'), async (req, res) => {
+  try {
+    const teamId = String(req.params.teamId);
+    const { workspaceId } = await loadTeamRouteContext(req, teamId);
+    const statusFilter = String(req.query?.status ?? '').trim().toLowerCase();
+    const leadFilter = String(req.query?.lead ?? '').trim();
+    const search = String(req.query?.search ?? '').trim().toLowerCase();
+    const sort = String(req.query?.sort ?? 'updated_at').trim().toLowerCase();
+    const activeOnly = ['active', 'open'].includes(statusFilter);
+    const completedOnly = statusFilter === 'completed';
+
+    const [projectsResult, taskRowsResult, milestoneRowsResult, userLookup] = await Promise.all([
+      supabase
+        .from('projects')
+        .select(projectSelectColumns)
+        .eq('workspace_id', workspaceId)
+        .eq('owner_team_id', teamId)
+        .order('updated_at', { ascending: false })
+        .limit(100),
+      supabase
+        .from('tasks')
+        .select(taskSelectWithHorizonColumns)
+        .eq('workspace_id', workspaceId)
+        .order('updated_at', { ascending: false })
+        .limit(500),
+      supabase
+        .from('project_milestones')
+        .select(projectMilestoneSelectColumns)
+        .eq('workspace_id', workspaceId)
+        .order('updated_at', { ascending: false })
+        .limit(500),
+      loadUsersByIds([]),
+    ]);
+    if (projectsResult.error) throw projectsResult.error;
+    if (taskRowsResult.error) throw taskRowsResult.error;
+    if (milestoneRowsResult.error) throw milestoneRowsResult.error;
+
+    const projectMap = new Map((projectsResult.data ?? []).map((project) => [project.id, project]));
+    const tasks = taskRowsResult.data ?? [];
+    const milestones = milestoneRowsResult.data ?? [];
+    const projects = (projectsResult.data ?? []).filter((project) => {
+      if (leadFilter && String(project.lead_id ?? '') !== leadFilter) return false;
+      if (activeOnly && isTeamActiveProject(project) === false) return false;
+      if (completedOnly && normalizeProjectSemanticStatus(project.status) !== 'completed') return false;
+      if (search) {
+        const text = [
+          project.name,
+          project.description,
+          project.status,
+          project.project_type,
+        ]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase();
+        if (!text.includes(search)) return false;
+      }
+      return true;
+    });
+
+    const sortRows = [...projects].sort((a, b) => {
+      const desc = !sort.endsWith(':asc');
+      const key = sort.replace(/:(asc|desc)$/i, '');
+      const aValue =
+        key === 'due'
+          ? a.end_date ?? ''
+          : key === 'status'
+          ? a.status ?? ''
+          : key === 'created'
+          ? a.created_at ?? ''
+          : a.updated_at ?? '';
+      const bValue =
+        key === 'due'
+          ? b.end_date ?? ''
+          : key === 'status'
+          ? b.status ?? ''
+          : key === 'created'
+          ? b.created_at ?? ''
+          : b.updated_at ?? '';
+      return desc ? String(bValue).localeCompare(String(aValue)) : String(aValue).localeCompare(String(bValue));
+    });
+
+    const nextActionsByProjectId = new Map();
+    const openTasksByProjectId = new Map();
+    for (const task of tasks) {
+      if (!task.project_id || !projectMap.has(task.project_id)) continue;
+      const bucket = openTasksByProjectId.get(task.project_id) ?? [];
+      bucket.push(task);
+      openTasksByProjectId.set(task.project_id, bucket);
+      if (isTeamOpenTask(task)) {
+        const openBucket = nextActionsByProjectId.get(task.project_id) ?? [];
+        openBucket.push(task);
+        nextActionsByProjectId.set(task.project_id, openBucket);
+      }
+    }
+    const milestoneByProjectId = new Map();
+    for (const milestone of milestones) {
+      if (!milestone.project_id || !projectMap.has(milestone.project_id)) continue;
+      const bucket = milestoneByProjectId.get(milestone.project_id) ?? [];
+      bucket.push(milestone);
+      milestoneByProjectId.set(milestone.project_id, bucket);
+    }
+
+    res.json({
+      projects: sortRows.map((project) => ({
+        id: project.id,
+        title: project.name ?? 'Untitled project',
+        status: project.status ?? null,
+        progress: project.completeness ?? 0,
+        lead: project.lead_id ?? null,
+        owner_team: { id: teamId },
+        start_date: project.start_date ?? null,
+        due_date: project.end_date ?? null,
+        open_task_count: (openTasksByProjectId.get(project.id) ?? []).length,
+        next_action_count: (nextActionsByProjectId.get(project.id) ?? []).length,
+        milestone_count: (milestoneByProjectId.get(project.id) ?? []).length,
+        updated_at: project.updated_at ?? null,
+      })),
+    });
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
+app.get('/api/teams/:teamId/milestones', authMiddleware, rateLimit('read'), async (req, res) => {
+  try {
+    const teamId = String(req.params.teamId);
+    const { workspaceId } = await loadTeamRouteContext(req, teamId);
+    const projectFilter = String(req.query?.project_id ?? '').trim();
+    const dateFrom = String(req.query?.date_from ?? '').trim();
+    const dateTo = String(req.query?.date_to ?? '').trim();
+    const statusFilter = String(req.query?.status ?? '').trim().toLowerCase();
+
+    const projectsResult = await supabase
+      .from('projects')
+      .select('id, name, status, completeness, color, start_date, end_date, lead_id, owner_team_id, created_by, created_at, updated_at')
+      .eq('workspace_id', workspaceId)
+      .eq('owner_team_id', teamId);
+    if (projectsResult.error) throw projectsResult.error;
+    const projectIds = (projectsResult.data ?? []).map((project) => project.id).filter(Boolean);
+    const milestonesResult = projectIds.length
+      ? await supabase
+          .from('project_milestones')
+          .select(projectMilestoneSelectColumns)
+          .eq('workspace_id', workspaceId)
+          .in('project_id', projectIds)
+          .order('milestone_date', { ascending: true })
+          .order('created_at', { ascending: true })
+      : { data: [], error: null };
+    if (milestonesResult.error) throw milestonesResult.error;
+
+    const projectMap = new Map((projectsResult.data ?? []).map((project) => [project.id, project]));
+    const milestones = (milestonesResult.data ?? []).filter((milestone) => {
+      if (projectFilter && milestone.project_id !== projectFilter) return false;
+      if (dateFrom && milestone.milestone_date < dateFrom) return false;
+      if (dateTo && milestone.milestone_date > dateTo) return false;
+      const isCompleted = Boolean(milestone.completed);
+      const isOverdue = !isCompleted && milestone.milestone_date && milestone.milestone_date < new Date().toISOString().slice(0, 10);
+      if (statusFilter === 'completed' && !isCompleted) return false;
+      if (statusFilter === 'overdue' && !isOverdue) return false;
+      if (statusFilter === 'upcoming' && (isCompleted || isOverdue)) return false;
+      return true;
+    });
+
+    res.json({
+      milestones: milestones.map((milestone) => ({
+        id: milestone.id,
+        title: milestone.title,
+        status: milestone.completed
+          ? 'completed'
+          : milestone.milestone_date && milestone.milestone_date < new Date().toISOString().slice(0, 10)
+          ? 'overdue'
+          : 'upcoming',
+        type: milestone.type ?? 'Custom',
+        due_date: milestone.milestone_date ?? null,
+        project: milestone.project_id ? projectMap.get(milestone.project_id) ?? null : null,
+        assignee: milestone.assigned_to_user_id ?? milestone.assigned_to_team_id ?? null,
+        completed_at: milestone.completed ? milestone.updated_at ?? null : null,
+        updated_at: milestone.updated_at ?? null,
+      })),
+    });
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
+app.get('/api/teams/:teamId/notes', authMiddleware, rateLimit('read'), async (req, res) => {
+  try {
+    const teamId = String(req.params.teamId);
+    const { workspaceId } = await loadTeamRouteContext(req, teamId);
+    const search = String(req.query?.search ?? '').trim().toLowerCase();
+    const projectFilter = String(req.query?.project_id ?? '').trim();
+    const createdByFilter = String(req.query?.created_by ?? '').trim();
+    const sectionFilter = String(req.query?.section ?? '').trim();
+    const recent = ['true', '1', 'yes'].includes(String(req.query?.recent ?? '').toLowerCase());
+    const updatedAfter = String(req.query?.updated_after ?? req.query?.updated ?? '').trim();
+    const limit = Math.min(100, Math.max(1, Number(req.query?.limit ?? (recent ? 25 : 50)) || 50));
+
+    const [directLinksResult, projectLinksResult, projectsResult] = await Promise.all([
+      supabase
+        .from('note_team_links')
+        .select('id, workspace_id, note_id, team_id, created_by, created_at')
+        .eq('workspace_id', workspaceId)
+        .eq('team_id', teamId),
+      supabase
+        .from('project_note_links')
+        .select('id, workspace_id, project_id, note_id, created_by, created_at')
+        .eq('workspace_id', workspaceId),
+      supabase
+        .from('projects')
+        .select('id, name, owner_team_id')
+        .eq('workspace_id', workspaceId)
+        .eq('owner_team_id', teamId),
+    ]);
+    if (directLinksResult.error) throw directLinksResult.error;
+    if (projectLinksResult.error) throw projectLinksResult.error;
+    if (projectsResult.error) throw projectsResult.error;
+
+    const projectIds = (projectsResult.data ?? []).map((project) => project.id).filter(Boolean);
+    const noteIds = [
+      ...new Set([
+        ...(directLinksResult.data ?? []).map((row) => row.note_id),
+        ...(projectLinksResult.data ?? []).filter((row) => projectIds.includes(row.project_id)).map((row) => row.note_id),
+      ].filter(Boolean)),
+    ];
+    const notesResult = noteIds.length
+      ? await supabase
+          .from('notes')
+          .select('id, workspace_id, user_id, updated_by, title, content, content_html, section_id, parent_id, created_at, updated_at')
+          .eq('workspace_id', workspaceId)
+          .in('id', noteIds)
+      : { data: [], error: null };
+    if (notesResult.error) throw notesResult.error;
+    const notesById = new Map((notesResult.data ?? []).map((note) => [note.id, note]));
+    const projectById = new Map((projectsResult.data ?? []).map((project) => [project.id, project]));
+
+    const rows = [...(directLinksResult.data ?? []), ...(projectLinksResult.data ?? [])]
+      .map((link) => {
+        const note = notesById.get(link.note_id);
+        if (!note) return null;
+        const project = link.project_id ? projectById.get(link.project_id) ?? null : null;
+        return {
+          id: note.id,
+          title: note.title || 'Untitled note',
+          preview: htmlToPlainText(note.content_html || plainTextToParagraphHtml(note.content ?? '')).slice(0, 160),
+          created_by: note.user_id ?? null,
+          updated_by: note.updated_by ?? null,
+          linked_project: project ? { id: project.id, title: project.name ?? 'Untitled project' } : null,
+          updated_at: note.updated_at ?? null,
+          created_at: note.created_at ?? null,
+          section_id: note.section_id ?? null,
+          project_id: link.project_id ?? null,
+        };
+      })
+      .filter(Boolean)
+      .filter((note) => {
+        if (projectFilter && note.project_id !== projectFilter) return false;
+        if (createdByFilter && String(note.created_by ?? '') !== createdByFilter) return false;
+        if (sectionFilter && String(note.section_id ?? '') !== sectionFilter) return false;
+        if (updatedAfter && String(note.updated_at ?? '') < updatedAfter) return false;
+        if (search) {
+          const text = [note.title, note.preview, note.linked_project?.title].filter(Boolean).join(' ').toLowerCase();
+          if (!text.includes(search)) return false;
+        }
+        return true;
+      })
+      .sort((a, b) => String(b.updated_at ?? b.created_at ?? '').localeCompare(String(a.updated_at ?? a.created_at ?? '')))
+      .slice(0, limit);
+
+    res.json({ notes: rows });
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
+app.get('/api/teams/:teamId/calendar', authMiddleware, rateLimit('read'), async (req, res) => {
+  try {
+    const teamId = String(req.params.teamId);
+    const { workspaceId } = await loadTeamRouteContext(req, teamId);
+    const start = String(req.query?.start ?? '').trim() || new Date().toISOString();
+    const end = String(req.query?.end ?? '').trim() || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+    const eventType = String(req.query?.event_type ?? '').trim().toLowerCase();
+    const projectFilter = String(req.query?.project_id ?? '').trim();
+    const assigneeFilter = String(req.query?.assignee ?? req.query?.owner ?? '').trim();
+
+    const projectsResult = await supabase
+      .from('projects')
+      .select('id, name, status, completeness, color, start_date, end_date, lead_id, owner_team_id, created_by, created_at, updated_at')
+      .eq('workspace_id', workspaceId)
+      .eq('owner_team_id', teamId);
+    if (projectsResult.error) throw projectsResult.error;
+    const projectIds = (projectsResult.data ?? []).map((project) => project.id).filter(Boolean);
+    const projectById = new Map((projectsResult.data ?? []).map((project) => [project.id, project]));
+
+    const [eventsResult, remindersResult, milestonesResult] = await Promise.all([
+      supabase
+        .from('events')
+        .select('id, workspace_id, title, start_at, end_at, all_day, calendar_id, status, notes, location, project_id, note_id, assigned_to_user_id, assigned_to_team_id, assigned_by_user_id, assigned_at, created_at, updated_at')
+        .eq('workspace_id', workspaceId)
+        .gte('start_at', start)
+        .lte('start_at', end),
+      withReminderTable((table) =>
+        supabase
+          .from(table)
+          .select('id, workspace_id, title, remind_at, status, project_id, note_id, calendar_id, notes, is_done, assigned_to_user_id, assigned_to_team_id, assigned_by_user_id, assigned_at, created_at, updated_at')
+          .eq('workspace_id', workspaceId)
+          .gte('remind_at', start)
+          .lte('remind_at', end)
+      ),
+      projectIds.length
+        ? supabase
+            .from('project_milestones')
+            .select(projectMilestoneSelectColumns)
+            .eq('workspace_id', workspaceId)
+            .in('project_id', projectIds)
+        : Promise.resolve({ data: [], error: null }),
+    ]);
+    if (eventsResult.error) throw eventsResult.error;
+    if (remindersResult.error) throw remindersResult.error;
+    if (milestonesResult.error) throw milestonesResult.error;
+
+    const isTeamRelevantEvent = (event) =>
+      event.assigned_to_team_id === teamId ||
+      event.assigned_team_id === teamId ||
+      (event.project_id && projectIds.includes(event.project_id));
+
+    const isTeamRelevantReminder = (reminder) =>
+      reminder.assigned_to_team_id === teamId ||
+      reminder.assigned_team_id === teamId ||
+      (reminder.project_id && projectIds.includes(reminder.project_id));
+
+    const items = [
+      ...(eventsResult.data ?? [])
+        .filter(isTeamRelevantEvent)
+        .filter((event) => (projectFilter ? event.project_id === projectFilter : true))
+        .filter(() => !eventType || eventType === 'event')
+        .map((event) => ({
+          id: event.id,
+          title: event.title,
+          type: 'event',
+          start: event.start_at,
+          end: event.end_at,
+          all_day: Boolean(event.all_day),
+          project: event.project_id ? projectById.get(event.project_id) ?? null : null,
+          note_id: event.note_id ?? null,
+          owner: event.assigned_to_user_id ?? event.assigned_to_team_id ?? null,
+          status: event.status ?? null,
+        })),
+      ...(remindersResult.data ?? [])
+        .filter(isTeamRelevantReminder)
+        .filter((reminder) => (projectFilter ? reminder.project_id === projectFilter : true))
+        .filter(() => !eventType || eventType === 'reminder')
+        .map((reminder) => ({
+          id: reminder.id,
+          title: reminder.title,
+          type: 'reminder',
+          start: reminder.remind_at,
+          end: reminder.remind_at,
+          all_day: false,
+          project: reminder.project_id ? projectById.get(reminder.project_id) ?? null : null,
+          note_id: reminder.note_id ?? null,
+          owner: reminder.assigned_to_user_id ?? reminder.assigned_to_team_id ?? null,
+          status: reminder.is_done ? 'completed' : reminder.status ?? 'active',
+        })),
+      ...(milestonesResult.data ?? [])
+        .filter((milestone) => (projectFilter ? milestone.project_id === projectFilter : true))
+        .filter(() => !eventType || eventType === 'milestone')
+        .map((milestone) => ({
+          id: milestone.id,
+          title: milestone.title,
+          type: 'milestone',
+          start: milestone.milestone_date,
+          end: milestone.milestone_date,
+          all_day: true,
+          project: milestone.project_id ? projectById.get(milestone.project_id) ?? null : null,
+          note_id: milestone.linked_note_id ?? null,
+          owner: milestone.assigned_to_user_id ?? milestone.assigned_to_team_id ?? null,
+          status: milestone.completed ? 'completed' : 'planned',
+        })),
+    ]
+      .filter((item) => (assigneeFilter ? String(item.owner ?? '') === assigneeFilter : true))
+      .sort((a, b) => String(a.start ?? '').localeCompare(String(b.start ?? '')));
+
+    res.json({ items });
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
+app.get('/api/teams/:teamId/intake', authMiddleware, rateLimit('read'), async (req, res) => {
+  try {
+    const teamId = String(req.params.teamId);
+    const { workspaceId } = await loadTeamRouteContext(req, teamId);
+    await resumeDueInboxItemsForWorkspace(workspaceId);
+    const statusFilter = String(req.query?.status ?? '').trim().toLowerCase();
+    const sourceFilter = String(req.query?.source ?? '').trim().toLowerCase();
+    const suggestedTypeFilter = String(req.query?.suggested_type ?? '').trim().toLowerCase();
+    const assigneeFilter = String(req.query?.assignee ?? '').trim();
+    const search = String(req.query?.search ?? '').trim().toLowerCase();
+    const createdAfter = String(req.query?.created_after ?? req.query?.created_date ?? '').trim();
+
+    const intakeResult = await supabase
+      .from('inbox_items')
+      .select(inboxItemSelectColumns)
+      .eq('workspace_id', workspaceId)
+      .order('created_at', { ascending: false })
+      .limit(200);
+    if (intakeResult.error) throw intakeResult.error;
+
+    const items = (intakeResult.data ?? [])
+      .filter((item) => {
+        const raw = item.raw_payload ?? {};
+        const routedTeamId = String(raw.suggested_team_id ?? raw.team_id ?? '').trim();
+        if (routedTeamId !== teamId) return false;
+        if (statusFilter && String(item.status ?? '').toLowerCase() !== statusFilter) return false;
+        if (sourceFilter && String(item.source ?? '').toLowerCase() !== sourceFilter) return false;
+        if (suggestedTypeFilter && String(item.suggested_type ?? '').toLowerCase() !== suggestedTypeFilter) return false;
+        if (assigneeFilter && String(item.suggested_assignee_id ?? '').trim() !== assigneeFilter) return false;
+        if (createdAfter && String(item.created_at ?? '') < createdAfter) return false;
+        if (search) {
+          const text = [item.title, item.body, item.source, item.suggested_type].filter(Boolean).join(' ').toLowerCase();
+          if (!text.includes(search)) return false;
+        }
+        return true;
+      })
+      .map((item) => ({
+        id: item.id,
+        title: item.title,
+        preview: htmlToPlainText(item.body ?? '').slice(0, 160),
+        source: item.source,
+        status: item.status,
+        suggested_type: item.suggested_type ?? null,
+        suggested_project_id: item.suggested_project_id ?? null,
+        suggested_assignee_id: item.suggested_assignee_id ?? null,
+        suggested_calendar_id: item.suggested_calendar_id ?? null,
+        suggested_date: item.suggested_date ?? null,
+        suggested_due_at: item.suggested_due_at ?? null,
+        converted_type: item.converted_type ?? null,
+        converted_id: item.converted_id ?? null,
+        converted_at: item.converted_at ?? null,
+        archived_at: item.archived_at ?? null,
+        snoozed_until: item.snoozed_until ?? null,
+        created_at: item.created_at ?? null,
+        updated_at: item.updated_at ?? null,
+      }));
+
+    res.json({ items });
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
+app.get('/api/teams/:teamId/activity', authMiddleware, rateLimit('read'), async (req, res) => {
+  try {
+    const teamId = String(req.params.teamId);
+    const { workspaceId } = await loadTeamRouteContext(req, teamId);
+    const limit = Math.min(100, Math.max(1, Number(req.query?.limit ?? 50) || 50));
+    const page = Math.max(1, Number(req.query?.page ?? 1) || 1);
+    const cursor = String(req.query?.cursor ?? '').trim();
+
+    const [projectsResult, tasksResult, notesResult, projectNotesResult, activitiesResult, intakeResult, eventsResult, remindersResult] = await Promise.all([
+      supabase
+        .from('projects')
+        .select(projectSelectColumns)
+        .eq('workspace_id', workspaceId)
+        .eq('owner_team_id', teamId)
+        .order('updated_at', { ascending: false })
+        .limit(50),
+      supabase
+        .from('tasks')
+        .select(taskSelectWithHorizonColumns)
+        .eq('workspace_id', workspaceId)
+        .order('updated_at', { ascending: false })
+        .limit(100),
+      supabase
+        .from('note_team_links')
+        .select('id, note_id, created_at')
+        .eq('workspace_id', workspaceId)
+        .eq('team_id', teamId),
+      supabase
+        .from('project_note_links')
+        .select('id, project_id, note_id, created_at')
+        .eq('workspace_id', workspaceId)
+        .order('created_at', { ascending: false })
+        .limit(100),
+      supabase
+        .from('workspace_audit_logs')
+        .select('id, actor_user_id, action, target_type, target_id, metadata, created_at')
+        .eq('workspace_id', workspaceId)
+        .order('created_at', { ascending: false })
+        .limit(100),
+      supabase
+        .from('inbox_items')
+        .select(inboxItemSelectColumns)
+        .eq('workspace_id', workspaceId)
+        .order('created_at', { ascending: false })
+        .limit(100),
+      supabase
+        .from('events')
+        .select('id, title, start_at, end_at, status, project_id, note_id, assigned_to_user_id, assigned_to_team_id, assigned_by_user_id, assigned_at, created_at, updated_at')
+        .eq('workspace_id', workspaceId)
+        .eq('assigned_to_team_id', teamId)
+        .order('updated_at', { ascending: false })
+        .limit(50),
+      withReminderTable((table) =>
+        supabase
+          .from(table)
+          .select('id, title, remind_at, status, project_id, note_id, assigned_to_user_id, assigned_to_team_id, assigned_by_user_id, assigned_at, created_at, updated_at')
+          .eq('workspace_id', workspaceId)
+          .eq('assigned_to_team_id', teamId)
+          .order('updated_at', { ascending: false })
+          .limit(50)
+      ),
+    ]);
+
+    if (projectsResult.error) throw projectsResult.error;
+    if (tasksResult.error) throw tasksResult.error;
+    if (notesResult.error) throw notesResult.error;
+    if (projectNotesResult.error) throw projectNotesResult.error;
+    if (activitiesResult.error) throw activitiesResult.error;
+    if (intakeResult.error) throw intakeResult.error;
+    if (eventsResult.error) throw eventsResult.error;
+    if (remindersResult.error) throw remindersResult.error;
+
+    const projectMap = new Map((projectsResult.data ?? []).map((project) => [project.id, project]));
+    const teamProjectIds = (projectsResult.data ?? []).map((project) => project.id).filter(Boolean);
+    const noteLinks = [
+      ...(notesResult.data ?? []).map((row) => ({ note_id: row.note_id, project_id: null, created_at: row.created_at })),
+      ...(projectNotesResult.data ?? []).map((row) => ({ note_id: row.note_id, project_id: row.project_id, created_at: row.created_at })),
+    ];
+    const noteIds = [...new Set(noteLinks.map((row) => row.note_id).filter(Boolean))];
+    const noteLookupResult = noteIds.length
+      ? await supabase
+          .from('notes')
+          .select('id, title, updated_at')
+          .eq('workspace_id', workspaceId)
+          .in('id', noteIds)
+      : { data: [], error: null };
+    if (noteLookupResult.error) throw noteLookupResult.error;
+    const noteMap = new Map((noteLookupResult.data ?? []).map((note) => [note.id, note]));
+    const isTeamRelevantTask = (task) =>
+      task.assigned_to_team_id === teamId ||
+      task.assigned_team_id === teamId ||
+      (task.project_id && teamProjectIds.includes(task.project_id));
+    const isTeamRelevantEvent = (event) =>
+      event.assigned_to_team_id === teamId ||
+      event.assigned_team_id === teamId ||
+      (event.project_id && teamProjectIds.includes(event.project_id));
+    const isTeamRelevantReminder = (reminder) =>
+      reminder.assigned_to_team_id === teamId ||
+      reminder.assigned_team_id === teamId ||
+      (reminder.project_id && teamProjectIds.includes(reminder.project_id));
+    const taskMap = new Map(
+      (tasksResult.data ?? [])
+        .filter(isTeamRelevantTask)
+        .map((task) => [task.id, task])
+    );
+    const eventMap = new Map(
+      (eventsResult.data ?? [])
+        .filter(isTeamRelevantEvent)
+        .map((event) => [event.id, event])
+    );
+    const reminderMap = new Map(
+      (remindersResult.data ?? [])
+        .filter(isTeamRelevantReminder)
+        .map((reminder) => [reminder.id, reminder])
+    );
+    const intakeMap = new Map(
+      (intakeResult.data ?? [])
+        .filter((item) => String(item.raw_payload?.suggested_team_id ?? item.raw_payload?.team_id ?? '').trim() === teamId)
+        .map((item) => [item.id, item])
+    );
+
+    const resolveActivityTitle = (targetType, targetId) => {
+      if (targetType === 'workspace_team_member') return 'Team member';
+      if (targetType === 'workspace_team') return 'Team';
+      if (targetType === 'project') return projectMap.get(targetId)?.name ?? 'Untitled project';
+      if (targetType === 'task') return taskMap.get(targetId)?.title ?? 'Untitled task';
+      if (targetType === 'note') return noteMap.get(targetId)?.title ?? 'Untitled note';
+      if (targetType === 'inbox_item') return intakeMap.get(targetId)?.title ?? 'Intake item';
+      if (targetType === 'event') return eventMap.get(targetId)?.title ?? 'Untitled event';
+      if (targetType === 'reminder') return reminderMap.get(targetId)?.title ?? 'Untitled reminder';
+      return targetType;
+    };
+    const isRelevantAuditRow = (row) => {
+      if (row.target_type === 'workspace_team_member' || row.target_type === 'workspace_team') return true;
+      if (row.target_type === 'project') return projectMap.has(row.target_id);
+      if (row.target_type === 'task') return taskMap.has(row.target_id);
+      if (row.target_type === 'note') return noteMap.has(row.target_id);
+      if (row.target_type === 'inbox_item') return intakeMap.has(row.target_id);
+      if (row.target_type === 'event') return eventMap.has(row.target_id);
+      if (row.target_type === 'reminder') return reminderMap.has(row.target_id);
+      return false;
+    };
+
+    const activity = [
+      ...(activitiesResult.data ?? [])
+        .filter(isRelevantAuditRow)
+        .map((row) => ({
+        id: row.id,
+        actor: row.actor_user_id,
+        action: titleCaseLabel(row.action),
+        object_type: row.target_type,
+        object_id: row.target_id ?? null,
+        object_title: resolveActivityTitle(row.target_type, row.target_id ?? null),
+        timestamp: row.created_at,
+        metadata: row.metadata ?? null,
+      })),
+      ...(projectsResult.data ?? []).map((project) => ({
+        id: `project:${project.id}`,
+        actor: project.updated_by ?? project.created_by ?? null,
+        action: isTeamActiveProject(project) ? 'Updated project' : 'Project update',
+        object_type: 'project',
+        object_id: project.id,
+        object_title: project.name ?? 'Untitled project',
+        timestamp: project.updated_at ?? project.created_at ?? null,
+        metadata: { team_id: teamId },
+      })),
+      ...(tasksResult.data ?? [])
+        .filter(isTeamRelevantTask)
+        .map((task) => ({
+          id: `task:${task.id}`,
+          actor: task.assigned_by_user_id ?? null,
+          action: String(task.status ?? '').toLowerCase() === 'completed' ? 'Completed task' : 'Updated task',
+          object_type: 'task',
+          object_id: task.id,
+        object_title: task.title,
+        timestamp: task.updated_at ?? task.created_at ?? null,
+        metadata: { project_id: task.project_id ?? null },
+      })),
+      ...noteLinks
+        .map((row) => ({
+          id: `note:${row.note_id}:${row.project_id ?? 'team'}`,
+          actor: null,
+          action: row.project_id ? 'Linked note to project' : 'Linked note',
+          object_type: 'note',
+          object_id: row.note_id,
+          object_title: noteMap.get(row.note_id)?.title ?? 'Untitled note',
+          timestamp: row.created_at ?? null,
+          metadata: { team_id: teamId, project_id: row.project_id ?? null },
+        })),
+      ...(intakeResult.data ?? [])
+        .filter((item) => String(item.raw_payload?.suggested_team_id ?? item.raw_payload?.team_id ?? '').trim() === teamId)
+        .map((item) => ({
+          id: `intake:${item.id}`,
+          actor: item.updated_by ?? item.user_id ?? null,
+          action: String(item.status ?? '') === 'converted' ? 'Converted intake' : 'Updated intake',
+          object_type: 'intake',
+          object_id: item.id,
+        object_title: item.title,
+        timestamp: item.updated_at ?? item.created_at ?? null,
+        metadata: { source: item.source ?? null },
+      })),
+      ...(eventsResult.data ?? [])
+        .filter(isTeamRelevantEvent)
+        .map((event) => ({
+        id: `event:${event.id}`,
+        actor: event.assigned_by_user_id ?? null,
+        action: 'Updated event',
+        object_type: 'event',
+        object_id: event.id,
+        object_title: event.title,
+        timestamp: event.updated_at ?? event.created_at ?? null,
+        metadata: { project_id: event.project_id ?? null },
+      })),
+      ...(remindersResult.data ?? [])
+        .filter(isTeamRelevantReminder)
+        .map((reminder) => ({
+        id: `reminder:${reminder.id}`,
+        actor: reminder.assigned_by_user_id ?? null,
+        action: 'Updated reminder',
+        object_type: 'reminder',
+        object_id: reminder.id,
+        object_title: reminder.title,
+        timestamp: reminder.updated_at ?? reminder.created_at ?? null,
+        metadata: { project_id: reminder.project_id ?? null },
+      })),
+    ]
+      .filter((row) => row.timestamp)
+      .sort((a, b) => String(b.timestamp).localeCompare(String(a.timestamp)));
+
+    const filtered = cursor ? activity.filter((row) => String(row.timestamp) < cursor) : activity;
+    const pageRows = cursor ? filtered.slice(0, limit) : filtered.slice((page - 1) * limit, (page - 1) * limit + limit);
+    const nextCursor = pageRows.length ? pageRows[pageRows.length - 1].timestamp ?? null : null;
+
+    res.json({ activity: pageRows, next_cursor: nextCursor, total_count: activity.length });
   } catch (error) {
     return respondWithError(res, error);
   }
