@@ -374,8 +374,14 @@ const CompactButton = ({
   </button>
 );
 
-const AvatarStack = ({ members }: { members: Array<{ id: string; name: string; avatar?: string | null }> }) => {
-  const visible = members.slice(0, 4);
+const AvatarStack = ({
+  members,
+  maxVisible = 3,
+}: {
+  members: Array<{ id: string; name: string; avatar?: string | null }>;
+  maxVisible?: number;
+}) => {
+  const visible = members.slice(0, maxVisible);
   return (
     <div className="flex items-center">
       {visible.map((member, index) => (
@@ -888,6 +894,34 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
   const teamQuickLinkCounts = new Map(
     (teamOverview?.quick_links ?? []).map((item) => [item.key, item.count ?? null])
   );
+  const normalizeProjectStatus = (status?: string | null): 'NotStarted' | 'InProgress' | 'Paused' | 'Completed' => {
+    const value = String(status ?? '').trim().toLowerCase();
+    if (!value) return 'NotStarted';
+    if (value.includes('complete')) return 'Completed';
+    if (value.includes('pause') || value.includes('archiv')) return 'Paused';
+    if (value.includes('progress') || value.includes('in_') || value.includes('doing')) return 'InProgress';
+    return 'NotStarted';
+  };
+  const formatProjectStatusLabel = (status?: string | null) => {
+    switch (normalizeProjectStatus(status)) {
+      case 'InProgress':
+        return 'In Progress';
+      case 'Paused':
+        return 'Paused';
+      case 'Completed':
+        return 'Completed';
+      case 'NotStarted':
+      default:
+        return 'Not Started';
+    }
+  };
+  const teamMemberLabelById = useMemo(() => {
+    const map = new Map<string, string>();
+    (teamOverview?.members ?? []).forEach((member) => {
+      map.set(member.id, member.name);
+    });
+    return map;
+  }, [teamOverview?.members]);
   const teamPinnedResources = useMemo(() => {
     const resources: Array<
       | {
@@ -1483,41 +1517,18 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
     return (
       <aside className={teamsTheme.rightPanel}>
         <div className="space-y-2">
-          <p className={teamsTheme.sectionTitle}>Members</p>
-          <button
-            type="button"
-            onClick={() => setActiveTab('Members')}
-            className="flex w-full items-center justify-between rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3 py-2.5 text-left transition hover:bg-[var(--ledger-surface-hover)]"
-          >
-            <div className="min-w-0">
-              <AvatarStack members={teamMembers} />
-              <p className="mt-2 text-sm font-medium text-[var(--ledger-text-primary)]">
-                {teamOverview?.team.member_count ?? currentTeam.members.length} members
-              </p>
-              <p className="text-xs text-[var(--ledger-text-muted)]">
-                {teamOverview?.team.lead_count ??
-                  currentTeam.members.filter((member) => member.role === 'lead').length}{' '}
-                lead
-                {(teamOverview?.team.lead_count ??
-                  currentTeam.members.filter((member) => member.role === 'lead').length) === 1
-                  ? ''
-                  : 's'}
-              </p>
+          <div className="space-y-1">
+            <span className="text-[11px] font-medium text-[var(--ledger-text-muted)]">Members</span>
+            <div className="flex justify-start">
+              <AvatarStack members={teamMembers} maxVisible={3} />
             </div>
-            <span className="text-xs font-medium text-[var(--ledger-text-muted)]">Open</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setAddMemberTeamId(currentTeam.id)}
-            className={teamsTheme.action}
-          >
-            <UserPlus size={13} />
-            Add member
-          </button>
+          </div>
         </div>
 
         <div className="space-y-2">
-          <p className={teamsTheme.sectionTitle}>Go to</p>
+          <div className="space-y-1">
+            <span className="text-[11px] font-medium text-[var(--ledger-text-muted)]">Go to</span>
+          </div>
           <div className="space-y-1">
             {[
               {
@@ -1587,31 +1598,31 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
         </div>
 
         <div className="space-y-2">
-          <p className={teamsTheme.sectionTitle}>Team details</p>
-          <div className="overflow-hidden rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)]">
-            <div className="border-b border-[color:var(--ledger-border-subtle)] px-3 py-2">
-              <p className="text-[11px] text-[var(--ledger-text-muted)]">Identifier</p>
-              <p className="mt-0.5 font-mono text-xs font-semibold text-[var(--ledger-text-secondary)]">
-                {teamDisplayIdentifier}
-              </p>
-            </div>
-            <div className="border-b border-[color:var(--ledger-border-subtle)] px-3 py-2">
-              <p className="text-[11px] text-[var(--ledger-text-muted)]">Workspace</p>
-              <p className="mt-0.5 truncate text-xs font-medium text-[var(--ledger-text-secondary)]">
-                {workspaceName}
-              </p>
-            </div>
-            <div className="border-b border-[color:var(--ledger-border-subtle)] px-3 py-2">
-              <p className="text-[11px] text-[var(--ledger-text-muted)]">Created</p>
-              <p className="mt-0.5 text-xs font-medium text-[var(--ledger-text-secondary)]">
-                {formatShortDate(teamOverview?.team.created_at ?? null) ?? 'Unknown'}
-              </p>
-            </div>
-            <div className="px-3 py-2">
-              <p className="text-[11px] text-[var(--ledger-text-muted)]">Updated</p>
-              <p className="mt-0.5 text-xs font-medium text-[var(--ledger-text-secondary)]">
-                {formatShortDate(teamOverview?.team.updated_at ?? null) ?? 'Unknown'}
-              </p>
+          <div className="space-y-1">
+            <span className="text-[11px] font-medium text-[var(--ledger-text-muted)]">Team details</span>
+            <div className="space-y-1 pt-1">
+              <div className="flex items-center justify-between gap-3 rounded-none px-0 py-0 text-xs">
+                <span className="text-[var(--ledger-text-muted)]">Identifier</span>
+                <span className="truncate font-mono text-[var(--ledger-text-secondary)]">
+                  {teamDisplayIdentifier}
+                </span>
+              </div>
+              <div className="flex items-center justify-between gap-3 rounded-none px-0 py-0 text-xs">
+                <span className="text-[var(--ledger-text-muted)]">Workspace</span>
+                <span className="truncate text-[var(--ledger-text-secondary)]">{workspaceName}</span>
+              </div>
+              <div className="flex items-center justify-between gap-3 rounded-none px-0 py-0 text-xs">
+                <span className="text-[var(--ledger-text-muted)]">Created</span>
+                <span className="text-[var(--ledger-text-secondary)]">
+                  {formatShortDate(teamOverview?.team.created_at ?? null) ?? 'Unknown'}
+                </span>
+              </div>
+              <div className="flex items-center justify-between gap-3 rounded-none px-0 py-0 text-xs">
+                <span className="text-[var(--ledger-text-muted)]">Updated</span>
+                <span className="text-[var(--ledger-text-secondary)]">
+                  {formatShortDate(teamOverview?.team.updated_at ?? null) ?? 'Unknown'}
+                </span>
+              </div>
             </div>
           </div>
         </div>
@@ -1806,7 +1817,7 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
               </div>
             </>
           ) : (
-            <section className="grid min-h-0 gap-4 lg:grid-cols-[minmax(0,1fr)_300px]">
+            <section className="space-y-4">
               <div className="min-w-0 space-y-4">
                 <header className="flex items-center justify-between gap-3 px-1">
                   <div className="flex min-w-0 items-center gap-3">
@@ -1857,34 +1868,47 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                     <Link2 size={13} />
                   </button>
                 </header>
-                <div className="flex items-center justify-between gap-3 px-1">
-                  <div className="flex min-w-0 gap-1 overflow-x-auto">
-                  {tabs.map((tab) => (
-                    <button
-                      key={tab}
-                      type="button"
-                      onClick={() => setActiveTab(tab)}
-                      className={`inline-flex h-8 shrink-0 items-center rounded-full border px-3 text-xs font-medium transition ${
-                        activeTab === tab
-                          ? 'border-[color:var(--ledger-border-strong)] bg-[var(--ledger-surface-hover)] text-[var(--ledger-text-primary)]'
-                          : 'border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] text-[var(--ledger-text-muted)] hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]'
-                      }`}
-                    >
-                      {tab}
-                    </button>
-                  ))}
+                <div className="flex flex-wrap items-center justify-between gap-3 px-1">
+                  <div className="flex min-w-0 flex-wrap items-center gap-2">
+                    <div className="flex min-w-0 gap-1 overflow-x-auto">
+                    {tabs.map((tab) => (
+                      <button
+                        key={tab}
+                        type="button"
+                        onClick={() => setActiveTab(tab)}
+                        className={`inline-flex h-8 shrink-0 items-center rounded-full border px-3 text-xs font-medium transition ${
+                          activeTab === tab
+                            ? 'border-[color:var(--ledger-border-strong)] bg-[var(--ledger-surface-hover)] text-[var(--ledger-text-primary)]'
+                            : 'border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] text-[var(--ledger-text-muted)] hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]'
+                        }`}
+                      >
+                        {tab}
+                      </button>
+                    ))}
+                    </div>
+                    {activeTab === 'Notes' ? (
+                      <label className="flex h-8 min-w-0 w-[min(100%,320px)] items-center gap-2 rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3">
+                        <Search size={13} className="text-[var(--ledger-text-muted)]" />
+                        <input
+                          value={teamNotesQuery}
+                          onChange={(event) => setTeamNotesQuery(event.target.value)}
+                          placeholder="Search notes..."
+                          className="min-w-0 flex-1 bg-transparent text-xs text-[var(--ledger-text-primary)] placeholder:text-[var(--ledger-placeholder)] focus:outline-none"
+                        />
+                      </label>
+                    ) : null}
                   </div>
                   <button
-                    type="button"
-                    onClick={(event) => {
-                      const rect = event.currentTarget.getBoundingClientRect();
-                      setResourceMenu({ x: rect.right, y: rect.bottom + 8 });
-                    }}
-                    className="inline-flex h-8 items-center gap-2 rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3 text-xs font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]"
-                  >
-                    <Plus size={13} />
-                    Add resources
-                  </button>
+                      type="button"
+                      onClick={(event) => {
+                        const rect = event.currentTarget.getBoundingClientRect();
+                        setResourceMenu({ x: rect.right, y: rect.bottom + 8 });
+                      }}
+                      className="inline-flex h-8 items-center gap-2 rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3 text-xs font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]"
+                    >
+                      <Plus size={13} />
+                      Add resources
+                    </button>
                 </div>
                 {teamOverviewLoading ? (
                   <p className="px-1 text-xs text-[var(--ledger-text-muted)]">
@@ -1894,7 +1918,9 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                 {teamOverviewError ? (
                   <p className="px-1 text-xs text-[color:#B42318]">{teamOverviewError}</p>
                 ) : null}
-                <div className="space-y-4">
+              </div>
+              <section className="grid min-h-0 gap-4 lg:grid-cols-[minmax(0,1fr)_260px]">
+                <div className="min-w-0 space-y-4">
                   {activeTab === 'Overview' ? (
                     <>
                       {renderTeamSectionShell(
@@ -2088,8 +2114,8 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                                 <span className="flex items-center gap-2">
                                   <span className={teamRowMetaClass}>
                                     {[
-                                      project.status ?? 'Active',
-                                      project.lead ?? null,
+                                      formatProjectStatusLabel(project.status),
+                                      project.lead ? teamMemberLabelById.get(project.lead) ?? null : null,
                                       project.due_date ? formatShortDate(project.due_date) : null,
                                     ]
                                       .filter(Boolean)
@@ -2211,17 +2237,8 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                     </>
                   ) : activeTab === 'Notes' ? (
                     <div className="space-y-4">
-                      <div className="flex flex-wrap items-center gap-2 px-1">
-                        <label className="flex h-8 min-w-0 w-full max-w-[320px] items-center gap-2 rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3">
-                          <Search size={13} className="text-[var(--ledger-text-muted)]" />
-                          <input
-                            value={teamNotesQuery}
-                            onChange={(event) => setTeamNotesQuery(event.target.value)}
-                            placeholder="Search notes..."
-                            className="min-w-0 flex-1 bg-transparent text-xs text-[var(--ledger-text-primary)] placeholder:text-[var(--ledger-placeholder)] focus:outline-none"
-                          />
-                        </label>
-                        {teamNotesQuery.trim() ? (
+                      {teamNotesQuery.trim() ? (
+                        <div className="px-1">
                           <button
                             type="button"
                             onClick={() => setTeamNotesQuery('')}
@@ -2229,8 +2246,8 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                           >
                             Clear
                           </button>
-                        ) : null}
-                      </div>
+                        </div>
+                      ) : null}
                       {teamNotesLoading ? (
                         <p className="px-1 text-xs text-[var(--ledger-text-muted)]">
                           Loading notes...
@@ -2417,8 +2434,8 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                     </div>
                   ) : null}
                 </div>
-              </div>
-              {renderRightPanel()}
+                {renderRightPanel()}
+              </section>
             </section>
           )}
         </div>
