@@ -35,6 +35,7 @@ import {
 import { ModalOverlay } from '../Common/ModalOverlay';
 import { useAuthContext } from '../../context/AuthContext';
 import { useSidebar } from '../../context/SidebarContext';
+import { PinActionButton } from '../Common/PinActionButton';
 import {
   modulePaneSizing,
   clampPaneWidth,
@@ -55,7 +56,6 @@ import {
 import { CloseGuardModal } from '../Common/CloseGuardModal';
 import { ModalCloseButton } from '../Common/ModalCloseButton';
 import { SkeletonCompactRow, SkeletonProjectCard } from '../Common/Skeleton';
-import { PinActionButton } from '../Common/PinActionButton';
 import { useViewportWidth } from '../../hooks/useViewportWidth';
 import { useWorkspaceRouteHistory } from '../../hooks/useWorkspaceRouteHistory';
 import {
@@ -6358,16 +6358,25 @@ export const ProjectsWindow = () => {
                 <section className="pb-3">
                   <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                     <div className="min-w-0 flex-1">
-                      <div
-                        className="flex h-8 w-8 items-center justify-center rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)]"
-                        style={{ color: projectDraft.color || '#FF5F40' }}
-                      >
-                        {(() => {
-                          const ProjectTypeIcon = getProjectTypeOption(
-                            projectDraft.projectType
-                          ).icon;
-                          return <ProjectTypeIcon size={16} />;
-                        })()}
+                      <div className="flex items-center gap-2">
+                        <div
+                          className="flex h-8 w-8 items-center justify-center rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)]"
+                          style={{ color: projectDraft.color || '#FF5F40' }}
+                        >
+                          {(() => {
+                            const ProjectTypeIcon = getProjectTypeOption(
+                              projectDraft.projectType
+                            ).icon;
+                            return <ProjectTypeIcon size={16} />;
+                          })()}
+                        </div>
+                        <PinActionButton
+                          objectType="project"
+                          objectId={selectedProject.id}
+                          showLabel={false}
+                          className="inline-flex h-7 w-7 items-center justify-center rounded-full text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]"
+                          iconSize={14}
+                        />
                       </div>
 
                       {isEditingTitle ? (

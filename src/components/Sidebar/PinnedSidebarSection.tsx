@@ -392,6 +392,14 @@ export const PinnedSidebarSection = () => {
     await createPinFolder({ name });
   };
 
+  const movePinToNewFolder = async (pinId: string) => {
+    const name = window.prompt('Folder name', 'New folder')?.trim();
+    if (!name) return;
+    const folder = await createPinFolder({ name });
+    if (!folder) return;
+    await handlePinMoveToFolder(pinId, folder.id);
+  };
+
   const renameFolder = async (folder: PinFolder) => {
     const name = window.prompt('Folder name', folder.name)?.trim();
     if (!name || name === folder.name) return;
@@ -408,6 +416,7 @@ export const PinnedSidebarSection = () => {
     const isDragging = dragState?.kind === 'pin' && dragState.id === pin.id;
     const showBefore = dropHint?.kind === 'pin' && dropHint.pinId === pin.id && dropHint.position === 'before';
     const showAfter = dropHint?.kind === 'pin' && dropHint.pinId === pin.id && dropHint.position === 'after';
+    const isProjectPin = pin.object_type === 'project';
 
     return (
       <div key={pin.id} className="relative">
@@ -447,13 +456,20 @@ export const PinnedSidebarSection = () => {
             setMenuState({ type: 'pin', x: event.clientX, y: event.clientY, pinId: pin.id });
           }}
           className={pinRowClass(isActive, isDragging)}
-          title={pin.subtitle ?? pin.title}
+          title={isProjectPin ? `Project ${pin.title}` : pin.subtitle ?? pin.title}
         >
           <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] text-[var(--ledger-text-secondary)]">
             {getPinIcon(pin)}
           </span>
-          <span className="min-w-0 truncate text-[13px] text-[var(--ledger-text-primary)]">
-            {pin.title}
+          <span className="min-w-0 text-[13px] text-[var(--ledger-text-primary)]">
+            {isProjectPin ? (
+              <span className="flex min-w-0 items-center gap-1">
+                <span className="shrink-0 text-[var(--ledger-text-muted)]">Project</span>
+                <span className="min-w-0 truncate text-[var(--ledger-text-primary)]">{pin.title}</span>
+              </span>
+            ) : (
+              <span className="block truncate">{pin.title}</span>
+            )}
           </span>
           <span className="flex items-center gap-0.5">
             {pin.destination.kind === 'teams' && (
@@ -597,6 +613,18 @@ export const PinnedSidebarSection = () => {
           {totalCount > 0 && (
             <span className="shrink-0 text-[11px] text-[var(--ledger-text-muted)]">{totalCount}</span>
           )}
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              void addFolder();
+            }}
+            className="flex h-6 w-6 items-center justify-center rounded-md text-[var(--ledger-text-muted)] opacity-0 transition group-hover:opacity-100 hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]"
+            aria-label="Create folder"
+            title="Create folder"
+          >
+            <FolderPlus size={12} />
+          </button>
           <button
             type="button"
             onClick={(event) => {
@@ -812,6 +840,17 @@ export const PinnedSidebarSection = () => {
 
             {menuState.type === 'move' && (
               <>
+                <button
+                  type="button"
+                  onClick={() => {
+                    void movePinToNewFolder(menuState.pinId);
+                    setMenuState(null);
+                  }}
+                  className={sidebarTheme.menuItemAccent}
+                >
+                  <FolderPlus size={14} />
+                  New folder
+                </button>
                 <button
                   type="button"
                   onClick={() => {
