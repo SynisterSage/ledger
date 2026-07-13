@@ -21,6 +21,7 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'rea
 import { ModalOverlay } from '../Common/ModalOverlay';
 import * as rruleModule from 'rrule';
 import { useAuthContext } from '../../context/AuthContext';
+import { PinActionButton } from '../Common/PinActionButton';
 import { useSidebar } from '../../context/SidebarContext';
 import {
   modulePaneSizing,
@@ -4463,17 +4464,24 @@ export const CalendarWindow = () => {
                                       ✓
                                     </span>
                                   )}
-                                  {canEditEvent(selectedEventPreview) && (
-                                    <button
-                                      onClick={() => openEventEditor(selectedEventPreview)}
-                                      className="inline-flex h-7 w-7 items-center justify-center rounded-full text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-accent)]"
-                                      aria-label="Edit event"
-                                      title="Edit event"
-                                    >
-                                      <PencilLine size={14} />
-                                    </button>
-                                  )}
-                                </div>
+                                {canEditEvent(selectedEventPreview) && (
+                                  <button
+                                    onClick={() => openEventEditor(selectedEventPreview)}
+                                    className="inline-flex h-7 w-7 items-center justify-center rounded-full text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-accent)]"
+                                    aria-label="Edit event"
+                                    title="Edit event"
+                                  >
+                                    <PencilLine size={14} />
+                                  </button>
+                                )}
+                                <PinActionButton
+                                  objectType="event"
+                                  objectId={selectedEventPreview.id}
+                                  showLabel={false}
+                                  className="inline-flex h-7 w-7 items-center justify-center rounded-full text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+                                  iconSize={14}
+                                />
+                              </div>
                               </div>
                               <p className="mt-1 text-[13px] text-[var(--ledger-text-secondary)]">
                                 {formatEventDateTimeLabel(selectedEventPreview)}
@@ -5595,12 +5603,21 @@ export const CalendarWindow = () => {
           <div className="p-4">
             <div className="mb-3 flex items-center justify-between">
               <h3 className="text-sm font-semibold text-gray-900">Edit Reminder</h3>
-              <ModalCloseButton
-                onClick={() => setSelectedReminder(null)}
-                ariaLabel="Close reminder editor"
-                disabled={isSavingEdit || isDeletingReminder}
-                className="shrink-0"
-              />
+              <div className="flex items-center gap-1">
+                <PinActionButton
+                  objectType="reminder"
+                  objectId={selectedReminder.id}
+                  showLabel={false}
+                  className="inline-flex h-7 w-7 items-center justify-center rounded-full text-gray-500 transition hover:bg-[#FFF1E3] hover:text-gray-900"
+                  iconSize={14}
+                />
+                <ModalCloseButton
+                  onClick={() => setSelectedReminder(null)}
+                  ariaLabel="Close reminder editor"
+                  disabled={isSavingEdit || isDeletingReminder}
+                  className="shrink-0"
+                />
+              </div>
             </div>
 
             <div className="space-y-2.5">

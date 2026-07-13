@@ -4,6 +4,7 @@ import { useWorkspaceContext } from '../context/WorkspaceContext';
 import { DEFAULT_API_URL } from '../config/runtime';
 import { getInviteBaseUrl } from '../config/invite';
 import { buildLedgerSessionHeaders } from '../utils/deviceSession';
+import type { PinFolder, PinObjectType, PinRecord } from '../utils/pins';
 import authService from '../services/auth';
 
 const API_URL = import.meta.env.VITE_API_URL?.trim() || DEFAULT_API_URL;
@@ -759,6 +760,62 @@ export const useApi = () => {
       removeTeamMember: (teamId: string, userId: string) =>
         request(`/api/teams/${teamId}/members/${userId}`, {
           method: 'DELETE',
+        }),
+
+      // Pins
+      getPins: () => request('/api/pins') as Promise<{ pins?: PinRecord[]; folders?: PinFolder[] } | PinRecord[]>,
+      getPinFolders: () =>
+        request('/api/pin-folders') as Promise<{ folders?: PinFolder[] } | PinFolder[]>,
+      pinObject: (
+        objectType: PinObjectType,
+        objectId: string,
+        payload?: { folder_id?: string | null; sort_order?: number }
+      ) =>
+        request('/api/pins', {
+          method: 'POST',
+          body: JSON.stringify({ object_type: objectType, object_id: objectId, ...payload }),
+        }),
+      unpinObject: (pinId: string) =>
+        request(`/api/pins/${pinId}`, {
+          method: 'DELETE',
+        }),
+      updatePin: (pinId: string, payload: { folder_id?: string | null; sort_order?: number }) =>
+        request(`/api/pins/${pinId}`, {
+          method: 'PATCH',
+          body: JSON.stringify(payload),
+        }),
+      reorderPins: (
+        pins: Array<{ id: string; folder_id?: string | null; sort_order?: number }>
+      ) =>
+        request('/api/pins/reorder', {
+          method: 'POST',
+          body: JSON.stringify({ pins }),
+        }),
+      createPinFolder: (payload: {
+        name: string;
+        sort_order?: number;
+        collapsed?: boolean;
+      }) =>
+        request('/api/pin-folders', {
+          method: 'POST',
+          body: JSON.stringify(payload),
+        }),
+      updatePinFolder: (
+        folderId: string,
+        payload: { name?: string; sort_order?: number; collapsed?: boolean }
+      ) =>
+        request(`/api/pin-folders/${folderId}`, {
+          method: 'PATCH',
+          body: JSON.stringify(payload),
+        }),
+      deletePinFolder: (folderId: string) =>
+        request(`/api/pin-folders/${folderId}`, {
+          method: 'DELETE',
+        }),
+      reorderPinFolders: (folders: Array<{ id: string; sort_order?: number }>) =>
+        request('/api/pin-folders/reorder', {
+          method: 'POST',
+          body: JSON.stringify({ folders }),
         }),
 
       // Circle

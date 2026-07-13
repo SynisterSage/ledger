@@ -8,7 +8,6 @@ import {
   Folder,
   MoreHorizontal,
   Pin,
-  PinOff,
   Plus,
   Search,
   SlidersHorizontal,
@@ -24,6 +23,7 @@ import {
   type ReactNode,
 } from 'react';
 import { ModuleHeaderActionButton, ModuleHeaderSegmentedButton, ModuleHeaderSegmentedGroup, ModuleWindowHeader } from '../Common/ModuleWindowHeader';
+import { PinActionButton } from '../Common/PinActionButton';
 import { useApi } from '../../hooks/useApi';
 import { useWorkspaceContext } from '../../context/WorkspaceContext';
 import { useWorkspaceRealtimeRefresh } from '../../hooks/useWorkspaceRealtimeRefresh';
@@ -855,28 +855,6 @@ export const CircleWindow = () => {
 
   const sharedProjectFromWork = selectedProjectsRows[0] ?? null;
 
-  const pinPerson = async (person: CirclePersonSummary) => {
-    const nextPinned = !person.is_pinned;
-    setPeople((prev) => prev.map((item) => (item.id === person.id ? { ...item, is_pinned: nextPinned } : item)));
-    setSelectedPerson((current) => (current?.id === person.id ? { ...current, is_pinned: nextPinned } : current));
-    try {
-      const payload = (await api.updatePersonPreferences(person.id, { is_pinned: nextPinned })) as {
-        preference?: { is_pinned?: boolean };
-      };
-      const resolvedPinned = Boolean(payload?.preference?.is_pinned);
-      setPeople((prev) => prev.map((item) => (item.id === person.id ? { ...item, is_pinned: resolvedPinned } : item)));
-      setSelectedPerson((current) =>
-        current?.id === person.id ? { ...current, is_pinned: resolvedPinned } : current
-      );
-    } catch (saveError) {
-      setPeople((prev) => prev.map((item) => (item.id === person.id ? { ...item, is_pinned: person.is_pinned } : item)));
-      setSelectedPerson((current) =>
-        current?.id === person.id ? { ...current, is_pinned: person.is_pinned } : current
-      );
-      setError(saveError instanceof Error ? saveError.message : 'Could not update pin.');
-    }
-  };
-
   const openTaskComposer = (person: CirclePersonSummary) => {
     void window.desktopWindow?.toggleModule('quick-task' as any, {
       kind: 'quick-task' as any,
@@ -1124,14 +1102,11 @@ export const CircleWindow = () => {
           </div>
 
           <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => void pinPerson(selectedPersonDetails)}
+            <PinActionButton
+              objectType="person"
+              objectId={selectedPersonDetails.id}
               className={circleTheme.primaryButton}
-            >
-              {selectedPersonDetails.is_pinned ? <PinOff size={11} /> : <Pin size={11} />}
-              {selectedPersonDetails.is_pinned ? 'Unpin' : 'Pin'}
-            </button>
+            />
             <button
               ref={moreMenuButtonRef}
               type="button"

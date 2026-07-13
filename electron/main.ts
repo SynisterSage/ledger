@@ -5299,12 +5299,16 @@ function getWorkspaceNavigationState() {
     canGoBack: workspaceModuleBackStack.length > 0,
     canGoForward: workspaceModuleForwardStack.length > 0,
     currentModule: workspaceModuleKind,
+    currentRoute: getCurrentWorkspaceRoute(),
   };
 }
 
 function broadcastWorkspaceNavigationState() {
   const state = getWorkspaceNavigationState();
   const targets = new Set<BrowserWindow>();
+  if (sidebarWin && !sidebarWin.isDestroyed()) {
+    targets.add(sidebarWin);
+  }
   if (workspaceModuleWin && !workspaceModuleWin.isDestroyed()) {
     targets.add(workspaceModuleWin);
   }

@@ -2,6 +2,7 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
 import { AuthProvider } from './context/AuthContext';
+import { PinsProvider } from './context/PinsContext';
 import { WorkspaceProvider } from './context/WorkspaceContext';
 import { SidebarProvider } from './context/SidebarContext';
 import './index.css';
@@ -68,9 +69,11 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <AuthProvider>
       <WorkspaceProvider>
-        <SidebarProvider>
-          <App />
-        </SidebarProvider>
+        <PinsProvider>
+          <SidebarProvider>
+            <App />
+          </SidebarProvider>
+        </PinsProvider>
       </WorkspaceProvider>
     </AuthProvider>
   </React.StrictMode>

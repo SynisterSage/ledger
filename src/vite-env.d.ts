@@ -117,6 +117,7 @@ interface Window {
       canGoBack: boolean;
       canGoForward: boolean;
       currentModule: ModuleWindowKind | null;
+      currentRoute?: ModuleFocusPayload | null;
     }>;
     updateWorkspaceRoute?: (route: ModuleFocusPayload) => Promise<void>;
     openExternal: (url: string) => Promise<void>;

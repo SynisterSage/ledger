@@ -7710,12 +7710,87 @@ const loadWorkspaceTeams = async (workspaceId, currentUserId, options = {}) => {
 
 const personPreferenceSelectColumns =
   'workspace_id, user_id, person_user_id, is_pinned, sort_order, created_at, updated_at';
+const pinSelectColumns =
+  'id, workspace_id, user_id, object_type, object_id, folder_id, sort_order, created_at, updated_at';
+const pinFolderSelectColumns =
+  'id, workspace_id, user_id, name, sort_order, collapsed, created_at, updated_at';
 const personTaskSelectColumns =
   'id, workspace_id, project_id, title, status, priority, due_date, due_time, completed_at, assigned_to, assigned_to_user_id, assigned_to_team_id, assigned_team_id, assigned_by_user_id, assigned_at, created_at, updated_at';
 const personProjectSelectColumns =
   'id, workspace_id, name, status, completeness, color, end_date, lead_id, created_by, created_at, updated_at';
 const personAuditSelectColumns =
   'id, workspace_id, actor_user_id, action, target_type, target_id, metadata, created_at';
+
+const supportedPinObjectTypes = new Set([
+  'person',
+  'project',
+  'note',
+  'team',
+  'task',
+  'event',
+  'reminder',
+  'saved_view',
+  'follow_up_view',
+  'team_page',
+]);
+
+const normalizePinObjectType = (value) => {
+  const normalized = String(value ?? '').trim().toLowerCase();
+  if (normalized === 'people') return 'person';
+  if (normalized === 'team_page') return 'team';
+  if (supportedPinObjectTypes.has(normalized)) return normalized;
+  return null;
+};
+
+const getPinObjectTypeLabel = (value) => {
+  switch (normalizePinObjectType(value)) {
+    case 'person':
+      return 'Person';
+    case 'project':
+      return 'Project';
+    case 'note':
+      return 'Note';
+    case 'team':
+      return 'Team';
+    case 'task':
+      return 'Task';
+    case 'event':
+      return 'Event';
+    case 'reminder':
+      return 'Reminder';
+    case 'saved_view':
+      return 'Saved view';
+    case 'follow_up_view':
+      return 'Follow-up view';
+    case 'team_page':
+      return 'Team page';
+    default:
+      return 'Item';
+  }
+};
+
+const getPinFolderName = (folder) => normalizeNullableText(folder?.name) || 'Folder';
+
+const formatPinTimestamp = (value) => {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+};
+
+const formatPinStatusLabel = (status) => {
+  const normalized = String(status ?? '').toLowerCase();
+  if (!normalized) return null;
+  if (normalized.includes('complete')) return 'Completed';
+  if (normalized.includes('pause') || normalized.includes('archiv')) return 'Paused';
+  if (normalized.includes('progress') || normalized.includes('in_')) return 'In progress';
+  if (normalized.includes('done')) return 'Done';
+  if (normalized.includes('todo')) return 'To do';
+  return titleCaseLabel(normalized);
+};
+
+const buildCirclePersonPinContext = (personId, personName) =>
+  `ledger-person|${personId}|${encodeURIComponent(personName ?? 'Member')}`;
 
 const normalizeCirclePersonName = (user) =>
   normalizeNullableText(user?.full_name) || normalizeNullableText(user?.email?.split('@')?.[0]) || 'Member';
@@ -7791,7 +7866,16 @@ const loadCircleWorkspacePeople = async (workspaceId, currentUserId) => {
   const access = await requireWorkspaceAccess(currentUserId, workspaceId, 'member');
   const workspace = access.workspace;
   const nowIso = new Date().toISOString();
-  const [memberRowsResult, teamRowsResult, teamMemberRowsResult, taskRowsResult, projectRowsResult, auditRowsResult, preferenceRowsResult] = await Promise.all([
+  const [
+    memberRowsResult,
+    teamRowsResult,
+    teamMemberRowsResult,
+    taskRowsResult,
+    projectRowsResult,
+    auditRowsResult,
+    preferenceRowsResult,
+    personPinRowsResult,
+  ] = await Promise.all([
     supabase
       .from('workspace_members')
       .select('user_id, role, joined_at')
@@ -7824,6 +7908,12 @@ const loadCircleWorkspacePeople = async (workspaceId, currentUserId) => {
       .select(personPreferenceSelectColumns)
       .eq('workspace_id', workspaceId)
       .eq('user_id', currentUserId),
+    supabase
+      .from('user_pins')
+      .select(pinSelectColumns)
+      .eq('workspace_id', workspaceId)
+      .eq('user_id', currentUserId)
+      .eq('object_type', 'person'),
   ]);
 
   if (memberRowsResult.error) throw memberRowsResult.error;
@@ -7833,6 +7923,7 @@ const loadCircleWorkspacePeople = async (workspaceId, currentUserId) => {
   if (projectRowsResult.error) throw projectRowsResult.error;
   if (auditRowsResult.error) throw auditRowsResult.error;
   if (preferenceRowsResult.error) throw preferenceRowsResult.error;
+  if (personPinRowsResult.error) throw personPinRowsResult.error;
 
   const memberRows = memberRowsResult.data ?? [];
   const teamRows = teamRowsResult.data ?? [];
@@ -7841,6 +7932,7 @@ const loadCircleWorkspacePeople = async (workspaceId, currentUserId) => {
   const projectRows = projectRowsResult.data ?? [];
   const auditRows = auditRowsResult.data ?? [];
   const preferenceRows = preferenceRowsResult.data ?? [];
+  const personPinRows = personPinRowsResult.data ?? [];
 
   const userIds = [
     workspace.owner_id,
@@ -7865,6 +7957,7 @@ const loadCircleWorkspacePeople = async (workspaceId, currentUserId) => {
   const preferenceByPersonId = new Map(
     preferenceRows.map((row) => [row.person_user_id, row])
   );
+  const personPinByPersonId = new Map(personPinRows.map((row) => [row.object_id, row]));
 
   const membersByUserId = new Map(memberRows.map((row) => [row.user_id, row]));
   const allPeople = [];
@@ -7931,7 +8024,8 @@ const loadCircleWorkspacePeople = async (workspaceId, currentUserId) => {
       shared_project_count: sharedProjectIds.length,
       follow_up_count: 0,
       waiting_on_count: assignedByCurrentUser.length,
-      is_pinned: Boolean(preferenceByPersonId.get(userId)?.is_pinned),
+      is_pinned:
+        Boolean(personPinByPersonId.get(userId)) || Boolean(preferenceByPersonId.get(userId)?.is_pinned),
       last_active_at:
         latestAuditTimestamp || latestTaskTimestamp || latestProjectTimestamp || memberRow?.joined_at || workspace.created_at || nowIso,
       joined_at: memberRow?.joined_at ?? workspace.created_at ?? null,
@@ -8129,6 +8223,398 @@ const loadUsersByIds = async (userIds) => {
 
   if (result.error) throw result.error;
   return new Map((result.data ?? []).map((user) => [user.id, user]));
+};
+
+const loadPinFolderById = async ({ folderId, workspaceId, userId }) => {
+  if (!folderId) return null;
+
+  const result = await supabase
+    .from('pin_folders')
+    .select(pinFolderSelectColumns)
+    .eq('id', folderId)
+    .eq('workspace_id', workspaceId)
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  if (result.error) throw result.error;
+  return result.data ?? null;
+};
+
+const getNextPinSortOrder = async ({ workspaceId, userId, folderId }) => {
+  let query = supabase
+    .from('user_pins')
+    .select('sort_order', { count: 'exact', head: false })
+    .eq('workspace_id', workspaceId)
+    .eq('user_id', userId);
+
+  if (folderId) {
+    query = query.eq('folder_id', folderId);
+  } else {
+    query = query.is('folder_id', null);
+  }
+
+  const result = await query.order('sort_order', { ascending: false }).limit(1);
+  if (result.error) throw result.error;
+
+  const current = Number(result.data?.[0]?.sort_order ?? -1);
+  return Number.isFinite(current) ? current + 1 : 0;
+};
+
+const buildPinPersonPayload = ({ person, memberRow, currentUserId }) => {
+  const name = normalizeCirclePersonName(person);
+  return {
+    title: name,
+    subtitle: person.workspace_role ? titleCaseLabel(person.workspace_role) : 'Circle',
+    icon_kind: 'person',
+    initials: getInitialsFromName(name, person.email),
+    color: null,
+    destination: {
+      kind: 'circle',
+      focusContext: buildCirclePersonPinContext(person.id, name),
+    },
+    metadata: {
+      role: memberRow?.role ?? null,
+      is_owner: Boolean(person.is_owner),
+      current_user_id: currentUserId,
+    },
+  };
+};
+
+const buildPinProjectPayload = (project) => ({
+  title: project.name ?? 'Untitled project',
+  subtitle: formatPinStatusLabel(project.status) ?? 'Project',
+  icon_kind: 'project',
+  initials: null,
+  color: project.color ?? null,
+  destination: {
+    kind: 'projects',
+    focusProjectId: project.id,
+  },
+});
+
+const buildPinNotePayload = (note) => ({
+  title: note.title ?? 'Untitled note',
+  subtitle: note.source ? titleCaseLabel(note.source) : 'Note',
+  icon_kind: 'note',
+  initials: null,
+  color: null,
+  destination: {
+    kind: 'notes',
+    focusNoteId: note.id,
+  },
+});
+
+const buildPinTeamPayload = (team, currentUserRole = null) => ({
+  title: team.name ?? 'Untitled team',
+  subtitle: currentUserRole ? `${titleCaseLabel(currentUserRole)} · Team` : 'Team',
+  icon_kind: 'team',
+  initials: normalizeTeamIdentifier(team.identifier) || getInitialsFromName(team.name),
+  color: team.color ?? null,
+  destination: {
+    kind: 'teams',
+    focusContext: `team:${team.id}`,
+  },
+});
+
+const buildPinTaskPayload = (task, project = null) => ({
+  title: task.title ?? 'Untitled task',
+  subtitle:
+    [
+      task.due_date ? `Due ${formatPinTimestamp(task.due_date) ?? task.due_date}` : null,
+      project?.name ?? null,
+    ]
+      .filter(Boolean)
+      .join(' · ') || 'Task',
+  icon_kind: 'task',
+  initials: null,
+  color: null,
+  destination: {
+    kind: 'dashboard',
+    focusTaskId: task.id,
+  },
+});
+
+const buildPinEventPayload = (event, calendar = null) => ({
+  title: event.title ?? 'Untitled event',
+  subtitle:
+    [
+      event.start_at ? formatPinTimestamp(event.start_at) : null,
+      calendar?.name ?? null,
+    ]
+      .filter(Boolean)
+      .join(' · ') || 'Event',
+  icon_kind: 'event',
+  initials: null,
+  color: event.color ?? calendar?.color ?? null,
+  destination: {
+    kind: 'calendar',
+    focusContext: `focus-event:${event.id}`,
+  },
+});
+
+const buildPinReminderPayload = (reminder, calendar = null) => ({
+  title: reminder.title ?? 'Untitled reminder',
+  subtitle:
+    [
+      reminder.remind_at ? formatPinTimestamp(reminder.remind_at) : null,
+      calendar?.name ?? null,
+    ]
+      .filter(Boolean)
+      .join(' · ') || 'Reminder',
+  icon_kind: 'reminder',
+  initials: null,
+  color: reminder.color ?? calendar?.color ?? null,
+  destination: {
+    kind: 'calendar',
+    focusContext: `focus-reminder:${reminder.id}`,
+  },
+});
+
+const resolvePinnedObjectTarget = async ({ workspaceId, userId, objectType, objectId }) => {
+  const normalizedType = normalizePinObjectType(objectType);
+  const normalizedObjectId = String(objectId ?? '').trim();
+  if (!normalizedType || !normalizedObjectId) {
+    const error = new Error('Unsupported pin target');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  if (normalizedType === 'person') {
+    const [workspaceResult, memberResult, userResult] = await Promise.all([
+      supabase
+        .from('workspaces')
+        .select('id, owner_id, name, created_at')
+        .eq('id', workspaceId)
+        .maybeSingle(),
+      supabase
+        .from('workspace_members')
+        .select('user_id, role, joined_at')
+        .eq('workspace_id', workspaceId)
+        .eq('user_id', normalizedObjectId)
+        .maybeSingle(),
+      supabase
+        .from('users')
+        .select('id, email, full_name, avatar_url')
+        .eq('id', normalizedObjectId)
+        .maybeSingle(),
+    ]);
+    if (workspaceResult.error) throw workspaceResult.error;
+    if (memberResult.error) throw memberResult.error;
+    if (userResult.error) throw userResult.error;
+    if (!userResult.data?.id) return null;
+    if (!memberResult.data?.user_id && workspaceResult.data?.owner_id !== normalizedObjectId) return null;
+    const role = memberResult.data?.role ?? (workspaceResult.data?.owner_id === normalizedObjectId ? 'owner' : 'member');
+    const person = {
+      id: userResult.data.id,
+      name: normalizeCirclePersonName(userResult.data),
+      email: userResult.data.email ?? null,
+      avatar_url: userResult.data.avatar_url ?? null,
+      role: String(role ?? 'member').toLowerCase(),
+      workspace_role: String(role ?? 'member').toLowerCase(),
+      is_owner: workspaceResult.data?.owner_id === normalizedObjectId,
+    };
+    return buildPinPersonPayload({ person, memberRow: memberResult.data, currentUserId: userId });
+  }
+
+  if (normalizedType === 'team') {
+    const [teamResult, memberResult] = await Promise.all([
+      supabase
+        .from('workspace_teams')
+        .select('id, workspace_id, name, identifier, color, created_by, archived_at')
+        .eq('workspace_id', workspaceId)
+        .eq('id', normalizedObjectId)
+        .maybeSingle(),
+      supabase
+        .from('workspace_team_members')
+        .select('id, team_id, user_id, role')
+        .eq('workspace_id', workspaceId)
+        .eq('team_id', normalizedObjectId)
+        .eq('user_id', userId)
+        .maybeSingle(),
+    ]);
+    if (teamResult.error) throw teamResult.error;
+    if (memberResult.error) throw memberResult.error;
+    if (!teamResult.data?.id) return null;
+    if (teamResult.data.archived_at) return null;
+    if (!memberResult.data?.id && teamResult.data.created_by !== userId) return null;
+    return buildPinTeamPayload(teamResult.data, memberResult.data?.role ?? null);
+  }
+
+  if (normalizedType === 'project') {
+    const result = await supabase
+      .from('projects')
+      .select('id, workspace_id, name, status, color, created_by, updated_at')
+      .eq('workspace_id', workspaceId)
+      .eq('id', normalizedObjectId)
+      .maybeSingle();
+    if (result.error) throw result.error;
+    if (!result.data?.id) return null;
+    return buildPinProjectPayload(result.data);
+  }
+
+  if (normalizedType === 'note') {
+    const result = await supabase
+      .from('notes')
+      .select('id, workspace_id, title, source, updated_at')
+      .eq('workspace_id', workspaceId)
+      .eq('id', normalizedObjectId)
+      .maybeSingle();
+    if (result.error) throw result.error;
+    if (!result.data?.id) return null;
+    return buildPinNotePayload(result.data);
+  }
+
+  if (normalizedType === 'task') {
+    const taskResult = await supabase
+      .from('tasks')
+      .select('id, workspace_id, title, status, due_date, project_id, created_at, updated_at')
+      .eq('workspace_id', workspaceId)
+      .eq('id', normalizedObjectId)
+      .maybeSingle();
+    if (taskResult.error) throw taskResult.error;
+    if (!taskResult.data?.id) return null;
+    const projectResult = taskResult.data.project_id
+      ? await supabase
+          .from('projects')
+          .select('id, name')
+          .eq('workspace_id', workspaceId)
+          .eq('id', taskResult.data.project_id)
+          .maybeSingle()
+      : null;
+    if (projectResult?.error) throw projectResult.error;
+    return buildPinTaskPayload(taskResult.data, projectResult?.data ?? null);
+  }
+
+  if (normalizedType === 'event') {
+    const result = await supabase
+      .from('events')
+      .select('id, workspace_id, title, start_at, end_at, calendar_id, color, status')
+      .eq('workspace_id', workspaceId)
+      .eq('id', normalizedObjectId)
+      .maybeSingle();
+    if (result.error) throw result.error;
+    if (!result.data?.id) return null;
+    const calendarResult = result.data.calendar_id
+      ? await supabase.from('calendars').select('id, name, color').eq('workspace_id', workspaceId).eq('id', result.data.calendar_id).maybeSingle()
+      : null;
+    if (calendarResult?.error) throw calendarResult.error;
+    return buildPinEventPayload(result.data, calendarResult?.data ?? null);
+  }
+
+  if (normalizedType === 'reminder') {
+    const result = await supabase
+      .from('reminders')
+      .select('id, workspace_id, title, remind_at, calendar_id, color, status')
+      .eq('workspace_id', workspaceId)
+      .eq('id', normalizedObjectId)
+      .maybeSingle();
+    if (result.error) throw result.error;
+    if (!result.data?.id) return null;
+    const calendarResult = result.data.calendar_id
+      ? await supabase.from('calendars').select('id, name, color').eq('workspace_id', workspaceId).eq('id', result.data.calendar_id).maybeSingle()
+      : null;
+    if (calendarResult?.error) throw calendarResult.error;
+    return buildPinReminderPayload(result.data, calendarResult?.data ?? null);
+  }
+
+  const error = new Error('Unsupported pin target');
+  error.statusCode = 400;
+  throw error;
+};
+
+const resolvePinnedObjectTargetSummary = async ({ workspaceId, userId, objectType, objectId }) => {
+  const target = await resolvePinnedObjectTarget({ workspaceId, userId, objectType, objectId });
+  return target
+    ? {
+        ...target,
+        object_type: normalizePinObjectType(objectType),
+        object_id: String(objectId),
+      }
+    : null;
+};
+
+const buildPinnedRecordResponse = (pinRow, target) => ({
+  id: pinRow.id,
+  workspace_id: pinRow.workspace_id,
+  user_id: pinRow.user_id,
+  object_type: pinRow.object_type,
+  object_id: pinRow.object_id,
+  folder_id: pinRow.folder_id ?? null,
+  sort_order: Number(pinRow.sort_order ?? 0),
+  created_at: pinRow.created_at,
+  updated_at: pinRow.updated_at,
+  title: target.title,
+  subtitle: target.subtitle ?? null,
+  icon_kind: target.icon_kind,
+  initials: target.initials ?? null,
+  color: target.color ?? null,
+  destination: target.destination,
+});
+
+const loadUserPinsForWorkspace = async ({ workspaceId, userId }) => {
+  const result = await supabase
+    .from('user_pins')
+    .select(pinSelectColumns)
+    .eq('workspace_id', workspaceId)
+    .eq('user_id', userId)
+    .order('folder_id', { ascending: true, nullsFirst: true })
+    .order('sort_order', { ascending: true });
+
+  if (result.error) throw result.error;
+  return result.data ?? [];
+};
+
+const loadPinFoldersForWorkspace = async ({ workspaceId, userId }) => {
+  const result = await supabase
+    .from('pin_folders')
+    .select(pinFolderSelectColumns)
+    .eq('workspace_id', workspaceId)
+    .eq('user_id', userId)
+    .order('sort_order', { ascending: true });
+
+  if (result.error) throw result.error;
+  return result.data ?? [];
+};
+
+const syncLegacyPersonPreferencePin = async ({
+  workspaceId,
+  userId,
+  personId,
+  isPinned,
+  sortOrder,
+}) => {
+  const nowIso = new Date().toISOString();
+  if (isPinned) {
+    const result = await supabase
+      .from('person_preferences')
+      .upsert(
+        {
+          workspace_id: workspaceId,
+          user_id: userId,
+          person_user_id: personId,
+          is_pinned: true,
+          sort_order: Math.max(0, Number(sortOrder) || 0),
+          updated_at: nowIso,
+          created_at: nowIso,
+        },
+        { onConflict: 'workspace_id,user_id,person_user_id' }
+      )
+      .select(personPreferenceSelectColumns)
+      .single();
+
+    if (result.error) throw result.error;
+    return result.data ?? null;
+  }
+
+  const result = await supabase
+    .from('person_preferences')
+    .delete()
+    .eq('workspace_id', workspaceId)
+    .eq('user_id', userId)
+    .eq('person_user_id', personId);
+
+  if (result.error) throw result.error;
+  return null;
 };
 
 const isTeamOpenTask = (task) => !['completed', 'cancelled'].includes(String(task?.status ?? '').toLowerCase());
@@ -9091,6 +9577,15 @@ app.patch('/api/people/:id/preferences', authMiddleware, rateLimit('write'), asy
         ? existing?.sort_order ?? 0
         : Math.max(0, Number(req.body.sort_order) || 0);
     const nowIso = new Date().toISOString();
+    const existingPinResult = await supabase
+      .from('user_pins')
+      .select(pinSelectColumns)
+      .eq('workspace_id', workspaceId)
+      .eq('user_id', req.authUser.id)
+      .eq('object_type', 'person')
+      .eq('object_id', personId)
+      .maybeSingle();
+    if (existingPinResult.error) throw existingPinResult.error;
 
     const { data: updated, error } = await supabase
       .from('person_preferences')
@@ -9111,9 +9606,558 @@ app.patch('/api/people/:id/preferences', authMiddleware, rateLimit('write'), asy
 
     if (error) throw error;
 
+    if (nextPinned) {
+      const pinUpsert = await supabase
+        .from('user_pins')
+        .upsert(
+          {
+            workspace_id: workspaceId,
+            user_id: req.authUser.id,
+            object_type: 'person',
+            object_id: personId,
+            folder_id: null,
+            sort_order: nextSortOrder,
+            updated_at: nowIso,
+            created_at: existingPinResult.data?.created_at ?? nowIso,
+          },
+          { onConflict: 'workspace_id,user_id,object_type,object_id' }
+        )
+        .select(pinSelectColumns)
+        .single();
+      if (pinUpsert.error) throw pinUpsert.error;
+    } else {
+      const pinDelete = await supabase
+        .from('user_pins')
+        .delete()
+        .eq('workspace_id', workspaceId)
+        .eq('user_id', req.authUser.id)
+        .eq('object_type', 'person')
+        .eq('object_id', personId);
+      if (pinDelete.error) throw pinDelete.error;
+    }
+
     res.json({
       preference: updated,
     });
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
+app.get('/api/pins', authMiddleware, rateLimit('read'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    await requireWorkspaceAccess(req.authUser.id, workspaceId, 'member');
+
+    const pinRows = await loadUserPinsForWorkspace({ workspaceId, userId: req.authUser.id });
+    const invalidPinIds = [];
+
+    const pins = (
+      await Promise.all(
+        pinRows.map(async (pinRow) => {
+          const target = await resolvePinnedObjectTargetSummary({
+            workspaceId,
+            userId: req.authUser.id,
+            objectType: pinRow.object_type,
+            objectId: pinRow.object_id,
+          });
+          if (!target) {
+            invalidPinIds.push(pinRow.id);
+            return null;
+          }
+          return buildPinnedRecordResponse(pinRow, target);
+        })
+      )
+    ).filter(Boolean);
+
+    if (invalidPinIds.length > 0) {
+      const cleanup = await supabase.from('user_pins').delete().in('id', invalidPinIds);
+      if (cleanup.error) throw cleanup.error;
+    }
+
+    res.json({
+      workspace_id: workspaceId,
+      current_user_id: req.authUser.id,
+      pins,
+    });
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
+app.get('/api/pin-folders', authMiddleware, rateLimit('read'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    await requireWorkspaceAccess(req.authUser.id, workspaceId, 'member');
+    const folders = await loadPinFoldersForWorkspace({ workspaceId, userId: req.authUser.id });
+    res.json({
+      workspace_id: workspaceId,
+      current_user_id: req.authUser.id,
+      folders,
+    });
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
+app.post('/api/pin-folders', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    await requireWorkspaceAccess(req.authUser.id, workspaceId, 'member');
+    const name = String(req.body?.name ?? '').trim();
+    if (!name) {
+      return res.status(400).json({ error: 'Folder name is required' });
+    }
+
+    const sortOrder =
+      req.body?.sort_order === undefined
+        ? await getNextPinSortOrder({ workspaceId, userId: req.authUser.id, folderId: null })
+        : Math.max(0, Number(req.body.sort_order) || 0);
+    const collapsed = Boolean(req.body?.collapsed ?? false);
+    const nowIso = new Date().toISOString();
+
+    const result = await supabase
+      .from('pin_folders')
+      .insert({
+        workspace_id: workspaceId,
+        user_id: req.authUser.id,
+        name,
+        sort_order: sortOrder,
+        collapsed,
+        created_at: nowIso,
+        updated_at: nowIso,
+      })
+      .select(pinFolderSelectColumns)
+      .single();
+
+    if (result.error) throw result.error;
+    res.json({ folder: result.data });
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
+app.patch('/api/pin-folders/:id', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    const folderId = String(req.params.id);
+    const folder = await loadPinFolderById({
+      folderId,
+      workspaceId,
+      userId: req.authUser.id,
+    });
+    if (!folder?.id) {
+      return res.status(404).json({ error: 'Pin folder not found' });
+    }
+
+    const nextName =
+      req.body?.name === undefined ? folder.name : String(req.body.name ?? '').trim();
+    if (!nextName) {
+      return res.status(400).json({ error: 'Folder name is required' });
+    }
+
+    const nextCollapsed =
+      req.body?.collapsed === undefined ? Boolean(folder.collapsed) : Boolean(req.body.collapsed);
+    const nextSortOrder =
+      req.body?.sort_order === undefined
+        ? folder.sort_order ?? 0
+        : Math.max(0, Number(req.body.sort_order) || 0);
+
+    const result = await supabase
+      .from('pin_folders')
+      .update({
+        name: nextName,
+        collapsed: nextCollapsed,
+        sort_order: nextSortOrder,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('workspace_id', workspaceId)
+      .eq('user_id', req.authUser.id)
+      .eq('id', folderId)
+      .select(pinFolderSelectColumns)
+      .single();
+
+    if (result.error) throw result.error;
+    res.json({ folder: result.data });
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
+app.delete('/api/pin-folders/:id', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    const folderId = String(req.params.id);
+    const folder = await loadPinFolderById({
+      folderId,
+      workspaceId,
+      userId: req.authUser.id,
+    });
+    if (!folder?.id) {
+      return res.status(404).json({ error: 'Pin folder not found' });
+    }
+
+    const folderPinsResult = await supabase
+      .from('user_pins')
+      .select(pinSelectColumns)
+      .eq('workspace_id', workspaceId)
+      .eq('user_id', req.authUser.id)
+      .eq('folder_id', folderId)
+      .order('sort_order', { ascending: true });
+    if (folderPinsResult.error) throw folderPinsResult.error;
+
+    const nextRootSortOrder = await getNextPinSortOrder({
+      workspaceId,
+      userId: req.authUser.id,
+      folderId: null,
+    });
+
+    for (const [index, pinRow] of (folderPinsResult.data ?? []).entries()) {
+      const updateResult = await supabase
+        .from('user_pins')
+        .update({
+          folder_id: null,
+          sort_order: nextRootSortOrder + index,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('workspace_id', workspaceId)
+        .eq('user_id', req.authUser.id)
+        .eq('id', pinRow.id);
+      if (updateResult.error) throw updateResult.error;
+
+      if (String(pinRow.object_type) === 'person') {
+        const syncResult = await syncLegacyPersonPreferencePin({
+          workspaceId,
+          userId: req.authUser.id,
+          personId: pinRow.object_id,
+          isPinned: true,
+          sortOrder: nextRootSortOrder + index,
+        });
+        if (syncResult?.error) throw syncResult.error;
+      }
+    }
+
+    const deleteResult = await supabase
+      .from('pin_folders')
+      .delete()
+      .eq('workspace_id', workspaceId)
+      .eq('user_id', req.authUser.id)
+      .eq('id', folderId);
+    if (deleteResult.error) throw deleteResult.error;
+    res.json({ success: true });
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
+app.post('/api/pin-folders/reorder', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    await requireWorkspaceAccess(req.authUser.id, workspaceId, 'member');
+    const folderItems = Array.isArray(req.body?.folders) ? req.body.folders : [];
+
+    const folders = await loadPinFoldersForWorkspace({ workspaceId, userId: req.authUser.id });
+    const folderById = new Map(folders.map((folder) => [folder.id, folder]));
+
+    for (const [index, folderItem] of folderItems.entries()) {
+      const folderId = String(folderItem?.id ?? '').trim();
+      if (!folderId || !folderById.has(folderId)) {
+        return res.status(404).json({ error: 'Pin folder not found' });
+      }
+
+      const updateResult = await supabase
+        .from('pin_folders')
+        .update({
+          sort_order:
+            folderItem?.sort_order === undefined ? index : Math.max(0, Number(folderItem.sort_order) || 0),
+          updated_at: new Date().toISOString(),
+        })
+        .eq('workspace_id', workspaceId)
+        .eq('user_id', req.authUser.id)
+        .eq('id', folderId);
+      if (updateResult.error) throw updateResult.error;
+    }
+
+    const nextFolders = await loadPinFoldersForWorkspace({ workspaceId, userId: req.authUser.id });
+    res.json({ folders: nextFolders });
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
+app.post('/api/pins', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    await requireWorkspaceAccess(req.authUser.id, workspaceId, 'member');
+    const objectType = normalizePinObjectType(req.body?.object_type);
+    const objectId = String(req.body?.object_id ?? '').trim();
+    if (!objectType || !objectId) {
+      return res.status(400).json({ error: 'Pin target is required' });
+    }
+
+    const target = await resolvePinnedObjectTargetSummary({
+      workspaceId,
+      userId: req.authUser.id,
+      objectType,
+      objectId,
+    });
+    if (!target) {
+      return res.status(404).json({ error: 'Pinned object not found' });
+    }
+
+    const existingResult = await supabase
+      .from('user_pins')
+      .select(pinSelectColumns)
+      .eq('workspace_id', workspaceId)
+      .eq('user_id', req.authUser.id)
+      .eq('object_type', objectType)
+      .eq('object_id', objectId)
+      .maybeSingle();
+    if (existingResult.error) throw existingResult.error;
+
+    const folderId =
+      req.body?.folder_id === undefined
+        ? existingResult.data?.folder_id ?? null
+        : String(req.body.folder_id ?? '').trim() || null;
+    if (folderId) {
+      const folder = await loadPinFolderById({
+        folderId,
+        workspaceId,
+        userId: req.authUser.id,
+      });
+      if (!folder?.id) {
+        return res.status(404).json({ error: 'Pin folder not found' });
+      }
+    }
+
+    const nextSortOrder =
+      req.body?.sort_order === undefined
+        ? existingResult.data?.sort_order ??
+          (await getNextPinSortOrder({
+            workspaceId,
+            userId: req.authUser.id,
+            folderId,
+          }))
+        : Math.max(0, Number(req.body.sort_order) || 0);
+    const nowIso = new Date().toISOString();
+
+    const result = await supabase
+      .from('user_pins')
+      .upsert(
+        {
+          workspace_id: workspaceId,
+          user_id: req.authUser.id,
+          object_type: objectType,
+          object_id: objectId,
+          folder_id: folderId,
+          sort_order: nextSortOrder,
+          updated_at: nowIso,
+          created_at: existingResult.data?.created_at ?? nowIso,
+        },
+        { onConflict: 'workspace_id,user_id,object_type,object_id' }
+      )
+      .select(pinSelectColumns)
+      .single();
+
+    if (result.error) throw result.error;
+
+    if (objectType === 'person') {
+      const syncResult = await syncLegacyPersonPreferencePin({
+        workspaceId,
+        userId: req.authUser.id,
+        personId: objectId,
+        isPinned: true,
+        sortOrder: nextSortOrder,
+      });
+      if (syncResult?.error) throw syncResult.error;
+    }
+
+    res.json({
+      pin: buildPinnedRecordResponse(result.data, target),
+    });
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
+app.patch('/api/pins/:id', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    await requireWorkspaceAccess(req.authUser.id, workspaceId, 'member');
+    const pinId = String(req.params.id);
+    const existingResult = await supabase
+      .from('user_pins')
+      .select(pinSelectColumns)
+      .eq('workspace_id', workspaceId)
+      .eq('user_id', req.authUser.id)
+      .eq('id', pinId)
+      .maybeSingle();
+    if (existingResult.error) throw existingResult.error;
+    if (!existingResult.data?.id) {
+      return res.status(404).json({ error: 'Pin not found' });
+    }
+
+    const nextFolderId =
+      req.body?.folder_id === undefined ? existingResult.data.folder_id ?? null : String(req.body.folder_id ?? '').trim() || null;
+    if (nextFolderId) {
+      const folder = await loadPinFolderById({
+        folderId: nextFolderId,
+        workspaceId,
+        userId: req.authUser.id,
+      });
+      if (!folder?.id) {
+        return res.status(404).json({ error: 'Pin folder not found' });
+      }
+    }
+
+    const nextSortOrder =
+      req.body?.sort_order === undefined
+        ? existingResult.data.sort_order
+        : Math.max(0, Number(req.body.sort_order) || 0);
+
+    const result = await supabase
+      .from('user_pins')
+      .update({
+        folder_id: nextFolderId,
+        sort_order: nextSortOrder,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('workspace_id', workspaceId)
+      .eq('user_id', req.authUser.id)
+      .eq('id', pinId)
+      .select(pinSelectColumns)
+      .single();
+
+    if (result.error) throw result.error;
+    const target = await resolvePinnedObjectTargetSummary({
+      workspaceId,
+      userId: req.authUser.id,
+      objectType: result.data.object_type,
+      objectId: result.data.object_id,
+    });
+    if (!target) {
+      await supabase.from('user_pins').delete().eq('workspace_id', workspaceId).eq('user_id', req.authUser.id).eq('id', pinId);
+      return res.status(404).json({ error: 'Pinned object not found' });
+    }
+
+    if (String(result.data.object_type) === 'person') {
+      const syncResult = await syncLegacyPersonPreferencePin({
+        workspaceId,
+        userId: req.authUser.id,
+        personId: result.data.object_id,
+        isPinned: true,
+        sortOrder: nextSortOrder,
+      });
+      if (syncResult?.error) throw syncResult.error;
+    }
+
+    res.json({ pin: buildPinnedRecordResponse(result.data, target) });
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
+app.delete('/api/pins/:id', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    await requireWorkspaceAccess(req.authUser.id, workspaceId, 'member');
+    const pinId = String(req.params.id);
+    const existingResult = await supabase
+      .from('user_pins')
+      .select(pinSelectColumns)
+      .eq('workspace_id', workspaceId)
+      .eq('user_id', req.authUser.id)
+      .eq('id', pinId)
+      .maybeSingle();
+    if (existingResult.error) throw existingResult.error;
+    if (!existingResult.data?.id) {
+      return res.status(404).json({ error: 'Pin not found' });
+    }
+
+    const deleteResult = await supabase
+      .from('user_pins')
+      .delete()
+      .eq('workspace_id', workspaceId)
+      .eq('user_id', req.authUser.id)
+      .eq('id', pinId);
+    if (deleteResult.error) throw deleteResult.error;
+
+    if (String(existingResult.data.object_type) === 'person') {
+      const syncResult = await syncLegacyPersonPreferencePin({
+        workspaceId,
+        userId: req.authUser.id,
+        personId: existingResult.data.object_id,
+        isPinned: false,
+        sortOrder: existingResult.data.sort_order,
+      });
+      if (syncResult?.error) throw syncResult.error;
+    }
+
+    res.json({ success: true });
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
+app.post('/api/pins/reorder', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    await requireWorkspaceAccess(req.authUser.id, workspaceId, 'member');
+    const pinItems = Array.isArray(req.body?.pins) ? req.body.pins : [];
+    if (pinItems.length === 0) {
+      return res.json({ pins: [] });
+    }
+
+    const existingPins = await loadUserPinsForWorkspace({ workspaceId, userId: req.authUser.id });
+    const pinById = new Map(existingPins.map((pin) => [pin.id, pin]));
+
+    for (const [index, pinItem] of pinItems.entries()) {
+      const pinId = String(pinItem?.id ?? '').trim();
+      const existingPin = pinById.get(pinId);
+      if (!pinId || !existingPin) {
+        return res.status(404).json({ error: 'Pin not found' });
+      }
+
+      const nextFolderId =
+        pinItem?.folder_id === undefined ? existingPin.folder_id ?? null : String(pinItem.folder_id ?? '').trim() || null;
+      if (nextFolderId) {
+        const folder = await loadPinFolderById({
+          folderId: nextFolderId,
+          workspaceId,
+          userId: req.authUser.id,
+        });
+        if (!folder?.id) {
+          return res.status(404).json({ error: 'Pin folder not found' });
+        }
+      }
+
+      const updateResult = await supabase
+        .from('user_pins')
+        .update({
+          folder_id: nextFolderId,
+          sort_order:
+            pinItem?.sort_order === undefined ? index : Math.max(0, Number(pinItem.sort_order) || 0),
+          updated_at: new Date().toISOString(),
+        })
+        .eq('workspace_id', workspaceId)
+        .eq('user_id', req.authUser.id)
+        .eq('id', pinId);
+      if (updateResult.error) throw updateResult.error;
+
+      if (String(existingPin.object_type) === 'person') {
+        const syncResult = await syncLegacyPersonPreferencePin({
+          workspaceId,
+          userId: req.authUser.id,
+          personId: existingPin.object_id,
+          isPinned: true,
+          sortOrder: pinItem?.sort_order === undefined ? index : Math.max(0, Number(pinItem.sort_order) || 0),
+        });
+        if (syncResult?.error) throw syncResult.error;
+      }
+    }
+
+    const nextPins = await loadUserPinsForWorkspace({ workspaceId, userId: req.authUser.id });
+    res.json({ pins: nextPins });
   } catch (error) {
     return respondWithError(res, error);
   }

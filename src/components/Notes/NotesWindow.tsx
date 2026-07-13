@@ -46,6 +46,7 @@ import {
 import { CloseGuardModal } from '../Common/CloseGuardModal';
 import { ModalOverlay } from '../Common/ModalOverlay';
 import { ModalCloseButton } from '../Common/ModalCloseButton';
+import { PinActionButton } from '../Common/PinActionButton';
 import { SkeletonLoader, SkeletonNoteCard } from '../Common/Skeleton';
 import { MindMapEditor } from './MindMapEditor';
 import { RichTextEditor } from './RichTextEditor';
@@ -4826,6 +4827,12 @@ export const NotesWindow = () => {
 
                         {isInspectorActionsOpen && selectedNote && (
                           <div className="absolute right-0 top-10 z-40 min-w-52 rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-1.5 shadow-[var(--ledger-shadow)]">
+                            <PinActionButton
+                              objectType="note"
+                              objectId={selectedNote.id}
+                              onClick={() => setIsInspectorActionsOpen(false)}
+                              className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+                            />
                             <button
                               onClick={() => {
                                 setIsInspectorActionsOpen(false);

@@ -39,6 +39,7 @@ import { useWorkspaceRealtimeRefresh } from '../../hooks/useWorkspaceRealtimeRef
 import { SkeletonList } from '../Common/Skeleton';
 import { WorkspaceSwitcherMenu } from '../Common/WorkspaceSwitcherMenu';
 import { SkeletonCompactRow } from '../Common/Skeleton';
+import { PinnedSidebarSection } from './PinnedSidebarSection';
 import { sidebarTheme } from './sidebarTheme';
 import { getProjectTypeOption } from '../../utils/projectTypes';
 import { resolveIntakeRouting } from '../../utils/intakeRouting';
@@ -3677,8 +3678,10 @@ export const ExpandedSidebar = ({
                 </button>
           </div>
 
+        <PinnedSidebarSection />
+
         {showMyTeamsSection && (
-          <section className="order-3 space-y-2">
+          <section className="order-4 space-y-2">
             <button
               type="button"
               onClick={() => {

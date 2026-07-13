@@ -15,16 +15,24 @@ import {
   Plus,
   Search,
   Sparkles,
-  Star,
   Trash2,
   UserPlus,
   Users,
   X,
 } from 'lucide-react';
-import { type FormEvent, type ReactNode, useEffect, useMemo, useState } from 'react';
+import {
+  type FormEvent,
+  type MouseEvent as ReactMouseEvent,
+  type ReactNode,
+  useEffect,
+  useMemo,
+  useState,
+} from 'react';
 import { ModuleHeaderActionButton, ModuleWindowHeader } from '../Common/ModuleWindowHeader';
+import { PinActionButton } from '../Common/PinActionButton';
 import { ModalOverlay } from '../Common/ModalOverlay';
 import { ModalCloseButton } from '../Common/ModalCloseButton';
+import { sidebarTheme } from '../Sidebar/sidebarTheme';
 import { useApi } from '../../hooks/useApi';
 import { useAuthContext } from '../../context/AuthContext';
 import { useSidebar } from '../../context/SidebarContext';
@@ -113,6 +121,7 @@ type TeamOverviewResponse = {
       priority?: string | null;
       due_date?: string | null;
       assignee?: string | null;
+      project_id?: string | null;
       project?: { id: string; name?: string | null } | null;
       blocked?: boolean;
     }>;
@@ -127,6 +136,7 @@ type TeamOverviewResponse = {
       title: string;
       status?: string | null;
       source?: string | null;
+      suggested_type?: string | null;
     }>;
   };
   active_projects: Array<{
@@ -146,6 +156,7 @@ type TeamOverviewResponse = {
     priority?: string | null;
     due_date?: string | null;
     assignee?: string | null;
+    project_id?: string | null;
     project?: { id: string; name?: string | null } | null;
     blocked?: boolean;
     created_at?: string | null;
@@ -157,6 +168,11 @@ type TeamOverviewResponse = {
     updatedAt?: string | null;
     projectId?: string | null;
     projectName?: string | null;
+    project_id?: string | null;
+    section_id?: string | null;
+    created_by?: string | null;
+    updated_by?: string | null;
+    linked_project?: { id: string; title?: string | null } | null;
   }>;
   upcoming: Array<{
     id: string;
@@ -172,6 +188,7 @@ type TeamOverviewResponse = {
   members: Array<{
     id: string;
     name: string;
+    email?: string | null;
     avatar?: string | null;
     role?: string | null;
     team_role?: string | null;
@@ -184,6 +201,7 @@ type TeamOverviewResponse = {
   recent_activity: Array<{
     id: string;
     actor?: string | null;
+    actor_id?: string | null;
     action: string;
     object_type?: string | null;
     object_id?: string | null;
@@ -259,6 +277,60 @@ type TeamContextMenu = {
   x: number;
   y: number;
 } | null;
+
+type TeamResourceKind = 'project' | 'note' | 'task' | 'event' | 'external';
+
+type TeamRowContextMenuState =
+  | {
+      kind: 'resource';
+      resourceKind: TeamResourceKind;
+      resourceId: string;
+      x: number;
+      y: number;
+    }
+  | {
+      kind: 'note';
+      noteId: string;
+      x: number;
+      y: number;
+    }
+  | {
+      kind: 'task';
+      taskId: string;
+      x: number;
+      y: number;
+    }
+  | {
+      kind: 'project';
+      projectId: string;
+      x: number;
+      y: number;
+    }
+  | {
+      kind: 'upcoming';
+      itemId: string;
+      itemType: 'event' | 'reminder' | 'milestone';
+      x: number;
+      y: number;
+    }
+  | {
+      kind: 'activity';
+      activityId: string;
+      x: number;
+      y: number;
+    }
+  | {
+      kind: 'member';
+      memberId: string;
+      x: number;
+      y: number;
+    }
+  | {
+      kind: 'intake';
+      intakeId: string;
+      x: number;
+      y: number;
+    };
 
 type TeamSectionId =
   | 'pinnedResources'
@@ -377,9 +449,11 @@ const CompactButton = ({
 const AvatarStack = ({
   members,
   maxVisible = 3,
+  onMemberContextMenu,
 }: {
   members: Array<{ id: string; name: string; avatar?: string | null }>;
   maxVisible?: number;
+  onMemberContextMenu?: (member: { id: string; name: string; avatar?: string | null }, event: ReactMouseEvent<HTMLElement>) => void;
 }) => {
   const visible = members.slice(0, maxVisible);
   return (
@@ -390,6 +464,14 @@ const AvatarStack = ({
           className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-[color:var(--ledger-surface-card)] bg-[var(--ledger-surface-muted)] text-[9px] font-semibold text-[var(--ledger-text-secondary)]"
           style={{ marginLeft: index === 0 ? 0 : -6 }}
           title={member.name}
+          onContextMenu={
+            onMemberContextMenu
+              ? (event) => {
+                  event.preventDefault();
+                  onMemberContextMenu(member, event);
+                }
+              : undefined
+          }
         >
           {member.avatar ? (
             <img src={member.avatar} alt={member.name} className="h-full w-full rounded-full object-cover" />
@@ -500,6 +582,9 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
   const [teamNotes, setTeamNotes] = useState<TeamOverviewResponse['recent_notes']>([]);
   const [teamNotesLoading, setTeamNotesLoading] = useState(false);
   const [teamNotesQuery, setTeamNotesQuery] = useState('');
+  const [teamRowContextMenu, setTeamRowContextMenu] = useState<TeamRowContextMenuState | null>(
+    null
+  );
   const [collapsedTeamSections, setCollapsedTeamSections] = useState<Record<TeamSectionId, boolean>>(
     {
       pinnedResources: false,
@@ -831,6 +916,24 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
   }, [contextMenu]);
 
   useEffect(() => {
+    if (!teamRowContextMenu) return;
+    const close = () => setTeamRowContextMenu(null);
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setTeamRowContextMenu(null);
+    };
+    window.addEventListener('click', close);
+    window.addEventListener('scroll', close, true);
+    window.addEventListener('resize', close);
+    window.addEventListener('keydown', closeOnEscape);
+    return () => {
+      window.removeEventListener('click', close);
+      window.removeEventListener('scroll', close, true);
+      window.removeEventListener('resize', close);
+      window.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [teamRowContextMenu]);
+
+  useEffect(() => {
     if (!resourceMenu) return;
     const close = () => setResourceMenu(null);
     const closeOnEscape = (event: KeyboardEvent) => {
@@ -891,6 +994,9 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
       initials: member.initials,
     }));
   }, [selectedTeam?.members, teamOverview?.members]);
+  const teamOverviewMembersById = useMemo(() => {
+    return new Map((teamOverview?.members ?? []).map((member) => [member.id, member]));
+  }, [teamOverview?.members]);
   const teamQuickLinkCounts = new Map(
     (teamOverview?.quick_links ?? []).map((item) => [item.key, item.count ?? null])
   );
@@ -915,6 +1021,10 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
         return 'Not Started';
     }
   };
+  const teamActiveProjects = teamOverview?.active_projects ?? [];
+  const teamUpcomingItems = teamOverview?.upcoming ?? [];
+  const teamRecentActivity = teamOverview?.recent_activity ?? [];
+  const teamOverviewNotes = teamOverview?.recent_notes ?? openedTeam?.linkedNotes ?? [];
   const teamMemberLabelById = useMemo(() => {
     const map = new Map<string, string>();
     (teamOverview?.members ?? []).forEach((member) => {
@@ -922,6 +1032,62 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
     });
     return map;
   }, [teamOverview?.members]);
+  const teamProjectById = useMemo(() => {
+    const map = new Map<
+      string,
+      {
+        id: string;
+        title: string;
+        status?: string | null;
+        progress?: number | null;
+        lead?: string | null;
+        due_date?: string | null;
+        next_action_count?: number | null;
+      }
+    >();
+    teamActiveProjects.forEach((project) => {
+      map.set(project.id, {
+        id: project.id,
+        title: project.title,
+        status: project.status ?? null,
+        progress: project.progress ?? null,
+        lead: project.lead ?? null,
+        due_date: project.due_date ?? null,
+        next_action_count: project.next_action_count ?? null,
+      });
+    });
+    (openedTeam?.ownedProjects ?? []).forEach((project) => {
+      if (!map.has(project.id)) {
+        map.set(project.id, { id: project.id, title: project.name });
+      }
+    });
+    return map;
+  }, [openedTeam?.ownedProjects, teamActiveProjects]);
+  const teamNoteById = useMemo(() => {
+    const map = new Map<string, TeamOverviewResponse['recent_notes'][number]>();
+    [...teamOverviewNotes, ...teamNotes].forEach((note) => {
+      map.set(note.id, note);
+    });
+    return map;
+  }, [teamNotes, teamOverviewNotes]);
+  const teamTaskById = useMemo(() => {
+    const map = new Map<string, TeamOverviewResponse['assigned_work'][number]>();
+    [...(teamOverview?.assigned_work ?? []), ...(teamOverview?.needs_attention.overdue_tasks ?? [])].forEach(
+      (task) => {
+        map.set(task.id, task);
+      }
+    );
+    return map;
+  }, [teamOverview?.assigned_work, teamOverview?.needs_attention.overdue_tasks]);
+  const teamUpcomingById = useMemo(() => {
+    return new Map(teamUpcomingItems.map((item) => [item.id, item]));
+  }, [teamUpcomingItems]);
+  const teamActivityById = useMemo(() => {
+    return new Map(teamRecentActivity.map((item) => [item.id, item]));
+  }, [teamRecentActivity]);
+  const teamLinkedNoteIds = useMemo(() => {
+    return new Set((openedTeam?.linkedNotes ?? []).map((note) => note.id));
+  }, [openedTeam?.linkedNotes]);
   const teamPinnedResources = useMemo(() => {
     const resources: Array<
       | {
@@ -990,10 +1156,7 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
         right: [item.assignee ?? null, item.task_type ? item.task_type : 'Task']
           .filter(Boolean)
           .join(' · '),
-        onClick: () =>
-          void window.desktopWindow?.toggleModule('inbox', {
-            focusContext: `team:${openedTeam?.id ?? ''}`,
-          }),
+        onClick: () => openTaskById(item.id.replace(/^task-/, '')),
       })),
       ...overdueMilestones.map((item) => ({
         id: `milestone-${item.id}`,
@@ -1024,11 +1187,6 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
       })),
     ];
   }, [openedTeam?.id, teamOverview?.needs_attention.intake_items, teamOverview?.needs_attention.overdue_milestones, teamOverview?.needs_attention.overdue_tasks]);
-
-  const teamActiveProjects = teamOverview?.active_projects ?? [];
-  const teamUpcomingItems = teamOverview?.upcoming ?? [];
-  const teamRecentActivity = teamOverview?.recent_activity ?? [];
-  const teamOverviewNotes = teamOverview?.recent_notes ?? openedTeam?.linkedNotes ?? [];
 
   const availableMembers = useMemo(() => {
     if (!addMemberTeam) return [];
@@ -1389,6 +1547,367 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
     setIsNoteLinkOpen(true);
   };
 
+  const copyLedgerLink = async (kind: string, sourceId: string) => {
+    try {
+      await navigator.clipboard.writeText(`ledger://${kind}/${sourceId}`);
+    } catch (error) {
+      console.error('Failed to copy link:', error);
+    }
+  };
+
+  const openNoteById = (noteId: string) => {
+    void window.desktopWindow?.toggleModule('notes', { focusNoteId: noteId });
+  };
+
+  const openProjectById = (projectId: string) => {
+    void window.desktopWindow?.toggleModule('projects', { focusProjectId: projectId });
+  };
+
+  const openTaskById = (taskId: string) => {
+    void window.desktopWindow?.toggleModule('projects', { focusTaskId: taskId });
+  };
+
+  const openMemberInCircle = (memberId: string, memberName?: string | null) => {
+    void window.desktopWindow?.toggleModule('circle' as any, {
+      kind: 'circle' as any,
+      focusContext: `ledger-person|${memberId}|${encodeURIComponent(memberName ?? 'Member')}`,
+    } as any);
+  };
+
+  const openPersonTaskComposer = (memberId: string, memberName?: string | null) => {
+    void window.desktopWindow?.toggleModule('quick-task' as any, {
+      kind: 'quick-task' as any,
+      focusContext: `ledger-person|${memberId}|${encodeURIComponent(memberName ?? 'Member')}`,
+    } as any);
+  };
+
+  const openPersonFollowUpComposer = (memberId: string, memberName?: string | null) => {
+    void window.desktopWindow?.toggleModule('quick-follow-up' as any, {
+      kind: 'quick-follow-up' as any,
+      focusContext: `ledger-person|${memberId}|${encodeURIComponent(memberName ?? 'Member')}`,
+    } as any);
+  };
+
+  const closeTeamRowContextMenu = () => setTeamRowContextMenu(null);
+
+  const openTeamRowContextMenu = (
+    event: ReactMouseEvent<HTMLElement>,
+    menu: TeamRowContextMenuState
+  ) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setTeamRowContextMenu(menu);
+  };
+
+  const refreshOpenedTeam = async () => {
+    if (!openedTeamId) return;
+    await reloadTeams(openedTeamId);
+  };
+
+  const canManageOpenedTeam =
+    activeWorkspace?.role === 'owner' ||
+    activeWorkspace?.role === 'admin' ||
+    openedTeam?.currentUserRole === 'lead';
+
+  const unpinTeamNote = async (noteId: string) => {
+    if (!openedTeam) return;
+    try {
+      await api.unlinkTeamNote(openedTeam.id, noteId);
+      await refreshOpenedTeam();
+    } catch (error) {
+      console.error(error);
+    } finally {
+      closeTeamRowContextMenu();
+    }
+  };
+
+  const pinTeamNote = async (noteId: string) => {
+    if (!openedTeam) return;
+    try {
+      await api.linkTeamNote(openedTeam.id, noteId);
+      await refreshOpenedTeam();
+    } catch (error) {
+      console.error(error);
+    } finally {
+      closeTeamRowContextMenu();
+    }
+  };
+
+  const unpinTeamProject = async (projectId: string) => {
+    if (!openedTeam) return;
+    try {
+      await api.updateProject(projectId, { owner_team_id: null });
+      await refreshOpenedTeam();
+    } catch (error) {
+      console.error(error);
+    } finally {
+      closeTeamRowContextMenu();
+    }
+  };
+
+  const updateTeamProjectStatus = async (
+    projectId: string,
+    status: 'not_started' | 'in_progress' | 'paused' | 'completed'
+  ) => {
+    try {
+      const payload: Record<string, unknown> = {
+        status:
+          status === 'not_started'
+            ? 'not_started'
+            : status === 'in_progress'
+            ? 'in_progress'
+            : status === 'paused'
+            ? 'paused'
+            : 'completed',
+      };
+      if (status === 'completed') {
+        payload.completeness = 100;
+      }
+      await api.updateProject(projectId, payload);
+      await refreshOpenedTeam();
+    } catch (error) {
+      console.error(error);
+    } finally {
+      closeTeamRowContextMenu();
+    }
+  };
+
+  const deleteTeamProject = async (projectId: string) => {
+    try {
+      await api.deleteProject(projectId);
+      await refreshOpenedTeam();
+    } catch (error) {
+      console.error(error);
+    } finally {
+      closeTeamRowContextMenu();
+    }
+  };
+
+  const updateTeamTaskStatus = async (taskId: string, status: 'todo' | 'in_progress' | 'completed') => {
+    try {
+      await api.updateTask(taskId, { status });
+      await refreshOpenedTeam();
+    } catch (error) {
+      console.error(error);
+    } finally {
+      closeTeamRowContextMenu();
+    }
+  };
+
+  const deleteTeamTask = async (taskId: string) => {
+    try {
+      await api.deleteTask(taskId);
+      await refreshOpenedTeam();
+    } catch (error) {
+      console.error(error);
+    } finally {
+      closeTeamRowContextMenu();
+    }
+  };
+
+  const toggleTeamMilestoneComplete = async (milestoneId: string, completed: boolean) => {
+    try {
+      await api.updateProjectMilestone(milestoneId, { completed: !completed });
+      await refreshOpenedTeam();
+    } catch (error) {
+      console.error(error);
+    } finally {
+      closeTeamRowContextMenu();
+    }
+  };
+
+  const deleteTeamMilestone = async (milestoneId: string) => {
+    try {
+      await api.deleteProjectMilestone(milestoneId);
+      await refreshOpenedTeam();
+    } catch (error) {
+      console.error(error);
+    } finally {
+      closeTeamRowContextMenu();
+    }
+  };
+
+  const acceptTeamIntakeItem = async (item: { id: string; suggested_type?: string | null; title: string }) => {
+    const type = ['task', 'note', 'reminder', 'event', 'project'].includes(
+      String(item.suggested_type ?? '').toLowerCase()
+    )
+      ? (String(item.suggested_type).toLowerCase() as 'task' | 'note' | 'reminder' | 'event' | 'project')
+      : 'task';
+    try {
+      await api.convertIntakeItem(item.id, { type, title: item.title });
+      await refreshOpenedTeam();
+    } catch (error) {
+      console.error(error);
+    } finally {
+      closeTeamRowContextMenu();
+    }
+  };
+
+  const markTeamReminderComplete = async (reminderId: string) => {
+    try {
+      await api.updateReminder(reminderId, { status: 'completed' });
+      await refreshOpenedTeam();
+    } catch (error) {
+      console.error(error);
+    } finally {
+      closeTeamRowContextMenu();
+    }
+  };
+
+  const snoozeTeamReminder = async (reminderId: string) => {
+    const snoozedUntil = new Date();
+    snoozedUntil.setDate(snoozedUntil.getDate() + 1);
+    try {
+      await api.snoozeReminder(reminderId, snoozedUntil.toISOString());
+      await refreshOpenedTeam();
+    } catch (error) {
+      console.error(error);
+    } finally {
+      closeTeamRowContextMenu();
+    }
+  };
+
+  const deleteTeamReminder = async (reminderId: string) => {
+    try {
+      await api.deleteReminder(reminderId);
+      await refreshOpenedTeam();
+    } catch (error) {
+      console.error(error);
+    } finally {
+      closeTeamRowContextMenu();
+    }
+  };
+
+  const deleteTeamEvent = async (eventId: string) => {
+    try {
+      await api.deleteEvent(eventId);
+      await refreshOpenedTeam();
+    } catch (error) {
+      console.error(error);
+    } finally {
+      closeTeamRowContextMenu();
+    }
+  };
+
+  const duplicateTeamNote = async (noteId: string) => {
+    try {
+      await api.duplicateNote(noteId);
+      await refreshOpenedTeam();
+    } catch (error) {
+      console.error(error);
+    } finally {
+      closeTeamRowContextMenu();
+    }
+  };
+
+  const deleteTeamNote = async (noteId: string) => {
+    try {
+      await api.deleteNote(noteId);
+      await refreshOpenedTeam();
+    } catch (error) {
+      console.error(error);
+    } finally {
+      closeTeamRowContextMenu();
+    }
+  };
+
+  const updateTeamMemberRole = async (memberId: string, role: 'lead' | 'member' | 'viewer') => {
+    if (!openedTeam) return;
+    try {
+      await api.updateTeamMember(openedTeam.id, memberId, { role });
+      await refreshOpenedTeam();
+    } catch (error) {
+      console.error(error);
+    } finally {
+      closeTeamRowContextMenu();
+    }
+  };
+
+  const removeTeamMemberFromTeam = async (memberId: string) => {
+    if (!openedTeam) return;
+    try {
+      await api.removeTeamMember(openedTeam.id, memberId);
+      await refreshOpenedTeam();
+    } catch (error) {
+      console.error(error);
+    } finally {
+      closeTeamRowContextMenu();
+    }
+  };
+
+  const snoozeTeamIntakeItem = async (itemId: string, days = 1) => {
+    const snoozedUntil = new Date();
+    snoozedUntil.setDate(snoozedUntil.getDate() + days);
+    try {
+      await api.snoozeIntakeItem(itemId, snoozedUntil.toISOString());
+      await refreshOpenedTeam();
+    } catch (error) {
+      console.error(error);
+    } finally {
+      closeTeamRowContextMenu();
+    }
+  };
+
+  const archiveTeamIntakeItem = async (itemId: string) => {
+    try {
+      await api.archiveIntakeItem(itemId);
+      await refreshOpenedTeam();
+    } catch (error) {
+      console.error(error);
+    } finally {
+      closeTeamRowContextMenu();
+    }
+  };
+
+  const deleteTeamIntakeItem = async (itemId: string) => {
+    try {
+      await api.deleteIntakeItem(itemId);
+      await refreshOpenedTeam();
+    } catch (error) {
+      console.error(error);
+    } finally {
+      closeTeamRowContextMenu();
+    }
+  };
+
+  const openTeamCalendarItem = (item: { id: string; type: 'event' | 'reminder' | 'milestone'; start?: string | null }) => {
+    const focusContext =
+      item.type === 'event'
+        ? `focus-event:${item.id}`
+        : item.type === 'reminder'
+        ? `focus-reminder:${item.id}`
+        : null;
+    void window.desktopWindow?.openModule('calendar', {
+      focusDate: item.start ? String(item.start).slice(0, 10) : undefined,
+      focusContext: focusContext ?? undefined,
+    });
+  };
+
+  const openTeamActivityItem = (activity: {
+    object_type?: string | null;
+    object_id?: string | null;
+    timestamp?: string | null;
+  }) => {
+    const kind = String(activity.object_type ?? '').toLowerCase();
+    const objectId = String(activity.object_id ?? '').trim();
+    if (!objectId) return;
+    if (kind === 'project') return openProjectById(objectId);
+    if (kind === 'note') return openNoteById(objectId);
+    if (kind === 'task') return openTaskById(objectId);
+    if (kind === 'event' || kind === 'reminder') {
+      openTeamCalendarItem({
+        id: objectId,
+        type: kind,
+        start: activity.timestamp ?? null,
+      });
+      return;
+    }
+    if (kind === 'workspace_team_member') {
+      const member = teamMembers.find((item) => item.id === objectId);
+      if (member) openMemberInCircle(member.id, member.name);
+    }
+  };
+
   const linkExistingProject = async (projectId: string) => {
     if (!openedTeam) return;
     try {
@@ -1520,7 +2039,18 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
           <div className="space-y-1">
             <span className="text-[11px] font-medium text-[var(--ledger-text-muted)]">Members</span>
             <div className="flex justify-start">
-              <AvatarStack members={teamMembers} maxVisible={3} />
+              <AvatarStack
+                members={teamMembers}
+                maxVisible={3}
+                onMemberContextMenu={(member, event) =>
+                  openTeamRowContextMenu(event, {
+                    kind: 'member',
+                    memberId: member.id,
+                    x: event.clientX,
+                    y: event.clientY,
+                  })
+                }
+              />
             </div>
           </div>
         </div>
@@ -1628,6 +2158,802 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
         </div>
       </aside>
     );
+  };
+
+  const renderTeamRowContextMenu = () => {
+    if (!teamRowContextMenu) return null;
+
+    const menuClasses = `${sidebarTheme.menu} z-[9999] w-64 overflow-hidden`;
+    const menuItemClass = `${sidebarTheme.menuItem} disabled:cursor-not-allowed disabled:opacity-40`;
+    const menuDangerClass = `${sidebarTheme.menuItemDanger} disabled:cursor-not-allowed disabled:opacity-40`;
+    const menuWidth =
+      teamRowContextMenu.kind === 'member'
+        ? 248
+        : teamRowContextMenu.kind === 'activity'
+        ? 228
+        : teamRowContextMenu.kind === 'upcoming'
+        ? 260
+        : 256;
+    const menuHeight =
+      teamRowContextMenu.kind === 'member'
+        ? 280
+        : teamRowContextMenu.kind === 'activity'
+        ? 180
+        : teamRowContextMenu.kind === 'upcoming'
+        ? 268
+        : 248;
+    const menuStyle = {
+      left: Math.max(8, Math.min(teamRowContextMenu.x + 8, window.innerWidth - menuWidth - 8)),
+      top: Math.max(8, Math.min(teamRowContextMenu.y + 8, window.innerHeight - menuHeight - 8)),
+    };
+
+    const copyCurrentItemLink = async (kind: string, id: string) => {
+      await copyLedgerLink(kind, id);
+      closeTeamRowContextMenu();
+    };
+
+    const renderDivider = (key: string) => (
+      <div key={key} className="my-1 h-px bg-[var(--ledger-border-subtle)]" />
+    );
+
+    switch (teamRowContextMenu.kind) {
+      case 'resource': {
+        if (teamRowContextMenu.resourceKind === 'project') {
+          return (
+            <div className={menuClasses} style={menuStyle} onClick={(event) => event.stopPropagation()}>
+              <button
+                type="button"
+                onClick={() => {
+                  closeTeamRowContextMenu();
+                  openProjectById(teamRowContextMenu.resourceId);
+                }}
+                className={menuItemClass}
+              >
+                Open project
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  void copyCurrentItemLink('project', teamRowContextMenu.resourceId);
+                }}
+                className={menuItemClass}
+              >
+                Copy project link
+              </button>
+              {canManageOpenedTeam ? (
+                <>
+                  {renderDivider('project-divider')}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void unpinTeamProject(teamRowContextMenu.resourceId);
+                    }}
+                    className={menuDangerClass}
+                  >
+                    Unpin from team
+                  </button>
+                </>
+              ) : null}
+            </div>
+          );
+        }
+
+        if (teamRowContextMenu.resourceKind === 'note') {
+          const note = teamNoteById.get(teamRowContextMenu.resourceId);
+          const linkedProjectId = note?.project_id ?? note?.projectId ?? note?.linked_project?.id ?? null;
+          const isPinned = teamLinkedNoteIds.has(teamRowContextMenu.resourceId);
+          return (
+            <div className={menuClasses} style={menuStyle} onClick={(event) => event.stopPropagation()}>
+              <button
+                type="button"
+                onClick={() => {
+                  closeTeamRowContextMenu();
+                  openNoteById(teamRowContextMenu.resourceId);
+                }}
+                className={menuItemClass}
+              >
+                Open note
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  closeTeamRowContextMenu();
+                  openNoteById(teamRowContextMenu.resourceId);
+                }}
+                className={menuItemClass}
+              >
+                Open in Notes
+              </button>
+              {linkedProjectId ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    closeTeamRowContextMenu();
+                    openProjectById(linkedProjectId);
+                  }}
+                  className={menuItemClass}
+                >
+                  Open linked project
+                </button>
+              ) : null}
+              <button
+                type="button"
+                onClick={() => {
+                  void copyCurrentItemLink('note', teamRowContextMenu.resourceId);
+                }}
+                className={menuItemClass}
+              >
+                Copy note link
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  void duplicateTeamNote(teamRowContextMenu.resourceId);
+                }}
+                className={menuItemClass}
+              >
+                Duplicate
+              </button>
+              {canManageOpenedTeam ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void (isPinned
+                        ? unpinTeamNote(teamRowContextMenu.resourceId)
+                        : pinTeamNote(teamRowContextMenu.resourceId));
+                    }}
+                    className={menuItemClass}
+                  >
+                    {isPinned ? 'Unpin from team' : 'Pin to team'}
+                  </button>
+                  {renderDivider('note-divider')}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void deleteTeamNote(teamRowContextMenu.resourceId);
+                    }}
+                    className={menuDangerClass}
+                  >
+                    Delete
+                  </button>
+                </>
+              ) : null}
+            </div>
+          );
+        }
+
+        if (teamRowContextMenu.resourceKind === 'task') {
+          const task = teamTaskById.get(teamRowContextMenu.resourceId);
+          const isComplete = String(task?.status ?? '').toLowerCase() === 'completed';
+          const linkedProjectId = task?.project?.id ?? task?.project_id ?? null;
+          return (
+            <div className={menuClasses} style={menuStyle} onClick={(event) => event.stopPropagation()}>
+              <button
+                type="button"
+                onClick={() => {
+                  closeTeamRowContextMenu();
+                  openTaskById(teamRowContextMenu.resourceId);
+                }}
+                className={menuItemClass}
+              >
+                Open task
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  void updateTeamTaskStatus(
+                    teamRowContextMenu.resourceId,
+                    isComplete ? 'todo' : 'completed'
+                  );
+                }}
+                className={menuItemClass}
+              >
+                {isComplete ? 'Reopen' : 'Mark complete'}
+              </button>
+              {linkedProjectId ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    closeTeamRowContextMenu();
+                    openProjectById(linkedProjectId);
+                  }}
+                  className={menuItemClass}
+                >
+                  Open project
+                </button>
+              ) : null}
+              <button
+                type="button"
+                onClick={() => {
+                  void copyCurrentItemLink('task', teamRowContextMenu.resourceId);
+                }}
+                className={menuItemClass}
+              >
+                Copy task link
+              </button>
+              <div className="my-1 h-px bg-[var(--ledger-border-subtle)]" />
+              <button
+                type="button"
+                onClick={() => {
+                  void deleteTeamTask(teamRowContextMenu.resourceId);
+                }}
+                className={menuDangerClass}
+              >
+                Delete
+              </button>
+            </div>
+          );
+        }
+
+        if (teamRowContextMenu.resourceKind === 'event') {
+          return (
+            <div className={menuClasses} style={menuStyle} onClick={(event) => event.stopPropagation()}>
+              <button
+                type="button"
+                onClick={() => {
+                  closeTeamRowContextMenu();
+                  void openTeamCalendarItem({
+                    id: teamRowContextMenu.resourceId,
+                    type: 'event',
+                    start: null,
+                  });
+                }}
+                className={menuItemClass}
+              >
+                Open event
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  void copyCurrentItemLink('event', teamRowContextMenu.resourceId);
+                }}
+                className={menuItemClass}
+              >
+                Copy link
+              </button>
+              <div className="my-1 h-px bg-[var(--ledger-border-subtle)]" />
+              <button
+                type="button"
+                onClick={() => {
+                  void deleteTeamEvent(teamRowContextMenu.resourceId);
+                }}
+                className={menuDangerClass}
+              >
+                Delete
+              </button>
+            </div>
+          );
+        }
+
+        if (teamRowContextMenu.resourceKind === 'external') {
+          return (
+            <div className={menuClasses} style={menuStyle} onClick={(event) => event.stopPropagation()}>
+              <button
+                type="button"
+                onClick={() => {
+                  closeTeamRowContextMenu();
+                  void window.desktopWindow?.openExternal(teamRowContextMenu.resourceId);
+                }}
+                className={menuItemClass}
+              >
+                Open link
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  void copyCurrentItemLink('external', teamRowContextMenu.resourceId);
+                }}
+                className={menuItemClass}
+              >
+                Copy link
+              </button>
+            </div>
+          );
+        }
+
+        return null;
+      }
+      case 'note': {
+        const note = teamNoteById.get(teamRowContextMenu.noteId);
+        const linkedProjectId = note?.project_id ?? note?.projectId ?? note?.linked_project?.id ?? null;
+        const isPinned = teamLinkedNoteIds.has(teamRowContextMenu.noteId);
+        return (
+          <div className={menuClasses} style={menuStyle} onClick={(event) => event.stopPropagation()}>
+            <button
+              type="button"
+              onClick={() => {
+                closeTeamRowContextMenu();
+                openNoteById(teamRowContextMenu.noteId);
+              }}
+              className={menuItemClass}
+            >
+              Open note
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                closeTeamRowContextMenu();
+                openNoteById(teamRowContextMenu.noteId);
+              }}
+              className={menuItemClass}
+            >
+              Open in Notes
+            </button>
+            {linkedProjectId ? (
+              <button
+                type="button"
+                onClick={() => {
+                  closeTeamRowContextMenu();
+                  openProjectById(linkedProjectId);
+                }}
+                className={menuItemClass}
+              >
+                Open linked project
+              </button>
+            ) : null}
+            <button
+              type="button"
+              onClick={() => {
+                void copyCurrentItemLink('note', teamRowContextMenu.noteId);
+              }}
+              className={menuItemClass}
+            >
+              Copy note link
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                void duplicateTeamNote(teamRowContextMenu.noteId);
+              }}
+              className={menuItemClass}
+            >
+              Duplicate
+            </button>
+            {canManageOpenedTeam ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => {
+                    void (isPinned ? unpinTeamNote(teamRowContextMenu.noteId) : pinTeamNote(teamRowContextMenu.noteId));
+                  }}
+                  className={menuItemClass}
+                >
+                  {isPinned ? 'Unpin from team' : 'Pin to team'}
+                </button>
+                {renderDivider('note-divider-2')}
+                <button
+                  type="button"
+                  onClick={() => {
+                    void deleteTeamNote(teamRowContextMenu.noteId);
+                  }}
+                  className={menuDangerClass}
+                >
+                  Delete
+                </button>
+              </>
+            ) : null}
+          </div>
+        );
+      }
+      case 'task': {
+        const task = teamTaskById.get(teamRowContextMenu.taskId);
+        const isComplete = String(task?.status ?? '').toLowerCase() === 'completed';
+        const linkedProjectId = task?.project?.id ?? task?.project_id ?? null;
+        return (
+          <div className={menuClasses} style={menuStyle} onClick={(event) => event.stopPropagation()}>
+            <button
+              type="button"
+              onClick={() => {
+                closeTeamRowContextMenu();
+                openTaskById(teamRowContextMenu.taskId);
+              }}
+              className={menuItemClass}
+            >
+              Open task
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                void updateTeamTaskStatus(teamRowContextMenu.taskId, isComplete ? 'todo' : 'completed');
+              }}
+              className={menuItemClass}
+            >
+              {isComplete ? 'Reopen' : 'Mark complete'}
+            </button>
+            {linkedProjectId ? (
+              <button
+                type="button"
+                onClick={() => {
+                  closeTeamRowContextMenu();
+                  openProjectById(linkedProjectId);
+                }}
+                className={menuItemClass}
+              >
+                Open project
+              </button>
+            ) : null}
+            <button
+              type="button"
+              onClick={() => {
+                void copyCurrentItemLink('task', teamRowContextMenu.taskId);
+              }}
+              className={menuItemClass}
+            >
+              Copy task link
+            </button>
+            {canManageOpenedTeam ? (
+              <>
+                {renderDivider('task-divider')}
+                <button
+                  type="button"
+                  onClick={() => {
+                    void deleteTeamTask(teamRowContextMenu.taskId);
+                  }}
+                  className={menuDangerClass}
+                >
+                  Delete
+                </button>
+              </>
+            ) : null}
+          </div>
+        );
+      }
+      case 'project': {
+        const project = teamProjectById.get(teamRowContextMenu.projectId);
+        return (
+          <div className={menuClasses} style={menuStyle} onClick={(event) => event.stopPropagation()}>
+            <button
+              type="button"
+              onClick={() => {
+                closeTeamRowContextMenu();
+                openProjectById(teamRowContextMenu.projectId);
+              }}
+              className={menuItemClass}
+            >
+              Open project
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                void copyCurrentItemLink('project', teamRowContextMenu.projectId);
+              }}
+              className={menuItemClass}
+            >
+              Copy project link
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                void updateTeamProjectStatus(
+                  teamRowContextMenu.projectId,
+                  project?.status && String(project.status).toLowerCase().includes('complete')
+                    ? 'in_progress'
+                    : 'completed'
+                );
+              }}
+              className={menuItemClass}
+            >
+              {project?.status && String(project.status).toLowerCase().includes('complete')
+                ? 'Reopen'
+                : 'Mark complete'}
+            </button>
+            {canManageOpenedTeam ? (
+              <>
+                {renderDivider('project-divider-2')}
+                <button
+                  type="button"
+                  onClick={() => {
+                    void deleteTeamProject(teamRowContextMenu.projectId);
+                  }}
+                  className={menuDangerClass}
+                >
+                  Delete
+                </button>
+              </>
+            ) : null}
+          </div>
+        );
+      }
+      case 'upcoming': {
+        const item = teamUpcomingById.get(teamRowContextMenu.itemId);
+        if (!item) return null;
+        return (
+          <div className={menuClasses} style={menuStyle} onClick={(event) => event.stopPropagation()}>
+            <button
+              type="button"
+              onClick={() => {
+                closeTeamRowContextMenu();
+                openTeamCalendarItem(item);
+              }}
+              className={menuItemClass}
+            >
+              Open {item.type}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                closeTeamRowContextMenu();
+                window.desktopWindow?.openModule('calendar');
+              }}
+              className={menuItemClass}
+            >
+              Open in Calendar
+            </button>
+            {item.project?.id ? (
+              <button
+                type="button"
+                onClick={() => {
+                  closeTeamRowContextMenu();
+                  openProjectById(item.project?.id ?? '');
+                }}
+                className={menuItemClass}
+              >
+                Open project
+              </button>
+            ) : null}
+            <button
+              type="button"
+              onClick={() => {
+                void copyCurrentItemLink(item.type, item.id);
+              }}
+              className={menuItemClass}
+            >
+              Copy link
+            </button>
+            {item.type === 'reminder' ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => {
+                    void markTeamReminderComplete(item.id);
+                  }}
+                  className={menuItemClass}
+                >
+                  Mark complete
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    void snoozeTeamReminder(item.id);
+                  }}
+                  className={menuItemClass}
+                >
+                  Snooze
+                </button>
+              </>
+            ) : null}
+            {item.type === 'milestone' ? (
+              <button
+                type="button"
+                onClick={() => {
+                  void toggleTeamMilestoneComplete(item.id, String(item.status ?? '').toLowerCase() === 'completed');
+                }}
+                className={menuItemClass}
+              >
+                {String(item.status ?? '').toLowerCase() === 'completed'
+                  ? 'Reopen milestone'
+                  : 'Mark complete'}
+              </button>
+            ) : null}
+            <div className="my-1 h-px bg-[var(--ledger-border-subtle)]" />
+            <button
+              type="button"
+              onClick={() => {
+                if (item.type === 'event') {
+                  void deleteTeamEvent(item.id);
+                } else if (item.type === 'reminder') {
+                  void deleteTeamReminder(item.id);
+                } else {
+                  void deleteTeamMilestone(item.id);
+                }
+              }}
+              className={menuDangerClass}
+            >
+              Delete
+            </button>
+          </div>
+        );
+      }
+      case 'activity': {
+        const activity = teamActivityById.get(teamRowContextMenu.activityId);
+        if (!activity) return null;
+        const actorId = (activity as { actor_id?: string | null }).actor_id ?? null;
+        return (
+          <div className={menuClasses} style={menuStyle} onClick={(event) => event.stopPropagation()}>
+            <button
+              type="button"
+              onClick={() => {
+                closeTeamRowContextMenu();
+                openTeamActivityItem(activity);
+              }}
+              className={menuItemClass}
+            >
+              Open related item
+            </button>
+            {actorId ? (
+              <button
+                type="button"
+                onClick={() => {
+                  closeTeamRowContextMenu();
+                  openMemberInCircle(actorId, activity.actor ?? undefined);
+                }}
+                className={menuItemClass}
+              >
+                Open actor in Circle
+              </button>
+            ) : null}
+            <button
+              type="button"
+              onClick={() => {
+                void copyCurrentItemLink('activity', activity.id);
+              }}
+              className={menuItemClass}
+            >
+              Copy link
+            </button>
+          </div>
+        );
+      }
+      case 'member': {
+        const member = teamOverviewMembersById.get(teamRowContextMenu.memberId);
+        if (!member) return null;
+        const isSelf = member.id === user?.id;
+        const isLead = Boolean(member.is_lead || member.role === 'lead' || member.team_role === 'lead');
+        const canToggleLead = canManageOpenedTeam && !isSelf;
+        const canDemoteLead = canToggleLead && isLead && (teamOverview?.team.lead_count ?? 0) > 1;
+        const canRemoveMember =
+          canManageOpenedTeam && !isSelf && (!isLead || (teamOverview?.team.lead_count ?? 0) > 1);
+        return (
+          <div className={menuClasses} style={menuStyle} onClick={(event) => event.stopPropagation()}>
+            <button
+              type="button"
+              onClick={() => {
+                closeTeamRowContextMenu();
+                openMemberInCircle(member.id, member.name);
+              }}
+              className={menuItemClass}
+            >
+              Open person in Circle
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                closeTeamRowContextMenu();
+                openPersonTaskComposer(member.id, member.name);
+              }}
+              className={menuItemClass}
+            >
+              Assign task
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                closeTeamRowContextMenu();
+                openPersonFollowUpComposer(member.id, member.name);
+              }}
+              className={menuItemClass}
+            >
+              Create follow-up
+            </button>
+            {member.email ? (
+              <button
+                type="button"
+                onClick={() => {
+                  void navigator.clipboard
+                    .writeText(member.email ?? '')
+                    .catch(() => undefined)
+                    .finally(() => closeTeamRowContextMenu());
+                }}
+                className={menuItemClass}
+              >
+                Copy email
+              </button>
+            ) : null}
+            {canToggleLead ? (
+              <>
+                <div className="my-1 h-px bg-[var(--ledger-border-subtle)]" />
+                {isLead ? (
+                  <button
+                    type="button"
+                    disabled={!canDemoteLead}
+                    onClick={() => {
+                      void updateTeamMemberRole(member.id, 'member');
+                    }}
+                    className={menuItemClass}
+                  >
+                    Remove team lead
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void updateTeamMemberRole(member.id, 'lead');
+                    }}
+                    className={menuItemClass}
+                  >
+                    Make team lead
+                  </button>
+                )}
+              </>
+            ) : null}
+            {canRemoveMember ? (
+              <>
+                <div className="my-1 h-px bg-[var(--ledger-border-subtle)]" />
+                <button
+                  type="button"
+                  onClick={() => {
+                    void removeTeamMemberFromTeam(member.id);
+                  }}
+                  className={menuDangerClass}
+                >
+                  Remove from team
+                </button>
+              </>
+            ) : null}
+          </div>
+        );
+      }
+      case 'intake': {
+        const item = teamOverview?.needs_attention.intake_items.find(
+          (intakeItem) => intakeItem.id === teamRowContextMenu.intakeId
+        );
+        if (!item) return null;
+        return (
+          <div className={menuClasses} style={menuStyle} onClick={(event) => event.stopPropagation()}>
+            <button
+              type="button"
+              onClick={() => {
+                closeTeamRowContextMenu();
+                void window.desktopWindow?.toggleModule('inbox');
+              }}
+              className={menuItemClass}
+            >
+              Open in Intake
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                void acceptTeamIntakeItem({ id: item.id, suggested_type: item.suggested_type, title: item.title });
+              }}
+              className={menuItemClass}
+            >
+              Accept
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                void snoozeTeamIntakeItem(item.id);
+              }}
+              className={menuItemClass}
+            >
+              Snooze
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                void archiveTeamIntakeItem(item.id);
+              }}
+              className={menuItemClass}
+            >
+              Archive
+            </button>
+            <div className="my-1 h-px bg-[var(--ledger-border-subtle)]" />
+            <button
+              type="button"
+              onClick={() => {
+                void deleteTeamIntakeItem(item.id);
+              }}
+              className={menuDangerClass}
+            >
+              Delete
+            </button>
+          </div>
+        );
+      }
+      default:
+        return null;
+    }
   };
 
   return (
@@ -1827,14 +3153,13 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                         <h1 className="truncate text-[20px] font-semibold leading-tight text-[var(--ledger-text-primary)]">
                           {teamDisplayName}
                         </h1>
-                        <button
-                          type="button"
+                        <PinActionButton
+                          objectType="team"
+                          objectId={openedTeam.id}
+                          showLabel={false}
                           className="inline-flex h-6 w-6 items-center justify-center rounded-full text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]"
-                          title="Favorite team"
-                          aria-label="Favorite team"
-                        >
-                          <Star size={12} />
-                        </button>
+                          iconSize={12}
+                        />
                         <button
                           type="button"
                           onClick={(event) => {
@@ -1869,22 +3194,22 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                   </button>
                 </header>
                 <div className="flex flex-wrap items-center justify-between gap-3 px-1">
-                  <div className="flex min-w-0 flex-wrap items-center gap-2">
+                  <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
                     <div className="flex min-w-0 gap-1 overflow-x-auto">
-                    {tabs.map((tab) => (
-                      <button
-                        key={tab}
-                        type="button"
-                        onClick={() => setActiveTab(tab)}
-                        className={`inline-flex h-8 shrink-0 items-center rounded-full border px-3 text-xs font-medium transition ${
-                          activeTab === tab
-                            ? 'border-[color:var(--ledger-border-strong)] bg-[var(--ledger-surface-hover)] text-[var(--ledger-text-primary)]'
-                            : 'border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] text-[var(--ledger-text-muted)] hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]'
-                        }`}
-                      >
-                        {tab}
-                      </button>
-                    ))}
+                      {tabs.map((tab) => (
+                        <button
+                          key={tab}
+                          type="button"
+                          onClick={() => setActiveTab(tab)}
+                          className={`inline-flex h-8 shrink-0 items-center rounded-full border px-3 text-xs font-medium transition ${
+                            activeTab === tab
+                              ? 'border-[color:var(--ledger-border-strong)] bg-[var(--ledger-surface-hover)] text-[var(--ledger-text-primary)]'
+                              : 'border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] text-[var(--ledger-text-muted)] hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]'
+                          }`}
+                        >
+                          {tab}
+                        </button>
+                      ))}
                     </div>
                     {activeTab === 'Notes' ? (
                       <label className="flex h-8 min-w-0 w-[min(100%,320px)] items-center gap-2 rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3">
@@ -1946,6 +3271,15 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                                 key={resource.id}
                                 type="button"
                                 onClick={resource.onClick}
+                                onContextMenu={(event) =>
+                                  openTeamRowContextMenu(event, {
+                                    kind: 'resource',
+                                    resourceKind: resource.kind,
+                                    resourceId: resource.id.replace(/^(project|note)-/, ''),
+                                    x: event.clientX,
+                                    y: event.clientY,
+                                  })
+                                }
                                 className={`${teamRowBaseClass} ${teamRowHoverClass}`}
                               >
                                 <span className={teamRowIconClass}>
@@ -2004,6 +3338,14 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                                     focusNoteId: note.id,
                                   })
                                 }
+                                onContextMenu={(event) =>
+                                  openTeamRowContextMenu(event, {
+                                    kind: 'note',
+                                    noteId: note.id,
+                                    x: event.clientX,
+                                    y: event.clientY,
+                                  })
+                                }
                                 className={`${teamRowBaseClass} ${teamRowHoverClass}`}
                               >
                                 <span className={teamRowIconClass}>
@@ -2054,6 +3396,29 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                                 key={item.id}
                                 type="button"
                                 onClick={item.onClick}
+                                onContextMenu={(event) =>
+                                  openTeamRowContextMenu(event, {
+                                    kind:
+                                      item.kind === 'task'
+                                        ? 'task'
+                                        : item.kind === 'milestone'
+                                        ? 'upcoming'
+                                        : 'intake',
+                                    taskId:
+                                      item.kind === 'task' ? item.id.replace(/^task-/, '') : undefined,
+                                    itemId:
+                                      item.kind === 'milestone'
+                                        ? item.id.replace(/^milestone-/, '')
+                                        : undefined,
+                                    itemType: item.kind === 'milestone' ? 'milestone' : undefined,
+                                    intakeId:
+                                      item.kind === 'intake'
+                                        ? item.id.replace(/^intake-/, '')
+                                        : undefined,
+                                    x: event.clientX,
+                                    y: event.clientY,
+                                  } as TeamRowContextMenuState)
+                                }
                                 className={`${teamRowBaseClass} ${teamRowHoverClass}`}
                               >
                                 <span className={teamRowIconClass}>{item.icon}</span>
@@ -2101,6 +3466,14 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                                 onClick={() =>
                                   void window.desktopWindow?.toggleModule('projects', {
                                     focusProjectId: project.id,
+                                  })
+                                }
+                                onContextMenu={(event) =>
+                                  openTeamRowContextMenu(event, {
+                                    kind: 'project',
+                                    projectId: project.id,
+                                    x: event.clientX,
+                                    y: event.clientY,
                                   })
                                 }
                                 className={`${teamRowBaseClass} ${teamRowHoverClass}`}
@@ -2163,6 +3536,15 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                                 key={item.id}
                                 type="button"
                                 onClick={() => void window.desktopWindow?.openModule('calendar')}
+                                onContextMenu={(event) =>
+                                  openTeamRowContextMenu(event, {
+                                    kind: 'upcoming',
+                                    itemId: item.id,
+                                    itemType: item.type,
+                                    x: event.clientX,
+                                    y: event.clientY,
+                                  })
+                                }
                                 className={`${teamRowBaseClass} ${teamRowHoverClass}`}
                               >
                                 <span className={teamRowIconClass}>
@@ -2210,7 +3592,18 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                         teamRecentActivity.length > 0 ? (
                           <div className="space-y-1">
                             {teamRecentActivity.slice(0, 6).map((item) => (
-                              <div key={item.id} className={`${teamRowBaseClass} ${teamRowHoverClass}`}>
+                              <div
+                                key={item.id}
+                                className={`${teamRowBaseClass} ${teamRowHoverClass}`}
+                                onContextMenu={(event) =>
+                                  openTeamRowContextMenu(event, {
+                                    kind: 'activity',
+                                    activityId: item.id,
+                                    x: event.clientX,
+                                    y: event.clientY,
+                                  })
+                                }
+                              >
                                 <span className={teamRowIconClass}>
                                   <Users size={12} />
                                 </span>
@@ -2265,16 +3658,24 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                               .filter((note) => /meeting|sync|standup|review|planning/i.test(note.title))
                               .slice(0, 5)
                               .map((note) => (
-                                <button
-                                  key={note.id}
-                                  type="button"
-                                  onClick={() =>
-                                    void window.desktopWindow?.toggleModule('notes', {
-                                      focusNoteId: note.id,
-                                    })
-                                  }
-                                  className={`${teamRowBaseClass} ${teamRowHoverClass}`}
-                                >
+                              <button
+                                key={note.id}
+                                type="button"
+                                onClick={() =>
+                                  void window.desktopWindow?.toggleModule('notes', {
+                                    focusNoteId: note.id,
+                                  })
+                                }
+                                onContextMenu={(event) =>
+                                  openTeamRowContextMenu(event, {
+                                    kind: 'note',
+                                    noteId: note.id,
+                                    x: event.clientX,
+                                    y: event.clientY,
+                                  })
+                                }
+                                className={`${teamRowBaseClass} ${teamRowHoverClass}`}
+                              >
                                   <span className={teamRowIconClass}>
                                     <FileText size={12} />
                                   </span>
@@ -2308,16 +3709,24 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                               .filter((note) => Boolean(note.projectName))
                               .slice(0, 5)
                               .map((note) => (
-                                <button
-                                  key={note.id}
-                                  type="button"
-                                  onClick={() =>
-                                    void window.desktopWindow?.toggleModule('notes', {
-                                      focusNoteId: note.id,
-                                    })
-                                  }
-                                  className={`${teamRowBaseClass} ${teamRowHoverClass}`}
-                                >
+                              <button
+                                key={note.id}
+                                type="button"
+                                onClick={() =>
+                                  void window.desktopWindow?.toggleModule('notes', {
+                                    focusNoteId: note.id,
+                                  })
+                                }
+                                onContextMenu={(event) =>
+                                  openTeamRowContextMenu(event, {
+                                    kind: 'note',
+                                    noteId: note.id,
+                                    x: event.clientX,
+                                    y: event.clientY,
+                                  })
+                                }
+                                className={`${teamRowBaseClass} ${teamRowHoverClass}`}
+                              >
                                   <span className={teamRowIconClass}>
                                     <Link2 size={12} />
                                   </span>
@@ -2350,6 +3759,14 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                                 onClick={() =>
                                   void window.desktopWindow?.toggleModule('notes', {
                                     focusNoteId: note.id,
+                                  })
+                                }
+                                onContextMenu={(event) =>
+                                  openTeamRowContextMenu(event, {
+                                    kind: 'note',
+                                    noteId: note.id,
+                                    x: event.clientX,
+                                    y: event.clientY,
                                   })
                                 }
                                 className={`${teamRowBaseClass} ${teamRowHoverClass}`}
@@ -2395,6 +3812,14 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                                 key={member.id}
                                 type="button"
                                 onClick={() => setAddMemberTeamId(openedTeam.id)}
+                                onContextMenu={(event) =>
+                                  openTeamRowContextMenu(event, {
+                                    kind: 'member',
+                                    memberId: member.id,
+                                    x: event.clientX,
+                                    y: event.clientY,
+                                  })
+                                }
                                 className={`${teamRowBaseClass} ${teamRowHoverClass}`}
                               >
                                 <span className={teamRowIconClass}>{member.initials}</span>
@@ -3299,6 +4724,8 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
           </CompactButton>
         </div>
       ) : null}
+
+      {renderTeamRowContextMenu()}
     </div>
   );
 };

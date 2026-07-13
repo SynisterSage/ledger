@@ -55,6 +55,7 @@ import {
 import { CloseGuardModal } from '../Common/CloseGuardModal';
 import { ModalCloseButton } from '../Common/ModalCloseButton';
 import { SkeletonCompactRow, SkeletonProjectCard } from '../Common/Skeleton';
+import { PinActionButton } from '../Common/PinActionButton';
 import { useViewportWidth } from '../../hooks/useViewportWidth';
 import { useWorkspaceRouteHistory } from '../../hooks/useWorkspaceRouteHistory';
 import {
@@ -6557,6 +6558,12 @@ export const ProjectsWindow = () => {
                         </button>
                         {isContextMenuOpen && (
                           <div className="absolute right-0 top-9 z-50 min-w-44 rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] py-1 shadow-[var(--ledger-shadow)]">
+                            <PinActionButton
+                              objectType="project"
+                              objectId={selectedProject.id}
+                              onClick={() => setIsContextMenuOpen(false)}
+                              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+                            />
                             <button
                               className="w-full px-3 py-2 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
                               onClick={() => {
@@ -8148,6 +8155,12 @@ export const ProjectsWindow = () => {
           style={{ left: `${taskMenuPosition.x}px`, top: `${taskMenuPosition.y}px` }}
           onClick={(e) => e.stopPropagation()}
         >
+          <PinActionButton
+            objectType="task"
+            objectId={taskContextMenu.taskId}
+            onClick={() => setTaskContextMenu(null)}
+            className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+          />
           <button
             onClick={() => {
               const task = tasks.find((item) => item.id === taskContextMenu.taskId);
