@@ -58,6 +58,8 @@ const PART_OF_DAY_TO_TIME: Record<string, { hour: number; minute: number }> = {
   night: { hour: 20, minute: 0 },
 };
 
+const ORDINAL_SUFFIX = '(?:st|nd|rd|th)';
+
 const DATE_ONLY_PATTERNS: Array<{ regex: RegExp; kind: SmartDateMatch['source'] }> = [
   {
     regex: /\b(?:today|tomorrow)\b/gi,
@@ -70,11 +72,17 @@ const DATE_ONLY_PATTERNS: Array<{ regex: RegExp; kind: SmartDateMatch['source'] 
   },
   {
     regex:
-      /\b(?:january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|sept|oct|nov|dec)\s+\d{1,2}(?:,?\s+\d{4})?\b/gi,
+      new RegExp(
+        `\\b(?:january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|sept|oct|nov|dec)\\s+\\d{1,2}(?:${ORDINAL_SUFFIX})?(?:,?\\s+\\d{4})?\\b`,
+        'gi'
+      ),
     kind: 'named',
   },
   {
-    regex: /\b\d{1,2}[\/.-]\d{1,2}(?:[\/.-]\d{2,4})?\b/g,
+    regex: new RegExp(
+      `\\b\\d{1,2}(?:${ORDINAL_SUFFIX})?[\\/.-]\\d{1,2}(?:${ORDINAL_SUFFIX})?(?:[\\/.-]\\d{2,4})?\\b`,
+      'gi'
+    ),
     kind: 'numeric',
   },
 ];
@@ -90,6 +98,9 @@ const normalizeText = (value: string) =>
   String(value ?? '')
     .replace(/\s+/g, ' ')
     .trim();
+
+const stripOrdinalSuffixes = (value: string) =>
+  String(value ?? '').replace(/(\d)(?:st|nd|rd|th)\b/gi, '$1');
 
 const inferNumericDateOrder = (locale: string) => {
   try {
@@ -137,7 +148,7 @@ const nextWeekday = (base: Date, weekday: number, includeToday = false) => {
 };
 
 const resolveNamedMonthDate = (value: string, now: Date) => {
-  const normalized = normalizeText(value).toLowerCase();
+  const normalized = stripOrdinalSuffixes(normalizeText(value)).toLowerCase();
   const parsed = parse(normalized.replace(/\s+/g, ' '), 'MMMM d yyyy', now);
   if (isValid(parsed)) return parsed;
 
@@ -164,7 +175,7 @@ const resolveNamedMonthDate = (value: string, now: Date) => {
 };
 
 const resolveNumericDate = (value: string, now: Date) => {
-  const normalized = normalizeText(value);
+  const normalized = stripOrdinalSuffixes(normalizeText(value));
   const match = normalized.match(/^(\d{1,2})[\/.-](\d{1,2})(?:[\/.-](\d{2,4}))?$/);
   if (!match) return null;
 
@@ -247,7 +258,8 @@ const resolveExplicitTime = (value: string) => {
 };
 
 const parseCandidate = (phrase: string, now: Date): SmartDateMatch | null => {
-  const trimmed = normalizeText(phrase);
+  const original = normalizeText(phrase);
+  const trimmed = stripOrdinalSuffixes(original);
   if (!trimmed) return null;
 
   const lower = trimmed.toLowerCase();
@@ -287,23 +299,23 @@ const parseCandidate = (phrase: string, now: Date): SmartDateMatch | null => {
       if (resolvedTime) {
         const resolved = setTimeOnDate(match.resolved, resolvedTime.hour, resolvedTime.minute);
         return {
-          phrase: normalizeText(trimmed.slice(0, match.value.length + timeMatch[0].length)),
+          phrase: original,
           resolvedDate: resolved,
           hasExplicitTime: true,
           source: match.kind === 'weekday' ? 'weekday' : match.kind,
           startOffset: 0,
-          endOffset: match.value.length + timeMatch[0].length,
+          endOffset: original.length,
         };
       }
     }
 
     return {
-      phrase: match.value,
+      phrase: original,
       resolvedDate: match.resolved,
       hasExplicitTime: false,
       source: match.kind === 'weekday' ? 'weekday' : match.kind,
       startOffset: 0,
-      endOffset: match.value.length,
+      endOffset: original.length,
     };
   }
 

@@ -29,11 +29,11 @@ type ConvertableSmartDateElement = HTMLElement & {
 
 const STATE_CLASS_NAMES: Record<SmartDateNodeState, string> = {
   detected:
-    'underline decoration-dotted decoration-[color:var(--ledger-accent)]/60 underline-offset-[0.22em]',
+    'underline decoration-solid decoration-1 decoration-[color:var(--ledger-accent)] underline-offset-[0.16em]',
   'linked-event':
-    'underline decoration-[color:var(--ledger-accent)] underline-offset-[0.22em] decoration-2',
+    'underline decoration-solid decoration-[color:var(--ledger-accent)] underline-offset-[0.16em] decoration-2',
   'linked-reminder':
-    'underline decoration-[color:var(--ledger-accent-hover)] underline-offset-[0.22em] decoration-2',
+    'underline decoration-solid decoration-[color:var(--ledger-accent-hover)] underline-offset-[0.16em] decoration-2',
   dismissed: 'no-underline',
 };
 
@@ -119,9 +119,6 @@ export class SmartDateNode extends TextNode {
     dom.classList.add(
       'ledger-smart-date',
       'cursor-pointer',
-      'rounded-[0.2rem]',
-      'px-0.5',
-      'transition-colors',
       'select-auto',
       'focus-visible:outline-none'
     );
@@ -172,9 +169,6 @@ export class SmartDateNode extends TextNode {
       element.classList.add(
         'ledger-smart-date',
         'cursor-pointer',
-        'rounded-[0.2rem]',
-        'px-0.5',
-        'transition-colors',
         'select-auto'
       );
       element.classList.add(...STATE_CLASS_NAMES[state].split(' '));
