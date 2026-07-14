@@ -47,6 +47,8 @@ import {
 import { $setBlocksType } from '@lexical/selection';
 import { $createHeadingNode, $createQuoteNode } from '@lexical/rich-text';
 import { $createImageNode, $isImageNode, ImageNode } from './nodes/ImageNode';
+import { SmartDateNode } from './nodes/SmartDateNode';
+import { SmartDatePlugin } from './SmartDatePlugin';
 import { supabase } from '../../services/supabase';
 import { useWorkspaceContext } from '../../context/WorkspaceContext';
 import { useToast } from '../Common/ToastProvider';
@@ -55,6 +57,8 @@ type Props = {
   initialValue?: string | null;
   editorKey?: string;
   noteId?: string | null;
+  noteTitle?: string | null;
+  noteProjectId?: string | null;
   onChange: (html: string) => void;
   onFocus?: () => void;
   onBlur?: () => void;
@@ -74,6 +78,7 @@ const editorConfig = {
     CodeNode,
     CodeHighlightNode,
     ImageNode,
+    SmartDateNode,
   ],
   theme: {
     text: {
@@ -133,7 +138,7 @@ const LoadHtmlPlugin = ({ html, editorKey }: { html?: string | null; editorKey?:
         root.select();
         $insertNodes(nodes);
       }
-    });
+    }, { tag: 'smart-date-load' });
   }, [editor, editorKey, html]);
 
   return null;
@@ -718,6 +723,8 @@ export function RichTextEditor({
   initialValue,
   editorKey,
   noteId,
+  noteTitle,
+  noteProjectId,
   onChange,
   onFocus,
   onBlur,
@@ -776,7 +783,8 @@ export function RichTextEditor({
       <div>
         <ToolbarPlugin onAutoCorrect={onAutoCorrect} />
         <div className="relative mt-2">
-          <RichTextBehaviorPlugin />
+        <RichTextBehaviorPlugin />
+          <SmartDatePlugin noteId={noteId} noteTitle={noteTitle} noteProjectId={noteProjectId} />
           <RichTextPlugin
             contentEditable={
               <ContentEditable

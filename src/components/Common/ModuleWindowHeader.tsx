@@ -4,18 +4,30 @@ import {
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from 'react';
+import { createPortal } from 'react-dom';
 import {
+  Bell,
   ChevronLeft,
   ChevronRight,
+  CircleUserRound,
+  CalendarDays,
+  FileText,
+  FolderKanban,
+  History,
   Loader2,
   Maximize2,
   Minus,
+  Inbox,
+  LayoutList,
   RefreshCw,
+  Settings2,
   SidebarClose,
   SidebarOpen,
+  Users,
   X,
 } from 'lucide-react';
 import { sidebarTheme } from '../Sidebar/sidebarTheme';
@@ -107,6 +119,18 @@ type ModuleHeaderStripActionProps = {
 type WorkspaceNavigationState = {
   canGoBack: boolean;
   canGoForward: boolean;
+  currentRoute?: WorkspaceRoute | null;
+  recentRoutes?: WorkspaceRoute[];
+};
+
+type WorkspaceRoute = {
+  kind: ModuleWindowKind;
+  focusDate?: string | null;
+  focusProjectId?: string | null;
+  focusNoteId?: string | null;
+  focusTaskId?: string | null;
+  focusContext?: string | null;
+  focusSection?: string | null;
 };
 
 type AppRegionStyle = CSSProperties & {
@@ -129,6 +153,100 @@ const segmentedButtonCompactBaseClassName =
   'inline-flex h-7 items-center justify-center rounded-full px-2.5 text-[12px] font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-accent)]/20';
 const stripIconButtonClassName = `inline-flex h-7 w-7 items-center justify-center rounded-lg ${sidebarTheme.textSecondary} transition hover:${sidebarTheme.hoverSurface} hover:${sidebarTheme.textPrimary} focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-accent)]/20`;
 const stripIconButtonDisabledClassName = `cursor-not-allowed opacity-35 hover:bg-transparent hover:${sidebarTheme.textSecondary}`;
+const historyMenuWidth = 256;
+const historyMenuMaxHeight = 280;
+
+const formatHistoryDate = (value: string | null | undefined) => {
+  if (!value) return null;
+  const parsed = new Date(String(value));
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed.toLocaleDateString([], { month: 'short', day: 'numeric' });
+};
+
+const normalizeWorkspaceRoute = (
+  route: Partial<WorkspaceRoute> | null | undefined
+): WorkspaceRoute | null => {
+  if (!route?.kind) return null;
+  return {
+    kind: route.kind,
+    focusDate: route.focusDate ?? null,
+    focusProjectId: route.focusProjectId ?? null,
+    focusNoteId: route.focusNoteId ?? null,
+    focusTaskId: route.focusTaskId ?? null,
+    focusContext: route.focusContext ?? null,
+    focusSection: route.focusSection ?? null,
+  };
+};
+
+const normalizeWorkspaceRoutes = (
+  routes: Array<Partial<WorkspaceRoute> | null | undefined> | null | undefined
+) => routes?.map((route) => normalizeWorkspaceRoute(route)).filter((route): route is WorkspaceRoute => Boolean(route)) ?? [];
+
+const getWorkspaceRouteLabel = (route: WorkspaceRoute) => {
+  switch (route.kind) {
+    case 'circle':
+      return route.focusContext?.startsWith('ledger-person|') ? 'Circle · Person' : 'Circle';
+    case 'calendar':
+      if (route.focusContext?.startsWith('focus-event:')) return 'Calendar · Event';
+      if (route.focusContext?.startsWith('focus-reminder:')) return 'Calendar · Reminder';
+      return route.focusDate ? `Calendar · ${formatHistoryDate(route.focusDate) ?? 'Day'}` : 'Calendar';
+    case 'notes':
+      return route.focusNoteId ? 'Notes · Note' : 'Notes';
+    case 'projects':
+      if (route.focusTaskId) return 'Projects · Task';
+      return route.focusProjectId ? 'Projects · Project' : 'Projects';
+    case 'teams':
+      if (route.focusContext?.startsWith('team-settings:')) return 'Team settings';
+      return route.focusContext?.startsWith('team:') ? 'Teams · Team' : 'Teams';
+    case 'dashboard':
+      return route.focusTaskId ? 'Dashboard · Task' : 'Dashboard';
+    case 'settings':
+      return route.focusSection
+        ? `Settings · ${route.focusSection.replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase())}`
+        : 'Settings';
+    case 'inbox':
+      return 'Intake';
+    case 'quick-follow-up':
+      return 'Quick follow-up';
+    case 'quick-task':
+      return 'Quick task';
+    case 'quick-note':
+      return 'Quick note';
+    case 'quick-event':
+      return 'Quick event';
+    default:
+      return 'Page';
+  }
+};
+
+const getWorkspaceRouteIcon = (route: WorkspaceRoute) => {
+  const iconClassName = 'h-3.5 w-3.5 text-[var(--ledger-text-secondary)]';
+  switch (route.kind) {
+    case 'circle':
+      return <CircleUserRound className={iconClassName} />;
+    case 'calendar':
+      return <CalendarDays className={iconClassName} />;
+    case 'notes':
+      return <FileText className={iconClassName} />;
+    case 'projects':
+      return <FolderKanban className={iconClassName} />;
+    case 'teams':
+      return <Users className={iconClassName} />;
+    case 'dashboard':
+      return <LayoutList className={iconClassName} />;
+    case 'settings':
+      return <Settings2 className={iconClassName} />;
+    case 'inbox':
+      return <Inbox className={iconClassName} />;
+    case 'quick-follow-up':
+    case 'quick-task':
+    case 'quick-note':
+    case 'quick-event':
+      return <Bell className={iconClassName} />;
+    default:
+      return <History className={iconClassName} />;
+  }
+};
 
 export const ModuleHeaderActionButton = ({
   children,
@@ -378,7 +496,12 @@ export const ModuleWindowHeader = ({
     useState<WorkspaceNavigationState>({
       canGoBack: false,
       canGoForward: false,
+      recentRoutes: [],
     });
+  const [historyMenuState, setHistoryMenuState] = useState<{ x: number; y: number } | null>(null);
+  const historyButtonRef = useRef<HTMLButtonElement | null>(null);
+  const historyMenuRef = useRef<HTMLDivElement | null>(null);
+  const recentRoutes = useMemo(() => workspaceNavigationState.recentRoutes ?? [], [workspaceNavigationState.recentRoutes]);
 
   useEffect(() => {
     let mounted = true;
@@ -390,6 +513,8 @@ export const ModuleWindowHeader = ({
         setWorkspaceNavigationState({
           canGoBack: Boolean(nextState.canGoBack),
           canGoForward: Boolean(nextState.canGoForward),
+          currentRoute: normalizeWorkspaceRoute(nextState.currentRoute),
+          recentRoutes: normalizeWorkspaceRoutes(nextState.recentRoutes),
         });
       } catch {
         // Browser dev mode and older desktop builds may not expose workspace history yet.
@@ -403,6 +528,8 @@ export const ModuleWindowHeader = ({
       setWorkspaceNavigationState({
         canGoBack: Boolean(nextState?.canGoBack),
         canGoForward: Boolean(nextState?.canGoForward),
+        currentRoute: normalizeWorkspaceRoute(nextState?.currentRoute as Partial<WorkspaceRoute> | null | undefined),
+        recentRoutes: normalizeWorkspaceRoutes(nextState?.recentRoutes as Array<Partial<WorkspaceRoute> | null | undefined> | null | undefined),
       });
     };
 
@@ -416,6 +543,39 @@ export const ModuleWindowHeader = ({
       window.ipcRenderer?.off?.('workspace:navigation-state', handleNavigationState as any);
     };
   }, [showWorkspaceNavigation]);
+
+  useEffect(() => {
+    if (!historyMenuState) return;
+
+    const handlePointerDown = (event: MouseEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (historyMenuRef.current && target && historyMenuRef.current.contains(target)) {
+        return;
+      }
+      if (historyButtonRef.current && target && historyButtonRef.current.contains(target)) {
+        return;
+      }
+      setHistoryMenuState(null);
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setHistoryMenuState(null);
+    };
+
+    const handleResize = () => setHistoryMenuState(null);
+
+    document.addEventListener('pointerdown', handlePointerDown);
+    document.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('resize', handleResize);
+    window.addEventListener('scroll', handleResize, true);
+
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown);
+      document.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('resize', handleResize);
+      window.removeEventListener('scroll', handleResize, true);
+    };
+  }, [historyMenuState]);
 
   const handleTitleBarDoubleClick = () => {
     if (onToggleFullscreen) {
@@ -450,6 +610,31 @@ export const ModuleWindowHeader = ({
     if (!workspaceNavigationState.canGoForward) return;
     void window.desktopWindow?.goForwardWorkspaceWindow?.();
   };
+
+  const handleOpenHistoryMenu = () => {
+    const buttonRect = historyButtonRef.current?.getBoundingClientRect();
+    if (!buttonRect || recentRoutes.length < 2) return;
+
+    setHistoryMenuState({
+      x: Math.max(8, Math.min(buttonRect.right - historyMenuWidth, window.innerWidth - historyMenuWidth - 8)),
+      y: Math.max(8, Math.min(buttonRect.bottom + 8, window.innerHeight - historyMenuMaxHeight - 8)),
+    });
+  };
+
+  const handleOpenRecentRoute = (route: WorkspaceRoute) => {
+    setHistoryMenuState(null);
+    void window.desktopWindow?.openModule?.(route.kind, route);
+  };
+
+  const currentRoute = workspaceNavigationState.currentRoute ?? null;
+  const isCurrentRoute = (route: WorkspaceRoute) =>
+    currentRoute?.kind === route.kind &&
+    (currentRoute.focusDate ?? null) === (route.focusDate ?? null) &&
+    (currentRoute.focusProjectId ?? null) === (route.focusProjectId ?? null) &&
+    (currentRoute.focusNoteId ?? null) === (route.focusNoteId ?? null) &&
+    (currentRoute.focusTaskId ?? null) === (route.focusTaskId ?? null) &&
+    (currentRoute.focusContext ?? null) === (route.focusContext ?? null) &&
+    (currentRoute.focusSection ?? null) === (route.focusSection ?? null);
 
   const handleHeaderPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (event.button !== 0) return;
@@ -574,6 +759,19 @@ export const ModuleWindowHeader = ({
                 >
                   <ChevronRight size={16} />
                 </button>
+                <button
+                  ref={historyButtonRef}
+                  type="button"
+                  onClick={handleOpenHistoryMenu}
+                  disabled={recentRoutes.length < 2}
+                  title="History"
+                  aria-label="History"
+                  className={`${stripIconButtonClassName} ${
+                    historyMenuState ? `${sidebarTheme.hoverSurface} ${sidebarTheme.textPrimary}` : ''
+                  } ${recentRoutes.length < 2 ? stripIconButtonDisabledClassName : ''}`}
+                >
+                  <History size={14} />
+                </button>
               </>
             )}
             {showPanelToggle && onTogglePanels && (
@@ -593,6 +791,57 @@ export const ModuleWindowHeader = ({
             )}
           </div>
         </div>
+
+        {historyMenuState && recentRoutes.length > 0 &&
+          createPortal(
+            <div
+              ref={historyMenuRef}
+              className={`${sidebarTheme.menu} w-[256px] overflow-hidden`}
+              style={{
+                left: `${historyMenuState.x}px`,
+                top: `${historyMenuState.y}px`,
+              } as CSSProperties}
+              onClick={(event) => event.stopPropagation()}
+              onMouseDown={(event) => event.stopPropagation()}
+            >
+              <div className="max-h-[280px] overflow-auto py-1">
+                {recentRoutes.slice(0, 8).map((route) => {
+                  const active = isCurrentRoute(route);
+                  return (
+                    <button
+                      key={[
+                        route.kind,
+                        route.focusDate ?? '',
+                        route.focusProjectId ?? '',
+                        route.focusNoteId ?? '',
+                        route.focusTaskId ?? '',
+                        route.focusContext ?? '',
+                        route.focusSection ?? '',
+                      ].join('|')}
+                      type="button"
+                      onClick={() => handleOpenRecentRoute(route)}
+                      className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px] transition ${
+                        active
+                          ? `${sidebarTheme.selectedSurface} ${sidebarTheme.textPrimary}`
+                          : `${sidebarTheme.textSecondary} hover:${sidebarTheme.hoverSurface} hover:${sidebarTheme.textPrimary}`
+                      }`}
+                    >
+                      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)]">
+                        {getWorkspaceRouteIcon(route)}
+                      </span>
+                      <span className="min-w-0 flex-1 truncate">{getWorkspaceRouteLabel(route)}</span>
+                      {active ? (
+                        <span className="shrink-0 text-[10px] font-medium text-[var(--ledger-text-muted)]">
+                          Current
+                        </span>
+                      ) : null}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>,
+            document.body
+          )}
 
         <div
           className="ml-3 flex min-w-0 flex-1 items-center gap-3"

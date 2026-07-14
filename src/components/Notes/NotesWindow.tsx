@@ -705,6 +705,7 @@ export const NotesWindow = () => {
     loadNoteSortPreferences(activeWorkspaceId)
   );
   const didRestoreInitialSelectionRef = useRef(false);
+  const didApplyInitialFocusRef = useRef(false);
   const [lastOpenedAtById, setLastOpenedAtById] = useState<Record<string, number>>(() =>
     loadLastOpenedAtById(activeWorkspaceId)
   );
@@ -776,6 +777,7 @@ export const NotesWindow = () => {
     setSelectedNoteIds([]);
     selectionAnchorNoteIdRef.current = null;
     didRestoreInitialSelectionRef.current = false;
+    didApplyInitialFocusRef.current = false;
   }, [activeWorkspaceId]);
 
   useEffect(() => {
@@ -3354,9 +3356,11 @@ export const NotesWindow = () => {
 
   useEffect(() => {
     if (!initialFocusNoteId) return;
+    if (didApplyInitialFocusRef.current) return;
     if (selectedNoteId === initialFocusNoteId) return;
 
     const target = notes.find((note) => note.id === initialFocusNoteId);
+    didApplyInitialFocusRef.current = true;
     if (target) {
       void openNote(target);
       return;
@@ -4704,6 +4708,8 @@ export const NotesWindow = () => {
                       <RichTextEditor
                         editorKey={`${selectedNote.id}:${editorRefreshTick}`}
                         noteId={selectedNote.id}
+                        noteTitle={selectedNote.title}
+                        noteProjectId={selectedNoteProjectLinks[0]?.project_id ?? null}
                         initialValue={draftContent}
                         onAutoCorrect={() => {
                           void runAutoCorrectSpelling();

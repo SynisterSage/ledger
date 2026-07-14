@@ -723,6 +723,7 @@ let workspaceModuleKind: ModuleWindowKind | null = null;
 let workspaceModuleCurrentRoute: WorkspaceModuleRoute | null = null;
 const workspaceModuleBackStack: WorkspaceModuleRoute[] = [];
 const workspaceModuleForwardStack: WorkspaceModuleRoute[] = [];
+const workspaceModuleRecentRoutes: WorkspaceModuleRoute[] = [];
 let currentSidebarMode: SidebarWindowMode = 'auth';
 let currentSidebarPosition: SidebarPosition = 'right';
 let currentFloatingPosition = { ...defaultSidebarPreferences.floatingPosition };
@@ -1534,6 +1535,14 @@ const broadcastCalendarItemsUpdated = () => {
   for (const win of targets) {
     if (!win || win.isDestroyed()) continue;
     win.webContents.send('calendar:items-updated');
+  }
+};
+
+const broadcastNotesSmartLinksUpdated = (payload: { noteId?: string | null } | null = null) => {
+  const targets = [moduleWins.get('notes')];
+  for (const win of targets) {
+    if (!win || win.isDestroyed()) continue;
+    win.webContents.send('notes:smart-links-updated', payload);
   }
 };
 
@@ -5300,6 +5309,7 @@ function getWorkspaceNavigationState() {
     canGoForward: workspaceModuleForwardStack.length > 0,
     currentModule: workspaceModuleKind,
     currentRoute: getCurrentWorkspaceRoute(),
+    recentRoutes: workspaceModuleRecentRoutes.map((route) => ({ ...route })),
   };
 }
 
@@ -5338,6 +5348,16 @@ function routeFromModuleArgs(
     focusContext: focusContext ?? null,
     focusSection: focusSection ?? null,
   };
+}
+
+function recordWorkspaceRoute(route: WorkspaceModuleRoute) {
+  const existingIndex = workspaceModuleRecentRoutes.findIndex((entry) => isSameWorkspaceRoute(entry, route));
+  if (existingIndex >= 0) {
+    workspaceModuleRecentRoutes.splice(existingIndex, 1);
+  }
+
+  workspaceModuleRecentRoutes.unshift({ ...route });
+  workspaceModuleRecentRoutes.length = Math.min(workspaceModuleRecentRoutes.length, 12);
 }
 
 function isSameWorkspaceRoute(a: WorkspaceModuleRoute | null, b: WorkspaceModuleRoute) {
@@ -5416,6 +5436,7 @@ function navigateWorkspaceModuleWindow(route: WorkspaceModuleRoute, pushHistory 
   }
 
   registerWorkspaceModuleKind(route.kind, moduleWin, route);
+  recordWorkspaceRoute(route);
   setWorkspaceWindowAsFloatingDockTarget(route.kind);
 
   const shouldKeepFullscreen =
@@ -5488,6 +5509,7 @@ function updateWorkspaceModuleRoute(route: WorkspaceModuleRoute) {
   workspaceModuleForwardStack.length = 0;
 
   registerWorkspaceModuleKind(route.kind, moduleWin, route);
+  recordWorkspaceRoute(route);
   setWorkspaceWindowAsFloatingDockTarget(route.kind);
   if (
     isWorkspaceModuleKind(route.kind) &&
@@ -5580,6 +5602,7 @@ function openModuleWindow(
         workspaceModuleForwardStack.length = 0;
       }
       registerWorkspaceModuleKind(kind, existing, workspaceRoute);
+      recordWorkspaceRoute(workspaceRoute);
     }
     sendModuleFocus(
       kind,
@@ -5668,6 +5691,7 @@ function openModuleWindow(
 
   if (isWorkspaceModuleKind(kind)) {
     registerWorkspaceModuleKind(kind, moduleWin, workspaceRoute);
+    recordWorkspaceRoute(workspaceRoute);
     setWorkspaceWindowAsFloatingDockTarget(kind);
   } else {
     moduleWins.set(kind, moduleWin);
@@ -5712,6 +5736,7 @@ function openModuleWindow(
       workspaceShellFullscreenRestoreBounds = null;
       workspaceModuleBackStack.length = 0;
       workspaceModuleForwardStack.length = 0;
+      workspaceModuleRecentRoutes.length = 0;
       broadcastWorkspaceNavigationState();
     }
     moduleWindowFullscreenBoundsMemory.delete(kind);
@@ -6567,6 +6592,13 @@ ipcMain.on(
 ipcMain.on('calendar:items-updated', () => {
   broadcastCalendarItemsUpdated();
 });
+
+ipcMain.on(
+  'notes:smart-links-updated',
+  (_event, payload: { noteId?: string | null } | null) => {
+    broadcastNotesSmartLinksUpdated(payload ?? null);
+  }
+);
 
 ipcMain.on(
   'ledger:theme-updated',

@@ -65,7 +65,9 @@ const REMINDER_TABLES = ['reminders', 'calendar_reminders'];
 const WINDOW_MS = 60_000;
 const RATE_LIMITS = {
   auth: { max: 60 },
-  read: { max: 180 },
+  // Navigation-heavy desktop use can burst a lot of reads quickly; keep this high enough
+  // for normal paging while still protecting against sustained scraping or abuse.
+  read: { max: 600 },
   write: { max: 60 },
 };
 
@@ -390,6 +392,8 @@ const reminderSelectColumns =
   'id, workspace_id, user_id, title, body, remind_at, status, linked_type, linked_id, completed_at, dismissed_at, snoozed_until, source, source_platform, created_at, updated_at, calendar_id, project_id, note_id, notes, color, is_done, created_by, series_id, series_type, recurrence_rule, assigned_to_user_id, assigned_to_team_id, assigned_by_user_id, assigned_at';
 const reminderDashboardSelectColumns =
   'id, workspace_id, user_id, title, body, remind_at, status, linked_type, linked_id, completed_at, dismissed_at, snoozed_until, source, source_platform, created_at, updated_at, calendar_id, project_id, note_id, notes, color, is_done, created_by, series_id, series_type, recurrence_rule, assigned_to_user_id, assigned_to_team_id, assigned_by_user_id, assigned_at';
+const noteSmartLinkSelectColumns =
+  'id, workspace_id, note_id, source_key, source_text, source_start_offset, source_end_offset, linked_event_id, linked_reminder_id, dismissed_at, created_by, updated_by, created_at, updated_at';
 const reminderLinkedTypes = ['task', 'event', 'note', 'project', 'inbox', 'none'];
 const reminderStatusValues = ['active', 'completed', 'dismissed', 'overdue'];
 const reminderLinkedLabels = {
@@ -13550,6 +13554,16 @@ app.delete('/api/events/:id', authMiddleware, rateLimit('write'), async (req, re
 
     const workspaceId = existingEvent.workspace_id;
     await requireWorkspaceAccess(req.authUser.id, workspaceId, 'member');
+    const nowIso = new Date().toISOString();
+    await supabase
+      .from('note_smart_links')
+      .update({
+        linked_event_id: null,
+        updated_by: req.authUser.id,
+        updated_at: nowIso,
+      })
+      .eq('workspace_id', workspaceId)
+      .eq('linked_event_id', req.params.id);
     const { error } = await supabase
       .from('events')
       .delete()
@@ -14487,6 +14501,16 @@ app.delete('/api/reminders/:id', authMiddleware, rateLimit('write'), async (req,
     }
 
     await requireWorkspaceAccess(req.authUser.id, reminder.workspace_id, 'member');
+    const nowIso = new Date().toISOString();
+    await supabase
+      .from('note_smart_links')
+      .update({
+        linked_reminder_id: null,
+        updated_by: req.authUser.id,
+        updated_at: nowIso,
+      })
+      .eq('workspace_id', reminder.workspace_id)
+      .eq('linked_reminder_id', req.params.id);
 
     const { error } = await supabase
       .from('reminders')
@@ -14537,6 +14561,100 @@ app.get('/api/notes/:id', authMiddleware, rateLimit('read'), async (req, res) =>
     if (error) throw error;
     if (!data) return res.status(404).json({ error: 'Note not found.' });
     res.json(mapNoteResponse(data));
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
+app.get('/api/notes/:id/smart-links', authMiddleware, rateLimit('read'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    const noteAllowed = await ensureWorkspaceResource('notes', req.params.id, workspaceId);
+    if (!noteAllowed) {
+      return res.status(404).json({ error: 'Note not found.' });
+    }
+
+    const { data, error } = await supabase
+      .from('note_smart_links')
+      .select(noteSmartLinkSelectColumns)
+      .eq('workspace_id', workspaceId)
+      .eq('note_id', req.params.id)
+      .order('created_at', { ascending: true });
+
+    if (error) throw error;
+    res.json({ links: Array.isArray(data) ? data : [] });
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
+app.post('/api/notes/:id/smart-links', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    const noteId = String(req.params.id ?? '').trim();
+    const noteAllowed = await ensureWorkspaceResource('notes', noteId, workspaceId);
+    if (!noteAllowed) {
+      return res.status(404).json({ error: 'Note not found.' });
+    }
+
+    const sourceKey = String(req.body?.source_key ?? '').trim();
+    const sourceText = String(req.body?.source_text ?? '').trim();
+    if (!sourceKey) {
+      return res.status(400).json({ error: 'source_key is required' });
+    }
+    if (!sourceText) {
+      return res.status(400).json({ error: 'source_text is required' });
+    }
+
+    const linkedEventId = normalizeNullableText(req.body?.linked_event_id);
+    const linkedReminderId = normalizeNullableText(req.body?.linked_reminder_id);
+    if (linkedEventId && linkedReminderId) {
+      return res.status(400).json({ error: 'Only one linked object can be set' });
+    }
+
+    if (linkedEventId) {
+      const eventAllowed = await ensureWorkspaceResource('events', linkedEventId, workspaceId);
+      if (!eventAllowed) {
+        return res.status(404).json({ error: 'Event not found.' });
+      }
+    }
+
+    if (linkedReminderId) {
+      const reminderAllowed = await ensureWorkspaceResource('reminders', linkedReminderId, workspaceId);
+      if (!reminderAllowed) {
+        return res.status(404).json({ error: 'Reminder not found.' });
+      }
+    }
+
+    const payload = {
+      workspace_id: workspaceId,
+      note_id: noteId,
+      source_key: sourceKey,
+      source_text: sourceText,
+      source_start_offset:
+        req.body?.source_start_offset !== undefined
+          ? toNonNegativeInt(req.body.source_start_offset, null)
+          : null,
+      source_end_offset:
+        req.body?.source_end_offset !== undefined
+          ? toNonNegativeInt(req.body.source_end_offset, null)
+          : null,
+      linked_event_id: linkedEventId || null,
+      linked_reminder_id: linkedReminderId || null,
+      dismissed_at: normalizeNullableText(req.body?.dismissed_at),
+      created_by: req.authUser.id,
+      updated_by: req.authUser.id,
+      updated_at: new Date().toISOString(),
+    };
+
+    const { data, error } = await supabase
+      .from('note_smart_links')
+      .upsert(payload, { onConflict: 'workspace_id,note_id,source_key' })
+      .select(noteSmartLinkSelectColumns)
+      .single();
+
+    if (error) throw error;
+    res.json(data);
   } catch (error) {
     return respondWithError(res, error);
   }

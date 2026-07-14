@@ -1064,6 +1064,23 @@ export const useApi = () => {
         request(`/api/notes/${id}`, {
           method: 'DELETE',
         }),
+      getNoteSmartLinks: (noteId: string) => request(`/api/notes/${noteId}/smart-links`),
+      upsertNoteSmartLink: (
+        noteId: string,
+        payload: {
+          source_key: string;
+          source_text: string;
+          source_start_offset?: number | null;
+          source_end_offset?: number | null;
+          linked_event_id?: string | null;
+          linked_reminder_id?: string | null;
+          dismissed_at?: string | null;
+        }
+      ) =>
+        request(`/api/notes/${noteId}/smart-links`, {
+          method: 'POST',
+          body: JSON.stringify(payload),
+        }),
 
       // Templates
       getTemplates: (category?: string) => {

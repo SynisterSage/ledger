@@ -33,6 +33,10 @@ import { useApi } from '../../hooks/useApi';
 import { useWorkspaceRealtimeRefresh } from '../../hooks/useWorkspaceRealtimeRefresh';
 import { useWorkspaceRouteHistory } from '../../hooks/useWorkspaceRouteHistory';
 import {
+  decodeSmartDateComposerContext,
+  type SmartDateComposerContext,
+} from '../Notes/smartDateUtils';
+import {
   ModuleHeaderSegmentedButton,
   ModuleHeaderSegmentedGroup,
   ModuleHeaderStripAction,
@@ -754,6 +758,7 @@ export const CalendarWindow = () => {
   const [newEventTime, setNewEventTime] = useState('09:00');
   const [newEventDurationValue, setNewEventDurationValue] = useState(30);
   const [newEventDurationUnit, setNewEventDurationUnit] = useState<'minutes' | 'hours'>('minutes');
+  const [newEventAllDay, setNewEventAllDay] = useState(false);
   const [newEventRecurrence, setNewEventRecurrence] = useState<
     'none' | 'daily' | 'weekly' | 'monthly' | 'weekdays' | 'specific_dates'
   >('none');
@@ -867,6 +872,8 @@ export const CalendarWindow = () => {
     calendarColor: 'ledger-orange',
   });
   const [calendarRefreshToken, setCalendarRefreshToken] = useState(0);
+  const smartDateComposerContextRef = useRef<SmartDateComposerContext | null>(null);
+  const smartDateComposerModeRef = useRef<'event' | 'reminder' | null>(null);
   const [leftPaneWidth, setLeftPaneWidth] = useState(() =>
     getPaneWidthForViewport(viewportWidth, modulePaneSizing.calendar.left)
   );
@@ -1143,6 +1150,25 @@ export const CalendarWindow = () => {
   useEffect(() => {
     const applyFocusContext = (focusContext: string | null | undefined) => {
       if (!focusContext) return;
+      if (focusContext.startsWith('smart-date-create:')) {
+        const payload = focusContext.slice('smart-date-create:'.length);
+        const separatorIndex = payload.lastIndexOf(':');
+        if (separatorIndex <= 0) return;
+
+        const encodedContext = payload.slice(0, separatorIndex);
+        const mode = payload.slice(separatorIndex + 1);
+        if (mode !== 'event' && mode !== 'reminder') return;
+
+        const decodedContext = decodeSmartDateComposerContext(
+          encodedContext.startsWith('smart-date:')
+            ? encodedContext
+            : `smart-date:${decodeURIComponent(encodedContext)}`
+        );
+        if (!decodedContext) return;
+
+        openComposerFromSmartDate(decodedContext, mode);
+        return;
+      }
       if (focusContext.startsWith('focus-event:')) {
         const eventId = focusContext.slice('focus-event:'.length).trim();
         if (eventId) {
@@ -2255,6 +2281,8 @@ export const CalendarWindow = () => {
     title = '',
     mode: 'event' | 'reminder' = 'event'
   ) => {
+    smartDateComposerContextRef.current = null;
+    smartDateComposerModeRef.current = null;
     setGridQuickAdd(null);
     setGridQuickTitle('');
     setNewEventDate(dateKey);
@@ -2266,6 +2294,7 @@ export const CalendarWindow = () => {
     const defaultDuration = getDurationDisplay(defaultEventDurationMinutes);
     setNewEventDurationValue(defaultDuration.value);
     setNewEventDurationUnit(defaultDuration.unit);
+    setNewEventAllDay(false);
     setNewEventTitle(title);
     setNewEventRecurrence('none');
     setNewEventSpecificDates([]);
@@ -2277,6 +2306,52 @@ export const CalendarWindow = () => {
     );
     setComposerProjectId('');
     setComposerNoteId('');
+    setComposerNotes('');
+    setNewEventVisibility(calendarPreferences.defaultEventVisibility ?? 'private');
+    setComposerMode(mode);
+    setIsSpecificDatesModalOpen(false);
+    setSpecificDatesDraft([]);
+    setSpecificDatesCleared(false);
+    setIsComposerOpen(true);
+  };
+
+  const openComposerFromSmartDate = (
+    context: SmartDateComposerContext,
+    mode: 'event' | 'reminder'
+  ) => {
+    smartDateComposerContextRef.current = context;
+    smartDateComposerModeRef.current = mode;
+    setGridQuickAdd(null);
+    setGridQuickTitle('');
+
+    const resolvedDate = new Date(context.resolvedDateISO);
+    const dateKey = formatDateKey(resolvedDate);
+
+    setNewEventDate(dateKey);
+    setNewEventTime(
+      context.hasExplicitTime
+        ? `${String(resolvedDate.getHours()).padStart(2, '0')}:${String(
+            resolvedDate.getMinutes()
+          ).padStart(2, '0')}`
+        : mode === 'event'
+        ? '00:00'
+        : calendarPreferences.defaultReminderTime ?? '09:00'
+    );
+    const defaultDuration = getDurationDisplay(defaultEventDurationMinutes);
+    setNewEventDurationValue(defaultDuration.value);
+    setNewEventDurationUnit(defaultDuration.unit);
+    setNewEventAllDay(mode === 'event' && !context.hasExplicitTime);
+    setNewEventTitle(context.suggestedTitle || context.noteTitle || 'Untitled event');
+    setNewEventRecurrence('none');
+    setNewEventSpecificDates([]);
+    setComposerCalendarId(
+      mode === 'reminder' &&
+        (calendarPreferences.reminderDestination ?? 'today-calendar') === 'today'
+        ? getPreferredCalendar('workspace')?.id ?? ''
+        : getPreferredCalendar('event')?.id ?? ''
+    );
+    setComposerProjectId(context.noteProjectId ?? '');
+    setComposerNoteId(context.noteId ?? '');
     setComposerNotes('');
     setNewEventVisibility(calendarPreferences.defaultEventVisibility ?? 'private');
     setComposerMode(mode);
@@ -2412,13 +2487,19 @@ export const CalendarWindow = () => {
       return;
     }
 
+    const smartDateContext = smartDateComposerContextRef.current;
+
     const selectedCalendar =
       calendars.find((calendar) => calendar.id === composerCalendarId) ?? getDefaultCalendar();
     if (!selectedCalendar) return;
-    const start = new Date(`${newEventDate}T${newEventTime}:00`);
+    const start = newEventAllDay
+      ? new Date(`${newEventDate}T00:00:00`)
+      : new Date(`${newEventDate}T${newEventTime}:00`);
     const durationMinutes = getDurationMinutes(newEventDurationValue, newEventDurationUnit);
-    const end = new Date(start.getTime() + durationMinutes * 60 * 1000);
-    if (end <= start) {
+    const end = newEventAllDay
+      ? new Date(start.getTime() + 24 * 60 * 60 * 1000)
+      : new Date(start.getTime() + durationMinutes * 60 * 1000);
+    if (!newEventAllDay && end <= start) {
       end.setHours(start.getHours() + 1);
     }
 
@@ -2473,6 +2554,7 @@ export const CalendarWindow = () => {
       setComposerMode('event');
       setNewEventRecurrence('none');
       setNewEventSpecificDates([]);
+      setNewEventAllDay(false);
       setComposerCalendarId(getPreferredCalendar('event')?.id ?? '');
       setComposerProjectId('');
       setComposerNoteId('');
@@ -2483,6 +2565,24 @@ export const CalendarWindow = () => {
       setNewEventDurationUnit(defaultDuration.unit);
       notifyCalendarItemsUpdated();
       window.dispatchEvent(new CustomEvent('ledger:notifications-refresh'));
+      if (smartDateContext) {
+        try {
+          await api.upsertNoteSmartLink(smartDateContext.noteId, {
+            source_key: smartDateContext.sourceKey,
+            source_text: smartDateContext.sourceText,
+            source_start_offset: smartDateContext.sourceStartOffset,
+            source_end_offset: smartDateContext.sourceEndOffset,
+            linked_reminder_id: createdReminders[0]?.id ?? null,
+            linked_event_id: null,
+            dismissed_at: null,
+          });
+          window.ipcRenderer?.send('notes:smart-links-updated', {
+            noteId: smartDateContext.noteId,
+          });
+        } catch (linkError) {
+          console.error('Failed to persist smart reminder link', linkError);
+        }
+      }
       return;
     }
 
@@ -2492,6 +2592,7 @@ export const CalendarWindow = () => {
       end_at: end.toISOString(),
       calendar_id: selectedCalendar.id,
       color: selectedCalendar.color,
+      all_day: newEventAllDay,
       recurrence_rule:
         newEventRecurrence === 'specific_dates' ? 'specific_dates' : newEventRecurrence,
       status: calendarPreferences.defaultEventStatus ?? 'planned',
@@ -2528,6 +2629,7 @@ export const CalendarWindow = () => {
     setComposerMode('event');
     setNewEventRecurrence('none');
     setNewEventSpecificDates([]);
+    setNewEventAllDay(false);
     setComposerCalendarId(getPreferredCalendar('event')?.id ?? '');
     setComposerProjectId('');
     setComposerNoteId('');
@@ -2538,6 +2640,24 @@ export const CalendarWindow = () => {
     setNewEventDurationUnit(defaultDuration.unit);
     notifyCalendarItemsUpdated();
     window.dispatchEvent(new CustomEvent('ledger:notifications-refresh'));
+    if (smartDateContext) {
+      try {
+        await api.upsertNoteSmartLink(smartDateContext.noteId, {
+          source_key: smartDateContext.sourceKey,
+          source_text: smartDateContext.sourceText,
+          source_start_offset: smartDateContext.sourceStartOffset,
+          source_end_offset: smartDateContext.sourceEndOffset,
+          linked_event_id: createdEvents[0]?.id ?? null,
+          linked_reminder_id: null,
+          dismissed_at: null,
+        });
+        window.ipcRenderer?.send('notes:smart-links-updated', {
+          noteId: smartDateContext.noteId,
+        });
+      } catch (linkError) {
+        console.error('Failed to persist smart event link', linkError);
+      }
+    }
   };
 
   const createNewCalendar = async () => {
@@ -4860,9 +4980,21 @@ export const CalendarWindow = () => {
                   type="time"
                   value={newEventTime}
                   onChange={(e) => setNewEventTime(e.target.value)}
+                  disabled={composerMode === 'event' && newEventAllDay}
                   className="h-9 rounded-md border border-[#E2D4C4] px-2 text-sm focus:border-gray-400 focus:outline-none"
                 />
               </div>
+              {composerMode === 'event' ? (
+                <label className="flex items-center gap-2 text-xs text-gray-600">
+                  <input
+                    type="checkbox"
+                    checked={newEventAllDay}
+                    onChange={(e) => setNewEventAllDay(e.target.checked)}
+                    className="h-3.5 w-3.5 rounded border-[#C9B7A5] text-[var(--ledger-accent)] focus:ring-[color:var(--ledger-accent)]"
+                  />
+                  All day
+                </label>
+              ) : null}
               {composerMode === 'event' && (
                 <div className="grid grid-cols-[1fr_92px] gap-2">
                   <input
