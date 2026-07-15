@@ -105,14 +105,14 @@ export const BulkExportModal = ({
       backdropBorderRadius="inherit"
       disablePortal
       manageWindowChrome={false}
-      classNameContainer="w-full max-w-md overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-lg"
+      classNameContainer="w-full max-w-md overflow-hidden rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] text-[var(--ledger-text-primary)] shadow-[var(--ledger-shadow)]"
     >
       <div className="flex flex-col">
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
+        <div className="flex items-center justify-between border-b border-[color:var(--ledger-border-subtle)] px-5 py-3.5">
           <div className="flex items-center gap-2">
-            <Download size={18} className="text-gray-600" />
-            <h2 className="text-lg font-semibold text-gray-900">
+            <Download size={17} className="text-[var(--ledger-accent)]" />
+            <h2 className="text-[15px] font-semibold text-[var(--ledger-text-primary)]">
               Export {isMindMapOnly ? 'Mind Maps' : 'Notes'}
             </h2>
           </div>
@@ -124,19 +124,21 @@ export const BulkExportModal = ({
         </div>
 
         {/* Content */}
-        <div className="space-y-4 px-6 py-4">
+        <div className="space-y-3.5 px-5 py-4">
           {/* Format selection */}
           <div>
-            <label className="mb-2 block text-sm font-medium text-gray-700">Export format</label>
-            <div className="grid grid-cols-4 gap-2">
+            <label className="mb-1.5 block text-xs font-semibold text-[var(--ledger-text-secondary)]">
+              Export format
+            </label>
+            <div className="grid grid-cols-3 gap-1.5">
               {formatOptions.map((opt) => (
                 <button
                   key={opt}
                   onClick={() => setFormat(opt)}
-                  className={`rounded-lg px-2 py-2 text-xs font-medium transition ${
+                  className={`rounded-md px-2 py-1.5 text-xs font-medium transition ${
                     format === opt
-                      ? 'bg-gray-900 text-white'
-                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      ? 'bg-[var(--ledger-accent)] text-white'
+                      : 'bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]'
                   }`}
                 >
                   {formatLabels[opt]}
@@ -147,19 +149,19 @@ export const BulkExportModal = ({
 
           {/* Notes selection */}
           <div>
-            <div className="mb-2 flex items-center justify-between">
-              <label className="text-sm font-medium text-gray-700">
+            <div className="mb-1.5 flex items-center justify-between">
+              <label className="text-xs font-semibold text-[var(--ledger-text-secondary)]">
                 Select {isMindMapOnly ? 'mind maps' : 'notes'} ({selectedRelevantCount} of{' '}
                 {relevantNotes.length})
               </label>
               <button
                 onClick={handleSelectAll}
-                className="text-xs font-medium text-gray-600 hover:text-gray-900"
+                className="text-xs font-medium text-[var(--ledger-text-secondary)] transition hover:text-[var(--ledger-accent)]"
               >
                 {selectedRelevantCount === relevantNotes.length ? 'Deselect all' : 'Select all'}
               </button>
             </div>
-            <div className="max-h-60 overflow-y-auto rounded-lg border border-gray-200 divide-y">
+            <div className="max-h-60 overflow-y-auto rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)]">
               {relevantNotes.length === 0 ? (
                 <div className="px-4 py-8 text-center text-sm text-gray-500">
                   No {isMindMapOnly ? 'mind maps' : 'notes'} available
@@ -168,15 +170,15 @@ export const BulkExportModal = ({
                 relevantNotes.map((note) => (
                   <label
                     key={note.id}
-                    className="flex cursor-pointer items-center gap-3 px-4 py-2.5 transition hover:bg-gray-50"
+                    className="flex cursor-pointer items-center gap-2.5 px-3 py-2 transition hover:bg-[var(--ledger-surface-hover)]"
                   >
                     <input
                       type="checkbox"
                       checked={selectedIds.has(note.id)}
                       onChange={() => handleToggleNote(note.id)}
-                      className="rounded border-gray-300"
+                      className="h-3.5 w-3.5 rounded border-[color:var(--ledger-border-strong)] [accent-color:var(--ledger-accent-soft)] focus:ring-[var(--ledger-accent-soft)]"
                     />
-                    <span className="flex-1 truncate text-sm text-gray-900">
+                    <span className="flex-1 truncate text-[13px] text-[var(--ledger-text-primary)]">
                       {note.title || 'Untitled'}
                     </span>
                   </label>
@@ -187,36 +189,37 @@ export const BulkExportModal = ({
 
           {/* Status message */}
           {exportStatus === 'success' && (
-            <div className="flex items-center gap-2 rounded-lg bg-green-50 px-3 py-2 text-sm text-green-700">
+            <div className="flex items-center gap-2 rounded-lg bg-[var(--ledger-surface-muted)] px-3 py-2 text-xs text-[var(--ledger-success)]">
               <Check size={16} />
-              Export complete! Downloading files...
+              Export complete! Downloading ZIP archive...
             </div>
           )}
           {exportStatus === 'error' && (
-            <div className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+            <div className="rounded-lg bg-[var(--ledger-surface-muted)] px-3 py-2 text-xs text-[var(--ledger-danger)]">
               Export failed. Please try again.
             </div>
           )}
         </div>
 
         {/* Footer */}
-        <div className="flex gap-3 border-t border-gray-100 px-6 py-3">
+        <div className="flex gap-2.5 border-t border-[color:var(--ledger-border-subtle)] px-5 py-3">
           <button
             onClick={onClose}
             disabled={isExporting}
-            className="flex-1 rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+            className="flex-1 rounded-lg border border-[color:var(--ledger-border-subtle)] px-4 py-2 text-xs font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] disabled:opacity-50"
           >
             Cancel
           </button>
           <button
             onClick={handleExport}
             disabled={isExporting || selectedRelevantCount === 0}
-            className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-50"
+            aria-busy={isExporting}
+            className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-[var(--ledger-accent)] px-4 py-2 text-xs font-semibold text-white transition hover:bg-[var(--ledger-accent-hover)] disabled:cursor-not-allowed disabled:opacity-60"
           >
             {isExporting ? (
               <>
                 <Loader2 size={16} className="animate-spin" />
-                Exporting...
+                Preparing ZIP...
               </>
             ) : (
               <>

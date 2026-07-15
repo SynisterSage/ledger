@@ -49,6 +49,8 @@ import { $createHeadingNode, $createQuoteNode } from '@lexical/rich-text';
 import { $createImageNode, $isImageNode, ImageNode } from './nodes/ImageNode';
 import { SmartDateNode } from './nodes/SmartDateNode';
 import { SmartDatePlugin } from './SmartDatePlugin';
+import { SmartPersonNode } from './nodes/SmartPersonNode';
+import { SmartPersonPlugin } from './SmartPersonPlugin';
 import { supabase } from '../../services/supabase';
 import { useWorkspaceContext } from '../../context/WorkspaceContext';
 import { useToast } from '../Common/ToastProvider';
@@ -79,6 +81,7 @@ const editorConfig = {
     CodeHighlightNode,
     ImageNode,
     SmartDateNode,
+    SmartPersonNode,
   ],
   theme: {
     text: {
@@ -734,7 +737,14 @@ export function RichTextEditor({
   const pendingHtmlRef = React.useRef<string | null>(null);
   const throttleTimerRef = React.useRef<NodeJS.Timeout | null>(null);
 
-  const handleChange = (editorState: EditorState, editor: any) => {
+  const handleChange = (editorState: EditorState, editor: any, tags?: Set<string>) => {
+    // Smart entities update Lexical programmatically. Those updates must never
+    // be serialized into the note autosave path as user edits.
+    if (tags?.has('smart-date-load') || tags?.has('smart-date-scan') || tags?.has('smart-date-sync') ||
+        tags?.has('smart-person-load') || tags?.has('smart-person-scan') || tags?.has('smart-person-sync')) {
+      return;
+    }
+
     try {
       editorState.read(() => {
         const html = $generateHtmlFromNodes(editor, null);
@@ -769,6 +779,17 @@ export function RichTextEditor({
     }
   };
 
+  // Drop queued HTML when switching notes so an old editor cannot save into a
+  // newly selected note after its blur/unmount sequence.
+  useEffect(() => {
+    if (throttleTimerRef.current) {
+      clearTimeout(throttleTimerRef.current);
+      throttleTimerRef.current = null;
+    }
+    pendingHtmlRef.current = null;
+    lastChangeTimeRef.current = Date.now();
+  }, [editorKey]);
+
   // Cleanup timer on unmount
   useEffect(() => {
     return () => {
@@ -785,6 +806,7 @@ export function RichTextEditor({
         <div className="relative mt-2">
         <RichTextBehaviorPlugin />
           <SmartDatePlugin noteId={noteId} noteTitle={noteTitle} noteProjectId={noteProjectId} />
+          <SmartPersonPlugin noteId={noteId} noteTitle={noteTitle} noteProjectId={noteProjectId} />
           <RichTextPlugin
             contentEditable={
               <ContentEditable

@@ -1081,6 +1081,19 @@ export const useApi = () => {
           method: 'POST',
           body: JSON.stringify(payload),
         }),
+      getNotePersonLinks: (noteId: string) => request(`/api/notes/${noteId}/person-links`),
+      upsertNotePersonLink: (
+        noteId: string,
+        payload: {
+          person_user_id: string;
+          source_key: string;
+          source_text: string;
+        }
+      ) =>
+        request(`/api/notes/${noteId}/person-links`, {
+          method: 'POST',
+          body: JSON.stringify(payload),
+        }),
 
       // Templates
       getTemplates: (category?: string) => {

@@ -29,6 +29,7 @@ import {
   type SmartDateNodeState,
   SmartDateNode,
 } from './nodes/SmartDateNode';
+import { $isSmartPersonNode } from './nodes/SmartPersonNode';
 
 type SmartLinkRow = {
   id: string;
@@ -74,6 +75,7 @@ const SMART_DATE_LOAD_TAG = 'smart-date-load';
 const isTextNodeEligible = (node: TextNode) => {
   if (!node.isSimpleText()) return false;
   if (node.hasFormat('code')) return false;
+  if (node instanceof SmartDateNode || $isSmartPersonNode(node)) return false;
 
   let current = node.getParent();
   while (current) {

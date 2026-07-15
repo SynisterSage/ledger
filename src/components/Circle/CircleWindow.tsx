@@ -500,7 +500,7 @@ const Row = ({
 const buildPersonContext = (person: CirclePersonSummary) =>
   `ledger-person|${person.id}|${encodeURIComponent(person.name)}`;
 
-export const CircleWindow = () => {
+export const CircleWindow = ({ focusContext }: { focusContext?: string | null } = {}) => {
   const api = useApi();
   const { activeWorkspaceId, activeWorkspace } = useWorkspaceContext();
 
@@ -660,6 +660,15 @@ export const CircleWindow = () => {
     });
     setListTab('all');
   }, [activeWorkspaceId]);
+
+  useEffect(() => {
+    const raw = String(focusContext ?? '').trim();
+    if (!raw.startsWith('ledger-person|')) return;
+    const [, personId = '', , tab = ''] = raw.split('|');
+    if (!personId) return;
+    setSelectedPersonId(personId);
+    setActiveTab(tab === 'projects' ? 'projects' : 'overview');
+  }, [focusContext]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {

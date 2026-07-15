@@ -394,6 +394,8 @@ const reminderDashboardSelectColumns =
   'id, workspace_id, user_id, title, body, remind_at, status, linked_type, linked_id, completed_at, dismissed_at, snoozed_until, source, source_platform, created_at, updated_at, calendar_id, project_id, note_id, notes, color, is_done, created_by, series_id, series_type, recurrence_rule, assigned_to_user_id, assigned_to_team_id, assigned_by_user_id, assigned_at';
 const noteSmartLinkSelectColumns =
   'id, workspace_id, note_id, source_key, source_text, source_start_offset, source_end_offset, linked_event_id, linked_reminder_id, dismissed_at, created_by, updated_by, created_at, updated_at';
+const notePersonLinkSelectColumns =
+  'id, workspace_id, note_id, person_user_id, source_key, source_text, created_by, updated_by, created_at, updated_at';
 const reminderLinkedTypes = ['task', 'event', 'note', 'project', 'inbox', 'none'];
 const reminderStatusValues = ['active', 'completed', 'dismissed', 'overdue'];
 const reminderLinkedLabels = {
@@ -14653,6 +14655,79 @@ app.post('/api/notes/:id/smart-links', authMiddleware, rateLimit('write'), async
       .select(noteSmartLinkSelectColumns)
       .single();
 
+    if (error) throw error;
+    res.json(data);
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
+app.get('/api/notes/:id/person-links', authMiddleware, rateLimit('read'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    const noteAllowed = await ensureWorkspaceResource('notes', req.params.id, workspaceId);
+    if (!noteAllowed) return res.status(404).json({ error: 'Note not found.' });
+
+    const { data, error } = await supabase
+      .from('note_person_links')
+      .select(notePersonLinkSelectColumns)
+      .eq('workspace_id', workspaceId)
+      .eq('note_id', req.params.id)
+      .order('created_at', { ascending: true });
+    if (error) throw error;
+    res.json({ links: Array.isArray(data) ? data : [] });
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
+app.post('/api/notes/:id/person-links', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    const noteId = String(req.params.id ?? '').trim();
+    const noteAllowed = await ensureWorkspaceResource('notes', noteId, workspaceId);
+    if (!noteAllowed) return res.status(404).json({ error: 'Note not found.' });
+
+    const personUserId = String(req.body?.person_user_id ?? '').trim();
+    const sourceKey = String(req.body?.source_key ?? '').trim();
+    const sourceText = String(req.body?.source_text ?? '').trim();
+    if (!personUserId || !sourceKey || !sourceText) {
+      return res.status(400).json({ error: 'person_user_id, source_key, and source_text are required' });
+    }
+
+    const { data: member, error: memberError } = await supabase
+      .from('workspace_members')
+      .select('user_id')
+      .eq('workspace_id', workspaceId)
+      .eq('user_id', personUserId)
+      .maybeSingle();
+    if (memberError) throw memberError;
+    if (!member) {
+      const { data: owner, error: ownerError } = await supabase
+        .from('workspaces')
+        .select('id')
+        .eq('id', workspaceId)
+        .eq('owner_id', personUserId)
+        .maybeSingle();
+      if (ownerError) throw ownerError;
+      if (!owner) return res.status(404).json({ error: 'Person is no longer available in this workspace.' });
+    }
+
+    const payload = {
+      workspace_id: workspaceId,
+      note_id: noteId,
+      person_user_id: personUserId,
+      source_key: sourceKey,
+      source_text: sourceText,
+      created_by: req.authUser.id,
+      updated_by: req.authUser.id,
+      updated_at: new Date().toISOString(),
+    };
+    const { data, error } = await supabase
+      .from('note_person_links')
+      .upsert(payload, { onConflict: 'workspace_id,note_id,person_user_id,source_key' })
+      .select(notePersonLinkSelectColumns)
+      .single();
     if (error) throw error;
     res.json(data);
   } catch (error) {

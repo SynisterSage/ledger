@@ -2387,6 +2387,14 @@ export const NotesWindow = () => {
         const updated = data as NoteRow;
         setNotes((prev) => prev.map((note) => (note.id === updated.id ? updated : note)));
         setNoteTree((prev) => replaceNoteInTree(prev, updated));
+        // An older save may resolve after navigation. Do not let it mutate
+        // dirty/saved state belonging to the newly selected note.
+        if (
+          selectedNoteIdRef.current !== selectedNoteId ||
+          hydrationNoteIdRef.current !== selectedNoteId
+        ) {
+          return updated;
+        }
         setIsDirty(false);
         setLastSavedAt(updated.updated_at);
         selectedNoteServerUpdatedAtRef.current = updated.updated_at ?? null;
@@ -2579,6 +2587,10 @@ export const NotesWindow = () => {
   const openNote = useCallback(
     async (note: NoteRow) => {
       if (selectedNoteId === note.id) return;
+      if (autosaveTimerRef.current) {
+        window.clearTimeout(autosaveTimerRef.current);
+        autosaveTimerRef.current = null;
+      }
       if (isDirty) {
         const saved = await flushAutosave();
         if (!saved) return;
@@ -2610,6 +2622,10 @@ export const NotesWindow = () => {
         return;
       }
 
+      if (autosaveTimerRef.current) {
+        window.clearTimeout(autosaveTimerRef.current);
+        autosaveTimerRef.current = null;
+      }
       if (isDirty) {
         const saved = await flushAutosave();
         if (!saved) return;
@@ -3761,7 +3777,6 @@ export const NotesWindow = () => {
                   <div className="space-y-0.5">
                     {visibleNotes.map((note) => {
                       const active = selectedNoteIdSet.has(note.id);
-                      const preview = htmlToPlainText(note.content).slice(0, 80) || '—';
 
                       return (
                         <button
@@ -3771,7 +3786,7 @@ export const NotesWindow = () => {
                           }}
                           onClick={(event) => void handleSidebarNoteClick(note, event.shiftKey)}
                           onContextMenu={(event) => handleSidebarNoteContextMenu(note, event)}
-                          className={`w-full rounded px-3 py-2 text-left text-sm transition ${
+                          className={`w-full rounded px-3 py-1.5 text-left text-sm transition ${
                             active
                               ? 'bg-[var(--ledger-surface-hover)] text-[var(--ledger-text-primary)] ring-1 ring-[color:var(--ledger-border-subtle)]'
                               : 'bg-transparent text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]'
@@ -3793,9 +3808,6 @@ export const NotesWindow = () => {
                               >
                                 {note.title || 'Untitled'}
                               </p>
-                              <p className="truncate text-xs text-[var(--ledger-text-muted)]">
-                                {preview}
-                              </p>
                             </div>
                           </div>
                         </button>
@@ -3804,7 +3816,7 @@ export const NotesWindow = () => {
                   </div>
                 ) : (
                   // Tree view with sections
-                  <div className="space-y-2">
+                  <div className="space-y-1.5">
                     {visibleSections.map((section) => {
                       const sectionColor = getColorClasses(section.color);
                       const isSectionCollapsed = collapsedSectionIds.has(section.id);
@@ -3962,11 +3974,9 @@ export const NotesWindow = () => {
 
                           {/* Section notes */}
                           {!isSectionCollapsed && (
-                            <div className="space-y-1 pl-4 mt-0.5">
+                            <div className="mt-1 pl-4 space-y-0.5">
                               {sectionNotes.map((note) => {
                                 const active = selectedNoteIdSet.has(note.id);
-                                const preview =
-                                  htmlToPlainText(note.content).slice(0, 60) || 'No content';
                                 const isExpanded = expandedNoteIds.has(note.id);
                                 const childNotes = sortNotesForScope(
                                   notes.filter((n) => n.parent_id === note.id),
@@ -3999,7 +4009,7 @@ export const NotesWindow = () => {
                                         onContextMenu={(event) =>
                                           handleSidebarNoteContextMenu(note, event)
                                         }
-                                        className={`flex-1 min-w-0 rounded px-2.5 py-1.5 text-left text-sm transition ${
+                                        className={`flex-1 min-w-0 rounded px-2.5 py-1 text-left text-sm transition ${
                                           active
                                             ? 'bg-[var(--ledger-surface-hover)] text-[var(--ledger-text-primary)] ring-1 ring-[color:var(--ledger-border-subtle)]'
                                             : 'bg-transparent text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]'
@@ -4051,9 +4061,6 @@ export const NotesWindow = () => {
                                                 {note.title || 'Untitled'}
                                               </p>
                                             )}
-                                            <p className="truncate text-xs text-[var(--ledger-text-muted)]">
-                                              {preview}
-                                            </p>
                                           </div>
                                         </div>
                                       </button>
@@ -4206,7 +4213,7 @@ export const NotesWindow = () => {
                               event.preventDefault();
                               void handleDropOnSection(null);
                             }}
-                            className="w-full flex items-center gap-2 rounded-lg px-3 py-1.5 text-left text-sm font-semibold text-[var(--ledger-text-secondary)] transition group hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+                            className="w-full flex items-center gap-2 rounded-lg px-3 py-1 text-left text-sm font-semibold text-[var(--ledger-text-secondary)] transition group hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
                           >
                             <div
                               className={`h-1.5 w-1.5 rounded-full shrink-0 ${sectionColor.dot}`}
@@ -4228,11 +4235,9 @@ export const NotesWindow = () => {
                           </button>
 
                           {!isUnsortedCollapsed && (
-                            <div className="space-y-1 pl-3.5 mt-0.5">
+                            <div className="mt-1 pl-3.5 space-y-0.5">
                               {unsortedNotes.map((note) => {
                                 const active = selectedNoteIdSet.has(note.id);
-                                const preview =
-                                  htmlToPlainText(note.content).slice(0, 60) || 'No content';
                                 const isExpanded = expandedNoteIds.has(note.id);
                                 const childNotes = sortNotesForScope(
                                   notes.filter((n) => n.parent_id === note.id),
@@ -4312,9 +4317,6 @@ export const NotesWindow = () => {
                                               {note.title || 'Untitled'}
                                             </p>
                                           )}
-                                          <p className="truncate text-xs text-[var(--ledger-text-muted)]">
-                                            {preview}
-                                          </p>
                                         </div>
                                       </button>
                                       {childCount > 0 && (
@@ -4726,6 +4728,10 @@ export const NotesWindow = () => {
                         }}
                         onBlur={() => {
                           isEditingRef.current = false;
+                          // A note switch blurs the old editor after the
+                          // selected note has changed. Never flush that old
+                          // editor against the new draft.
+                          if (hydrationNoteIdRef.current !== selectedNote.id || isHydratingNote) return;
                           void flushAutosave();
                         }}
                       />

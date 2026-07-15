@@ -765,6 +765,9 @@ function DashboardContent() {
       updated_at?: string | null;
     }>
   >([]);
+  const [upcomingReminders, setUpcomingReminders] = useState<
+    Array<(typeof todayTasks)[number]>
+  >([]);
   const [workspaceTasks, setWorkspaceTasks] = useState<
     Array<{
       id: string;
@@ -1529,6 +1532,7 @@ function DashboardContent() {
       });
       setProjects([]);
       setUpcoming([]);
+      setUpcomingReminders([]);
       setNotes([]);
       optimisticNotesRef.current = [];
       setWorkspaceTeams([]);
@@ -1553,6 +1557,7 @@ function DashboardContent() {
           todayData,
           projectData,
           upcomingData,
+          upcomingReminderData,
           noteData,
           taskData,
           projectNoteLinksData,
@@ -1562,6 +1567,7 @@ function DashboardContent() {
           api.getToday(),
           api.getProjects(),
           api.getUpcomingEvents({ scope: calendarScope }),
+          api.getReminders({ scope: calendarScope }),
           api.getNotes(),
           api.getTasks(),
           api.getWorkspaceProjectNoteLinks(activeWorkspaceId),
@@ -1769,12 +1775,54 @@ function DashboardContent() {
                 .filter(isUpcomingEventActive)
                 .sort(
                   (left, right) =>
-                    new Date(getSortTimestamp(right)).getTime() -
-                    new Date(getSortTimestamp(left)).getTime()
+                    new Date(left.start_at).getTime() - new Date(right.start_at).getTime()
                 )
                 .slice(0, 4)
             : []
         );
+        const normalizedUpcomingReminders =
+          upcomingReminderData.status === 'fulfilled' && Array.isArray(upcomingReminderData.value)
+            ? (upcomingReminderData.value as Array<{
+                id: string;
+                title: string;
+                remind_at?: string | null;
+                is_done?: boolean;
+                status?: string | null;
+                project_id?: string | null;
+                project_name?: string | null;
+                workspace_id?: string | null;
+                workspace_name?: string | null;
+                workspace_color?: string | null;
+                calendar_name?: string | null;
+                created_at?: string | null;
+                updated_at?: string | null;
+              }>)
+                .filter((reminder) => {
+                  const remindAt = new Date(reminder.remind_at ?? '').getTime();
+                  return (
+                    !reminder.is_done &&
+                    String(reminder.status ?? '').toLowerCase() !== 'completed' &&
+                    Number.isFinite(remindAt) &&
+                    remindAt > Date.now() &&
+                    new Date(reminder.remind_at ?? '').toDateString() !== new Date().toDateString()
+                  );
+                })
+                .sort(
+                  (left, right) =>
+                    new Date(left.remind_at ?? 0).getTime() -
+                    new Date(right.remind_at ?? 0).getTime()
+                )
+                .slice(0, 6)
+                .map((reminder) => ({
+                  ...reminder,
+                  kind: 'reminder' as const,
+                  status: reminder.status ?? 'todo',
+                  remind_at: reminder.remind_at ?? null,
+                  show_in_today: false,
+                  is_today_focus: false,
+                }))
+            : [];
+        setUpcomingReminders(normalizedUpcomingReminders);
         const mergedNotes = [
           ...normalizedNotes.filter((note) => !isOverviewDeletePending('note', note.id)),
           ...optimisticNotesRef.current.filter(
@@ -1864,6 +1912,7 @@ function DashboardContent() {
           todayData.status === 'rejected' ? 'today feed' : null,
           projectData.status === 'rejected' ? 'projects' : null,
           upcomingData.status === 'rejected' ? 'upcoming events' : null,
+          upcomingReminderData.status === 'rejected' ? 'upcoming reminders' : null,
           noteData.status === 'rejected' ? 'notes' : null,
           projectNoteLinksData.status === 'rejected' ? 'note links' : null,
           taskData.status === 'rejected' ? 'follow-ups' : null,
@@ -1888,6 +1937,7 @@ function DashboardContent() {
             setTodayTasks([]);
             setProjects([]);
             setUpcoming([]);
+            setUpcomingReminders([]);
             setNotes([]);
             setFollowUpTasks([]);
           } else {
@@ -4023,9 +4073,16 @@ function DashboardContent() {
     open: () => openModule('notes', { kind: 'notes', focusNoteId: note.id }),
   }));
 
+  const upcomingReminderRows = upcomingReminders.map<OverviewRow>((reminder) =>
+    buildTaskRow(reminder, 'Upcoming', ['Reminder'])
+  );
+
   const eventRows = upcoming.slice(0, 6).map<OverviewRow>((event) => {
     const start = new Date(event.start_at);
-    const isToday = start.toDateString() === new Date().toDateString();
+    const now = new Date();
+    const isToday =
+      start.toDateString() === now.toDateString() ||
+      (start.getTime() <= now.getTime() && new Date(event.end_at).getTime() > now.getTime());
     const dayLabel = isToday ? 'Today' : formatShortDate(event.start_at);
     const timeLabel = formatTime(event.start_at);
     const eventTeamId = event.assigned_to_team_id ?? event.assigned_team_id ?? null;
@@ -4067,7 +4124,7 @@ function DashboardContent() {
         .join(' · '),
       chips: [isToday ? 'Today' : 'Upcoming'],
       dateLabel: dayLabel ?? undefined,
-      group: 'Upcoming',
+      group: isToday ? 'Today' : 'Upcoming',
       icon: <CalendarDays size={13} />,
       assignee: eventUserLabel
         ? {
@@ -4140,7 +4197,9 @@ function DashboardContent() {
     ...longTermTaskRows,
     ...projectRows,
     ...noteRows,
+    ...upcomingReminderRows,
     ...eventRows.filter((row) => row.group === 'Upcoming'),
+    ...eventRows.filter((row) => row.group === 'Today'),
   ];
 
   const activeOverviewFilters = overviewFilters[overviewTab];
@@ -7164,7 +7223,7 @@ function AppShell() {
     }
 
     if (activeModuleKind === 'circle') {
-      return <CircleWindow />;
+      return <CircleWindow focusContext={activeModuleFocusContext} />;
     }
 
     if (activeModuleKind === 'notes') {

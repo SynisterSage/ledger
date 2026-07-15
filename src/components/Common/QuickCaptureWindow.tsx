@@ -18,6 +18,9 @@ type FollowUpContext = {
 type PersonContext = {
   userId: string;
   displayName: string;
+  noteId: string | null;
+  projectId: string | null;
+  suggestedTitle: string | null;
 };
 
 type QuickCapturePreferences = {
@@ -62,11 +65,14 @@ const parseFollowUpContext = (value?: string): FollowUpContext | null => {
 const parsePersonContext = (value?: string): PersonContext | null => {
   if (!value) return null;
   if (!value.startsWith('ledger-person|')) return null;
-  const [, userId = '', displayName = ''] = value.split('|');
+  const [, userId = '', displayName = '', noteId = '', projectId = '', suggestedTitle = ''] = value.split('|');
   if (!userId) return null;
   return {
     userId,
     displayName: decodeURIComponent(displayName || ''),
+    noteId: noteId ? decodeURIComponent(noteId) : null,
+    projectId: projectId ? decodeURIComponent(projectId) : null,
+    suggestedTitle: suggestedTitle ? decodeURIComponent(suggestedTitle) : null,
   };
 };
 
@@ -267,6 +273,11 @@ export const QuickCaptureWindow = ({
       : displayContext
     : undefined;
 
+  useEffect(() => {
+    if (kind !== 'quick-task' && kind !== 'quick-follow-up') return;
+    if (personContext?.suggestedTitle) setTaskTitle(personContext.suggestedTitle);
+  }, [context, kind]);
+
   const saveQuickTask = async () => {
     if (!user || !activeWorkspaceId || !taskTitle.trim()) {
       setError('Task title cannot be empty');
@@ -304,7 +315,7 @@ export const QuickCaptureWindow = ({
         priority: 'medium',
         task_horizon: 'long_term',
         assigned_to_user_id: personContext?.userId ?? null,
-        project_id: followUpContext?.projectId ?? null,
+        project_id: followUpContext?.projectId ?? personContext?.projectId ?? null,
         notes: followUpContext?.eventTitle
           ? `Follow-up from calendar: ${followUpContext.eventTitle}`
           : personContext?.displayName
