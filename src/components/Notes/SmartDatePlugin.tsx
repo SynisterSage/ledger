@@ -65,6 +65,7 @@ const SCAN_DEBOUNCE_MS = 220;
 const SMART_DATE_SCAN_TAG = 'smart-date-scan';
 const SMART_DATE_SYNC_TAG = 'smart-date-sync';
 const SMART_DATE_LOAD_TAG = 'smart-date-load';
+const DEFAULT_REMINDER_TIME = '09:00';
 
 const isTextNodeEligible = (node: TextNode) => {
   if (!node.isSimpleText()) return false;
@@ -669,6 +670,8 @@ export function SmartDatePlugin({
           ? `${String(resolvedDate.getHours()).padStart(2, '0')}:${String(
               resolvedDate.getMinutes()
             ).padStart(2, '0')}`
+          : mode === 'reminder'
+          ? DEFAULT_REMINDER_TIME
           : '',
         allDay: mode === 'event' && !target.hasExplicitTime,
         calendarId: composerCalendars[0]?.id ?? '',
@@ -682,7 +685,11 @@ export function SmartDatePlugin({
   const saveComposer = useCallback(async () => {
     if (!composerTarget || !composerValues.title.trim() || !composerValues.calendarId) return;
 
-    const start = new Date(`${composerValues.date}T${composerValues.time || '00:00'}:00`);
+    const startTime =
+      composerMode === 'reminder'
+        ? composerValues.time || DEFAULT_REMINDER_TIME
+        : composerValues.time || '00:00';
+    const start = new Date(`${composerValues.date}T${startTime}:00`);
     if (Number.isNaN(start.getTime())) {
       toast.show(
         composerMode === 'event' ? 'Could not create event.' : 'Could not create reminder.',

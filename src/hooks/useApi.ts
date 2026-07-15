@@ -1109,6 +1109,11 @@ export const useApi = () => {
         category?: string;
         content_html?: string;
         is_default?: boolean;
+        visibility?: 'mine' | 'workspace';
+        icon?: string | null;
+        color?: string | null;
+        suggested_section_id?: string | null;
+        title_pattern?: string | null;
       }) =>
         request('/api/templates', {
           method: 'POST',
@@ -1122,6 +1127,11 @@ export const useApi = () => {
           category?: string;
           content_html?: string;
           is_default?: boolean;
+          visibility?: 'mine' | 'workspace';
+          icon?: string | null;
+          color?: string | null;
+          suggested_section_id?: string | null;
+          title_pattern?: string | null;
         }
       ) =>
         request(`/api/templates/${id}`, {
@@ -1132,9 +1142,15 @@ export const useApi = () => {
         request(`/api/templates/${id}`, {
           method: 'DELETE',
         }),
-      duplicateTemplate: (id: string) =>
+      duplicateTemplate: (id: string, options?: { visibility?: 'mine' | 'workspace' }) =>
         request(`/api/templates/${id}/duplicate`, {
           method: 'POST',
+          body: JSON.stringify(options ?? {}),
+        }),
+      pinTemplate: (id: string, pinned: boolean) =>
+        request(`/api/templates/${id}/pin`, {
+          method: 'PATCH',
+          body: JSON.stringify({ pinned }),
         }),
       createNoteFromTemplate: (templateId: string, options?: { section_id?: string | null }) =>
         request(`/api/notes/from-template/${templateId}`, {
@@ -1148,6 +1164,11 @@ export const useApi = () => {
           description?: string | null;
           category?: string;
           is_default?: boolean;
+          visibility?: 'mine' | 'workspace';
+          icon?: string | null;
+          color?: string | null;
+          suggested_section_id?: string | null;
+          title_pattern?: string | null;
         }
       ) =>
         request(`/api/templates/from-note/${noteId}`, {

@@ -180,7 +180,10 @@ const normalizeWorkspaceRoute = (
 
 const normalizeWorkspaceRoutes = (
   routes: Array<Partial<WorkspaceRoute> | null | undefined> | null | undefined
-) => routes?.map((route) => normalizeWorkspaceRoute(route)).filter((route): route is WorkspaceRoute => Boolean(route)) ?? [];
+) =>
+  routes
+    ?.map((route) => normalizeWorkspaceRoute(route))
+    .filter((route): route is WorkspaceRoute => Boolean(route)) ?? [];
 
 const getWorkspaceRouteLabel = (route: WorkspaceRoute) => {
   switch (route.kind) {
@@ -189,9 +192,11 @@ const getWorkspaceRouteLabel = (route: WorkspaceRoute) => {
     case 'calendar':
       if (route.focusContext?.startsWith('focus-event:')) return 'Calendar · Event';
       if (route.focusContext?.startsWith('focus-reminder:')) return 'Calendar · Reminder';
-      return route.focusDate ? `Calendar · ${formatHistoryDate(route.focusDate) ?? 'Day'}` : 'Calendar';
+      return route.focusDate
+        ? `Calendar · ${formatHistoryDate(route.focusDate) ?? 'Day'}`
+        : 'Calendar';
     case 'notes':
-      return route.focusNoteId ? 'Notes · Note' : 'Notes';
+      return 'Notes';
     case 'projects':
       if (route.focusTaskId) return 'Projects · Task';
       return route.focusProjectId ? 'Projects · Project' : 'Projects';
@@ -202,7 +207,9 @@ const getWorkspaceRouteLabel = (route: WorkspaceRoute) => {
       return route.focusTaskId ? 'Dashboard · Task' : 'Dashboard';
     case 'settings':
       return route.focusSection
-        ? `Settings · ${route.focusSection.replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase())}`
+        ? `Settings · ${route.focusSection
+            .replace(/_/g, ' ')
+            .replace(/\b\w/g, (char) => char.toUpperCase())}`
         : 'Settings';
     case 'inbox':
       return 'Intake';
@@ -328,7 +335,7 @@ export const ModuleHeaderSegmentedButton = ({
       title={title}
       aria-label={ariaLabel ?? title}
       className={`${baseClassName} ${
-      active
+        active
           ? `${sidebarTheme.surface} ${sidebarTheme.textPrimary} shadow-[0_1px_2px_rgba(15,23,42,0.08)]`
           : `${sidebarTheme.textSecondary} hover:${sidebarTheme.textPrimary}`
       } ${iconOnly ? (compact ? 'w-7 px-0' : 'w-8 px-0') : ''} ${
@@ -501,7 +508,17 @@ export const ModuleWindowHeader = ({
   const [historyMenuState, setHistoryMenuState] = useState<{ x: number; y: number } | null>(null);
   const historyButtonRef = useRef<HTMLButtonElement | null>(null);
   const historyMenuRef = useRef<HTMLDivElement | null>(null);
-  const recentRoutes = useMemo(() => workspaceNavigationState.recentRoutes ?? [], [workspaceNavigationState.recentRoutes]);
+  const recentRoutes = useMemo(() => {
+    const routes = workspaceNavigationState.recentRoutes ?? [];
+    const seen = new Set<string>();
+
+    return routes.filter((route) => {
+      const key = getWorkspaceRouteLabel(route);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }, [workspaceNavigationState.recentRoutes]);
 
   useEffect(() => {
     let mounted = true;
@@ -528,8 +545,15 @@ export const ModuleWindowHeader = ({
       setWorkspaceNavigationState({
         canGoBack: Boolean(nextState?.canGoBack),
         canGoForward: Boolean(nextState?.canGoForward),
-        currentRoute: normalizeWorkspaceRoute(nextState?.currentRoute as Partial<WorkspaceRoute> | null | undefined),
-        recentRoutes: normalizeWorkspaceRoutes(nextState?.recentRoutes as Array<Partial<WorkspaceRoute> | null | undefined> | null | undefined),
+        currentRoute: normalizeWorkspaceRoute(
+          nextState?.currentRoute as Partial<WorkspaceRoute> | null | undefined
+        ),
+        recentRoutes: normalizeWorkspaceRoutes(
+          nextState?.recentRoutes as
+            | Array<Partial<WorkspaceRoute> | null | undefined>
+            | null
+            | undefined
+        ),
       });
     };
 
@@ -558,6 +582,14 @@ export const ModuleWindowHeader = ({
       setHistoryMenuState(null);
     };
 
+    const handleScroll = (event: Event) => {
+      const target = event.target;
+      if (target instanceof Element && historyMenuRef.current?.contains(target)) {
+        return;
+      }
+      setHistoryMenuState(null);
+    };
+
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') setHistoryMenuState(null);
     };
@@ -567,13 +599,13 @@ export const ModuleWindowHeader = ({
     document.addEventListener('pointerdown', handlePointerDown);
     document.addEventListener('keydown', handleKeyDown);
     window.addEventListener('resize', handleResize);
-    window.addEventListener('scroll', handleResize, true);
+    window.addEventListener('scroll', handleScroll, true);
 
     return () => {
       document.removeEventListener('pointerdown', handlePointerDown);
       document.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('resize', handleResize);
-      window.removeEventListener('scroll', handleResize, true);
+      window.removeEventListener('scroll', handleScroll, true);
     };
   }, [historyMenuState]);
 
@@ -616,8 +648,14 @@ export const ModuleWindowHeader = ({
     if (!buttonRect || recentRoutes.length < 2) return;
 
     setHistoryMenuState({
-      x: Math.max(8, Math.min(buttonRect.right - historyMenuWidth, window.innerWidth - historyMenuWidth - 8)),
-      y: Math.max(8, Math.min(buttonRect.bottom + 8, window.innerHeight - historyMenuMaxHeight - 8)),
+      x: Math.max(
+        8,
+        Math.min(buttonRect.right - historyMenuWidth, window.innerWidth - historyMenuWidth - 8)
+      ),
+      y: Math.max(
+        8,
+        Math.min(buttonRect.bottom + 8, window.innerHeight - historyMenuMaxHeight - 8)
+      ),
     });
   };
 
@@ -767,7 +805,9 @@ export const ModuleWindowHeader = ({
                   title="History"
                   aria-label="History"
                   className={`${stripIconButtonClassName} ${
-                    historyMenuState ? `${sidebarTheme.hoverSurface} ${sidebarTheme.textPrimary}` : ''
+                    historyMenuState
+                      ? `${sidebarTheme.hoverSurface} ${sidebarTheme.textPrimary}`
+                      : ''
                   } ${recentRoutes.length < 2 ? stripIconButtonDisabledClassName : ''}`}
                 >
                   <History size={14} />
@@ -792,15 +832,18 @@ export const ModuleWindowHeader = ({
           </div>
         </div>
 
-        {historyMenuState && recentRoutes.length > 0 &&
+        {historyMenuState &&
+          recentRoutes.length > 0 &&
           createPortal(
             <div
               ref={historyMenuRef}
               className={`${sidebarTheme.menu} w-[256px] overflow-hidden`}
-              style={{
-                left: `${historyMenuState.x}px`,
-                top: `${historyMenuState.y}px`,
-              } as CSSProperties}
+              style={
+                {
+                  left: `${historyMenuState.x}px`,
+                  top: `${historyMenuState.y}px`,
+                } as CSSProperties
+              }
               onClick={(event) => event.stopPropagation()}
               onMouseDown={(event) => event.stopPropagation()}
             >
@@ -829,7 +872,9 @@ export const ModuleWindowHeader = ({
                       <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)]">
                         {getWorkspaceRouteIcon(route)}
                       </span>
-                      <span className="min-w-0 flex-1 truncate">{getWorkspaceRouteLabel(route)}</span>
+                      <span className="min-w-0 flex-1 truncate">
+                        {getWorkspaceRouteLabel(route)}
+                      </span>
                       {active ? (
                         <span className="shrink-0 text-[10px] font-medium text-[var(--ledger-text-muted)]">
                           Current

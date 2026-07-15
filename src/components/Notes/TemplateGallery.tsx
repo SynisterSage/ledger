@@ -1,41 +1,34 @@
-import { MoreHorizontal, Plus, Search, Trash2 } from 'lucide-react'
+import { Copy, Eye, MoreHorizontal, Pencil, Pin, Plus, Search, Trash2 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useWorkspaceContext } from '../../context/WorkspaceContext'
 import { useApi } from '../../hooks/useApi'
 import { useToast } from '../Common/ToastProvider'
-
-interface Template {
-  id: string
-  name: string
-  description: string | null
-  category: string
-  is_default: boolean
-  is_system: boolean
-  usage_count: number
-}
+import type { TemplateSummary } from './templateDefinitions'
 
 interface TemplateGalleryProps {
   onSelectTemplate: (templateId: string) => void
   onCreateCustom?: () => void
+  onEditTemplate?: (template: TemplateSummary) => void
 }
 
-export const TemplateGallery = ({ onSelectTemplate, onCreateCustom }: TemplateGalleryProps) => {
+export const TemplateGallery = ({ onSelectTemplate, onCreateCustom, onEditTemplate }: TemplateGalleryProps) => {
   const { activeWorkspaceId } = useWorkspaceContext()
   const api = useApi()
   const toast = useToast()
 
-  const [templates, setTemplates] = useState<Template[]>([])
+  const [templates, setTemplates] = useState<TemplateSummary[]>([])
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedFilter, setSelectedFilter] = useState<string>('all')
   const [isLoading, setIsLoading] = useState(true)
   const [rowMenuTemplateId, setRowMenuTemplateId] = useState<string | null>(null)
+  const [previewTemplate, setPreviewTemplate] = useState<TemplateSummary | null>(null)
 
   const loadTemplates = useCallback(async () => {
     if (!activeWorkspaceId) return
     setIsLoading(true)
     try {
       const data = await api.getTemplates()
-      setTemplates((Array.isArray(data) ? data : []) as Template[])
+      setTemplates((Array.isArray(data) ? data : []) as TemplateSummary[])
     } catch (error) {
       console.error('Failed to load templates:', error)
       setTemplates([])
@@ -84,8 +77,11 @@ export const TemplateGallery = ({ onSelectTemplate, onCreateCustom }: TemplateGa
   const filters = useMemo(
     () => [
       { key: 'all', label: 'All' },
-      { key: 'presets', label: 'Presets' },
-      { key: 'custom', label: 'Custom' },
+      { key: 'ledger', label: 'Ledger' },
+      { key: 'workspace', label: 'Workspace' },
+      { key: 'mine', label: 'Mine' },
+      { key: 'pinned', label: 'Pinned' },
+      { key: 'recent', label: 'Recent' },
       ...categories.map((category) => ({
         key: `cat:${category}`,
         label: category.charAt(0).toUpperCase() + category.slice(1),
@@ -97,10 +93,16 @@ export const TemplateGallery = ({ onSelectTemplate, onCreateCustom }: TemplateGa
   const filteredTemplates = useMemo(() => {
     let result = [...templates]
 
-    if (selectedFilter === 'presets') {
+    if (selectedFilter === 'ledger') {
       result = result.filter((t) => t.is_system)
-    } else if (selectedFilter === 'custom') {
-      result = result.filter((t) => !t.is_system)
+    } else if (selectedFilter === 'workspace') {
+      result = result.filter((t) => !t.is_system && t.visibility === 'workspace')
+    } else if (selectedFilter === 'mine') {
+      result = result.filter((t) => !t.is_system && t.visibility !== 'workspace')
+    } else if (selectedFilter === 'pinned') {
+      result = result.filter((t) => t.pinned)
+    } else if (selectedFilter === 'recent') {
+      result = result.filter((t) => t.last_used_at || t.usage_count > 0)
     } else if (selectedFilter.startsWith('cat:')) {
       const category = selectedFilter.slice(4)
       result = result.filter((t) => (t.category || 'personal').toLowerCase() === category)
@@ -115,7 +117,8 @@ export const TemplateGallery = ({ onSelectTemplate, onCreateCustom }: TemplateGa
       )
     }
     return result.sort((a, b) => {
-      if (b.usage_count !== a.usage_count) return b.usage_count - a.usage_count
+      if (Boolean(b.pinned) !== Boolean(a.pinned)) return b.pinned ? -1 : 1
+      if (b.last_used_at !== a.last_used_at) return String(b.last_used_at ?? '').localeCompare(String(a.last_used_at ?? ''))
       return a.name.localeCompare(b.name)
     })
   }, [templates, searchQuery, selectedFilter])
@@ -125,7 +128,7 @@ export const TemplateGallery = ({ onSelectTemplate, onCreateCustom }: TemplateGa
   }, [])
 
   const handleDeleteTemplate = useCallback(
-    async (template: Template) => {
+    async (template: TemplateSummary) => {
       const ok = window.confirm(`Delete template “${template.name}”? This cannot be undone.`)
       if (!ok) return
 
@@ -143,6 +146,25 @@ export const TemplateGallery = ({ onSelectTemplate, onCreateCustom }: TemplateGa
     },
     [api, dispatchTemplatesUpdated, loadTemplates, toast]
   )
+
+  const handleDuplicate = async (template: TemplateSummary) => {
+    try {
+      await api.duplicateTemplate(template.id)
+      dispatchTemplatesUpdated()
+      toast.show('Template duplicated', { variant: 'success' })
+    } catch (error) {
+      toast.show(error instanceof Error ? error.message : 'Could not duplicate template', { variant: 'error' })
+    }
+  }
+
+  const handlePin = async (template: TemplateSummary) => {
+    try {
+      await api.pinTemplate(template.id, !template.pinned)
+      await loadTemplates()
+    } catch (error) {
+      toast.show(error instanceof Error ? error.message : 'Could not update pin', { variant: 'error' })
+    }
+  }
 
   return (
     <div className="flex max-h-[66vh] min-h-0 flex-col gap-2 bg-[var(--ledger-surface-card)]">
@@ -211,7 +233,7 @@ export const TemplateGallery = ({ onSelectTemplate, onCreateCustom }: TemplateGa
               >
                 <button
                   type="button"
-                  onClick={() => onSelectTemplate(template.id)}
+                  onClick={() => setPreviewTemplate(template)}
                   className="flex min-h-9 w-full items-center gap-2 rounded-lg px-2.5 py-1.5 pr-12 text-left"
                 >
                   <h3 className="min-w-0 shrink truncate text-sm font-medium leading-5 text-[var(--ledger-text-primary)]">
@@ -225,11 +247,12 @@ export const TemplateGallery = ({ onSelectTemplate, onCreateCustom }: TemplateGa
                   <span className="ml-auto shrink-0 text-[11px] text-[var(--ledger-text-muted)]">
                     <span className="capitalize">{template.category || 'personal'}</span>
                     <span className="mx-1.5">·</span>
-                    <span>{template.is_system ? 'Preset' : 'Custom'}</span>
+                    <span>{template.is_system ? 'Ledger' : template.visibility === 'workspace' ? 'Workspace' : 'Mine'}</span>
                   </span>
                 </button>
 
-                {!template.is_system && (
+                <div className="absolute right-2 top-2">
+                  {template.pinned && <Pin size={12} className="mr-7 mt-1 inline text-[var(--ledger-accent)]" />}
                   <div className="absolute right-2 top-2">
                     <button
                       type="button"
@@ -250,7 +273,11 @@ export const TemplateGallery = ({ onSelectTemplate, onCreateCustom }: TemplateGa
                         onClick={(event) => event.stopPropagation()}
                         onMouseDown={(event) => event.stopPropagation()}
                       >
-                        <button
+                        <button type="button" onClick={() => setPreviewTemplate(template)} className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs hover:bg-[var(--ledger-surface-selected)]"><Eye size={12} />Preview</button>
+                        <button type="button" onClick={() => void handlePin(template)} className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs hover:bg-[var(--ledger-surface-selected)]"><Pin size={12} />{template.pinned ? 'Unpin' : 'Pin'}</button>
+                        <button type="button" onClick={() => void handleDuplicate(template)} className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs hover:bg-[var(--ledger-surface-selected)]"><Copy size={12} />Duplicate</button>
+                        {!template.is_system && onEditTemplate && <button type="button" onClick={() => onEditTemplate(template)} className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs hover:bg-[var(--ledger-surface-selected)]"><Pencil size={12} />Edit</button>}
+                        {!template.is_system && <button
                           type="button"
                           onClick={() => {
                             setRowMenuTemplateId(null)
@@ -260,16 +287,26 @@ export const TemplateGallery = ({ onSelectTemplate, onCreateCustom }: TemplateGa
                         >
                           <Trash2 size={12} className="text-red-500" />
                           Delete
-                        </button>
+                        </button>}
                       </div>
                     )}
                   </div>
-                )}
+                </div>
               </div>
             ))}
           </div>
         )}
       </div>
+
+      {previewTemplate && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/25 p-6" onClick={() => setPreviewTemplate(null)}>
+          <div className="max-h-[80vh] w-full max-w-2xl overflow-hidden rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-[var(--ledger-shadow)]" onClick={(event) => event.stopPropagation()}>
+            <div className="flex items-start justify-between border-b border-[color:var(--ledger-border-subtle)] px-5 py-4"><div><h2 className="font-semibold text-[var(--ledger-text-primary)]">{previewTemplate.name}</h2><p className="mt-1 text-xs text-[var(--ledger-text-secondary)]">{previewTemplate.description || 'Ledger writing structure'} · {previewTemplate.is_system ? 'Ledger' : previewTemplate.visibility === 'workspace' ? 'Workspace' : 'Mine'}</p></div><button type="button" onClick={() => setPreviewTemplate(null)} className="text-sm text-[var(--ledger-text-muted)]">Close</button></div>
+            <div className="max-h-[58vh] overflow-y-auto px-6 py-5"><div className="prose prose-sm max-w-none text-[var(--ledger-text-primary)]" dangerouslySetInnerHTML={{ __html: previewTemplate.content_html || '<p>Empty template</p>' }} /></div>
+            <div className="flex justify-end gap-2 border-t border-[color:var(--ledger-border-subtle)] px-5 py-3"><button type="button" onClick={() => { setPreviewTemplate(null); onSelectTemplate(previewTemplate.id) }} className="rounded-lg bg-[var(--ledger-accent)] px-3 py-2 text-sm font-medium text-white">Use template</button></div>
+          </div>
+        </div>
+      )}
 
     </div>
   )

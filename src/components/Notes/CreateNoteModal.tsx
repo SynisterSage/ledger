@@ -1,9 +1,11 @@
-import { ChevronRight, FileText, Lightbulb, User, BookOpen } from 'lucide-react';
+import { ChevronRight, FileText } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useApi } from '../../hooks/useApi';
 import { ModalCloseButton } from '../Common/ModalCloseButton';
 import { ModalOverlay } from '../Common/ModalOverlay';
 import { TemplateGallery } from './TemplateGallery';
+import { RichTextEditor } from './RichTextEditor';
+import { QUICK_TEMPLATE_DEFINITIONS } from './templateDefinitions';
 
 interface CreateNoteModalProps {
   isOpen: boolean;
@@ -26,62 +28,7 @@ interface CreateNoteModalProps {
   }) => void;
 }
 
-type WorkspaceTemplateSummary = {
-  id: string;
-  name: string;
-};
-
 type Step = 'main' | 'gallery' | 'custom-form';
-
-const QUICK_TEMPLATES = [
-  {
-    id: 'meeting-notes',
-    name: 'Meeting Notes',
-    icon: User,
-    description: 'Date, attendees, agenda, discussion, action items',
-  },
-  {
-    id: 'project-brief',
-    name: 'Project Brief',
-    icon: Lightbulb,
-    description: 'Project, owner, due, objective, success criteria',
-  },
-  {
-    id: 'daily-reflection',
-    name: 'Daily Reflection',
-    icon: FileText,
-    description: "Wins, lessons, blockers, tomorrow's focus, mood",
-  },
-  {
-    id: 'book-notes',
-    name: 'Book Notes',
-    icon: BookOpen,
-    description: 'Title, author, summary, key takeaways, quotes',
-  },
-];
-
-const QUICK_TEMPLATE_FALLBACKS: Record<string, { content: string; content_html: string }> = {
-  'meeting notes': {
-    content: 'Date\nAttendees\nAgenda\nDiscussion\nAction items',
-    content_html:
-      '<p>Date</p><p>Attendees</p><p>Agenda</p><p>Discussion</p><p>Action items</p>',
-  },
-  'project brief': {
-    content: 'Project\nOwner\nDue\nObjective\nSuccess criteria',
-    content_html:
-      '<p>Project</p><p>Owner</p><p>Due</p><p>Objective</p><p>Success criteria</p>',
-  },
-  'daily reflection': {
-    content: 'Wins\nLessons\nBlockers\nTomorrow\'s focus\nMood',
-    content_html:
-      "<p>Wins</p><p>Lessons</p><p>Blockers</p><p>Tomorrow's focus</p><p>Mood</p>",
-  },
-  'book notes': {
-    content: 'Title\nAuthor\nSummary\nKey takeaways\nQuotes',
-    content_html:
-      '<p>Title</p><p>Author</p><p>Summary</p><p>Key takeaways</p><p>Quotes</p>',
-  },
-};
 
 export const CreateNoteModal = ({
   isOpen,
@@ -93,8 +40,15 @@ export const CreateNoteModal = ({
   const api = useApi();
   const [step, setStep] = useState<Step>('main');
   const [isCreating, setIsCreating] = useState(false);
-  const [workspaceTemplates, setWorkspaceTemplates] = useState<WorkspaceTemplateSummary[]>([]);
+  const [workspaceTemplates, setWorkspaceTemplates] = useState<Array<{ id: string; name: string }>>([]);
   const [isLoadingTemplates, setIsLoadingTemplates] = useState(false);
+  const [templateName, setTemplateName] = useState('');
+  const [templateDescription, setTemplateDescription] = useState('');
+  const [templateCategory, setTemplateCategory] = useState('personal');
+  const [templateVisibility, setTemplateVisibility] = useState<'mine' | 'workspace'>('mine');
+  const [templateContent, setTemplateContent] = useState('');
+  const [templateTitlePattern, setTemplateTitlePattern] = useState('');
+  const [editingTemplateId, setEditingTemplateId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isOpen) {
@@ -209,7 +163,7 @@ export const CreateNoteModal = ({
     }
   };
 
-  const handleCreateQuickTemplate = async (name: string, templateId: string | null) => {
+  const handleCreateQuickTemplate = async (_name: string, templateId: string | null) => {
     setIsCreating(true);
     try {
       if (templateId) {
@@ -217,23 +171,55 @@ export const CreateNoteModal = ({
         return;
       }
 
-      const fallback = QUICK_TEMPLATE_FALLBACKS[name.toLowerCase()];
-      if (!fallback) {
-        throw new Error('Template not found');
-      }
-
-      const note = await api.createNote(name, fallback.content, {
-        content_html: fallback.content_html,
-        section_id: defaultSectionId ?? undefined,
-        source: 'template',
-        mode: 'text',
-      });
-      onNoteCreated?.(note);
-      onClose();
+      throw new Error('Template not available');
     } catch (error) {
       console.error('Failed to create note from quick template:', error);
     } finally {
       setIsCreating(false);
+    }
+  };
+
+  const handleCreateTemplate = async () => {
+    if (!templateName.trim()) return;
+    setIsCreating(true);
+    try {
+      const payload = {
+        name: templateName.trim(),
+        description: templateDescription.trim() || null,
+        category: templateCategory,
+        visibility: templateVisibility,
+        content_html: templateContent,
+        title_pattern: templateTitlePattern.trim() || null,
+      };
+      if (editingTemplateId) await api.updateTemplate(editingTemplateId, payload);
+      else await api.createTemplate(payload);
+      window.dispatchEvent(new CustomEvent('templates:updated'));
+      setStep('gallery');
+      setTemplateName('');
+      setTemplateDescription('');
+      setTemplateContent('');
+      setTemplateTitlePattern('');
+      setEditingTemplateId(null);
+    } catch (error) {
+      console.error('Failed to create template:', error);
+    } finally {
+      setIsCreating(false);
+    }
+  };
+
+  const handleEditTemplate = async (template: { id: string; name: string; description: string | null; category: string; visibility?: 'mine' | 'workspace' }) => {
+    try {
+      const full = await api.getTemplate(template.id) as { content_html?: string; title_pattern?: string | null };
+      setTemplateName(template.name);
+      setTemplateDescription(template.description || '');
+      setTemplateCategory(template.category || 'personal');
+      setTemplateVisibility(template.visibility === 'workspace' ? 'workspace' : 'mine');
+      setTemplateContent(full.content_html || '');
+      setTemplateTitlePattern(full.title_pattern || '');
+      setEditingTemplateId(template.id);
+      setStep('custom-form');
+    } catch (error) {
+      console.error('Failed to open template:', error);
     }
   };
 
@@ -295,11 +281,11 @@ export const CreateNoteModal = ({
                 <div className="space-y-2">
                   <p className="text-xs font-semibold text-gray-600 uppercase">Quick Templates</p>
                   <div className="grid grid-cols-2 gap-2">
-                    {QUICK_TEMPLATES.map(({ id, name, icon: Icon, description }) => {
+                    {QUICK_TEMPLATE_DEFINITIONS.map(({ name, icon: Icon, description }) => {
                       const templateId = resolveQuickTemplateId(name);
                       return (
                         <button
-                          key={id}
+                          key={name}
                           type="button"
                           onClick={() => void handleCreateQuickTemplate(name, templateId)}
                           disabled={isCreating || isLoadingTemplates}
@@ -337,20 +323,22 @@ export const CreateNoteModal = ({
               <TemplateGallery
                 onSelectTemplate={handleCreateFromTemplate}
                 onCreateCustom={() => setStep('custom-form')}
+                onEditTemplate={handleEditTemplate}
               />
             </div>
           )}
 
           {step === 'custom-form' && (
-            <div className="text-center py-8 text-gray-500">
-              <p className="text-sm">Create custom template form coming soon</p>
-              <button
-                type="button"
-                onClick={() => setStep('gallery')}
-                className="mt-3 text-sm font-medium text-[#FF5F40] hover:underline"
-              >
-                Back to gallery
-              </button>
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-3">
+                <label className="text-xs font-medium text-gray-600">Name<input value={templateName} onChange={(e) => setTemplateName(e.target.value)} className="mt-1 h-9 w-full rounded-lg border border-gray-200 px-3 text-sm" placeholder="Weekly team check-in" /></label>
+                <label className="text-xs font-medium text-gray-600">Category<select value={templateCategory} onChange={(e) => setTemplateCategory(e.target.value)} className="mt-1 h-9 w-full rounded-lg border border-gray-200 px-3 text-sm">{['meeting','internship','team','project','personal','reading'].map((category) => <option key={category}>{category}</option>)}</select></label>
+              </div>
+              <label className="block text-xs font-medium text-gray-600">Description<textarea value={templateDescription} onChange={(e) => setTemplateDescription(e.target.value)} className="mt-1 min-h-16 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm" placeholder="When this template is useful" /></label>
+              <div className="flex items-center gap-4 text-sm text-gray-700"><span className="text-xs font-medium text-gray-600">Visibility</span>{(['mine','workspace'] as const).map((visibility) => <label key={visibility} className="flex items-center gap-1.5"><input type="radio" checked={templateVisibility === visibility} onChange={() => setTemplateVisibility(visibility)} />{visibility === 'mine' ? 'Mine' : 'Workspace'}</label>)}</div>
+              <label className="block text-xs font-medium text-gray-600">Title pattern<input value={templateTitlePattern} onChange={(e) => setTemplateTitlePattern(e.target.value)} className="mt-1 h-9 w-full rounded-lg border border-gray-200 px-3 text-sm" placeholder="{{date}} Team Meeting" /></label>
+              <div><p className="mb-1 text-xs font-medium text-gray-600">Content</p><div className="max-h-[38vh] overflow-y-auto rounded-lg border border-gray-200 bg-white"><RichTextEditor initialValue={templateContent} editorKey="new-template" onChange={setTemplateContent} /></div></div>
+              <div className="flex justify-end gap-2"><button type="button" onClick={() => setStep('gallery')} className="rounded-lg px-3 py-2 text-sm text-gray-600">Cancel</button><button type="button" disabled={!templateName.trim() || isCreating} onClick={() => void handleCreateTemplate()} className="rounded-lg bg-[#FF5F40] px-3 py-2 text-sm font-medium text-white disabled:opacity-50">Save template</button></div>
             </div>
           )}
           </div>

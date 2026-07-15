@@ -21,9 +21,9 @@ export type SerializedSmartPersonNode = SerializedTextNode & {
 
 const STATE_CLASS_NAMES: Record<SmartPersonNodeState, string> = {
   detected:
-    'underline decoration-solid decoration-1 decoration-[color:var(--ledger-text-muted)] underline-offset-[0.2em]',
+    'underline decoration-solid decoration-1 decoration-[color:var(--ledger-text-muted)] underline-offset-2',
   linked:
-    'underline decoration-solid decoration-2 decoration-[color:var(--ledger-accent)] underline-offset-[0.2em]',
+    'underline decoration-solid decoration-2 decoration-[color:var(--ledger-accent)] underline-offset-2',
   dismissed: 'no-underline',
 };
 
@@ -139,7 +139,12 @@ export class SmartPersonNode extends TextNode {
 
   createDOM(config: EditorConfig, editor?: LexicalEditor): HTMLElement {
     const dom = super.createDOM(config, editor);
-    dom.classList.add('ledger-smart-person', 'cursor-pointer', 'select-auto', 'focus-visible:outline-none');
+    dom.classList.add(
+      'ledger-smart-person',
+      'cursor-pointer',
+      'select-auto',
+      'focus-visible:outline-none'
+    );
     dom.setAttribute('role', 'button');
     dom.setAttribute('tabindex', '0');
     this.applyDOMState(dom);
@@ -149,7 +154,9 @@ export class SmartPersonNode extends TextNode {
   updateDOM(prevNode: SmartPersonNode, dom: HTMLElement, config: EditorConfig): boolean {
     const updated = super.updateDOM(prevNode as unknown as this, dom, config);
     if (prevNode.__smartPersonState !== this.__smartPersonState) {
-      dom.classList.remove(...Object.values(STATE_CLASS_NAMES).flatMap((value) => value.split(' ')));
+      dom.classList.remove(
+        ...Object.values(STATE_CLASS_NAMES).flatMap((value) => value.split(' '))
+      );
       this.applyDOMState(dom);
     }
     return updated;
@@ -186,6 +193,5 @@ export const $createSmartPersonNode = (
   state: SmartPersonNodeState = 'detected'
 ) => $applyNodeReplacement(new SmartPersonNode(text, personUserId, sourceKey, state));
 
-export const $isSmartPersonNode = (
-  node: unknown
-): node is SmartPersonNode => node instanceof SmartPersonNode;
+export const $isSmartPersonNode = (node: unknown): node is SmartPersonNode =>
+  node instanceof SmartPersonNode;

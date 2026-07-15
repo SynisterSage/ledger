@@ -8,7 +8,6 @@ import {
   Folder,
   Inbox,
   MoreHorizontal,
-  MoreVertical,
   Plus,
   Search,
   StickyNote,
@@ -62,6 +61,7 @@ import {
   type NotesSelectionComposerKind,
 } from './NotesSelectionComposerModal';
 import { bulkExportNotes, bulkExportMindMaps } from '../../utils/exportUtils';
+import { QUICK_TEMPLATE_DEFINITIONS } from './templateDefinitions';
 
 type NoteRow = {
   id: string;
@@ -733,30 +733,10 @@ export const NotesWindow = () => {
   const toast = useToast();
   const { openSearch } = useSearch();
   const [workspaceMembers, setWorkspaceMembers] = useState<WorkspaceMember[]>([]);
-  const quickTemplates = [
-    { id: 'meeting-notes', name: 'Meeting Notes' },
-    { id: 'project-brief', name: 'Project Brief' },
-    { id: 'daily-reflection', name: 'Daily Reflection' },
-    { id: 'book-notes', name: 'Book Notes' },
-  ];
-  const quickTemplateFallbacks: Record<string, { content: string; content_html: string }> = {
-    'meeting notes': {
-      content: 'Date\nAttendees\nAgenda\nDiscussion\nAction items',
-      content_html: '<p>Date</p><p>Attendees</p><p>Agenda</p><p>Discussion</p><p>Action items</p>',
-    },
-    'project brief': {
-      content: 'Project\nOwner\nDue\nObjective\nSuccess criteria',
-      content_html: '<p>Project</p><p>Owner</p><p>Due</p><p>Objective</p><p>Success criteria</p>',
-    },
-    'daily reflection': {
-      content: "Wins\nLessons\nBlockers\nTomorrow's focus\nMood",
-      content_html: "<p>Wins</p><p>Lessons</p><p>Blockers</p><p>Tomorrow's focus</p><p>Mood</p>",
-    },
-    'book notes': {
-      content: 'Title\nAuthor\nSummary\nKey takeaways\nQuotes',
-      content_html: '<p>Title</p><p>Author</p><p>Summary</p><p>Key takeaways</p><p>Quotes</p>',
-    },
-  };
+  const quickTemplates = QUICK_TEMPLATE_DEFINITIONS.map(({ name }) => ({
+    id: name.toLowerCase().replace(/\s+/g, '-'),
+    name,
+  }));
 
   const areSidePanelsCollapsed = isLeftPaneCollapsed && isRightPaneCollapsed;
   const isCompactLayout = viewportWidth < modulePaneSizing.notes.left.compactBreakpoint;
@@ -1976,28 +1956,7 @@ export const NotesWindow = () => {
           return;
         }
 
-        const fallback = quickTemplateFallbacks[templateName.toLowerCase()];
-        if (!fallback) {
-          throw new Error('Template not found');
-        }
-
-        const note = await api.createNote(templateName, fallback.content, {
-          content_html: fallback.content_html,
-          source: 'template',
-          mode: 'text',
-        });
-        setNotes((prev) => [note as NoteRow, ...prev]);
-        setNoteTree((prev) => [
-          {
-            ...(note as NoteRow),
-            depth: (note as NoteRow).depth ?? 0,
-            children: [],
-          },
-          ...prev,
-        ]);
-        setSelectedNoteId(note.id);
-        syncDraftFromNote(note as NoteRow);
-        setTimeout(() => titleRef.current?.focus(), 0);
+        throw new Error('Template is not available in this workspace');
       } catch (error) {
         setError(error instanceof Error ? error.message : 'Failed to create note');
       } finally {
@@ -3774,10 +3733,10 @@ export const NotesWindow = () => {
                     <button
                       onClick={() => setShowNewMenu((current) => !current)}
                       disabled={isCreating}
-                      className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-accent)] transition hover:bg-[var(--ledger-surface-hover)] disabled:opacity-60"
+                      className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] disabled:opacity-60"
                       title="Notes actions"
                     >
-                      <MoreVertical size={13} />
+                      <MoreHorizontal size={13} />
                     </button>
                     {showNewMenu && (
                       <div className="absolute right-0 top-8 z-40 max-h-[60vh] min-w-48 overflow-y-auto rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-1 shadow-[var(--ledger-shadow)]">
@@ -5488,9 +5447,6 @@ export const NotesWindow = () => {
             <div className="border-b border-[color:var(--ledger-border-subtle)] px-3 py-2">
               <p className="text-xs font-medium text-[var(--ledger-text-muted)]">
                 Sort {sortMenu.scopeId === ROOT_NOTE_SCOPE_ID ? 'notes' : sortMenu.scopeName}
-              </p>
-              <p className="mt-0.5 text-[11px] text-[var(--ledger-text-muted)]">
-                {formatNoteSortLabel(getSortPreferenceForScope(sortMenu.scopeId))}
               </p>
             </div>
             {NOTE_SORT_OPTIONS.map((option) => {

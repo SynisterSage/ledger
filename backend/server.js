@@ -6702,6 +6702,29 @@ app.get('/api/workspaces', authMiddleware, rateLimit('read'), async (req, res) =
   }
 });
 
+const LEDGER_TEMPLATE_PRESETS = [
+  ['Meeting Notes', 'Decisions, owners, deadlines, and follow-ups.', 'meeting', '<h1>Meeting Notes</h1><p><strong>Date:</strong><br><strong>Attendees:</strong></p><h2>Agenda</h2><h2>Discussion</h2><h2>Decisions</h2><h2>Short-term tasks</h2><ul><li>[ ] Task<br>Owner:<br>Deadline:</li></ul><h2>Long-term tasks</h2><ul><li>[ ] Task<br>Owner:<br>Target:</li></ul><h2>Follow-ups</h2><h2>Next meeting</h2>'],
+  ['Project Brief', 'Goals, scope, risks, and next actions.', 'project', '<h1>Project Brief</h1><p><strong>Project name:</strong><br><strong>Owner:</strong><br><strong>Team:</strong></p><h2>Problem or opportunity</h2><h2>Objective</h2><h2>Success criteria</h2><h2>Scope</h2><h2>Out of scope</h2><h2>Deliverables</h2><h2>Timeline</h2><h2>Short-term next actions</h2><h2>Long-term work</h2><h2>Risks</h2><h2>Blockers</h2><h2>Stakeholders</h2><h2>Linked resources</h2>'],
+  ['Daily Reflection', 'What moved, what blocked, and what needs attention tomorrow.', 'personal', '<h1>Daily Reflection</h1><h2>Finished</h2><h2>Blocked</h2><h2>What moved forward</h2><h2>What I learned</h2><h2>Communication or follow-ups</h2><h2>First task tomorrow</h2><h2>Notes</h2>'],
+  ['Book Notes', 'Summary, takeaways, and how to apply the ideas.', 'reading', '<h1>Book Notes</h1><p><strong>Title:</strong><br><strong>Author:</strong><br><strong>Date read:</strong></p><h2>Summary</h2><h2>Key takeaways</h2><h2>Memorable quotes</h2><h2>How I will apply this</h2>'],
+  ['Weekly Internship Workspace', 'A reusable weekly home base for internship work and follow-through.', 'internship', '<h1>Week of</h1><h2>Goals for the week</h2><h2>Daily overview</h2><h3>Monday</h3><h3>Tuesday</h3><h3>Wednesday</h3><h3>Thursday</h3><h3>Friday</h3><h2>Short-term tasks</h2><ul><li>[ ] Task</li></ul><h2>Long-term tasks</h2><ul><li>[ ] Task</li></ul><h2>Meetings this week</h2><h2>Communication and follow-ups</h2><h2>Feedback received</h2><h2>Skills practiced</h2><h2>Work completed</h2><h2>Questions for supervisor</h2><h2>Next week</h2>'],
+  ['Team Meeting Notes', 'Discussion, decisions, ownership, and the team update.', 'team', '<h1>Team Meeting</h1><p><strong>Date:</strong><br><strong>Meeting lead:</strong><br><strong>Location or call:</strong></p><h2>Attendance</h2><p>Present:<br>Absent:</p><h2>Agenda</h2><h2>Main room notes</h2><h2>Breakout room notes</h2><h2>Announcements</h2><h2>Decisions made</h2><h2>Short-term tasks</h2><ul><li>[ ] Task<br>Owner:<br>Due:</li></ul><h2>Long-term tasks</h2><ul><li>[ ] Task<br>Owner:<br>Target:</li></ul><h2>Questions and blockers</h2><h2>Team overview message</h2><h2>Next meeting</h2>'],
+  ['Breakout Room Notes', 'Focused small-group discussion and the main-room update.', 'team', '<h1>Breakout Room Notes</h1><p><strong>Topic:</strong><br><strong>People present:</strong><br><strong>Facilitator:</strong></p><h2>Goal</h2><h2>Discussion</h2><h2>Decisions</h2><h2>Assigned tasks</h2><ul><li>[ ] Task<br>Owner:<br>Due:</li></ul><h2>Questions to bring back</h2><h2>Main-room update</h2><h2>Follow-ups</h2>'],
+  ['Formal Meeting Minutes', 'Concise minutes ready to distribute after a meeting.', 'meeting', '<h1>Meeting Minutes</h1><p><strong>Meeting:</strong><br><strong>Date:</strong><br><strong>Time:</strong><br><strong>Location:</strong><br><strong>Facilitator:</strong><br><strong>Minutes prepared by:</strong></p><h2>Attendees</h2><h2>Absent</h2><h2>Agenda</h2><h2>Discussion by topic</h2><h3>Topic 1</h3><p>Summary:<br>Decision:</p><h2>Action items</h2><ul><li>[ ] Action<br>Owner:<br>Deadline:</li></ul><h2>Motions or formal decisions</h2><h2>Items carried forward</h2><h2>Next meeting</h2><h2>Distribution</h2>'],
+  ['Team Lead Weekly Overview', 'Priorities, support, blockers, and communication for a small team.', 'team', '<h1>Team Lead Weekly Overview</h1><h2>Team priorities</h2><h2>Short-term work</h2><ul><li>[ ] Task<br>Owner:<br>Due:</li></ul><h2>Long-term work</h2><ul><li>[ ] Task<br>Owner:<br>Target:</li></ul><h2>Assignments by person</h2><h3>Team member</h3><p>Current work:<br>Support needed:<br>Next step:</p><h2>Blockers</h2><h2>People needing support</h2><h2>Upcoming deadlines</h2><h2>Meeting agenda</h2><h2>Communication to send</h2><h2>Wins</h2><h2>Risks</h2><h2>Next week</h2>'],
+];
+
+const provisionLedgerTemplates = async (workspaceId) => {
+  for (const [name, description, category, content_html] of LEDGER_TEMPLATE_PRESETS) {
+    const existing = await supabase.from('note_templates').select('id').eq('workspace_id', workspaceId).eq('name', name).eq('is_system', true).maybeSingle();
+    if (existing.error) throw existing.error;
+    if (!existing.data) {
+      const result = await supabase.from('note_templates').insert({ workspace_id: workspaceId, name, description, category, content_html, is_default: false, is_system: true, visibility: 'workspace', usage_count: 0 });
+      if (result.error) throw result.error;
+    }
+  }
+};
+
 app.post('/api/workspaces', authMiddleware, rateLimit('write'), async (req, res) => {
   try {
     const userId = req.authUser.id;
@@ -6727,6 +6750,8 @@ app.post('/api/workspaces', authMiddleware, rateLimit('write'), async (req, res)
       .single();
 
     if (insertResult.error) throw insertResult.error;
+
+    await provisionLedgerTemplates(insertResult.data.id);
 
     await setUserActiveWorkspaceId(userId, insertResult.data.id);
     await writeWorkspaceAuditLog({
@@ -15418,7 +15443,7 @@ app.get('/api/templates', authMiddleware, rateLimit('read'), async (req, res) =>
     let query = supabase
       .from('note_templates')
       .select(
-        'id, name, description, category, is_default, is_system, usage_count, created_at, created_by'
+        'id, name, description, category, is_default, is_system, usage_count, created_at, updated_at, created_by, visibility, icon, color, suggested_section_id, title_pattern, last_used_at'
       )
       .eq('workspace_id', workspaceId);
 
@@ -15431,7 +15456,17 @@ app.get('/api/templates', authMiddleware, rateLimit('read'), async (req, res) =>
       .order('created_at', { ascending: false });
 
     if (error) throw error;
-    res.json(data ?? []);
+    const { data: preferences } = await supabase
+      .from('note_template_preferences')
+      .select('template_id, pinned')
+      .eq('user_id', req.authUser.id)
+      .eq('pinned', true);
+    const pinned = new Set((preferences ?? []).map((row) => row.template_id));
+    res.json(
+      (data ?? [])
+        .filter((template) => template.is_system || template.visibility === 'workspace' || template.created_by === req.authUser.id)
+        .map((template) => ({ ...template, pinned: pinned.has(template.id) }))
+    );
   } catch (error) {
     return respondWithError(res, error);
   }
@@ -15448,7 +15483,7 @@ app.get(
       const { data, error } = await supabase
         .from('note_templates')
         .select(
-          'id, name, description, content_html, category, is_default, is_system, usage_count, created_at, updated_at, created_by'
+          'id, name, description, content_html, category, is_default, is_system, usage_count, created_at, updated_at, created_by, visibility, icon, color, suggested_section_id, title_pattern, last_used_at'
         )
         .eq('id', String(req.params.id))
         .eq('workspace_id', workspaceId)
@@ -15478,9 +15513,13 @@ app.post('/api/templates', authMiddleware, rateLimit('write'), async (req, res) 
     const incomingContent =
       req.body?.content !== undefined ? String(req.body.content).trim() : null;
     const isDefault = Boolean(req.body?.is_default ?? false);
+    const visibility = String(req.body?.visibility ?? 'mine').toLowerCase();
 
     if (!name) {
       return res.status(400).json({ error: 'Template name is required' });
+    }
+    if (!['mine', 'workspace'].includes(visibility)) {
+      return res.status(400).json({ error: 'Invalid template visibility' });
     }
 
     const content_html = normalizeNoteHtml(
@@ -15499,9 +15538,14 @@ app.post('/api/templates', authMiddleware, rateLimit('write'), async (req, res) 
         is_system: false,
         usage_count: 0,
         created_by: req.authUser.id,
+        visibility,
+        icon: normalizeNullableText(req.body?.icon),
+        color: normalizeNullableText(req.body?.color),
+        suggested_section_id: req.body?.suggested_section_id || null,
+        title_pattern: normalizeNullableText(req.body?.title_pattern),
       })
       .select(
-        'id, name, description, content_html, category, is_default, is_system, usage_count, created_at, updated_at, created_by'
+        'id, name, description, content_html, category, is_default, is_system, usage_count, created_at, updated_at, created_by, visibility, icon, color, suggested_section_id, title_pattern, last_used_at'
       )
       .single();
 
@@ -15525,17 +15569,18 @@ app.patch(
       // Check ownership (non-system templates only)
       const { data: existing, error: checkError } = await supabase
         .from('note_templates')
-        .select('id, created_by, is_system')
+        .select('id, created_by, is_system, visibility')
         .eq('id', templateId)
         .eq('workspace_id', workspaceId)
         .maybeSingle();
 
       if (checkError) throw checkError;
       if (!existing) return res.status(404).json({ error: 'Template not found' });
-      if (existing.is_system && existing.created_by !== req.authUser.id) {
+      if (existing.is_system) {
         return res.status(403).json({ error: 'Cannot edit system templates' });
       }
-      if (existing.created_by !== req.authUser.id) {
+      const access = await getWorkspaceAccess(req.authUser.id, workspaceId);
+      if (existing.created_by !== req.authUser.id && !(existing.visibility === 'workspace' && access && roleAtLeast(access.role, 'admin'))) {
         return res.status(403).json({ error: 'Can only edit your own templates' });
       }
 
@@ -15554,6 +15599,14 @@ app.patch(
         update.content_html = html;
       }
       if (req.body?.is_default !== undefined) update.is_default = Boolean(req.body.is_default);
+      if (req.body?.visibility !== undefined) {
+        const nextVisibility = String(req.body.visibility).toLowerCase();
+        if (!['mine', 'workspace'].includes(nextVisibility)) return res.status(400).json({ error: 'Invalid template visibility' });
+        update.visibility = nextVisibility;
+      }
+      for (const field of ['icon', 'color', 'title_pattern', 'suggested_section_id']) {
+        if (req.body?.[field] !== undefined) update[field] = normalizeNullableText(req.body[field]);
+      }
 
       update.updated_at = new Date().toISOString();
 
@@ -15563,7 +15616,7 @@ app.patch(
         .eq('id', templateId)
         .eq('workspace_id', workspaceId)
         .select(
-          'id, name, description, content_html, category, is_default, is_system, usage_count, created_at, updated_at, created_by'
+          'id, name, description, content_html, category, is_default, is_system, usage_count, created_at, updated_at, created_by, visibility, icon, color, suggested_section_id, title_pattern, last_used_at'
         )
         .single();
 
@@ -15587,7 +15640,7 @@ app.delete(
 
       const { data: existing, error: checkError } = await supabase
         .from('note_templates')
-        .select('created_by, is_system')
+        .select('created_by, is_system, visibility')
         .eq('id', templateId)
         .eq('workspace_id', workspaceId)
         .maybeSingle();
@@ -15596,7 +15649,8 @@ app.delete(
       if (!existing) return res.status(404).json({ error: 'Template not found' });
       if (existing.is_system)
         return res.status(403).json({ error: 'Cannot delete system templates' });
-      if (existing.created_by !== req.authUser.id) {
+      const access = await getWorkspaceAccess(req.authUser.id, workspaceId);
+      if (existing.created_by !== req.authUser.id && !(existing.visibility === 'workspace' && access && roleAtLeast(access.role, 'admin'))) {
         return res.status(403).json({ error: 'Can only delete your own templates' });
       }
 
@@ -15626,7 +15680,7 @@ app.post(
 
       const { data: original, error: fetchError } = await supabase
         .from('note_templates')
-        .select('name, description, content_html, category')
+        .select('name, description, content_html, category, visibility, icon, color, suggested_section_id, title_pattern')
         .eq('id', templateId)
         .eq('workspace_id', workspaceId)
         .maybeSingle();
@@ -15648,9 +15702,14 @@ app.post(
           is_system: false,
           usage_count: 0,
           created_by: req.authUser.id,
+          visibility: ['mine', 'workspace'].includes(String(req.body?.visibility ?? '').toLowerCase()) ? String(req.body.visibility).toLowerCase() : 'mine',
+          icon: original.icon,
+          color: original.color,
+          suggested_section_id: original.suggested_section_id,
+          title_pattern: original.title_pattern,
         })
         .select(
-          'id, name, description, content_html, category, is_default, is_system, usage_count, created_at, updated_at, created_by'
+          'id, name, description, content_html, category, is_default, is_system, usage_count, created_at, updated_at, created_by, visibility, icon, color, suggested_section_id, title_pattern, last_used_at'
         )
         .single();
 
@@ -15675,7 +15734,7 @@ app.post(
 
       const { data: template, error: templateError } = await supabase
         .from('note_templates')
-        .select('id, name, content_html')
+        .select('id, name, content_html, title_pattern, suggested_section_id')
         .eq('id', templateId)
         .eq('workspace_id', workspaceId)
         .maybeSingle();
@@ -15701,12 +15760,23 @@ app.post(
               .eq('id', templateId);
           }
         }
+        await supabase
+          .from('note_templates')
+          .update({ last_used_at: new Date().toISOString() })
+          .eq('id', templateId);
       })();
 
       // Create note from template
       const content_html = template.content_html;
       const content_plain = htmlToPlainText(content_html);
       const date = new Date().toISOString().slice(0, 10);
+      const titlePattern = template.title_pattern || template.name;
+      const title = titlePattern
+        .replace(/\{\{date\}\}/g, date)
+        .replace(/\{\{week_start\}\}/g, date)
+        .replace(/\{\{project\}\}|\{\{team\}\}|\{\{person\}\}|\{\{topic\}\}/g, '')
+        .replace(/\s{2,}/g, ' ')
+        .trim() || template.name;
 
       const requestedSectionId = req.body?.section_id ? String(req.body.section_id).trim() : null;
       let section_id = null;
@@ -15726,7 +15796,7 @@ app.post(
         .insert({
           workspace_id: workspaceId,
           user_id: req.authUser.id,
-          title: template.name,
+          title,
           content: content_plain,
           content_html,
           date,
@@ -15775,6 +15845,10 @@ app.post(
         .trim()
         .toLowerCase();
       const isDefault = Boolean(req.body?.is_default ?? false);
+      const visibility = String(req.body?.visibility ?? 'mine').toLowerCase();
+      if (!['mine', 'workspace'].includes(visibility)) {
+        return res.status(400).json({ error: 'Invalid template visibility' });
+      }
 
       const { data: template, error } = await supabase
         .from('note_templates')
@@ -15788,9 +15862,14 @@ app.post(
           is_system: false,
           usage_count: 0,
           created_by: req.authUser.id,
+          visibility,
+          icon: normalizeNullableText(req.body?.icon),
+          color: normalizeNullableText(req.body?.color),
+          suggested_section_id: req.body?.suggested_section_id || null,
+          title_pattern: normalizeNullableText(req.body?.title_pattern),
         })
         .select(
-          'id, name, description, content_html, category, is_default, is_system, usage_count, created_at, updated_at, created_by'
+          'id, name, description, content_html, category, is_default, is_system, usage_count, created_at, updated_at, created_by, visibility, icon, color, suggested_section_id, title_pattern, last_used_at'
         )
         .single();
 
@@ -15838,6 +15917,37 @@ app.patch(
         .select('id, is_default')
         .single();
 
+      if (error) throw error;
+      res.json(data);
+    } catch (error) {
+      return respondWithError(res, error);
+    }
+  }
+);
+
+// Personal curation is separate from shared template metadata.
+app.patch(
+  '/api/templates/:id([0-9a-fA-F-]{36})/pin',
+  authMiddleware,
+  rateLimit('write'),
+  async (req, res) => {
+    try {
+      const workspaceId = await resolveWorkspaceIdForRequest(req);
+      const templateId = String(req.params.id);
+      const pinned = Boolean(req.body?.pinned);
+      const { data: template, error: templateError } = await supabase
+        .from('note_templates')
+        .select('id')
+        .eq('id', templateId)
+        .eq('workspace_id', workspaceId)
+        .maybeSingle();
+      if (templateError) throw templateError;
+      if (!template) return res.status(404).json({ error: 'Template not found' });
+      const { data, error } = await supabase
+        .from('note_template_preferences')
+        .upsert({ template_id: templateId, user_id: req.authUser.id, pinned, updated_at: new Date().toISOString() })
+        .select('template_id, pinned')
+        .single();
       if (error) throw error;
       res.json(data);
     } catch (error) {

@@ -29,11 +29,11 @@ type ConvertableSmartDateElement = HTMLElement & {
 
 const STATE_CLASS_NAMES: Record<SmartDateNodeState, string> = {
   detected:
-    'underline decoration-solid decoration-1 decoration-[color:var(--ledger-accent)] underline-offset-[0.16em]',
+    'underline decoration-solid decoration-1 decoration-[color:var(--ledger-accent)] underline-offset-2',
   'linked-event':
-    'underline decoration-solid decoration-[color:var(--ledger-accent)] underline-offset-[0.16em] decoration-2',
+    'underline decoration-solid decoration-[color:var(--ledger-accent)] underline-offset-2 decoration-2',
   'linked-reminder':
-    'underline decoration-solid decoration-[color:var(--ledger-accent-hover)] underline-offset-[0.16em] decoration-2',
+    'underline decoration-solid decoration-[color:var(--ledger-accent-hover)] underline-offset-2 decoration-2',
   dismissed: 'no-underline',
 };
 
@@ -136,11 +136,15 @@ export class SmartDateNode extends TextNode {
     const updated = super.updateDOM(prevNode as unknown as this, dom, config);
     if (prevNode.__smartDateState !== this.__smartDateState) {
       dom.dataset.ledgerSmartDateState = this.__smartDateState;
-      dom.classList.remove(...Object.values(STATE_CLASS_NAMES).flatMap((value) => value.split(' ')));
+      dom.classList.remove(
+        ...Object.values(STATE_CLASS_NAMES).flatMap((value) => value.split(' '))
+      );
       dom.classList.add(...STATE_CLASS_NAMES[this.__smartDateState].split(' '));
       dom.setAttribute(
         'aria-label',
-        `${STATE_ARIA_PREFIX[this.__smartDateState]}: ${this.getTextContent().trim() || 'date phrase'}`
+        `${STATE_ARIA_PREFIX[this.__smartDateState]}: ${
+          this.getTextContent().trim() || 'date phrase'
+        }`
       );
     }
     if (prevNode.__smartDateKey !== this.__smartDateKey) {
@@ -166,11 +170,7 @@ export class SmartDateNode extends TextNode {
       element.dataset.ledgerSmartDate = 'true';
       element.dataset.ledgerSmartDateKey = this.getSmartDateKey();
       element.dataset.ledgerSmartDateState = state;
-      element.classList.add(
-        'ledger-smart-date',
-        'cursor-pointer',
-        'select-auto'
-      );
+      element.classList.add('ledger-smart-date', 'cursor-pointer', 'select-auto');
       element.classList.add(...STATE_CLASS_NAMES[state].split(' '));
       element.setAttribute(
         'aria-label',

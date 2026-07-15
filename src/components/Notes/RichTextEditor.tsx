@@ -8,6 +8,7 @@ import { LinkPlugin } from '@lexical/react/LexicalLinkPlugin';
 import { MarkdownShortcutPlugin } from '@lexical/react/LexicalMarkdownShortcutPlugin';
 import { TabIndentationPlugin } from '@lexical/react/LexicalTabIndentationPlugin';
 import { ListPlugin } from '@lexical/react/LexicalListPlugin';
+import { AutoLinkPlugin, createLinkMatcherWithRegExp } from '@lexical/react/LexicalAutoLinkPlugin';
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext';
 import {
   Bold,
@@ -63,6 +64,8 @@ import { SmartPersonPlugin } from './SmartPersonPlugin';
 import { supabase } from '../../services/supabase';
 import { useWorkspaceContext } from '../../context/WorkspaceContext';
 import { useToast } from '../Common/ToastProvider';
+import { ModalCloseButton } from '../Common/ModalCloseButton';
+import { ModalOverlay } from '../Common/ModalOverlay';
 import { NotesEditorContextMenu, type EditorContextMenuPosition } from './NotesEditorContextMenu';
 
 type Props = {
@@ -110,6 +113,7 @@ const editorConfig = {
       italic: 'italic',
       underline: 'underline',
     },
+    link: 'cursor-pointer text-blue-600 underline decoration-blue-600 underline-offset-2 hover:text-blue-700 dark:text-blue-400 dark:decoration-blue-400 dark:hover:text-blue-300',
     heading: {
       h1: 'mb-4 text-4xl font-semibold tracking-tight text-[var(--ledger-text-primary)]',
       h2: 'mb-3 text-3xl font-semibold tracking-tight text-[var(--ledger-text-primary)]',
@@ -136,6 +140,22 @@ const editorConfig = {
     },
   },
   onError: (error: Error) => console.error(error),
+};
+
+const URL_MATCHERS = [
+  createLinkMatcherWithRegExp(/(?:https?:\/\/|www\.)[^\s<]+/i, (text) =>
+    text.startsWith('www.') ? `https://${text}` : text
+  ),
+];
+
+const openExternalLink = (value: string) => {
+  const href = String(value ?? '').trim();
+  if (!/^(?:https?:\/\/|mailto:|tel:)/i.test(href)) return;
+  if (window.desktopWindow?.openExternal) {
+    void window.desktopWindow.openExternal(href);
+  } else {
+    window.open(href, '_blank', 'noopener,noreferrer');
+  }
 };
 
 const LoadHtmlPlugin = ({ html, editorKey }: { html?: string | null; editorKey?: string }) => {
@@ -187,6 +207,52 @@ const RichTextBehaviorPlugin = () => {
   return null;
 };
 
+const LinkInteractionPlugin = () => {
+  const [editor] = useLexicalComposerContext();
+
+  useEffect(() => {
+    const root = editor.getRootElement();
+    if (!root) return;
+
+    const onClick = (event: MouseEvent) => {
+      const target = event.target as HTMLElement | null;
+      const anchor = target?.closest('a[href]') as HTMLAnchorElement | null;
+      if (!anchor || !root.contains(anchor)) return;
+      const href = anchor.href.trim();
+      if (!/^(?:https?:\/\/|mailto:|tel:)/i.test(href)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      openExternalLink(href);
+    };
+
+    root.addEventListener('click', onClick);
+    return () => root.removeEventListener('click', onClick);
+  }, [editor]);
+
+  return null;
+};
+
+const LinkScanPlugin = ({ editorKey }: { editorKey?: string }) => {
+  const [editor] = useLexicalComposerContext();
+
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => {
+      editor.update(
+        () => {
+          $getRoot()
+            .getAllTextNodes()
+            .forEach((textNode) => textNode.markDirty());
+        },
+        { tag: ['smart-date-load', 'link-scan', HISTORIC_TAG] }
+      );
+    });
+
+    return () => window.cancelAnimationFrame(frame);
+  }, [editor, editorKey]);
+
+  return null;
+};
+
 const ToolbarButton = ({
   onClick,
   title,
@@ -232,6 +298,8 @@ const ToolbarPlugin = ({ onAutoCorrect }: { onAutoCorrect?: () => void | Promise
     underline: false,
     code: false,
   });
+  const [isLinkModalOpen, setIsLinkModalOpen] = useState(false);
+  const [linkUrl, setLinkUrl] = useState('');
   const savedSelectionRef = useRef<ReturnType<typeof $getSelection> | null>(null);
 
   const getSelectedText = useCallback(() => {
@@ -468,17 +536,9 @@ const ToolbarPlugin = ({ onAutoCorrect }: { onAutoCorrect?: () => void | Promise
           }}
           onClick={() => {
             const selectedText = getSelectedText();
-            const defaultValue = isProbablyUrl(selectedText) ? selectedText : '';
-            const enteredUrl = window.prompt('Enter URL', defaultValue);
-            const nextUrl = normalizeUrl(enteredUrl?.trim() || defaultValue);
-            if (!nextUrl) return;
-            editor.focus();
-            editor.update(() => {
-              if (savedSelectionRef.current) {
-                $setSelection(savedSelectionRef.current);
-              }
-            });
-            editor.dispatchCommand(TOGGLE_LINK_COMMAND, nextUrl);
+            if (!selectedText) return;
+            setLinkUrl(isProbablyUrl(selectedText) ? normalizeUrl(selectedText) : '');
+            setIsLinkModalOpen(true);
           }}
         >
           <Link2 size={14} />
@@ -490,6 +550,81 @@ const ToolbarPlugin = ({ onAutoCorrect }: { onAutoCorrect?: () => void | Promise
           </ToolbarButton>
         ) : null}
       </div>
+      <ModalOverlay
+        isOpen={isLinkModalOpen}
+        onClose={() => setIsLinkModalOpen(false)}
+        backdropBorderRadius="inherit"
+        disablePortal
+        manageWindowChrome={false}
+        classNameContainer="w-full max-w-[420px] overflow-hidden rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-[var(--ledger-shadow)]"
+      >
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            const nextUrl = normalizeUrl(linkUrl.trim());
+            if (
+              !nextUrl ||
+              !/^(?:https?:\/\/|mailto:|tel:)/i.test(nextUrl) ||
+              !savedSelectionRef.current
+            ) {
+              return;
+            }
+            editor.update(() => {
+              const selection = savedSelectionRef.current?.clone();
+              if (!selection) return;
+              $setSelection(selection);
+              editor.dispatchCommand(TOGGLE_LINK_COMMAND, nextUrl);
+            });
+            savedSelectionRef.current = null;
+            setIsLinkModalOpen(false);
+          }}
+        >
+          <div className="flex items-start justify-between gap-4 border-b border-[color:var(--ledger-border-subtle)] px-5 py-4">
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-[var(--ledger-text-primary)]">Add link</p>
+              <p className="mt-1 text-sm text-[var(--ledger-text-secondary)]">
+                Link the selected text to a web address.
+              </p>
+            </div>
+            <ModalCloseButton
+              onClick={() => setIsLinkModalOpen(false)}
+              ariaLabel="Close link modal"
+            />
+          </div>
+          <div className="space-y-2 p-5">
+            <label
+              className="text-xs font-medium text-[var(--ledger-text-secondary)]"
+              htmlFor="notes-link-url"
+            >
+              URL
+            </label>
+            <input
+              id="notes-link-url"
+              autoFocus
+              value={linkUrl}
+              onChange={(event) => setLinkUrl(event.target.value)}
+              placeholder="https://example.com"
+              className="h-10 w-full rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 text-sm text-[var(--ledger-text-primary)] outline-none placeholder:text-[var(--ledger-text-muted)] focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[var(--ledger-surface-hover)]/60"
+            />
+          </div>
+          <div className="flex items-center justify-end gap-2 border-t border-[color:var(--ledger-border-subtle)] px-5 py-4">
+            <button
+              type="button"
+              onClick={() => setIsLinkModalOpen(false)}
+              className="rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3 py-1.5 text-sm font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)]"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={!linkUrl.trim()}
+              className="rounded-lg bg-[var(--ledger-accent)] px-3 py-1.5 text-sm font-medium text-white transition hover:bg-[var(--ledger-accent-hover)] disabled:opacity-50"
+            >
+              Add link
+            </button>
+          </div>
+        </form>
+      </ModalOverlay>
     </>
   );
 };
@@ -792,6 +927,7 @@ const EditorContextMenuPlugin = ({
   const [selectedText, setSelectedText] = useState('');
   const [hasSmartDate, setHasSmartDate] = useState(false);
   const [personId, setPersonId] = useState<string | null>(null);
+  const [linkUrl, setLinkUrl] = useState<string | null>(null);
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
   const savedSelectionRef = useRef<any>(null);
@@ -877,9 +1013,13 @@ const EditorContextMenuPlugin = ({
       });
       const smartDate = Boolean(target.closest('[data-ledger-smart-date-key]'));
       const person = target.closest('[data-ledger-smart-person-key]');
+      const anchor = target.closest('a[href]') as HTMLAnchorElement | null;
       setSelectedText(text);
       setHasSmartDate(smartDate);
       setPersonId(person?.getAttribute('data-ledger-smart-person-user-id') ?? null);
+      setLinkUrl(
+        anchor?.href && /^(?:https?:\/\/|mailto:|tel:)/i.test(anchor.href) ? anchor.href : null
+      );
       setPosition({ x: event.clientX, y: event.clientY });
     };
 
@@ -968,6 +1108,10 @@ const EditorContextMenuPlugin = ({
         if (personId) onLinkPerson?.(selectedText, personId);
       }}
       onSearch={() => onSearch?.(selectedText)}
+      linkUrl={linkUrl}
+      onOpenLink={() => {
+        if (linkUrl) openExternalLink(linkUrl);
+      }}
       onClose={close}
     />
   );
@@ -1009,7 +1153,8 @@ export function RichTextEditor({
       tags?.has('smart-date-sync') ||
       tags?.has('smart-person-load') ||
       tags?.has('smart-person-scan') ||
-      tags?.has('smart-person-sync')
+      tags?.has('smart-person-sync') ||
+      tags?.has('link-scan')
     ) {
       return;
     }
@@ -1094,7 +1239,7 @@ export function RichTextEditor({
               <ContentEditable
                 onFocus={onFocus}
                 onBlur={onBlur}
-                className="min-h-[calc(100vh-420px)] rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-6 py-5 text-[16px] leading-8 text-[var(--ledger-text-primary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60"
+                className="notes-rich-text-editor min-h-[calc(100vh-420px)] rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-6 py-5 text-[16px] leading-8 text-[var(--ledger-text-primary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60"
               />
             }
             placeholder={
@@ -1105,8 +1250,11 @@ export function RichTextEditor({
             ErrorBoundary={() => null}
           />
           <HistoryPlugin />
-          <LoadHtmlPlugin html={initialValue} editorKey={editorKey} />
           <LinkPlugin />
+          <AutoLinkPlugin matchers={URL_MATCHERS} />
+          <LinkInteractionPlugin />
+          <LinkScanPlugin editorKey={editorKey} />
+          <LoadHtmlPlugin html={initialValue} editorKey={editorKey} />
           <MarkdownShortcutPlugin />
           <TabIndentationPlugin />
           <ListPlugin />

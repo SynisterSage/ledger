@@ -12,6 +12,7 @@ import {
   UserRound,
   CalendarDays,
   Bell,
+  ExternalLink,
 } from 'lucide-react';
 import { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
@@ -49,6 +50,8 @@ export type NotesEditorContextMenuProps = {
   onLinkProject: () => void;
   onLinkPerson: () => void;
   onSearch: () => void;
+  linkUrl?: string | null;
+  onOpenLink: () => void;
   onClose: () => void;
 };
 
@@ -77,6 +80,8 @@ export const NotesEditorContextMenu = ({
   onLinkProject,
   onLinkPerson,
   onSearch,
+  linkUrl,
+  onOpenLink,
   onClose,
 }: NotesEditorContextMenuProps) => {
   const menuRef = useRef<HTMLDivElement | null>(null);
@@ -132,6 +137,7 @@ export const NotesEditorContextMenu = ({
   ];
 
   const ledgerActions: Action[] = [
+    ...(linkUrl ? [{ label: 'Open link', icon: ExternalLink, onClick: onOpenLink }] : []),
     ...(hasSmartDate
       ? [
           { label: 'Create event', icon: CalendarDays, onClick: onCreateEvent },
@@ -150,7 +156,7 @@ export const NotesEditorContextMenu = ({
     ...(hasSmartPerson
       ? [{ label: 'Link to person', icon: UserRound, onClick: onLinkPerson, disabled: !canEdit }]
       : []),
-    { label: 'Search Ledger', icon: Search, onClick: onSearch },
+    ...(hasSelection ? [{ label: 'Search Ledger', icon: Search, onClick: onSearch }] : []),
   ];
 
   const renderAction = (action: Action) => {
@@ -202,7 +208,7 @@ export const NotesEditorContextMenu = ({
       }}
     >
       {editingActions.map(renderAction)}
-      {hasSelection && (
+      {(hasSelection || linkUrl) && (
         <>
           <div className="my-1 h-px bg-[var(--ledger-border-subtle)]" />
           <p className="px-2 pb-1 pt-0.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--ledger-text-muted)]">

@@ -31,7 +31,12 @@ export const SidebarTemplatesSection = ({
       try {
         const data = await api.getTemplates();
         const sorted = (Array.isArray(data) ? data : [])
-          .sort((a: any, b: any) => b.usage_count - a.usage_count)
+          .filter((template: any) => template.pinned || template.last_used_at || template.is_system)
+          .sort((a: any, b: any) => {
+            if (Boolean(a.pinned) !== Boolean(b.pinned)) return a.pinned ? -1 : 1;
+            if (Boolean(a.last_used_at) !== Boolean(b.last_used_at)) return a.last_used_at ? -1 : 1;
+            return String(b.last_used_at ?? '').localeCompare(String(a.last_used_at ?? ''));
+          })
           .slice(0, maxTemplates);
         setTemplates(sorted);
       } catch (error) {
@@ -51,7 +56,7 @@ export const SidebarTemplatesSection = ({
 
   return (
     <div className="space-y-2">
-      <p className="px-3 text-xs font-semibold uppercase text-gray-600">Templates</p>
+      <p className="px-3 text-xs font-medium text-gray-600">Templates</p>
       {isLoading
         ? Array.from({ length: 3 }).map((_, i) => (
             <div

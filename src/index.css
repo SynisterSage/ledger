@@ -37,6 +37,8 @@ body {
   --ledger-accent: #ff5f40;
   --ledger-accent-hover: #e85430;
   --ledger-accent-soft: #ffe8dc;
+  --ledger-link: #2563eb;
+  --ledger-link-hover: #1d4ed8;
   --ledger-danger: #d92d20;
   --ledger-success: #12b76a;
   --ledger-warning: #dc6803;
@@ -97,6 +99,8 @@ body {
     --ledger-accent: #ff8c5f;
     --ledger-accent-hover: #ff7a4d;
     --ledger-accent-soft: #ffab8f;
+    --ledger-link: #60a5fa;
+    --ledger-link-hover: #93c5fd;
     --ledger-danger: #f97066;
     --ledger-success: #32d583;
     --ledger-warning: #fdb022;
@@ -132,6 +136,25 @@ body {
     --ledger-scrollbar-thumb: rgb(80 80 80);
     --ledger-scrollbar-thumb-hover: rgb(110 110 110);
   }
+}
+
+.notes-rich-text-editor a[href] {
+  color: var(--ledger-link) !important;
+  cursor: pointer;
+  text-decoration-line: underline !important;
+  text-decoration-color: var(--ledger-link) !important;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+}
+
+.notes-rich-text-editor a[href]:hover {
+  color: var(--ledger-link-hover) !important;
+  text-decoration-color: var(--ledger-link-hover) !important;
+}
+
+.notes-rich-text-editor .ledger-smart-date,
+.notes-rich-text-editor .ledger-smart-person {
+  text-underline-offset: 2px !important;
 }
 
 /* When a modal is open, hide the app shell border/shadow and match body background
