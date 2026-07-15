@@ -3777,9 +3777,14 @@ function DashboardContent() {
   ): OverviewRow => {
     const workspaceTask = workspaceTaskById.get(task.id) ?? null;
     const resolvedTask = workspaceTask ? { ...task, ...workspaceTask } : task;
-    const dueLabel = formatShortDate(resolvedTask.due_date);
-    const timeLabel = resolvedTask.due_time || formatTime(resolvedTask.remind_at);
     const isReminder = isOverviewReminderTask(resolvedTask);
+    const reminderDateLabel = isReminder ? formatShortDate(resolvedTask.remind_at) : null;
+    const reminderTimeLabel = isReminder ? formatTime(resolvedTask.remind_at) : null;
+    const reminderScheduleLabel = [reminderDateLabel, reminderTimeLabel]
+      .filter(Boolean)
+      .join(' · ');
+    const dueLabel = formatShortDate(resolvedTask.due_date);
+    const timeLabel = resolvedTask.due_time || reminderTimeLabel;
     const teamId = resolvedTask.assigned_to_team_id ?? resolvedTask.assigned_team_id ?? null;
     const assigneeUserId = resolvedTask.assigned_to_user_id ?? resolvedTask.assigned_to ?? null;
     const assignedMember = assigneeUserId ? workspaceMemberById.get(assigneeUserId) ?? null : null;
@@ -3839,7 +3844,7 @@ function DashboardContent() {
           resolvedTask.workspace_name ||
           activeWorkspace?.name ||
           'Workspace',
-        dueLabel ? `Due ${dueLabel}` : timeLabel,
+        isReminder ? reminderScheduleLabel : dueLabel ? `Due ${dueLabel}` : timeLabel,
       ]
         .filter(Boolean)
         .join(' · '),
@@ -3911,7 +3916,7 @@ function DashboardContent() {
         ? 'Long-term'
         : 'Today',
       dateLabel: isReminder
-        ? timeLabel || dueLabel || undefined
+        ? reminderScheduleLabel || dueLabel || undefined
         : resolvedTask.is_today_focus
         ? 'Not set'
         : resolvedTask.task_horizon === 'long_term'

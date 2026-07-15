@@ -565,7 +565,8 @@ export const ProjectsWindow = () => {
   const initialFocusHandledRef = useRef(false);
   const initialTeamFocusHandledRef = useRef(false);
   const initialFocusTaskId = new URLSearchParams(window.location.search).get('focusTaskId');
-  const initialFocusContext = new URLSearchParams(window.location.search).get('focusContext')?.trim() ?? '';
+  const initialFocusContext =
+    new URLSearchParams(window.location.search).get('focusContext')?.trim() ?? '';
   const autosaveTimerRef = useRef<number | null>(null);
   const isDirtyRef = useRef(false);
   const isCompletenessDraggingRef = useRef(false);
@@ -963,11 +964,13 @@ export const ProjectsWindow = () => {
     }
     return events
       .filter((event) => event.at)
-      .sort((a, b) => String(b.at).localeCompare(String(a.at)))
-      ;
+      .sort((a, b) => String(b.at).localeCompare(String(a.at)));
   }, [completedProjectTasks, projectEvents, projectReminders, selectedProject?.updated_at]);
 
-  const recentProjectActivity = useMemo(() => fullProjectActivity.slice(0, 5), [fullProjectActivity]);
+  const recentProjectActivity = useMemo(
+    () => fullProjectActivity.slice(0, 5),
+    [fullProjectActivity]
+  );
 
   const groupedProjectActivity = useMemo(() => {
     const now = Date.now();
@@ -1405,7 +1408,8 @@ export const ProjectsWindow = () => {
     return getClampedMenuPosition(taskContextMenu.x, taskContextMenu.y, 256, 520);
   }, [taskContextMenu]);
   const taskContextTask = useMemo(
-    () => (taskContextMenu ? tasks.find((item) => item.id === taskContextMenu.taskId) ?? null : null),
+    () =>
+      taskContextMenu ? tasks.find((item) => item.id === taskContextMenu.taskId) ?? null : null,
     [taskContextMenu, tasks]
   );
   const linkedNoteMenuPosition = useMemo(() => {
@@ -2696,9 +2700,9 @@ export const ProjectsWindow = () => {
         setWorkspaceMilestones((prev) =>
           prev.map((milestone) => (milestone.id === updated.id ? updated : milestone))
         );
-    } catch (error) {
-      setError(error instanceof Error ? error.message : 'Could not update milestone assignee.');
-    }
+      } catch (error) {
+        setError(error instanceof Error ? error.message : 'Could not update milestone assignee.');
+      }
     },
     [api, parseAssignmentValue]
   );
@@ -3525,7 +3529,13 @@ export const ProjectsWindow = () => {
           {completed ? <CheckCircle2 size={13} /> : <CircleDot size={13} />}
         </button>
         <div className="min-w-0">
-          <p className={completed ? compactGhostTitleClass : 'truncate text-[13px] font-medium leading-5 text-[var(--ledger-text-primary)]'}>
+          <p
+            className={
+              completed
+                ? compactGhostTitleClass
+                : 'truncate text-[13px] font-medium leading-5 text-[var(--ledger-text-primary)]'
+            }
+          >
             {task.title}
           </p>
         </div>
@@ -3875,16 +3885,16 @@ export const ProjectsWindow = () => {
               )}
             </div>
             <div className="mt-3 flex items-center justify-between gap-2">
-                <button
-                  type="button"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    openTaskComposer({ milestoneId: milestone.id });
-                  }}
-                  className="rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 py-1.5 text-xs font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
-                >
-                  Add linked action
-                </button>
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  openTaskComposer({ milestoneId: milestone.id });
+                }}
+                className="rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 py-1.5 text-xs font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+              >
+                Add linked action
+              </button>
               <div className="flex items-center gap-2">
                 <button
                   type="button"
@@ -4196,7 +4206,9 @@ export const ProjectsWindow = () => {
     const visibleDoneMilestones = interactive
       ? selectedProjectMilestones.filter((milestone) => milestone.completed)
       : selectedProjectMilestones.filter((milestone) => milestone.completed).slice(0, 4);
-    const visibleDoneTasks = interactive ? completedProjectTasks : completedProjectTasks.slice(0, 4);
+    const visibleDoneTasks = interactive
+      ? completedProjectTasks
+      : completedProjectTasks.slice(0, 4);
 
     return (
       <div className="space-y-2">
@@ -4225,9 +4237,7 @@ export const ProjectsWindow = () => {
           'milestones',
           'Milestones',
           visibleActiveMilestones.length === 0 ? (
-            <p className="px-2 py-2 text-sm text-[var(--ledger-text-muted)]">
-              No milestones yet.
-            </p>
+            <p className="px-2 py-2 text-sm text-[var(--ledger-text-muted)]">No milestones yet.</p>
           ) : (
             <div className="space-y-1">
               {visibleActiveMilestones.map((milestone) =>
@@ -4249,9 +4259,7 @@ export const ProjectsWindow = () => {
             'done',
             'Done',
             <div className="space-y-1">
-              {visibleDoneMilestones.map((milestone) =>
-                renderMilestoneRow(milestone, interactive)
-              )}
+              {visibleDoneMilestones.map((milestone) => renderMilestoneRow(milestone, interactive))}
               {visibleDoneTasks.map((task) => renderTaskRow(task, true, interactive))}
             </div>,
             visibleDoneMilestones.length + visibleDoneTasks.length
@@ -4333,12 +4341,10 @@ export const ProjectsWindow = () => {
       linkedNotes.length
     );
 
-  const renderCalendarSection = () =>
+  const renderCalendarSection = () => (
     <div className="space-y-2">
       {isLoadingProjectCalendarItems ? (
-        <div className="space-y-2">
-          {renderCompactRowSkeletons(3)}
-        </div>
+        <div className="space-y-2">{renderCompactRowSkeletons(3)}</div>
       ) : (
         <div className="space-y-2">
           {renderGroupShell(
@@ -4351,7 +4357,10 @@ export const ProjectsWindow = () => {
             ) : (
               <div className="space-y-1">
                 {projectCalendarAgenda.upcoming.map((item) => (
-                  <div key={item.id} className={`${compactRowBaseClass} ${compactRowHoverClass} min-h-[44px]`}>
+                  <div
+                    key={item.id}
+                    className={`${compactRowBaseClass} ${compactRowHoverClass} min-h-[44px]`}
+                  >
                     <span className={compactIconClass}>
                       <CalendarDays size={12} />
                     </span>
@@ -4391,13 +4400,14 @@ export const ProjectsWindow = () => {
             ) : (
               <div className="space-y-1">
                 {projectCalendarAgenda.past.map((item) => (
-                  <div key={item.id} className={`${compactRowBaseClass} ${compactRowHoverClass} min-h-[44px]`}>
+                  <div
+                    key={item.id}
+                    className={`${compactRowBaseClass} ${compactRowHoverClass} min-h-[44px]`}
+                  >
                     <span className={compactIconClass}>
                       <CalendarDays size={12} />
                     </span>
-                    <p className={compactGhostTitleClass}>
-                      {item.title}
-                    </p>
+                    <p className={compactGhostTitleClass}>{item.title}</p>
                     <span className="shrink-0 truncate text-[11px] leading-4 text-[var(--ledger-text-muted)]">
                       {item.meta}
                     </span>
@@ -4409,9 +4419,10 @@ export const ProjectsWindow = () => {
           )}
         </div>
       )}
-    </div>;
+    </div>
+  );
 
-  const renderRecentActivitySection = () =>
+  const renderRecentActivitySection = () => (
     <div className="space-y-2">
       {isLoadingProjectActivity ? (
         <div className="space-y-1">{renderCompactRowSkeletons(3)}</div>
@@ -4428,7 +4439,10 @@ export const ProjectsWindow = () => {
               ) : (
                 <div className="space-y-1">
                   {items.map((item) => (
-                    <div key={item.id} className={`${compactRowBaseClass} ${compactRowHoverClass} min-h-[40px]`}>
+                    <div
+                      key={item.id}
+                      className={`${compactRowBaseClass} ${compactRowHoverClass} min-h-[40px]`}
+                    >
                       <span className={compactIconClass}>
                         <Clock3 size={12} />
                       </span>
@@ -4447,7 +4461,8 @@ export const ProjectsWindow = () => {
           )}
         </div>
       )}
-    </div>;
+    </div>
+  );
 
   const renderMemberStack = (size = 'h-5 w-5') =>
     isSharedWorkspace && workspaceMembers.length > 0 ? (
@@ -4952,7 +4967,10 @@ export const ProjectsWindow = () => {
       ) : (
         <div className="space-y-1">
           {recentProjectActivity.map((item) => (
-            <div key={item.id} className={`${compactRowBaseClass} ${compactRowHoverClass} min-h-[40px]`}>
+            <div
+              key={item.id}
+              className={`${compactRowBaseClass} ${compactRowHoverClass} min-h-[40px]`}
+            >
               <span className={compactIconClass}>
                 <Clock3 size={12} />
               </span>
@@ -6506,8 +6524,8 @@ export const ProjectsWindow = () => {
                             ? 'text-[var(--ledger-text-primary)]'
                             : 'text-[var(--ledger-text-muted)] hover:text-[var(--ledger-text-primary)]'
                         }`}
-                        >
-                          {tab.label}
+                      >
+                        {tab.label}
                       </button>
                     ))}
                   </div>
@@ -7284,7 +7302,10 @@ export const ProjectsWindow = () => {
               {milestoneDetailProject?.name ?? 'Project'}
             </p>
             <p className="mt-0.5 truncate text-xs text-[var(--ledger-text-muted)]">
-              Assigned to {milestoneDetailAssignmentValue ? getAssigneeLabel(milestoneDetailAssignmentValue) : 'Unassigned'}
+              Assigned to{' '}
+              {milestoneDetailAssignmentValue
+                ? getAssigneeLabel(milestoneDetailAssignmentValue)
+                : 'Unassigned'}
             </p>
           </div>
           {milestoneDetailRow.note && (
@@ -7303,83 +7324,83 @@ export const ProjectsWindow = () => {
             </button>
             {!milestoneDetailRow.completed ? (
               <>
-            <label className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]">
-              <CalendarDays size={14} />
-              <span className="flex-1">Change date</span>
-              <input
-                type="date"
-                value={milestoneDetailRow.milestone_date}
-                onChange={(event) =>
-                  void handleMilestoneDateChange(milestoneDetailRow.id, event.target.value)
-                }
-                className="h-7 max-w-[132px] rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-1.5 text-xs text-[var(--ledger-text-primary)] outline-none"
-              />
-            </label>
-            <label className="block px-4 py-2 text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]">
-              <span className="mb-2 block text-sm">Assign to</span>
-              <select
-                value={milestoneDetailAssignmentValue}
-                onChange={(event) =>
-                  void handleMilestoneAssigneeChange(milestoneDetailRow.id, event.target.value)
-                }
-                className="h-9 w-full rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2 text-sm text-[var(--ledger-text-primary)] outline-none transition focus:border-[color:var(--ledger-border-strong)]"
-              >
-                <option value="">Unassigned</option>
-                <optgroup label="People">
-                  {workspaceMembers.map((member) => (
-                    <option key={member.user_id} value={`user:${member.user_id}`}>
-                      {displayMemberName(member)}
-                    </option>
-                  ))}
-                </optgroup>
-                <optgroup label="Teams">
-                  {workspaceTeams.map((team) => (
-                    <option key={team.id} value={`team:${team.id}`}>
-                      {team.name}
-                    </option>
-                  ))}
-                </optgroup>
-              </select>
-            </label>
-            <button
-              type="button"
-              onClick={() => {
-                setMilestoneDetail(null);
-                void openLinkNoteModal(milestoneDetailRow.project_id);
-              }}
-              className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
-            >
-              <Link2 size={14} />
-              Link note
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setMilestoneDetail(null);
-                createTimelineTodo(
-                  'create reminder from milestone',
-                  milestoneDetailRow.project_id,
-                  milestoneDetailRow.id
-                );
-              }}
-              className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
-            >
-              <Bell size={14} />
-              Create reminder
-            </button>
-            {!milestoneDetailIsOpenProject && (
-              <button
-                type="button"
-                onClick={() => {
-                  setMilestoneDetail(null);
-                  void openProjectById(milestoneDetailRow.project_id);
-                }}
-                className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
-              >
-                <Folder size={14} />
-                Open project
-              </button>
-            )}
+                <label className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]">
+                  <CalendarDays size={14} />
+                  <span className="flex-1">Change date</span>
+                  <input
+                    type="date"
+                    value={milestoneDetailRow.milestone_date}
+                    onChange={(event) =>
+                      void handleMilestoneDateChange(milestoneDetailRow.id, event.target.value)
+                    }
+                    className="h-7 max-w-[132px] rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-1.5 text-xs text-[var(--ledger-text-primary)] outline-none"
+                  />
+                </label>
+                <label className="block px-4 py-2 text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]">
+                  <span className="mb-2 block text-sm">Assign to</span>
+                  <select
+                    value={milestoneDetailAssignmentValue}
+                    onChange={(event) =>
+                      void handleMilestoneAssigneeChange(milestoneDetailRow.id, event.target.value)
+                    }
+                    className="h-9 w-full rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2 text-sm text-[var(--ledger-text-primary)] outline-none transition focus:border-[color:var(--ledger-border-strong)]"
+                  >
+                    <option value="">Unassigned</option>
+                    <optgroup label="People">
+                      {workspaceMembers.map((member) => (
+                        <option key={member.user_id} value={`user:${member.user_id}`}>
+                          {displayMemberName(member)}
+                        </option>
+                      ))}
+                    </optgroup>
+                    <optgroup label="Teams">
+                      {workspaceTeams.map((team) => (
+                        <option key={team.id} value={`team:${team.id}`}>
+                          {team.name}
+                        </option>
+                      ))}
+                    </optgroup>
+                  </select>
+                </label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMilestoneDetail(null);
+                    void openLinkNoteModal(milestoneDetailRow.project_id);
+                  }}
+                  className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+                >
+                  <Link2 size={14} />
+                  Link note
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMilestoneDetail(null);
+                    createTimelineTodo(
+                      'create reminder from milestone',
+                      milestoneDetailRow.project_id,
+                      milestoneDetailRow.id
+                    );
+                  }}
+                  className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+                >
+                  <Bell size={14} />
+                  Create reminder
+                </button>
+                {!milestoneDetailIsOpenProject && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMilestoneDetail(null);
+                      void openProjectById(milestoneDetailRow.project_id);
+                    }}
+                    className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+                  >
+                    <Folder size={14} />
+                    Open project
+                  </button>
+                )}
               </>
             ) : null}
           </div>

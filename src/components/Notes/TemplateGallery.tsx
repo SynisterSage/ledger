@@ -22,6 +22,7 @@ export const TemplateGallery = ({ onSelectTemplate, onCreateCustom, onEditTempla
   const [isLoading, setIsLoading] = useState(true)
   const [rowMenuTemplateId, setRowMenuTemplateId] = useState<string | null>(null)
   const [previewTemplate, setPreviewTemplate] = useState<TemplateSummary | null>(null)
+  const [isPreviewLoading, setIsPreviewLoading] = useState(false)
 
   const loadTemplates = useCallback(async () => {
     if (!activeWorkspaceId) return
@@ -53,15 +54,21 @@ export const TemplateGallery = ({ onSelectTemplate, onCreateCustom, onEditTempla
   useEffect(() => {
     if (!rowMenuTemplateId) return
     const close = () => setRowMenuTemplateId(null)
+    const onPointerDown = (event: MouseEvent) => {
+      const target = event.target as HTMLElement | null
+      if (target?.closest('[data-template-row-menu="true"]')) return
+      if (target?.closest('[data-template-row-actions="true"]')) return
+      close()
+    }
     const onEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') close()
     }
-    window.addEventListener('mousedown', close)
+    window.addEventListener('mousedown', onPointerDown, true)
     window.addEventListener('scroll', close, true)
     window.addEventListener('resize', close)
     window.addEventListener('keydown', onEscape)
     return () => {
-      window.removeEventListener('mousedown', close)
+      window.removeEventListener('mousedown', onPointerDown, true)
       window.removeEventListener('scroll', close, true)
       window.removeEventListener('resize', close)
       window.removeEventListener('keydown', onEscape)
@@ -166,6 +173,39 @@ export const TemplateGallery = ({ onSelectTemplate, onCreateCustom, onEditTempla
     }
   }
 
+  const handlePreview = async (template: TemplateSummary) => {
+    setIsPreviewLoading(true)
+    setPreviewTemplate({ ...template, content_html: null })
+    try {
+      const full = (await api.getTemplate(template.id)) as TemplateSummary
+      setPreviewTemplate({ ...template, ...full })
+    } catch (error) {
+      console.error('Failed to load template preview:', error)
+      setPreviewTemplate({ ...template, content_html: '<p>Could not load this template preview.</p>' })
+    } finally {
+      setIsPreviewLoading(false)
+    }
+  }
+
+  if (previewTemplate) {
+    return (
+      <div className="flex max-h-[66vh] min-h-0 flex-col gap-3 bg-[var(--ledger-surface-card)]">
+        <div className="flex items-start justify-between border-b border-[color:var(--ledger-border-subtle)] pb-3">
+          <div className="min-w-0">
+            <button type="button" onClick={() => setPreviewTemplate(null)} className="mb-2 text-xs font-medium text-[var(--ledger-text-secondary)] hover:text-[var(--ledger-text-primary)]">Back to templates</button>
+            <h2 className="truncate text-base font-semibold text-[var(--ledger-text-primary)]">{previewTemplate.name}</h2>
+            <p className="mt-1 text-xs text-[var(--ledger-text-secondary)]">{previewTemplate.description || 'Ledger writing structure'}</p>
+          </div>
+          <span className="ml-4 shrink-0 rounded-md bg-[var(--ledger-surface-muted)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--ledger-text-muted)]">{previewTemplate.is_system ? 'Ledger' : previewTemplate.visibility === 'workspace' ? 'Workspace' : 'Mine'}</span>
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto py-2">
+          {isPreviewLoading ? <div className="space-y-3 py-4"><div className="h-5 w-40 animate-pulse rounded bg-[var(--ledger-surface-muted)]" /><div className="h-4 w-full animate-pulse rounded bg-[var(--ledger-surface-muted)]" /><div className="h-4 w-4/5 animate-pulse rounded bg-[var(--ledger-surface-muted)]" /></div> : <div className="prose prose-sm max-w-none text-[var(--ledger-text-primary)]" dangerouslySetInnerHTML={{ __html: previewTemplate.content_html || '<p>Empty template</p>' }} />}
+        </div>
+        <div className="flex justify-end border-t border-[color:var(--ledger-border-subtle)] pt-3"><button type="button" disabled={isPreviewLoading} onClick={() => onSelectTemplate(previewTemplate.id)} className="rounded-lg bg-[var(--ledger-accent)] px-3 py-2 text-sm font-medium text-white disabled:opacity-50">Use template</button></div>
+      </div>
+    )
+  }
+
   return (
     <div className="flex max-h-[66vh] min-h-0 flex-col gap-2 bg-[var(--ledger-surface-card)]">
       <div className="space-y-2 shrink-0">
@@ -229,33 +269,46 @@ export const TemplateGallery = ({ onSelectTemplate, onCreateCustom, onEditTempla
             {filteredTemplates.map((template) => (
               <div
                 key={template.id}
-                className="group relative rounded-lg text-left transition hover:bg-[var(--ledger-surface-selected)]"
+                className={`group relative rounded-lg text-left transition hover:bg-[var(--ledger-surface-selected)] ${
+                  rowMenuTemplateId === template.id ? 'z-40' : 'z-0'
+                }`}
               >
                 <button
                   type="button"
-                  onClick={() => setPreviewTemplate(template)}
-                  className="flex min-h-9 w-full items-center gap-2 rounded-lg px-2.5 py-1.5 pr-12 text-left"
+                  onClick={() => void handlePreview(template)}
+                  className="flex min-h-9 w-full items-center gap-3 rounded-lg px-2.5 py-1.5 pr-12 text-left"
                 >
-                  <h3 className="min-w-0 shrink truncate text-sm font-medium leading-5 text-[var(--ledger-text-primary)]">
+                  <h3 className="min-w-0 shrink-0 max-w-[34%] truncate text-sm font-medium leading-5 text-[var(--ledger-text-primary)]">
                     {template.name}
                   </h3>
                   {template.description?.trim() && (
-                    <span className="min-w-0 truncate text-xs text-[var(--ledger-text-secondary)]">
+                    <span className="min-w-0 flex-1 truncate text-xs text-[var(--ledger-text-secondary)]">
                       {template.description.trim()}
                     </span>
                   )}
-                  <span className="ml-auto shrink-0 text-[11px] text-[var(--ledger-text-muted)]">
-                    <span className="capitalize">{template.category || 'personal'}</span>
-                    <span className="mx-1.5">·</span>
-                    <span>{template.is_system ? 'Ledger' : template.visibility === 'workspace' ? 'Workspace' : 'Mine'}</span>
+                  <span className="ml-auto flex shrink-0 items-center gap-1.5 text-[10px] text-[var(--ledger-text-muted)]">
+                    <span className="rounded-md border border-[color:var(--ledger-border-subtle)] px-1.5 py-0.5 capitalize">
+                      {template.category || 'personal'}
+                    </span>
+                    <span
+                      className="rounded-md bg-[var(--ledger-surface-muted)] px-1.5 py-0.5 font-medium"
+                      title="Template source"
+                    >
+                      {template.is_system
+                        ? 'Ledger'
+                        : template.visibility === 'workspace'
+                          ? 'Workspace'
+                          : 'Mine'}
+                    </span>
                   </span>
                 </button>
 
-                <div className="absolute right-2 top-2">
-                  {template.pinned && <Pin size={12} className="mr-7 mt-1 inline text-[var(--ledger-accent)]" />}
-                  <div className="absolute right-2 top-2">
+                <div className="absolute right-2 top-1/2 z-50 flex -translate-y-1/2 items-center gap-1">
+                  {template.pinned && <Pin size={12} className="text-[var(--ledger-accent)]" />}
+                  <div className="relative">
                     <button
                       type="button"
+                      data-template-row-actions="true"
                       onClick={(event) => {
                         event.stopPropagation()
                         setRowMenuTemplateId((current) =>
@@ -269,11 +322,12 @@ export const TemplateGallery = ({ onSelectTemplate, onCreateCustom, onEditTempla
                     </button>
                     {rowMenuTemplateId === template.id && (
                       <div
-                        className="absolute right-0 top-7 z-30 min-w-34 overflow-hidden rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] py-1 shadow-[var(--ledger-shadow)]"
+                        data-template-row-menu="true"
+                        className="absolute right-0 top-full z-50 mt-1 min-w-34 overflow-hidden rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] py-1 shadow-[var(--ledger-shadow)]"
                         onClick={(event) => event.stopPropagation()}
                         onMouseDown={(event) => event.stopPropagation()}
                       >
-                        <button type="button" onClick={() => setPreviewTemplate(template)} className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs hover:bg-[var(--ledger-surface-selected)]"><Eye size={12} />Preview</button>
+                        <button type="button" onClick={() => void handlePreview(template)} className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs hover:bg-[var(--ledger-surface-selected)]"><Eye size={12} />Preview</button>
                         <button type="button" onClick={() => void handlePin(template)} className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs hover:bg-[var(--ledger-surface-selected)]"><Pin size={12} />{template.pinned ? 'Unpin' : 'Pin'}</button>
                         <button type="button" onClick={() => void handleDuplicate(template)} className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs hover:bg-[var(--ledger-surface-selected)]"><Copy size={12} />Duplicate</button>
                         {!template.is_system && onEditTemplate && <button type="button" onClick={() => onEditTemplate(template)} className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs hover:bg-[var(--ledger-surface-selected)]"><Pencil size={12} />Edit</button>}
@@ -297,16 +351,6 @@ export const TemplateGallery = ({ onSelectTemplate, onCreateCustom, onEditTempla
           </div>
         )}
       </div>
-
-      {previewTemplate && (
-        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/25 p-6" onClick={() => setPreviewTemplate(null)}>
-          <div className="max-h-[80vh] w-full max-w-2xl overflow-hidden rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-[var(--ledger-shadow)]" onClick={(event) => event.stopPropagation()}>
-            <div className="flex items-start justify-between border-b border-[color:var(--ledger-border-subtle)] px-5 py-4"><div><h2 className="font-semibold text-[var(--ledger-text-primary)]">{previewTemplate.name}</h2><p className="mt-1 text-xs text-[var(--ledger-text-secondary)]">{previewTemplate.description || 'Ledger writing structure'} · {previewTemplate.is_system ? 'Ledger' : previewTemplate.visibility === 'workspace' ? 'Workspace' : 'Mine'}</p></div><button type="button" onClick={() => setPreviewTemplate(null)} className="text-sm text-[var(--ledger-text-muted)]">Close</button></div>
-            <div className="max-h-[58vh] overflow-y-auto px-6 py-5"><div className="prose prose-sm max-w-none text-[var(--ledger-text-primary)]" dangerouslySetInnerHTML={{ __html: previewTemplate.content_html || '<p>Empty template</p>' }} /></div>
-            <div className="flex justify-end gap-2 border-t border-[color:var(--ledger-border-subtle)] px-5 py-3"><button type="button" onClick={() => { setPreviewTemplate(null); onSelectTemplate(previewTemplate.id) }} className="rounded-lg bg-[var(--ledger-accent)] px-3 py-2 text-sm font-medium text-white">Use template</button></div>
-          </div>
-        </div>
-      )}
 
     </div>
   )
