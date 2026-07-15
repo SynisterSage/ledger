@@ -37,7 +37,8 @@ type ModuleWindowKind =
   | 'quick-follow-up'
   | 'quick-task'
   | 'quick-note'
-  | 'quick-event';
+  | 'quick-event'
+  | 'quick-reminder';
 type ModuleFocusPayload = {
   kind: ModuleWindowKind;
   focusDate?: string | null;

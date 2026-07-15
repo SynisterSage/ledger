@@ -3,13 +3,7 @@ import { createPortal } from 'react-dom';
 import { BellRing, CalendarDays, CircleX } from 'lucide-react';
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext';
 import { useLexicalTextEntity } from '@lexical/react/useLexicalTextEntity';
-import {
-  $getNodeByKey,
-  $getRoot,
-  type Klass,
-  type NodeKey,
-  TextNode,
-} from 'lexical';
+import { $getNodeByKey, $getRoot, HISTORIC_TAG, type Klass, type NodeKey, TextNode } from 'lexical';
 import { CodeNode } from '@lexical/code';
 import { LinkNode } from '@lexical/link';
 import { useApi } from '../../hooks/useApi';
@@ -177,9 +171,7 @@ const SmartDatePopover = ({
       const belowTop = rect.bottom + 10;
       const aboveTop = rect.top - estimatedHeight - 10;
       const top =
-        belowTop + estimatedHeight <= window.innerHeight - 12
-          ? belowTop
-          : Math.max(12, aboveTop);
+        belowTop + estimatedHeight <= window.innerHeight - 12 ? belowTop : Math.max(12, aboveTop);
       setPosition({ top, left });
     };
 
@@ -218,9 +210,7 @@ const SmartDatePopover = ({
     >
       <div className="flex items-start justify-between gap-2 px-2 py-1.5">
         <div className="min-w-0">
-          <p className="truncate text-[11px] text-[var(--ledger-text-muted)]">
-            Date detected
-          </p>
+          <p className="truncate text-[11px] text-[var(--ledger-text-muted)]">Date detected</p>
           <p className="mt-0.5 truncate text-[13px] font-medium leading-5 text-[var(--ledger-text-primary)]">
             {target.text}
           </p>
@@ -285,7 +275,6 @@ const SmartDatePopover = ({
           ) : null}
         </div>
       )}
-
     </div>,
     document.body
   );
@@ -322,6 +311,8 @@ const SmartDateComposer = ({
     isOpen
     onClose={onClose}
     closeOnBackdropClick={!isSaving}
+    backdropBorderRadius="inherit"
+    disablePortal
     manageWindowChrome={false}
     classNameContainer="w-[min(380px,calc(100vw-2rem))] overflow-hidden rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] text-[var(--ledger-text-primary)] shadow-[var(--ledger-shadow)]"
   >
@@ -457,8 +448,14 @@ export function SmartDatePlugin({
     }
 
     try {
-      const payload = (await api.getNoteSmartLinks(noteId)) as SmartLinkRow[] | { links?: SmartLinkRow[] };
-      const rows = Array.isArray(payload) ? payload : Array.isArray(payload?.links) ? payload.links : [];
+      const payload = (await api.getNoteSmartLinks(noteId)) as
+        | SmartLinkRow[]
+        | { links?: SmartLinkRow[] };
+      const rows = Array.isArray(payload)
+        ? payload
+        : Array.isArray(payload?.links)
+        ? payload.links
+        : [];
       setSmartLinks(rows);
     } catch (error) {
       console.error('[smart-dates] failed to load smart links', error);
@@ -522,7 +519,7 @@ export function SmartDatePlugin({
         };
         visit(root);
       },
-      { tag: SMART_DATE_SYNC_TAG }
+      { tag: [SMART_DATE_SYNC_TAG, HISTORIC_TAG] }
     );
   }, [editor, smartLinksByKey]);
 
@@ -564,7 +561,7 @@ export function SmartDatePlugin({
               visit(node);
             }
           },
-          { tag: SMART_DATE_SCAN_TAG }
+          { tag: [SMART_DATE_SCAN_TAG, HISTORIC_TAG] }
         );
 
         queueMicrotask(() => {
@@ -587,6 +584,7 @@ export function SmartDatePlugin({
         return;
       }
       if (
+        tags.has(HISTORIC_TAG) ||
         tags.has(SMART_DATE_SCAN_TAG) ||
         tags.has(SMART_DATE_SYNC_TAG) ||
         tags.has('smart-person-scan') ||
@@ -644,7 +642,7 @@ export function SmartDatePlugin({
             }
           }
         },
-        { tag: SMART_DATE_LOAD_TAG }
+        { tag: [SMART_DATE_LOAD_TAG, HISTORIC_TAG] }
       );
       queueMicrotask(() => {
         scanRequestedRef.current = false;
@@ -684,13 +682,14 @@ export function SmartDatePlugin({
   const saveComposer = useCallback(async () => {
     if (!composerTarget || !composerValues.title.trim() || !composerValues.calendarId) return;
 
-    const start = new Date(
-      `${composerValues.date}T${composerValues.time || '00:00'}:00`
-    );
+    const start = new Date(`${composerValues.date}T${composerValues.time || '00:00'}:00`);
     if (Number.isNaN(start.getTime())) {
-      toast.show(composerMode === 'event' ? 'Could not create event.' : 'Could not create reminder.', {
-        variant: 'error',
-      });
+      toast.show(
+        composerMode === 'event' ? 'Could not create event.' : 'Could not create reminder.',
+        {
+          variant: 'error',
+        }
+      );
       return;
     }
 
@@ -760,9 +759,12 @@ export function SmartDatePlugin({
       setComposerTarget(null);
     } catch (error) {
       console.error('[smart-dates] failed to create linked item', error);
-      toast.show(composerMode === 'event' ? 'Could not create event.' : 'Could not create reminder.', {
-        variant: 'error',
-      });
+      toast.show(
+        composerMode === 'event' ? 'Could not create event.' : 'Could not create reminder.',
+        {
+          variant: 'error',
+        }
+      );
     } finally {
       setIsComposerSaving(false);
     }
@@ -953,10 +955,7 @@ export function SmartDatePlugin({
 
   return (
     <>
-      <SmartDateEntityMatcher
-        noteId={noteId}
-        scanRequestedRef={scanRequestedRef}
-      />
+      <SmartDateEntityMatcher noteId={noteId} scanRequestedRef={scanRequestedRef} />
       {popover}
       {composerTarget ? (
         <SmartDateComposer

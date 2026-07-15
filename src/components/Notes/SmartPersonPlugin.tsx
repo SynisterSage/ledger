@@ -3,13 +3,26 @@ import { ArrowRight, CircleX, Folder, Link2, UserRound } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext';
 import { useLexicalTextEntity } from '@lexical/react/useLexicalTextEntity';
-import { $createTextNode, $getNodeByKey, $getRoot, type Klass, type NodeKey, TextNode } from 'lexical';
+import {
+  $createTextNode,
+  $getNodeByKey,
+  $getRoot,
+  HISTORIC_TAG,
+  type Klass,
+  type NodeKey,
+  TextNode,
+} from 'lexical';
 import { CodeNode } from '@lexical/code';
 import { LinkNode } from '@lexical/link';
 import { useApi } from '../../hooks/useApi';
 import { useToast } from '../Common/ToastProvider';
 import { useWorkspaceContext } from '../../context/WorkspaceContext';
-import { $createSmartPersonNode, $isSmartPersonNode, SmartPersonNode, type SmartPersonNodeState } from './nodes/SmartPersonNode';
+import {
+  $createSmartPersonNode,
+  $isSmartPersonNode,
+  SmartPersonNode,
+  type SmartPersonNodeState,
+} from './nodes/SmartPersonNode';
 import { SmartDateNode } from './nodes/SmartDateNode';
 
 type PersonIndexEntry = {
@@ -34,17 +47,35 @@ type PersonTarget = PersonIndexEntry & {
 
 const SCAN_TAG = 'smart-person-scan';
 const LOAD_TAG = 'smart-person-load';
-const commonWordNames = new Set(['may', 'will', 'mark', 'grant', 'rose', 'joy', 'art', 'bill', 'hope', 'faith', 'summer', 'winter']);
+const commonWordNames = new Set([
+  'may',
+  'will',
+  'mark',
+  'grant',
+  'rose',
+  'joy',
+  'art',
+  'bill',
+  'hope',
+  'faith',
+  'summer',
+  'winter',
+]);
 
-const sourceKeyFor = (sourceText: string) =>
-  `person:${sourceText.trim().toLowerCase()}`;
+const sourceKeyFor = (sourceText: string) => `person:${sourceText.trim().toLowerCase()}`;
 
 const isEligibleTextNode = (node: TextNode) => {
   if (!node.isSimpleText() || node.hasFormat('code')) return false;
   if ($isSmartPersonNode(node) || node instanceof SmartDateNode) return false;
   let parent = node.getParent();
   while (parent) {
-    if (parent instanceof LinkNode || parent instanceof CodeNode || $isSmartPersonNode(parent) || parent instanceof SmartDateNode) return false;
+    if (
+      parent instanceof LinkNode ||
+      parent instanceof CodeNode ||
+      $isSmartPersonNode(parent) ||
+      parent instanceof SmartDateNode
+    )
+      return false;
     parent = parent.getParent();
   }
   return true;
@@ -52,7 +83,8 @@ const isEligibleTextNode = (node: TextNode) => {
 
 const getPersonElement = (event: Event) => {
   const target = event.target as Node | null;
-  if (target instanceof Element) return target.closest('[data-ledger-smart-person-key]') as HTMLElement | null;
+  if (target instanceof Element)
+    return target.closest('[data-ledger-smart-person-key]') as HTMLElement | null;
   return target?.parentElement?.closest('[data-ledger-smart-person-key]') as HTMLElement | null;
 };
 
@@ -73,7 +105,9 @@ const findPersonMatch = (text: string, people: PersonIndexEntry[]) => {
   const sorted = [...candidates.entries()].sort((a, b) => b[0].length - a[0].length);
   for (const [name, person] of sorted) {
     const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const match = new RegExp(`(^|[^\\p{L}\\p{N}_])(${escaped})(?=$|[^\\p{L}\\p{N}_])`, 'iu').exec(text);
+    const match = new RegExp(`(^|[^\\p{L}\\p{N}_])(${escaped})(?=$|[^\\p{L}\\p{N}_])`, 'iu').exec(
+      text
+    );
     if (!match || match.index === undefined) continue;
     const start = match.index + match[1].length;
     const end = start + match[2].length;
@@ -108,14 +142,17 @@ const PersonPopover = ({
   const [position, setPosition] = useState({ top: 12, left: 12 });
   useEffect(() => {
     const update = () => {
-      const element = document.querySelector<HTMLElement>(`[data-ledger-smart-person-key="${target.sourceKey}"]`);
+      const element = document.querySelector<HTMLElement>(
+        `[data-ledger-smart-person-key="${target.sourceKey}"]`
+      );
       if (!element) return;
       const rect = element.getBoundingClientRect();
       const width = 248;
       const height = 260;
       const left = Math.min(Math.max(12, rect.left), Math.max(12, window.innerWidth - width - 12));
       const below = rect.bottom + 8;
-      const top = below + height <= window.innerHeight - 12 ? below : Math.max(12, rect.top - height - 8);
+      const top =
+        below + height <= window.innerHeight - 12 ? below : Math.max(12, rect.top - height - 8);
       setPosition({ top, left });
     };
     update();
@@ -148,27 +185,82 @@ const PersonPopover = ({
         <div className="min-w-0">
           <p className="truncate text-[13px] font-medium">{target.name}</p>
           <p className="mt-0.5 truncate text-[11px] text-[var(--ledger-text-muted)]">
-            {[target.role, target.teams?.[0]?.name].filter(Boolean).join(' · ') || 'Workspace member'}
+            {[target.role, target.teams?.[0]?.name].filter(Boolean).join(' · ') ||
+              'Workspace member'}
           </p>
         </div>
-        <button type="button" onClick={onClose} aria-label="Close" className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-[var(--ledger-text-muted)] hover:bg-[var(--ledger-surface-hover)]">
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Close"
+          className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-[var(--ledger-text-muted)] hover:bg-[var(--ledger-surface-hover)]"
+        >
           <CircleX size={13} />
         </button>
       </div>
       <div className="space-y-0.5 border-y border-[color:var(--ledger-border-subtle)] py-1">
-        <button type="button" onClick={onOpenCircle} className="flex min-h-8 w-full items-center gap-2 rounded-md px-2 text-left text-[12px] text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"><UserRound size={13} className="text-[var(--ledger-accent)]" />Open in Circle</button>
-        <button type="button" onClick={onAssignTask} className="flex min-h-8 w-full items-center gap-2 rounded-md px-2 text-left text-[12px] text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"><ArrowRight size={13} />Assign task</button>
-        <button type="button" onClick={onFollowUp} className="flex min-h-8 w-full items-center gap-2 rounded-md px-2 text-left text-[12px] text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"><ArrowRight size={13} />Create follow-up</button>
-        <button type="button" onClick={onSharedProjects} className="flex min-h-8 w-full items-center gap-2 rounded-md px-2 text-left text-[12px] text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"><Folder size={13} />View shared projects</button>
-        <button type="button" onClick={onLink} className="flex min-h-8 w-full items-center gap-2 rounded-md px-2 text-left text-[12px] text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"><Link2 size={13} />Link person to note</button>
+        <button
+          type="button"
+          onClick={onOpenCircle}
+          className="flex min-h-8 w-full items-center gap-2 rounded-md px-2 text-left text-[12px] text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+        >
+          <UserRound size={13} className="text-[var(--ledger-accent)]" />
+          Open in Circle
+        </button>
+        <button
+          type="button"
+          onClick={onAssignTask}
+          className="flex min-h-8 w-full items-center gap-2 rounded-md px-2 text-left text-[12px] text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+        >
+          <ArrowRight size={13} />
+          Assign task
+        </button>
+        <button
+          type="button"
+          onClick={onFollowUp}
+          className="flex min-h-8 w-full items-center gap-2 rounded-md px-2 text-left text-[12px] text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+        >
+          <ArrowRight size={13} />
+          Create follow-up
+        </button>
+        <button
+          type="button"
+          onClick={onSharedProjects}
+          className="flex min-h-8 w-full items-center gap-2 rounded-md px-2 text-left text-[12px] text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+        >
+          <Folder size={13} />
+          View shared projects
+        </button>
+        <button
+          type="button"
+          onClick={onLink}
+          className="flex min-h-8 w-full items-center gap-2 rounded-md px-2 text-left text-[12px] text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+        >
+          <Link2 size={13} />
+          Link person to note
+        </button>
       </div>
-      <button type="button" onClick={onDismiss} className="mt-1 flex min-h-7 w-full items-center rounded-md px-2 text-left text-[11px] text-[var(--ledger-text-muted)] hover:bg-[var(--ledger-surface-hover)]">Dismiss suggestion</button>
+      <button
+        type="button"
+        onClick={onDismiss}
+        className="mt-1 flex min-h-7 w-full items-center rounded-md px-2 text-left text-[11px] text-[var(--ledger-text-muted)] hover:bg-[var(--ledger-surface-hover)]"
+      >
+        Dismiss suggestion
+      </button>
     </div>,
     document.body
   );
 };
 
-export function SmartPersonPlugin({ noteId, noteTitle, noteProjectId }: { noteId?: string | null; noteTitle?: string | null; noteProjectId?: string | null }) {
+export function SmartPersonPlugin({
+  noteId,
+  onAssignTask,
+  onCreateFollowUp,
+}: {
+  noteId?: string | null;
+  onAssignTask?: (person: PersonTarget) => void;
+  onCreateFollowUp?: (person: PersonTarget) => void;
+}) {
   const [editor] = useLexicalComposerContext();
   const api = useApi();
   const toast = useToast();
@@ -217,70 +309,95 @@ export function SmartPersonPlugin({ noteId, noteTitle, noteProjectId }: { noteId
       }
     };
     void loadPeople();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [activeWorkspaceId, api]);
 
-  useEffect(() => { void refreshLinks(); }, [activeWorkspaceId, noteId, refreshLinks]);
+  useEffect(() => {
+    void refreshLinks();
+  }, [activeWorkspaceId, noteId, refreshLinks]);
 
   useEffect(() => {
-    editor.update(() => {
-      const visit = (node: any) => {
-        if ($isSmartPersonNode(node)) {
-          const resolvedPerson =
-            people.find((person) => person.id === node.getPersonUserId()) ??
-            findPersonMatch(node.getTextContent(), people)?.person;
-          if (resolvedPerson && !node.getPersonUserId()) node.setPersonUserId(resolvedPerson.id);
-          if (peopleLoadedRef.current && !resolvedPerson) {
-            const replacement = $createTextNode(node.getTextContent());
-            replacement.setFormat(node.getFormat());
-            replacement.setStyle(node.getStyle());
-            node.replace(replacement);
+    editor.update(
+      () => {
+        const visit = (node: any) => {
+          if ($isSmartPersonNode(node)) {
+            const resolvedPerson =
+              people.find((person) => person.id === node.getPersonUserId()) ??
+              findPersonMatch(node.getTextContent(), people)?.person;
+            if (resolvedPerson && !node.getPersonUserId()) node.setPersonUserId(resolvedPerson.id);
+            if (peopleLoadedRef.current && !resolvedPerson) {
+              const replacement = $createTextNode(node.getTextContent());
+              replacement.setFormat(node.getFormat());
+              replacement.setStyle(node.getStyle());
+              node.replace(replacement);
+              return;
+            }
+            const nextState: SmartPersonNodeState = linksByKey.has(node.getSourceKey())
+              ? 'linked'
+              : 'detected';
+            if (node.getSmartPersonState() !== nextState) node.setSmartPersonState(nextState);
             return;
           }
-          const nextState: SmartPersonNodeState = linksByKey.has(node.getSourceKey()) ? 'linked' : 'detected';
-          if (node.getSmartPersonState() !== nextState) node.setSmartPersonState(nextState);
-          return;
-        }
-        node?.getChildren?.().forEach(visit);
-      };
-      visit($getRoot());
-    }, { tag: 'smart-person-sync' });
+          node?.getChildren?.().forEach(visit);
+        };
+        visit($getRoot());
+      },
+      { tag: ['smart-person-sync', HISTORIC_TAG] }
+    );
   }, [editor, linksByKey, people]);
 
-  const getTargetFromElement = useCallback((element: HTMLElement | null): PersonTarget | null => {
-    if (!element) return null;
-    const sourceKey = element.getAttribute('data-ledger-smart-person-key') ?? '';
-    const personId = element.getAttribute('data-ledger-smart-person-user-id') ?? '';
-    const sourceText = element.textContent?.trim() ?? '';
-    const person =
-      people.find((entry) => entry.id === personId) ??
-      findPersonMatch(sourceText, people)?.person;
-    if (!sourceKey || !person || dismissedKeysRef.current.has(sourceKey)) return null;
-    return { ...person, sourceKey, sourceText, state: linksByKey.has(sourceKey) ? 'linked' : 'detected' };
-  }, [linksByKey, people]);
+  const getTargetFromElement = useCallback(
+    (element: HTMLElement | null): PersonTarget | null => {
+      if (!element) return null;
+      const sourceKey = element.getAttribute('data-ledger-smart-person-key') ?? '';
+      const personId = element.getAttribute('data-ledger-smart-person-user-id') ?? '';
+      const sourceText = element.textContent?.trim() ?? '';
+      const person =
+        people.find((entry) => entry.id === personId) ??
+        findPersonMatch(sourceText, people)?.person;
+      if (!sourceKey || !person || dismissedKeysRef.current.has(sourceKey)) return null;
+      return {
+        ...person,
+        sourceKey,
+        sourceText,
+        state: linksByKey.has(sourceKey) ? 'linked' : 'detected',
+      };
+    },
+    [linksByKey, people]
+  );
 
   const openCircle = useCallback((person: PersonTarget, tab?: 'projects') => {
-    void window.desktopWindow?.toggleModule('circle' as any, {
-      kind: 'circle' as any,
-      focusContext: `ledger-person|${person.id}|${encodeURIComponent(person.name)}${tab ? '|projects' : ''}`,
-    } as any);
+    void window.desktopWindow?.toggleModule(
+      'circle' as any,
+      {
+        kind: 'circle' as any,
+        focusContext: `ledger-person|${person.id}|${encodeURIComponent(person.name)}${
+          tab ? '|projects' : ''
+        }`,
+      } as any
+    );
     setTarget(null);
   }, []);
 
-  const openQuickCapture = useCallback((person: PersonTarget, kind: 'quick-task' | 'quick-follow-up') => {
-    const title = encodeURIComponent(noteTitle?.trim() ? `${noteTitle.trim()} · ${person.name}` : person.name);
-    const project = encodeURIComponent(noteProjectId ?? '');
-    void window.desktopWindow?.toggleModule(kind as any, {
-      kind: kind as any,
-      focusContext: `ledger-person|${person.id}|${encodeURIComponent(person.name)}|${encodeURIComponent(noteId ?? '')}|${project}|${title}`,
-    } as any);
-    setTarget(null);
-  }, [noteId, noteProjectId, noteTitle]);
+  const openPersonTaskComposer = useCallback(
+    (person: PersonTarget, action: 'task' | 'follow-up') => {
+      if (action === 'task') onAssignTask?.(person);
+      else onCreateFollowUp?.(person);
+      setTarget(null);
+    },
+    [onAssignTask, onCreateFollowUp]
+  );
 
   const linkPerson = useCallback(async () => {
     if (!target || !noteId) return;
     try {
-      await api.upsertNotePersonLink(noteId, { person_user_id: target.id, source_key: target.sourceKey, source_text: target.sourceText });
+      await api.upsertNotePersonLink(noteId, {
+        person_user_id: target.id,
+        source_key: target.sourceKey,
+        source_text: target.sourceText,
+      });
       await refreshLinks();
       setTarget(null);
     } catch (error) {
@@ -289,84 +406,114 @@ export function SmartPersonPlugin({ noteId, noteTitle, noteProjectId }: { noteId
     }
   }, [api, noteId, refreshLinks, target, toast]);
 
-  const getMatch = useCallback((text: string) => {
-    if (!noteId) return null;
-    const match = findPersonMatch(text, people);
-    return match ? { start: match.start, end: match.end } : null;
-  }, [noteId, people]);
+  const getMatch = useCallback(
+    (text: string) => {
+      if (!noteId) return null;
+      const match = findPersonMatch(text, people);
+      return match ? { start: match.start, end: match.end } : null;
+    },
+    [noteId, people]
+  );
 
-  const createNode = useCallback((textNode: TextNode) => {
-    const match = findPersonMatch(textNode.getTextContent(), people);
-    if (!match) return textNode;
-    const sourceKey = sourceKeyFor(match.text);
-    const node = $createSmartPersonNode(textNode.getTextContent(), match.person.id, sourceKey, linksByKey.has(sourceKey) ? 'linked' : 'detected');
-    node.setFormat(textNode.getFormat());
-    node.setStyle(textNode.getStyle());
-    node.setDetail(textNode.getDetail());
-    node.setMode(textNode.getMode());
-    return node;
-  }, [linksByKey, people]);
+  const createNode = useCallback(
+    (textNode: TextNode) => {
+      const match = findPersonMatch(textNode.getTextContent(), people);
+      if (!match) return textNode;
+      const sourceKey = sourceKeyFor(match.text);
+      const node = $createSmartPersonNode(
+        textNode.getTextContent(),
+        match.person.id,
+        sourceKey,
+        linksByKey.has(sourceKey) ? 'linked' : 'detected'
+      );
+      node.setFormat(textNode.getFormat());
+      node.setStyle(textNode.getStyle());
+      node.setDetail(textNode.getDetail());
+      node.setMode(textNode.getMode());
+      return node;
+    },
+    [linksByKey, people]
+  );
 
-  useLexicalTextEntity(getMatch, SmartPersonNode as unknown as Klass<TextNode>, createNode as unknown as (node: TextNode) => TextNode);
+  useLexicalTextEntity(
+    getMatch,
+    SmartPersonNode as unknown as Klass<TextNode>,
+    createNode as unknown as (node: TextNode) => TextNode
+  );
 
-  const queueScan = useCallback((keys: Set<NodeKey>) => {
-    keys.forEach((key) => pendingKeysRef.current.add(key));
-    if (scanTimerRef.current) window.clearTimeout(scanTimerRef.current);
-    scanTimerRef.current = window.setTimeout(() => {
-      const keysToScan = new Set(pendingKeysRef.current);
-      pendingKeysRef.current.clear();
-      scanRequestedRef.current = true;
-      editor.update(() => {
-        keysToScan.forEach((key) => {
-          const node = $getNodeByKey(key);
-          const visit = (current: any) => {
-            if (!current) return;
-            if (current instanceof TextNode) {
-              if (isEligibleTextNode(current)) current.markDirty();
-              return;
-            }
-            current.getChildren?.().forEach(visit);
-          };
-          visit(node);
+  const queueScan = useCallback(
+    (keys: Set<NodeKey>) => {
+      keys.forEach((key) => pendingKeysRef.current.add(key));
+      if (scanTimerRef.current) window.clearTimeout(scanTimerRef.current);
+      scanTimerRef.current = window.setTimeout(() => {
+        const keysToScan = new Set(pendingKeysRef.current);
+        pendingKeysRef.current.clear();
+        scanRequestedRef.current = true;
+        editor.update(
+          () => {
+            keysToScan.forEach((key) => {
+              const node = $getNodeByKey(key);
+              const visit = (current: any) => {
+                if (!current) return;
+                if (current instanceof TextNode) {
+                  if (isEligibleTextNode(current)) current.markDirty();
+                  return;
+                }
+                current.getChildren?.().forEach(visit);
+              };
+              visit(node);
+            });
+          },
+          { tag: [SCAN_TAG, HISTORIC_TAG] }
+        );
+        queueMicrotask(() => {
+          scanRequestedRef.current = false;
         });
-      }, { tag: SCAN_TAG });
-      queueMicrotask(() => {
-        scanRequestedRef.current = false;
-      });
-    }, 220);
-  }, [editor]);
+      }, 220);
+    },
+    [editor]
+  );
 
-  useEffect(() => editor.registerUpdateListener(({ editorState, dirtyLeaves, dirtyElements, tags }) => {
-    if (!noteId || editor.isComposing()) return;
-    if (
-      tags.has(SCAN_TAG) ||
-      tags.has('smart-person-sync') ||
-      tags.has('smart-date-load') ||
-      tags.has('smart-date-scan') ||
-      tags.has('smart-date-sync')
-    ) return;
-    const keys = new Set<NodeKey>();
-    editorState.read(() => {
-      if (tags.has(LOAD_TAG)) {
-        const visit = (node: any) => {
-          if (node instanceof TextNode && isEligibleTextNode(node)) keys.add(node.getKey());
-          node.getChildren?.().forEach(visit);
-        };
-        visit($getRoot());
-        return;
-      }
-      [...dirtyLeaves, ...dirtyElements.keys()].forEach((key) => {
-        const node = $getNodeByKey(key);
-        if (node instanceof TextNode && isEligibleTextNode(node)) keys.add(node.getKey());
-        else if ((node as any)?.getChildren && node) keys.add(node.getKey());
-      });
-    });
-    if (keys.size) queueScan(keys);
-  }), [editor, noteId, queueScan]);
+  useEffect(
+    () =>
+      editor.registerUpdateListener(({ editorState, dirtyLeaves, dirtyElements, tags }) => {
+        if (!noteId || editor.isComposing()) return;
+        if (
+          tags.has(HISTORIC_TAG) ||
+          tags.has(SCAN_TAG) ||
+          tags.has('smart-person-sync') ||
+          tags.has('smart-date-load') ||
+          tags.has('smart-date-scan') ||
+          tags.has('smart-date-sync')
+        )
+          return;
+        const keys = new Set<NodeKey>();
+        editorState.read(() => {
+          if (tags.has(LOAD_TAG)) {
+            const visit = (node: any) => {
+              if (node instanceof TextNode && isEligibleTextNode(node)) keys.add(node.getKey());
+              node.getChildren?.().forEach(visit);
+            };
+            visit($getRoot());
+            return;
+          }
+          [...dirtyLeaves, ...dirtyElements.keys()].forEach((key) => {
+            const node = $getNodeByKey(key);
+            if (node instanceof TextNode && isEligibleTextNode(node)) keys.add(node.getKey());
+            else if ((node as any)?.getChildren && node) keys.add(node.getKey());
+          });
+        });
+        if (keys.size) queueScan(keys);
+      }),
+    [editor, noteId, queueScan]
+  );
 
   useEffect(() => {
     if (!noteId) return;
-    const timer = window.setTimeout(() => queueScan(new Set([editor.getEditorState().read(() => $getRoot().getKey())])), 100);
+    const timer = window.setTimeout(
+      () => queueScan(new Set([editor.getEditorState().read(() => $getRoot().getKey())])),
+      100
+    );
     return () => window.clearTimeout(timer);
   }, [editor, noteId, people, queueScan]);
 
@@ -391,7 +538,8 @@ export function SmartPersonPlugin({ noteId, noteTitle, noteProjectId }: { noteId
     };
     const onDocumentPointerDown = (event: PointerEvent) => {
       const element = event.target as HTMLElement | null;
-      if (element?.closest('[data-ledger-smart-person-key], [data-ledger-smart-person-popover]')) return;
+      if (element?.closest('[data-ledger-smart-person-key], [data-ledger-smart-person-popover]'))
+        return;
       setTarget(null);
     };
     root.addEventListener('pointerdown', onPointerDown, true);
@@ -410,11 +558,14 @@ export function SmartPersonPlugin({ noteId, noteTitle, noteProjectId }: { noteId
       target={target}
       onClose={() => setTarget(null)}
       onOpenCircle={() => openCircle(target)}
-      onAssignTask={() => openQuickCapture(target, 'quick-task')}
-      onFollowUp={() => openQuickCapture(target, 'quick-follow-up')}
+      onAssignTask={() => openPersonTaskComposer(target, 'task')}
+      onFollowUp={() => openPersonTaskComposer(target, 'follow-up')}
       onSharedProjects={() => openCircle(target, 'projects')}
       onLink={() => void linkPerson()}
-      onDismiss={() => { dismissedKeysRef.current.add(target.sourceKey); setTarget(null); }}
+      onDismiss={() => {
+        dismissedKeysRef.current.add(target.sourceKey);
+        setTarget(null);
+      }}
     />
   );
 }

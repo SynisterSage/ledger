@@ -389,9 +389,9 @@ export const ExpandedSidebar = ({
   const [isLoadingProjects, setIsLoadingProjects] = useState(true);
   const [newProjectName, setNewProjectName] = useState('');
   const [isCreatingProject, setIsCreatingProject] = useState(false);
-  const [calendarScope, setCalendarScope] = useState<'current_workspace' | 'all_accessible_workspaces'>(
-    'current_workspace'
-  );
+  const [calendarScope, setCalendarScope] = useState<
+    'current_workspace' | 'all_accessible_workspaces'
+  >('current_workspace');
   const [upcomingItems, setUpcomingItems] = useState<UpcomingItem[]>([]);
   const [eventsExpanded, setEventsExpanded] = useState(false);
   const [todayItems, setTodayItems] = useState<TodayTask[]>([]);
@@ -477,7 +477,6 @@ export const ExpandedSidebar = ({
     } catch {
       setWorkspaceSectionCollapsed(false);
     }
-
   }, [activeWorkspaceId, user?.id]);
 
   useEffect(() => {
@@ -516,7 +515,9 @@ export const ExpandedSidebar = ({
     }
 
     try {
-      const activeRaw = window.localStorage.getItem(`${MY_TEAMS_ACTIVE_STORAGE_KEY}:${storageScope}`);
+      const activeRaw = window.localStorage.getItem(
+        `${MY_TEAMS_ACTIVE_STORAGE_KEY}:${storageScope}`
+      );
       const parsed = activeRaw ? (JSON.parse(activeRaw) as unknown) : null;
       if (
         parsed &&
@@ -554,7 +555,16 @@ export const ExpandedSidebar = ({
 
   useWorkspaceRealtimeRefresh({
     workspaceId: activeWorkspaceId,
-    tables: ['notes', 'projects', 'tasks', 'events', 'reminders', 'workspace_teams', 'workspace_team_members', 'inbox_items'],
+    tables: [
+      'notes',
+      'projects',
+      'tasks',
+      'events',
+      'reminders',
+      'workspace_teams',
+      'workspace_team_members',
+      'inbox_items',
+    ],
     enabled: Boolean(user && activeWorkspaceId),
     onChange: handleSidebarWorkspaceRefresh,
   });
@@ -566,7 +576,9 @@ export const ExpandedSidebar = ({
     const loadCalendarSettings = async () => {
       try {
         const settings = (await api.getUserSettings()) as {
-          preferences?: { calendarScope?: 'current_workspace' | 'all_accessible_workspaces' } | null;
+          preferences?: {
+            calendarScope?: 'current_workspace' | 'all_accessible_workspaces';
+          } | null;
         };
         if (cancelled) return;
         setCalendarScope(
@@ -1193,17 +1205,18 @@ export const ExpandedSidebar = ({
             workspace_color: e.workspace_color ?? null,
             type: 'event' as const,
             dueDate: dateDisplay,
-                  rawDate: eventDateISO,
-                  time: isValidDate
-                    ? startDate.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+            rawDate: eventDateISO,
+            time: isValidDate
+              ? startDate.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
               : undefined,
             sortAt: isValidDate ? startAt : Number.MAX_SAFE_INTEGER,
           };
         });
 
         const activeEventItems = eventItems
-          .filter((item: { status?: string | null; start_at?: string | null; end_at?: string | null }) =>
-            isUpcomingEventActive(item)
+          .filter(
+            (item: { status?: string | null; start_at?: string | null; end_at?: string | null }) =>
+              isUpcomingEventActive(item)
           )
           .sort((a: { sortAt: number }, b: { sortAt: number }) => a.sortAt - b.sortAt);
 
@@ -1339,8 +1352,6 @@ export const ExpandedSidebar = ({
     document.addEventListener('mousedown', handlePointerDown);
     return () => document.removeEventListener('mousedown', handlePointerDown);
   }, [todayDockPopoverOpen]);
-
-  
 
   useEffect(() => {
     const syncToNextDay = () => {
@@ -1619,7 +1630,9 @@ export const ExpandedSidebar = ({
       try {
         const data = await api.getTasks();
         if (cancelled) return;
-        const rows = Array.isArray(data) ? (data as Array<TodayTask & { task_horizon?: string | null }>) : [];
+        const rows = Array.isArray(data)
+          ? (data as Array<TodayTask & { task_horizon?: string | null }>)
+          : [];
         setWorkspaceTasks(rows);
       } catch (error) {
         if (!cancelled) {
@@ -1734,17 +1747,17 @@ export const ExpandedSidebar = ({
     setTodayItems((prev) => [optimisticTask, ...prev]);
     window.ipcRenderer?.send('dashboard:today-task-created', {
       source: 'sidebar',
-        optimistic: true,
-        client_id: tempId,
-        task: {
-          ...optimisticTask,
-          id: tempId,
-          kind: 'task' as const,
-          is_today_focus: false,
-          task_horizon: 'today',
-          ...getWorkspaceTaskMetadata(),
-        },
-      });
+      optimistic: true,
+      client_id: tempId,
+      task: {
+        ...optimisticTask,
+        id: tempId,
+        kind: 'task' as const,
+        is_today_focus: false,
+        task_horizon: 'today',
+        ...getWorkspaceTaskMetadata(),
+      },
+    });
     try {
       const created = await api.createTask({
         title: base,
@@ -1939,16 +1952,15 @@ export const ExpandedSidebar = ({
         window.localStorage.removeItem(`${MY_TEAMS_ACTIVE_STORAGE_KEY}:${scope}`);
         return;
       }
-      window.localStorage.setItem(
-        `${MY_TEAMS_ACTIVE_STORAGE_KEY}:${scope}`,
-        JSON.stringify(route)
-      );
+      window.localStorage.setItem(`${MY_TEAMS_ACTIVE_STORAGE_KEY}:${scope}`, JSON.stringify(route));
     } catch {
       // No-op when storage is unavailable.
     }
   };
 
-  const closeWorkspaceSections = (next?: 'tasks' | 'today' | 'note' | 'event' | 'events' | 'checkin' | 'projects') => {
+  const closeWorkspaceSections = (
+    next?: 'tasks' | 'today' | 'note' | 'event' | 'events' | 'checkin' | 'projects'
+  ) => {
     setTasksCollapsed(next !== 'tasks');
     setTodayCollapsed(next !== 'today');
     setProjectsCollapsed(next !== 'projects');
@@ -1987,7 +1999,9 @@ export const ExpandedSidebar = ({
   useEffect(() => {
     if (!isCheckinExpanded) return;
     const timer = window.setTimeout(() => {
-      const firstCheckinInput = document.querySelector<HTMLInputElement>('[data-checkin-input="finished"]');
+      const firstCheckinInput = document.querySelector<HTMLInputElement>(
+        '[data-checkin-input="finished"]'
+      );
       firstCheckinInput?.focus();
     }, 120);
     return () => window.clearTimeout(timer);
@@ -2022,42 +2036,39 @@ export const ExpandedSidebar = ({
         settings.preferences?.defaultEventStatus === 'tentative'
           ? 'tentative'
           : settings.preferences?.defaultEventStatus === 'confirmed'
-            ? 'confirmed'
-            : 'planned';
+          ? 'confirmed'
+          : 'planned';
       const defaultEventCalendar = settings.preferences?.defaultEventCalendar ?? 'personal';
 
       let calendars = await api.getCalendars({ scope: calendarScope });
-      const personalCalendar =
-        Array.isArray(calendars)
-          ? calendars.find((calendar) => calendar.is_visible !== false && calendar.is_personal) ??
-            calendars.find((calendar) => calendar.is_visible !== false && calendar.is_default) ??
-            calendars[0] ??
-            null
-          : null;
-      const workspaceCalendar =
-        Array.isArray(calendars)
-          ? calendars.find(
-              (calendar) => calendar.is_visible !== false && !calendar.is_personal && calendar.is_default
-            ) ??
-            calendars.find((calendar) => calendar.is_visible !== false && !calendar.is_personal) ??
-            personalCalendar
-          : null;
-      const projectCalendar =
-        Array.isArray(calendars)
-          ? calendars.find(
-              (calendar) =>
-                calendar.is_visible !== false &&
-                /project/i.test(String(calendar.name ?? '').trim())
-            ) ??
-            workspaceCalendar ??
-            personalCalendar
-          : null;
+      const personalCalendar = Array.isArray(calendars)
+        ? calendars.find((calendar) => calendar.is_visible !== false && calendar.is_personal) ??
+          calendars.find((calendar) => calendar.is_visible !== false && calendar.is_default) ??
+          calendars[0] ??
+          null
+        : null;
+      const workspaceCalendar = Array.isArray(calendars)
+        ? calendars.find(
+            (calendar) =>
+              calendar.is_visible !== false && !calendar.is_personal && calendar.is_default
+          ) ??
+          calendars.find((calendar) => calendar.is_visible !== false && !calendar.is_personal) ??
+          personalCalendar
+        : null;
+      const projectCalendar = Array.isArray(calendars)
+        ? calendars.find(
+            (calendar) =>
+              calendar.is_visible !== false && /project/i.test(String(calendar.name ?? '').trim())
+          ) ??
+          workspaceCalendar ??
+          personalCalendar
+        : null;
       let selectedCalendar =
         defaultEventCalendar === 'work'
           ? workspaceCalendar
           : defaultEventCalendar === 'projects'
-            ? projectCalendar
-            : personalCalendar;
+          ? projectCalendar
+          : personalCalendar;
 
       if (!selectedCalendar) {
         const createdCalendar = await api.createCalendar('Personal', 'var(--ledger-accent)', true);
@@ -2191,7 +2202,10 @@ export const ExpandedSidebar = ({
       }
 
       const createdProject = created as (typeof projects)[number];
-      setProjects((prev) => [createdProject, ...prev.filter((item) => item.id !== createdProject.id)]);
+      setProjects((prev) => [
+        createdProject,
+        ...prev.filter((item) => item.id !== createdProject.id),
+      ]);
       setNewProjectName('');
       setIsCreatingProject(false);
       setQuickCaptureNotice('Created project');
@@ -2325,7 +2339,9 @@ export const ExpandedSidebar = ({
   }, [teamIntakeItems]);
   const visibleMyTeams = useMemo(
     () =>
-      myTeams.filter((team) => Boolean(team.id && team.name) && team.currentUserRole !== null && !team.archivedAt),
+      myTeams.filter(
+        (team) => Boolean(team.id && team.name) && team.currentUserRole !== null && !team.archivedAt
+      ),
     [myTeams]
   );
   const myTeamsHeaderCount = visibleMyTeams.length;
@@ -2351,7 +2367,9 @@ export const ExpandedSidebar = ({
 
     return (
       <div className="flex h-full w-full flex-col items-center gap-1.25 p-1.25">
-        <div className={`flex h-15 w-full items-center gap-2 px-2.5 backdrop-blur-sm ${sidebarTheme.surface}`}>
+        <div
+          className={`flex h-15 w-full items-center gap-2 px-2.5 backdrop-blur-sm ${sidebarTheme.surface}`}
+        >
           <div className="flex shrink-0 items-center gap-1.5">
             <button
               type="button"
@@ -2370,7 +2388,7 @@ export const ExpandedSidebar = ({
 
           <button
             type="button"
-            onClick={openSearch}
+            onClick={() => openSearch()}
             className="flex h-8 w-[320px] min-w-65 max-w-85 items-center justify-between gap-2 rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] px-3 text-left shadow-sm transition hover:border-[color:var(--ledger-border-strong)] hover:bg-[var(--ledger-surface-muted)]"
           >
             <span className="flex min-w-0 items-center gap-2 text-[11px] text-[var(--ledger-text-muted)]">
@@ -2384,12 +2402,36 @@ export const ExpandedSidebar = ({
 
           <div className="flex items-center gap-1 shrink-0">
             {[
-              { label: 'Notifications', icon: Bell, action: () => window.desktopWindow?.openModule('notifications') },
-              { label: 'Overview', icon: BarChart3, action: () => window.desktopWindow?.toggleModule('dashboard') },
-              { label: 'Circle', icon: CircleUserRound, action: () => window.desktopWindow?.toggleModule('circle') },
-              { label: 'Projects', icon: Folder, action: () => window.desktopWindow?.toggleModule('projects') },
-              { label: 'Notes', icon: StickyNote, action: () => window.desktopWindow?.toggleModule('notes') },
-              { label: 'Calendar', icon: CalendarDays, action: () => window.desktopWindow?.openModule('calendar') },
+              {
+                label: 'Notifications',
+                icon: Bell,
+                action: () => window.desktopWindow?.openModule('notifications'),
+              },
+              {
+                label: 'Overview',
+                icon: BarChart3,
+                action: () => window.desktopWindow?.toggleModule('dashboard'),
+              },
+              {
+                label: 'Circle',
+                icon: CircleUserRound,
+                action: () => window.desktopWindow?.toggleModule('circle'),
+              },
+              {
+                label: 'Projects',
+                icon: Folder,
+                action: () => window.desktopWindow?.toggleModule('projects'),
+              },
+              {
+                label: 'Notes',
+                icon: StickyNote,
+                action: () => window.desktopWindow?.toggleModule('notes'),
+              },
+              {
+                label: 'Calendar',
+                icon: CalendarDays,
+                action: () => window.desktopWindow?.openModule('calendar'),
+              },
             ].map((item) => (
               <button
                 key={item.label}
@@ -2431,7 +2473,9 @@ export const ExpandedSidebar = ({
           </div>
         </div>
 
-        <div className={`flex w-full flex-1 min-h-0 items-center gap-2 px-3 ${sidebarTheme.surface}`}>
+        <div
+          className={`flex w-full flex-1 min-h-0 items-center gap-2 px-3 ${sidebarTheme.surface}`}
+        >
           <button
             ref={todayDockButtonRef}
             type="button"
@@ -2440,10 +2484,10 @@ export const ExpandedSidebar = ({
             }}
             className="inline-flex shrink-0 items-center gap-2 rounded-full px-2 py-1.5 text-[13px] transition hover:bg-[var(--ledger-surface-muted)]"
           >
-            <span className="text-xs font-medium text-[var(--ledger-text-muted)]">
-              Today
+            <span className="text-xs font-medium text-[var(--ledger-text-muted)]">Today</span>
+            <span className="font-semibold text-[var(--ledger-text-primary)]">
+              {horizontalTodaySummary}
             </span>
-            <span className="font-semibold text-[var(--ledger-text-primary)]">{horizontalTodaySummary}</span>
           </button>
 
           <span className="text-[var(--ledger-text-muted)]/40">•</span>
@@ -2453,9 +2497,7 @@ export const ExpandedSidebar = ({
             onClick={() => window.desktopWindow?.openCheckin()}
             className="inline-flex shrink-0 items-center gap-2 rounded-full px-2 py-1.5 text-[13px] transition hover:bg-[var(--ledger-surface-muted)]"
           >
-            <span className="text-xs font-medium text-[var(--ledger-text-muted)]">
-              Check-in
-            </span>
+            <span className="text-xs font-medium text-[var(--ledger-text-muted)]">Check-in</span>
             <span className="font-medium text-[var(--ledger-text-primary)]">
               {checkin.finished.trim()
                 ? 'Saved'
@@ -2472,10 +2514,10 @@ export const ExpandedSidebar = ({
             onClick={() => window.desktopWindow?.openModule('calendar')}
             className="inline-flex shrink-0 items-center gap-2 rounded-full px-2 py-1.5 text-[13px] transition hover:bg-[var(--ledger-surface-muted)]"
           >
-            <span className="text-xs font-medium text-[var(--ledger-text-muted)]">
-              Upcoming
+            <span className="text-xs font-medium text-[var(--ledger-text-muted)]">Upcoming</span>
+            <span className="font-medium text-[var(--ledger-text-primary)]">
+              {upcomingItems.length}
             </span>
-            <span className="font-medium text-[var(--ledger-text-primary)]">{upcomingItems.length}</span>
           </button>
 
           <span className="text-[var(--ledger-text-muted)]/40">•</span>
@@ -2485,10 +2527,10 @@ export const ExpandedSidebar = ({
             onClick={() => window.desktopWindow?.toggleModule('projects')}
             className="inline-flex shrink-0 items-center gap-2 rounded-full px-2 py-1.5 text-[13px] transition hover:bg-[var(--ledger-surface-muted)]"
           >
-            <span className="text-xs font-medium text-[var(--ledger-text-muted)]">
-              Projects
+            <span className="text-xs font-medium text-[var(--ledger-text-muted)]">Projects</span>
+            <span className="font-medium text-[var(--ledger-text-primary)]">
+              {activeProjectCount} active
             </span>
-            <span className="font-medium text-[var(--ledger-text-primary)]">{activeProjectCount} active</span>
           </button>
 
           <div className="ml-auto">
@@ -2512,10 +2554,10 @@ export const ExpandedSidebar = ({
               >
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-xs font-medium text-[var(--ledger-text-muted)]">
-                      Today
+                    <p className="text-xs font-medium text-[var(--ledger-text-muted)]">Today</p>
+                    <p className="mt-1 text-sm text-[var(--ledger-text-secondary)]">
+                      {horizontalTodaySummary}
                     </p>
-                    <p className="mt-1 text-sm text-[var(--ledger-text-secondary)]">{horizontalTodaySummary}</p>
                   </div>
                   <button
                     type="button"
@@ -2535,10 +2577,16 @@ export const ExpandedSidebar = ({
                         className="flex w-full items-start gap-2 rounded-xl px-2 py-2 text-left transition hover:bg-[var(--ledger-surface-muted)]"
                       >
                         <span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center text-[var(--ledger-text-muted)]">
-                          {item.kind === 'reminder' ? <Bell size={13} className="shrink-0" /> : <Zap size={13} className="shrink-0" />}
+                          {item.kind === 'reminder' ? (
+                            <Bell size={13} className="shrink-0" />
+                          ) : (
+                            <Zap size={13} className="shrink-0" />
+                          )}
                         </span>
                         <span className="min-w-0">
-                          <span className="block truncate text-sm text-[var(--ledger-text-primary)]">{item.title}</span>
+                          <span className="block truncate text-sm text-[var(--ledger-text-primary)]">
+                            {item.title}
+                          </span>
                           <span className="block truncate text-[11px] text-[var(--ledger-text-muted)]">
                             {formatTodayTaskWorkspace(item) || item.workspace_name || 'Workspace'}
                           </span>
@@ -2546,7 +2594,9 @@ export const ExpandedSidebar = ({
                       </button>
                     ))
                   ) : (
-                    <p className="px-2 py-3 text-sm text-[var(--ledger-text-muted)]">Nothing needs your attention yet.</p>
+                    <p className="px-2 py-3 text-sm text-[var(--ledger-text-muted)]">
+                      Nothing needs your attention yet.
+                    </p>
                   )}
 
                   {completedToday.length > 0 && (
@@ -2554,22 +2604,26 @@ export const ExpandedSidebar = ({
                       <p className="px-2 text-xs font-medium text-[var(--ledger-text-muted)]">
                         Completed today
                       </p>
-                      {sortTodayTasks(completedToday).slice(0, 4).map((item) => (
-                        <div
-                          key={item.id}
-                          className="mt-1 flex items-start gap-2 rounded-xl px-2 py-2 text-left"
-                        >
-                          <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-[var(--ledger-success)]" />
-                          <span className="min-w-0">
-                            <span className="block truncate text-sm text-[var(--ledger-text-secondary)] line-through">
-                              {item.title}
+                      {sortTodayTasks(completedToday)
+                        .slice(0, 4)
+                        .map((item) => (
+                          <div
+                            key={item.id}
+                            className="mt-1 flex items-start gap-2 rounded-xl px-2 py-2 text-left"
+                          >
+                            <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-[var(--ledger-success)]" />
+                            <span className="min-w-0">
+                              <span className="block truncate text-sm text-[var(--ledger-text-secondary)] line-through">
+                                {item.title}
+                              </span>
+                              <span className="block truncate text-[11px] text-[var(--ledger-text-muted)]">
+                                {formatTodayTaskWorkspace(item) ||
+                                  item.workspace_name ||
+                                  'Workspace'}
+                              </span>
                             </span>
-                            <span className="block truncate text-[11px] text-[var(--ledger-text-muted)]">
-                              {formatTodayTaskWorkspace(item) || item.workspace_name || 'Workspace'}
-                            </span>
-                          </span>
-                        </div>
-                      ))}
+                          </div>
+                        ))}
                     </div>
                   )}
                 </div>
@@ -2577,18 +2631,16 @@ export const ExpandedSidebar = ({
               document.body
             )
           : null}
-
-        
-
       </div>
-
     );
   }
 
   return (
     <div
       className={`flex h-full min-h-0 w-full bg-transparent ${
-        isHorizontal ? 'flex-col border-b border-[color:var(--ledger-border-subtle)] py-5' : 'flex-col py-5'
+        isHorizontal
+          ? 'flex-col border-b border-[color:var(--ledger-border-subtle)] py-5'
+          : 'flex-col py-5'
       }`}
     >
       <div
@@ -2642,7 +2694,7 @@ export const ExpandedSidebar = ({
               )}
             </button>
             <button
-              onClick={openSearch}
+              onClick={() => openSearch()}
               onMouseDown={(e) => e.stopPropagation()}
               className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]"
               title="Search"
@@ -2661,10 +2713,26 @@ export const ExpandedSidebar = ({
           </p>
           <div className="space-y-1">
             {[
-              { label: 'Overview', icon: BarChart3, action: () => window.desktopWindow?.toggleModule('dashboard') },
-              { label: 'Projects', icon: Folder, action: () => window.desktopWindow?.toggleModule('projects') },
-              { label: 'Notes', icon: StickyNote, action: () => window.desktopWindow?.toggleModule('notes') },
-              { label: 'Calendar', icon: CalendarDays, action: () => window.desktopWindow?.openModule('calendar') },
+              {
+                label: 'Overview',
+                icon: BarChart3,
+                action: () => window.desktopWindow?.toggleModule('dashboard'),
+              },
+              {
+                label: 'Projects',
+                icon: Folder,
+                action: () => window.desktopWindow?.toggleModule('projects'),
+              },
+              {
+                label: 'Notes',
+                icon: StickyNote,
+                action: () => window.desktopWindow?.toggleModule('notes'),
+              },
+              {
+                label: 'Calendar',
+                icon: CalendarDays,
+                action: () => window.desktopWindow?.openModule('calendar'),
+              },
             ].map((item) => (
               <button
                 key={item.label}
@@ -2680,25 +2748,25 @@ export const ExpandedSidebar = ({
         </section>
 
         <section ref={workspaceCaptureRef} className="order-2 space-y-3">
-            <button
-              type="button"
-              onClick={() => {
-                const next = !workspaceSectionCollapsed;
-                setWorkspaceSectionCollapsed(next);
-                persistScopedCollapsedState(WORKSPACE_SECTION_COLLAPSE_STORAGE_KEY, next);
-              }}
-              className="flex w-full items-center justify-between gap-3 px-0.5 text-left text-[12px] font-medium text-[var(--ledger-text-secondary)] transition hover:text-[var(--ledger-text-primary)]"
-            >
-              <span className="flex min-w-0 items-center gap-1.5">
-                <span className="truncate">Workspace</span>
-                <ChevronDown
-                  size={12}
-                  className={`shrink-0 text-[var(--ledger-text-muted)] transition-transform ${
-                    workspaceSectionCollapsed ? 'rotate-180' : ''
-                  }`}
-                />
-              </span>
-            </button>
+          <button
+            type="button"
+            onClick={() => {
+              const next = !workspaceSectionCollapsed;
+              setWorkspaceSectionCollapsed(next);
+              persistScopedCollapsedState(WORKSPACE_SECTION_COLLAPSE_STORAGE_KEY, next);
+            }}
+            className="flex w-full items-center justify-between gap-3 px-0.5 text-left text-[12px] font-medium text-[var(--ledger-text-secondary)] transition hover:text-[var(--ledger-text-primary)]"
+          >
+            <span className="flex min-w-0 items-center gap-1.5">
+              <span className="truncate">Workspace</span>
+              <ChevronDown
+                size={12}
+                className={`shrink-0 text-[var(--ledger-text-muted)] transition-transform ${
+                  workspaceSectionCollapsed ? 'rotate-180' : ''
+                }`}
+              />
+            </span>
+          </button>
 
           <div hidden={workspaceSectionCollapsed} className="space-y-1.5">
             <button
@@ -2769,7 +2837,9 @@ export const ExpandedSidebar = ({
                             </div>
                             <div className="mt-0.5 flex min-w-0 items-center gap-1.5 truncate text-[10px] text-[var(--ledger-text-muted)]">
                               <span className="truncate">
-                                {task.due_date ? `Due ${formatTaskDueDateLabel(task.due_date)}` : 'Long-term'}
+                                {task.due_date
+                                  ? `Due ${formatTaskDueDateLabel(task.due_date)}`
+                                  : 'Long-term'}
                               </span>
                             </div>
                           </div>
@@ -2875,7 +2945,9 @@ export const ExpandedSidebar = ({
                   <span className="truncate">Today</span>
                 </span>
                 <span className="flex shrink-0 items-center gap-2 text-[11px] text-[var(--ledger-text-muted)]">
-                  <span>{todayTotalCount > 0 ? `${completedToday.length}/${todayTotalCount}` : '0/0'}</span>
+                  <span>
+                    {todayTotalCount > 0 ? `${completedToday.length}/${todayTotalCount}` : '0/0'}
+                  </span>
                   <ChevronDown
                     size={14}
                     className={`transition-transform ${todayCollapsed ? 'rotate-180' : ''}`}
@@ -2943,7 +3015,8 @@ export const ExpandedSidebar = ({
                                   <span
                                     className="h-1.5 w-1.5 shrink-0 rounded-full"
                                     style={{
-                                      backgroundColor: item.workspace_color || 'var(--ledger-border-subtle)',
+                                      backgroundColor:
+                                        item.workspace_color || 'var(--ledger-border-subtle)',
                                     }}
                                   />
                                   <span className="truncate">
@@ -3083,7 +3156,8 @@ export const ExpandedSidebar = ({
                                       <span
                                         className="h-1.5 w-1.5 shrink-0 rounded-full"
                                         style={{
-                                          backgroundColor: item.workspace_color || 'var(--ledger-border-subtle)',
+                                          backgroundColor:
+                                            item.workspace_color || 'var(--ledger-border-subtle)',
                                         }}
                                       />
                                       <span className="truncate">
@@ -3096,7 +3170,9 @@ export const ExpandedSidebar = ({
                               {completedToday.length > visibleCompletedToday.length && (
                                 <button
                                   type="button"
-                                  onClick={() => void window.desktopWindow?.toggleModule('dashboard')}
+                                  onClick={() =>
+                                    void window.desktopWindow?.toggleModule('dashboard')
+                                  }
                                   className="w-full rounded-xl px-2 py-1 text-left text-[11px] font-medium text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]"
                                 >
                                   View all completed
@@ -3112,92 +3188,98 @@ export const ExpandedSidebar = ({
               )}
             </section>
 
-                <section ref={checkinSectionRef} className="space-y-1.5">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (isCheckinExpanded) {
-                        setIsCheckinExpanded(false);
-                        persistCollapsedState(CHECKIN_COLLAPSE_STORAGE_KEY, true);
-                      } else {
-                        closeWorkspaceSections('checkin');
-                      }
-                    }}
-                    className={`flex h-9 w-full items-center justify-between gap-3 rounded-xl px-2.5 text-left text-[13px] font-medium transition ${
-                      isCheckinExpanded
-                        ? 'bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-primary)]'
-                        : 'text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]'
-                    }`}
-                  >
-                    <span className="flex min-w-0 items-center gap-2.5">
-                      <ClipboardCheck size={15} className="shrink-0 text-[var(--ledger-text-muted)]" />
-                      <span className="truncate">Daily Check-in</span>
-                    </span>
-                    <span className="flex shrink-0 items-center gap-2 text-[11px] text-[var(--ledger-text-muted)]">
-                      <span>{checkinStatusLabel}</span>
-                      {isCheckinExpanded ? (
-                        <ChevronUp size={14} className="text-[var(--ledger-text-muted)]" />
-                      ) : (
-                        <ChevronDown size={14} className="text-[var(--ledger-text-muted)]" />
-                      )}
-                    </span>
-                  </button>
-
-                  {isCheckinExpanded && (
-                    <div className="pl-1">
-                      <div className="space-y-2">
-                        <div className="grid grid-cols-[84px_minmax(0,1fr)] items-center gap-2">
-                          <label className="text-[10px] font-medium text-[var(--ledger-text-muted)]">Finished</label>
-                          <input
-                            data-checkin-input="finished"
-                            value={checkin.finished}
-                            onChange={(e) => {
-                              setCheckin((prev) => ({ ...prev, finished: e.target.value }));
-                            }}
-                            placeholder="What did you finish?"
-                            className={checkinFieldClass}
-                            disabled={isLoadingDaily}
-                          />
-                        </div>
-                        <div className="grid grid-cols-[84px_minmax(0,1fr)] items-center gap-2">
-                          <label className="text-[10px] font-medium text-[var(--ledger-text-muted)]">Blocked</label>
-                          <input
-                            value={checkin.blocked}
-                            onChange={(e) => {
-                              setCheckin((prev) => ({ ...prev, blocked: e.target.value }));
-                            }}
-                            placeholder="Anything blocked?"
-                            className={checkinFieldClass}
-                            disabled={isLoadingDaily}
-                          />
-                        </div>
-                        <div className="grid grid-cols-[84px_minmax(0,1fr)] items-center gap-2">
-                          <label className="text-[10px] font-medium text-[var(--ledger-text-muted)]">Tomorrow</label>
-                          <input
-                            value={checkin.firstTaskTomorrow}
-                            onChange={(e) => {
-                              setCheckin((prev) => ({ ...prev, firstTaskTomorrow: e.target.value }));
-                            }}
-                            placeholder="First task tomorrow?"
-                            className={checkinFieldClass}
-                            disabled={isLoadingDaily}
-                          />
-                        </div>
-
-                        <div className="flex items-center justify-end gap-2 pt-0.5">
-                          <button
-                            onClick={() => void saveCheckin()}
-                            className="inline-flex h-6 shrink-0 items-center justify-center rounded-full px-2 text-[11px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] disabled:opacity-60"
-                            disabled={isLoadingDaily}
-                            aria-label="Save check-in"
-                          >
-                            +
-                          </button>
-                        </div>
-                      </div>
-                    </div>
+            <section ref={checkinSectionRef} className="space-y-1.5">
+              <button
+                type="button"
+                onClick={() => {
+                  if (isCheckinExpanded) {
+                    setIsCheckinExpanded(false);
+                    persistCollapsedState(CHECKIN_COLLAPSE_STORAGE_KEY, true);
+                  } else {
+                    closeWorkspaceSections('checkin');
+                  }
+                }}
+                className={`flex h-9 w-full items-center justify-between gap-3 rounded-xl px-2.5 text-left text-[13px] font-medium transition ${
+                  isCheckinExpanded
+                    ? 'bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-primary)]'
+                    : 'text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]'
+                }`}
+              >
+                <span className="flex min-w-0 items-center gap-2.5">
+                  <ClipboardCheck size={15} className="shrink-0 text-[var(--ledger-text-muted)]" />
+                  <span className="truncate">Daily Check-in</span>
+                </span>
+                <span className="flex shrink-0 items-center gap-2 text-[11px] text-[var(--ledger-text-muted)]">
+                  <span>{checkinStatusLabel}</span>
+                  {isCheckinExpanded ? (
+                    <ChevronUp size={14} className="text-[var(--ledger-text-muted)]" />
+                  ) : (
+                    <ChevronDown size={14} className="text-[var(--ledger-text-muted)]" />
                   )}
-                </section>
+                </span>
+              </button>
+
+              {isCheckinExpanded && (
+                <div className="pl-1">
+                  <div className="space-y-2">
+                    <div className="grid grid-cols-[84px_minmax(0,1fr)] items-center gap-2">
+                      <label className="text-[10px] font-medium text-[var(--ledger-text-muted)]">
+                        Finished
+                      </label>
+                      <input
+                        data-checkin-input="finished"
+                        value={checkin.finished}
+                        onChange={(e) => {
+                          setCheckin((prev) => ({ ...prev, finished: e.target.value }));
+                        }}
+                        placeholder="What did you finish?"
+                        className={checkinFieldClass}
+                        disabled={isLoadingDaily}
+                      />
+                    </div>
+                    <div className="grid grid-cols-[84px_minmax(0,1fr)] items-center gap-2">
+                      <label className="text-[10px] font-medium text-[var(--ledger-text-muted)]">
+                        Blocked
+                      </label>
+                      <input
+                        value={checkin.blocked}
+                        onChange={(e) => {
+                          setCheckin((prev) => ({ ...prev, blocked: e.target.value }));
+                        }}
+                        placeholder="Anything blocked?"
+                        className={checkinFieldClass}
+                        disabled={isLoadingDaily}
+                      />
+                    </div>
+                    <div className="grid grid-cols-[84px_minmax(0,1fr)] items-center gap-2">
+                      <label className="text-[10px] font-medium text-[var(--ledger-text-muted)]">
+                        Tomorrow
+                      </label>
+                      <input
+                        value={checkin.firstTaskTomorrow}
+                        onChange={(e) => {
+                          setCheckin((prev) => ({ ...prev, firstTaskTomorrow: e.target.value }));
+                        }}
+                        placeholder="First task tomorrow?"
+                        className={checkinFieldClass}
+                        disabled={isLoadingDaily}
+                      />
+                    </div>
+
+                    <div className="flex items-center justify-end gap-2 pt-0.5">
+                      <button
+                        onClick={() => void saveCheckin()}
+                        className="inline-flex h-6 shrink-0 items-center justify-center rounded-full px-2 text-[11px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] disabled:opacity-60"
+                        disabled={isLoadingDaily}
+                        aria-label="Save check-in"
+                      >
+                        +
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </section>
 
             <button
               type="button"
@@ -3222,7 +3304,9 @@ export const ExpandedSidebar = ({
                 <span>+</span>
                 <ChevronDown
                   size={14}
-                  className={`transition-transform ${quickCaptureMode === 'note' ? 'rotate-180' : ''}`}
+                  className={`transition-transform ${
+                    quickCaptureMode === 'note' ? 'rotate-180' : ''
+                  }`}
                 />
               </span>
             </button>
@@ -3300,12 +3384,12 @@ export const ExpandedSidebar = ({
                         }`}
                       />
                     </button>
-                {savedNotesExpanded && (
-                  <div className="max-h-44 space-y-0.5 overflow-auto pr-0.5">
-                    {visibleSavedNotes.map((note) => {
-                        return (
-                          <button
-                            key={note.id}
+                    {savedNotesExpanded && (
+                      <div className="max-h-44 space-y-0.5 overflow-auto pr-0.5">
+                        {visibleSavedNotes.map((note) => {
+                          return (
+                            <button
+                              key={note.id}
                               type="button"
                               onClick={() =>
                                 void window.desktopWindow?.toggleModule('notes', {
@@ -3318,25 +3402,28 @@ export const ExpandedSidebar = ({
                                 {note.title}
                               </span>
                               <span className="shrink-0 text-[10px] text-[var(--ledger-text-muted)]">
-                                {new Date(note.updated_at || note.created_at).toLocaleDateString([], {
-                                  month: 'short',
-                                  day: 'numeric',
-                                })}
+                                {new Date(note.updated_at || note.created_at).toLocaleDateString(
+                                  [],
+                                  {
+                                    month: 'short',
+                                    day: 'numeric',
+                                  }
+                                )}
                               </span>
                             </button>
                           );
                         })}
-                    {savedNotes.length > visibleSavedNotes.length && (
-                      <button
-                        type="button"
-                        onClick={() => void window.desktopWindow?.toggleModule('notes')}
-                        className="w-full rounded-lg px-2 py-1.5 text-left text-[11px] font-medium text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]"
-                      >
-                        View all notes
-                      </button>
+                        {savedNotes.length > visibleSavedNotes.length && (
+                          <button
+                            type="button"
+                            onClick={() => void window.desktopWindow?.toggleModule('notes')}
+                            className="w-full rounded-lg px-2 py-1.5 text-left text-[11px] font-medium text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]"
+                          >
+                            View all notes
+                          </button>
+                        )}
+                      </div>
                     )}
-                  </div>
-                )}
                   </div>
                 )}
               </div>
@@ -3365,7 +3452,9 @@ export const ExpandedSidebar = ({
                 <span>+</span>
                 <ChevronDown
                   size={14}
-                  className={`transition-transform ${quickCaptureMode === 'event' ? 'rotate-180' : ''}`}
+                  className={`transition-transform ${
+                    quickCaptureMode === 'event' ? 'rotate-180' : ''
+                  }`}
                 />
               </span>
             </button>
@@ -3421,11 +3510,11 @@ export const ExpandedSidebar = ({
                     />
                   </div>
                 </div>
-            {quickCaptureNotice && (
-              <p className="px-0.5 text-[11px] text-[var(--ledger-text-muted)]">
-                {quickCaptureNotice}
-              </p>
-            )}
+                {quickCaptureNotice && (
+                  <p className="px-0.5 text-[11px] text-[var(--ledger-text-muted)]">
+                    {quickCaptureNotice}
+                  </p>
+                )}
                 <div className="space-y-0.5 pt-1">
                   <button
                     type="button"
@@ -3494,376 +3583,385 @@ export const ExpandedSidebar = ({
                     </div>
                   )}
                 </div>
-
               </div>
             )}
 
-                <section className="space-y-2">
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (projectsCollapsed) {
-                          closeWorkspaceSections('projects');
-                        } else {
-                          setProjectsCollapsed(true);
-                        }
-                      }}
-                      className={`flex h-9 min-w-0 flex-1 items-center justify-between gap-3 rounded-xl px-2.5 text-left text-[13px] font-medium transition ${
-                        projectsCollapsed
-                          ? 'text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]'
-                          : 'bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-primary)]'
-                      }`}
-                    >
-                      <span className="flex min-w-0 items-center gap-2.5">
-                        <Folder size={15} className="shrink-0 text-[var(--ledger-text-muted)]" />
-                        <span className="truncate">Projects</span>
-                      </span>
-                      <span className="flex shrink-0 items-center gap-2 text-[11px] text-[var(--ledger-text-muted)]">
-                        <span>{projects.length}</span>
-                        <ChevronDown
-                          size={14}
-                          className={`transition-transform ${projectsCollapsed ? 'rotate-180' : ''}`}
-                        />
-                      </span>
-                    </button>
-                  </div>
-
-                  {!projectsCollapsed && (
-                    <div className="space-y-1">
-                      {isLoadingProjects ? (
-                        <SkeletonList count={2} />
-                      ) : projects.length === 0 ? (
-                        <p className="px-0.5 text-xs text-[var(--ledger-text-muted)]">No active projects</p>
-                      ) : (
-                        <>
-                          {projects.slice(0, 4).map((project) => {
-                            const displayCompleteness = Math.max(0, Math.min(100, Number(project.completeness) || 0));
-                            const projectAccent = project.color || 'var(--ledger-accent)';
-                            const ProjectTypeIcon = getProjectTypeOption(project.project_type).icon;
-
-                            return (
-                              <button
-                                key={project.id}
-                                type="button"
-                                onClick={() => {
-                                  void window.desktopWindow?.toggleModule('projects', {
-                                    kind: 'projects',
-                                    focusProjectId: project.id,
-                                  });
-                                }}
-                                onContextMenu={(e) => {
-                                  e.preventDefault();
-                                  setContextMenu({
-                                    type: 'project',
-                                    id: project.id,
-                                    x: e.clientX,
-                                    y: e.clientY,
-                                  });
-                                }}
-                                className="group w-full rounded-xl px-2 py-2 text-left transition hover:bg-[var(--ledger-surface-muted)]"
-                              >
-                                <div className="flex items-center justify-between gap-2">
-                                  <div className="flex min-w-0 items-center gap-2">
-                                    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] text-[var(--ledger-text-secondary)]">
-                                      <ProjectTypeIcon size={11} style={{ color: projectAccent }} />
-                                    </span>
-                                    <p className="truncate text-xs font-medium text-[var(--ledger-text-primary)]">
-                                      {project.name}
-                                    </p>
-                                  </div>
-                                  <span className="shrink-0 text-[11px] font-medium text-[var(--ledger-text-muted)]">
-                                    {displayCompleteness}%
-                                  </span>
-                                </div>
-                                <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-[var(--ledger-border-subtle)]">
-                                  <div
-                                    className="h-full rounded-full transition-all"
-                                    style={{
-                                      width: `${displayCompleteness}%`,
-                                      backgroundColor: projectAccent,
-                                    }}
-                                  />
-                                </div>
-                              </button>
-                            );
-                          })}
-                          {projects.length > 4 && (
-                            <button
-                              type="button"
-                              onClick={() => window.desktopWindow?.toggleModule('projects')}
-                              className="w-full rounded-lg px-2 py-1 text-left text-[11px] font-medium text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]"
-                            >
-                              +{projects.length - 4} more projects
-                            </button>
-                          )}
-                          {isCreatingProject ? (
-                            <div className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 transition hover:bg-[var(--ledger-surface-muted)]">
-                              <input
-                                value={newProjectName}
-                                onChange={(e) => setNewProjectName(e.target.value)}
-                                onKeyDown={(e) => {
-                                  if (e.key === 'Enter' || e.key === '+') {
-                                    e.preventDefault();
-                                    void createProject();
-                                  }
-                                  if (e.key === 'Escape' && !newProjectName.trim()) {
-                                    e.preventDefault();
-                                    setNewProjectName('');
-                                    setIsCreatingProject(false);
-                                  }
-                                }}
-                                onBlur={(e) => {
-                                  const nextFocus = e.relatedTarget;
-                                  if (!newProjectName.trim() && !nextFocus) {
-                                    setNewProjectName('');
-                                    setIsCreatingProject(false);
-                                  }
-                                }}
-                                placeholder="Project name..."
-                                className="min-w-0 flex-1 bg-transparent px-0 py-0.5 text-[12px] leading-4 text-[var(--ledger-text-primary)] placeholder:text-[var(--ledger-placeholder)] focus:outline-none"
-                                autoFocus
-                              />
-                              <button
-                                type="button"
-                                onMouseDown={(e) => e.preventDefault()}
-                                onClick={() => void createProject()}
-                                disabled={isCreatingProject || !newProjectName.trim()}
-                                className="inline-flex h-6 items-center justify-center rounded-full px-2 text-[11px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] disabled:opacity-60"
-                                aria-label="Add project"
-                              >
-                                +
-                              </button>
-                            </div>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={() => setIsCreatingProject(true)}
-                              className="flex h-8 w-full items-center gap-2 rounded-xl px-2 text-left text-[12px] text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]"
-                            >
-                              <Plus size={13} className="shrink-0" />
-                              <span className="truncate">Add Project</span>
-                            </button>
-                          )}
-                        </>
-                      )}
-                    </div>
-                  )}
-                </section>
-
+            <section className="space-y-2">
+              <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => window.desktopWindow?.toggleModule('circle')}
-                  className="flex h-9 w-full items-center gap-2.5 rounded-xl px-2.5 text-left text-[13px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]"
-                >
-                  <CircleUserRound size={15} className="shrink-0 text-[var(--ledger-text-muted)]" />
-                  <span>Circle</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => window.desktopWindow?.toggleModule('inbox')}
-                  className="relative flex h-9 w-full items-center justify-between gap-3 rounded-xl px-2.5 text-left text-[13px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]"
-                  title="Intake"
-                  aria-label="Open intake"
+                  onClick={() => {
+                    if (projectsCollapsed) {
+                      closeWorkspaceSections('projects');
+                    } else {
+                      setProjectsCollapsed(true);
+                    }
+                  }}
+                  className={`flex h-9 min-w-0 flex-1 items-center justify-between gap-3 rounded-xl px-2.5 text-left text-[13px] font-medium transition ${
+                    projectsCollapsed
+                      ? 'text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]'
+                      : 'bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-primary)]'
+                  }`}
                 >
                   <span className="flex min-w-0 items-center gap-2.5">
-                    <Funnel size={15} className="shrink-0 text-[var(--ledger-text-muted)]" />
-                    <span className="truncate">Intake</span>
+                    <Folder size={15} className="shrink-0 text-[var(--ledger-text-muted)]" />
+                    <span className="truncate">Projects</span>
                   </span>
-                  {inboxCount > 0 && (
-                    <span className="flex shrink-0 items-center gap-2 text-[11px] text-[var(--ledger-text-muted)]">
-                      <span>{inboxCount > 99 ? '99+' : inboxCount}</span>
-                    </span>
-                  )}
+                  <span className="flex shrink-0 items-center gap-2 text-[11px] text-[var(--ledger-text-muted)]">
+                    <span>{projects.length}</span>
+                    <ChevronDown
+                      size={14}
+                      className={`transition-transform ${projectsCollapsed ? 'rotate-180' : ''}`}
+                    />
+                  </span>
                 </button>
-          </div>
+              </div>
 
-        <PinnedSidebarSection />
+              {!projectsCollapsed && (
+                <div className="space-y-1">
+                  {isLoadingProjects ? (
+                    <SkeletonList count={2} />
+                  ) : projects.length === 0 ? (
+                    <p className="px-0.5 text-xs text-[var(--ledger-text-muted)]">
+                      No active projects
+                    </p>
+                  ) : (
+                    <>
+                      {projects.slice(0, 4).map((project) => {
+                        const displayCompleteness = Math.max(
+                          0,
+                          Math.min(100, Number(project.completeness) || 0)
+                        );
+                        const projectAccent = project.color || 'var(--ledger-accent)';
+                        const ProjectTypeIcon = getProjectTypeOption(project.project_type).icon;
 
-        {showMyTeamsSection && (
-          <section className="order-4 space-y-2">
+                        return (
+                          <button
+                            key={project.id}
+                            type="button"
+                            onClick={() => {
+                              void window.desktopWindow?.toggleModule('projects', {
+                                kind: 'projects',
+                                focusProjectId: project.id,
+                              });
+                            }}
+                            onContextMenu={(e) => {
+                              e.preventDefault();
+                              setContextMenu({
+                                type: 'project',
+                                id: project.id,
+                                x: e.clientX,
+                                y: e.clientY,
+                              });
+                            }}
+                            className="group w-full rounded-xl px-2 py-2 text-left transition hover:bg-[var(--ledger-surface-muted)]"
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="flex min-w-0 items-center gap-2">
+                                <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] text-[var(--ledger-text-secondary)]">
+                                  <ProjectTypeIcon size={11} style={{ color: projectAccent }} />
+                                </span>
+                                <p className="truncate text-xs font-medium text-[var(--ledger-text-primary)]">
+                                  {project.name}
+                                </p>
+                              </div>
+                              <span className="shrink-0 text-[11px] font-medium text-[var(--ledger-text-muted)]">
+                                {displayCompleteness}%
+                              </span>
+                            </div>
+                            <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-[var(--ledger-border-subtle)]">
+                              <div
+                                className="h-full rounded-full transition-all"
+                                style={{
+                                  width: `${displayCompleteness}%`,
+                                  backgroundColor: projectAccent,
+                                }}
+                              />
+                            </div>
+                          </button>
+                        );
+                      })}
+                      {projects.length > 4 && (
+                        <button
+                          type="button"
+                          onClick={() => window.desktopWindow?.toggleModule('projects')}
+                          className="w-full rounded-lg px-2 py-1 text-left text-[11px] font-medium text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]"
+                        >
+                          +{projects.length - 4} more projects
+                        </button>
+                      )}
+                      {isCreatingProject ? (
+                        <div className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 transition hover:bg-[var(--ledger-surface-muted)]">
+                          <input
+                            value={newProjectName}
+                            onChange={(e) => setNewProjectName(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' || e.key === '+') {
+                                e.preventDefault();
+                                void createProject();
+                              }
+                              if (e.key === 'Escape' && !newProjectName.trim()) {
+                                e.preventDefault();
+                                setNewProjectName('');
+                                setIsCreatingProject(false);
+                              }
+                            }}
+                            onBlur={(e) => {
+                              const nextFocus = e.relatedTarget;
+                              if (!newProjectName.trim() && !nextFocus) {
+                                setNewProjectName('');
+                                setIsCreatingProject(false);
+                              }
+                            }}
+                            placeholder="Project name..."
+                            className="min-w-0 flex-1 bg-transparent px-0 py-0.5 text-[12px] leading-4 text-[var(--ledger-text-primary)] placeholder:text-[var(--ledger-placeholder)] focus:outline-none"
+                            autoFocus
+                          />
+                          <button
+                            type="button"
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => void createProject()}
+                            disabled={isCreatingProject || !newProjectName.trim()}
+                            className="inline-flex h-6 items-center justify-center rounded-full px-2 text-[11px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] disabled:opacity-60"
+                            aria-label="Add project"
+                          >
+                            +
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setIsCreatingProject(true)}
+                          className="flex h-8 w-full items-center gap-2 rounded-xl px-2 text-left text-[12px] text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]"
+                        >
+                          <Plus size={13} className="shrink-0" />
+                          <span className="truncate">Add Project</span>
+                        </button>
+                      )}
+                    </>
+                  )}
+                </div>
+              )}
+            </section>
+
             <button
               type="button"
-              onClick={() => {
-                const next = !myTeamsCollapsed;
-                setMyTeamsCollapsed(next);
-                persistMyTeamsCollapsed(next);
-              }}
-              className="flex w-full items-center justify-between gap-3 px-0.5 text-left text-[12px] font-medium text-[var(--ledger-text-secondary)] transition hover:text-[var(--ledger-text-primary)]"
+              onClick={() => window.desktopWindow?.toggleModule('circle')}
+              className="flex h-9 w-full items-center gap-2.5 rounded-xl px-2.5 text-left text-[13px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]"
             >
-              <span className="flex min-w-0 items-center gap-1.5">
-                <span className="truncate">Teamspace</span>
-                <ChevronDown
-                  size={12}
-                  className={`shrink-0 text-[var(--ledger-text-muted)] transition-transform ${
-                    myTeamsCollapsed ? 'rotate-180' : ''
-                  }`}
-                />
+              <CircleUserRound size={15} className="shrink-0 text-[var(--ledger-text-muted)]" />
+              <span>Circle</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => window.desktopWindow?.toggleModule('inbox')}
+              className="relative flex h-9 w-full items-center justify-between gap-3 rounded-xl px-2.5 text-left text-[13px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]"
+              title="Intake"
+              aria-label="Open intake"
+            >
+              <span className="flex min-w-0 items-center gap-2.5">
+                <Funnel size={15} className="shrink-0 text-[var(--ledger-text-muted)]" />
+                <span className="truncate">Intake</span>
               </span>
-              {myTeamsHeaderCount > 0 && (
-                <span className="shrink-0 text-[11px] text-[var(--ledger-text-muted)]">
-                  {myTeamsHeaderCount}
+              {inboxCount > 0 && (
+                <span className="flex shrink-0 items-center gap-2 text-[11px] text-[var(--ledger-text-muted)]">
+                  <span>{inboxCount > 99 ? '99+' : inboxCount}</span>
                 </span>
               )}
             </button>
+          </div>
 
-            {!myTeamsCollapsed && (
-              <div className="space-y-1.5 pl-1">
-                {isLoadingMyTeams && visibleMyTeams.length === 0 ? (
-                  <div className="space-y-1.5">
-                    <SkeletonCompactRow />
-                    <SkeletonCompactRow />
-                  </div>
-                ) : (
-                  visibleMyTeams.map((team) => {
-                    const isTeamExpanded = expandedMyTeamIds.has(team.id);
-                    const teamIntakeCount = myTeamIntakeCountById.get(team.id) ?? 0;
-                    const teamTaskCount = myTeamTaskCountById.get(team.id) ?? 0;
-                    const teamProjectCount = myTeamProjectCountById.get(team.id) ?? 0;
-                    const teamProjectsLabel = `${team.name} Projects`;
+          <PinnedSidebarSection />
 
-                    return (
-                      <div key={team.id} className="space-y-0.5">
-                        <div
-                          className={`flex h-8 items-center gap-2 rounded-lg px-2 transition ${
-                            isTeamExpanded
-                              ? 'bg-[var(--ledger-surface-muted)]'
-                              : 'hover:bg-[var(--ledger-surface-muted)]'
-                          }`}
-                        >
-                          <button
-                            type="button"
-                            onClick={() => {
-                              persistMyTeamsActiveRoute({ teamId: team.id, kind: 'team' });
-                              void window.desktopWindow?.openModule('teams', {
-                                kind: 'teams',
-                                focusContext: `team:${team.id}`,
-                              });
-                            }}
-                            className="flex min-w-0 flex-1 items-center gap-2 rounded-lg text-left text-[12px] font-medium text-[var(--ledger-text-secondary)] transition hover:text-[var(--ledger-text-primary)]"
+          {showMyTeamsSection && (
+            <section className="order-4 space-y-2">
+              <button
+                type="button"
+                onClick={() => {
+                  const next = !myTeamsCollapsed;
+                  setMyTeamsCollapsed(next);
+                  persistMyTeamsCollapsed(next);
+                }}
+                className="flex w-full items-center justify-between gap-3 px-0.5 text-left text-[12px] font-medium text-[var(--ledger-text-secondary)] transition hover:text-[var(--ledger-text-primary)]"
+              >
+                <span className="flex min-w-0 items-center gap-1.5">
+                  <span className="truncate">Teamspace</span>
+                  <ChevronDown
+                    size={12}
+                    className={`shrink-0 text-[var(--ledger-text-muted)] transition-transform ${
+                      myTeamsCollapsed ? 'rotate-180' : ''
+                    }`}
+                  />
+                </span>
+                {myTeamsHeaderCount > 0 && (
+                  <span className="shrink-0 text-[11px] text-[var(--ledger-text-muted)]">
+                    {myTeamsHeaderCount}
+                  </span>
+                )}
+              </button>
+
+              {!myTeamsCollapsed && (
+                <div className="space-y-1.5 pl-1">
+                  {isLoadingMyTeams && visibleMyTeams.length === 0 ? (
+                    <div className="space-y-1.5">
+                      <SkeletonCompactRow />
+                      <SkeletonCompactRow />
+                    </div>
+                  ) : (
+                    visibleMyTeams.map((team) => {
+                      const isTeamExpanded = expandedMyTeamIds.has(team.id);
+                      const teamIntakeCount = myTeamIntakeCountById.get(team.id) ?? 0;
+                      const teamTaskCount = myTeamTaskCountById.get(team.id) ?? 0;
+                      const teamProjectCount = myTeamProjectCountById.get(team.id) ?? 0;
+                      const teamProjectsLabel = `${team.name} Projects`;
+
+                      return (
+                        <div key={team.id} className="space-y-0.5">
+                          <div
+                            className={`flex h-8 items-center gap-2 rounded-lg px-2 transition ${
+                              isTeamExpanded
+                                ? 'bg-[var(--ledger-surface-muted)]'
+                                : 'hover:bg-[var(--ledger-surface-muted)]'
+                            }`}
                           >
-                            <span
-                              className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[8px] font-semibold leading-none text-white"
-                              style={{ backgroundColor: team.color || 'var(--ledger-accent)' }}
-                            >
-                              {getSidebarTeamInitials(team)}
-                            </span>
-                            <span className="truncate">{team.name}</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const next = !isTeamExpanded;
-                              persistMyTeamExpandedState(team.id, next);
-                            }}
-                            className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
-                            aria-label={`${isTeamExpanded ? 'Collapse' : 'Expand'} ${team.name}`}
-                          >
-                            <ChevronDown
-                              size={13}
-                              className={`transition-transform ${isTeamExpanded ? '' : 'rotate-180'}`}
-                            />
-                          </button>
-                        </div>
-
-                        {isTeamExpanded && (
-                          <div className="mt-1.5 space-y-0.5 pl-5">
                             <button
                               type="button"
                               onClick={() => {
-                                persistMyTeamsActiveRoute({ teamId: team.id, kind: 'intake' });
-                                void window.desktopWindow?.toggleModule('inbox', {
-                                  kind: 'inbox',
+                                persistMyTeamsActiveRoute({ teamId: team.id, kind: 'team' });
+                                void window.desktopWindow?.openModule('teams', {
+                                  kind: 'teams',
                                   focusContext: `team:${team.id}`,
                                 });
                               }}
-                              className={`flex h-8 w-full items-center justify-between rounded-lg px-2 text-left text-[12px] transition ${
-                                activeMyTeamRoute?.teamId === team.id &&
-                                activeMyTeamRoute?.kind === 'intake'
-                                  ? sidebarTheme.mutedSurface
-                                  : 'text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]'
-                              }`}
+                              className="flex min-w-0 flex-1 items-center gap-2 rounded-lg text-left text-[12px] font-medium text-[var(--ledger-text-secondary)] transition hover:text-[var(--ledger-text-primary)]"
                             >
-                              <span className="flex min-w-0 items-center gap-2">
-                                <Funnel size={13} className="shrink-0 text-[var(--ledger-text-muted)]" />
-                                <span className="truncate">Intake</span>
+                              <span
+                                className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[8px] font-semibold leading-none text-white"
+                                style={{ backgroundColor: team.color || 'var(--ledger-accent)' }}
+                              >
+                                {getSidebarTeamInitials(team)}
                               </span>
-                              {teamIntakeCount > 0 && (
-                                <span className="shrink-0 text-[10px] text-[var(--ledger-text-muted)]">
-                                  {teamIntakeCount > 99 ? '99+' : teamIntakeCount}
-                                </span>
-                              )}
+                              <span className="truncate">{team.name}</span>
                             </button>
                             <button
                               type="button"
                               onClick={() => {
-                                persistMyTeamsActiveRoute({ teamId: team.id, kind: 'tasks' });
-                                void window.desktopWindow?.toggleModule('dashboard', {
-                                  kind: 'dashboard',
-                                  focusContext: `team:${team.id}`,
-                                });
+                                const next = !isTeamExpanded;
+                                persistMyTeamExpandedState(team.id, next);
                               }}
-                              className={`flex h-8 w-full items-center justify-between rounded-lg px-2 text-left text-[12px] transition ${
-                                activeMyTeamRoute?.teamId === team.id &&
-                                activeMyTeamRoute?.kind === 'tasks'
-                                  ? sidebarTheme.mutedSurface
-                                  : 'text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]'
-                              }`}
+                              className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+                              aria-label={`${isTeamExpanded ? 'Collapse' : 'Expand'} ${team.name}`}
                             >
-                              <span className="flex min-w-0 items-center gap-2">
-                                <CheckSquare2
-                                  size={13}
-                                  className="shrink-0 text-[var(--ledger-text-muted)]"
-                                />
-                                <span className="truncate">Tasks</span>
-                              </span>
-                              {teamTaskCount > 0 && (
-                                <span className="shrink-0 text-[10px] text-[var(--ledger-text-muted)]">
-                                  {teamTaskCount > 99 ? '99+' : teamTaskCount}
-                                </span>
-                              )}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                persistMyTeamsActiveRoute({ teamId: team.id, kind: 'projects' });
-                                void window.desktopWindow?.toggleModule('projects', {
-                                  kind: 'projects',
-                                  focusContext: `team:${team.id}`,
-                                });
-                              }}
-                              className={`flex h-8 w-full items-center justify-between rounded-lg px-2 text-left text-[12px] transition ${
-                                activeMyTeamRoute?.teamId === team.id &&
-                                activeMyTeamRoute?.kind === 'projects'
-                                  ? sidebarTheme.mutedSurface
-                                  : 'text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]'
-                              }`}
-                            >
-                              <span className="flex min-w-0 items-center gap-2">
-                                <FolderKanban
-                                  size={13}
-                                  className="shrink-0 text-[var(--ledger-text-muted)]"
-                                />
-                                <span className="truncate">{teamProjectsLabel}</span>
-                              </span>
-                              {teamProjectCount > 0 && (
-                                <span className="shrink-0 text-[10px] text-[var(--ledger-text-muted)]">
-                                  {teamProjectCount > 99 ? '99+' : teamProjectCount}
-                                </span>
-                              )}
+                              <ChevronDown
+                                size={13}
+                                className={`transition-transform ${
+                                  isTeamExpanded ? '' : 'rotate-180'
+                                }`}
+                              />
                             </button>
                           </div>
-                        )}
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-            )}
-          </section>
-        )}
 
-        {saveError && <p className="text-[11px] text-[var(--ledger-danger)]">{saveError}</p>}
+                          {isTeamExpanded && (
+                            <div className="mt-1.5 space-y-0.5 pl-5">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  persistMyTeamsActiveRoute({ teamId: team.id, kind: 'intake' });
+                                  void window.desktopWindow?.toggleModule('inbox', {
+                                    kind: 'inbox',
+                                    focusContext: `team:${team.id}`,
+                                  });
+                                }}
+                                className={`flex h-8 w-full items-center justify-between rounded-lg px-2 text-left text-[12px] transition ${
+                                  activeMyTeamRoute?.teamId === team.id &&
+                                  activeMyTeamRoute?.kind === 'intake'
+                                    ? sidebarTheme.mutedSurface
+                                    : 'text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]'
+                                }`}
+                              >
+                                <span className="flex min-w-0 items-center gap-2">
+                                  <Funnel
+                                    size={13}
+                                    className="shrink-0 text-[var(--ledger-text-muted)]"
+                                  />
+                                  <span className="truncate">Intake</span>
+                                </span>
+                                {teamIntakeCount > 0 && (
+                                  <span className="shrink-0 text-[10px] text-[var(--ledger-text-muted)]">
+                                    {teamIntakeCount > 99 ? '99+' : teamIntakeCount}
+                                  </span>
+                                )}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  persistMyTeamsActiveRoute({ teamId: team.id, kind: 'tasks' });
+                                  void window.desktopWindow?.toggleModule('dashboard', {
+                                    kind: 'dashboard',
+                                    focusContext: `team:${team.id}`,
+                                  });
+                                }}
+                                className={`flex h-8 w-full items-center justify-between rounded-lg px-2 text-left text-[12px] transition ${
+                                  activeMyTeamRoute?.teamId === team.id &&
+                                  activeMyTeamRoute?.kind === 'tasks'
+                                    ? sidebarTheme.mutedSurface
+                                    : 'text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]'
+                                }`}
+                              >
+                                <span className="flex min-w-0 items-center gap-2">
+                                  <CheckSquare2
+                                    size={13}
+                                    className="shrink-0 text-[var(--ledger-text-muted)]"
+                                  />
+                                  <span className="truncate">Tasks</span>
+                                </span>
+                                {teamTaskCount > 0 && (
+                                  <span className="shrink-0 text-[10px] text-[var(--ledger-text-muted)]">
+                                    {teamTaskCount > 99 ? '99+' : teamTaskCount}
+                                  </span>
+                                )}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  persistMyTeamsActiveRoute({ teamId: team.id, kind: 'projects' });
+                                  void window.desktopWindow?.toggleModule('projects', {
+                                    kind: 'projects',
+                                    focusContext: `team:${team.id}`,
+                                  });
+                                }}
+                                className={`flex h-8 w-full items-center justify-between rounded-lg px-2 text-left text-[12px] transition ${
+                                  activeMyTeamRoute?.teamId === team.id &&
+                                  activeMyTeamRoute?.kind === 'projects'
+                                    ? sidebarTheme.mutedSurface
+                                    : 'text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]'
+                                }`}
+                              >
+                                <span className="flex min-w-0 items-center gap-2">
+                                  <FolderKanban
+                                    size={13}
+                                    className="shrink-0 text-[var(--ledger-text-muted)]"
+                                  />
+                                  <span className="truncate">{teamProjectsLabel}</span>
+                                </span>
+                                {teamProjectCount > 0 && (
+                                  <span className="shrink-0 text-[10px] text-[var(--ledger-text-muted)]">
+                                    {teamProjectCount > 99 ? '99+' : teamProjectCount}
+                                  </span>
+                                )}
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              )}
+            </section>
+          )}
+
+          {saveError && <p className="text-[11px] text-[var(--ledger-danger)]">{saveError}</p>}
         </section>
       </div>
 

@@ -145,7 +145,7 @@ export const TemplateGallery = ({ onSelectTemplate, onCreateCustom }: TemplateGa
   )
 
   return (
-    <div className="flex max-h-[66vh] min-h-0 flex-col gap-2 bg-[#FFF8F2]">
+    <div className="flex max-h-[66vh] min-h-0 flex-col gap-2 bg-[var(--ledger-surface-card)]">
       <div className="space-y-2 shrink-0">
         <div className="relative">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
@@ -154,7 +154,7 @@ export const TemplateGallery = ({ onSelectTemplate, onCreateCustom }: TemplateGa
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search templates..."
-            className="h-9 w-full rounded-lg border border-[#E2D4C4] bg-[#FFF8F2] pl-8 pr-3 text-sm text-gray-700 outline-none transition focus:border-gray-300"
+            className="h-9 w-full rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-input-background)] pl-8 pr-3 text-sm text-[var(--ledger-text-primary)] outline-none transition focus:border-[color:var(--ledger-border-strong)]"
           />
         </div>
 
@@ -165,71 +165,68 @@ export const TemplateGallery = ({ onSelectTemplate, onCreateCustom }: TemplateGa
               onClick={() => setSelectedFilter(filter.key)}
               className={`rounded-full px-2.5 py-1 text-[11px] font-medium transition ${
                 selectedFilter === filter.key
-                  ? 'bg-gray-900 text-white'
-                  : 'bg-[#FFF3E7] text-gray-600 hover:bg-[#FFF1E3]'
+                  ? 'bg-[var(--ledger-text-primary)] text-[var(--ledger-background)]'
+                  : 'border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-selected)] hover:text-[var(--ledger-text-primary)]'
               }`}
             >
               {filter.label}
             </button>
           ))}
+          {onCreateCustom && (
+            <button
+              type="button"
+              onClick={onCreateCustom}
+              className="inline-flex items-center gap-1 rounded-full bg-[var(--ledger-accent)] px-2.5 py-1 text-[11px] font-medium text-white transition hover:bg-[var(--ledger-accent-hover)]"
+            >
+              Create
+              <Plus size={12} strokeWidth={2.5} />
+            </button>
+          )}
         </div>
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto pr-1 [scrollbar-gutter:stable]">
         {isLoading ? (
-          <div className="space-y-1.5 pb-1">
+          <div className="pb-1">
             {Array.from({ length: 5 }).map((_, i) => (
               <div
                 key={i}
-                className="animate-pulse rounded-lg border border-[#E2D4C4] bg-[#FFF8F2] px-3 py-2"
+                className="mx-0.5 flex h-9 animate-pulse items-center gap-3 rounded-lg px-2.5"
               >
-                <div className="flex items-center gap-2">
-                  <div className="h-3.5 w-36 rounded bg-[#FFF3E7]" />
-                  <div className="ml-auto h-4 w-14 rounded-full bg-[#FFF3E7]" />
-                </div>
-                <div className="mt-1.5 h-3 w-2/3 rounded bg-[#FFF3E7]" />
+                <div className="h-3.5 w-36 rounded bg-[var(--ledger-surface-muted)]" />
+                <div className="h-3 w-28 rounded bg-[var(--ledger-surface-muted)]" />
               </div>
             ))}
           </div>
         ) : filteredTemplates.length === 0 ? (
-          <div className="py-8 text-center text-gray-500">
+          <div className="py-8 text-center text-[var(--ledger-text-muted)]">
             <p className="text-sm">No templates found</p>
-            {onCreateCustom && (
-              <button
-                onClick={onCreateCustom}
-                className="mt-3 text-sm font-medium text-[#FF5F40] hover:underline"
-              >
-                Create custom template
-              </button>
-            )}
           </div>
         ) : (
-          <div className="space-y-1.5 pb-1">
+          <div className="pb-1">
             {filteredTemplates.map((template) => (
               <div
                 key={template.id}
-                className="group relative rounded-lg border border-[#E2D4C4] bg-[#FFF8F2] px-3 py-2 text-left transition hover:border-[#D8C6B6] hover:bg-[#FFF1E3] hover:shadow-[0_1px_4px_rgba(15,23,42,0.04)]"
+                className="group relative rounded-lg text-left transition hover:bg-[var(--ledger-surface-selected)]"
               >
                 <button
                   type="button"
                   onClick={() => onSelectTemplate(template.id)}
-                  className="block w-full text-left"
+                  className="flex min-h-9 w-full items-center gap-2 rounded-lg px-2.5 py-1.5 pr-12 text-left"
                 >
-                  <div className="flex items-start gap-2 pr-10">
-                    <div className="min-w-0 flex-1">
-                      <h3 className="truncate text-sm font-semibold leading-5 text-gray-900">
-                        {template.name}
-                      </h3>
-                      <p className="mt-0.5 truncate text-xs leading-4 text-gray-600">
-                        {template.description?.trim() || 'No description'}
-                      </p>
-                      <p className="mt-1 text-[11px] text-gray-500">
-                        <span className="capitalize">{template.category || 'personal'}</span>
-                        <span className="mx-1.5">·</span>
-                        <span>{template.is_system ? 'Preset' : 'Custom'}</span>
-                      </p>
-                    </div>
-                  </div>
+                  <h3 className="min-w-0 shrink truncate text-sm font-medium leading-5 text-[var(--ledger-text-primary)]">
+                    {template.name}
+                  </h3>
+                  {template.description?.trim() && (
+                    <span className="min-w-0 truncate text-xs text-[var(--ledger-text-secondary)]">
+                      {template.description.trim()}
+                    </span>
+                  )}
+                  <span className="ml-auto shrink-0 text-[11px] text-[var(--ledger-text-muted)]">
+                    <span className="capitalize">{template.category || 'personal'}</span>
+                    <span className="mx-1.5">·</span>
+                    <span>{template.is_system ? 'Preset' : 'Custom'}</span>
+                  </span>
                 </button>
 
                 {!template.is_system && (
@@ -242,14 +239,14 @@ export const TemplateGallery = ({ onSelectTemplate, onCreateCustom }: TemplateGa
                           current === template.id ? null : template.id
                         )
                       }}
-                      className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-[#E2D4C4] bg-[#FFF8F2] text-gray-500 hover:bg-[#FFF1E3]"
+                      className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] text-[var(--ledger-text-muted)] hover:bg-[var(--ledger-surface-selected)]"
                       aria-label={`Template actions for ${template.name}`}
                     >
                       <MoreHorizontal size={12} />
                     </button>
                     {rowMenuTemplateId === template.id && (
                       <div
-                        className="absolute right-0 top-7 z-30 min-w-34 overflow-hidden rounded-lg border border-[#E2D4C4] bg-[#FFF8F2] py-1 shadow-lg"
+                        className="absolute right-0 top-7 z-30 min-w-34 overflow-hidden rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] py-1 shadow-[var(--ledger-shadow)]"
                         onClick={(event) => event.stopPropagation()}
                         onMouseDown={(event) => event.stopPropagation()}
                       >
@@ -274,21 +271,6 @@ export const TemplateGallery = ({ onSelectTemplate, onCreateCustom }: TemplateGa
         )}
       </div>
 
-      {onCreateCustom && (
-        <button
-          type="button"
-          onClick={onCreateCustom}
-          className="mt-1 flex shrink-0 items-center gap-2 rounded-lg border border-[#E2D4C4] bg-[#FFF8F2] px-3 py-2 text-left transition hover:bg-[#FFF1E3]"
-        >
-          <span className="inline-flex h-5 w-5 items-center justify-center rounded-md border border-[#ffd8cc] text-[#FF5F40]">
-            <Plus size={12} />
-          </span>
-          <div>
-            <p className="text-sm font-medium text-gray-800">Create custom template</p>
-            <p className="text-[11px] text-gray-500">Save your own reusable note format.</p>
-          </div>
-        </button>
-      )}
     </div>
   )
 }

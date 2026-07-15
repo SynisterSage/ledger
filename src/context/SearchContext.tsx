@@ -9,7 +9,8 @@ import React, {
 
 type SearchContextValue = {
   isSearchOpen: boolean;
-  openSearch: () => void;
+  initialQuery: string;
+  openSearch: (query?: string) => void;
   closeSearch: () => void;
 };
 
@@ -17,8 +18,10 @@ const SearchContext = createContext<SearchContextValue | undefined>(undefined);
 
 export const SearchProvider = ({ children }: { children: ReactNode }) => {
   const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [initialQuery, setInitialQuery] = useState('');
 
-  const openSearch = useCallback(() => {
+  const openSearch = useCallback((query = '') => {
+    setInitialQuery(query);
     setIsSearchOpen(true);
   }, []);
 
@@ -27,8 +30,8 @@ export const SearchProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   const value = useMemo(
-    () => ({ isSearchOpen, openSearch, closeSearch }),
-    [closeSearch, isSearchOpen, openSearch]
+    () => ({ isSearchOpen, initialQuery, openSearch, closeSearch }),
+    [closeSearch, initialQuery, isSearchOpen, openSearch]
   );
 
   return <SearchContext.Provider value={value}>{children}</SearchContext.Provider>;

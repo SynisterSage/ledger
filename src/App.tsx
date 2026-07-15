@@ -97,6 +97,7 @@ type ModuleKind =
   | 'quick-task'
   | 'quick-note'
   | 'quick-event'
+  | 'quick-reminder'
   | null;
 
 const windowParams = new URLSearchParams(window.location.search);
@@ -765,9 +766,9 @@ function DashboardContent() {
       updated_at?: string | null;
     }>
   >([]);
-  const [upcomingReminders, setUpcomingReminders] = useState<
-    Array<(typeof todayTasks)[number]>
-  >([]);
+  const [upcomingReminders, setUpcomingReminders] = useState<Array<(typeof todayTasks)[number]>>(
+    []
+  );
   const [workspaceTasks, setWorkspaceTasks] = useState<
     Array<{
       id: string;
@@ -990,10 +991,7 @@ function DashboardContent() {
   );
   const countOverviewFilters = useCallback(
     (filters: OverviewFilterValues) =>
-      overviewFilterKeyList.reduce(
-        (total, key) => total + (filters[key]?.length ?? 0),
-        0
-      ),
+      overviewFilterKeyList.reduce((total, key) => total + (filters[key]?.length ?? 0), 0),
     [overviewFilterKeyList]
   );
   const getWorkspaceTaskMetadata = () => ({
@@ -1753,7 +1751,7 @@ function DashboardContent() {
             : []
         );
         setUpcoming(
-      upcomingData.status === 'fulfilled'
+          upcomingData.status === 'fulfilled'
             ? (
                 (upcomingData.value ?? []) as Array<{
                   id: string;
@@ -1782,21 +1780,23 @@ function DashboardContent() {
         );
         const normalizedUpcomingReminders =
           upcomingReminderData.status === 'fulfilled' && Array.isArray(upcomingReminderData.value)
-            ? (upcomingReminderData.value as Array<{
-                id: string;
-                title: string;
-                remind_at?: string | null;
-                is_done?: boolean;
-                status?: string | null;
-                project_id?: string | null;
-                project_name?: string | null;
-                workspace_id?: string | null;
-                workspace_name?: string | null;
-                workspace_color?: string | null;
-                calendar_name?: string | null;
-                created_at?: string | null;
-                updated_at?: string | null;
-              }>)
+            ? (
+                upcomingReminderData.value as Array<{
+                  id: string;
+                  title: string;
+                  remind_at?: string | null;
+                  is_done?: boolean;
+                  status?: string | null;
+                  project_id?: string | null;
+                  project_name?: string | null;
+                  workspace_id?: string | null;
+                  workspace_name?: string | null;
+                  workspace_color?: string | null;
+                  calendar_name?: string | null;
+                  created_at?: string | null;
+                  updated_at?: string | null;
+                }>
+              )
                 .filter((reminder) => {
                   const remindAt = new Date(reminder.remind_at ?? '').getTime();
                   return (
@@ -2062,9 +2062,7 @@ function DashboardContent() {
   }, [collapsedOverviewGroups]);
 
   useEffect(() => {
-    const storageKey = activeWorkspaceId
-      ? `ledger:overview:filters:v1:${activeWorkspaceId}`
-      : null;
+    const storageKey = activeWorkspaceId ? `ledger:overview:filters:v1:${activeWorkspaceId}` : null;
     if (!storageKey) {
       setOverviewFilters(createEmptyOverviewFilters());
       return;
@@ -2093,11 +2091,7 @@ function DashboardContent() {
     } catch {
       setOverviewFilters(createEmptyOverviewFilters());
     }
-  }, [
-    activeWorkspaceId,
-    createEmptyOverviewFilters,
-    overviewFilterKeyList,
-  ]);
+  }, [activeWorkspaceId, createEmptyOverviewFilters, overviewFilterKeyList]);
 
   useEffect(() => {
     if (!activeWorkspaceId) return;
@@ -2193,11 +2187,10 @@ function DashboardContent() {
     () => new Set(focusTasksForDisplay.map((task) => task.id)),
     [focusTasksForDisplay]
   );
-  const activeTodayTasks = sortedTodayTasks.filter(
-    (task) =>
-      isOverviewReminderTask(task)
-        ? true
-        : !task.is_today_focus && !focusTaskIdsForDisplay.has(task.id)
+  const activeTodayTasks = sortedTodayTasks.filter((task) =>
+    isOverviewReminderTask(task)
+      ? true
+      : !task.is_today_focus && !focusTaskIdsForDisplay.has(task.id)
   );
   const recentNotes = useMemo(() => sortNewestFirst(notes), [notes]);
   const todayLabel = new Date().toLocaleDateString([], {
@@ -2366,7 +2359,9 @@ function DashboardContent() {
             ])
           );
         } else {
-          setTodayTasks((prev) => prev.filter((item) => item.id !== tempId && item.id !== createdId));
+          setTodayTasks((prev) =>
+            prev.filter((item) => item.id !== tempId && item.id !== createdId)
+          );
         }
         setWorkspaceTasks((prev) =>
           sortNewestFirst([
@@ -3354,10 +3349,7 @@ function DashboardContent() {
     | { kind: 'user'; id: string }
     | { kind: 'team'; id: string };
 
-  const updateOverviewAssignment = async (
-    row: OverviewRow,
-    target: OverviewAssignmentTarget
-  ) => {
+  const updateOverviewAssignment = async (row: OverviewRow, target: OverviewAssignmentTarget) => {
     const assigned_to_user_id = target.kind === 'user' ? target.id : null;
     const assigned_to_team_id = target.kind === 'team' ? target.id : null;
 
@@ -3422,7 +3414,15 @@ function DashboardContent() {
     const previousWorkspaceTasks = workspaceTasks;
     const previousFollowUpTasks = followUpTasks;
 
-    const applyAssignment = <T extends { id: string; assigned_to?: string | null; assigned_to_user_id?: string | null; assigned_to_team_id?: string | null; assigned_team_id?: string | null }>(
+    const applyAssignment = <
+      T extends {
+        id: string;
+        assigned_to?: string | null;
+        assigned_to_user_id?: string | null;
+        assigned_to_team_id?: string | null;
+        assigned_team_id?: string | null;
+      }
+    >(
       item: T
     ) =>
       item.id === row.sourceId
@@ -3657,9 +3657,11 @@ function DashboardContent() {
     return dueAt.getTime() < Date.now();
   };
 
-  const isOverdueTask = (
-    task: { due_date?: string | null; due_time?: string | null; status?: string | null }
-  ) => {
+  const isOverdueTask = (task: {
+    due_date?: string | null;
+    due_time?: string | null;
+    status?: string | null;
+  }) => {
     const status = String(task.status ?? '').toLowerCase();
     if (status === 'completed' || status === 'cancelled') return false;
     return isPastDue(task.due_date, task.due_time);
@@ -3699,7 +3701,9 @@ function DashboardContent() {
   };
 
   const normalizeOverviewPriority = (priority?: string | null) => {
-    const normalized = String(priority ?? '').trim().toLowerCase();
+    const normalized = String(priority ?? '')
+      .trim()
+      .toLowerCase();
     if (normalized === 'urgent') return 'urgent';
     if (normalized === 'high') return 'high';
     if (normalized === 'medium') return 'medium';
@@ -3740,7 +3744,10 @@ function DashboardContent() {
     return next;
   };
 
-  const filterOverviewRow = (rowValues: OverviewFilterValues, activeFilters: OverviewFilterValues) =>
+  const filterOverviewRow = (
+    rowValues: OverviewFilterValues,
+    activeFilters: OverviewFilterValues
+  ) =>
     overviewFilterKeyList.every((key) => {
       const selected = activeFilters[key];
       if (!selected || selected.length === 0) return true;
@@ -3828,7 +3835,10 @@ function DashboardContent() {
       kind: isReminder ? 'reminder' : 'task',
       title: resolvedTask.title,
       meta: [
-        resolvedTask.project_name || resolvedTask.workspace_name || activeWorkspace?.name || 'Workspace',
+        resolvedTask.project_name ||
+          resolvedTask.workspace_name ||
+          activeWorkspace?.name ||
+          'Workspace',
         dueLabel ? `Due ${dueLabel}` : timeLabel,
       ]
         .filter(Boolean)
@@ -3880,7 +3890,11 @@ function DashboardContent() {
             name: teamName || teamIdentifier,
           }
         : undefined,
-      contextIcon: assigneeName ? <UserCheck size={10} /> : teamId ? <Users size={10} /> : undefined,
+      contextIcon: assigneeName ? (
+        <UserCheck size={10} />
+      ) : teamId ? (
+        <Users size={10} />
+      ) : undefined,
       contextLabel: assignmentLabel,
       assignment: {
         userId: assigneeUserId,
@@ -3888,11 +3902,7 @@ function DashboardContent() {
         teamId,
         teamLabel: teamName || null,
       },
-      taskTypeLabel: isReminder
-        ? 'Reminder'
-        : resolvedTask.is_today_focus
-        ? 'Focus'
-        : 'Task',
+      taskTypeLabel: isReminder ? 'Reminder' : resolvedTask.is_today_focus ? 'Focus' : 'Task',
       taskStatusLabel: isReminder
         ? 'Reminder'
         : resolvedTask.is_today_focus
@@ -3980,7 +3990,11 @@ function DashboardContent() {
       ]
         .filter(Boolean)
         .join(' · '),
-      contextIcon: ownerTeamName ? <Users size={10} /> : leadName ? <UserCheck size={10} /> : undefined,
+      contextIcon: ownerTeamName ? (
+        <Users size={10} />
+      ) : leadName ? (
+        <UserCheck size={10} />
+      ) : undefined,
       assignee: leadName
         ? {
             kind: 'user',
@@ -4146,7 +4160,11 @@ function DashboardContent() {
         teamLabel: eventTeamLabel || null,
       },
       contextLabel: eventAssignmentLabel || undefined,
-      contextIcon: eventUserLabel ? <UserCheck size={10} /> : eventTeamId ? <Users size={10} /> : undefined,
+      contextIcon: eventUserLabel ? (
+        <UserCheck size={10} />
+      ) : eventTeamId ? (
+        <Users size={10} />
+      ) : undefined,
       filterValues,
       open: () =>
         openModule('calendar', {
@@ -4232,7 +4250,9 @@ function DashboardContent() {
       : overviewTab === 'notes'
       ? noteRows
       : overviewTab === 'today'
-      ? overviewRows.filter((row) => row.group === 'Today' || row.filterValues.date.includes('today'))
+      ? overviewRows.filter(
+          (row) => row.group === 'Today' || row.filterValues.date.includes('today')
+        )
       : overviewTab === 'assigned'
       ? assignedRows
       : overviewRows;
@@ -4358,7 +4378,8 @@ function DashboardContent() {
                 : [['Linked', 'None']]
               : selectedOverviewRow.kind === 'event'
               ? [
-                  ...(selectedOverviewRow.assignment?.userLabel || selectedOverviewRow.assignment?.teamLabel
+                  ...(selectedOverviewRow.assignment?.userLabel ||
+                  selectedOverviewRow.assignment?.teamLabel
                     ? [
                         [
                           'Assignment',
@@ -4983,7 +5004,10 @@ function DashboardContent() {
       selectedValues.includes(option.value)
     ).length;
     return (
-      <div key={section.id} className="border-b border-[color:var(--ledger-border-subtle)] last:border-b-0">
+      <div
+        key={section.id}
+        className="border-b border-[color:var(--ledger-border-subtle)] last:border-b-0"
+      >
         <button
           type="button"
           onClick={() => toggleOverviewFilterSection(section.id)}
@@ -5186,7 +5210,16 @@ function DashboardContent() {
                 aria-label="Change overview view"
                 title="Change overview view"
               >
-                View: {overviewTab === 'assigned' ? 'Assigned' : overviewTab === 'today' ? 'Today' : overviewTab === 'projects' ? 'Projects' : overviewTab === 'notes' ? 'Notes' : 'All'}
+                View:{' '}
+                {overviewTab === 'assigned'
+                  ? 'Assigned'
+                  : overviewTab === 'today'
+                  ? 'Today'
+                  : overviewTab === 'projects'
+                  ? 'Projects'
+                  : overviewTab === 'notes'
+                  ? 'Notes'
+                  : 'All'}
                 <ChevronDown size={12} />
               </button>
               {isOverviewViewMenuOpen && (
@@ -5229,20 +5262,20 @@ function DashboardContent() {
                   ['projects', 'Projects'],
                   ['notes', 'Notes'],
                 ].map(([id, label]) => (
-                    <ModuleHeaderSegmentedButton
-                      key={id}
-                      compact
-                      active={overviewTab === id}
-                      onClick={() => {
-                        setOverviewTab(id as OverviewTab);
-                        setIsOverviewFilterOpen(false);
-                        setIsOverviewDisplayOpen(false);
-                        setIsOverviewCreateMenuOpen(false);
-                        setIsOverviewViewMenuOpen(false);
-                      }}
-                      title={label}
-                      ariaLabel={label}
-                    >
+                  <ModuleHeaderSegmentedButton
+                    key={id}
+                    compact
+                    active={overviewTab === id}
+                    onClick={() => {
+                      setOverviewTab(id as OverviewTab);
+                      setIsOverviewFilterOpen(false);
+                      setIsOverviewDisplayOpen(false);
+                      setIsOverviewCreateMenuOpen(false);
+                      setIsOverviewViewMenuOpen(false);
+                    }}
+                    title={label}
+                    ariaLabel={label}
+                  >
                     {label}
                   </ModuleHeaderSegmentedButton>
                 ))}
@@ -5269,7 +5302,9 @@ function DashboardContent() {
               {isOverviewFilterOpen && (
                 <div className="absolute right-0 top-full z-40 mt-2 w-80 overflow-hidden rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] py-1 shadow-[var(--ledger-shadow)]">
                   <div className="flex items-center justify-between px-3 py-1.5">
-                    <p className="text-[11px] font-medium text-[var(--ledger-text-muted)]">Filter</p>
+                    <p className="text-[11px] font-medium text-[var(--ledger-text-muted)]">
+                      Filter
+                    </p>
                     {activeOverviewFilterCount > 0 && (
                       <button
                         type="button"
@@ -5426,7 +5461,6 @@ function DashboardContent() {
                 </div>
               )}
             </div>
-
           </div>
         }
         closeLabel="Close overview"
@@ -6464,9 +6498,14 @@ function DashboardContent() {
                     : row.group === 'Long-term tasks'
                     ? 'Move to Today'
                     : null;
-                const addToFocusIcon = row.kind === 'reminder' ? <Bell size={14} /> : <CircleAlert size={14} />;
+                const addToFocusIcon =
+                  row.kind === 'reminder' ? <Bell size={14} /> : <CircleAlert size={14} />;
                 const moveLabelIcon =
-                  row.group === 'Today' ? <MapIcon size={14} /> : row.group === 'Long-term tasks' ? <Zap size={14} /> : null;
+                  row.group === 'Today' ? (
+                    <MapIcon size={14} />
+                  ) : row.group === 'Long-term tasks' ? (
+                    <Zap size={14} />
+                  ) : null;
                 const canAssign =
                   row.kind === 'task' ||
                   row.kind === 'reminder' ||
@@ -6573,9 +6612,7 @@ function DashboardContent() {
                               if (!id) return;
                               void updateOverviewAssignment(
                                 row,
-                                kind === 'team'
-                                  ? { kind: 'team', id }
-                                  : { kind: 'user', id }
+                                kind === 'team' ? { kind: 'team', id } : { kind: 'user', id }
                               );
                             }}
                             className="h-9 w-full appearance-none rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 pr-8 text-sm text-[var(--ledger-text-primary)] outline-none transition focus:border-[color:var(--ledger-border-strong)]"
@@ -7261,7 +7298,8 @@ function AppShell() {
       activeModuleKind === 'quick-follow-up' ||
       activeModuleKind === 'quick-task' ||
       activeModuleKind === 'quick-note' ||
-      activeModuleKind === 'quick-event'
+      activeModuleKind === 'quick-event' ||
+      activeModuleKind === 'quick-reminder'
     ) {
       return (
         <QuickCaptureWindow
@@ -7626,7 +7664,7 @@ function AppShell() {
         shellFullscreen: workspaceShellLayout.shellFullscreen,
       })
       .catch(() => {
-      // No-op outside Electron (browser dev mode)
+        // No-op outside Electron (browser dev mode)
       });
   }, [
     isLoading,

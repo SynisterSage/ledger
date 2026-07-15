@@ -1,10 +1,11 @@
-import { ArrowRight, Check, FileText, Calendar } from 'lucide-react';
+import { ArrowRight, Check, FileText, Calendar, Bell } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useApi } from '../../hooks/useApi';
 import { useAuthContext } from '../../context/AuthContext';
 import { useWorkspaceContext } from '../../context/WorkspaceContext';
 import { ModuleWindowHeader } from './ModuleWindowHeader';
 import { CloseGuardModal } from './CloseGuardModal';
+import { findSmartDateMatch, formatSmartDateKey } from '../Notes/smartDateUtils';
 
 type FollowUpContext = {
   eventId: string;
@@ -21,6 +22,12 @@ type PersonContext = {
   noteId: string | null;
   projectId: string | null;
   suggestedTitle: string | null;
+};
+
+type SelectionContext = {
+  text: string;
+  noteId: string | null;
+  projectId: string | null;
 };
 
 type QuickCapturePreferences = {
@@ -65,7 +72,8 @@ const parseFollowUpContext = (value?: string): FollowUpContext | null => {
 const parsePersonContext = (value?: string): PersonContext | null => {
   if (!value) return null;
   if (!value.startsWith('ledger-person|')) return null;
-  const [, userId = '', displayName = '', noteId = '', projectId = '', suggestedTitle = ''] = value.split('|');
+  const [, userId = '', displayName = '', noteId = '', projectId = '', suggestedTitle = ''] =
+    value.split('|');
   if (!userId) return null;
   return {
     userId,
@@ -76,11 +84,21 @@ const parsePersonContext = (value?: string): PersonContext | null => {
   };
 };
 
+const parseSelectionContext = (value?: string): SelectionContext | null => {
+  if (!value?.startsWith('ledger-selection|')) return null;
+  const [, text = '', noteId = '', projectId = ''] = value.split('|');
+  return {
+    text: text ? decodeURIComponent(text) : '',
+    noteId: noteId || null,
+    projectId: projectId || null,
+  };
+};
+
 export const QuickCaptureWindow = ({
   kind,
   context,
 }: {
-  kind: 'quick-follow-up' | 'quick-task' | 'quick-note' | 'quick-event';
+  kind: 'quick-follow-up' | 'quick-task' | 'quick-note' | 'quick-event' | 'quick-reminder';
   context?: string;
 }) => {
   const { user } = useAuthContext();
@@ -124,7 +142,7 @@ export const QuickCaptureWindow = ({
         taskInputRef.current?.focus();
       } else if (kind === 'quick-note') {
         noteInputRef.current?.focus();
-      } else if (kind === 'quick-event') {
+      } else if (kind === 'quick-event' || kind === 'quick-reminder') {
         eventInputRef.current?.focus();
       }
     }, 100);
@@ -150,8 +168,8 @@ export const QuickCaptureWindow = ({
             payload?.preferences?.defaultEventStatus === 'tentative'
               ? 'tentative'
               : payload?.preferences?.defaultEventStatus === 'confirmed'
-                ? 'confirmed'
-                : 'planned',
+              ? 'confirmed'
+              : 'planned',
           defaultEventCalendar:
             payload?.preferences?.defaultEventCalendar === 'work' ||
             payload?.preferences?.defaultEventCalendar === 'projects'
@@ -262,10 +280,11 @@ export const QuickCaptureWindow = ({
   const contextText = context?.trim();
   const followUpContext = parseFollowUpContext(contextText);
   const personContext = parsePersonContext(contextText);
+  const selectionContext = parseSelectionContext(contextText);
   const displayContext = followUpContext?.eventTitle
     ? `Follow-up: ${followUpContext.eventTitle}`
     : personContext?.displayName
-      ? `Person: ${personContext.displayName}`
+    ? `Person: ${personContext.displayName}`
     : contextText;
   const truncatedContext = displayContext
     ? displayContext.length > 80
@@ -276,7 +295,31 @@ export const QuickCaptureWindow = ({
   useEffect(() => {
     if (kind !== 'quick-task' && kind !== 'quick-follow-up') return;
     if (personContext?.suggestedTitle) setTaskTitle(personContext.suggestedTitle);
-  }, [context, kind]);
+    else if (selectionContext?.text)
+      setTaskTitle(selectionContext.text.split('\n')[0].trim().slice(0, 140));
+  }, [context, kind, personContext?.suggestedTitle, selectionContext?.text]);
+
+  useEffect(() => {
+    if (kind !== 'quick-event' && kind !== 'quick-reminder') return;
+    if (selectionContext?.text)
+      setEventTitle(selectionContext.text.split('\n')[0].trim().slice(0, 140));
+    if (selectionContext) {
+      const match = findSmartDateMatch(selectionContext.text);
+      if (match) {
+        setEventDate(formatSmartDateKey(match.resolvedDate));
+        setEventTime(
+          match.hasExplicitTime
+            ? `${String(match.resolvedDate.getHours()).padStart(2, '0')}:${String(
+                match.resolvedDate.getMinutes()
+              ).padStart(2, '0')}`
+            : ''
+        );
+      } else {
+        setEventDate('');
+        setEventTime('');
+      }
+    }
+  }, [context, kind, selectionContext?.text]);
 
   const saveQuickTask = async () => {
     if (!user || !activeWorkspaceId || !taskTitle.trim()) {
@@ -291,9 +334,10 @@ export const QuickCaptureWindow = ({
         ? resolveFollowUpDate(followUpContext.defaultTime)
         : null;
       const followUpDueDate = followUpDate
-        ? `${followUpDate.getFullYear()}-${String(followUpDate.getMonth() + 1).padStart(2, '0')}-${String(
-            followUpDate.getDate()
-          ).padStart(2, '0')}`
+        ? `${followUpDate.getFullYear()}-${String(followUpDate.getMonth() + 1).padStart(
+            2,
+            '0'
+          )}-${String(followUpDate.getDate()).padStart(2, '0')}`
         : (() => {
             const today = new Date();
             const year = today.getFullYear();
@@ -306,20 +350,27 @@ export const QuickCaptureWindow = ({
             followUpDate.getMinutes()
           ).padStart(2, '0')}`
         : null;
-      const showInToday =
-        followUpContext?.linkedProjectFollowUps !== 'project_only';
+      const showInToday = followUpContext?.linkedProjectFollowUps !== 'project_only';
       const createdTask = await api.createTask({
         title: taskTitle.trim(),
-        description: followUpContext ? `calendar_followup:${followUpContext.eventId}` : '',
+        description: followUpContext
+          ? `calendar_followup:${followUpContext.eventId}`
+          : selectionContext?.text ?? '',
         status: 'todo',
         priority: 'medium',
         task_horizon: 'long_term',
         assigned_to_user_id: personContext?.userId ?? null,
-        project_id: followUpContext?.projectId ?? personContext?.projectId ?? null,
+        project_id:
+          followUpContext?.projectId ??
+          personContext?.projectId ??
+          selectionContext?.projectId ??
+          null,
         notes: followUpContext?.eventTitle
           ? `Follow-up from calendar: ${followUpContext.eventTitle}`
           : personContext?.displayName
-            ? `Assigned from Circle: ${personContext.displayName}`
+          ? `Assigned from Circle: ${personContext.displayName}`
+          : selectionContext?.noteId
+          ? `Created from note ${selectionContext.noteId}`
           : null,
         due_date: followUpDueDate,
         due_time: followUpDueTime,
@@ -345,9 +396,7 @@ export const QuickCaptureWindow = ({
     }
   };
 
-  const resolveFollowUpDate = (
-    setting: FollowUpContext['defaultTime'] = 'tomorrow_9'
-  ) => {
+  const resolveFollowUpDate = (setting: FollowUpContext['defaultTime'] = 'tomorrow_9') => {
     const date = new Date();
     if (setting === 'today_5') {
       date.setHours(17, 0, 0, 0);
@@ -395,9 +444,11 @@ export const QuickCaptureWindow = ({
       setIsSaving(true);
       setError(null);
       const startDateTime = new Date(`${eventDate}T${eventTime}:00`);
-      const endDateTime = new Date(
-        startDateTime.getTime() + getEventDurationMinutes() * 60 * 1000
-      );
+      if (!eventDate) {
+        setError('Choose a date for this event');
+        return;
+      }
+      const endDateTime = new Date(startDateTime.getTime() + getEventDurationMinutes() * 60 * 1000);
 
       const calendars = (await api.getCalendars({
         scope: quickCapturePreferences.calendarScope,
@@ -409,7 +460,8 @@ export const QuickCaptureWindow = ({
         null;
       const workspaceCalendar =
         calendars.find(
-          (calendar) => calendar.is_visible !== false && !calendar.is_personal && calendar.is_default
+          (calendar) =>
+            calendar.is_visible !== false && !calendar.is_personal && calendar.is_default
         ) ??
         calendars.find((calendar) => calendar.is_visible !== false && !calendar.is_personal) ??
         personalCalendar;
@@ -417,13 +469,15 @@ export const QuickCaptureWindow = ({
         calendars.find(
           (calendar) =>
             calendar.is_visible !== false && /project/i.test(String(calendar.name ?? '').trim())
-        ) ?? workspaceCalendar ?? personalCalendar;
+        ) ??
+        workspaceCalendar ??
+        personalCalendar;
       const preferredCalendar =
         quickCapturePreferences.defaultEventCalendar === 'work'
           ? workspaceCalendar
           : quickCapturePreferences.defaultEventCalendar === 'projects'
-            ? projectCalendar
-            : personalCalendar;
+          ? projectCalendar
+          : personalCalendar;
       if (!preferredCalendar) {
         throw new Error('Could not find a default calendar.');
       }
@@ -580,7 +634,48 @@ export const QuickCaptureWindow = ({
     );
   }
 
-  if (kind === 'quick-event') {
+  const saveQuickReminder = async () => {
+    if (!user || !activeWorkspaceId || !eventTitle.trim()) {
+      setError('Reminder title cannot be empty');
+      return;
+    }
+    try {
+      setIsSaving(true);
+      setError(null);
+      const startDateTime = new Date(`${eventDate}T${eventTime}:00`);
+      if (!eventDate) {
+        setError('Choose a date for this reminder');
+        return;
+      }
+      const calendars = (await api.getCalendars({
+        scope: quickCapturePreferences.calendarScope,
+      })) as QuickCaptureCalendar[];
+      const calendar =
+        calendars.find(
+          (item) => item.is_visible !== false && (item.is_personal || item.is_default)
+        ) ?? calendars[0];
+      if (!calendar) throw new Error('No calendar available');
+      await api.createReminder({
+        title: eventTitle.trim(),
+        remind_at: startDateTime.toISOString(),
+        calendar_id: calendar.id,
+        color: calendar.color ?? undefined,
+        is_done: false,
+        project_id: selectionContext?.projectId ?? null,
+        note_id: selectionContext?.noteId ?? null,
+      });
+      setShowCloseGuardModal(false);
+      resetEventDraft();
+      closeWindowNow();
+    } catch (error) {
+      console.error('Failed to create reminder:', error);
+      setError('Failed to create reminder. Please try again.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  if (kind === 'quick-event' || kind === 'quick-reminder') {
     return (
       <div className={shellClassName}>
         <CloseGuardModal
@@ -597,8 +692,8 @@ export const QuickCaptureWindow = ({
           }}
         />
         <ModuleWindowHeader
-          title="Quick Event"
-          icon={<Calendar size={16} />}
+          title={kind === 'quick-reminder' ? 'Quick Reminder' : 'Quick Event'}
+          icon={kind === 'quick-reminder' ? <Bell size={16} /> : <Calendar size={16} />}
           onClose={closeWindow}
           onMinimize={minimizeWindow}
           onToggleFullscreen={toggleFullscreen}
@@ -606,7 +701,7 @@ export const QuickCaptureWindow = ({
 
         {contextText && (
           <div className="border-b border-gray-200 bg-[#FFFDFB] px-4 py-2">
-            <p className="text-[11px] text-gray-500">From Calendar</p>
+            <p className="text-[11px] text-gray-500">From Notes</p>
             <p className="mt-0.5 text-xs font-medium text-gray-900 truncate">{contextText}</p>
           </div>
         )}
@@ -614,7 +709,9 @@ export const QuickCaptureWindow = ({
         <div className={scrollAreaClassName}>
           <div className="space-y-4">
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Event Title</label>
+              <label className="block text-xs font-medium text-gray-600 mb-1">
+                {kind === 'quick-reminder' ? 'Reminder Title' : 'Event Title'}
+              </label>
               <input
                 ref={eventInputRef}
                 type="text"
@@ -646,32 +743,34 @@ export const QuickCaptureWindow = ({
               </div>
             </div>
 
-            <div className="grid grid-cols-[1fr_92px] gap-3">
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Duration</label>
-                <input
-                  type="number"
-                  min="1"
-                  step="1"
-                  value={eventDurationValue}
-                  onChange={(e) => setEventDurationValue(Number(e.target.value) || 1)}
-                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-gray-400 focus:bg-[#FFFDFB] focus:outline-none"
-                />
+            {kind === 'quick-event' && (
+              <div className="grid grid-cols-[1fr_92px] gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Duration</label>
+                  <input
+                    type="number"
+                    min="1"
+                    step="1"
+                    value={eventDurationValue}
+                    onChange={(e) => setEventDurationValue(Number(e.target.value) || 1)}
+                    className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-gray-400 focus:bg-[#FFFDFB] focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1 invisible">
+                    Duration unit
+                  </label>
+                  <select
+                    value={eventDurationUnit}
+                    onChange={(e) => setEventDurationUnit(e.target.value as 'minutes' | 'hours')}
+                    className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-gray-400 focus:bg-[#FFFDFB] focus:outline-none bg-[#FFFDFB]"
+                  >
+                    <option value="minutes">minutes</option>
+                    <option value="hours">hours</option>
+                  </select>
+                </div>
               </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1 invisible">
-                  Duration unit
-                </label>
-                <select
-                  value={eventDurationUnit}
-                  onChange={(e) => setEventDurationUnit(e.target.value as 'minutes' | 'hours')}
-                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-gray-400 focus:bg-[#FFFDFB] focus:outline-none bg-[#FFFDFB]"
-                >
-                  <option value="minutes">minutes</option>
-                  <option value="hours">hours</option>
-                </select>
-              </div>
-            </div>
+            )}
 
             {error && (
               <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
@@ -680,7 +779,10 @@ export const QuickCaptureWindow = ({
             )}
           </div>
         </div>
-        {footer(() => void saveQuickEvent(), Boolean(eventTitle.trim()))}
+        {footer(
+          () => void (kind === 'quick-reminder' ? saveQuickReminder() : saveQuickEvent()),
+          Boolean(eventTitle.trim())
+        )}
       </div>
     );
   }

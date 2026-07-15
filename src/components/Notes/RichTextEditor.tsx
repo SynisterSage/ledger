@@ -41,8 +41,17 @@ import {
   $setSelection,
   $createParagraphNode,
   COMMAND_PRIORITY_HIGH,
+  COMMAND_PRIORITY_LOW,
   PASTE_COMMAND,
   DROP_COMMAND,
+  UNDO_COMMAND,
+  REDO_COMMAND,
+  SELECT_ALL_COMMAND,
+  CAN_UNDO_COMMAND,
+  CAN_REDO_COMMAND,
+  CLEAR_HISTORY_COMMAND,
+  HISTORIC_TAG,
+  HISTORY_PUSH_TAG,
 } from 'lexical';
 import { $setBlocksType } from '@lexical/selection';
 import { $createHeadingNode, $createQuoteNode } from '@lexical/rich-text';
@@ -54,6 +63,7 @@ import { SmartPersonPlugin } from './SmartPersonPlugin';
 import { supabase } from '../../services/supabase';
 import { useWorkspaceContext } from '../../context/WorkspaceContext';
 import { useToast } from '../Common/ToastProvider';
+import { NotesEditorContextMenu, type EditorContextMenuPosition } from './NotesEditorContextMenu';
 
 type Props = {
   initialValue?: string | null;
@@ -65,6 +75,17 @@ type Props = {
   onFocus?: () => void;
   onBlur?: () => void;
   onAutoCorrect?: () => void | Promise<void>;
+  onCreateTask?: (selectedText: string) => void;
+  onPersonTaskAction?: (
+    action: 'task' | 'follow-up',
+    person: { id: string; name: string; sourceText: string }
+  ) => void;
+  onCreateReminder?: (selectedText: string) => void;
+  onCreateEvent?: (selectedText: string) => void;
+  onSendToIntake?: (selectedText: string) => void | Promise<void>;
+  onLinkProject?: (selectedText: string) => void;
+  onLinkPerson?: (selectedText: string, personId: string) => void;
+  onSearch?: (selectedText: string) => void;
 };
 
 const editorConfig = {
@@ -94,7 +115,8 @@ const editorConfig = {
       h2: 'mb-3 text-3xl font-semibold tracking-tight text-[var(--ledger-text-primary)]',
       h3: 'mb-2 text-2xl font-semibold tracking-tight text-[var(--ledger-text-primary)]',
     },
-    quote: 'my-4 border-l-4 border-[color:var(--ledger-border-subtle)] pl-4 italic text-[var(--ledger-text-secondary)]',
+    quote:
+      'my-4 border-l-4 border-[color:var(--ledger-border-subtle)] pl-4 italic text-[var(--ledger-text-secondary)]',
     paragraph: 'mb-4',
     list: {
       nested: {
@@ -125,27 +147,33 @@ const LoadHtmlPlugin = ({ html, editorKey }: { html?: string | null; editorKey?:
     if (lastLoadedKeyRef.current === key) return;
     lastLoadedKeyRef.current = key;
 
-    editor.update(() => {
-      const root = $getRoot();
-      root.clear();
+    editor.update(
+      () => {
+        const root = $getRoot();
+        root.clear();
 
-      const initialHtml = String(html ?? '').trim();
-      if (!initialHtml) {
-        return;
-      }
+        const initialHtml = String(html ?? '').trim();
+        if (!initialHtml) {
+          return;
+        }
 
-      const parser = new DOMParser();
-      const dom = parser.parseFromString(initialHtml, 'text/html');
-      const nodes = $generateNodesFromDOM(editor, dom);
-      if (nodes.length > 0) {
-        // Loading a note must not move Lexical's selection to the end of the
-        // document, otherwise opening a long note scrolls the editor to the
-        // bottom.
-        root.select();
-        $insertNodes(nodes);
+        const parser = new DOMParser();
+        const dom = parser.parseFromString(initialHtml, 'text/html');
+        const nodes = $generateNodesFromDOM(editor, dom);
+        if (nodes.length > 0) {
+          // Loading a note must not move Lexical's selection to the end of the
+          // document, otherwise opening a long note scrolls the editor to the
+          // bottom.
+          root.select();
+          $insertNodes(nodes);
+        }
+        $setSelection(null);
+      },
+      {
+        tag: ['smart-date-load', HISTORIC_TAG],
+        onUpdate: () => editor.dispatchCommand(CLEAR_HISTORY_COMMAND, undefined),
       }
-      $setSelection(null);
-    }, { tag: 'smart-date-load' });
+    );
   }, [editor, editorKey, html]);
 
   return null;
@@ -163,9 +191,9 @@ const ToolbarButton = ({
   onClick,
   title,
   children,
-    isActive = false,
-    onMouseDown,
-  }: {
+  isActive = false,
+  onMouseDown,
+}: {
   onClick: () => void;
   title: string;
   children: React.ReactNode;
@@ -273,7 +301,7 @@ const ToolbarPlugin = ({ onAutoCorrect }: { onAutoCorrect?: () => void | Promise
   }, []);
 
   const updateToolbar = useCallback(() => {
-    editor.update(() => {
+    editor.getEditorState().read(() => {
       const selection = $getSelection();
       if ($isRangeSelection(selection)) {
         setActiveFormats({
@@ -339,8 +367,12 @@ const ToolbarPlugin = ({ onAutoCorrect }: { onAutoCorrect?: () => void | Promise
 
   return (
     <>
-      <div ref={toolbarSentinelRef} aria-hidden="true" className="pointer-events-none h-px w-full" />
-        <div
+      <div
+        ref={toolbarSentinelRef}
+        aria-hidden="true"
+        className="pointer-events-none h-px w-full"
+      />
+      <div
         style={{ top: 'var(--notes-toolbar-sticky-top, 0px)' }}
         className={`sticky z-20 mb-2 mx-auto flex w-fit max-w-full flex-wrap items-center gap-1.5 rounded-xl px-1.5 py-1 transition-[background-color,border-color,box-shadow,opacity,transform,backdrop-filter] duration-150 ease-out ${
           isSticky
@@ -348,115 +380,115 @@ const ToolbarPlugin = ({ onAutoCorrect }: { onAutoCorrect?: () => void | Promise
             : 'border border-transparent bg-transparent shadow-none backdrop-blur-none'
         }`}
       >
-      {/* Block type selector */}
-      <div className="relative">
-        <button
-          type="button"
-          onMouseDown={(event) => event.preventDefault()}
-          onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-          onBlur={() => setTimeout(() => setIsDropdownOpen(false), 150)}
-          className="inline-flex h-7 items-center justify-center gap-1 rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2.5 text-[11px] font-medium text-[var(--ledger-text-secondary)] outline-none transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-border-strong)] focus-visible:ring-offset-0"
+        {/* Block type selector */}
+        <div className="relative">
+          <button
+            type="button"
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+            onBlur={() => setTimeout(() => setIsDropdownOpen(false), 150)}
+            className="inline-flex h-7 items-center justify-center gap-1 rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2.5 text-[11px] font-medium text-[var(--ledger-text-secondary)] outline-none transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-border-strong)] focus-visible:ring-offset-0"
+          >
+            {blockTypeLabels[blockType]}
+            <ChevronDown size={13} />
+          </button>
+          {isDropdownOpen && (
+            <div className="absolute left-0 top-full z-50 mt-1 min-w-40 rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-[var(--ledger-shadow)]">
+              {(['paragraph', 'h1', 'h2', 'h3', 'quote'] as BlockType[]).map((type) => (
+                <button
+                  key={type}
+                  type="button"
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => changeBlockType(type)}
+                  className={`w-full px-3 py-2 text-left text-sm ${
+                    blockType === type
+                      ? 'bg-[var(--ledger-surface-hover)] font-medium text-[var(--ledger-text-primary)]'
+                      : 'text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]'
+                  }`}
+                >
+                  {blockTypeLabels[type]}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="mx-1 h-5 w-px bg-[var(--ledger-border-subtle)]" />
+
+        <ToolbarButton
+          title="Bold (Ctrl+B)"
+          onClick={() => editor.dispatchCommand(FORMAT_TEXT_COMMAND, 'bold')}
+          isActive={activeFormats.bold}
         >
-          {blockTypeLabels[blockType]}
-          <ChevronDown size={13} />
-        </button>
-        {isDropdownOpen && (
-          <div className="absolute left-0 top-full z-50 mt-1 min-w-40 rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-[var(--ledger-shadow)]">
-            {(['paragraph', 'h1', 'h2', 'h3', 'quote'] as BlockType[]).map((type) => (
-              <button
-                key={type}
-                type="button"
-                onMouseDown={(event) => event.preventDefault()}
-                onClick={() => changeBlockType(type)}
-                className={`w-full px-3 py-2 text-left text-sm ${
-                  blockType === type
-                    ? 'bg-[var(--ledger-surface-hover)] font-medium text-[var(--ledger-text-primary)]'
-                    : 'text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]'
-                }`}
-              >
-                {blockTypeLabels[type]}
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
-
-      <div className="mx-1 h-5 w-px bg-[var(--ledger-border-subtle)]" />
-
-      <ToolbarButton
-        title="Bold (Ctrl+B)"
-        onClick={() => editor.dispatchCommand(FORMAT_TEXT_COMMAND, 'bold')}
-        isActive={activeFormats.bold}
-      >
-        <Bold size={14} />
-      </ToolbarButton>
-      <ToolbarButton
-        title="Italic (Ctrl+I)"
-        onClick={() => editor.dispatchCommand(FORMAT_TEXT_COMMAND, 'italic')}
-        isActive={activeFormats.italic}
-      >
-        <Italic size={14} />
-      </ToolbarButton>
-      <ToolbarButton
-        title="Underline (Ctrl+U)"
-        onClick={() => editor.dispatchCommand(FORMAT_TEXT_COMMAND, 'underline')}
-        isActive={activeFormats.underline}
-      >
-        <Underline size={14} />
-      </ToolbarButton>
-
-      <div className="mx-1 h-5 w-px bg-[var(--ledger-border-subtle)]" />
-
-      <ToolbarButton
-        title="Bullet List"
-        onClick={() => editor.dispatchCommand(INSERT_UNORDERED_LIST_COMMAND, undefined)}
-      >
-        <List size={14} />
-      </ToolbarButton>
-      <ToolbarButton
-        title="Numbered List"
-        onClick={() => editor.dispatchCommand(INSERT_ORDERED_LIST_COMMAND, undefined)}
-      >
-        <ListOrdered size={14} />
-      </ToolbarButton>
-      <ToolbarButton
-        title="Inline Code"
-        onClick={() => editor.dispatchCommand(FORMAT_TEXT_COMMAND, 'code')}
-        isActive={activeFormats.code}
-      >
-        <Code2 size={14} />
-      </ToolbarButton>
-
-      <div className="mx-1 h-5 w-px bg-[var(--ledger-border-subtle)]" />
-
-      <ToolbarButton
-        title="Add Link"
-        onMouseDown={() => {
-          captureSelection();
-        }}
-        onClick={() => {
-          const selectedText = getSelectedText();
-          const defaultValue = isProbablyUrl(selectedText) ? selectedText : '';
-          const enteredUrl = window.prompt('Enter URL', defaultValue);
-          const nextUrl = normalizeUrl(enteredUrl?.trim() || defaultValue);
-          if (!nextUrl) return;
-          editor.focus();
-          editor.update(() => {
-            if (savedSelectionRef.current) {
-              $setSelection(savedSelectionRef.current);
-            }
-          });
-          editor.dispatchCommand(TOGGLE_LINK_COMMAND, nextUrl);
-        }}
-      >
-        <Link2 size={14} />
-      </ToolbarButton>
-
-      {onAutoCorrect ? (
-        <ToolbarButton title="Auto-correct spelling" onClick={() => void onAutoCorrect()}>
-          <SpellCheck size={14} />
+          <Bold size={14} />
         </ToolbarButton>
-      ) : null}
+        <ToolbarButton
+          title="Italic (Ctrl+I)"
+          onClick={() => editor.dispatchCommand(FORMAT_TEXT_COMMAND, 'italic')}
+          isActive={activeFormats.italic}
+        >
+          <Italic size={14} />
+        </ToolbarButton>
+        <ToolbarButton
+          title="Underline (Ctrl+U)"
+          onClick={() => editor.dispatchCommand(FORMAT_TEXT_COMMAND, 'underline')}
+          isActive={activeFormats.underline}
+        >
+          <Underline size={14} />
+        </ToolbarButton>
+
+        <div className="mx-1 h-5 w-px bg-[var(--ledger-border-subtle)]" />
+
+        <ToolbarButton
+          title="Bullet List"
+          onClick={() => editor.dispatchCommand(INSERT_UNORDERED_LIST_COMMAND, undefined)}
+        >
+          <List size={14} />
+        </ToolbarButton>
+        <ToolbarButton
+          title="Numbered List"
+          onClick={() => editor.dispatchCommand(INSERT_ORDERED_LIST_COMMAND, undefined)}
+        >
+          <ListOrdered size={14} />
+        </ToolbarButton>
+        <ToolbarButton
+          title="Inline Code"
+          onClick={() => editor.dispatchCommand(FORMAT_TEXT_COMMAND, 'code')}
+          isActive={activeFormats.code}
+        >
+          <Code2 size={14} />
+        </ToolbarButton>
+
+        <div className="mx-1 h-5 w-px bg-[var(--ledger-border-subtle)]" />
+
+        <ToolbarButton
+          title="Add Link"
+          onMouseDown={() => {
+            captureSelection();
+          }}
+          onClick={() => {
+            const selectedText = getSelectedText();
+            const defaultValue = isProbablyUrl(selectedText) ? selectedText : '';
+            const enteredUrl = window.prompt('Enter URL', defaultValue);
+            const nextUrl = normalizeUrl(enteredUrl?.trim() || defaultValue);
+            if (!nextUrl) return;
+            editor.focus();
+            editor.update(() => {
+              if (savedSelectionRef.current) {
+                $setSelection(savedSelectionRef.current);
+              }
+            });
+            editor.dispatchCommand(TOGGLE_LINK_COMMAND, nextUrl);
+          }}
+        >
+          <Link2 size={14} />
+        </ToolbarButton>
+
+        {onAutoCorrect ? (
+          <ToolbarButton title="Auto-correct spelling" onClick={() => void onAutoCorrect()}>
+            <SpellCheck size={14} />
+          </ToolbarButton>
+        ) : null}
       </div>
     </>
   );
@@ -639,6 +671,7 @@ const ResizableImagePlugin = () => {
         observer: ResizeObserver;
         widthTimer: number | null;
         lastWidth: number | null;
+        userResize: boolean;
       }
     >()
   );
@@ -648,7 +681,9 @@ const ResizableImagePlugin = () => {
     if (!rootElement) return;
 
     const seenKeys = new Set<string>();
-    const wrappers = Array.from(rootElement.querySelectorAll<HTMLElement>('[data-lexical-image-node-key]'));
+    const wrappers = Array.from(
+      rootElement.querySelectorAll<HTMLElement>('[data-lexical-image-node-key]')
+    );
 
     for (const wrapper of wrappers) {
       const key = wrapper.getAttribute('data-lexical-image-node-key');
@@ -670,22 +705,29 @@ const ResizableImagePlugin = () => {
           if (currentState.lastWidth === nextWidth) return;
 
           currentState.lastWidth = nextWidth;
+          currentState.userResize ||= wrapper.dataset.resizing === 'true';
 
           if (currentState.widthTimer) {
             window.clearTimeout(currentState.widthTimer);
           }
 
           currentState.widthTimer = window.setTimeout(() => {
-            editor.update(() => {
-              const node = $getNodeByKey(key);
-              if (!$isImageNode(node)) return;
-              if (node.getWidth() === nextWidth) return;
-              node.setWidth(nextWidth);
-            });
+            const isUserResize = currentState.userResize;
+            currentState.userResize = false;
+            editor.update(
+              () => {
+                const node = $getNodeByKey(key);
+                if (!$isImageNode(node)) return;
+                if (node.getWidth() === nextWidth) return;
+                node.setWidth(nextWidth);
+              },
+              { tag: isUserResize ? HISTORY_PUSH_TAG : HISTORIC_TAG }
+            );
           }, 120);
         }),
         widthTimer: null as number | null,
         lastWidth: null as number | null,
+        userResize: false,
       };
 
       observerState.lastWidth = Math.round(wrapper.getBoundingClientRect().width);
@@ -726,6 +768,215 @@ const ResizableImagePlugin = () => {
   return null;
 };
 
+const EditorContextMenuPlugin = ({
+  canEdit = true,
+  onCreateTask,
+  onCreateReminder,
+  onCreateEvent,
+  onSendToIntake,
+  onLinkProject,
+  onLinkPerson,
+  onSearch,
+}: Pick<
+  Props,
+  | 'onCreateTask'
+  | 'onCreateReminder'
+  | 'onCreateEvent'
+  | 'onSendToIntake'
+  | 'onLinkProject'
+  | 'onLinkPerson'
+  | 'onSearch'
+> & { canEdit?: boolean }) => {
+  const [editor] = useLexicalComposerContext();
+  const [position, setPosition] = useState<EditorContextMenuPosition | null>(null);
+  const [selectedText, setSelectedText] = useState('');
+  const [hasSmartDate, setHasSmartDate] = useState(false);
+  const [personId, setPersonId] = useState<string | null>(null);
+  const [canUndo, setCanUndo] = useState(false);
+  const [canRedo, setCanRedo] = useState(false);
+  const savedSelectionRef = useRef<any>(null);
+
+  const close = useCallback(() => setPosition(null), []);
+
+  useEffect(() => {
+    const unregisterUndo = editor.registerCommand(
+      CAN_UNDO_COMMAND,
+      (value) => {
+        setCanUndo(value);
+        return false;
+      },
+      COMMAND_PRIORITY_LOW
+    );
+    const unregisterRedo = editor.registerCommand(
+      CAN_REDO_COMMAND,
+      (value) => {
+        setCanRedo(value);
+        return false;
+      },
+      COMMAND_PRIORITY_LOW
+    );
+    return () => {
+      unregisterUndo();
+      unregisterRedo();
+    };
+  }, [editor]);
+
+  useEffect(() => {
+    if (!position) return;
+    const onPointerDown = (event: globalThis.MouseEvent) => {
+      if (!menuContains(event.target)) close();
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        close();
+      }
+    };
+    window.addEventListener('mousedown', onPointerDown);
+    window.addEventListener('scroll', close, true);
+    window.addEventListener('resize', close);
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      window.removeEventListener('mousedown', onPointerDown);
+      window.removeEventListener('scroll', close, true);
+      window.removeEventListener('resize', close);
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, [close, position]);
+
+  const getSelectedText = useCallback(() => {
+    let text = '';
+    editor.getEditorState().read(() => {
+      const selection = $getSelection();
+      if ($isRangeSelection(selection)) text = selection.getTextContent().trim();
+    });
+    return text;
+  }, [editor]);
+
+  useEffect(() => {
+    const root = editor.getRootElement();
+    if (!root) return;
+
+    const onContextMenu = (event: MouseEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (
+        !target ||
+        target.closest(
+          '[data-lexical-image-node-key], [data-ledger-smart-person-popover], [data-ledger-smart-date-popover]'
+        )
+      )
+        return;
+      if (!root.contains(target)) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+      const text = getSelectedText();
+      editor.getEditorState().read(() => {
+        const selection = $getSelection();
+        savedSelectionRef.current = selection?.clone?.() ?? null;
+      });
+      const smartDate = Boolean(target.closest('[data-ledger-smart-date-key]'));
+      const person = target.closest('[data-ledger-smart-person-key]');
+      setSelectedText(text);
+      setHasSmartDate(smartDate);
+      setPersonId(person?.getAttribute('data-ledger-smart-person-user-id') ?? null);
+      setPosition({ x: event.clientX, y: event.clientY });
+    };
+
+    root.addEventListener('contextmenu', onContextMenu);
+    return () => root.removeEventListener('contextmenu', onContextMenu);
+  }, [editor, getSelectedText]);
+
+  if (!position) return null;
+
+  const dispatch = (command: any) => {
+    editor.focus();
+    editor.dispatchCommand(command, undefined);
+  };
+
+  const restoreSavedSelection = () => {
+    const savedSelection = savedSelectionRef.current;
+    if (!savedSelection) return;
+    editor.focus();
+    editor.update(
+      () => {
+        $setSelection(savedSelection.clone());
+      },
+      { tag: HISTORIC_TAG }
+    );
+  };
+
+  const withSavedSelection = (callback: (selection: any) => void) => {
+    const savedSelection = savedSelectionRef.current;
+    if (!savedSelection) return;
+    editor.focus();
+    editor.update(() => {
+      const selection = savedSelection.clone();
+      $setSelection(selection);
+      callback(selection);
+    });
+  };
+
+  const copySelectedText = async () => {
+    try {
+      await navigator.clipboard.writeText(selectedText);
+      restoreSavedSelection();
+    } catch (error) {
+      console.error('[notes] clipboard copy failed', error);
+    }
+  };
+
+  const cutSelectedText = async () => {
+    await copySelectedText();
+    withSavedSelection((selection) => selection.removeText());
+  };
+
+  const pasteTextFromClipboard = async () => {
+    try {
+      const text = await navigator.clipboard.readText();
+      if (!text) return;
+      withSavedSelection((selection) => selection.insertText(text));
+    } catch (error) {
+      console.error('[notes] clipboard paste failed', error);
+    }
+  };
+  const hasSelection = Boolean(selectedText);
+
+  return (
+    <NotesEditorContextMenu
+      position={position}
+      hasSelection={hasSelection}
+      hasSmartDate={hasSmartDate}
+      hasSmartPerson={Boolean(personId)}
+      canUndo={canUndo}
+      canRedo={canRedo}
+      canCut={hasSelection}
+      canPaste={canEdit}
+      canEdit={canEdit}
+      onUndo={() => dispatch(UNDO_COMMAND)}
+      onRedo={() => dispatch(REDO_COMMAND)}
+      onCut={() => void cutSelectedText()}
+      onCopy={() => void copySelectedText()}
+      onPaste={() => void pasteTextFromClipboard()}
+      onSelectAll={() => dispatch(SELECT_ALL_COMMAND)}
+      onCreateTask={() => onCreateTask?.(selectedText)}
+      onCreateReminder={() => onCreateReminder?.(selectedText)}
+      onCreateEvent={() => onCreateEvent?.(selectedText)}
+      onSendToIntake={() => void onSendToIntake?.(selectedText)}
+      onLinkProject={() => onLinkProject?.(selectedText)}
+      onLinkPerson={() => {
+        if (personId) onLinkPerson?.(selectedText, personId);
+      }}
+      onSearch={() => onSearch?.(selectedText)}
+      onClose={close}
+    />
+  );
+};
+
+const menuContains = (target: EventTarget | null) =>
+  target instanceof Element &&
+  Boolean(target.closest('[role="menu"][aria-label="Editor actions"]'));
+
 export function RichTextEditor({
   initialValue,
   editorKey,
@@ -736,6 +987,14 @@ export function RichTextEditor({
   onFocus,
   onBlur,
   onAutoCorrect,
+  onCreateTask,
+  onPersonTaskAction,
+  onCreateReminder,
+  onCreateEvent,
+  onSendToIntake,
+  onLinkProject,
+  onLinkPerson,
+  onSearch,
 }: Props) {
   const lastChangeTimeRef = React.useRef(0);
   const pendingHtmlRef = React.useRef<string | null>(null);
@@ -744,8 +1003,14 @@ export function RichTextEditor({
   const handleChange = (editorState: EditorState, editor: any, tags?: Set<string>) => {
     // Smart entities update Lexical programmatically. Those updates must never
     // be serialized into the note autosave path as user edits.
-    if (tags?.has('smart-date-load') || tags?.has('smart-date-scan') || tags?.has('smart-date-sync') ||
-        tags?.has('smart-person-load') || tags?.has('smart-person-scan') || tags?.has('smart-person-sync')) {
+    if (
+      tags?.has('smart-date-load') ||
+      tags?.has('smart-date-scan') ||
+      tags?.has('smart-date-sync') ||
+      tags?.has('smart-person-load') ||
+      tags?.has('smart-person-scan') ||
+      tags?.has('smart-person-sync')
+    ) {
       return;
     }
 
@@ -808,9 +1073,22 @@ export function RichTextEditor({
       <div>
         <ToolbarPlugin onAutoCorrect={onAutoCorrect} />
         <div className="relative mt-2">
-        <RichTextBehaviorPlugin />
+          <RichTextBehaviorPlugin />
           <SmartDatePlugin noteId={noteId} noteTitle={noteTitle} noteProjectId={noteProjectId} />
-          <SmartPersonPlugin noteId={noteId} noteTitle={noteTitle} noteProjectId={noteProjectId} />
+          <SmartPersonPlugin
+            noteId={noteId}
+            onAssignTask={(person) => onPersonTaskAction?.('task', person)}
+            onCreateFollowUp={(person) => onPersonTaskAction?.('follow-up', person)}
+          />
+          <EditorContextMenuPlugin
+            onCreateTask={onCreateTask}
+            onCreateReminder={onCreateReminder}
+            onCreateEvent={onCreateEvent}
+            onSendToIntake={onSendToIntake}
+            onLinkProject={onLinkProject}
+            onLinkPerson={onLinkPerson}
+            onSearch={onSearch}
+          />
           <RichTextPlugin
             contentEditable={
               <ContentEditable
@@ -826,8 +1104,8 @@ export function RichTextEditor({
             }
             ErrorBoundary={() => null}
           />
-          <LoadHtmlPlugin html={initialValue} editorKey={editorKey} />
           <HistoryPlugin />
+          <LoadHtmlPlugin html={initialValue} editorKey={editorKey} />
           <LinkPlugin />
           <MarkdownShortcutPlugin />
           <TabIndentationPlugin />
@@ -877,7 +1155,9 @@ const ImageCopyPlugin = () => {
               if (navigator.clipboard && (window as any).ClipboardItem) {
                 const clipboardItemInput: any = {};
                 clipboardItemInput[blob.type || 'image/png'] = blob;
-                await navigator.clipboard.write([new (window as any).ClipboardItem(clipboardItemInput)]);
+                await navigator.clipboard.write([
+                  new (window as any).ClipboardItem(clipboardItemInput),
+                ]);
                 copied = true;
               }
             }
@@ -891,7 +1171,9 @@ const ImageCopyPlugin = () => {
             try {
               if (navigator.clipboard && (navigator.clipboard as any).write) {
                 const blob = new Blob([html], { type: 'text/html' });
-                await (navigator.clipboard as any).write([new (window as any).ClipboardItem({ 'text/html': blob })]);
+                await (navigator.clipboard as any).write([
+                  new (window as any).ClipboardItem({ 'text/html': blob }),
+                ]);
               } else if (navigator.clipboard && navigator.clipboard.writeText) {
                 await navigator.clipboard.writeText(src);
               }

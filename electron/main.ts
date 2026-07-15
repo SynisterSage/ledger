@@ -672,7 +672,8 @@ type ModuleWindowKind =
   | 'inbox'
   | 'quick-task'
   | 'quick-note'
-  | 'quick-event';
+  | 'quick-event'
+  | 'quick-reminder';
 type ModuleFocusPayload = {
   kind: ModuleWindowKind;
   focusDate?: string | null;
@@ -2300,7 +2301,12 @@ function setSidebarAboveWorkspaceWindow(enabled: boolean) {
   const workspaceWin =
     workspaceModuleWin && !workspaceModuleWin.isDestroyed() ? workspaceModuleWin : null;
 
-  if (enabled && workspaceWin && currentSidebarMode !== 'auth' && currentSidebarMode !== 'fullscreen') {
+  if (
+    enabled &&
+    workspaceWin &&
+    currentSidebarMode !== 'auth' &&
+    currentSidebarMode !== 'fullscreen'
+  ) {
     if (parent !== workspaceWin) {
       sidebarWin.setParentWindow(workspaceWin);
     }
@@ -5351,7 +5357,9 @@ function routeFromModuleArgs(
 }
 
 function recordWorkspaceRoute(route: WorkspaceModuleRoute) {
-  const existingIndex = workspaceModuleRecentRoutes.findIndex((entry) => isSameWorkspaceRoute(entry, route));
+  const existingIndex = workspaceModuleRecentRoutes.findIndex((entry) =>
+    isSameWorkspaceRoute(entry, route)
+  );
   if (existingIndex >= 0) {
     workspaceModuleRecentRoutes.splice(existingIndex, 1);
   }
@@ -5618,7 +5626,11 @@ function openModuleWindow(
   }
 
   // Quick capture modules use smaller dimensions
-  const isQuickCapture = kind === 'quick-task' || kind === 'quick-note' || kind === 'quick-event';
+  const isQuickCapture =
+    kind === 'quick-task' ||
+    kind === 'quick-note' ||
+    kind === 'quick-event' ||
+    kind === 'quick-reminder';
   const isNotificationCenter = kind === 'notifications';
   holdCurrentFloatingDockTarget();
   let initialBounds =
@@ -6593,12 +6605,9 @@ ipcMain.on('calendar:items-updated', () => {
   broadcastCalendarItemsUpdated();
 });
 
-ipcMain.on(
-  'notes:smart-links-updated',
-  (_event, payload: { noteId?: string | null } | null) => {
-    broadcastNotesSmartLinksUpdated(payload ?? null);
-  }
-);
+ipcMain.on('notes:smart-links-updated', (_event, payload: { noteId?: string | null } | null) => {
+  broadcastNotesSmartLinksUpdated(payload ?? null);
+});
 
 ipcMain.on(
   'ledger:theme-updated',

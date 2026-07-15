@@ -36,6 +36,7 @@ import {
 } from '../../config/modulePaneSizes';
 import { useApi } from '../../hooks/useApi';
 import { useWorkspaceContext } from '../../context/WorkspaceContext';
+import { useSearch } from '../../context/SearchContext';
 import { supabase } from '../../services/supabase';
 import {
   ModuleHeaderActionButton,
@@ -55,6 +56,11 @@ import { useWorkspaceRouteHistory } from '../../hooks/useWorkspaceRouteHistory';
 import { CreateNoteModal } from './CreateNoteModal';
 import { BulkExportModal } from './BulkExportModal';
 import { VersionHistoryModal } from './VersionHistoryModal';
+import {
+  NotesSelectionComposerModal,
+  type NotesSelectionComposerContext,
+  type NotesSelectionComposerKind,
+} from './NotesSelectionComposerModal';
 import { bulkExportNotes, bulkExportMindMaps } from '../../utils/exportUtils';
 
 type NoteRow = {
@@ -597,6 +603,8 @@ export const NotesWindow = () => {
   const selectedNoteServerUpdatedByRef = useRef<string | null>(null);
   const remoteNoteUpdateToastIdRef = useRef<string | null>(null);
   const remoteNoteUpdatePendingRef = useRef(false);
+  const intakeSubmissionRef = useRef(false);
+  const noteNavigationRequestRef = useRef(0);
 
   const [notes, setNotes] = useState<NoteRow[]>([]);
   const [noteTree, setNoteTree] = useState<NoteTreeNode[]>([]);
@@ -716,11 +724,14 @@ export const NotesWindow = () => {
     WorkspaceProjectNoteLink[]
   >([]);
   const [isLinkProjectModalOpen, setIsLinkProjectModalOpen] = useState(false);
+  const [selectionComposerContext, setSelectionComposerContext] =
+    useState<NotesSelectionComposerContext | null>(null);
   const [linkProjectTargetNoteId, setLinkProjectTargetNoteId] = useState<string | null>(null);
   const [linkableProjects, setLinkableProjects] = useState<ProjectLinkCandidate[]>([]);
   const [isLoadingLinkableProjects, setIsLoadingLinkableProjects] = useState(false);
   const [linkProjectSearch, setLinkProjectSearch] = useState('');
   const toast = useToast();
+  const { openSearch } = useSearch();
   const [workspaceMembers, setWorkspaceMembers] = useState<WorkspaceMember[]>([]);
   const quickTemplates = [
     { id: 'meeting-notes', name: 'Meeting Notes' },
@@ -771,6 +782,7 @@ export const NotesWindow = () => {
   }, [areSidePanelsCollapsed]);
 
   useEffect(() => {
+    noteNavigationRequestRef.current += 1;
     setNoteSortPreferences(loadNoteSortPreferences(activeWorkspaceId));
     setLastOpenedAtById(loadLastOpenedAtById(activeWorkspaceId));
     setSelectedNoteId(null);
@@ -914,6 +926,95 @@ export const NotesWindow = () => {
       return haystack.includes(query);
     });
   }, [linkProjectSearch, linkableProjects]);
+
+  const openEditorOverviewComposer = useCallback(
+    (kind: NotesSelectionComposerKind, selectedText: string) => {
+      if (!selectedNoteId) return;
+      setSelectionComposerContext({
+        kind,
+        text: selectedText,
+        noteId: selectedNoteId,
+        projectId: selectedNoteProjectLinks[0]?.project_id ?? null,
+      });
+    },
+    [selectedNoteId, selectedNoteProjectLinks]
+  );
+
+  const openSmartPersonTaskComposer = useCallback(
+    (action: 'task' | 'follow-up', person: { id: string; name: string; sourceText: string }) => {
+      if (!selectedNoteId) return;
+      setSelectionComposerContext({
+        kind: 'task',
+        taskVariant: action,
+        text: person.sourceText || person.name,
+        noteId: selectedNoteId,
+        projectId: selectedNoteProjectLinks[0]?.project_id ?? null,
+        assigneeId: person.id,
+      });
+    },
+    [selectedNoteId, selectedNoteProjectLinks]
+  );
+
+  const sendEditorSelectionToIntake = useCallback(
+    async (selectedText: string) => {
+      if (
+        !activeWorkspaceId ||
+        !selectedNoteId ||
+        !selectedText.trim() ||
+        intakeSubmissionRef.current
+      ) {
+        return;
+      }
+      intakeSubmissionRef.current = true;
+      try {
+        const firstLine =
+          selectedText
+            .split('\n')
+            .find((line) => line.trim())
+            ?.trim() ?? selectedText.trim();
+        const title = firstLine.replace(/^#\s*/, '').slice(0, 120);
+        const data = await api.createIntakeItem({
+          workspace_id: activeWorkspaceId,
+          source: 'manual',
+          source_provider: 'notes',
+          suggested_type: 'capture',
+          title,
+          body: selectedText,
+          raw_content: selectedText,
+          reason: 'Selected from note editor',
+          source_object_type: 'note',
+          source_object_id: selectedNoteId,
+        });
+        if (!data) throw new Error('intake_create_failed');
+        window.ipcRenderer?.send('inbox:items-updated', { delta: 1 });
+        toast.show('Sent to Intake.', { variant: 'success' });
+      } catch (error) {
+        console.error('Failed to send selected note text to Intake:', error);
+        toast.show('Could not send to Intake.', { variant: 'error' });
+      } finally {
+        intakeSubmissionRef.current = false;
+      }
+    },
+    [activeWorkspaceId, api, selectedNoteId, toast]
+  );
+
+  const linkEditorSelectionToPerson = useCallback(
+    async (selectedText: string, personId: string) => {
+      if (!selectedNoteId) return;
+      try {
+        await api.upsertNotePersonLink(selectedNoteId, {
+          person_user_id: personId,
+          source_key: `person:${selectedText.trim().toLowerCase()}`,
+          source_text: selectedText.trim(),
+        });
+        toast.show('Linked to person', { variant: 'success' });
+      } catch (error) {
+        console.error('Failed to link selected note text to person:', error);
+        toast.show('Could not link person.', { variant: 'error' });
+      }
+    },
+    [api, selectedNoteId, toast]
+  );
 
   const getSortPreferenceForScope = useCallback(
     (scopeId: string) => {
@@ -1408,7 +1509,15 @@ export const NotesWindow = () => {
   ]);
 
   const applySidebarSelection = useCallback(
-    (noteId: string, modifiers?: { shiftKey?: boolean; metaKey?: boolean; ctrlKey?: boolean }) => {
+    (
+      noteId: string,
+      modifiers?: {
+        shiftKey?: boolean;
+        metaKey?: boolean;
+        ctrlKey?: boolean;
+        activate?: boolean;
+      }
+    ) => {
       const orderedIds = visibleNoteOrder;
       const currentAnchor = selectionAnchorNoteIdRef.current ?? selectedNoteIdRef.current ?? noteId;
       const isToggle = Boolean(modifiers?.metaKey || modifiers?.ctrlKey);
@@ -1448,7 +1557,7 @@ export const NotesWindow = () => {
 
       bulkSidebarSelectionRef.current = false;
       selectionAnchorNoteIdRef.current = noteId;
-      setSelectedNoteId(noteId);
+      if (modifiers?.activate !== false) setSelectedNoteId(noteId);
       setSelectedNoteIds([noteId]);
     },
     [visibleNoteOrder]
@@ -1628,6 +1737,7 @@ export const NotesWindow = () => {
     setDraftMode(note.mode || 'text');
     setDraftMindMapStructure(note.mind_map_structure || null);
     setLastSavedAt(note.updated_at);
+    isDirtyRef.current = false;
     setIsDirty(false);
     setHasUserEdited(false);
     setHasHydratedNote(true);
@@ -2286,8 +2396,18 @@ export const NotesWindow = () => {
   );
 
   const flushAutosave = useCallback(
-    async (override?: { title?: string; content?: string; date?: string; mood?: string }) => {
-      if (!selectedNoteId) return null;
+    async (
+      override?: { title?: string; content?: string; date?: string; mood?: string },
+      expectedNoteId?: string | null
+    ) => {
+      const saveNoteId = expectedNoteId ?? selectedNoteId;
+      if (!saveNoteId) return null;
+      if (selectedNoteIdRef.current !== saveNoteId || hydrationNoteIdRef.current !== saveNoteId) {
+        return null;
+      }
+
+      const saveIsStillCurrent = () =>
+        selectedNoteIdRef.current === saveNoteId && hydrationNoteIdRef.current === saveNoteId;
 
       const noteTitle = (override?.title ?? draftTitle).trim() || 'Untitled note';
       const noteContent = normalizeEditorHtml(override?.content ?? draftContent);
@@ -2334,9 +2454,10 @@ export const NotesWindow = () => {
       setError(null);
 
       try {
+        if (!saveIsStillCurrent()) return null;
         // safety: create a checkpoint if update would be destructive
         try {
-          const existing = notes.find((n) => n.id === selectedNoteId);
+          const existing = notes.find((n) => n.id === saveNoteId);
           if (existing) {
             const oldPlain = htmlToPlainText(
               (existing as any).content_html ?? existing.content ?? ''
@@ -2346,7 +2467,7 @@ export const NotesWindow = () => {
             const newLen = String(newPlain).replace(/\s/g, '').length;
             if (oldLen > 50 && newLen < Math.max(5, Math.floor(oldLen * 0.25))) {
               try {
-                await api.createNoteVersion(selectedNoteId, {
+                await api.createNoteVersion(saveNoteId, {
                   reason: 'before_destructive_overwrite',
                 });
               } catch (e) {
@@ -2361,12 +2482,12 @@ export const NotesWindow = () => {
         // autosave checkpoint throttling: keep revision history calm in production
         try {
           const now = Date.now();
-          const last = lastAutosaveCheckpointRef.current.get(selectedNoteId) ?? 0;
+          const last = lastAutosaveCheckpointRef.current.get(saveNoteId) ?? 0;
           const TEN_MIN = 10 * 60 * 1000;
           if (!last || now - last >= TEN_MIN) {
             try {
-              await api.createNoteVersion(selectedNoteId, { reason: 'autosave_checkpoint' });
-              lastAutosaveCheckpointRef.current.set(selectedNoteId, now);
+              await api.createNoteVersion(saveNoteId, { reason: 'autosave_checkpoint' });
+              lastAutosaveCheckpointRef.current.set(saveNoteId, now);
             } catch (e) {
               console.error('[notes] failed to create autosave checkpoint', e);
             }
@@ -2375,7 +2496,8 @@ export const NotesWindow = () => {
           console.error('[notes] autosave checkpoint check failed', e);
         }
 
-        const data = await api.updateNote(selectedNoteId, {
+        if (!saveIsStillCurrent()) return null;
+        const data = await api.updateNote(saveNoteId, {
           title: noteTitle,
           content_html: noteContent,
           date: noteDate,
@@ -2389,10 +2511,7 @@ export const NotesWindow = () => {
         setNoteTree((prev) => replaceNoteInTree(prev, updated));
         // An older save may resolve after navigation. Do not let it mutate
         // dirty/saved state belonging to the newly selected note.
-        if (
-          selectedNoteIdRef.current !== selectedNoteId ||
-          hydrationNoteIdRef.current !== selectedNoteId
-        ) {
+        if (selectedNoteIdRef.current !== saveNoteId || hydrationNoteIdRef.current !== saveNoteId) {
           return updated;
         }
         setIsDirty(false);
@@ -2586,15 +2705,25 @@ export const NotesWindow = () => {
 
   const openNote = useCallback(
     async (note: NoteRow) => {
-      if (selectedNoteId === note.id) return;
+      if (
+        selectedNoteId === note.id &&
+        selectedNoteIdRef.current === note.id &&
+        hydrationNoteIdRef.current === note.id
+      ) {
+        return;
+      }
+      const navigationRequest = ++noteNavigationRequestRef.current;
+      const currentNoteId = selectedNoteIdRef.current;
       if (autosaveTimerRef.current) {
         window.clearTimeout(autosaveTimerRef.current);
         autosaveTimerRef.current = null;
       }
-      if (isDirty) {
-        const saved = await flushAutosave();
+      if (isDirtyRef.current && currentNoteId) {
+        const saved = await flushAutosave(undefined, currentNoteId);
+        if (navigationRequest !== noteNavigationRequestRef.current) return;
         if (!saved) return;
       }
+      if (navigationRequest !== noteNavigationRequestRef.current) return;
       setSelectedNoteId(note.id);
       if (!bulkSidebarSelectionRef.current) {
         setSelectedNoteIds([note.id]);
@@ -2602,7 +2731,6 @@ export const NotesWindow = () => {
       }
       syncDraftFromNote(note);
       recordNoteOpened(note.id);
-      titleRef.current?.focus();
     },
     [
       flushAutosave,
@@ -2626,10 +2754,14 @@ export const NotesWindow = () => {
         window.clearTimeout(autosaveTimerRef.current);
         autosaveTimerRef.current = null;
       }
-      if (isDirty) {
-        const saved = await flushAutosave();
+      const navigationRequest = ++noteNavigationRequestRef.current;
+      const currentNoteId = selectedNoteIdRef.current;
+      if (isDirtyRef.current && currentNoteId) {
+        const saved = await flushAutosave(undefined, currentNoteId);
+        if (navigationRequest !== noteNavigationRequestRef.current) return;
         if (!saved) return;
       }
+      if (navigationRequest !== noteNavigationRequestRef.current) return;
 
       setIsHydratingNote(true);
       setHasHydratedNote(false);
@@ -2638,6 +2770,7 @@ export const NotesWindow = () => {
 
       try {
         const fetched = (await api.getNoteById(noteId)) as NoteRow;
+        if (navigationRequest !== noteNavigationRequestRef.current) return;
         setNotes((prev) => {
           const exists = prev.some((note) => note.id === fetched.id);
           if (exists) return prev.map((note) => (note.id === fetched.id ? fetched : note));
@@ -2670,7 +2803,7 @@ export const NotesWindow = () => {
 
   const handleSidebarNoteClick = useCallback(
     async (note: NoteRow, shiftKey = false) => {
-      applySidebarSelection(note.id, { shiftKey });
+      applySidebarSelection(note.id, { shiftKey, activate: shiftKey });
       if (!shiftKey) {
         await openNote(note);
       }
@@ -4660,6 +4793,7 @@ export const NotesWindow = () => {
                       value={draftTitle}
                       onChange={(e) => {
                         setDraftTitle(e.target.value);
+                        isDirtyRef.current = true;
                         setIsDirty(true);
                       }}
                       onFocus={() => {
@@ -4676,6 +4810,7 @@ export const NotesWindow = () => {
                         type="button"
                         onClick={() => {
                           setDraftMode('text');
+                          isDirtyRef.current = true;
                           setIsDirty(true);
                         }}
                         className={`h-7 rounded-md px-2.5 text-xs font-medium ${
@@ -4690,6 +4825,7 @@ export const NotesWindow = () => {
                         type="button"
                         onClick={() => {
                           setDraftMode('mind_map');
+                          isDirtyRef.current = true;
                           setIsDirty(true);
                         }}
                         className={`h-7 rounded-md px-2.5 text-xs font-medium ${
@@ -4716,11 +4852,40 @@ export const NotesWindow = () => {
                         onAutoCorrect={() => {
                           void runAutoCorrectSpelling();
                         }}
+                        onCreateTask={(selectedText) =>
+                          openEditorOverviewComposer('task', selectedText)
+                        }
+                        onPersonTaskAction={(action, person) =>
+                          openSmartPersonTaskComposer(action, person)
+                        }
+                        onCreateReminder={(selectedText) =>
+                          openEditorOverviewComposer('reminder', selectedText)
+                        }
+                        onCreateEvent={(selectedText) =>
+                          openEditorOverviewComposer('event', selectedText)
+                        }
+                        onSendToIntake={sendEditorSelectionToIntake}
+                        onLinkProject={() => {
+                          void openLinkProjectModal(selectedNote.id);
+                        }}
+                        onLinkPerson={linkEditorSelectionToPerson}
+                        onSearch={(selectedText) => openSearch(selectedText)}
                         onChange={(nextHtml) => {
+                          // The old Lexical editor can emit a final change while
+                          // it is unmounting (image nodes are especially prone
+                          // to this). Never let that stale editor write into the
+                          // newly selected note's draft.
+                          if (
+                            selectedNoteIdRef.current !== selectedNote.id ||
+                            hydrationNoteIdRef.current !== selectedNote.id
+                          ) {
+                            return;
+                          }
                           const normalizedNext = normalizeEditorHtml(nextHtml);
                           const normalizedCurrent = normalizeEditorHtml(draftContent);
                           if (normalizedNext === normalizedCurrent) return;
                           setDraftContent(normalizedNext);
+                          isDirtyRef.current = true;
                           setIsDirty(true);
                         }}
                         onFocus={() => {
@@ -4745,6 +4910,7 @@ export const NotesWindow = () => {
                           structure={draftMindMapStructure}
                           onChange={(structure) => {
                             setDraftMindMapStructure(structure);
+                            isDirtyRef.current = true;
                             setIsDirty(true);
                           }}
                           isFullscreen={isMindMapFullscreen}
@@ -5174,6 +5340,7 @@ export const NotesWindow = () => {
                 structure={draftMindMapStructure}
                 onChange={(structure) => {
                   setDraftMindMapStructure(structure);
+                  isDirtyRef.current = true;
                   setIsDirty(true);
                 }}
                 isFullscreen
@@ -5586,12 +5753,20 @@ export const NotesWindow = () => {
         }
       />
 
+      <NotesSelectionComposerModal
+        context={selectionComposerContext}
+        members={workspaceMembers}
+        onClose={() => setSelectionComposerContext(null)}
+      />
       <ModalOverlay
         isOpen={isLinkProjectModalOpen}
         onClose={() => {
           setIsLinkProjectModalOpen(false);
           setLinkProjectTargetNoteId(null);
         }}
+        backdropBorderRadius="inherit"
+        disablePortal
+        manageWindowChrome={false}
         classNameContainer="w-full max-w-[420px] overflow-hidden rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-[var(--ledger-shadow)]"
       >
         <div className="flex items-start justify-between gap-4 border-b border-[color:var(--ledger-border-subtle)] px-5 py-4">

@@ -46,7 +46,7 @@ const truncatePreview = (value: string, length = 80) => {
 export const SearchModal = () => {
   const { user } = useAuthContext();
   const { activeWorkspaceId } = useWorkspaceContext();
-  const { isSearchOpen, closeSearch } = useSearch();
+  const { isSearchOpen, initialQuery, closeSearch } = useSearch();
   const api = useApi();
   const inputRef = useRef<HTMLInputElement | null>(null);
   const itemRefs = useRef<Array<HTMLButtonElement | null>>([]);
@@ -76,7 +76,7 @@ export const SearchModal = () => {
       return;
     }
 
-    setQuery('');
+    setQuery(initialQuery);
     setResults([]);
     setSelectedIndex(0);
     setIsFullscreen(false);
@@ -86,7 +86,7 @@ export const SearchModal = () => {
     }, 20);
 
     return () => window.clearTimeout(timer);
-  }, [isSearchOpen]);
+  }, [initialQuery, isSearchOpen]);
 
   const activeResult = useMemo(() => results[selectedIndex] ?? null, [results, selectedIndex]);
 
@@ -302,7 +302,9 @@ export const SearchModal = () => {
                       <Icon size={16} />
                     </span>
                     <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-semibold text-[var(--ledger-text-primary)]">{result.title}</p>
+                      <p className="truncate text-sm font-semibold text-[var(--ledger-text-primary)]">
+                        {result.title}
+                      </p>
                       <p className="mt-0.5 line-clamp-2 text-xs leading-5 text-[var(--ledger-text-secondary)]">
                         {truncatePreview(result.preview) || 'No preview available'}
                       </p>

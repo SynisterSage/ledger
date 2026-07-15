@@ -40,7 +40,9 @@ const formatVersionStamp = (value: string) =>
 
 const toHumanReason = (reason: string | null | undefined, isCurrent: boolean) => {
   if (isCurrent) return 'Current';
-  const key = String(reason ?? '').trim().toLowerCase();
+  const key = String(reason ?? '')
+    .trim()
+    .toLowerCase();
   if (!key) return 'Manual version';
   if (key === 'autosave_checkpoint') return 'Autosaved';
   if (key === 'before_edit') return 'Before edit';
@@ -66,7 +68,7 @@ export const VersionHistoryModal = ({
 
   useEffect(() => {
     if (!isOpen) return;
-    setSelectedVersionId((current) => current ?? (versions[0]?.id ?? null));
+    setSelectedVersionId((current) => current ?? versions[0]?.id ?? null);
   }, [isOpen, versions]);
 
   useEffect(() => {
@@ -102,8 +104,8 @@ export const VersionHistoryModal = ({
       manageWindowChrome={false}
       classNameContainer="w-full max-w-3xl overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-xl"
     >
-      <div className="flex max-h-[84vh] flex-col">
-        <div className="sticky top-0 z-10 flex items-center justify-between border-b border-gray-200 bg-white px-5 py-4">
+      <div className="flex h-[84vh] max-h-[84vh] flex-col">
+        <div className="flex shrink-0 items-center justify-between border-b border-gray-200 bg-white px-5 py-4">
           <div className="min-w-0">
             <p className="text-xs font-medium text-gray-500">Version history</p>
             <p className="mt-1 truncate text-sm font-semibold text-gray-900">
@@ -116,7 +118,7 @@ export const VersionHistoryModal = ({
           <ModalCloseButton onClick={onClose} ariaLabel="Close version history" />
         </div>
 
-        <div className="min-h-0 flex-1 overflow-auto p-4">
+        <div className="min-h-0 flex-1 overflow-hidden p-4">
           {isLoading ? (
             <div className="flex items-center justify-center py-12 text-gray-500">
               <Loader2 size={18} className="animate-spin" />
@@ -127,9 +129,9 @@ export const VersionHistoryModal = ({
               No versions available yet.
             </div>
           ) : (
-            <div className="grid max-h-[calc(84vh-102px)] grid-cols-1 gap-4 overflow-hidden md:grid-cols-[300px_minmax(0,1fr)]">
-              <div className="min-h-0 rounded-xl border border-gray-200">
-                <div className="max-h-full overflow-auto py-1.5">
+            <div className="grid h-full min-h-0 grid-cols-1 gap-4 overflow-hidden md:grid-cols-[300px_minmax(0,1fr)]">
+              <div className="min-h-0 h-full rounded-xl border border-gray-200">
+                <div className="h-full overflow-y-auto py-1.5">
                   {versions.map((version, index) => {
                     const isSelected = selectedVersion?.id === version.id;
                     const isCurrent = index === 0;
@@ -174,7 +176,7 @@ export const VersionHistoryModal = ({
                 </div>
               </div>
 
-              <div className="min-h-0 rounded-xl border border-gray-200 bg-white p-4">
+              <div className="min-h-0 h-full rounded-xl border border-gray-200 bg-white p-4">
                 {selectedVersion ? (
                   <div className="flex h-full min-h-0 flex-col">
                     <div className="border-b border-gray-100 pb-3">
@@ -189,7 +191,8 @@ export const VersionHistoryModal = ({
                     </div>
 
                     <div className="mt-3 min-h-0 flex-1 overflow-auto rounded-lg border border-gray-100 bg-gray-50/60 px-3 py-2.5 text-sm leading-6 text-gray-700">
-                      {previewPlainText(selectedVersion.content_html) || 'No content in this version.'}
+                      {previewPlainText(selectedVersion.content_html) ||
+                        'No content in this version.'}
                     </div>
 
                     <div className="mt-3 flex items-center justify-between">
