@@ -36,6 +36,7 @@ import {
 import { useApi } from '../../hooks/useApi';
 import { useWorkspaceContext } from '../../context/WorkspaceContext';
 import { useSearch } from '../../context/SearchContext';
+import { usePins } from '../../context/PinsContext';
 import { supabase } from '../../services/supabase';
 import {
   ModuleHeaderActionButton,
@@ -62,6 +63,8 @@ import {
 } from './NotesSelectionComposerModal';
 import { bulkExportNotes, bulkExportMindMaps } from '../../utils/exportUtils';
 import { QUICK_TEMPLATE_DEFINITIONS } from './templateDefinitions';
+import NotesHome from './NotesHome';
+import type { NotesHomeTemplate } from './NotesHome';
 
 type NoteRow = {
   id: string;
@@ -173,7 +176,6 @@ type SortMenuState = {
 const ROOT_NOTE_SCOPE_ID = '__root__';
 const NOTE_SORT_STORAGE_PREFIX = 'notes-sort-preferences:v1';
 const NOTE_LAST_OPENED_STORAGE_PREFIX = 'notes-last-opened:v1';
-const NOTE_LAST_SELECTED_STORAGE_PREFIX = 'notes-last-selected:v1';
 
 const todayKey = () => new Date().toISOString().slice(0, 10);
 
@@ -424,9 +426,6 @@ const getNotesSortStorageKey = (workspaceId?: string | null) =>
 const getLastOpenedStorageKey = (workspaceId?: string | null) =>
   `${NOTE_LAST_OPENED_STORAGE_PREFIX}:${workspaceId ?? 'default'}`;
 
-const getLastSelectedStorageKey = (workspaceId?: string | null) =>
-  `${NOTE_LAST_SELECTED_STORAGE_PREFIX}:${workspaceId ?? 'default'}`;
-
 const normalizeNoteSortPreference = (value: unknown): NoteSortPreference | null => {
   if (!value || typeof value !== 'object') return null;
   const candidate = value as Partial<NoteSortPreference>;
@@ -469,15 +468,6 @@ const loadLastOpenedAtById = (workspaceId?: string | null) => {
     Number.isFinite(Number(value))
   );
   return Object.fromEntries(entries.map(([id, value]) => [id, Number(value)]));
-};
-
-const loadLastSelectedNoteId = (workspaceId?: string | null) => {
-  try {
-    const stored = localStorage.getItem(getLastSelectedStorageKey(workspaceId));
-    return stored?.trim() ? stored : null;
-  } catch {
-    return null;
-  }
 };
 
 const formatNoteSortLabel = (pref: NoteSortPreference | null) => {
@@ -632,6 +622,10 @@ export const NotesWindow = () => {
   const [isCreating, setIsCreating] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [showCreateNoteModal, setShowCreateNoteModal] = useState(false);
+  const [createNoteModalInitialStep, setCreateNoteModalInitialStep] = useState<'main' | 'gallery'>(
+    'main'
+  );
+  const [createNoteModalTemplateId, setCreateNoteModalTemplateId] = useState<string | null>(null);
   const [showExportModal, setShowExportModal] = useState(false);
   const [exportNoteIds, setExportNoteIds] = useState<string[] | null>(null);
   const [showVersionHistoryModal, setShowVersionHistoryModal] = useState(false);
@@ -712,14 +706,11 @@ export const NotesWindow = () => {
   const [noteSortPreferences, setNoteSortPreferences] = useState<NoteSortPreferences>(() =>
     loadNoteSortPreferences(activeWorkspaceId)
   );
-  const didRestoreInitialSelectionRef = useRef(false);
   const didApplyInitialFocusRef = useRef(false);
   const [lastOpenedAtById, setLastOpenedAtById] = useState<Record<string, number>>(() =>
     loadLastOpenedAtById(activeWorkspaceId)
   );
-  const [workspaceTemplates, setWorkspaceTemplates] = useState<Array<{ id: string; name: string }>>(
-    []
-  );
+  const [workspaceTemplates, setWorkspaceTemplates] = useState<NotesHomeTemplate[]>([]);
   const [workspaceProjectNoteLinks, setWorkspaceProjectNoteLinks] = useState<
     WorkspaceProjectNoteLink[]
   >([]);
@@ -731,6 +722,7 @@ export const NotesWindow = () => {
   const [isLoadingLinkableProjects, setIsLoadingLinkableProjects] = useState(false);
   const [linkProjectSearch, setLinkProjectSearch] = useState('');
   const toast = useToast();
+  const { pins, toggleObjectPin } = usePins();
   const { openSearch } = useSearch();
   const [workspaceMembers, setWorkspaceMembers] = useState<WorkspaceMember[]>([]);
   const quickTemplates = QUICK_TEMPLATE_DEFINITIONS.map(({ name }) => ({
@@ -768,7 +760,6 @@ export const NotesWindow = () => {
     setSelectedNoteId(null);
     setSelectedNoteIds([]);
     selectionAnchorNoteIdRef.current = null;
-    didRestoreInitialSelectionRef.current = false;
     didApplyInitialFocusRef.current = false;
   }, [activeWorkspaceId]);
 
@@ -1090,22 +1081,10 @@ export const NotesWindow = () => {
     {
       kind: 'notes',
       focusNoteId: selectedNoteId,
+      focusContext: selectedNoteId ? null : 'home',
     },
     true
   );
-
-  useEffect(() => {
-    try {
-      const storageKey = getLastSelectedStorageKey(activeWorkspaceId);
-      if (selectedNoteId) {
-        localStorage.setItem(storageKey, selectedNoteId);
-      } else {
-        localStorage.removeItem(storageKey);
-      }
-    } catch (error) {
-      console.error('Failed to save last selected note:', error);
-    }
-  }, [activeWorkspaceId, selectedNoteId]);
 
   useEffect(() => {
     selectedNoteIdsRef.current = selectedNoteIds;
@@ -1547,17 +1526,13 @@ export const NotesWindow = () => {
     (note: NoteRow, event: MouseEvent<HTMLButtonElement>) => {
       event.preventDefault();
 
-      if (!selectedNoteIdSet.has(note.id) || selectedNoteIds.length <= 1) {
-        applySidebarSelection(note.id);
-      }
-
       setNoteContextMenu({
         x: event.clientX,
         y: event.clientY,
         noteId: note.id,
       });
     },
-    [applySidebarSelection, selectedNoteIdSet, selectedNoteIds.length]
+    []
   );
 
   const closeNoteContextMenu = useCallback(() => {
@@ -1590,6 +1565,23 @@ export const NotesWindow = () => {
     return map;
   }, [noteTree]);
 
+  const sectionById = useMemo(() => {
+    return new Map(sections.map((section) => [section.id, section]));
+  }, [sections]);
+
+  const selectedSectionBreadcrumb = useMemo(() => {
+    if (!selectedNote?.section_id) return [];
+    const crumbs: Array<{ id: string; title: string }> = [];
+    const seen = new Set<string>();
+    let cursor = sectionById.get(selectedNote.section_id) ?? null;
+    while (cursor && !seen.has(cursor.id)) {
+      seen.add(cursor.id);
+      crumbs.unshift({ id: cursor.id, title: cursor.name || 'Untitled folder' });
+      cursor = cursor.parent_id ? sectionById.get(cursor.parent_id) ?? null : null;
+    }
+    return crumbs;
+  }, [sectionById, selectedNote?.section_id]);
+
   const selectedBreadcrumb = useMemo(() => {
     if (!selectedNoteId) return [];
     const crumbs: Array<{ id: string; title: string }> = [];
@@ -1600,8 +1592,8 @@ export const NotesWindow = () => {
       crumbs.unshift({ id: cursor.id, title: cursor.title || 'Untitled note' });
       cursor = cursor.parent_id ? nodeById.get(cursor.parent_id) ?? null : null;
     }
-    return crumbs;
-  }, [nodeById, selectedNoteId]);
+    return [...selectedSectionBreadcrumb, ...crumbs];
+  }, [nodeById, selectedNoteId, selectedSectionBreadcrumb]);
 
   const recentNotes = useMemo(
     () =>
@@ -1805,14 +1797,7 @@ export const NotesWindow = () => {
   const refreshTemplates = useCallback(async () => {
     try {
       const data = await api.getTemplates();
-      setWorkspaceTemplates(
-        Array.isArray(data)
-          ? data.map((template: { id: string; name: string }) => ({
-              id: template.id,
-              name: template.name,
-            }))
-          : []
-      );
+      setWorkspaceTemplates(Array.isArray(data) ? (data as NotesHomeTemplate[]) : []);
     } catch (e) {
       console.error('Failed to load templates:', e);
       setWorkspaceTemplates([]);
@@ -1837,6 +1822,77 @@ export const NotesWindow = () => {
       } catch (error) {
         console.error('Failed to save template:', error);
         setError(error instanceof Error ? error.message : 'Could not save template.');
+      }
+    },
+    [api, refreshTemplates]
+  );
+
+  const useTemplateFromHome = useCallback(
+    async (templateId: string) => {
+      try {
+        const note = await api.createNoteFromTemplate(templateId);
+        setNotes((prev) => [note as NoteRow, ...prev]);
+        setNoteTree((prev) => [
+          {
+            ...(note as NoteRow),
+            depth: (note as NoteRow).depth ?? 0,
+            children: [],
+          },
+          ...prev,
+        ]);
+        setSelectedNoteId(note.id);
+        if (!bulkSidebarSelectionRef.current) {
+          setSelectedNoteIds([note.id]);
+          selectionAnchorNoteIdRef.current = note.id;
+        }
+        syncDraftFromNote(note as NoteRow);
+        setTimeout(() => titleRef.current?.focus(), 0);
+      } catch (error) {
+        setError(error instanceof Error ? error.message : 'Could not create note from template.');
+      }
+    },
+    [api, syncDraftFromNote]
+  );
+
+  const toggleNotePin = useCallback(
+    async (noteId: string) => {
+      try {
+        await toggleObjectPin({ objectType: 'note', objectId: noteId });
+      } catch (error) {
+        setError(error instanceof Error ? error.message : 'Could not update pin.');
+      }
+    },
+    [toggleObjectPin]
+  );
+
+  const toggleTemplatePin = useCallback(
+    async (template: NotesHomeTemplate) => {
+      try {
+        await api.pinTemplate(template.id, !template.pinned);
+        await refreshTemplates();
+        try {
+          window.dispatchEvent(new CustomEvent('templates:updated'));
+        } catch (e) {}
+      } catch (error) {
+        setError(error instanceof Error ? error.message : 'Could not update template pin.');
+      }
+    },
+    [api, refreshTemplates]
+  );
+
+  const duplicateTemplateFromHome = useCallback(
+    async (template: NotesHomeTemplate) => {
+      try {
+        await api.duplicateTemplate(
+          template.id,
+          template.is_system ? { visibility: 'mine' } : undefined
+        );
+        await refreshTemplates();
+        try {
+          window.dispatchEvent(new CustomEvent('templates:updated'));
+        } catch (e) {}
+      } catch (error) {
+        setError(error instanceof Error ? error.message : 'Could not duplicate template.');
       }
     },
     [api, refreshTemplates]
@@ -2085,26 +2141,6 @@ export const NotesWindow = () => {
           setHasHydratedNote(false);
           setHasUserEdited(false);
           setIsHydratingNote(false);
-        }
-
-        if (
-          !didRestoreInitialSelectionRef.current &&
-          !initialFocusNoteId &&
-          !selectedExists &&
-          !preservedSelection.length &&
-          rows.length > 0
-        ) {
-          didRestoreInitialSelectionRef.current = true;
-          const lastSelectedNoteId = loadLastSelectedNoteId(activeWorkspaceId);
-          const lastSelectedNote = lastSelectedNoteId
-            ? rows.find((note) => note.id === lastSelectedNoteId) ?? null
-            : null;
-          if (lastSelectedNote) {
-            setSelectedNoteId(lastSelectedNote.id);
-            setSelectedNoteIds([lastSelectedNote.id]);
-            selectionAnchorNoteIdRef.current = lastSelectedNote.id;
-            syncDraftFromNote(lastSelectedNote);
-          }
         }
       } catch (fetchError) {
         setError(fetchError instanceof Error ? fetchError.message : 'Could not load notes.');
@@ -2523,6 +2559,19 @@ export const NotesWindow = () => {
     await refreshCurrentNoteFromServer({ silent: true, force: true });
   }, [flushAutosave, refreshCurrentNoteFromServer]);
 
+  const goToNotesHome = useCallback(async () => {
+    const currentNoteId = selectedNoteIdRef.current;
+    if (currentNoteId && isDirtyRef.current) {
+      const saved = await flushAutosave(undefined, currentNoteId);
+      if (!saved) return;
+    }
+
+    setShowVersionHistoryModal(false);
+    setIsNoteActionsOpen(false);
+    setIsInspectorActionsOpen(false);
+    clearSidebarSelection();
+  }, [clearSidebarSelection, flushAutosave]);
+
   const runQuickAutosaveThen = useCallback(
     (after: () => void, timeoutMs = 120) => {
       let completed = false;
@@ -2914,6 +2963,34 @@ export const NotesWindow = () => {
       }
     },
     [api, notes]
+  );
+
+  const moveNoteToSection = useCallback(
+    async (noteId: string, sectionId: string | null) => {
+      const targetSortOrder = notes.reduce((max, note) => {
+        const sameSection = (note.section_id ?? null) === (sectionId ?? null);
+        if (!sameSection || note.parent_id) return max;
+        return Math.max(max, toNonNegativeInt(note.sort_order));
+      }, -1);
+      await moveNote(noteId, {
+        parent_id: null,
+        section_id: sectionId,
+        sort_order: targetSortOrder + 1,
+      });
+    },
+    [moveNote, notes]
+  );
+
+  const moveSectionToParent = useCallback(
+    async (sectionId: string, parentSectionId: string | null) => {
+      try {
+        await api.updateSection(sectionId, { parent_id: parentSectionId });
+        await loadSections();
+      } catch (error) {
+        setError(error instanceof Error ? error.message : 'Could not move folder.');
+      }
+    },
+    [api, loadSections]
   );
 
   const handleTreeDragStart = useCallback((noteId: string) => {
@@ -4628,11 +4705,24 @@ export const NotesWindow = () => {
               <div className="flex-1 flex flex-col min-h-0">
                 <div className="border-b border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-6 py-4">
                   <div className="flex items-center justify-between gap-4">
-                    <p className="truncate text-[11px] text-[var(--ledger-text-muted)]">
-                      Home
-                      {selectedBreadcrumb.length
-                        ? ` > ${selectedBreadcrumb.map((crumb) => crumb.title).join(' > ')}`
-                        : ''}
+                    <p className="min-w-0 truncate text-[11px] text-[var(--ledger-text-muted)]">
+                      <button
+                        type="button"
+                        onClick={() => void goToNotesHome()}
+                        className={`transition hover:text-[var(--ledger-text-primary)] ${
+                          selectedNote
+                            ? 'text-[var(--ledger-text-secondary)]'
+                            : 'text-[var(--ledger-text-primary)]'
+                        }`}
+                      >
+                        Home
+                      </button>
+                      {selectedBreadcrumb.length > 0 && (
+                        <>
+                          <span className="mx-1 text-[var(--ledger-text-muted)]">›</span>
+                          <span>{selectedBreadcrumb.map((crumb) => crumb.title).join(' › ')}</span>
+                        </>
+                      )}
                     </p>
                     <div className="flex items-center gap-2 shrink-0">
                       <span className="text-[11px] text-[var(--ledger-text-muted)]">
@@ -4881,28 +4971,83 @@ export const NotesWindow = () => {
                 </div>
               </div>
             ) : (
-              <div className="flex-1 flex items-center justify-center p-8">
-                <div className="max-w-md text-center">
-                  <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-hover)]">
-                    <StickyNote size={22} className="text-[var(--ledger-accent)]" />
-                  </div>
-                  <h2 className="mt-4 text-xl font-semibold text-[var(--ledger-text-primary)]">
-                    No note selected
-                  </h2>
-                  <p className="mt-2 text-sm text-[var(--ledger-text-secondary)]">
-                    Create a note to start writing, planning, or dumping ideas.
-                  </p>
-                  <button
-                    onClick={() => {
-                      setNoteCreationSectionId(null);
-                      setShowCreateNoteModal(true);
-                    }}
-                    className="mt-5 rounded-full bg-[var(--ledger-accent)] px-4 py-2 text-sm font-medium text-white transition hover:bg-[var(--ledger-accent-hover)]"
-                  >
-                    New note
-                  </button>
-                </div>
-              </div>
+              <NotesHome
+                notes={notes}
+                sections={sections}
+                templates={workspaceTemplates}
+                pins={pins}
+                workspaceId={activeWorkspaceId}
+                userId={user?.id}
+                currentSectionId={noteCreationSectionId}
+                onOpenNote={(note) => {
+                  void openNote(note as NoteRow);
+                }}
+                onNewNote={(sectionId) => {
+                  setNoteCreationSectionId(sectionId ?? noteCreationSectionId);
+                  setShowCreateNoteModal(true);
+                }}
+                onBrowseTemplates={() => {
+                  setCreateNoteModalTemplateId(null);
+                  setCreateNoteModalInitialStep('gallery');
+                  setShowCreateNoteModal(true);
+                }}
+                onOpenTemplate={(templateId) => {
+                  setCreateNoteModalTemplateId(templateId);
+                  setCreateNoteModalInitialStep('gallery');
+                  setShowCreateNoteModal(true);
+                }}
+                onUseTemplate={(templateId) => {
+                  void useTemplateFromHome(templateId);
+                }}
+                onViewAllRecent={() => {
+                  setIsLeftPaneCollapsed(false);
+                  setSearch('');
+                }}
+                onToggleNotePin={(noteId) => void toggleNotePin(noteId)}
+                onMoveNoteToSection={(noteId, sectionId) => void moveNoteToSection(noteId, sectionId)}
+                onRenameNote={(noteId) => beginInlineRename(noteId)}
+                onCreateChildNote={(noteId) => void createChildNote(noteId)}
+                onLinkNoteToProject={(noteId) => void openLinkProjectModal(noteId)}
+                onMoveNoteToRoot={(noteId) => {
+                  void api
+                    .moveNoteParent(noteId, null)
+                    .then(() => loadNotes({ silent: true }))
+                    .catch(() => {});
+                }}
+                onDuplicateNote={(noteId) => void duplicateNoteById(noteId)}
+                onSaveNoteAsTemplate={(noteId, name) => {
+                  void handleSaveNoteAsTemplate(noteId, name ?? 'Untitled note');
+                }}
+                onDeleteNote={(noteId) => void deleteNoteById(noteId)}
+                onRenameFolder={(sectionId) => beginInlineSectionRename(sectionId)}
+                onCreateChildFolder={(sectionId) => {
+                  void createSection('New folder', sectionId);
+                }}
+                onMoveFolder={(sectionId, parentSectionId) =>
+                  void moveSectionToParent(sectionId, parentSectionId)
+                }
+                onDeleteFolder={(sectionId) => {
+                  const target = sections.find((section) => section.id === sectionId);
+                  if (!target) return;
+                  void api
+                    .deleteSection(target.id)
+                    .then(() => {
+                      setSections((prev) => prev.filter((section) => section.id !== target.id));
+                      setCollapsedSectionIds((prev) => {
+                        const next = new Set(prev);
+                        next.delete(target.id);
+                        return next;
+                      });
+                      void loadSections();
+                      void loadNotes({ silent: true });
+                    })
+                    .catch((error) => {
+                      setError(error instanceof Error ? error.message : 'Could not delete folder.');
+                    });
+                }}
+                onToggleTemplatePin={(template) => void toggleTemplatePin(template)}
+                onDuplicateTemplate={(template) => void duplicateTemplateFromHome(template)}
+              />
             )}
           </div>
         </section>
@@ -4928,14 +5073,14 @@ export const NotesWindow = () => {
                   <div className="min-w-0 flex-1">
                     <p className="text-xs font-medium text-[var(--ledger-text-muted)]">Inspector</p>
                     <p className="mt-1 truncate text-sm font-semibold text-[var(--ledger-text-primary)]">
-                      {selectedNote ? 'Current note' : 'No note selected'}
+                      {selectedNote ? 'Current note' : 'Notes Home'}
                     </p>
                     <p className="mt-1 truncate text-xs text-[var(--ledger-text-muted)]">
                       {selectedNote
                         ? selectedBreadcrumb.length
-                          ? selectedBreadcrumb.map((crumb) => crumb.title).join(' > ')
+                          ? selectedBreadcrumb.map((crumb) => crumb.title).join(' › ')
                           : 'Home'
-                        : 'Click a note to view details'}
+                        : 'Quick actions and recent context'}
                     </p>
                   </div>
 
@@ -5116,16 +5261,28 @@ export const NotesWindow = () => {
                       </div>
                     </div>
                   ) : (
-                    <p className="text-sm text-[var(--ledger-text-muted)]">
-                      No metadata to show until a note is selected.
-                    </p>
+                    <div className="space-y-2">
+                      <InspectorInfoRow label="Notes" value={String(notes.length)} />
+                      <InspectorInfoRow
+                        label="Updated this week"
+                        value={String(
+                          notes.filter(
+                            (note) => Date.now() - new Date(note.updated_at).getTime() < 604800000
+                          ).length
+                        )}
+                      />
+                      <InspectorInfoRow
+                        label="Pinned"
+                        value={String(pins.filter((pin) => pin.object_type === 'note').length)}
+                      />
+                    </div>
                   )}
                 </div>
 
                 <div className="space-y-2 border-t border-[color:var(--ledger-border-subtle)] pt-4">
                   <div className="flex items-center justify-between gap-3">
                     <p className="text-xs font-medium text-[var(--ledger-text-muted)]">
-                      Linked project
+                      {selectedNote ? 'Linked project' : 'Quick actions'}
                     </p>
                     {selectedNote && (
                       <button
@@ -5187,9 +5344,29 @@ export const NotesWindow = () => {
                       </div>
                     )
                   ) : (
-                    <p className="text-sm text-[var(--ledger-text-muted)]">
-                      Select a note to see linked project context.
-                    </p>
+                    <div className="space-y-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setNoteCreationSectionId(null);
+                          setCreateNoteModalInitialStep('main');
+                          setShowCreateNoteModal(true);
+                        }}
+                        className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+                      >
+                        <Plus size={14} /> New note
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCreateNoteModalInitialStep('gallery');
+                          setShowCreateNoteModal(true);
+                        }}
+                        className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+                      >
+                        <Zap size={14} /> From template
+                      </button>
+                    </div>
                   )}
                 </div>
 
@@ -5648,7 +5825,13 @@ export const NotesWindow = () => {
 
       <CreateNoteModal
         isOpen={showCreateNoteModal}
-        onClose={() => setShowCreateNoteModal(false)}
+        initialStep={createNoteModalInitialStep}
+        initialTemplateId={createNoteModalTemplateId}
+        onClose={() => {
+          setShowCreateNoteModal(false);
+          setCreateNoteModalInitialStep('main');
+          setCreateNoteModalTemplateId(null);
+        }}
         defaultSectionId={noteCreationSectionId}
         onNoteCreated={(note) => {
           if (isDirty) {

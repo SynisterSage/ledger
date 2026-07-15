@@ -5569,6 +5569,18 @@ function openModuleWindow(
     focusContext,
     focusSection
   );
+  const notesHomeRoute =
+    kind === 'notes'
+      ? routeFromModuleArgs(
+          kind,
+          focusDate,
+          focusProjectId,
+          null,
+          focusTaskId,
+          'home',
+          focusSection
+        )
+      : null;
   if (
     isWorkspaceModuleKind(kind) &&
     workspaceModuleWin &&
@@ -5577,6 +5589,9 @@ function openModuleWindow(
   ) {
     holdCurrentFloatingDockTarget();
     setWorkspaceWindowAsFloatingDockTarget(kind);
+    if (notesHomeRoute) {
+      navigateWorkspaceModuleWindow(notesHomeRoute);
+    }
     navigateWorkspaceModuleWindow(workspaceRoute);
     return;
   }
@@ -5702,8 +5717,8 @@ function openModuleWindow(
   attachNativeContextMenu(moduleWin);
 
   if (isWorkspaceModuleKind(kind)) {
-    registerWorkspaceModuleKind(kind, moduleWin, workspaceRoute);
-    recordWorkspaceRoute(workspaceRoute);
+    registerWorkspaceModuleKind(kind, moduleWin, notesHomeRoute ?? workspaceRoute);
+    recordWorkspaceRoute(notesHomeRoute ?? workspaceRoute);
     setWorkspaceWindowAsFloatingDockTarget(kind);
   } else {
     moduleWins.set(kind, moduleWin);

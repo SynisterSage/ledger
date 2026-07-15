@@ -11,6 +11,8 @@ interface CreateNoteModalProps {
   isOpen: boolean;
   onClose: () => void;
   defaultSectionId?: string | null;
+  initialStep?: Step;
+  initialTemplateId?: string | null;
   compactShell?: boolean;
   onNoteCreated?: (note: {
     id: string;
@@ -34,13 +36,17 @@ export const CreateNoteModal = ({
   isOpen,
   onClose,
   defaultSectionId = null,
+  initialStep = 'main',
+  initialTemplateId = null,
   compactShell = false,
   onNoteCreated,
 }: CreateNoteModalProps) => {
   const api = useApi();
   const [step, setStep] = useState<Step>('main');
   const [isCreating, setIsCreating] = useState(false);
-  const [workspaceTemplates, setWorkspaceTemplates] = useState<Array<{ id: string; name: string }>>([]);
+  const [workspaceTemplates, setWorkspaceTemplates] = useState<Array<{ id: string; name: string }>>(
+    []
+  );
   const [isLoadingTemplates, setIsLoadingTemplates] = useState(false);
   const [templateName, setTemplateName] = useState('');
   const [templateDescription, setTemplateDescription] = useState('');
@@ -52,9 +58,13 @@ export const CreateNoteModal = ({
 
   useEffect(() => {
     if (!isOpen) {
-      setStep('main');
+      setStep(initialStep);
     }
-  }, [isOpen]);
+  }, [initialStep, isOpen]);
+
+  useEffect(() => {
+    if (isOpen) setStep(initialStep);
+  }, [initialStep, isOpen]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -98,7 +108,10 @@ export const CreateNoteModal = ({
           const data = await api.getTemplates();
           setWorkspaceTemplates(
             Array.isArray(data)
-              ? data.map((template: { id: string; name: string }) => ({ id: template.id, name: template.name }))
+              ? data.map((template: { id: string; name: string }) => ({
+                  id: template.id,
+                  name: template.name,
+                }))
               : []
           );
         } catch (e) {
@@ -207,9 +220,18 @@ export const CreateNoteModal = ({
     }
   };
 
-  const handleEditTemplate = async (template: { id: string; name: string; description: string | null; category: string; visibility?: 'mine' | 'workspace' }) => {
+  const handleEditTemplate = async (template: {
+    id: string;
+    name: string;
+    description: string | null;
+    category: string;
+    visibility?: 'mine' | 'workspace';
+  }) => {
     try {
-      const full = await api.getTemplate(template.id) as { content_html?: string; title_pattern?: string | null };
+      const full = (await api.getTemplate(template.id)) as {
+        content_html?: string;
+        title_pattern?: string | null;
+      };
       setTemplateName(template.name);
       setTemplateDescription(template.description || '');
       setTemplateCategory(template.category || 'personal');
@@ -258,70 +280,71 @@ export const CreateNoteModal = ({
           />
         </div>
 
-          {/* Body */}
-          <div className="p-5">
-            {step === 'main' && (
-              <div className="space-y-4">
-                {/* Blank note */}
-                <button
-                  type="button"
-                  onClick={handleCreateBlank}
-                  disabled={isCreating}
-                  className="w-full flex items-center gap-4 p-4 rounded-lg border border-gray-200 text-left transition hover:bg-gray-50 active:bg-white disabled:opacity-50"
-                >
-                  <FileText size={20} className="text-gray-400" />
-                  <div className="flex-1">
-                    <p className="font-medium text-gray-900">Blank Note</p>
-                    <p className="text-sm text-gray-500">Start with an empty canvas</p>
-                  </div>
-                  <ChevronRight size={18} className="text-gray-400" />
-                </button>
-
-                {/* Quick templates */}
-                <div className="space-y-2">
-                  <p className="text-xs font-semibold text-gray-600 uppercase">Quick Templates</p>
-                  <div className="grid grid-cols-2 gap-2">
-                    {QUICK_TEMPLATE_DEFINITIONS.map(({ name, icon: Icon, description }) => {
-                      const templateId = resolveQuickTemplateId(name);
-                      return (
-                        <button
-                          key={name}
-                          type="button"
-                          onClick={() => void handleCreateQuickTemplate(name, templateId)}
-                          disabled={isCreating || isLoadingTemplates}
-                          className="p-3 rounded-lg border border-gray-200 text-left transition hover:bg-gray-50 active:bg-white disabled:opacity-50"
-                        >
-                          <Icon size={16} className="text-gray-600 mb-2" />
-                          <p className="font-medium text-sm text-gray-900">{name}</p>
-                          <p className="text-xs text-gray-500 line-clamp-1 mt-0.5">{description}</p>
-                        </button>
-                      );
-                    })}
-                  </div>
+        {/* Body */}
+        <div className="p-5">
+          {step === 'main' && (
+            <div className="space-y-4">
+              {/* Blank note */}
+              <button
+                type="button"
+                onClick={handleCreateBlank}
+                disabled={isCreating}
+                className="w-full flex items-center gap-4 p-4 rounded-lg border border-gray-200 text-left transition hover:bg-gray-50 active:bg-white disabled:opacity-50"
+              >
+                <FileText size={20} className="text-gray-400" />
+                <div className="flex-1">
+                  <p className="font-medium text-gray-900">Blank Note</p>
+                  <p className="text-sm text-gray-500">Start with an empty canvas</p>
                 </div>
+                <ChevronRight size={18} className="text-gray-400" />
+              </button>
 
-                {/* Browse all templates */}
-                <button
-                  type="button"
-                  onClick={() => setStep('gallery')}
-                  className="w-full flex items-center gap-4 p-4 rounded-lg border border-gray-200 text-left transition hover:bg-gray-50 active:bg-white"
-                >
-                  <div className="w-5 h-5 rounded border-2 border-gray-400 flex items-center justify-center">
-                    <div className="w-2 h-2 bg-gray-400 rounded-full" />
-                  </div>
-                  <div className="flex-1">
-                    <p className="font-medium text-gray-900">Browse All Templates</p>
-                    <p className="text-sm text-gray-500">View the complete gallery</p>
-                  </div>
-                  <ChevronRight size={18} className="text-gray-400" />
-                </button>
+              {/* Quick templates */}
+              <div className="space-y-2">
+                <p className="text-xs font-semibold text-gray-600 uppercase">Quick Templates</p>
+                <div className="grid grid-cols-2 gap-2">
+                  {QUICK_TEMPLATE_DEFINITIONS.map(({ name, icon: Icon, description }) => {
+                    const templateId = resolveQuickTemplateId(name);
+                    return (
+                      <button
+                        key={name}
+                        type="button"
+                        onClick={() => void handleCreateQuickTemplate(name, templateId)}
+                        disabled={isCreating || isLoadingTemplates}
+                        className="p-3 rounded-lg border border-gray-200 text-left transition hover:bg-gray-50 active:bg-white disabled:opacity-50"
+                      >
+                        <Icon size={16} className="text-gray-600 mb-2" />
+                        <p className="font-medium text-sm text-gray-900">{name}</p>
+                        <p className="text-xs text-gray-500 line-clamp-1 mt-0.5">{description}</p>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
-            )}
+
+              {/* Browse all templates */}
+              <button
+                type="button"
+                onClick={() => setStep('gallery')}
+                className="w-full flex items-center gap-4 p-4 rounded-lg border border-gray-200 text-left transition hover:bg-gray-50 active:bg-white"
+              >
+                <div className="w-5 h-5 rounded border-2 border-gray-400 flex items-center justify-center">
+                  <div className="w-2 h-2 bg-gray-400 rounded-full" />
+                </div>
+                <div className="flex-1">
+                  <p className="font-medium text-gray-900">Browse All Templates</p>
+                  <p className="text-sm text-gray-500">View the complete gallery</p>
+                </div>
+                <ChevronRight size={18} className="text-gray-400" />
+              </button>
+            </div>
+          )}
 
           {step === 'gallery' && (
             <div className="min-h-0 overflow-hidden">
               <TemplateGallery
                 onSelectTemplate={handleCreateFromTemplate}
+                initialTemplateId={initialTemplateId}
                 onCreateCustom={() => setStep('custom-form')}
                 onEditTemplate={handleEditTemplate}
               />
@@ -331,17 +354,91 @@ export const CreateNoteModal = ({
           {step === 'custom-form' && (
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-3">
-                <label className="text-xs font-medium text-gray-600">Name<input value={templateName} onChange={(e) => setTemplateName(e.target.value)} className="mt-1 h-9 w-full rounded-lg border border-gray-200 px-3 text-sm" placeholder="Weekly team check-in" /></label>
-                <label className="text-xs font-medium text-gray-600">Category<select value={templateCategory} onChange={(e) => setTemplateCategory(e.target.value)} className="mt-1 h-9 w-full rounded-lg border border-gray-200 px-3 text-sm">{['meeting','internship','team','project','personal','reading'].map((category) => <option key={category}>{category}</option>)}</select></label>
+                <label className="text-xs font-medium text-gray-600">
+                  Name
+                  <input
+                    value={templateName}
+                    onChange={(e) => setTemplateName(e.target.value)}
+                    className="mt-1 h-9 w-full rounded-lg border border-gray-200 px-3 text-sm"
+                    placeholder="Weekly team check-in"
+                  />
+                </label>
+                <label className="text-xs font-medium text-gray-600">
+                  Category
+                  <select
+                    value={templateCategory}
+                    onChange={(e) => setTemplateCategory(e.target.value)}
+                    className="mt-1 h-9 w-full rounded-lg border border-gray-200 px-3 text-sm"
+                  >
+                    {['meeting', 'internship', 'team', 'project', 'personal', 'reading'].map(
+                      (category) => (
+                        <option key={category}>{category}</option>
+                      )
+                    )}
+                  </select>
+                </label>
               </div>
-              <label className="block text-xs font-medium text-gray-600">Description<textarea value={templateDescription} onChange={(e) => setTemplateDescription(e.target.value)} className="mt-1 min-h-16 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm" placeholder="When this template is useful" /></label>
-              <div className="flex items-center gap-4 text-sm text-gray-700"><span className="text-xs font-medium text-gray-600">Visibility</span>{(['mine','workspace'] as const).map((visibility) => <label key={visibility} className="flex items-center gap-1.5"><input type="radio" checked={templateVisibility === visibility} onChange={() => setTemplateVisibility(visibility)} />{visibility === 'mine' ? 'Mine' : 'Workspace'}</label>)}</div>
-              <label className="block text-xs font-medium text-gray-600">Title pattern<input value={templateTitlePattern} onChange={(e) => setTemplateTitlePattern(e.target.value)} className="mt-1 h-9 w-full rounded-lg border border-gray-200 px-3 text-sm" placeholder="{{date}} Team Meeting" /></label>
-              <div><p className="mb-1 text-xs font-medium text-gray-600">Content</p><div className="max-h-[38vh] overflow-y-auto rounded-lg border border-gray-200 bg-white"><RichTextEditor initialValue={templateContent} editorKey="new-template" onChange={setTemplateContent} /></div></div>
-              <div className="flex justify-end gap-2"><button type="button" onClick={() => setStep('gallery')} className="rounded-lg px-3 py-2 text-sm text-gray-600">Cancel</button><button type="button" disabled={!templateName.trim() || isCreating} onClick={() => void handleCreateTemplate()} className="rounded-lg bg-[#FF5F40] px-3 py-2 text-sm font-medium text-white disabled:opacity-50">Save template</button></div>
+              <label className="block text-xs font-medium text-gray-600">
+                Description
+                <textarea
+                  value={templateDescription}
+                  onChange={(e) => setTemplateDescription(e.target.value)}
+                  className="mt-1 min-h-16 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+                  placeholder="When this template is useful"
+                />
+              </label>
+              <div className="flex items-center gap-4 text-sm text-gray-700">
+                <span className="text-xs font-medium text-gray-600">Visibility</span>
+                {(['mine', 'workspace'] as const).map((visibility) => (
+                  <label key={visibility} className="flex items-center gap-1.5">
+                    <input
+                      type="radio"
+                      checked={templateVisibility === visibility}
+                      onChange={() => setTemplateVisibility(visibility)}
+                    />
+                    {visibility === 'mine' ? 'Mine' : 'Workspace'}
+                  </label>
+                ))}
+              </div>
+              <label className="block text-xs font-medium text-gray-600">
+                Title pattern
+                <input
+                  value={templateTitlePattern}
+                  onChange={(e) => setTemplateTitlePattern(e.target.value)}
+                  className="mt-1 h-9 w-full rounded-lg border border-gray-200 px-3 text-sm"
+                  placeholder="{{date}} Team Meeting"
+                />
+              </label>
+              <div>
+                <p className="mb-1 text-xs font-medium text-gray-600">Content</p>
+                <div className="max-h-[38vh] overflow-y-auto rounded-lg border border-gray-200 bg-white">
+                  <RichTextEditor
+                    initialValue={templateContent}
+                    editorKey="new-template"
+                    onChange={setTemplateContent}
+                  />
+                </div>
+              </div>
+              <div className="flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setStep('gallery')}
+                  className="rounded-lg px-3 py-2 text-sm text-gray-600"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={!templateName.trim() || isCreating}
+                  onClick={() => void handleCreateTemplate()}
+                  className="rounded-lg bg-[#FF5F40] px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+                >
+                  Save template
+                </button>
+              </div>
             </div>
           )}
-          </div>
+        </div>
       </div>
     </ModalOverlay>
   );

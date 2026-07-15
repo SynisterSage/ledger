@@ -196,7 +196,7 @@ const getWorkspaceRouteLabel = (route: WorkspaceRoute) => {
         ? `Calendar · ${formatHistoryDate(route.focusDate) ?? 'Day'}`
         : 'Calendar';
     case 'notes':
-      return 'Notes';
+      return route.focusContext === 'home' || !route.focusNoteId ? 'Notes Home' : 'Notes · Note';
     case 'projects':
       if (route.focusTaskId) return 'Projects · Task';
       return route.focusProjectId ? 'Projects · Project' : 'Projects';

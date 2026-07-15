@@ -3,6 +3,7 @@ import {
   CalendarDays,
   ChevronDown,
   Folder,
+  FolderInput,
   Link2,
   PinOff,
   StickyNote,
@@ -11,13 +12,11 @@ import {
   X,
 } from 'lucide-react';
 import {
-  type CSSProperties,
   useEffect,
-  useRef,
   useState,
 } from 'react';
-import { createPortal } from 'react-dom';
 import { useAuthContext } from '../../context/AuthContext';
+import { ContextMenu, type ContextMenuGroup } from '../Common/ContextMenu';
 import { useWorkspaceContext } from '../../context/WorkspaceContext';
 import { usePins } from '../../context/PinsContext';
 import { sidebarTheme } from './sidebarTheme';
@@ -50,8 +49,6 @@ type DropHint =
   | null;
 
 const PIN_SECTION_COLLAPSE_STORAGE_KEY = 'ledger:sidebar:pinned-collapsed:v1';
-const menuWidth = 208;
-const menuHeight = 184;
 
 const getStorageScope = (userId?: string | null, workspaceId?: string | null) =>
   userId && workspaceId ? `${userId}:${workspaceId}` : null;
@@ -139,7 +136,6 @@ export const PinnedSidebarSection = () => {
   const [dragState, setDragState] = useState<DragState>(null);
   const [dropHint, setDropHint] = useState<DropHint>(null);
   const [optimisticPins, setOptimisticPins] = useState<PinRecord[] | null>(null);
-  const menuRef = useRef<HTMLDivElement | null>(null);
 
   const storageScope = getStorageScope(user?.id, activeWorkspaceId);
   const visiblePins = sortPins(optimisticPins ?? pins);
@@ -161,11 +157,7 @@ export const PinnedSidebarSection = () => {
   useEffect(() => {
     if (!menuState) return;
 
-    const handlePointerDown = (event: MouseEvent) => {
-      const target = event.target as HTMLElement | null;
-      if (menuRef.current && target && menuRef.current.contains(target)) {
-        return;
-      }
+    const handlePointerDown = () => {
       setMenuState(null);
     };
 
@@ -221,6 +213,40 @@ export const PinnedSidebarSection = () => {
   const handlePinDelete = async (pinId: string) => {
     setMenuState(null);
     await unpinObject(pinId);
+  };
+
+  const menuGroups = (): ContextMenuGroup[] | null => {
+    if (!menuState) return null;
+    if (menuState.type !== 'pin') return null;
+    const pin = visiblePins.find((item) => item.id === menuState.pinId);
+    if (!pin) return null;
+    const target = resolvePinTarget(pin);
+    const canOpenInNewWindow = Boolean(target?.openInNewWindow);
+    return [
+      {
+        items: [
+          {
+            id: 'open',
+            label: pin.object_type === 'note' ? 'Open note' : 'Open',
+            icon: <StickyNote size={14} />,
+            onClick: () => openPin(pin),
+          },
+          {
+            id: 'open-new',
+            label: 'Open in new window',
+            icon: <FolderInput size={14} />,
+            hidden: !canOpenInNewWindow,
+            onClick: () => openPin(pin, true),
+          },
+          {
+            id: 'unpin',
+            label: pin.object_type === 'note' ? 'Unpin note' : 'Unpin',
+            icon: <PinOff size={14} />,
+            onClick: () => void handlePinDelete(pin.id),
+          },
+        ],
+      },
+    ];
   };
 
   const handlePinReorder = async (draggedId: string, target: DropHint) => {
@@ -394,57 +420,17 @@ export const PinnedSidebarSection = () => {
         </div>
       ) : null}
 
-      {menuState &&
-        createPortal(
-          <div
-            ref={menuRef}
-            className={`${sidebarTheme.menu} min-w-52`}
-            style={{
-              left: `${Math.max(8, Math.min(menuState.x, window.innerWidth - menuWidth - 8))}px`,
-              top: `${Math.max(8, Math.min(menuState.y, window.innerHeight - menuHeight - 8))}px`,
-            } as CSSProperties}
-            onClick={(event) => event.stopPropagation()}
-            onMouseDown={(event) => event.stopPropagation()}
-          >
-            {menuState.type === 'pin' && (
-              <>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const pin = visiblePins.find((item) => item.id === menuState.pinId);
-                    if (pin) openPin(pin);
-                    setMenuState(null);
-                  }}
-                  className={sidebarTheme.menuItemAccent}
-                >
-                  <Folder size={14} />
-                  Open
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const pin = visiblePins.find((item) => item.id === menuState.pinId);
-                    if (pin) openPin(pin, true);
-                    setMenuState(null);
-                  }}
-                  className={sidebarTheme.menuItem}
-                >
-                  <Folder size={14} />
-                  Open in new window
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handlePinDelete(menuState.pinId)}
-                  className={sidebarTheme.menuItem}
-                >
-                  <PinOff size={14} />
-                  Unpin
-                </button>
-              </>
-            )}
-          </div>,
-          document.body
-        )}
+      {menuState && (
+        <ContextMenu
+          open
+          x={menuState.x}
+          y={menuState.y}
+          width={228}
+          groups={menuGroups() ?? []}
+          onClose={() => setMenuState(null)}
+          ariaLabel="Pinned item actions"
+        />
+      )}
     </section>
   );
 };
