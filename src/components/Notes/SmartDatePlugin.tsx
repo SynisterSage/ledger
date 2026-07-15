@@ -544,9 +544,9 @@ export function SmartDatePlugin({
         pendingTopLevelKeysRef.current.clear();
         if (keysToScan.size === 0) return;
 
+        scanRequestedRef.current = true;
         editor.update(
           () => {
-            scanRequestedRef.current = true;
             for (const key of keysToScan) {
               const node = $getNodeByKey(key);
               if (!node) continue;
@@ -567,7 +567,9 @@ export function SmartDatePlugin({
           { tag: SMART_DATE_SCAN_TAG }
         );
 
-        scanRequestedRef.current = false;
+        queueMicrotask(() => {
+          scanRequestedRef.current = false;
+        });
       }, SCAN_DEBOUNCE_MS);
     },
     [editor]
@@ -584,7 +586,13 @@ export function SmartDatePlugin({
         queueScan(loadedTextKeys);
         return;
       }
-      if (tags.has(SMART_DATE_SCAN_TAG) || tags.has(SMART_DATE_SYNC_TAG)) {
+      if (
+        tags.has(SMART_DATE_SCAN_TAG) ||
+        tags.has(SMART_DATE_SYNC_TAG) ||
+        tags.has('smart-person-scan') ||
+        tags.has('smart-person-sync') ||
+        tags.has('smart-person-load')
+      ) {
         return;
       }
       if (editor.isComposing()) return;
@@ -626,9 +634,9 @@ export function SmartDatePlugin({
     const timer = window.setTimeout(() => {
       const fullScanKeys = collectEligibleTextKeys();
       if (fullScanKeys.size === 0) return;
+      scanRequestedRef.current = true;
       editor.update(
         () => {
-          scanRequestedRef.current = true;
           for (const key of fullScanKeys) {
             const node = $getNodeByKey(key);
             if (node instanceof TextNode && isTextNodeEligible(node)) {
@@ -638,7 +646,9 @@ export function SmartDatePlugin({
         },
         { tag: SMART_DATE_LOAD_TAG }
       );
-      scanRequestedRef.current = false;
+      queueMicrotask(() => {
+        scanRequestedRef.current = false;
+      });
     }, 80);
 
     return () => window.clearTimeout(timer);
@@ -973,7 +983,6 @@ function SmartDateEntityMatcher({
 }) {
   const getMatch = useCallback(
     (text: string) => {
-      if (!scanRequestedRef.current) return null;
       if (!noteId) return null;
       const match = findSmartDateMatch(text);
       if (!match) return null;

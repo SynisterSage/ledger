@@ -138,9 +138,13 @@ const LoadHtmlPlugin = ({ html, editorKey }: { html?: string | null; editorKey?:
       const dom = parser.parseFromString(initialHtml, 'text/html');
       const nodes = $generateNodesFromDOM(editor, dom);
       if (nodes.length > 0) {
+        // Loading a note must not move Lexical's selection to the end of the
+        // document, otherwise opening a long note scrolls the editor to the
+        // bottom.
         root.select();
         $insertNodes(nodes);
       }
+      $setSelection(null);
     }, { tag: 'smart-date-load' });
   }, [editor, editorKey, html]);
 

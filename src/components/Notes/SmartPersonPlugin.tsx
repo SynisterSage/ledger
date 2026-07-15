@@ -290,7 +290,7 @@ export function SmartPersonPlugin({ noteId, noteTitle, noteProjectId }: { noteId
   }, [api, noteId, refreshLinks, target, toast]);
 
   const getMatch = useCallback((text: string) => {
-    if (!scanRequestedRef.current || !noteId) return null;
+    if (!noteId) return null;
     const match = findPersonMatch(text, people);
     return match ? { start: match.start, end: match.end } : null;
   }, [noteId, people]);
@@ -315,8 +315,8 @@ export function SmartPersonPlugin({ noteId, noteTitle, noteProjectId }: { noteId
     scanTimerRef.current = window.setTimeout(() => {
       const keysToScan = new Set(pendingKeysRef.current);
       pendingKeysRef.current.clear();
+      scanRequestedRef.current = true;
       editor.update(() => {
-        scanRequestedRef.current = true;
         keysToScan.forEach((key) => {
           const node = $getNodeByKey(key);
           const visit = (current: any) => {
@@ -330,13 +330,21 @@ export function SmartPersonPlugin({ noteId, noteTitle, noteProjectId }: { noteId
           visit(node);
         });
       }, { tag: SCAN_TAG });
-      scanRequestedRef.current = false;
+      queueMicrotask(() => {
+        scanRequestedRef.current = false;
+      });
     }, 220);
   }, [editor]);
 
   useEffect(() => editor.registerUpdateListener(({ editorState, dirtyLeaves, dirtyElements, tags }) => {
     if (!noteId || editor.isComposing()) return;
-    if (tags.has(SCAN_TAG) || tags.has('smart-person-sync')) return;
+    if (
+      tags.has(SCAN_TAG) ||
+      tags.has('smart-person-sync') ||
+      tags.has('smart-date-load') ||
+      tags.has('smart-date-scan') ||
+      tags.has('smart-date-sync')
+    ) return;
     const keys = new Set<NodeKey>();
     editorState.read(() => {
       if (tags.has(LOAD_TAG)) {

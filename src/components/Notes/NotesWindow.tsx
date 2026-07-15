@@ -3788,7 +3788,7 @@ export const NotesWindow = () => {
                           onContextMenu={(event) => handleSidebarNoteContextMenu(note, event)}
                           className={`w-full rounded px-3 py-1.5 text-left text-sm transition ${
                             active
-                              ? 'bg-[var(--ledger-surface-hover)] text-[var(--ledger-text-primary)] ring-1 ring-[color:var(--ledger-border-subtle)]'
+                              ? 'bg-[var(--ledger-surface-hover)] text-[var(--ledger-text-primary)]'
                               : 'bg-transparent text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]'
                           }`}
                         >
@@ -4011,7 +4011,7 @@ export const NotesWindow = () => {
                                         }
                                         className={`flex-1 min-w-0 rounded px-2.5 py-1 text-left text-sm transition ${
                                           active
-                                            ? 'bg-[var(--ledger-surface-hover)] text-[var(--ledger-text-primary)] ring-1 ring-[color:var(--ledger-border-subtle)]'
+                                            ? 'bg-[var(--ledger-surface-hover)] text-[var(--ledger-text-primary)]'
                                             : 'bg-transparent text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]'
                                         } ${getDropPreviewClasses(dropPreview, note.id)}`}
                                       >
@@ -4126,7 +4126,7 @@ export const NotesWindow = () => {
                                                 }}
                                                 className={`flex-1 min-w-0 px-2.5 py-1.5 rounded text-left text-xs transition ${
                                                   selectedNoteIdSet.has(child.id)
-                                                    ? 'bg-[var(--ledger-surface-hover)] text-[var(--ledger-text-primary)] ring-1 ring-[color:var(--ledger-border-subtle)]'
+                                                    ? 'bg-[var(--ledger-surface-hover)] text-[var(--ledger-text-primary)]'
                                                     : 'bg-transparent hover:bg-[var(--ledger-surface-hover)] text-[var(--ledger-text-secondary)]'
                                                 } ${getDropPreviewClasses(dropPreview, child.id)}`}
                                               >
@@ -4268,7 +4268,7 @@ export const NotesWindow = () => {
                                         }
                                         className={`flex-1 min-w-0 flex items-center gap-2 rounded px-2.5 py-1 text-left text-sm transition ${
                                           active
-                                            ? 'bg-[var(--ledger-surface-hover)] text-[var(--ledger-text-primary)] ring-1 ring-[color:var(--ledger-border-subtle)]'
+                                            ? 'bg-[var(--ledger-surface-hover)] text-[var(--ledger-text-primary)]'
                                             : 'bg-transparent text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]'
                                         } ${getDropPreviewClasses(dropPreview, note.id)}`}
                                       >
@@ -4376,7 +4376,7 @@ export const NotesWindow = () => {
                                               }
                                               className={`w-full flex items-center gap-2 rounded px-2.5 py-1 text-left text-xs transition ${
                                                 childActive
-                                                  ? 'bg-[var(--ledger-surface-hover)] text-[var(--ledger-text-primary)] ring-1 ring-[color:var(--ledger-border-subtle)]'
+                                                  ? 'bg-[var(--ledger-surface-hover)] text-[var(--ledger-text-primary)]'
                                                   : 'bg-transparent text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]'
                                               } ${getDropPreviewClasses(dropPreview, child.id)}`}
                                             >
@@ -4731,7 +4731,8 @@ export const NotesWindow = () => {
                           // A note switch blurs the old editor after the
                           // selected note has changed. Never flush that old
                           // editor against the new draft.
-                          if (hydrationNoteIdRef.current !== selectedNote.id || isHydratingNote) return;
+                          if (hydrationNoteIdRef.current !== selectedNote.id || isHydratingNote)
+                            return;
                           void flushAutosave();
                         }}
                       />
@@ -5252,7 +5253,7 @@ export const NotesWindow = () => {
                   })}
                 </div>
               </div>
-              <div className="pointer-events-none absolute right-0 top-0 h-6 w-7 bg-linear-to-l from-white to-transparent" />
+              <div className="pointer-events-none absolute right-0 top-0 h-6 w-7 bg-linear-to-l from-[var(--ledger-surface-card)] to-transparent" />
             </div>
           </div>
           <button
