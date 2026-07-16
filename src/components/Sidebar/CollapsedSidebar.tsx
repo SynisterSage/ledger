@@ -53,10 +53,12 @@ export const CollapsedSidebar = ({
             <button
               aria-label="Open search"
               onClick={() => {
-                restoreSidebarView();
-                window.setTimeout(() => {
-                  openSearch();
-                }, 180);
+                void (async () => {
+                  const wasForwarded = await window.desktopWindow?.openSearchInWorkspaceWindow?.();
+                  if (wasForwarded) return;
+                  restoreSidebarView();
+                  window.setTimeout(() => openSearch(), 180);
+                })();
               }}
               onMouseDown={(e) => e.stopPropagation()}
               className={iconButtonClass}

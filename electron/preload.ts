@@ -170,6 +170,9 @@ contextBridge.exposeInMainWorld('desktopWindow', {
       side: 'right' | 'left' | 'top' | 'bottom' | 'floating' | null;
     }>;
   },
+  openSearchInWorkspaceWindow(query = '') {
+    return ipcRenderer.invoke('window:open-search-in-workspace-window', query) as Promise<boolean>;
+  },
   toggleModule(kind: ModuleWindowKind, focus?: string | ModuleFocusPayload) {
     const payload =
       typeof focus === 'string' ? { kind, focusDate: focus } : { kind, ...(focus ?? {}) };

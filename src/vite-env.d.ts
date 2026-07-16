@@ -119,6 +119,7 @@ interface Window {
       attachmentStatus: string;
       side: 'right' | 'left' | 'top' | 'bottom' | 'floating' | null;
     }>;
+    openSearchInWorkspaceWindow?: (query?: string) => Promise<boolean>;
     toggleModule: (kind: ModuleWindowKind, focus?: string | ModuleFocusPayload) => Promise<void>;
     openModule: (kind: ModuleWindowKind, focus?: string | ModuleFocusPayload) => Promise<void>;
     closeModule: (kind: ModuleWindowKind) => Promise<void>;

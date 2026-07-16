@@ -7105,21 +7105,12 @@ function AppShell() {
 
       event.preventDefault();
       if (!user || isLoading) return;
-
-      if (state !== 'expanded') {
-        setState('expanded');
-        window.setTimeout(() => {
-          openSearch();
-        }, 220);
-        return;
-      }
-
       openSearch();
     };
 
     window.addEventListener('keydown', handleSearchShortcut);
     return () => window.removeEventListener('keydown', handleSearchShortcut);
-  }, [isLoading, openSearch, setState, state, user]);
+  }, [isLoading, openSearch, user]);
 
   useEffect(() => {
     const handleSidebarExpandShortcut = (event: KeyboardEvent) => {
@@ -7258,11 +7249,30 @@ function AppShell() {
     const handleTouchBarOpenSearch = () => {
       if (!user || isLoading) return;
 
+      const forwardToWorkspaceWindow = window.desktopWindow?.openSearchInWorkspaceWindow;
+      if (forwardToWorkspaceWindow) {
+        void forwardToWorkspaceWindow().then((wasForwarded) => {
+          if (wasForwarded) return;
+          if (state !== 'expanded') {
+            setState('expanded');
+            window.setTimeout(() => openSearch(), 220);
+            return;
+          }
+          openSearch();
+        }).catch(() => {
+          if (state !== 'expanded') {
+            setState('expanded');
+            window.setTimeout(() => openSearch(), 220);
+            return;
+          }
+          openSearch();
+        });
+        return;
+      }
+
       if (state !== 'expanded') {
         setState('expanded');
-        window.setTimeout(() => {
-          openSearch();
-        }, 220);
+        window.setTimeout(() => openSearch(), 220);
         return;
       }
 

@@ -68,10 +68,12 @@ export const MinimizedSidebar = ({
           <button
             aria-label="Open search"
             onClick={() => {
-              setState('expanded');
-              window.setTimeout(() => {
-                openSearch();
-              }, 220);
+              void (async () => {
+                const wasForwarded = await window.desktopWindow?.openSearchInWorkspaceWindow?.();
+                if (wasForwarded) return;
+                setState('expanded');
+                window.setTimeout(() => openSearch(), 220);
+              })();
             }}
             onMouseDown={(e) => e.stopPropagation()}
             className={neutralIcon}

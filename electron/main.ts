@@ -5991,6 +5991,7 @@ function openModuleWindow(
       moduleWindowFullscreenBoundsMemory.delete(kind);
     }
     if (shouldRestoreFloatingSidebar && currentSidebarMode !== 'auth') {
+      sidebarWin?.webContents.send('sidebar:state-changed', { state: 'minimized' });
       applySidebarWindowMode('minimized', true);
     }
   });
@@ -6575,6 +6576,17 @@ ipcMain.handle('window:detach-floating-window', () => {
 
 ipcMain.handle('window:floating-dock-state', () => {
   return getFloatingDockStatePayload();
+});
+
+ipcMain.handle('window:open-search-in-workspace-window', (event, query = '') => {
+  const senderWindow = BrowserWindow.fromWebContents(event.sender);
+  if (senderWindow !== sidebarWin || !isLedgerWindowDockTarget()) return false;
+  if (!workspaceModuleWin || workspaceModuleWin.isDestroyed()) return false;
+
+  workspaceModuleWin.show();
+  workspaceModuleWin.focus();
+  workspaceModuleWin.webContents.send('search:open', { query: String(query ?? '') });
+  return true;
 });
 
 ipcMain.handle('window:toggle-module', (event, payload: ModuleWindowKind | ModuleFocusPayload) => {

@@ -13648,7 +13648,7 @@ async function searchWorkspaceContent({
   const like = `%${rawQuery}%`;
   const normalizedQuery = normalizeSearchTerm(rawQuery);
 
-  const [notesResult, projectsResult, tasksResult, eventsResult, remindersResult] = await Promise.all([
+  const [notesResult, projectsResult, tasksResult, eventsResult, remindersResult, inboxResult, teamsResult, membersResult, workspaceResult] = await Promise.all([
     supabase
       .from('notes')
       .select('id, title, content, content_html, mode, updated_at, created_at')
@@ -13684,6 +13684,30 @@ async function searchWorkspaceContent({
       .or(`title.ilike.${like},body.ilike.${like}`)
       .order('updated_at', { ascending: false })
       .limit(25),
+    supabase
+      .from('inbox_items')
+      .select(inboxItemSelectColumns)
+      .eq('workspace_id', workspaceId)
+      .or(`title.ilike.${like},body.ilike.${like},source.ilike.${like}`)
+      .order('updated_at', { ascending: false })
+      .limit(25),
+    supabase
+      .from('workspace_teams')
+      .select('id, name, identifier, description, created_at, updated_at')
+      .eq('workspace_id', workspaceId)
+      .is('archived_at', null)
+      .or(`name.ilike.${like},identifier.ilike.${like},description.ilike.${like}`)
+      .order('updated_at', { ascending: false })
+      .limit(25),
+    supabase
+      .from('workspace_members')
+      .select('user_id')
+      .eq('workspace_id', workspaceId),
+    supabase
+      .from('workspaces')
+      .select('owner_id')
+      .eq('id', workspaceId)
+      .maybeSingle(),
   ]);
 
   if (notesResult.error) throw notesResult.error;
@@ -13691,6 +13715,26 @@ async function searchWorkspaceContent({
   if (tasksResult.error) throw tasksResult.error;
   if (eventsResult.error) throw eventsResult.error;
   if (remindersResult.error) throw remindersResult.error;
+  if (inboxResult.error) throw inboxResult.error;
+  if (teamsResult.error) throw teamsResult.error;
+  if (membersResult.error) throw membersResult.error;
+  if (workspaceResult.error) throw workspaceResult.error;
+
+  const memberUserIds = [
+    ...new Set([
+      ...(membersResult.data ?? []).map((row) => row.user_id).filter(Boolean),
+      workspaceResult.data?.owner_id,
+    ].filter(Boolean)),
+  ];
+  const usersResult = memberUserIds.length > 0
+    ? await supabase
+        .from('users')
+        .select('id, email, full_name')
+        .in('id', memberUserIds)
+        .or(`full_name.ilike.${like},email.ilike.${like}`)
+        .limit(25)
+    : { data: [], error: null };
+  if (usersResult.error) throw usersResult.error;
 
   const notes = (notesResult.data ?? []).map((row) => {
     const preview = truncatePreview(htmlToPlainText(row.content_html || row.content || ''), 80);
@@ -13833,7 +13877,61 @@ async function searchWorkspaceContent({
     };
   });
 
-  return [...notes, ...projects, ...tasks, ...events, ...reminders]
+  const people = (usersResult.data ?? []).map((row) => ({
+    type: 'person',
+    id: row.id,
+    title: row.full_name?.trim() || row.email || 'Workspace member',
+    preview: row.email ?? 'Workspace member',
+    snippet: row.email ?? 'Workspace member',
+    workspace_id: workspaceId,
+    workspace_name: workspaceName,
+    source_type: 'person',
+    source_id: row.id,
+    updated_at: null,
+    icon: 'Briefcase',
+    score: scoreSearchResult(row.full_name ?? row.email ?? '', normalizedQuery, row.email ?? '', false),
+  }));
+
+  const teams = (teamsResult.data ?? []).map((row) => {
+    const preview = row.identifier ? `Team · ${row.identifier}` : 'Workspace team';
+    return {
+      type: 'team',
+      id: row.id,
+      title: row.name,
+      preview,
+      snippet: preview,
+      workspace_id: workspaceId,
+      workspace_name: workspaceName,
+      source_type: 'team',
+      source_id: row.id,
+      updated_at: row.updated_at ?? row.created_at ?? null,
+      icon: 'Briefcase',
+      score: scoreSearchResult(row.name, normalizedQuery, `${row.identifier ?? ''} ${row.description ?? ''}`, false),
+    };
+  });
+
+  const intake = (inboxResult.data ?? []).map((row) => {
+    const preview = truncatePreview(
+      htmlToPlainText(row.body ?? '') || titleCaseLabel(row.source ?? 'Intake item'),
+      80
+    );
+    return {
+      type: 'intake',
+      id: row.id,
+      title: row.title,
+      preview,
+      snippet: preview,
+      workspace_id: workspaceId,
+      workspace_name: workspaceName,
+      source_type: 'intake',
+      source_id: row.id,
+      updated_at: row.updated_at ?? row.created_at ?? null,
+      icon: 'FileText',
+      score: scoreSearchResult(row.title, normalizedQuery, `${row.body ?? ''} ${row.source ?? ''}`, false),
+    };
+  });
+
+  return [...notes, ...projects, ...tasks, ...events, ...reminders, ...people, ...teams, ...intake]
     .sort((left, right) => {
       if (left.score !== right.score) return left.score - right.score;
       return String(left.title).localeCompare(String(right.title));

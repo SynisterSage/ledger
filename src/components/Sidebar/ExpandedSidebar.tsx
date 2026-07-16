@@ -626,10 +626,6 @@ export const ExpandedSidebar = ({
     return 'not_started';
   };
 
-  const WorkspaceSwitcher = ({ compact = false }: { compact?: boolean }) => (
-    <WorkspaceSwitcherMenu variant="sidebar" compact={compact} />
-  );
-
   useEffect(() => {
     if (!activeWorkspaceId) {
       setIsLoadingProjects(false);
@@ -2467,7 +2463,7 @@ export const ExpandedSidebar = ({
             >
               <img src="./logo-color.svg" alt="Ledger" className="h-7 w-7 opacity-100" />
             </button>
-            <WorkspaceSwitcher compact />
+            <WorkspaceSwitcherMenu variant="sidebar" compact />
           </div>
 
           <button
@@ -2764,7 +2760,7 @@ export const ExpandedSidebar = ({
 
         <div className="mt-0 flex items-center justify-between gap-2">
           <div className="min-w-0 -ml-1.5">
-            <WorkspaceSwitcher compact />
+            <WorkspaceSwitcherMenu variant="sidebar" compact />
           </div>
           <div className="flex shrink-0 items-center gap-1">
             <button

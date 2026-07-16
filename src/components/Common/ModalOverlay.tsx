@@ -28,6 +28,7 @@ export interface ModalOverlayProps {
   classNameContainer?: string;
   closeOnBackdropClick?: boolean;
   backdropBorderRadius?: string;
+  backdropInset?: string;
   manageWindowChrome?: boolean;
   disablePortal?: boolean;
 }
@@ -45,6 +46,7 @@ export const ModalOverlay = ({
   classNameContainer = '',
   closeOnBackdropClick = true,
   backdropBorderRadius = 'var(--modal-backdrop-radius, 28px)',
+  backdropInset,
   manageWindowChrome = true,
   disablePortal = false,
 }: ModalOverlayProps) => {
@@ -61,7 +63,7 @@ export const ModalOverlay = ({
     borderRadius: backdropBorderRadius,
     overflow: 'hidden',
     position: disablePortal ? 'absolute' : 'fixed',
-    inset: disablePortal ? 'calc(-2px)' : 'calc(-1px)',
+    inset: backdropInset ?? (disablePortal ? 'calc(-2px)' : 'calc(-1px)'),
     // Ensure overlay sits above shadows and outlines
     boxShadow: 'none',
   };

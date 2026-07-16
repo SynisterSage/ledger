@@ -14,17 +14,30 @@ import { useWorkspaceContext } from '../../context/WorkspaceContext';
 import { useSearch } from '../../context/SearchContext';
 import { useApi } from '../../hooks/useApi';
 import { ModalCloseButton } from '../Common/ModalCloseButton';
+import { ModalOverlay } from '../Common/ModalOverlay';
 
-type SearchResultType = 'note' | 'project' | 'task' | 'event';
+type SearchResultType =
+  | 'note'
+  | 'project'
+  | 'task'
+  | 'event'
+  | 'reminder'
+  | 'person'
+  | 'team'
+  | 'intake'
+  | 'command';
+type SearchCategory = 'navigate' | 'action' | 'resource' | 'settings';
 
 type SearchResult = {
   type: SearchResultType;
+  category: SearchCategory;
   id: string;
   title: string;
   preview: string;
   icon: string;
   project_id?: string | null;
   focusDate?: string | null;
+  actionId?: string;
 };
 
 const iconMap: Record<SearchResultType, typeof FileText> = {
@@ -32,20 +45,51 @@ const iconMap: Record<SearchResultType, typeof FileText> = {
   project: Briefcase,
   task: Check,
   event: CalendarDays,
+  reminder: CalendarDays,
+  person: Briefcase,
+  team: Briefcase,
+  intake: FileText,
+  command: Search,
 };
 
-const truncatePreview = (value: string, length = 80) => {
-  const text = String(value ?? '')
-    .trim()
-    .replace(/\s+/g, ' ');
-  if (!text) return '';
-  if (text.length <= length) return text;
-  return `${text.slice(0, length - 1).trimEnd()}…`;
+const ledgerSearchCommands: Array<
+  SearchResult & { keywords: string[]; personal?: boolean }
+> = [
+  { id: 'navigate-overview', type: 'command', category: 'navigate', title: 'Overview', preview: 'Open Overview', icon: '', actionId: 'overview', keywords: ['home', 'dashboard'] },
+  { id: 'navigate-projects', type: 'command', category: 'navigate', title: 'Projects', preview: 'Open Projects', icon: '', actionId: 'projects', keywords: ['project'] },
+  { id: 'navigate-notes', type: 'command', category: 'navigate', title: 'Notes', preview: 'Open Notes', icon: '', actionId: 'notes', keywords: ['note'] },
+  { id: 'navigate-calendar', type: 'command', category: 'navigate', title: 'Calendar', preview: 'Open Calendar', icon: '', actionId: 'calendar', keywords: ['schedule', 'event'] },
+  { id: 'navigate-today', type: 'command', category: 'navigate', title: 'Today', preview: 'Open today\'s focus', icon: '', actionId: 'today', keywords: ['today', 'focus'] },
+  { id: 'navigate-tasks', type: 'command', category: 'navigate', title: 'Tasks', preview: 'Open task focus', icon: '', actionId: 'tasks', keywords: ['task', 'todo'] },
+  { id: 'navigate-intake', type: 'command', category: 'navigate', title: 'Intake', preview: 'Review captured items', icon: '', actionId: 'intake', keywords: ['capture', 'inbox'] },
+  { id: 'navigate-checkin', type: 'command', category: 'navigate', title: 'Daily Check-In', preview: 'Open your daily review', icon: '', actionId: 'checkin', keywords: ['check-in', 'checkin', 'review'] },
+  { id: 'navigate-templates', type: 'command', category: 'navigate', title: 'Templates', preview: 'Browse note templates', icon: '', actionId: 'templates', keywords: ['template'] },
+  { id: 'navigate-settings', type: 'command', category: 'navigate', title: 'Settings', preview: 'Open Settings', icon: '', actionId: 'settings', keywords: ['settings', 'preferences'] },
+  { id: 'action-new-note', type: 'command', category: 'action', title: 'New note', preview: 'Create a blank note', icon: '', actionId: 'new-note', keywords: ['new', 'note', 'create'] },
+  { id: 'action-new-task', type: 'command', category: 'action', title: 'New task', preview: 'Create a task', icon: '', actionId: 'new-task', keywords: ['new', 'task', 'create', 'todo'] },
+  { id: 'action-create-project', type: 'command', category: 'action', title: 'Create project', preview: 'Start a new project', icon: '', actionId: 'create-project', keywords: ['new', 'project', 'create'] },
+  { id: 'action-template-gallery', type: 'command', category: 'action', title: 'Open template gallery', preview: 'Browse note templates', icon: '', actionId: 'templates', keywords: ['browse', 'template'] },
+  { id: 'action-connect-calendar', type: 'command', category: 'action', title: 'Connect calendar', preview: 'Open calendar integrations', icon: '', actionId: 'integrations', keywords: ['calendar', 'connect', 'sync'] },
+  { id: 'action-install-extension', type: 'command', category: 'action', title: 'Install extension', preview: 'Open browser extension settings', icon: '', actionId: 'integrations', keywords: ['browser', 'extension', 'install'] },
+  { id: 'action-invite-member', type: 'command', category: 'action', title: 'Invite member', preview: 'Invite someone to this workspace', icon: '', actionId: 'invite-member', keywords: ['invite', 'member', 'team'], personal: false },
+  { id: 'settings-notifications', type: 'command', category: 'settings', title: 'Notifications', preview: 'Notification settings', icon: '', actionId: 'notifications', keywords: ['notification', 'alerts'] },
+  { id: 'settings-integrations', type: 'command', category: 'settings', title: 'Integrations', preview: 'Connected services', icon: '', actionId: 'integrations', keywords: ['integration', 'connect'] },
+  { id: 'settings-shortcuts', type: 'command', category: 'settings', title: 'Shortcuts', preview: 'Keyboard shortcuts', icon: '', actionId: 'shortcuts', keywords: ['shortcut', 'keyboard'] },
+  { id: 'settings-appearance', type: 'command', category: 'settings', title: 'Appearance', preview: 'Workspace appearance settings', icon: '', actionId: 'appearance', keywords: ['appearance', 'theme', 'dark', 'light'] },
+  { id: 'settings-workspace', type: 'command', category: 'settings', title: 'Workspace settings', preview: 'Workspace identity and defaults', icon: '', actionId: 'workspace', keywords: ['workspace', 'settings'] },
+];
+
+const searchCategoryLabels: Record<SearchCategory, string> = {
+  navigate: 'Navigate',
+  action: 'Features and actions',
+  resource: 'Resources',
+  settings: 'Settings',
 };
 
 export const SearchModal = () => {
+  const isModuleWindow = new URLSearchParams(window.location.search).get('window') === 'module';
   const { user } = useAuthContext();
-  const { activeWorkspaceId } = useWorkspaceContext();
+  const { activeWorkspaceId, activeWorkspace } = useWorkspaceContext();
   const { isSearchOpen, initialQuery, closeSearch } = useSearch();
   const api = useApi();
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -70,6 +114,17 @@ export const SearchModal = () => {
   }, [selectedIndex]);
 
   const trimmedQuery = query.trim();
+  const commandResults = useMemo(() => {
+    const normalizedQuery = trimmedQuery.toLowerCase();
+    if (!normalizedQuery) return [];
+    return ledgerSearchCommands.filter((command) => {
+      if (command.personal === false && activeWorkspace?.is_personal) return false;
+      const haystack = [command.title, command.preview, ...command.keywords]
+        .join(' ')
+        .toLowerCase();
+      return haystack.includes(normalizedQuery);
+    });
+  }, [activeWorkspace?.is_personal, trimmedQuery]);
 
   useEffect(() => {
     if (!isSearchOpen) {
@@ -96,7 +151,7 @@ export const SearchModal = () => {
     }
 
     if (trimmedQuery.length < 2) {
-      setResults([]);
+      setResults(commandResults);
       setIsLoading(false);
       setSelectedIndex(0);
       return;
@@ -112,9 +167,35 @@ export const SearchModal = () => {
         .searchWorkspace(activeWorkspaceId, trimmedQuery)
         .then((data) => {
           if (cancelled || searchIdRef.current !== searchId) return;
-          const next = Array.isArray(data) ? (data as SearchResult[]) : [];
+          const resources = Array.isArray(data)
+            ? (data as Array<Record<string, unknown>>).map((result) => {
+                const rawType = String(result.type ?? 'note').toLowerCase();
+                const type: SearchResultType = [
+                  'note',
+                  'project',
+                  'task',
+                  'event',
+                  'reminder',
+                  'person',
+                  'team',
+                  'intake',
+                ].includes(rawType)
+                  ? (rawType as SearchResultType)
+                  : 'note';
+                return {
+                  ...(result as unknown as SearchResult),
+                  type,
+                  category: 'resource' as const,
+                  id: String(result.id ?? ''),
+                  title: String(result.title ?? 'Untitled'),
+                  preview: String(result.preview ?? ''),
+                  icon: String(result.icon ?? ''),
+                };
+              })
+            : [];
+          const next = [...commandResults, ...resources];
           setResults(next);
-          setSelectedIndex(next.length > 0 ? 0 : 0);
+          setSelectedIndex(0);
         })
         .catch((error) => {
           if (cancelled || searchIdRef.current !== searchId) return;
@@ -131,7 +212,7 @@ export const SearchModal = () => {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [activeWorkspaceId, api, isSearchOpen, trimmedQuery, user]);
+  }, [activeWorkspaceId, api, commandResults, isSearchOpen, trimmedQuery, user]);
 
   useEffect(() => {
     const selected = itemRefs.current[selectedIndex];
@@ -151,7 +232,88 @@ export const SearchModal = () => {
 
   const jumpToResult = useCallback(
     (result: SearchResult) => {
-      if (result.type === 'note') {
+      if (result.type === 'command') {
+        switch (result.actionId) {
+          case 'overview':
+            void window.desktopWindow?.openModule('dashboard');
+            break;
+          case 'settings':
+            void window.desktopWindow?.openModule('settings');
+            break;
+          case 'projects':
+          case 'create-project':
+            void window.desktopWindow?.openModule('projects');
+            break;
+          case 'notes':
+            void window.desktopWindow?.openModule('notes');
+            break;
+          case 'calendar':
+            void window.desktopWindow?.openModule('calendar');
+            break;
+          case 'today':
+          case 'checkin':
+            void window.desktopWindow?.openModule('dashboard', {
+              kind: 'dashboard',
+              focusSection: 'today',
+            });
+            break;
+          case 'tasks':
+            void window.desktopWindow?.openModule('dashboard', {
+              kind: 'dashboard',
+              focusSection: 'assigned',
+            });
+            break;
+          case 'intake':
+            void window.desktopWindow?.openModule('inbox', {
+              kind: 'inbox',
+              focusSection: 'unprocessed',
+            });
+            break;
+          case 'templates':
+            void window.desktopWindow?.openModule('notes', {
+              kind: 'notes',
+              focusContext: 'try:template',
+            });
+            break;
+          case 'new-note':
+            void window.desktopWindow?.openModule('quick-note', { kind: 'quick-note' });
+            break;
+          case 'new-task':
+            void window.desktopWindow?.openModule('quick-task', { kind: 'quick-task' });
+            break;
+          case 'invite-member':
+            void window.desktopWindow?.openModule('teams', {
+              kind: 'teams',
+              focusContext: 'try:invite-member',
+            });
+            break;
+          case 'notifications':
+            void window.desktopWindow?.openModule('settings', {
+              kind: 'settings',
+              focusContext: 'notifications',
+            });
+            break;
+          case 'integrations':
+            void window.desktopWindow?.openModule('settings', {
+              kind: 'settings',
+              focusContext: 'integrations',
+            });
+            break;
+          case 'shortcuts':
+            void window.desktopWindow?.openModule('settings', {
+              kind: 'settings',
+              focusContext: 'shortcuts',
+            });
+            break;
+          case 'workspace':
+          case 'appearance':
+            void window.desktopWindow?.openModule('settings', {
+              kind: 'settings',
+              focusContext: 'workspace',
+            });
+            break;
+        }
+      } else if (result.type === 'note') {
         void window.desktopWindow?.toggleModule('notes', { focusNoteId: result.id });
       } else if (result.type === 'project') {
         void window.desktopWindow?.toggleModule('projects', { focusProjectId: result.id });
@@ -163,6 +325,10 @@ export const SearchModal = () => {
       } else if (result.type === 'event') {
         const focusDate = result.focusDate ?? undefined;
         void window.desktopWindow?.openModule('calendar', focusDate ? { focusDate } : undefined);
+      } else if (result.type === 'reminder' || result.type === 'intake') {
+        void window.desktopWindow?.openModule('inbox', { focusSection: 'unprocessed' });
+      } else if (result.type === 'person' || result.type === 'team') {
+        void window.desktopWindow?.openModule('teams');
       }
 
       closeSearch();
@@ -219,11 +385,12 @@ export const SearchModal = () => {
 
   const panelClassName = isFullscreen
     ? 'flex h-full w-full flex-col overflow-hidden rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] shadow-[0_24px_70px_rgba(17,24,39,0.12)]'
-    : 'flex h-[400px] w-full max-w-[500px] flex-col overflow-hidden rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] shadow-[0_24px_70px_rgba(17,24,39,0.12)]';
+    : `flex h-[400px] w-full ${
+        isModuleWindow ? 'max-w-[680px]' : 'max-w-[500px]'
+      } flex-col overflow-hidden rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] shadow-[0_24px_70px_rgba(17,24,39,0.12)]`;
 
-  return createPortal(
-    <div className={shellClassName} onMouseDown={closeSearch}>
-      <div className={panelClassName} onMouseDown={(event) => event.stopPropagation()}>
+  const searchPanel = (
+    <div className={panelClassName} onMouseDown={(event) => event.stopPropagation()}>
         <div className="flex items-center justify-between gap-3 border-b border-[color:var(--ledger-border-subtle)] px-4 py-3">
           <div className="flex min-w-0 flex-1 items-center gap-2 rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 py-2">
             <Search size={16} className="shrink-0 text-[var(--ledger-text-muted)]" />
@@ -259,7 +426,7 @@ export const SearchModal = () => {
             <div className="flex h-full items-center justify-center px-4 text-sm text-[var(--ledger-text-muted)]">
               Start typing to search...
             </div>
-          ) : trimmedQuery.length < 2 ? (
+          ) : trimmedQuery.length < 2 && commandResults.length === 0 ? (
             <div className="flex h-full items-center justify-center px-4 text-sm text-[var(--ledger-text-muted)]">
               Type at least 2 characters to search.
             </div>
@@ -272,44 +439,51 @@ export const SearchModal = () => {
               No results for “{trimmedQuery}”
             </div>
           ) : (
-            <div className="space-y-1">
+            <div className="space-y-0.5">
               {results.map((result, index) => {
                 const Icon = iconMap[result.type];
                 const selected = index === selectedIndex;
+                const showCategory = index === 0 || results[index - 1]?.category !== result.category;
 
                 return (
-                  <button
-                    key={`${result.type}-${result.id}`}
-                    ref={(element) => {
-                      itemRefs.current[index] = element;
-                    }}
-                    type="button"
-                    onMouseEnter={() => setSelectedIndex(index)}
-                    onClick={() => jumpToResult(result)}
-                    className={`flex w-full items-start gap-3 rounded-2xl border px-3 py-2.5 text-left transition ${
-                      selected
-                        ? 'border-[color:var(--ledger-border-strong)] bg-[var(--ledger-surface-hover)]'
-                        : 'border-transparent hover:border-[color:var(--ledger-border-subtle)] hover:bg-[var(--ledger-surface-hover)]'
-                    }`}
-                  >
-                    <span
-                      className={`mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border ${
+                  <div key={`${result.type}-${result.id}`}>
+                    {showCategory && (
+                      <p className={`${index === 0 ? 'pt-0' : 'pt-3'} px-2 pb-1 text-[11px] font-medium text-[var(--ledger-text-muted)]`}>
+                        {searchCategoryLabels[result.category]}
+                      </p>
+                    )}
+                    <button
+                      ref={(element) => {
+                        itemRefs.current[index] = element;
+                      }}
+                      type="button"
+                      onMouseEnter={() => setSelectedIndex(index)}
+                      onClick={() => jumpToResult(result)}
+                      className={`flex h-10 w-full items-center gap-2 rounded-lg px-2.5 text-left transition ${
                         selected
-                          ? 'border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] text-[var(--ledger-accent)]'
-                          : 'border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)]'
+                          ? 'bg-[var(--ledger-surface-hover)]'
+                          : 'hover:bg-[var(--ledger-surface-hover)]'
                       }`}
                     >
-                      <Icon size={16} />
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-semibold text-[var(--ledger-text-primary)]">
+                      <span
+                        className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md border ${
+                          selected
+                            ? 'border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] text-[var(--ledger-text-secondary)]'
+                            : 'border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)]'
+                        }`}
+                      >
+                        <Icon size={13} />
+                      </span>
+                      <p className="min-w-0 flex-1 truncate text-sm font-medium text-[var(--ledger-text-primary)]">
                         {result.title}
                       </p>
-                      <p className="mt-0.5 line-clamp-2 text-xs leading-5 text-[var(--ledger-text-secondary)]">
-                        {truncatePreview(result.preview) || 'No preview available'}
-                      </p>
-                    </div>
-                  </button>
+                      {result.type !== 'command' && (
+                        <span className="shrink-0 text-[10px] font-medium capitalize text-[var(--ledger-text-muted)]">
+                          {result.type}
+                        </span>
+                      )}
+                    </button>
+                  </div>
                 );
               })}
             </div>
@@ -324,7 +498,29 @@ export const SearchModal = () => {
             {activeResult ? `${activeResult.type} selected` : ' '}
           </span>
         </div>
-      </div>
+    </div>
+  );
+
+  if (isModuleWindow) {
+    return (
+      <ModalOverlay
+        isOpen={isSearchOpen}
+        onClose={closeSearch}
+        backdropBorderRadius="var(--window-radius)"
+        backdropInset="0px"
+        manageWindowChrome={false}
+        classNameContainer={`${
+          isFullscreen ? 'h-full w-full' : 'w-full max-w-[680px]'
+        } !overflow-visible !rounded-none !border-0 !bg-transparent !p-0 !shadow-none`}
+      >
+        {searchPanel}
+      </ModalOverlay>
+    );
+  }
+
+  return createPortal(
+    <div className={shellClassName} onMouseDown={closeSearch}>
+      {searchPanel}
     </div>,
     document.body
   );
