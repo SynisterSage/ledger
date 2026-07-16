@@ -33,6 +33,7 @@ import {
 } from 'lucide-react';
 import { sidebarTheme } from '../Sidebar/sidebarTheme';
 import { WorkspaceSwitcherMenu } from './WorkspaceSwitcherMenu';
+import { LedgerTabStrip } from './LedgerTabStrip';
 
 type ModuleWindowHeaderProps = {
   eyebrow?: string;
@@ -205,7 +206,7 @@ const getWorkspaceRouteLabel = (route: WorkspaceRoute) => {
         ? `Calendar · ${formatHistoryDate(route.focusDate) ?? 'Day'}`
         : 'Calendar';
     case 'notes':
-      return route.focusContext === 'home' || !route.focusNoteId ? 'Notes Home' : 'Notes · Note';
+      return route.focusContext === 'home' || !route.focusNoteId ? 'Notes Home' : 'Notes';
     case 'projects':
       if (route.focusTaskId) return 'Projects · Task';
       return route.focusProjectId ? 'Projects · Project' : 'Projects';
@@ -989,6 +990,7 @@ export const ModuleWindowHeader = ({
           )}
         </div>
       )}
+      <LedgerTabStrip />
     </div>
   );
 };
