@@ -17,6 +17,7 @@ import { execFile, spawn, type ChildProcessWithoutNullStreams } from 'node:child
 import { createRequire } from 'node:module';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
+import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import fs from 'node:fs';
 import { defaultSidebarPreferences, type SidebarPosition } from '../src/config/sidebarPreferences';
@@ -692,6 +693,26 @@ type WorkspaceModuleRoute = {
   focusContext?: string | null;
   focusSection?: string | null;
 };
+type DetachedTabSession = {
+  tabId: string;
+  workspaceId?: string | null;
+  module: ModuleWindowKind;
+  route: WorkspaceModuleRoute;
+  selectedResourceId?: string | null;
+  routeState?: Record<string, unknown>;
+  tabHistory: WorkspaceModuleRoute[];
+  historyIndex: number;
+  title?: string;
+  icon?: string;
+};
+type DetachedWindowRecord = {
+  id: string;
+  win: BrowserWindow;
+  route: WorkspaceModuleRoute;
+  backStack: WorkspaceModuleRoute[];
+  forwardStack: WorkspaceModuleRoute[];
+  recentRoutes: WorkspaceModuleRoute[];
+};
 type Rect = { x: number; y: number; width: number; height: number };
 type DockSide = 'left' | 'right';
 type FloatingDockTarget = {
@@ -719,12 +740,39 @@ type WindowsDockTraceInput = {
 
 let sidebarWin: BrowserWindow | null = null;
 const moduleWins = new Map<ModuleWindowKind, BrowserWindow>();
+const detachedWindows = new Map<string, DetachedWindowRecord>();
+const ledgerWindowIds = new WeakMap<BrowserWindow, string>();
+const pendingTabDetaches = new Map<
+  string,
+  {
+    source: BrowserWindow;
+    target: BrowserWindow | null;
+    session: DetachedTabSession;
+    resolve: (success: boolean) => void;
+  }
+>();
 let workspaceModuleWin: BrowserWindow | null = null;
 let workspaceModuleKind: ModuleWindowKind | null = null;
 let workspaceModuleCurrentRoute: WorkspaceModuleRoute | null = null;
 const workspaceModuleBackStack: WorkspaceModuleRoute[] = [];
 const workspaceModuleForwardStack: WorkspaceModuleRoute[] = [];
 const workspaceModuleRecentRoutes: WorkspaceModuleRoute[] = [];
+
+function getLedgerWindowId(win: BrowserWindow) {
+  const existing = ledgerWindowIds.get(win);
+  if (existing) return existing;
+  const id = `ledger-window-${randomUUID()}`;
+  ledgerWindowIds.set(win, id);
+  return id;
+}
+
+function getDetachedWindowRecord(win: BrowserWindow | null | undefined) {
+  if (!win || win.isDestroyed()) return null;
+  for (const record of detachedWindows.values()) {
+    if (record.win === win) return record;
+  }
+  return null;
+}
 let currentSidebarMode: SidebarWindowMode = 'auth';
 let currentSidebarPosition: SidebarPosition = 'right';
 let currentFloatingPosition = { ...defaultSidebarPreferences.floatingPosition };
@@ -4860,6 +4908,9 @@ function resolveWorkspaceModuleBounds(kind: ModuleWindowKind): Electron.Rectangl
 function clampOpenModuleWindowsToDisplays() {
   const windows = new Set<BrowserWindow>(moduleWins.values());
   if (workspaceModuleWin && !workspaceModuleWin.isDestroyed()) windows.add(workspaceModuleWin);
+  for (const record of detachedWindows.values()) {
+    if (!record.win.isDestroyed()) windows.add(record.win);
+  }
 
   for (const win of windows) {
     if (win.isDestroyed() || win.isMinimized() || win.isFullScreen()) continue;
@@ -5318,9 +5369,10 @@ function sendModuleFocus(
   focusNoteId?: string | null,
   focusTaskId?: string | null,
   focusContext?: string | null,
-  focusSection?: string | null
+  focusSection?: string | null,
+  targetWin?: BrowserWindow
 ) {
-  const existing = moduleWins.get(kind);
+  const existing = targetWin ?? moduleWins.get(kind);
   if (existing && !existing.isDestroyed()) {
     if (focusDate) {
       existing.webContents.send('module:focus-date', { kind, focusDate });
@@ -5369,6 +5421,24 @@ function getWorkspaceNavigationState() {
   };
 }
 
+function getNavigationStateForWindow(win: BrowserWindow | null | undefined) {
+  const detached = getDetachedWindowRecord(win);
+  if (!detached) return getWorkspaceNavigationState();
+  return {
+    canGoBack: detached.backStack.length > 0,
+    canGoForward: detached.forwardStack.length > 0,
+    currentModule: detached.route.kind,
+    currentRoute: { ...detached.route },
+    recentRoutes: detached.recentRoutes.map((route) => ({ ...route })),
+    windowId: detached.id,
+  };
+}
+
+function sendNavigationStateToWindow(win: BrowserWindow) {
+  if (!win || win.isDestroyed()) return;
+  win.webContents.send('workspace:navigation-state', getNavigationStateForWindow(win));
+}
+
 function broadcastWorkspaceNavigationState() {
   const state = getWorkspaceNavigationState();
   const targets = new Set<BrowserWindow>();
@@ -5384,6 +5454,53 @@ function broadcastWorkspaceNavigationState() {
   for (const win of targets) {
     win.webContents.send('workspace:navigation-state', state);
   }
+}
+
+function sendDetachedRouteChanged(record: DetachedWindowRecord) {
+  if (record.win.isDestroyed()) return;
+  sendWorkspaceRouteChanged(record.win, record.route);
+  sendModuleFocus(
+    record.route.kind,
+    record.route.focusDate,
+    record.route.focusProjectId,
+    record.route.focusNoteId,
+    record.route.focusTaskId,
+    record.route.focusContext,
+    record.route.focusSection,
+    record.win
+  );
+  sendNavigationStateToWindow(record.win);
+}
+
+function navigateDetachedWindow(
+  record: DetachedWindowRecord,
+  route: WorkspaceModuleRoute,
+  pushHistory = true
+) {
+  if (pushHistory && !isSameWorkspaceRoute(record.route, route)) {
+    record.backStack.push({ ...record.route });
+    record.forwardStack.length = 0;
+  }
+  record.route = { ...route };
+  const existingIndex = record.recentRoutes.findIndex((entry) =>
+    isSameWorkspaceRoute(entry, route)
+  );
+  if (existingIndex >= 0) record.recentRoutes.splice(existingIndex, 1);
+  record.recentRoutes.unshift({ ...route });
+  record.recentRoutes.length = Math.min(record.recentRoutes.length, 12);
+  sendDetachedRouteChanged(record);
+  return true;
+}
+
+function navigateDetachedHistory(record: DetachedWindowRecord, direction: 'back' | 'forward') {
+  const target = direction === 'back' ? record.backStack.pop() : record.forwardStack.pop();
+  if (!target) {
+    sendNavigationStateToWindow(record.win);
+    return;
+  }
+  if (direction === 'back') record.forwardStack.push({ ...record.route });
+  else record.backStack.push({ ...record.route });
+  navigateDetachedWindow(record, target, false);
 }
 
 function routeFromModuleArgs(
@@ -5430,7 +5547,10 @@ function isSameWorkspaceRoute(a: WorkspaceModuleRoute | null, b: WorkspaceModule
   );
 }
 
-function buildModuleUrl(route: WorkspaceModuleRoute) {
+function buildModuleUrl(
+  route: WorkspaceModuleRoute,
+  options: { windowId?: string; detached?: boolean; transferId?: string } = {}
+) {
   const focusDateQuery = route.focusDate ? `&focusDate=${encodeURIComponent(route.focusDate)}` : '';
   const focusProjectQuery = route.focusProjectId
     ? `&focusProjectId=${encodeURIComponent(route.focusProjectId)}`
@@ -5447,8 +5567,13 @@ function buildModuleUrl(route: WorkspaceModuleRoute) {
   const focusSectionQuery = route.focusSection
     ? `&section=${encodeURIComponent(route.focusSection)}`
     : '';
+  const windowIdQuery = options.windowId ? `&windowId=${encodeURIComponent(options.windowId)}` : '';
+  const detachedQuery = options.detached ? '&detached=1' : '';
+  const transferIdQuery = options.transferId
+    ? `&tabTransferId=${encodeURIComponent(options.transferId)}`
+    : '';
   return getRendererUrl(
-    `?window=module&module=${route.kind}${focusDateQuery}${focusProjectQuery}${focusNoteQuery}${focusTaskQuery}${focusContextQuery}${focusSectionQuery}`
+    `?window=module&module=${route.kind}${focusDateQuery}${focusProjectQuery}${focusNoteQuery}${focusTaskQuery}${focusContextQuery}${focusSectionQuery}${windowIdQuery}${detachedQuery}${transferIdQuery}`
   );
 }
 
@@ -5601,6 +5726,13 @@ function navigateWorkspaceHistory(direction: 'back' | 'forward') {
   navigateWorkspaceModuleWindow(target, false);
 }
 
+type OpenModuleWindowOptions = {
+  detachedWindowId?: string;
+  initialBounds?: Electron.Rectangle;
+  detachedTabSession?: DetachedTabSession;
+  transferId?: string;
+};
+
 function openModuleWindow(
   kind: ModuleWindowKind,
   focusDate?: string | null,
@@ -5608,8 +5740,10 @@ function openModuleWindow(
   focusNoteId?: string | null,
   focusTaskId?: string | null,
   focusContext?: string | null,
-  focusSection?: string | null
+  focusSection?: string | null,
+  options: OpenModuleWindowOptions = {}
 ) {
+  const isDetachedWindow = Boolean(options.detachedWindowId);
   const workspaceRoute = routeFromModuleArgs(
     kind,
     focusDate,
@@ -5632,6 +5766,7 @@ function openModuleWindow(
         )
       : null;
   if (
+    !isDetachedWindow &&
     isWorkspaceModuleKind(kind) &&
     workspaceModuleWin &&
     !workspaceModuleWin.isDestroyed() &&
@@ -5646,7 +5781,7 @@ function openModuleWindow(
     return;
   }
 
-  const existing = moduleWins.get(kind);
+  const existing = isDetachedWindow ? null : moduleWins.get(kind);
   if (existing && !existing.isDestroyed()) {
     holdCurrentFloatingDockTarget();
     if (isWorkspaceModuleKind(kind)) {
@@ -5697,11 +5832,14 @@ function openModuleWindow(
     kind === 'quick-event' ||
     kind === 'quick-reminder';
   const isNotificationCenter = kind === 'notifications';
-  holdCurrentFloatingDockTarget();
+  if (!isDetachedWindow) {
+    holdCurrentFloatingDockTarget();
+  }
   let initialBounds =
-    isWorkspaceModuleKind(kind) && shouldAttachWorkspaceWindowToSidebar()
+    options.initialBounds ??
+    (isWorkspaceModuleKind(kind) && shouldAttachWorkspaceWindowToSidebar()
       ? resolveWorkspaceModuleBounds(kind)
-      : resolveModuleBounds(kind);
+      : resolveModuleBounds(kind));
 
   if (isQuickCapture) {
     const displayForModule = screen.getDisplayMatching(initialBounds).workArea;
@@ -5763,10 +5901,27 @@ function openModuleWindow(
   applyWindowsModuleWindowShape(moduleWin);
 
   lockWindowZoom(moduleWin);
-  attachWindowsCloseShortcut(moduleWin);
+  if (!isWorkspaceModuleKind(kind)) {
+    attachWindowsCloseShortcut(moduleWin);
+  }
   attachNativeContextMenu(moduleWin);
 
-  if (isWorkspaceModuleKind(kind)) {
+  if (isDetachedWindow && options.detachedWindowId) {
+    const session = options.detachedTabSession;
+    const history = session?.tabHistory?.length ? session.tabHistory : [workspaceRoute];
+    const historyIndex = Math.max(
+      0,
+      Math.min(session?.historyIndex ?? history.length - 1, history.length - 1)
+    );
+    detachedWindows.set(options.detachedWindowId, {
+      id: options.detachedWindowId,
+      win: moduleWin,
+      route: { ...(session?.route ?? workspaceRoute) },
+      backStack: history.slice(0, historyIndex).map((route) => ({ ...route })),
+      forwardStack: history.slice(historyIndex + 1).map((route) => ({ ...route })),
+      recentRoutes: history.map((route) => ({ ...route })),
+    });
+  } else if (isWorkspaceModuleKind(kind)) {
     registerWorkspaceModuleKind(kind, moduleWin, notesHomeRoute ?? workspaceRoute);
     recordWorkspaceRoute(notesHomeRoute ?? workspaceRoute);
     setWorkspaceWindowAsFloatingDockTarget(kind);
@@ -5775,6 +5930,10 @@ function openModuleWindow(
   }
 
   moduleWin.on('minimize', () => {
+    if (isDetachedWindow) {
+      sidebarWin?.webContents.send('module:state-changed', { kind, state: 'minimized' });
+      return;
+    }
     if (moduleWin === workspaceModuleWin && isWorkspaceDockTarget()) {
       minimizeSidebarWithWorkspaceShell();
       suspendWorkspaceWindowDockTarget();
@@ -5789,6 +5948,16 @@ function openModuleWindow(
   });
 
   moduleWin.on('closed', () => {
+    const detachedRecord = getDetachedWindowRecord(moduleWin);
+    if (detachedRecord) {
+      detachedWindows.delete(detachedRecord.id);
+      for (const [transferId, pending] of pendingTabDetaches) {
+        if (pending.target === moduleWin) {
+          pendingTabDetaches.delete(transferId);
+          pending.resolve(false);
+        }
+      }
+    }
     if (moduleWin === workspaceModuleWin) {
       setSidebarAboveWorkspaceWindow(false);
       workspaceSidebarMinimizedWithShell = false;
@@ -5797,7 +5966,9 @@ function openModuleWindow(
       moduleWin === workspaceModuleWin &&
       currentSidebarPosition === 'floating' &&
       Boolean(currentFloatingDockTarget);
-    moduleWins.delete(kind);
+    if (!detachedRecord) {
+      moduleWins.delete(kind);
+    }
     if (workspaceModuleWin === moduleWin) {
       if (isWorkspaceDockTarget()) {
         clearCurrentFloatingDockTarget('target_closed');
@@ -5816,7 +5987,9 @@ function openModuleWindow(
       workspaceModuleRecentRoutes.length = 0;
       broadcastWorkspaceNavigationState();
     }
-    moduleWindowFullscreenBoundsMemory.delete(kind);
+    if (!detachedRecord) {
+      moduleWindowFullscreenBoundsMemory.delete(kind);
+    }
     if (shouldRestoreFloatingSidebar && currentSidebarMode !== 'auth') {
       applySidebarWindowMode('minimized', true);
     }
@@ -5891,14 +6064,19 @@ function openModuleWindow(
   moduleWin.webContents.on('before-input-event', (event, input) => {
     try {
       const key = String(input.key ?? '').toLowerCase();
+      const detachedRecord = getDetachedWindowRecord(moduleWin);
       const isWorkspaceHistoryShortcut =
-        moduleWin === workspaceModuleWin &&
-        isWorkspaceModuleKind(workspaceModuleKind ?? kind) &&
+        ((moduleWin === workspaceModuleWin && isWorkspaceModuleKind(workspaceModuleKind ?? kind)) ||
+          Boolean(detachedRecord)) &&
         (input.meta || input.control) &&
         (key === '[' || key === ']');
       if (isWorkspaceHistoryShortcut) {
         event.preventDefault();
-        navigateWorkspaceHistory(key === '[' ? 'back' : 'forward');
+        if (detachedRecord) {
+          navigateDetachedHistory(detachedRecord, key === '[' ? 'back' : 'forward');
+        } else {
+          navigateWorkspaceHistory(key === '[' ? 'back' : 'forward');
+        }
         return;
       }
 
@@ -5953,7 +6131,9 @@ function openModuleWindow(
         }
         moduleWin.show();
         moduleWin.focus();
-        syncSidebarWorkspaceFullscreenLayer(kind, moduleWin);
+        if (!isDetachedWindow) {
+          syncSidebarWorkspaceFullscreenLayer(kind, moduleWin);
+        }
         sendModuleFullscreenState(kind, moduleWin, true);
       }
     } catch (err) {}
@@ -5982,7 +6162,7 @@ function openModuleWindow(
     } catch (err) {}
   });
 
-  if (!isQuickCapture) {
+  if (!isQuickCapture && !isDetachedWindow) {
     const rememberBounds = () => {
       if (
         moduleWin.isDestroyed() ||
@@ -6017,7 +6197,8 @@ function openModuleWindow(
       focusNoteId,
       focusTaskId,
       focusContext,
-      focusSection
+      focusSection,
+      isDetachedWindow ? moduleWin : undefined
     );
     sendModuleFullscreenState(
       kind,
@@ -6026,13 +6207,41 @@ function openModuleWindow(
         moduleWindowFullscreenBoundsMemory.has(kind) ||
         moduleWin.isFullScreen()
     );
-    if (isWorkspaceModuleKind(kind) && currentSidebarMode === 'fullscreen') {
+    if (isDetachedWindow) {
+      const detachedRecord = getDetachedWindowRecord(moduleWin);
+      if (detachedRecord) {
+        sendWorkspaceRouteChanged(moduleWin, detachedRecord.route);
+        if (options.detachedTabSession && options.detachedWindowId) {
+          const transferId = options.detachedTabSession.tabId;
+          const sendHydration = () => {
+            const pending = pendingTabDetaches.get(transferId);
+            if (!pending || pending.target !== moduleWin || moduleWin.isDestroyed()) return;
+            moduleWin.webContents.send('tab:hydrate-session', {
+              transferId,
+              session: options.detachedTabSession,
+            });
+          };
+          sendHydration();
+          setTimeout(sendHydration, 150);
+          setTimeout(sendHydration, 500);
+        }
+        sendNavigationStateToWindow(moduleWin);
+      }
+    } else if (isWorkspaceModuleKind(kind) && currentSidebarMode === 'fullscreen') {
       enterModuleWindowFullscreen(kind, moduleWin);
     }
-    broadcastWorkspaceNavigationState();
+    if (!isDetachedWindow) {
+      broadcastWorkspaceNavigationState();
+    }
   });
   try {
-    moduleWin.loadURL(buildModuleUrl(workspaceRoute));
+    moduleWin.loadURL(
+      buildModuleUrl(workspaceRoute, {
+        windowId: options.detachedWindowId ?? getLedgerWindowId(moduleWin),
+        detached: isDetachedWindow,
+        transferId: options.transferId,
+      })
+    );
   } catch (err) {
     console.error('[electron] Error while loading module renderer:', err);
   }
@@ -6368,7 +6577,9 @@ ipcMain.handle('window:floating-dock-state', () => {
   return getFloatingDockStatePayload();
 });
 
-ipcMain.handle('window:toggle-module', (_event, payload: ModuleWindowKind | ModuleFocusPayload) => {
+ipcMain.handle('window:toggle-module', (event, payload: ModuleWindowKind | ModuleFocusPayload) => {
+  const senderWindow = BrowserWindow.fromWebContents(event.sender);
+  const detachedRecord = getDetachedWindowRecord(senderWindow);
   const kind = typeof payload === 'string' ? payload : payload.kind;
   const focusDate = typeof payload === 'string' ? undefined : payload.focusDate;
   const focusProjectId = typeof payload === 'string' ? undefined : payload.focusProjectId;
@@ -6376,6 +6587,28 @@ ipcMain.handle('window:toggle-module', (_event, payload: ModuleWindowKind | Modu
   const focusTaskId = typeof payload === 'string' ? undefined : payload.focusTaskId;
   const focusContext = typeof payload === 'string' ? undefined : payload.focusContext;
   const focusSection = typeof payload === 'string' ? undefined : payload.focusSection;
+  if (detachedRecord) {
+    if (typeof payload !== 'string') {
+      navigateDetachedWindow(
+        detachedRecord,
+        routeFromModuleArgs(
+          kind,
+          focusDate,
+          focusProjectId,
+          focusNoteId,
+          focusTaskId,
+          focusContext,
+          focusSection
+        )
+      );
+    } else if (senderWindow?.isVisible()) {
+      senderWindow.minimize();
+    } else {
+      senderWindow?.show();
+      senderWindow?.focus();
+    }
+    return;
+  }
   const existing = moduleWins.get(kind);
 
   if (existing && !existing.isDestroyed()) {
@@ -6432,7 +6665,9 @@ ipcMain.handle('window:toggle-module', (_event, payload: ModuleWindowKind | Modu
   );
 });
 
-ipcMain.handle('window:open-module', (_event, payload: ModuleWindowKind | ModuleFocusPayload) => {
+ipcMain.handle('window:open-module', (event, payload: ModuleWindowKind | ModuleFocusPayload) => {
+  const senderWindow = BrowserWindow.fromWebContents(event.sender);
+  const detachedRecord = getDetachedWindowRecord(senderWindow);
   const kind = typeof payload === 'string' ? payload : payload.kind;
   const focusDate = typeof payload === 'string' ? undefined : payload.focusDate;
   const focusProjectId = typeof payload === 'string' ? undefined : payload.focusProjectId;
@@ -6440,6 +6675,23 @@ ipcMain.handle('window:open-module', (_event, payload: ModuleWindowKind | Module
   const focusTaskId = typeof payload === 'string' ? undefined : payload.focusTaskId;
   const focusContext = typeof payload === 'string' ? undefined : payload.focusContext;
   const focusSection = typeof payload === 'string' ? undefined : payload.focusSection;
+  if (detachedRecord) {
+    navigateDetachedWindow(
+      detachedRecord,
+      routeFromModuleArgs(
+        kind,
+        focusDate,
+        focusProjectId,
+        focusNoteId,
+        focusTaskId,
+        focusContext,
+        focusSection
+      )
+    );
+    senderWindow?.show();
+    senderWindow?.focus();
+    return;
+  }
   const existing = moduleWins.get(kind);
 
   if (existing && !existing.isDestroyed()) {
@@ -6479,13 +6731,23 @@ ipcMain.handle('window:open-module', (_event, payload: ModuleWindowKind | Module
   );
 });
 
-ipcMain.handle('window:close-module', (_event, kind: ModuleWindowKind) => {
+ipcMain.handle('window:close-module', (event, kind: ModuleWindowKind) => {
+  const detachedRecord = getDetachedWindowRecord(BrowserWindow.fromWebContents(event.sender));
+  if (detachedRecord) {
+    detachedRecord.win.close();
+    return;
+  }
   const existing = moduleWins.get(kind);
   if (!existing || existing.isDestroyed()) return;
   existing.close();
 });
 
-ipcMain.handle('window:minimize-module', (_event, kind: ModuleWindowKind) => {
+ipcMain.handle('window:minimize-module', (event, kind: ModuleWindowKind) => {
+  const detachedRecord = getDetachedWindowRecord(BrowserWindow.fromWebContents(event.sender));
+  if (detachedRecord) {
+    detachedRecord.win.minimize();
+    return;
+  }
   const existing = moduleWins.get(kind);
   if (!existing || existing.isDestroyed()) return;
   suspendCurrentFloatingDockTarget('suspended_minimized');
@@ -6495,7 +6757,16 @@ ipcMain.handle('window:minimize-module', (_event, kind: ModuleWindowKind) => {
   }
 });
 
-ipcMain.handle('window:toggle-module-fullscreen', (_event, kind: ModuleWindowKind) => {
+ipcMain.handle('window:toggle-module-fullscreen', (event, kind: ModuleWindowKind) => {
+  const detachedRecord = getDetachedWindowRecord(BrowserWindow.fromWebContents(event.sender));
+  if (detachedRecord) {
+    if (detachedRecord.win.isFullScreen()) {
+      detachedRecord.win.setFullScreen(false);
+      return false;
+    }
+    detachedRecord.win.setFullScreen(true);
+    return true;
+  }
   const existing = moduleWins.get(kind);
   if (!existing || existing.isDestroyed()) return false;
   if (existing.isMinimized()) {
@@ -6522,21 +6793,46 @@ ipcMain.handle('window:toggle-module-fullscreen', (_event, kind: ModuleWindowKin
   return false;
 });
 
-ipcMain.handle('window:workspace-go-back', () => {
+ipcMain.handle('window:workspace-go-back', (event) => {
+  const detachedRecord = getDetachedWindowRecord(BrowserWindow.fromWebContents(event.sender));
+  if (detachedRecord) {
+    navigateDetachedHistory(detachedRecord, 'back');
+    return;
+  }
   navigateWorkspaceHistory('back');
 });
 
-ipcMain.handle('window:workspace-go-forward', () => {
+ipcMain.handle('window:workspace-go-forward', (event) => {
+  const detachedRecord = getDetachedWindowRecord(BrowserWindow.fromWebContents(event.sender));
+  if (detachedRecord) {
+    navigateDetachedHistory(detachedRecord, 'forward');
+    return;
+  }
   navigateWorkspaceHistory('forward');
 });
 
-ipcMain.handle('window:workspace-navigation-state', () => {
-  return getWorkspaceNavigationState();
+ipcMain.handle('window:workspace-navigation-state', (event) => {
+  return getNavigationStateForWindow(BrowserWindow.fromWebContents(event.sender));
 });
 
-ipcMain.handle('window:workspace-route-changed', (_event, payload: ModuleFocusPayload) => {
+ipcMain.handle('window:workspace-route-changed', (event, payload: ModuleFocusPayload) => {
   const kind = payload?.kind;
   if (!kind) return false;
+  const detachedRecord = getDetachedWindowRecord(BrowserWindow.fromWebContents(event.sender));
+  if (detachedRecord) {
+    return navigateDetachedWindow(
+      detachedRecord,
+      routeFromModuleArgs(
+        kind,
+        payload.focusDate,
+        payload.focusProjectId,
+        payload.focusNoteId,
+        payload.focusTaskId,
+        payload.focusContext,
+        payload.focusSection
+      )
+    );
+  }
   return updateWorkspaceModuleRoute(
     routeFromModuleArgs(
       kind,
@@ -6548,6 +6844,124 @@ ipcMain.handle('window:workspace-route-changed', (_event, payload: ModuleFocusPa
       payload.focusSection
     )
   );
+});
+
+function isValidDetachedTabSession(value: unknown): value is DetachedTabSession {
+  if (!value || typeof value !== 'object') return false;
+  const session = value as Partial<DetachedTabSession>;
+  if (typeof session.tabId !== 'string' || session.tabId.length > 200) return false;
+  if (typeof session.module !== 'string' || !isWorkspaceModuleKind(session.module)) return false;
+  if (!session.route || typeof session.route !== 'object') return false;
+  if (session.route.kind !== session.module || !isWorkspaceModuleKind(session.route.kind)) {
+    return false;
+  }
+  if (!Array.isArray(session.tabHistory) || session.tabHistory.length > 100) return false;
+  return session.tabHistory.every(
+    (route) => route && typeof route === 'object' && isWorkspaceModuleKind(route.kind)
+  );
+}
+
+ipcMain.handle('window:get-bounds', (event) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (!win || win.isDestroyed()) return null;
+  return { ...win.getBounds(), windowId: getLedgerWindowId(win) };
+});
+
+ipcMain.handle(
+  'window:detach-tab',
+  async (event, payload: { session?: unknown; screenPoint?: { x?: number; y?: number } }) => {
+    const source = BrowserWindow.fromWebContents(event.sender);
+    const session = payload?.session;
+    if (!source || source.isDestroyed() || !isValidDetachedTabSession(session)) {
+      return { success: false };
+    }
+
+    const point = {
+      x: Number(payload?.screenPoint?.x),
+      y: Number(payload?.screenPoint?.y),
+    };
+    if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) return { success: false };
+
+    const display = screen.getDisplayNearestPoint(point);
+    const workArea = display.workArea;
+    const width = Math.min(1050, Math.max(MODULE_MIN_WIDTH, workArea.width - WINDOW_MARGIN * 2));
+    const height = Math.min(720, Math.max(MODULE_MIN_HEIGHT, workArea.height - WINDOW_MARGIN * 2));
+    const initialBounds = clampRectToWorkArea(
+      {
+        x: Math.round(point.x - width / 2),
+        y: Math.round(point.y - 24),
+        width,
+        height,
+      },
+      workArea
+    );
+    const detachedWindowId = `ledger-window-${randomUUID()}`;
+    const transferId = randomUUID();
+
+    const success = await new Promise<boolean>((resolve) => {
+      pendingTabDetaches.set(transferId, {
+        source,
+        target: null,
+        session: { ...session, tabId: transferId },
+        resolve,
+      });
+      try {
+        openModuleWindow(
+          session.module,
+          session.route.focusDate,
+          session.route.focusProjectId,
+          session.route.focusNoteId,
+          session.route.focusTaskId,
+          session.route.focusContext,
+          session.route.focusSection,
+          {
+            detachedWindowId,
+            initialBounds,
+            detachedTabSession: { ...session, tabId: transferId },
+            transferId,
+          }
+        );
+        const record = detachedWindows.get(detachedWindowId);
+        const pending = pendingTabDetaches.get(transferId);
+        if (!record || !pending) {
+          pendingTabDetaches.delete(transferId);
+          resolve(false);
+          return;
+        }
+        pending.target = record.win;
+        setTimeout(() => {
+          const stillPending = pendingTabDetaches.get(transferId);
+          if (!stillPending) return;
+          pendingTabDetaches.delete(transferId);
+          if (record.win && !record.win.isDestroyed()) record.win.close();
+          resolve(false);
+        }, 15000);
+      } catch {
+        pendingTabDetaches.delete(transferId);
+        resolve(false);
+      }
+    });
+
+    return { success };
+  }
+);
+
+ipcMain.handle('window:confirm-tab-detach', (event, transferId: unknown) => {
+  if (typeof transferId !== 'string') return false;
+  const target = BrowserWindow.fromWebContents(event.sender);
+  const pending = pendingTabDetaches.get(transferId);
+  if (!target || !pending || pending.target !== target) return false;
+  pendingTabDetaches.delete(transferId);
+  pending.resolve(true);
+  return true;
+});
+
+ipcMain.handle('window:get-tab-detach-session', (event, transferId: unknown) => {
+  if (typeof transferId !== 'string') return null;
+  const target = BrowserWindow.fromWebContents(event.sender);
+  const pending = pendingTabDetaches.get(transferId);
+  if (!target || !pending || pending.target !== target) return null;
+  return pending.session;
 });
 
 ipcMain.handle('window:open-external', async (_event, url: string) => {

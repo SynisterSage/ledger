@@ -1,4 +1,12 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+  type ReactNode,
+} from 'react';
 import {
   CalendarDays,
   ChevronDown,
@@ -11,6 +19,8 @@ import {
   Users,
   X,
 } from 'lucide-react';
+import { useWorkspaceContext } from '../../context/WorkspaceContext';
+import { useToast } from './ToastProvider';
 
 type LedgerRoute = {
   kind: ModuleWindowKind;
@@ -42,6 +52,7 @@ const TAB_GAP = 4;
 const TAB_FALLBACK_WIDTH = 132;
 const OVERFLOW_CONTROL_WIDTH = 42;
 const TAB_SESSION_STORAGE_KEY = 'ledger:window-tabs:v1';
+const TAB_TRANSFER_ID = new URLSearchParams(window.location.search).get('tabTransferId');
 
 const routeKey = (route: LedgerRoute) =>
   [
@@ -109,18 +120,37 @@ const sameRoute = (left: LedgerRoute, right: LedgerRoute) => routeKey(left) === 
 export const LedgerTab = ({
   route,
   active,
+  isDragging = false,
   onSelect,
   onClose,
+  onPointerDown,
+  onPointerMove,
+  onPointerUp,
+  onPointerCancel,
 }: {
   route: LedgerRoute;
   active: boolean;
+  isDragging?: boolean;
   onSelect: () => void;
   onClose: () => void;
+  onPointerDown?: (event: ReactPointerEvent<HTMLDivElement>) => void;
+  onPointerMove?: (event: ReactPointerEvent<HTMLDivElement>) => void;
+  onPointerUp?: (event: ReactPointerEvent<HTMLDivElement>) => void;
+  onPointerCancel?: (event: ReactPointerEvent<HTMLDivElement>) => void;
 }) => (
   <div
     data-tab-key={routeKey(route)}
+    onClick={(event) => {
+      if (event.target === event.currentTarget) onSelect();
+    }}
+    onPointerDown={onPointerDown}
+    onPointerMove={onPointerMove}
+    onPointerUp={onPointerUp}
+    onPointerCancel={onPointerCancel}
     className={`group flex max-w-[190px] min-w-0 items-center gap-1 border border-b-0 px-1 transition ${
-      active
+      isDragging
+        ? 'relative z-20 -translate-y-0.5 cursor-grabbing rounded-t-md border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] text-[var(--ledger-text-primary)]'
+        : active
         ? '-mb-px h-7 rounded-t-md border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] text-[var(--ledger-text-primary)]'
         : 'mb-0.5 h-6 rounded-md border-transparent text-[var(--ledger-text-muted)] hover:text-[var(--ledger-text-primary)]'
     }`}
@@ -132,6 +162,7 @@ export const LedgerTab = ({
       aria-current={active ? 'page' : undefined}
       role="tab"
       aria-selected={active}
+      draggable={false}
     >
       {routeIcon(route)}
       <span className="truncate">{routeLabel(route)}</span>
@@ -139,6 +170,7 @@ export const LedgerTab = ({
     <button
       type="button"
       onClick={onClose}
+      onPointerDown={(event) => event.stopPropagation()}
       className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-[var(--ledger-text-muted)] opacity-0 transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] group-hover:opacity-100 focus-visible:opacity-100"
       aria-label={`Close ${routeLabel(route)} tab`}
       title="Close tab"
@@ -149,6 +181,8 @@ export const LedgerTab = ({
 );
 
 export const LedgerTabStrip = () => {
+  const { activeWorkspaceId } = useWorkspaceContext();
+  const toast = useToast();
   const [navigationState, setNavigationState] = useState<NavigationState>({});
   const [tabOrder, setTabOrder] = useState<LedgerRoute[]>([]);
   const [closedTabKeys, setClosedTabKeys] = useState<Set<string>>(new Set());
@@ -160,12 +194,19 @@ export const LedgerTabStrip = () => {
   const tabOrderRef = useRef<LedgerRoute[]>([]);
   const closedTabKeysRef = useRef<Set<string>>(new Set());
   const pendingCloseKeyRef = useRef<string | null>(null);
+  const tabDragRef = useRef<{
+    route: LedgerRoute;
+    pointerId: number;
+    startX: number;
+    startY: number;
+    movedOutsideStrip: boolean;
+  } | null>(null);
+  const suppressTabClickRef = useRef(false);
+  const [isDetaching, setIsDetaching] = useState(false);
+  const [draggingTabKey, setDraggingTabKey] = useState<string | null>(null);
 
   const currentRoute = normalizeRoute(navigationState.currentRoute);
-  const incomingRoutes = useMemo(
-    () => (currentRoute ? [currentRoute] : []),
-    [currentRoute]
-  );
+  const incomingRoutes = useMemo(() => (currentRoute ? [currentRoute] : []), [currentRoute]);
 
   useEffect(() => {
     tabOrderRef.current = tabOrder;
@@ -193,6 +234,68 @@ export const LedgerTabStrip = () => {
     } catch {
       // Browser privacy settings can disable sessionStorage; the in-memory session still works.
     }
+  }, []);
+
+  useEffect(() => {
+    if (!TAB_TRANSFER_ID) return;
+    let cancelled = false;
+    const retryDelays = [0, 150, 500, 1000];
+    const pullSession = async (attempt: number) => {
+      const getSession = window.desktopWindow?.getTabDetachSession;
+      const session = getSession ? await getSession(TAB_TRANSFER_ID).catch(() => null) : null;
+      if (cancelled) return;
+      if (session) {
+        const route = normalizeRoute(session.route);
+        if (!route) return;
+        const restored = [route];
+        tabOrderRef.current = restored;
+        setTabOrder(restored);
+        setClosedTabKeys(new Set());
+        try {
+          sessionStorage.setItem(TAB_SESSION_STORAGE_KEY, JSON.stringify(restored));
+        } catch {
+          // The in-memory target session remains usable.
+        }
+        void window.desktopWindow?.confirmTabDetach?.(TAB_TRANSFER_ID);
+        return;
+      }
+      if (attempt + 1 < retryDelays.length) {
+        window.setTimeout(() => void pullSession(attempt + 1), retryDelays[attempt + 1]);
+      }
+    };
+    void pullSession(0);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    const handleHydrateSession = (
+      _event: unknown,
+      payload?: { transferId?: string; session?: LedgerTabSession }
+    ) => {
+      const session = payload?.session;
+      const route = normalizeRoute(session?.route);
+      if (!session || !route) return;
+
+      const restored = [route];
+      tabOrderRef.current = restored;
+      setTabOrder(restored);
+      setClosedTabKeys(new Set());
+      try {
+        sessionStorage.setItem(TAB_SESSION_STORAGE_KEY, JSON.stringify(restored));
+      } catch {
+        // The in-memory target session remains usable.
+      }
+      if (payload.transferId) {
+        void window.desktopWindow?.confirmTabDetach?.(payload.transferId);
+      }
+    };
+
+    window.ipcRenderer?.on?.('tab:hydrate-session', handleHydrateSession as any);
+    return () => {
+      window.ipcRenderer?.off?.('tab:hydrate-session', handleHydrateSession as any);
+    };
   }, []);
 
   useEffect(() => {
@@ -345,8 +448,10 @@ export const LedgerTabStrip = () => {
         visible[visible.length - 1] = currentRoute;
         while (
           visible.length > 1 &&
-          visible.reduce((total, route, index) => total + widthFor(route) + (index ? TAB_GAP : 0), 0) >
-            availableWidth
+          visible.reduce(
+            (total, route, index) => total + widthFor(route) + (index ? TAB_GAP : 0),
+            0
+          ) > availableWidth
         ) {
           visible.splice(visible.length - 2, 1);
         }
@@ -360,6 +465,191 @@ export const LedgerTabStrip = () => {
     };
   }, [currentRoute, stripWidth, tabOrder, tabWidths]);
 
+  const closeTab = useCallback(
+    (route: LedgerRoute) => {
+      const key = routeKey(route);
+      const index = tabOrder.findIndex((item) => sameRoute(item, route));
+      if (index < 0) return;
+
+      const nextOrder = tabOrder.filter((item) => !sameRoute(item, route));
+      tabOrderRef.current = nextOrder;
+      setTabOrder(nextOrder);
+      setClosedTabKeys((current) => new Set(current).add(key));
+      setIsOverflowOpen(false);
+
+      if (nextOrder.length === 0) {
+        // The last tab is also the window's close affordance. This is
+        // window-aware in Electron, so it closes a detached Ledger window
+        // without touching the shared module window.
+        try {
+          sessionStorage.removeItem(TAB_SESSION_STORAGE_KEY);
+        } catch {
+          // Closing the BrowserWindow is still the correct fallback if
+          // session storage is unavailable.
+        }
+        void window.desktopWindow?.closeModule?.(route.kind);
+        return;
+      }
+
+      if (!currentRoute || !sameRoute(route, currentRoute)) return;
+      const nextRoute = nextOrder[index - 1] ?? nextOrder[index];
+      if (nextRoute) {
+        pendingCloseKeyRef.current = key;
+        void window.desktopWindow?.openModule?.(nextRoute.kind, nextRoute);
+      }
+    },
+    [currentRoute, tabOrder]
+  );
+
+  const finishTabDrag = useCallback(
+    async (event: ReactPointerEvent<HTMLDivElement>) => {
+      const drag = tabDragRef.current;
+      if (!drag || drag.pointerId !== event.pointerId) return;
+      tabDragRef.current = null;
+      setDraggingTabKey(null);
+      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+        event.currentTarget.releasePointerCapture(event.pointerId);
+      }
+      if (drag.movedOutsideStrip) {
+        suppressTabClickRef.current = true;
+        window.setTimeout(() => {
+          suppressTabClickRef.current = false;
+        }, 0);
+      }
+
+      const getWindowBounds = window.desktopWindow?.getWindowBounds;
+      const bounds = getWindowBounds ? await getWindowBounds().catch(() => null) : null;
+      const screenX = event.screenX;
+      const screenY = event.screenY;
+      const outsideWindow = Boolean(
+        bounds &&
+          (screenX < bounds.x ||
+            screenY < bounds.y ||
+            screenX > bounds.x + bounds.width ||
+            screenY > bounds.y + bounds.height)
+      );
+      if (!drag.movedOutsideStrip || !outsideWindow || isDetaching) return;
+
+      setIsDetaching(true);
+      const route = drag.route;
+      const session: LedgerTabSession = {
+        tabId: routeKey(route),
+        workspaceId: activeWorkspaceId ?? null,
+        module: route.kind,
+        route: { ...route, kind: route.kind },
+        selectedResourceId: route.focusNoteId ?? route.focusProjectId ?? route.focusTaskId ?? null,
+        routeState: {},
+        tabHistory: [{ ...route, kind: route.kind }],
+        historyIndex: 0,
+        title: routeLabel(route),
+        icon: route.kind,
+      };
+
+      try {
+        const result = await window.desktopWindow?.detachTab?.(session, {
+          x: screenX,
+          y: screenY,
+        });
+        if (result?.success) {
+          if (tabOrder.length > 1) {
+            closeTab(route);
+          } else {
+            tabOrderRef.current = [];
+            setTabOrder([]);
+            try {
+              sessionStorage.removeItem(TAB_SESSION_STORAGE_KEY);
+            } catch {
+              // The source window can still close when storage is unavailable.
+            }
+            void window.desktopWindow?.closeModule?.(route.kind);
+          }
+        } else {
+          toast.show('Could not move tab to a new window.', { variant: 'error' });
+        }
+      } catch {
+        toast.show('Could not move tab to a new window.', { variant: 'error' });
+      } finally {
+        setIsDetaching(false);
+      }
+    },
+    [activeWorkspaceId, closeTab, isDetaching, tabOrder.length, toast]
+  );
+
+  const handleTabPointerDown =
+    (route: LedgerRoute) => (event: ReactPointerEvent<HTMLDivElement>) => {
+      if (event.button !== 0 || isDetaching) return;
+      tabDragRef.current = {
+        route,
+        pointerId: event.pointerId,
+        startX: event.clientX,
+        startY: event.clientY,
+        movedOutsideStrip: false,
+      };
+      event.currentTarget.setPointerCapture(event.pointerId);
+    };
+
+  const handleTabPointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const drag = tabDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    const distance = Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY);
+    if (distance < 8) return;
+    setDraggingTabKey(routeKey(drag.route));
+    const stripBounds = stripRef.current?.getBoundingClientRect();
+    if (!stripBounds) return;
+    drag.movedOutsideStrip ||=
+      event.clientX < stripBounds.left - 12 ||
+      event.clientX > stripBounds.right + 12 ||
+      event.clientY < stripBounds.top - 12 ||
+      event.clientY > stripBounds.bottom + 12;
+    if (drag.movedOutsideStrip) {
+      suppressTabClickRef.current = true;
+      event.preventDefault();
+    }
+  };
+
+  const handleTabPointerCancel = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (tabDragRef.current?.pointerId !== event.pointerId) return;
+    tabDragRef.current = null;
+    setDraggingTabKey(null);
+    suppressTabClickRef.current = false;
+  };
+
+  const handleTabSelect = (route: LedgerRoute) => {
+    if (suppressTabClickRef.current) return;
+    selectTab(route);
+  };
+
+  useEffect(() => {
+    const handleCloseTabShortcut = (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== 'w') return;
+      if (!currentRoute) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+
+      if (tabOrder.length > 1 && tabOrder.some((route) => sameRoute(route, currentRoute))) {
+        closeTab(currentRoute);
+        return;
+      }
+
+      void window.desktopWindow?.closeModule?.(currentRoute.kind);
+    };
+
+    window.addEventListener('keydown', handleCloseTabShortcut);
+    return () => window.removeEventListener('keydown', handleCloseTabShortcut);
+  }, [closeTab, currentRoute, tabOrder.length]);
+
+  useEffect(() => {
+    const cancelTabDrag = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      tabDragRef.current = null;
+      setDraggingTabKey(null);
+      setIsDetaching(false);
+    };
+    window.addEventListener('keydown', cancelTabDrag);
+    return () => window.removeEventListener('keydown', cancelTabDrag);
+  }, []);
+
   if (tabOrder.length === 0) return null;
 
   const selectTab = (route: LedgerRoute) => {
@@ -371,27 +661,6 @@ export const LedgerTabStrip = () => {
     });
     setIsOverflowOpen(false);
     void window.desktopWindow?.openModule?.(route.kind, route);
-  };
-
-  const closeTab = (route: LedgerRoute) => {
-    const key = routeKey(route);
-    const index = tabOrder.findIndex((item) => sameRoute(item, route));
-    if (index < 0) return;
-
-    const nextOrder = tabOrder.filter((item) => !sameRoute(item, route));
-    if (nextOrder.length === 0) return;
-
-    tabOrderRef.current = nextOrder;
-    setTabOrder(nextOrder);
-    setClosedTabKeys((current) => new Set(current).add(key));
-    setIsOverflowOpen(false);
-
-    if (!currentRoute || !sameRoute(route, currentRoute)) return;
-    const nextRoute = nextOrder[index - 1] ?? nextOrder[index];
-    if (nextRoute) {
-      pendingCloseKeyRef.current = key;
-      void window.desktopWindow?.openModule?.(nextRoute.kind, nextRoute);
-    }
   };
 
   return (
@@ -407,8 +676,13 @@ export const LedgerTabStrip = () => {
             key={routeKey(route)}
             route={route}
             active={Boolean(currentRoute && sameRoute(currentRoute, route))}
-            onSelect={() => selectTab(route)}
+            isDragging={draggingTabKey === routeKey(route)}
+            onSelect={() => handleTabSelect(route)}
             onClose={() => closeTab(route)}
+            onPointerDown={handleTabPointerDown(route)}
+            onPointerMove={handleTabPointerMove}
+            onPointerUp={finishTabDrag}
+            onPointerCancel={handleTabPointerCancel}
           />
         ))}
       </div>
@@ -419,7 +693,9 @@ export const LedgerTabStrip = () => {
             type="button"
             onClick={() => setIsOverflowOpen((current) => !current)}
             className="flex h-6 min-w-8 items-center justify-center gap-0.5 rounded-md px-1.5 text-[var(--ledger-text-muted)] transition hover:text-[var(--ledger-text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-accent)]/20"
-            aria-label={`Open hidden tabs, ${overflowTabs.length} hidden tab${overflowTabs.length === 1 ? '' : 's'}`}
+            aria-label={`Open hidden tabs, ${overflowTabs.length} hidden tab${
+              overflowTabs.length === 1 ? '' : 's'
+            }`}
             aria-expanded={isOverflowOpen}
             aria-haspopup="menu"
             title={`${overflowTabs.length} hidden tab${overflowTabs.length === 1 ? '' : 's'}`}
@@ -471,6 +747,7 @@ export const LedgerTabStrip = () => {
             key={`measure-${routeKey(route)}`}
             route={route}
             active={false}
+            isDragging={false}
             onSelect={() => undefined}
             onClose={() => undefined}
           />

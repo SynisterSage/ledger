@@ -1,14 +1,30 @@
 import { ipcRenderer, contextBridge } from 'electron';
 
+const rendererListenerWrappers = new Map<string, Map<Function, Function>>();
+
 // --------- Expose some API to the Renderer process ---------
 contextBridge.exposeInMainWorld('ipcRenderer', {
   on(...args: Parameters<typeof ipcRenderer.on>) {
     const [channel, listener] = args;
-    return ipcRenderer.on(channel, (event, ...args) => listener(event, ...args));
+    const wrapped = (event: Electron.IpcRendererEvent, ...payload: unknown[]) =>
+      listener(event, ...payload);
+    let channelListeners = rendererListenerWrappers.get(channel);
+    if (!channelListeners) {
+      channelListeners = new Map();
+      rendererListenerWrappers.set(channel, channelListeners);
+    }
+    channelListeners.set(listener, wrapped);
+    return ipcRenderer.on(channel, wrapped as Parameters<typeof ipcRenderer.on>[1]);
   },
   off(...args: Parameters<typeof ipcRenderer.off>) {
-    const [channel, ...omit] = args;
-    return ipcRenderer.off(channel, ...omit);
+    const [channel, listener] = args;
+    const wrapped = rendererListenerWrappers.get(channel)?.get(listener);
+    const result = ipcRenderer.off(
+      channel,
+      (wrapped ?? listener) as Parameters<typeof ipcRenderer.off>[1]
+    );
+    rendererListenerWrappers.get(channel)?.delete(listener);
+    return result;
   },
   send(...args: Parameters<typeof ipcRenderer.send>) {
     const [channel, ...omit] = args;
@@ -47,6 +63,18 @@ type ModuleFocusPayload = {
   focusTaskId?: string | null;
   focusContext?: string | null;
   focusSection?: string | null;
+};
+type LedgerTabSession = {
+  tabId: string;
+  workspaceId?: string | null;
+  module: ModuleWindowKind;
+  route: ModuleFocusPayload & { kind: ModuleWindowKind };
+  selectedResourceId?: string | null;
+  routeState?: Record<string, unknown>;
+  tabHistory: Array<ModuleFocusPayload & { kind: ModuleWindowKind }>;
+  historyIndex: number;
+  title?: string;
+  icon?: string;
 };
 
 contextBridge.exposeInMainWorld('desktopWindow', {
@@ -169,6 +197,18 @@ contextBridge.exposeInMainWorld('desktopWindow', {
   },
   getWorkspaceNavigationState() {
     return ipcRenderer.invoke('window:workspace-navigation-state');
+  },
+  getWindowBounds() {
+    return ipcRenderer.invoke('window:get-bounds');
+  },
+  detachTab(session: LedgerTabSession, screenPoint: { x: number; y: number }) {
+    return ipcRenderer.invoke('window:detach-tab', { session, screenPoint });
+  },
+  confirmTabDetach(transferId: string) {
+    return ipcRenderer.invoke('window:confirm-tab-detach', transferId);
+  },
+  getTabDetachSession(transferId: string) {
+    return ipcRenderer.invoke('window:get-tab-detach-session', transferId);
   },
   updateWorkspaceRoute(route: ModuleFocusPayload) {
     return ipcRenderer.invoke('window:workspace-route-changed', route);

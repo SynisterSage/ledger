@@ -25,6 +25,18 @@ type ModuleFocusPayload = {
   focusContext?: string | null;
   focusSection?: string | null;
 };
+type LedgerTabSession = {
+  tabId: string;
+  workspaceId?: string | null;
+  module: ModuleWindowKind;
+  route: ModuleFocusPayload & { kind: ModuleWindowKind };
+  selectedResourceId?: string | null;
+  routeState?: Record<string, unknown>;
+  tabHistory: Array<ModuleFocusPayload & { kind: ModuleWindowKind }>;
+  historyIndex: number;
+  title?: string;
+  icon?: string;
+};
 
 interface ImportMetaEnv {
   readonly VITE_ICAL_SERVICE_URL?: string;
@@ -120,7 +132,21 @@ interface Window {
       currentModule: ModuleWindowKind | null;
       currentRoute?: ModuleFocusPayload | null;
       recentRoutes?: ModuleFocusPayload[];
+      windowId?: string;
     }>;
+    getWindowBounds?: () => Promise<{
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+      windowId?: string;
+    } | null>;
+    detachTab?: (
+      session: LedgerTabSession,
+      screenPoint: { x: number; y: number }
+    ) => Promise<{ success: boolean }>;
+    confirmTabDetach?: (transferId: string) => Promise<boolean>;
+    getTabDetachSession?: (transferId: string) => Promise<LedgerTabSession | null>;
     updateWorkspaceRoute?: (route: ModuleFocusPayload) => Promise<void>;
     openExternal: (url: string) => Promise<void>;
     openCheckin: () => Promise<void>;
