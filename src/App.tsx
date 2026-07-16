@@ -5679,33 +5679,31 @@ function DashboardContent() {
                                       </span>
                                     )}
                                   </span>
-                                  <span className="flex min-w-0 items-center gap-2">
-                                    <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-[var(--ledger-text-primary)]">
-                                      {row.title}
-                                    </span>
+                                  <span className="min-w-0 truncate text-[13px] font-medium text-[var(--ledger-text-primary)]">
+                                    {row.title}
                                     {row.contextLabel && (
-                                      <span className="inline-flex min-w-0 max-w-[42%] shrink items-center gap-1 truncate text-[11px] font-normal text-[var(--ledger-text-muted)]">
+                                      <span className="ml-2 inline-flex items-center gap-1 text-[11px] font-normal text-[var(--ledger-text-muted)]">
                                         {row.contextIcon}
-                                        <span className="truncate">{row.contextLabel}</span>
+                                        <span>{row.contextLabel}</span>
                                       </span>
                                     )}
                                   </span>
-                                  <span className="flex min-w-0 max-w-[58%] items-center justify-end gap-1.5 overflow-hidden sm:gap-2">
-                                    <span className="hidden min-w-0 shrink-0 items-center gap-1.5 sm:flex">
+                                  <span className="flex items-center gap-2">
+                                    <span className="hidden min-w-0 items-center gap-1.5 sm:flex">
                                       {row.chips.slice(0, 2).map((chip) => (
                                         <span
                                           key={chip}
-                                          className="max-w-24 truncate rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-2 py-0.5 text-[10px] leading-none text-[var(--ledger-text-muted)]"
+                                          className="rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-2 py-0.5 text-[10px] leading-none text-[var(--ledger-text-muted)]"
                                         >
                                           {chip}
                                         </span>
                                       ))}
                                     </span>
-                                    <span className="hidden min-w-0 max-w-28 shrink truncate text-[11px] leading-4 text-[var(--ledger-text-muted)] md:inline xl:max-w-80">
+                                    <span className="hidden max-w-80 truncate text-[11px] leading-4 text-[var(--ledger-text-muted)] md:inline">
                                       {row.meta}
                                     </span>
                                     {typeof row.progress === 'number' && (
-                                      <span className="hidden h-1 w-12 shrink-0 overflow-hidden rounded-full bg-[var(--ledger-border-subtle)] lg:block xl:w-20">
+                                      <span className="hidden h-1 w-20 overflow-hidden rounded-full bg-[var(--ledger-border-subtle)] lg:block">
                                         <span
                                           className="block h-full rounded-full bg-[var(--ledger-accent)]"
                                           style={{
