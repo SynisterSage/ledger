@@ -652,9 +652,20 @@ const snoozeOffset = (
 export default function IntakeWindow() {
   const { user } = useAuthContext();
   const { activeWorkspaceId, activeWorkspace } = useWorkspaceContext();
+  const isPersonalWorkspace = Boolean(activeWorkspace?.is_personal);
   const { workspaceShellLayout } = useSidebar();
   const api = useApi();
   const toast = useToast();
+
+  useEffect(() => {
+    if (!isPersonalWorkspace) return;
+    setFilters(defaultFilters);
+    setDisplay((current) => ({ ...current, showAssignee: false }));
+    setSelectedAssigneeId('');
+    setSelectedTeamId('');
+    setProjectLeadId('');
+    setProjectOwnerTeamId('');
+  }, [isPersonalWorkspace]);
   const initialFocusContext =
     new URLSearchParams(window.location.search).get('focusContext')?.trim() ?? '';
   const initialFocusSection =
@@ -1453,8 +1464,8 @@ export default function IntakeWindow() {
         project_id: projectId,
         note_id: noteId || null,
         calendar_id: calendarId || null,
-        assigned_to_user_id: selectedAssigneeId || null,
-        assigned_to_team_id: selectedTeamId || null,
+        assigned_to_user_id: isPersonalWorkspace ? null : selectedAssigneeId || null,
+        assigned_to_team_id: isPersonalWorkspace ? null : selectedTeamId || null,
       };
 
       if (draft.type === 'project') {
@@ -1466,8 +1477,8 @@ export default function IntakeWindow() {
           start_date: projectStartDate || null,
           end_date: projectEndDate || null,
           status: projectStatus,
-          lead_id: projectLeadId || null,
-          owner_team_id: projectOwnerTeamId || null,
+          lead_id: isPersonalWorkspace ? null : projectLeadId || null,
+          owner_team_id: isPersonalWorkspace ? null : projectOwnerTeamId || null,
         });
       } else if (draft.type === 'task') {
         await api.convertIntakeItem(draft.item.id, {
@@ -1921,39 +1932,47 @@ export default function IntakeWindow() {
           onClick={() => setFilters((current) => ({ ...current, project: project.id }))}
         />
       ))}
-      <MenuDivider />
-      <MenuSectionLabel label="Assignee" />
-      <MenuOption
-        label="All assignees"
-        active={filters.assignee === 'all'}
-        onClick={() => setFilters((current) => ({ ...current, assignee: 'all' }))}
-      />
-      <MenuOption
-        label="Me"
-        active={filters.assignee === 'me'}
-        onClick={() => setFilters((current) => ({ ...current, assignee: 'me' }))}
-      />
-      <MenuOption
-        label="Unassigned"
-        active={filters.assignee === 'unassigned'}
-        onClick={() => setFilters((current) => ({ ...current, assignee: 'unassigned' }))}
-      />
-      {workspaceMembers.map((member) => (
-        <MenuOption
-          key={member.id}
-          label={member.name}
-          active={filters.assignee === `member:${member.id}`}
-          onClick={() => setFilters((current) => ({ ...current, assignee: `member:${member.id}` }))}
-        />
-      ))}
-      {workspaceTeams.map((team) => (
-        <MenuOption
-          key={team.id}
-          label={team.name}
-          active={filters.assignee === `team:${team.id}`}
-          onClick={() => setFilters((current) => ({ ...current, assignee: `team:${team.id}` }))}
-        />
-      ))}
+      {!isPersonalWorkspace && (
+        <>
+          <MenuDivider />
+          <MenuSectionLabel label="Assignee" />
+          <MenuOption
+            label="All assignees"
+            active={filters.assignee === 'all'}
+            onClick={() => setFilters((current) => ({ ...current, assignee: 'all' }))}
+          />
+          <MenuOption
+            label="Me"
+            active={filters.assignee === 'me'}
+            onClick={() => setFilters((current) => ({ ...current, assignee: 'me' }))}
+          />
+          <MenuOption
+            label="Unassigned"
+            active={filters.assignee === 'unassigned'}
+            onClick={() => setFilters((current) => ({ ...current, assignee: 'unassigned' }))}
+          />
+          {workspaceMembers.map((member) => (
+            <MenuOption
+              key={member.id}
+              label={member.name}
+              active={filters.assignee === `member:${member.id}`}
+              onClick={() =>
+                setFilters((current) => ({ ...current, assignee: `member:${member.id}` }))
+              }
+            />
+          ))}
+          {workspaceTeams.map((team) => (
+            <MenuOption
+              key={team.id}
+              label={team.name}
+              active={filters.assignee === `team:${team.id}`}
+              onClick={() =>
+                setFilters((current) => ({ ...current, assignee: `team:${team.id}` }))
+              }
+            />
+          ))}
+        </>
+      )}
       <MenuDivider />
       <MenuSectionLabel label="Created" />
       {(['all', 'today', 'week', 'older'] as const).map((value) => (
@@ -2009,13 +2028,15 @@ export default function IntakeWindow() {
           setDisplay((current) => ({ ...current, showProject: !current.showProject }))
         }
       />
-      <ToggleOption
-        label="Assignee"
-        checked={display.showAssignee}
-        onToggle={() =>
-          setDisplay((current) => ({ ...current, showAssignee: !current.showAssignee }))
-        }
-      />
+      {!isPersonalWorkspace && (
+        <ToggleOption
+          label="Assignee"
+          checked={display.showAssignee}
+          onToggle={() =>
+            setDisplay((current) => ({ ...current, showAssignee: !current.showAssignee }))
+          }
+        />
+      )}
       <ToggleOption
         label="Created"
         checked={display.showCreated}
@@ -2184,8 +2205,7 @@ export default function IntakeWindow() {
                       />
                     </div>
                   </label>
-                </div>
-
+                  </div>
                 <label className="block space-y-1">
                   <span className={`text-xs font-medium ${inboxTheme.mutedText}`}>Brief</span>
                   <textarea
@@ -2219,7 +2239,8 @@ export default function IntakeWindow() {
                   </label>
                 </div>
 
-                <div className="grid gap-3 sm:grid-cols-2">
+                {!isPersonalWorkspace && (
+                  <div className="grid gap-3 sm:grid-cols-2">
                   <label className="block space-y-1">
                     <span className={`text-xs font-medium ${inboxTheme.mutedText}`}>
                       Owner team
@@ -2264,7 +2285,8 @@ export default function IntakeWindow() {
                       />
                     </div>
                   </label>
-                </div>
+                  </div>
+                )}
               </div>
             ) : (
               <>
@@ -2310,7 +2332,7 @@ export default function IntakeWindow() {
                       />
                     </div>
                   </label>
-                </div>
+                  </div>
 
                 {draft.type === 'note' && (
                   <div className="grid gap-3 sm:grid-cols-2">
@@ -2338,7 +2360,8 @@ export default function IntakeWindow() {
                   </div>
                 )}
 
-                <div className="grid gap-3 sm:grid-cols-2">
+                {!isPersonalWorkspace && (
+                  <div className="grid gap-3 sm:grid-cols-2">
                   <label className="block space-y-1">
                     <span className={`text-xs font-medium ${inboxTheme.mutedText}`}>Assignee</span>
                     <div className="relative">
@@ -2381,7 +2404,8 @@ export default function IntakeWindow() {
                       />
                     </div>
                   </label>
-                </div>
+                  </div>
+                )}
 
                 {(draft.type === 'reminder' || draft.type === 'event') && (
                   <div className="grid gap-3 sm:grid-cols-2">
@@ -2685,9 +2709,13 @@ export default function IntakeWindow() {
           { label: 'Type', value: selectedItemTypeLabel },
         ];
         if (selectedItemTypeBucket === 'project') {
+          if (!isPersonalWorkspace) {
+            rows.push(
+              { label: 'Owner', value: selectedItemPlacement?.owner ?? 'Not suggested' },
+              { label: 'Team', value: selectedItemPlacement?.team ?? 'Not suggested' }
+            );
+          }
           rows.push(
-            { label: 'Owner', value: selectedItemPlacement?.owner ?? 'Not suggested' },
-            { label: 'Team', value: selectedItemPlacement?.team ?? 'Not suggested' },
             { label: 'Start date', value: selectedItemPlacement?.startDate ?? 'Not suggested' },
             { label: 'Target date', value: selectedItemPlacement?.targetDate ?? 'Not suggested' }
           );
@@ -2715,12 +2743,17 @@ export default function IntakeWindow() {
           );
           return rows;
         }
-        rows.push(
-          { label: 'Project', value: selectedItemPlacement?.project ?? 'Not suggested' },
-          { label: 'Owner', value: selectedItemPlacement?.owner ?? 'Not suggested' },
-          { label: 'Team', value: selectedItemPlacement?.team ?? 'Not suggested' },
-          { label: 'Due date', value: selectedItemPlacement?.dueDate ?? 'Not suggested' }
-        );
+        rows.push({
+          label: 'Project',
+          value: selectedItemPlacement?.project ?? 'Not suggested',
+        });
+        if (!isPersonalWorkspace) {
+          rows.push(
+            { label: 'Owner', value: selectedItemPlacement?.owner ?? 'Not suggested' },
+            { label: 'Team', value: selectedItemPlacement?.team ?? 'Not suggested' }
+          );
+        }
+        rows.push({ label: 'Due date', value: selectedItemPlacement?.dueDate ?? 'Not suggested' });
         return rows;
       })()
     : [];

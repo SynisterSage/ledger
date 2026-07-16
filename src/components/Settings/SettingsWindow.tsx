@@ -2398,7 +2398,9 @@ export const SettingsWindow = () => {
                       Workspace
                     </h2>
                     <p className={settingsTheme.pageSubtitle}>
-                      Manage workspace identity, members, and defaults.
+                      {activeWorkspace?.is_personal
+                        ? 'Manage workspace identity and defaults.'
+                        : 'Manage workspace identity, members, and defaults.'}
                     </p>
                     <p className={settingsTheme.pageStatus} role="status">
                       {workspaceStatus || workspaceError || 'Changes save automatically.'}
@@ -2530,6 +2532,8 @@ export const SettingsWindow = () => {
                       </div>
                     </section>
 
+                    {!activeWorkspace?.is_personal && (
+                      <>
                     <section
                       className={settingsTheme.sectionShell}
                       aria-labelledby="settings-members"
@@ -2937,6 +2941,8 @@ export const SettingsWindow = () => {
                         )}
                       </div>
                     </section>
+                      </>
+                    )}
 
                     <section
                       className={settingsTheme.sectionShell}

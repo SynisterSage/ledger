@@ -2600,7 +2600,9 @@ export const CalendarWindow = () => {
       recurrence_rule:
         newEventRecurrence === 'specific_dates' ? 'specific_dates' : newEventRecurrence,
       status: calendarPreferences.defaultEventStatus ?? 'planned',
-      visibility: newEventVisibility ?? calendarPreferences.defaultEventVisibility ?? 'private',
+      visibility: isPersonalWorkspace
+        ? 'private'
+        : newEventVisibility ?? calendarPreferences.defaultEventVisibility ?? 'private',
       project_id: composerProjectId || null,
       note_id: composerNoteId || null,
       notes: composerNotes.trim() || null,
@@ -4950,11 +4952,11 @@ export const CalendarWindow = () => {
           backdropBorderRadius="inherit"
           disablePortal
           manageWindowChrome={false}
-          classNameContainer="w-full max-w-[420px] overflow-hidden rounded-xl border border-[#E2D4C4] bg-[#FFF8F2] shadow-xl"
+          classNameContainer="w-full max-w-[620px] overflow-hidden rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-[var(--ledger-shadow)]"
         >
-          <div className="p-4">
-            <div className="mb-3 flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-gray-900">
+          <div>
+            <div className="flex items-start justify-between gap-4 border-b border-[color:var(--ledger-border-subtle)] px-5 py-4">
+              <h3 className="text-sm font-semibold text-[var(--ledger-text-primary)]">
                 {composerMode === 'reminder' ? 'New Reminder' : 'New Event'}
               </h3>
               <ModalCloseButton
@@ -4966,30 +4968,30 @@ export const CalendarWindow = () => {
                 className="shrink-0"
               />
             </div>
-            <div className="space-y-2.5">
+            <div className="space-y-4 px-5 py-5">
               <input
                 value={newEventTitle}
                 onChange={(e) => setNewEventTitle(e.target.value)}
                 placeholder={composerMode === 'reminder' ? 'Reminder title' : 'Event title'}
-                className="h-9 w-full rounded-md border border-[#E2D4C4] px-3 text-sm focus:border-gray-400 focus:outline-none"
+                className="h-10 w-full rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 text-sm text-[var(--ledger-text-primary)] outline-none transition placeholder:text-[var(--ledger-placeholder)] focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60"
               />
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-2 gap-3">
                 <input
                   type="date"
                   value={newEventDate}
                   onChange={(e) => setNewEventDate(e.target.value)}
-                  className="h-9 rounded-md border border-[#E2D4C4] px-2 text-sm focus:border-gray-400 focus:outline-none"
+                  className="h-10 rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 text-sm text-[var(--ledger-text-primary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60"
                 />
                 <input
                   type="time"
                   value={newEventTime}
                   onChange={(e) => setNewEventTime(e.target.value)}
                   disabled={composerMode === 'event' && newEventAllDay}
-                  className="h-9 rounded-md border border-[#E2D4C4] px-2 text-sm focus:border-gray-400 focus:outline-none"
+                  className="h-10 rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 text-sm text-[var(--ledger-text-primary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60"
                 />
               </div>
               {composerMode === 'event' ? (
-                <label className="flex items-center gap-2 text-xs text-gray-600">
+                <label className="flex items-center gap-2 text-xs text-[var(--ledger-text-muted)]">
                   <input
                     type="checkbox"
                     checked={newEventAllDay}
@@ -5000,14 +5002,14 @@ export const CalendarWindow = () => {
                 </label>
               ) : null}
               {composerMode === 'event' && (
-                <div className="grid grid-cols-[1fr_92px] gap-2">
+                <div className="grid grid-cols-[1fr_110px] gap-3">
                   <input
                     type="number"
                     min="1"
                     step="1"
                     value={newEventDurationValue}
                     onChange={(e) => setNewEventDurationValue(Number(e.target.value) || 1)}
-                    className="h-9 rounded-md border border-[#E2D4C4] px-2 text-sm focus:border-gray-400 focus:outline-none"
+                    className="h-10 rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 text-sm text-[var(--ledger-text-primary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60"
                   />
                   <div className="relative">
                     <select
@@ -5015,7 +5017,7 @@ export const CalendarWindow = () => {
                       onChange={(e) =>
                         setNewEventDurationUnit(e.target.value as 'minutes' | 'hours')
                       }
-                      className="h-9 w-full appearance-none rounded-md border border-[#E2D4C4] bg-[#FFF8F2] pl-2 pr-8 text-sm focus:border-gray-400 focus:outline-none"
+                      className="h-10 w-full appearance-none rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] pl-3 pr-9 text-sm text-[var(--ledger-text-secondary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[var(--ledger-surface-hover)]/60"
                     >
                       <option value="minutes">minutes</option>
                       <option value="hours">hours</option>
@@ -5031,7 +5033,7 @@ export const CalendarWindow = () => {
                 <select
                   value={composerCalendarId || getDefaultCalendar()?.id || ''}
                   onChange={(e) => setComposerCalendarId(e.target.value)}
-                  className="h-9 w-full appearance-none rounded-md border border-[#E2D4C4] bg-[#FFF8F2] pl-2 pr-9 text-sm focus:border-gray-400 focus:outline-none"
+                  className="h-10 w-full appearance-none rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] pl-3 pr-9 text-sm text-[var(--ledger-text-secondary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[var(--ledger-surface-hover)]/60"
                   disabled={calendars.length === 0}
                 >
                   {calendars.map((calendar) => (
@@ -5045,14 +5047,14 @@ export const CalendarWindow = () => {
                   className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500"
                 />
               </div>
-              {composerMode === 'event' && (
+              {composerMode === 'event' && !isPersonalWorkspace && (
                 <div className="relative">
                   <select
                     value={newEventVisibility}
                     onChange={(e) =>
                       setNewEventVisibility(e.target.value as 'private' | 'workspace')
                     }
-                    className="h-9 w-full appearance-none rounded-md border border-[#E2D4C4] bg-[#FFF8F2] pl-2 pr-9 text-sm focus:border-gray-400 focus:outline-none"
+                    className="h-10 w-full appearance-none rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] pl-3 pr-9 text-sm text-[var(--ledger-text-secondary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[var(--ledger-surface-hover)]/60"
                   >
                     <option value="private">Private</option>
                     <option value="workspace">Workspace</option>
@@ -5067,7 +5069,7 @@ export const CalendarWindow = () => {
                 <select
                   value={composerProjectId}
                   onChange={(e) => setComposerProjectId(e.target.value)}
-                  className="h-9 w-full appearance-none rounded-md border border-[#E2D4C4] bg-[#FFF8F2] pl-2 pr-9 text-sm focus:border-gray-400 focus:outline-none"
+                  className="h-10 w-full appearance-none rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] pl-3 pr-9 text-sm text-[var(--ledger-text-secondary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[var(--ledger-surface-hover)]/60"
                 >
                   <option value="">None</option>
                   {projects.map((project) => (
@@ -5085,7 +5087,7 @@ export const CalendarWindow = () => {
                 <select
                   value={composerNoteId}
                   onChange={(e) => setComposerNoteId(e.target.value)}
-                  className="h-9 w-full appearance-none rounded-md border border-[#E2D4C4] bg-[#FFF8F2] pl-2 pr-9 text-sm focus:border-gray-400 focus:outline-none"
+                  className="h-10 w-full appearance-none rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] pl-3 pr-9 text-sm text-[var(--ledger-text-secondary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[var(--ledger-surface-hover)]/60"
                 >
                   <option value="">None</option>
                   {notes.map((note) => (
@@ -5108,7 +5110,7 @@ export const CalendarWindow = () => {
                     : 'Add context for this event...'
                 }
                 rows={3}
-                className="w-full rounded-md border border-[#E2D4C4] px-3 py-2 text-sm text-gray-800 placeholder:text-gray-400 outline-none focus:border-gray-400"
+                className="w-full rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 py-2 text-sm text-[var(--ledger-text-primary)] placeholder:text-[var(--ledger-placeholder)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[var(--ledger-surface-hover)]/60"
               />
               <div className="relative">
                 <select
@@ -5127,7 +5129,7 @@ export const CalendarWindow = () => {
                     }
                     setNewEventRecurrence(nextValue);
                   }}
-                  className="h-9 w-full appearance-none rounded-md border border-[#E2D4C4] bg-[#FFF8F2] pl-2 pr-9 text-sm focus:border-gray-400 focus:outline-none"
+                  className="h-10 w-full appearance-none rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] pl-3 pr-9 text-sm text-[var(--ledger-text-secondary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[var(--ledger-surface-hover)]/60"
                 >
                   <option value="none">Does not repeat</option>
                   <option value="daily">Daily</option>
@@ -5146,10 +5148,10 @@ export const CalendarWindow = () => {
                 <p className="text-xs text-red-600">{specificDatesValidationMessage}</p>
               )}
             </div>
-            <div className="mt-4 flex justify-end gap-2">
+            <div className="flex justify-end gap-2 border-t border-[color:var(--ledger-border-subtle)] px-5 py-4">
               <button
                 onClick={() => setIsComposerOpen(false)}
-                className="rounded-md bg-[#FFF1E3] px-3 py-2 text-xs font-medium text-gray-700 hover:bg-[#EDE3D8]"
+                className="rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 py-1.5 text-xs font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
               >
                 Cancel
               </button>
@@ -5161,7 +5163,7 @@ export const CalendarWindow = () => {
                   calendars.length === 0 ||
                   Boolean(specificDatesValidationMessage)
                 }
-                className="rounded-md bg-[var(--ledger-accent)] px-3 py-2 text-xs font-medium text-white hover:bg-[var(--ledger-accent-hover)] disabled:opacity-60"
+                className="rounded-md bg-[var(--ledger-accent)] px-3 py-1.5 text-xs font-medium text-white transition hover:bg-[var(--ledger-accent-hover)] disabled:opacity-60"
               >
                 {isSavingEvent
                   ? 'Saving...'

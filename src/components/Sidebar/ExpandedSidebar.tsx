@@ -2354,7 +2354,7 @@ export const ExpandedSidebar = ({
       action: () => window.desktopWindow?.openModule('quick-task', { kind: 'quick-task' }),
     },
     {
-      title: 'Set up shortcuts',
+      title: 'See all shortcuts',
       icon: Keyboard,
       action: () => openSettingsSection('shortcuts'),
     },
