@@ -4040,8 +4040,13 @@ function DashboardContent() {
     };
   });
 
+  const activeTodayTaskIds = new Set(
+    activeTodayTasks
+      .filter((task) => !isOverviewReminderTask(task))
+      .map((task) => task.id)
+  );
   const longTermTaskRows = workspaceTasks
-    .filter((task) => task.task_horizon === 'long_term')
+    .filter((task) => task.task_horizon === 'long_term' && !activeTodayTaskIds.has(task.id))
     .slice(0, 8)
     .map<OverviewRow>((task) =>
       buildTaskRow(task as (typeof todayTasks)[number], 'Long-term tasks', ['Long-term'])
