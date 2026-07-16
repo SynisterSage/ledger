@@ -20,6 +20,7 @@ import {
   X,
 } from 'lucide-react';
 import { useWorkspaceContext } from '../../context/WorkspaceContext';
+import { useApi } from '../../hooks/useApi';
 import { useToast } from './ToastProvider';
 
 type LedgerRoute = {
@@ -72,14 +73,14 @@ const routeKey = (route: LedgerRoute) => {
   ].join('|');
 };
 
-const routeLabel = (route: LedgerRoute) => {
+const routeLabel = (route: LedgerRoute, projectTitle?: string) => {
   switch (route.kind) {
     case 'dashboard':
       return 'Workspace Overview';
     case 'notes':
       return route.focusNoteId ? 'Notes' : 'Notes Home';
     case 'projects':
-      return route.focusProjectId ? 'Projects · Project' : 'Projects Roadmap';
+      return route.focusProjectId ? projectTitle || 'Projects · Project' : 'Projects Roadmap';
     case 'calendar':
       return 'Calendar';
     case 'circle':
@@ -128,6 +129,7 @@ export const LedgerTab = ({
   route,
   active,
   isDragging = false,
+  title,
   onSelect,
   onClose,
   onPointerDown,
@@ -138,6 +140,7 @@ export const LedgerTab = ({
   route: LedgerRoute;
   active: boolean;
   isDragging?: boolean;
+  title?: string;
   onSelect: () => void;
   onClose: () => void;
   onPointerDown?: (event: ReactPointerEvent<HTMLDivElement>) => void;
@@ -172,14 +175,16 @@ export const LedgerTab = ({
       draggable={false}
     >
       {routeIcon(route)}
-      <span className="truncate">{routeLabel(route)}</span>
+      <span className="truncate" title={title ?? routeLabel(route)}>
+        {title ?? routeLabel(route)}
+      </span>
     </button>
     <button
       type="button"
       onClick={onClose}
       onPointerDown={(event) => event.stopPropagation()}
       className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-[var(--ledger-text-muted)] opacity-0 transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] group-hover:opacity-100 focus-visible:opacity-100"
-      aria-label={`Close ${routeLabel(route)} tab`}
+      aria-label={`Close ${title ?? routeLabel(route)} tab`}
       title="Close tab"
     >
       <X size={12} />
@@ -189,6 +194,7 @@ export const LedgerTab = ({
 
 export const LedgerTabStrip = () => {
   const { activeWorkspaceId } = useWorkspaceContext();
+  const { getProjects } = useApi();
   const toast = useToast();
   const [navigationState, setNavigationState] = useState<NavigationState>({});
   const [tabOrder, setTabOrder] = useState<LedgerRoute[]>([]);
@@ -211,9 +217,49 @@ export const LedgerTabStrip = () => {
   const suppressTabClickRef = useRef(false);
   const [isDetaching, setIsDetaching] = useState(false);
   const [draggingTabKey, setDraggingTabKey] = useState<string | null>(null);
+  const [projectTitles, setProjectTitles] = useState<Record<string, string>>({});
 
   const currentRoute = normalizeRoute(navigationState.currentRoute);
   const incomingRoutes = useMemo(() => (currentRoute ? [currentRoute] : []), [currentRoute]);
+  const projectIds = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          tabOrder
+            .filter((route) => route.kind === 'projects' && route.focusProjectId)
+            .map((route) => route.focusProjectId as string)
+        )
+      ),
+    [tabOrder]
+  );
+
+  useEffect(() => {
+    if (projectIds.length === 0) {
+      setProjectTitles({});
+      return;
+    }
+
+    let cancelled = false;
+    void getProjects({ includeCompleted: true })
+      .then((projects) => {
+        if (cancelled || !Array.isArray(projects)) return;
+        const titles: Record<string, string> = {};
+        for (const project of projects as Array<{ id?: string; name?: string }>) {
+          if (project.id && project.name?.trim()) titles[project.id] = project.name.trim();
+        }
+        if (!cancelled) setProjectTitles(titles);
+      })
+      .catch(() => {
+        // Keep the generic project label if project metadata is unavailable.
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [getProjects, projectIds, activeWorkspaceId]);
+
+  const getTabTitle = (route: LedgerRoute) =>
+    routeLabel(route, route.focusProjectId ? projectTitles[route.focusProjectId] : undefined);
 
   useEffect(() => {
     tabOrderRef.current = tabOrder;
@@ -548,7 +594,7 @@ export const LedgerTabStrip = () => {
         routeState: {},
         tabHistory: [{ ...route, kind: route.kind }],
         historyIndex: 0,
-        title: routeLabel(route),
+        title: getTabTitle(route),
         icon: route.kind,
       };
 
@@ -682,6 +728,7 @@ export const LedgerTabStrip = () => {
           <LedgerTab
             key={routeKey(route)}
             route={route}
+            title={getTabTitle(route)}
             active={Boolean(currentRoute && sameRoute(currentRoute, route))}
             isDragging={draggingTabKey === routeKey(route)}
             onSelect={() => handleTabSelect(route)}
@@ -726,13 +773,13 @@ export const LedgerTabStrip = () => {
                     role="menuitem"
                   >
                     {routeIcon(route)}
-                    <span className="min-w-0 flex-1 truncate">{routeLabel(route)}</span>
+                    <span className="min-w-0 flex-1 truncate">{getTabTitle(route)}</span>
                   </button>
                   <button
                     type="button"
                     onClick={() => closeTab(route)}
                     className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-[var(--ledger-text-muted)] opacity-0 group-hover/menu:opacity-100 focus-visible:opacity-100 hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
-                    aria-label={`Close ${routeLabel(route)} tab`}
+                    aria-label={`Close ${getTabTitle(route)} tab`}
                     title="Close tab"
                   >
                     <X size={12} />
@@ -753,6 +800,7 @@ export const LedgerTabStrip = () => {
           <LedgerTab
             key={`measure-${routeKey(route)}`}
             route={route}
+            title={getTabTitle(route)}
             active={false}
             isDragging={false}
             onSelect={() => undefined}

@@ -677,6 +677,7 @@ export const SettingsWindow = () => {
   const [isWorkspaceManageModalOpen, setIsWorkspaceManageModalOpen] = useState(false);
   const [workspaceEditName, setWorkspaceEditName] = useState('');
   const [workspaceEditDescription, setWorkspaceEditDescription] = useState('');
+  const [workspaceEditType, setWorkspaceEditType] = useState<'team' | 'personal'>('team');
   const [workspaceEditStatus, setWorkspaceEditStatus] = useState<string | null>(null);
   const [workspaceEditError, setWorkspaceEditError] = useState<string | null>(null);
   const [isSavingWorkspace, setIsSavingWorkspace] = useState(false);
@@ -1530,6 +1531,7 @@ export const SettingsWindow = () => {
     if (!nextWorkspaceId) {
       setWorkspaceEditName('');
       setWorkspaceEditDescription('');
+      setWorkspaceEditType('team');
       setWorkspaceDeleteConfirm('');
       setIsWorkspaceManageModalOpen(false);
       setIsWorkspaceDeleteModalOpen(false);
@@ -1539,6 +1541,7 @@ export const SettingsWindow = () => {
     if (previousWorkspaceId && previousWorkspaceId !== nextWorkspaceId) {
       setWorkspaceEditName(activeWorkspace?.name ?? '');
       setWorkspaceEditDescription(activeWorkspace?.description ?? '');
+      setWorkspaceEditType(activeWorkspace?.is_personal ? 'personal' : 'team');
       setWorkspaceDeleteConfirm('');
       setIsWorkspaceManageModalOpen(false);
       setIsWorkspaceDeleteModalOpen(false);
@@ -1548,12 +1551,14 @@ export const SettingsWindow = () => {
     if (!isWorkspaceManageModalOpen && !isWorkspaceDeleteModalOpen) {
       setWorkspaceEditName(activeWorkspace?.name ?? '');
       setWorkspaceEditDescription(activeWorkspace?.description ?? '');
+      setWorkspaceEditType(activeWorkspace?.is_personal ? 'personal' : 'team');
       setWorkspaceDeleteConfirm('');
     }
   }, [
     activeWorkspace?.id,
     activeWorkspace?.name,
     activeWorkspace?.description,
+    activeWorkspace?.is_personal,
     isWorkspaceDeleteModalOpen,
     isWorkspaceManageModalOpen,
   ]);
@@ -1575,6 +1580,7 @@ export const SettingsWindow = () => {
       await api.updateWorkspace(activeWorkspaceId, {
         name,
         description: workspaceEditDescription.trim() || null,
+        is_personal: workspaceEditType === 'personal',
       });
       await refreshWorkspaces();
       window.dispatchEvent(new CustomEvent('ledger:workspaces-changed'));
@@ -1644,6 +1650,7 @@ export const SettingsWindow = () => {
 
     setWorkspaceEditName(activeWorkspace.name);
     setWorkspaceEditDescription(activeWorkspace.description ?? '');
+    setWorkspaceEditType(activeWorkspace.is_personal ? 'personal' : 'team');
     setWorkspaceEditStatus(null);
     setWorkspaceEditError(null);
     setIsWorkspaceManageModalOpen(true);
@@ -4830,6 +4837,33 @@ export const SettingsWindow = () => {
                       className={settingsTheme.input + ' min-h-24 resize-none py-2'}
                       aria-label="Edit workspace description"
                     />
+                  </div>
+                </div>
+
+                <div className="mt-4 border-t border-[color:var(--ledger-border-subtle)] px-5 pt-4">
+                  <div className="grid gap-4 md:grid-cols-[220px_minmax(0,1fr)] md:items-start">
+                    <div className="space-y-1 pt-1">
+                      <p className="text-sm font-medium text-[var(--ledger-text-primary)]">
+                        Workspace type
+                      </p>
+                      <p className={settingsTheme.rowMuted}>
+                        Choose whether this workspace is for personal or shared work.
+                      </p>
+                    </div>
+                    <select
+                      id="workspace-edit-type"
+                      value={workspaceEditType}
+                      onChange={(event) =>
+                        setWorkspaceEditType(event.target.value as 'team' | 'personal')
+                      }
+                      disabled={!canManageWorkspace || isSavingWorkspace}
+                      className={settingsTheme.input + ' appearance-none pr-9'}
+                      style={selectChevronStyle}
+                      aria-label="Workspace type"
+                    >
+                      <option value="team">Team workspace</option>
+                      <option value="personal">Personal workspace</option>
+                    </select>
                   </div>
                 </div>
 

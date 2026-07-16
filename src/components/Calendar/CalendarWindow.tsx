@@ -714,7 +714,7 @@ const parseIcsEvents = (rawIcs: string): ParsedIcsEvent[] => {
 
 export const CalendarWindow = () => {
   const { user } = useAuthContext();
-  const { activeWorkspaceId } = useWorkspaceContext();
+  const { activeWorkspaceId, activeWorkspace } = useWorkspaceContext();
   const { workspaceShellLayout } = useSidebar();
   const api = useApi();
   const viewportWidth = useViewportWidth();
@@ -872,6 +872,10 @@ export const CalendarWindow = () => {
     calendarColor: 'ledger-orange',
   });
   const [calendarRefreshToken, setCalendarRefreshToken] = useState(0);
+  const isPersonalWorkspace = Boolean(activeWorkspace?.is_personal);
+  const effectiveCalendarScope = isPersonalWorkspace
+    ? 'current_workspace'
+    : calendarPreferences.calendarScope;
   const smartDateComposerContextRef = useRef<SmartDateComposerContext | null>(null);
   const smartDateComposerModeRef = useRef<'event' | 'reminder' | null>(null);
   const [leftPaneWidth, setLeftPaneWidth] = useState(() =>
@@ -1794,7 +1798,7 @@ export const CalendarWindow = () => {
                 | 'workspace'
                 | 'projects')
             : 'personal',
-          calendarScope: ['current_workspace', 'all_accessible_workspaces'].includes(
+          calendarScope: !activeWorkspace?.is_personal && ['current_workspace', 'all_accessible_workspaces'].includes(
             String(payload?.preferences?.calendarScope)
           )
             ? (payload?.preferences?.calendarScope as
@@ -1912,7 +1916,7 @@ export const CalendarWindow = () => {
     () => (overflowDayKey ? remindersByDay[overflowDayKey] ?? [] : []),
     [overflowDayKey, remindersByDay]
   );
-  const showWorkspaceNames = calendarPreferences.calendarScope === 'all_accessible_workspaces';
+  const showWorkspaceNames = effectiveCalendarScope === 'all_accessible_workspaces';
 
   useEffect(() => {
     let cancelled = false;
@@ -1937,7 +1941,7 @@ export const CalendarWindow = () => {
 
       try {
         const loadedCalendars = await api.getCalendars({
-          scope: calendarPreferences.calendarScope,
+          scope: effectiveCalendarScope,
         });
 
         if (cancelled) return;
@@ -1963,9 +1967,9 @@ export const CalendarWindow = () => {
 
         const [eventRows, reminderRows] = await Promise.all([
           api.getEvents(viewConfig.start.toISOString(), viewConfig.end.toISOString(), {
-            scope: calendarPreferences.calendarScope,
+            scope: effectiveCalendarScope,
           }),
-          api.getReminders({ scope: calendarPreferences.calendarScope }),
+          api.getReminders({ scope: effectiveCalendarScope }),
         ]);
 
         if (cancelled) return;
@@ -2069,7 +2073,7 @@ export const CalendarWindow = () => {
     viewConfig.start.getTime(),
     viewConfig.end.getTime(),
     api,
-    calendarPreferences.calendarScope,
+    effectiveCalendarScope,
     calendarRefreshToken,
   ]);
 

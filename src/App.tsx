@@ -975,6 +975,8 @@ function DashboardContent() {
   const [calendarScope, setCalendarScope] = useState<
     'current_workspace' | 'all_accessible_workspaces'
   >('current_workspace');
+  const isPersonalWorkspace = Boolean(activeWorkspace?.is_personal);
+  const effectiveCalendarScope = isPersonalWorkspace ? 'current_workspace' : calendarScope;
   const autoExpireTodayTaskIdsRef = useRef<Set<string>>(new Set());
   const workspaceMemberById = useMemo(
     () => new Map(workspaceMembers.map((member) => [member.user_id, member])),
@@ -1108,6 +1110,9 @@ function DashboardContent() {
     if (!raw.startsWith('team:')) return null;
     return raw.slice('team:'.length).trim() || null;
   });
+  useEffect(() => {
+    if (isPersonalWorkspace) setOverviewTeamScopeId(null);
+  }, [activeWorkspaceId, isPersonalWorkspace]);
   const [overviewLayout, setOverviewLayout] = useState<'list' | 'compact'>('list');
   const [isOverviewFilterOpen, setIsOverviewFilterOpen] = useState(false);
   const [isOverviewDisplayOpen, setIsOverviewDisplayOpen] = useState(false);
@@ -1458,7 +1463,7 @@ function DashboardContent() {
         };
         if (cancelled) return;
         setCalendarScope(
-          payload?.preferences?.calendarScope === 'all_accessible_workspaces'
+          !activeWorkspace?.is_personal && payload?.preferences?.calendarScope === 'all_accessible_workspaces'
             ? 'all_accessible_workspaces'
             : 'current_workspace'
         );
@@ -1482,7 +1487,7 @@ function DashboardContent() {
     return () => {
       cancelled = true;
     };
-  }, [api, user]);
+  }, [activeWorkspace?.is_personal, api, user]);
 
   useEffect(() => {
     if (!user) {
@@ -1598,8 +1603,8 @@ function DashboardContent() {
           api.getDailyAccountability(),
           api.getToday(),
           api.getProjects(),
-          api.getUpcomingEvents({ scope: calendarScope }),
-          api.getReminders({ scope: calendarScope }),
+          api.getUpcomingEvents({ scope: effectiveCalendarScope }),
+          api.getReminders({ scope: effectiveCalendarScope }),
           api.getNotes(),
           api.getTasks(),
           api.getWorkspaceProjectNoteLinks(activeWorkspaceId),
@@ -1992,7 +1997,7 @@ function DashboardContent() {
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [activeWorkspaceId, api, calendarScope, dashboardRefreshToken, user]);
+  }, [activeWorkspaceId, api, effectiveCalendarScope, dashboardRefreshToken, user]);
 
   useEffect(() => {
     if (!user || !activeWorkspaceId) {
@@ -4981,6 +4986,28 @@ function DashboardContent() {
           },
         ];
 
+  const visibleOverviewFilterSections = overviewFilterSections
+    .filter((section) => !isPersonalWorkspace || !['people', 'teams', 'team'].includes(section.id))
+    .map((section) => {
+      if (!isPersonalWorkspace) return section;
+      if (section.id === 'linkedContext') {
+        return {
+          ...section,
+          options: section.options.filter((option) => option.value !== 'linked_to_team'),
+        };
+      }
+      if (section.id !== 'assignment') return section;
+      return {
+        ...section,
+        options: section.options.filter(
+          (option) =>
+            option.value === 'me' ||
+            option.value === 'assigned' ||
+            option.value === 'unassigned'
+        ),
+      };
+    });
+
   const activeOverviewFilterCount = countOverviewFilters(activeOverviewFilters);
   const overviewFilterButtonLabel =
     activeOverviewFilterCount > 0 ? `Filter ${activeOverviewFilterCount}` : 'Filter';
@@ -5358,7 +5385,7 @@ function DashboardContent() {
                     )}
                   </div>
                   <div className="max-h-[58vh] overflow-auto">
-                    {overviewFilterSections.map(renderOverviewFilterSection)}
+                    {visibleOverviewFilterSections.map(renderOverviewFilterSection)}
                   </div>
                 </div>
               )}
@@ -6305,13 +6332,15 @@ function DashboardContent() {
                       </option>
                     ))}
                 </optgroup>
-                <optgroup label="Teams">
-                  {workspaceTeams.map((team) => (
-                    <option key={team.id} value={`team:${team.id}`}>
-                      {team.name}
-                    </option>
-                  ))}
-                </optgroup>
+                {!isPersonalWorkspace && (
+                  <optgroup label="Teams">
+                    {workspaceTeams.map((team) => (
+                      <option key={team.id} value={`team:${team.id}`}>
+                        {team.name}
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
               </select>
             </label>
           </div>
@@ -6669,13 +6698,15 @@ function DashboardContent() {
                                 </option>
                               ))}
                             </optgroup>
-                            <optgroup label="Teams">
-                              {workspaceTeams.map((team) => (
-                                <option key={team.id} value={`team:${team.id}`}>
-                                  {team.identifier?.trim() || team.name}
-                                </option>
-                              ))}
-                            </optgroup>
+                            {!isPersonalWorkspace && (
+                              <optgroup label="Teams">
+                                {workspaceTeams.map((team) => (
+                                  <option key={team.id} value={`team:${team.id}`}>
+                                    {team.identifier?.trim() || team.name}
+                                  </option>
+                                ))}
+                              </optgroup>
+                            )}
                           </select>
                           <ChevronDown
                             size={12}

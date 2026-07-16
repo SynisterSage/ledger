@@ -559,6 +559,7 @@ export const ProjectsWindow = () => {
   const { activeWorkspaceId, activeWorkspace } = useWorkspaceContext();
   const { workspaceShellLayout } = useSidebar();
   const api = useApi();
+  const isPersonalWorkspace = Boolean(activeWorkspace?.is_personal);
   const viewportWidth = useViewportWidth();
   const viewportHeight = useViewportHeight();
   const initialFocusProjectId = new URLSearchParams(window.location.search).get('focusProjectId');
@@ -610,6 +611,10 @@ export const ProjectsWindow = () => {
   const [rightPaneWidth, setRightPaneWidth] = useState(() =>
     getPaneWidthForViewport(viewportWidth, modulePaneSizing.projects.right)
   );
+
+  useEffect(() => {
+    if (isPersonalWorkspace) setFocusedTeamId(null);
+  }, [activeWorkspaceId, isPersonalWorkspace]);
   const [isLeftPaneCollapsed, setIsLeftPaneCollapsed] = useState(() => viewportWidth < 760);
   const [isRightPaneCollapsed, setIsRightPaneCollapsed] = useState(true);
   const [isResizingLeftPane, setIsResizingLeftPane] = useState(false);
@@ -1030,8 +1035,9 @@ export const ProjectsWindow = () => {
   }, [workspaceMembers]);
 
   const workspaceTeamById = useMemo(() => {
-    return new Map(workspaceTeams.map((team) => [team.id, team]));
+    return new Map(availableWorkspaceTeams.map((team) => [team.id, team]));
   }, [workspaceTeams]);
+  const availableWorkspaceTeams = isPersonalWorkspace ? [] : workspaceTeams;
 
   const getAssignmentValue = useCallback(
     (
@@ -3690,7 +3696,7 @@ export const ProjectsWindow = () => {
                     ))}
                   </optgroup>
                   <optgroup label="Teams">
-                    {workspaceTeams.map((team) => (
+                    {availableWorkspaceTeams.map((team) => (
                       <option key={team.id} value={`team:${team.id}`}>
                         {team.name}
                       </option>
@@ -4059,13 +4065,13 @@ export const ProjectsWindow = () => {
                     </option>
                   ))}
                 </optgroup>
-                <optgroup label="Teams">
-                  {workspaceTeams.map((team) => (
+                {!isPersonalWorkspace && <optgroup label="Teams">
+                  {availableWorkspaceTeams.map((team) => (
                     <option key={team.id} value={`team:${team.id}`}>
                       {team.name}
                     </option>
                   ))}
-                </optgroup>
+                </optgroup>}
               </select>
               <ChevronDown
                 size={14}
@@ -4656,24 +4662,26 @@ export const ProjectsWindow = () => {
             </div>
           </label>
 
-          <label className="flex min-w-0 items-center gap-2">
-            <span className={propertyLabelClass}>Owner team</span>
-            <div className="relative min-w-0 flex-1">
-              <select
-                value={selectedProject.owner_team_id ?? ''}
-                onChange={(e) => void updateSelectedProjectOwnerTeam(e.target.value)}
-                className={`${inlineControlClass} w-auto appearance-none pr-5`}
-                title={ownerTeam}
-              >
-                <option value="">No team</option>
-                {workspaceTeams.map((team) => (
-                  <option key={team.id} value={team.id}>
-                    {team.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </label>
+          {!isPersonalWorkspace && (
+            <label className="flex min-w-0 items-center gap-2">
+              <span className={propertyLabelClass}>Owner team</span>
+              <div className="relative min-w-0 flex-1">
+                <select
+                  value={selectedProject.owner_team_id ?? ''}
+                  onChange={(e) => void updateSelectedProjectOwnerTeam(e.target.value)}
+                  className={`${inlineControlClass} w-auto appearance-none pr-5`}
+                  title={ownerTeam}
+                >
+                  <option value="">No team</option>
+                  {availableWorkspaceTeams.map((team) => (
+                    <option key={team.id} value={team.id}>
+                      {team.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </label>
+          )}
 
           <label className="flex min-w-0 items-center gap-2">
             <span className={propertyLabelClass}>Lead</span>
@@ -6243,18 +6251,18 @@ export const ProjectsWindow = () => {
                   </option>
                 ))}
             </select>
-            <select
+            {!isPersonalWorkspace && <select
               value={newProjectOwnerTeamId}
               onChange={(e) => setNewProjectOwnerTeamId(e.target.value)}
               className="inline-flex h-8 min-w-[160px] items-center rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2.5 text-xs font-medium text-[var(--ledger-text-secondary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60"
             >
               <option value="">No owner team</option>
-              {workspaceTeams.map((team) => (
+              {availableWorkspaceTeams.map((team) => (
                 <option key={team.id} value={team.id}>
                   {team.name}
                 </option>
               ))}
-            </select>
+            </select>}
 
             <button
               type="button"
@@ -7429,7 +7437,7 @@ export const ProjectsWindow = () => {
                   ))}
                 </optgroup>
                 <optgroup label="Teams">
-                  {workspaceTeams.map((team) => (
+                  {availableWorkspaceTeams.map((team) => (
                     <option key={team.id} value={`team:${team.id}`}>
                       {team.name}
                     </option>
@@ -7553,7 +7561,7 @@ export const ProjectsWindow = () => {
                       ))}
                     </optgroup>
                     <optgroup label="Teams">
-                      {workspaceTeams.map((team) => (
+                      {availableWorkspaceTeams.map((team) => (
                         <option key={team.id} value={`team:${team.id}`}>
                           {team.name}
                         </option>
@@ -7756,7 +7764,7 @@ export const ProjectsWindow = () => {
             className="h-10 w-full rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 text-sm text-[var(--ledger-text-primary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60"
           >
             <option value="">No owner team</option>
-            {workspaceTeams.map((team) => (
+            {availableWorkspaceTeams.map((team) => (
               <option key={team.id} value={team.id}>
                 {team.name}
               </option>

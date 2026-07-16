@@ -199,7 +199,7 @@ export const useApi = () => {
         }),
       updateWorkspace: (
         workspaceId: string,
-        payload: { name?: string; description?: string | null }
+        payload: { name?: string; description?: string | null; is_personal?: boolean }
       ) =>
         request(`/api/workspaces/${workspaceId}`, {
           method: 'PATCH',

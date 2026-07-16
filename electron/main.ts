@@ -6695,6 +6695,24 @@ ipcMain.handle('window:open-module', (event, payload: ModuleWindowKind | ModuleF
   const existing = moduleWins.get(kind);
 
   if (existing && !existing.isDestroyed()) {
+    // A tab activation can switch the shared Ledger window to another
+    // module without creating a BrowserWindow. Keep the window-level route
+    // authority in sync with the content that is being focused.
+    if (existing === workspaceModuleWin && typeof payload !== 'string') {
+      navigateWorkspaceModuleWindow(
+        routeFromModuleArgs(
+          kind,
+          focusDate,
+          focusProjectId,
+          focusNoteId,
+          focusTaskId,
+          focusContext,
+          focusSection
+        )
+      );
+      return;
+    }
+
     if (existing.isMinimized()) {
       existing.restore();
       if (existing === workspaceModuleWin) {

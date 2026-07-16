@@ -402,6 +402,8 @@ export const ExpandedSidebar = ({
   const [calendarScope, setCalendarScope] = useState<
     'current_workspace' | 'all_accessible_workspaces'
   >('current_workspace');
+  const isPersonalWorkspace = Boolean(activeWorkspace?.is_personal);
+  const effectiveCalendarScope = isPersonalWorkspace ? 'current_workspace' : calendarScope;
   const [upcomingItems, setUpcomingItems] = useState<UpcomingItem[]>([]);
   const [eventsExpanded, setEventsExpanded] = useState(false);
   const [todayItems, setTodayItems] = useState<TodayTask[]>([]);
@@ -592,7 +594,7 @@ export const ExpandedSidebar = ({
         };
         if (cancelled) return;
         setCalendarScope(
-          settings?.preferences?.calendarScope === 'all_accessible_workspaces'
+          !activeWorkspace?.is_personal && settings?.preferences?.calendarScope === 'all_accessible_workspaces'
             ? 'all_accessible_workspaces'
             : 'current_workspace'
         );
@@ -608,7 +610,7 @@ export const ExpandedSidebar = ({
     return () => {
       cancelled = true;
     };
-  }, [api, user]);
+  }, [activeWorkspace?.is_personal, api, user]);
   const eventCaptureRef = useRef<HTMLInputElement | null>(null);
   const todayDockButtonRef = useRef<HTMLButtonElement | null>(null);
   const todayDockPopoverRef = useRef<HTMLDivElement | null>(null);
@@ -892,6 +894,13 @@ export const ExpandedSidebar = ({
 
       setIsLoadingMyTeams(true);
 
+      if (isPersonalWorkspace) {
+        setMyTeams([]);
+        setTeamIntakeItems([]);
+        setIsLoadingMyTeams(false);
+        return;
+      }
+
       try {
         const [teamsPayload, inboxPayload] = await Promise.allSettled([
           api.getTeams(),
@@ -1009,7 +1018,7 @@ export const ExpandedSidebar = ({
     return () => {
       cancelled = true;
     };
-  }, [activeWorkspaceId, api, sidebarRefreshToken, user]);
+  }, [activeWorkspaceId, api, isPersonalWorkspace, sidebarRefreshToken, user]);
 
   useEffect(() => {
     if (!user || !activeWorkspaceId) {
@@ -1173,7 +1182,7 @@ export const ExpandedSidebar = ({
 
     const loadUpcoming = async () => {
       try {
-        const events = await api.getUpcomingEvents({ scope: calendarScope });
+        const events = await api.getUpcomingEvents({ scope: effectiveCalendarScope });
         const todayISO = formatDateKey(new Date());
         const tomorrowISO = formatDateKey(addDays(new Date(), 1));
 
@@ -1255,7 +1264,7 @@ export const ExpandedSidebar = ({
       window.ipcRenderer?.off('calendar:items-updated', handleCalendarItemsUpdated);
       window.clearInterval(refreshTimer);
     };
-  }, [user?.id, activeWorkspaceId, calendarScope, api]);
+  }, [user?.id, activeWorkspaceId, effectiveCalendarScope, api]);
 
   useEffect(() => {
     if (quickCaptureMode === 'none') return;
@@ -2050,7 +2059,7 @@ export const ExpandedSidebar = ({
           : 'planned';
       const defaultEventCalendar = settings.preferences?.defaultEventCalendar ?? 'personal';
 
-      let calendars = await api.getCalendars({ scope: calendarScope });
+      let calendars = await api.getCalendars({ scope: effectiveCalendarScope });
       const personalCalendar = Array.isArray(calendars)
         ? calendars.find((calendar) => calendar.is_visible !== false && calendar.is_personal) ??
           calendars.find((calendar) => calendar.is_visible !== false && calendar.is_default) ??
@@ -2089,7 +2098,7 @@ export const ExpandedSidebar = ({
             color: created.color ?? 'var(--ledger-accent)',
           };
         } else {
-          calendars = await api.getCalendars({ scope: calendarScope });
+          calendars = await api.getCalendars({ scope: effectiveCalendarScope });
           selectedCalendar = Array.isArray(calendars) ? calendars[0] ?? null : null;
         }
       }
@@ -2386,15 +2395,23 @@ export const ExpandedSidebar = ({
         }),
     },
   ];
+  const visibleTrySectionItems = isPersonalWorkspace
+    ? trySectionItems.filter(
+        (item) =>
+          !['Invite a member', 'Open Circle', 'Create a team meeting note'].includes(item.title)
+      )
+    : trySectionItems;
   const trySectionRotationSeed = Number(todayKey().replace(/-/g, '')) + tryRotationTick;
   const trySectionRotationStart =
-    trySectionItems.length > 0 ? trySectionRotationSeed % trySectionItems.length : 0;
+    visibleTrySectionItems.length > 0
+      ? trySectionRotationSeed % visibleTrySectionItems.length
+      : 0;
   const trySectionVisibleItems =
-    trySectionItems.length <= 4
-      ? trySectionItems
+    visibleTrySectionItems.length <= 4
+      ? visibleTrySectionItems
       : [
-          ...trySectionItems.slice(trySectionRotationStart),
-          ...trySectionItems.slice(0, trySectionRotationStart),
+          ...visibleTrySectionItems.slice(trySectionRotationStart),
+          ...visibleTrySectionItems.slice(0, trySectionRotationStart),
         ].slice(0, 4);
   const myTeamIntakeCountById = useMemo(() => {
     const counts = new Map<string, number>();
@@ -2479,11 +2496,15 @@ export const ExpandedSidebar = ({
                 icon: BarChart3,
                 action: () => window.desktopWindow?.toggleModule('dashboard'),
               },
-              {
-                label: 'Circle',
-                icon: CircleUserRound,
-                action: () => window.desktopWindow?.toggleModule('circle'),
-              },
+              ...(!isPersonalWorkspace
+                ? [
+                    {
+                      label: 'Circle',
+                      icon: CircleUserRound,
+                      action: () => window.desktopWindow?.toggleModule('circle'),
+                    },
+                  ]
+                : []),
               {
                 label: 'Projects',
                 icon: Folder,
@@ -2836,14 +2857,16 @@ export const ExpandedSidebar = ({
           </button>
 
           <div hidden={workspaceSectionCollapsed} className="space-y-1.5">
-            <button
-              type="button"
-              onClick={() => window.desktopWindow?.toggleModule('teams')}
-              className="flex h-9 w-full items-center gap-2.5 rounded-xl px-2.5 text-left text-[13px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]"
-            >
-              <Users size={15} className="shrink-0 text-[var(--ledger-text-muted)]" />
-              <span className="truncate">All Teams</span>
-            </button>
+            {!isPersonalWorkspace && (
+              <button
+                type="button"
+                onClick={() => window.desktopWindow?.toggleModule('teams')}
+                className="flex h-9 w-full items-center gap-2.5 rounded-xl px-2.5 text-left text-[13px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]"
+              >
+                <Users size={15} className="shrink-0 text-[var(--ledger-text-muted)]" />
+                <span className="truncate">All Teams</span>
+              </button>
+            )}
             <button
               type="button"
               onClick={() => {
@@ -3811,14 +3834,16 @@ export const ExpandedSidebar = ({
               )}
             </section>
 
-            <button
-              type="button"
-              onClick={() => window.desktopWindow?.toggleModule('circle')}
-              className="flex h-9 w-full items-center gap-2.5 rounded-xl px-2.5 text-left text-[13px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]"
-            >
-              <CircleUserRound size={15} className="shrink-0 text-[var(--ledger-text-muted)]" />
-              <span>Circle</span>
-            </button>
+            {!isPersonalWorkspace && (
+              <button
+                type="button"
+                onClick={() => window.desktopWindow?.toggleModule('circle')}
+                className="flex h-9 w-full items-center gap-2.5 rounded-xl px-2.5 text-left text-[13px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]"
+              >
+                <CircleUserRound size={15} className="shrink-0 text-[var(--ledger-text-muted)]" />
+                <span>Circle</span>
+              </button>
+            )}
             <button
               type="button"
               onClick={() => window.desktopWindow?.toggleModule('inbox')}
@@ -3840,7 +3865,7 @@ export const ExpandedSidebar = ({
 
           <PinnedSidebarSection />
 
-          {showMyTeamsSection && (
+          {!isPersonalWorkspace && showMyTeamsSection && (
             <section className="order-4 space-y-2">
               <button
                 type="button"

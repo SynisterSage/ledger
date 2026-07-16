@@ -6905,18 +6905,23 @@ app.patch(
       const access = await requireWorkspaceAccess(req.authUser.id, workspaceId, 'admin');
       const name = String(req.body?.name ?? '').trim();
       const description = String(req.body?.description ?? '').trim();
+      const hasWorkspaceType = typeof req.body?.is_personal === 'boolean';
+      const isPersonal = hasWorkspaceType ? Boolean(req.body.is_personal) : null;
 
       if (!name) {
         return res.status(400).json({ error: 'Workspace name is required' });
       }
 
+      const updatePayload = {
+        name,
+        description: description || null,
+        updated_at: new Date().toISOString(),
+        ...(hasWorkspaceType ? { is_personal: isPersonal } : {}),
+      };
+
       const updated = await supabase
         .from('workspaces')
-        .update({
-          name,
-          description: description || null,
-          updated_at: new Date().toISOString(),
-        })
+        .update(updatePayload)
         .eq('id', workspaceId)
         .select('id, name, description, is_personal, color, owner_id, created_at, updated_at')
         .single();
@@ -6932,6 +6937,7 @@ app.patch(
         metadata: {
           name,
           description: description || null,
+          ...(hasWorkspaceType ? { is_personal: isPersonal } : {}),
           actor_role: access.role,
         },
       });

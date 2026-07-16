@@ -89,6 +89,7 @@ export const WorkspaceSwitcherMenu = ({ variant = 'sidebar', compact = false }: 
   const resolvedWorkspace = activeWorkspace ?? workspaces.find((workspace) => workspace.id === activeWorkspaceId) ?? null;
   const workspaceName = resolvedWorkspace?.name?.trim() || 'Workspace';
   const workspaceInitials = getWorkspaceInitials(workspaceName);
+  const isPersonalWorkspace = Boolean(resolvedWorkspace?.is_personal);
 
   const primaryButtonClass =
     variant === 'header'
@@ -195,7 +196,10 @@ export const WorkspaceSwitcherMenu = ({ variant = 'sidebar', compact = false }: 
   }, []);
 
   const loadWorkspaceTeams = async () => {
-    if (!activeWorkspaceId) return;
+    if (!activeWorkspaceId || isPersonalWorkspace) {
+      setWorkspaceTeams([]);
+      return;
+    }
     setWorkspaceLoadingTeams(true);
     try {
       const payload = await api.getTeams({ includeArchived: false });
@@ -210,13 +214,17 @@ export const WorkspaceSwitcherMenu = ({ variant = 'sidebar', compact = false }: 
     }
   };
 
+  useEffect(() => {
+    setWorkspaceTeams([]);
+  }, [activeWorkspaceId, isPersonalWorkspace]);
+
   const openMenu = async () => {
     updateMenuPosition();
     setIsOpen(true);
     setSubmenuOpen(false);
     setInviteModalOpen(false);
     setCreateModalOpen(false);
-    if (workspaceTeams.length === 0 && !workspaceLoadingTeams) {
+    if (!isPersonalWorkspace && workspaceTeams.length === 0 && !workspaceLoadingTeams) {
       void loadWorkspaceTeams();
     }
   };
@@ -228,7 +236,7 @@ export const WorkspaceSwitcherMenu = ({ variant = 'sidebar', compact = false }: 
     setInviteRole('member');
     setInviteLink(null);
     setInviteStatus(null);
-    if (workspaceTeams.length === 0 && !workspaceLoadingTeams) {
+    if (!isPersonalWorkspace && workspaceTeams.length === 0 && !workspaceLoadingTeams) {
       void loadWorkspaceTeams();
     }
   };
@@ -298,22 +306,26 @@ export const WorkspaceSwitcherMenu = ({ variant = 'sidebar', compact = false }: 
         openSettingsSection('workspace');
       },
     },
-    {
-      label: 'Invite members',
-      icon: UserPlus,
-      action: () => {
-        closeAllMenus();
-        void openInviteModal();
-      },
-    },
-    {
-      label: 'Manage teams',
-      icon: Users,
-      action: () => {
-        closeAllMenus();
-        openSettingsSection('workspace');
-      },
-    },
+    ...(!isPersonalWorkspace
+      ? [
+          {
+            label: 'Invite members',
+            icon: UserPlus,
+            action: () => {
+              closeAllMenus();
+              void openInviteModal();
+            },
+          },
+          {
+            label: 'Manage teams',
+            icon: Users,
+            action: () => {
+              closeAllMenus();
+              openSettingsSection('workspace');
+            },
+          },
+        ]
+      : []),
   ];
 
   const selectWorkspace = async (workspaceId: string) => {
