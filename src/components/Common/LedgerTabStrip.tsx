@@ -15,6 +15,7 @@ import {
   FolderKanban,
   Inbox,
   LayoutList,
+  Plus,
   Settings2,
   Users,
   X,
@@ -34,11 +35,13 @@ type LedgerRoute = {
 };
 
 type NavigationState = {
+  currentModule?: ModuleWindowKind | null;
   currentRoute?: ModuleFocusPayload | null;
   recentRoutes?: ModuleFocusPayload[];
 };
 
 const tabKinds = new Set<ModuleWindowKind>([
+  'new-tab',
   'dashboard',
   'notes',
   'projects',
@@ -56,6 +59,7 @@ const TAB_SESSION_STORAGE_KEY = 'ledger:window-tabs:v1';
 const TAB_TRANSFER_ID = new URLSearchParams(window.location.search).get('tabTransferId');
 
 const routeKey = (route: LedgerRoute) => {
+  if (route.kind === 'new-tab') return `new-tab|${route.focusContext ?? 'default'}`;
   // Notes Home can arrive with transient focus metadata such as `home`.
   // That metadata changes the view state, not the document tab identity.
   if (route.kind === 'notes') {
@@ -75,6 +79,8 @@ const routeKey = (route: LedgerRoute) => {
 
 const routeLabel = (route: LedgerRoute, projectTitle?: string) => {
   switch (route.kind) {
+    case 'new-tab':
+      return 'New Tab';
     case 'dashboard':
       return 'Workspace Overview';
     case 'notes':
@@ -99,6 +105,8 @@ const routeLabel = (route: LedgerRoute, projectTitle?: string) => {
 const routeIcon = (route: LedgerRoute): ReactNode => {
   const className = 'h-3.5 w-3.5 shrink-0 text-current';
   switch (route.kind) {
+    case 'new-tab':
+      return <Plus className={className} />;
     case 'dashboard':
       return <LayoutList className={className} />;
     case 'notes':
@@ -124,6 +132,11 @@ const normalizeRoute = (route?: ModuleFocusPayload | null): LedgerRoute | null =
 };
 
 const sameRoute = (left: LedgerRoute, right: LedgerRoute) => routeKey(left) === routeKey(right);
+const isNewTabRoute = (route: LedgerRoute | null | undefined) => route?.kind === 'new-tab';
+const createNewTabRoute = (): LedgerRoute => ({
+  kind: 'new-tab',
+  focusContext: `new-tab:${crypto.randomUUID()}`,
+});
 
 export const LedgerTab = ({
   route,
@@ -207,6 +220,7 @@ export const LedgerTabStrip = () => {
   const tabOrderRef = useRef<LedgerRoute[]>([]);
   const closedTabKeysRef = useRef<Set<string>>(new Set());
   const pendingCloseKeyRef = useRef<string | null>(null);
+  const suppressInitialRouteRef = useRef(false);
   const tabDragRef = useRef<{
     route: LedgerRoute;
     pointerId: number;
@@ -270,23 +284,49 @@ export const LedgerTabStrip = () => {
   }, [closedTabKeys]);
 
   useEffect(() => {
-    try {
-      const saved = JSON.parse(sessionStorage.getItem(TAB_SESSION_STORAGE_KEY) ?? 'null');
-      if (Array.isArray(saved)) {
-        const restored: LedgerRoute[] = [];
-        const seen = new Set<string>();
-        for (const item of saved) {
-          const route = normalizeRoute(item as ModuleFocusPayload);
-          if (!route || seen.has(routeKey(route))) continue;
-          seen.add(routeKey(route));
-          restored.push(route);
+    let mounted = true;
+    const initialize = async () => {
+      let restored: LedgerRoute[] = [];
+      try {
+        const saved = JSON.parse(sessionStorage.getItem(TAB_SESSION_STORAGE_KEY) ?? 'null');
+        if (Array.isArray(saved)) {
+          const seen = new Set<string>();
+          restored = saved.flatMap((item) => {
+            const route = normalizeRoute(item as ModuleFocusPayload);
+            if (!route) return [];
+            const key = isNewTabRoute(route) ? 'new-tab' : routeKey(route);
+            if (seen.has(key)) return [];
+            seen.add(key);
+            return [route];
+          });
         }
-        tabOrderRef.current = restored;
-        setTabOrder(restored);
+      } catch {
+        // Browser privacy settings can disable sessionStorage; the in-memory session still works.
       }
-    } catch {
-      // Browser privacy settings can disable sessionStorage; the in-memory session still works.
-    }
+
+      const state = await window.desktopWindow?.getWorkspaceNavigationState?.().catch(() => null);
+      if (!mounted) return;
+      if (state) setNavigationState(state);
+      if (restored.length === 0) {
+        const current = normalizeRoute(state?.currentRoute);
+        const hasExplicitModuleRoute = Boolean(
+          state?.currentModule && current && state.currentModule === current.kind
+        );
+        if (hasExplicitModuleRoute && current) {
+          restored = [current];
+        } else {
+          restored = [createNewTabRoute()];
+          suppressInitialRouteRef.current = true;
+          void window.desktopWindow?.openModule?.('new-tab', restored[0]);
+        }
+      }
+      tabOrderRef.current = restored;
+      setTabOrder(restored);
+    };
+    void initialize();
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   useEffect(() => {
@@ -361,20 +401,11 @@ export const LedgerTabStrip = () => {
   }, [tabOrder]);
 
   useEffect(() => {
-    let mounted = true;
-    const load = async () => {
-      const getNavigationState = window.desktopWindow?.getWorkspaceNavigationState;
-      const state = getNavigationState ? await getNavigationState().catch(() => null) : null;
-      if (mounted && state) setNavigationState(state);
-    };
-    void load();
-
     const handleState = (_event: unknown, state?: NavigationState) => {
       if (state) setNavigationState(state);
     };
     window.ipcRenderer?.on?.('workspace:navigation-state', handleState as any);
     return () => {
-      mounted = false;
       window.ipcRenderer?.off?.('workspace:navigation-state', handleState as any);
     };
   }, []);
@@ -382,13 +413,65 @@ export const LedgerTabStrip = () => {
   useEffect(() => {
     if (incomingRoutes.length === 0) return;
 
+    if (suppressInitialRouteRef.current && currentRoute && !isNewTabRoute(currentRoute)) {
+      return;
+    }
+    if (suppressInitialRouteRef.current && isNewTabRoute(currentRoute)) {
+      suppressInitialRouteRef.current = false;
+    }
+
     const currentKey = currentRoute ? routeKey(currentRoute) : null;
-    if (pendingCloseKeyRef.current && pendingCloseKeyRef.current !== currentKey) {
+    if (
+      pendingCloseKeyRef.current &&
+      pendingCloseKeyRef.current !== currentKey &&
+      !isNewTabRoute(currentRoute)
+    ) {
       pendingCloseKeyRef.current = null;
     }
 
-    const nextOrder = [...tabOrderRef.current];
+    const nextOrder = tabOrderRef.current.filter((route, index, routes) => {
+      if (!isNewTabRoute(route)) return true;
+      return routes.findIndex((candidate) => isNewTabRoute(candidate)) === index;
+    });
     const nextClosed = new Set(closedTabKeysRef.current);
+
+    if (
+      currentRoute &&
+      nextClosed.has(currentKey ?? '') &&
+      pendingCloseKeyRef.current === currentKey
+    ) {
+      return;
+    }
+
+    const existingNewTabIndex = nextOrder.findIndex((route) => isNewTabRoute(route));
+    if (currentRoute && isNewTabRoute(currentRoute) && existingNewTabIndex >= 0) {
+      const existingNewTab = nextOrder[existingNewTabIndex];
+      nextOrder[existingNewTabIndex] = currentRoute;
+      const newTabOrderChanged =
+        nextOrder.length !== tabOrderRef.current.length ||
+        !sameRoute(existingNewTab, currentRoute);
+      if (newTabOrderChanged) {
+        tabOrderRef.current = nextOrder;
+        setTabOrder(nextOrder);
+      }
+      suppressInitialRouteRef.current = false;
+      return;
+    }
+
+    const newTabIndex = nextOrder.findIndex((route) => isNewTabRoute(route));
+    if (currentRoute && !isNewTabRoute(currentRoute) && newTabIndex >= 0) {
+      // An existing tab was selected. Its route is already represented in the
+      // stable tab order, so this is not a New Tab destination replacement.
+      if (nextOrder.some((route) => sameRoute(route, currentRoute))) {
+        return;
+      }
+      nextOrder[newTabIndex] = currentRoute;
+      nextClosed.delete(currentKey ?? '');
+      tabOrderRef.current = nextOrder;
+      setTabOrder(nextOrder);
+      setClosedTabKeys(nextClosed);
+      return;
+    }
 
     // The current route is a deliberate reopen/focus of a previously closed tab.
     if (
@@ -527,20 +610,34 @@ export const LedgerTabStrip = () => {
       const nextOrder = tabOrder.filter((item) => !sameRoute(item, route));
       tabOrderRef.current = nextOrder;
       setTabOrder(nextOrder);
-      setClosedTabKeys((current) => new Set(current).add(key));
+      const nextClosed = new Set(closedTabKeysRef.current);
+      nextClosed.add(key);
+      closedTabKeysRef.current = nextClosed;
+      setClosedTabKeys(nextClosed);
       setIsOverflowOpen(false);
 
       if (nextOrder.length === 0) {
-        // The last tab is also the window's close affordance. This is
-        // window-aware in Electron, so it closes a detached Ledger window
-        // without touching the shared module window.
-        try {
-          sessionStorage.removeItem(TAB_SESSION_STORAGE_KEY);
-        } catch {
-          // Closing the BrowserWindow is still the correct fallback if
-          // session storage is unavailable.
+        if (isNewTabRoute(route)) {
+          try {
+            sessionStorage.removeItem(TAB_SESSION_STORAGE_KEY);
+          } catch {
+            // Keep the sidebar-only state usable when storage is unavailable.
+          }
+          void window.desktopWindow?.closeModule?.(route.kind);
+          return;
         }
-        void window.desktopWindow?.closeModule?.(route.kind);
+
+        const newTab = createNewTabRoute();
+        tabOrderRef.current = [newTab];
+        setTabOrder([newTab]);
+        closedTabKeysRef.current = new Set();
+        setClosedTabKeys(closedTabKeysRef.current);
+        try {
+          sessionStorage.setItem(TAB_SESSION_STORAGE_KEY, JSON.stringify([newTab]));
+        } catch {
+          // Keep the in-memory tab usable when storage is unavailable.
+        }
+        void window.desktopWindow?.openModule?.('new-tab', newTab);
         return;
       }
 
@@ -684,8 +781,7 @@ export const LedgerTabStrip = () => {
         closeTab(currentRoute);
         return;
       }
-
-      void window.desktopWindow?.closeModule?.(currentRoute.kind);
+      closeTab(currentRoute);
     };
 
     window.addEventListener('keydown', handleCloseTabShortcut);
@@ -703,6 +799,37 @@ export const LedgerTabStrip = () => {
     return () => window.removeEventListener('keydown', cancelTabDrag);
   }, []);
 
+  useEffect(() => {
+    const handleTabNavigation = (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey) || event.altKey) return;
+
+      if (event.key === 'Tab') {
+        if (tabOrderRef.current.length < 2) return;
+        event.preventDefault();
+        event.stopPropagation();
+        const activeIndex = currentRoute
+          ? tabOrderRef.current.findIndex((route) => sameRoute(route, currentRoute))
+          : 0;
+        const direction = event.shiftKey ? -1 : 1;
+        const nextIndex = (activeIndex + direction + tabOrderRef.current.length) % tabOrderRef.current.length;
+        selectTab(tabOrderRef.current[nextIndex]);
+        return;
+      }
+
+      if (event.shiftKey) return;
+      const digitMatch = /^Digit([1-9])$/.exec(event.code);
+      const index = digitMatch ? Number.parseInt(digitMatch[1], 10) - 1 : -1;
+      if (!Number.isInteger(index) || index < 0 || index >= tabOrderRef.current.length) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+      selectTab(tabOrderRef.current[index]);
+    };
+
+    window.addEventListener('keydown', handleTabNavigation);
+    return () => window.removeEventListener('keydown', handleTabNavigation);
+  }, [currentRoute]);
+
   if (tabOrder.length === 0) return null;
 
   const selectTab = (route: LedgerRoute) => {
@@ -714,6 +841,23 @@ export const LedgerTabStrip = () => {
     });
     setIsOverflowOpen(false);
     void window.desktopWindow?.openModule?.(route.kind, route);
+  };
+
+  const openNewTab = () => {
+    if (currentRoute && isNewTabRoute(currentRoute)) {
+      selectTab(currentRoute);
+      return;
+    }
+    const newTab = tabOrder.find((route) => isNewTabRoute(route));
+    if (newTab) {
+      selectTab(newTab);
+      return;
+    }
+    const created = createNewTabRoute();
+    const nextOrder = [...tabOrder, created];
+    tabOrderRef.current = nextOrder;
+    setTabOrder(nextOrder);
+    void window.desktopWindow?.openModule?.('new-tab', created);
   };
 
   return (
@@ -739,6 +883,23 @@ export const LedgerTabStrip = () => {
             onPointerCancel={handleTabPointerCancel}
           />
         ))}
+        {!currentRoute || !isNewTabRoute(currentRoute) ? (
+          <>
+            <div
+              aria-hidden="true"
+              className="mx-1 h-4 shrink-0 self-center border-l border-[color:var(--ledger-border-strong)]"
+            />
+            <button
+              type="button"
+              onClick={openNewTab}
+              className="flex h-6 w-6 shrink-0 -translate-y-px items-center justify-center text-[var(--ledger-text-muted)] transition hover:text-[var(--ledger-text-primary)]"
+              aria-label="Open new tab"
+              title="New tab"
+            >
+              <Plus size={14} />
+            </button>
+          </>
+        ) : null}
       </div>
 
       {overflowTabs.length > 0 && (

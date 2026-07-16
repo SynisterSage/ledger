@@ -662,6 +662,7 @@ type SidebarPreferencesPayload = {
   lastState?: 'expanded' | 'collapsed';
 };
 type ModuleWindowKind =
+  | 'new-tab'
   | 'circle'
   | 'calendar'
   | 'notes'
@@ -5400,6 +5401,7 @@ function sendModuleFocus(
 
 function isWorkspaceModuleKind(kind: ModuleWindowKind) {
   return (
+    kind === 'new-tab' ||
     kind === 'dashboard' ||
     kind === 'circle' ||
     kind === 'calendar' ||
@@ -5632,11 +5634,7 @@ function navigateWorkspaceModuleWindow(route: WorkspaceModuleRoute, pushHistory 
     moduleWin.restore();
   }
   moduleWin.show();
-  setTimeout(() => {
-    if (!moduleWin.isDestroyed()) {
-      moduleWin.focus();
-    }
-  }, 100);
+  moduleWin.focus();
 
   if (moduleWin.webContents.isLoading()) {
     moduleWin.webContents.once('did-finish-load', () => {

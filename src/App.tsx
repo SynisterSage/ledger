@@ -79,11 +79,13 @@ import { saveSidebarPreferences, type SidebarPosition } from './config/sidebarPr
 import { useToast } from './components/Common/ToastProvider';
 import { getProjectTypeOption } from './utils/projectTypes';
 import { useWorkspaceRouteHistory } from './hooks/useWorkspaceRouteHistory';
+import { NewTabWindow } from './components/Common/NewTabWindow';
 
 type PostAuthStage = 'idle' | 'loading' | 'onboarding' | 'ready';
 type OnboardingStep = 'welcome' | 'workspace' | 'position';
 type OnboardingWorkspaceMode = 'create' | 'join';
 type ModuleKind =
+  | 'new-tab'
   | 'circle'
   | 'calendar'
   | 'notes'
@@ -143,6 +145,9 @@ const getKeepAliveModuleKey = (
   }
   return null;
 };
+
+const isNewTabRoute = (route: WorkspaceShellRoute | ModuleFocusPayload | null | undefined) =>
+  route?.kind === 'new-tab';
 
 const getWorkspaceShellRouteFromLocation = (): WorkspaceShellRoute => {
   const params = new URLSearchParams(window.location.search);
@@ -5583,7 +5588,7 @@ function DashboardContent() {
             </div>
           )}
 
-          <div className="grid min-h-0 flex-1 md:grid-cols-[minmax(0,1fr)_320px]">
+          <div className="grid min-h-0 flex-1 md:grid-cols-[minmax(0,1fr)_280px]">
             <main className="flex min-h-0 min-w-0 flex-col overflow-auto px-3 py-3">
               {isLoadingDashboard ? (
                 <div className="space-y-2 p-3">
@@ -6996,6 +7001,7 @@ function AppShell() {
   const handledInviteTokenRef = useRef<string | null>(null);
   const postAuthBootstrapUserRef = useRef<string | null>(null);
   const ensuredVisibleOnBootRef = useRef(false);
+  const ensuredWorkspaceStartPageRef = useRef(false);
   const authTransitionTimerRef = useRef<number | null>(null);
   const sidebarModeRef = useRef<
     'auth' | 'minimized' | 'compact' | 'expanded' | 'fullscreen' | null
@@ -7177,38 +7183,39 @@ function AppShell() {
     const handleModuleNavigation = (event: KeyboardEvent) => {
       if (!(event.metaKey || event.ctrlKey)) return;
       if (event.shiftKey) return;
+      if (!event.altKey) return;
       if (!user || isLoading) return;
 
-      const key = event.key.toLowerCase();
+      const key = event.code;
 
-      // Module navigation: Cmd+1 to Cmd+5
-      if (key === '1') {
+      // Module navigation: Cmd/Ctrl+Option/Alt+1 to 5
+      if (key === 'Digit1') {
         event.preventDefault();
-        void window.desktopWindow?.toggleModule('dashboard');
+        void window.desktopWindow?.openModule('dashboard');
         return;
       }
 
-      if (key === '2') {
+      if (key === 'Digit2') {
         event.preventDefault();
         void window.desktopWindow?.openModule('calendar');
         return;
       }
 
-      if (key === '3') {
+      if (key === 'Digit3') {
         event.preventDefault();
-        void window.desktopWindow?.toggleModule('notes');
+        void window.desktopWindow?.openModule('notes');
         return;
       }
 
-      if (key === '4') {
+      if (key === 'Digit4') {
         event.preventDefault();
-        void window.desktopWindow?.toggleModule('projects');
+        void window.desktopWindow?.openModule('projects');
         return;
       }
 
-      if (key === '5') {
+      if (key === 'Digit5') {
         event.preventDefault();
-        void window.desktopWindow?.toggleModule('settings');
+        void window.desktopWindow?.openModule('settings');
         return;
       }
     };
@@ -7368,6 +7375,27 @@ function AppShell() {
     }
   }, [effectiveUiMode, isLoading, isVisible, postAuthStage, setIsVisible, user]);
 
+  useEffect(() => {
+    if (isModuleWindow || isLoading || !user || postAuthStage !== 'ready') return;
+    if (ensuredWorkspaceStartPageRef.current) return;
+    ensuredWorkspaceStartPageRef.current = true;
+
+    let cancelled = false;
+    const ensureWorkspaceStartPage = async () => {
+      const state = await window.desktopWindow?.getWorkspaceNavigationState?.().catch(() => null);
+      if (cancelled || state?.currentModule) return;
+      void window.desktopWindow?.openModule('new-tab', {
+        kind: 'new-tab',
+        focusContext: `new-tab:${crypto.randomUUID()}`,
+      });
+    };
+
+    void ensureWorkspaceStartPage();
+    return () => {
+      cancelled = true;
+    };
+  }, [isLoading, isModuleWindow, postAuthStage, user]);
+
   if (isModuleWindow) {
     if (isLoading) {
       return <AuthStatusScreen title="Opening module" subtitle="Bringing it into view…" />;
@@ -7426,6 +7454,10 @@ function AppShell() {
           ))}
         </div>
       );
+    }
+
+    if (isNewTabRoute(workspaceShellRoute)) {
+      return <NewTabWindow onClose={() => void window.desktopWindow?.closeModule('new-tab')} />;
     }
 
     if (

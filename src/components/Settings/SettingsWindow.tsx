@@ -348,10 +348,11 @@ const shortcutSections: Array<{
     id: 'navigation',
     title: 'Navigation',
     shortcuts: [
-      { keys: '⌘ + 1', description: 'overview' },
-      { keys: '⌘ + 2', description: 'calendar' },
-      { keys: '⌘ + 3', description: 'notes' },
-      { keys: '⌘ + 4', description: 'projects' },
+      { keys: '⌘/Ctrl + ⌥/Alt + 1', description: 'overview' },
+      { keys: '⌘/Ctrl + ⌥/Alt + 2', description: 'calendar' },
+      { keys: '⌘/Ctrl + ⌥/Alt + 3', description: 'notes' },
+      { keys: '⌘/Ctrl + ⌥/Alt + 4', description: 'projects' },
+      { keys: '⌘/Ctrl + ⌥/Alt + 5', description: 'settings' },
     ],
   },
   {
