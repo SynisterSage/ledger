@@ -572,13 +572,17 @@ const getDropPreviewClasses = (
   return 'border-b border-[color:var(--ledger-border-subtle)]';
 };
 
-export const NotesWindow = () => {
+export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) => {
   const { user } = useAuthContext();
   const { activeWorkspaceId, activeWorkspace } = useWorkspaceContext();
   const { workspaceShellLayout } = useSidebar();
   const api = useApi();
   const viewportWidth = useViewportWidth();
   const initialFocusNoteId = new URLSearchParams(window.location.search).get('focusNoteId');
+  const initialFocusContext =
+    focusContext?.trim() ||
+    new URLSearchParams(window.location.search).get('focusContext')?.trim() ||
+    '';
   const titleRef = useRef<HTMLInputElement | null>(null);
   const autosaveTimerRef = useRef<number | null>(null);
   const savingIndicatorTimerRef = useRef<number | null>(null);
@@ -595,6 +599,7 @@ export const NotesWindow = () => {
   const remoteNoteUpdatePendingRef = useRef(false);
   const intakeSubmissionRef = useRef(false);
   const noteNavigationRequestRef = useRef(0);
+  const initialTryActionHandledRef = useRef(false);
 
   const [notes, setNotes] = useState<NoteRow[]>([]);
   const [noteTree, setNoteTree] = useState<NoteTreeNode[]>([]);
@@ -732,6 +737,21 @@ export const NotesWindow = () => {
 
   const areSidePanelsCollapsed = isLeftPaneCollapsed && isRightPaneCollapsed;
   const isCompactLayout = viewportWidth < modulePaneSizing.notes.left.compactBreakpoint;
+
+  useEffect(() => {
+    if (initialTryActionHandledRef.current) return;
+    if (
+      initialFocusContext !== 'try:template' &&
+      initialFocusContext !== 'try:team-meeting-template'
+    ) {
+      return;
+    }
+
+    initialTryActionHandledRef.current = true;
+    setCreateNoteModalTemplateId(null);
+    setCreateNoteModalInitialStep('gallery');
+    setShowCreateNoteModal(true);
+  }, [initialFocusContext]);
 
   useEffect(() => {
     const onHideSidePanelsShortcut = (event: KeyboardEvent) => {
@@ -5004,7 +5024,9 @@ export const NotesWindow = () => {
                   setSearch('');
                 }}
                 onToggleNotePin={(noteId) => void toggleNotePin(noteId)}
-                onMoveNoteToSection={(noteId, sectionId) => void moveNoteToSection(noteId, sectionId)}
+                onMoveNoteToSection={(noteId, sectionId) =>
+                  void moveNoteToSection(noteId, sectionId)
+                }
                 onRenameNote={(noteId) => beginInlineRename(noteId)}
                 onCreateChildNote={(noteId) => void createChildNote(noteId)}
                 onLinkNoteToProject={(noteId) => void openLinkProjectModal(noteId)}

@@ -365,9 +365,9 @@ const teamsTheme = {
   title: 'text-[13px] font-medium text-[var(--ledger-text-primary)]',
   meta: 'text-[11px] leading-4 text-[var(--ledger-text-muted)]',
   chip: 'inline-flex h-5 items-center rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2 text-[10px] font-medium text-[var(--ledger-text-secondary)]',
-  rightPanel:
-    'space-y-4 lg:sticky lg:top-0 lg:self-start',
-  sectionTitle: 'text-[11px] font-medium uppercase tracking-[0.08em] text-[var(--ledger-text-muted)]',
+  rightPanel: 'space-y-4 lg:sticky lg:top-0 lg:self-start',
+  sectionTitle:
+    'text-[11px] font-medium uppercase tracking-[0.08em] text-[var(--ledger-text-muted)]',
   modalInput:
     'h-9 w-full rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] px-3 text-sm text-[var(--ledger-text-primary)] outline-none transition placeholder:text-[var(--ledger-placeholder)] focus:border-[color:var(--ledger-border-strong)]',
 };
@@ -453,7 +453,10 @@ const AvatarStack = ({
 }: {
   members: Array<{ id: string; name: string; avatar?: string | null }>;
   maxVisible?: number;
-  onMemberContextMenu?: (member: { id: string; name: string; avatar?: string | null }, event: ReactMouseEvent<HTMLElement>) => void;
+  onMemberContextMenu?: (
+    member: { id: string; name: string; avatar?: string | null },
+    event: ReactMouseEvent<HTMLElement>
+  ) => void;
 }) => {
   const visible = members.slice(0, maxVisible);
   return (
@@ -474,7 +477,11 @@ const AvatarStack = ({
           }
         >
           {member.avatar ? (
-            <img src={member.avatar} alt={member.name} className="h-full w-full rounded-full object-cover" />
+            <img
+              src={member.avatar}
+              alt={member.name}
+              className="h-full w-full rounded-full object-cover"
+            />
           ) : (
             member.name
               .split(' ')
@@ -585,16 +592,16 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
   const [teamRowContextMenu, setTeamRowContextMenu] = useState<TeamRowContextMenuState | null>(
     null
   );
-  const [collapsedTeamSections, setCollapsedTeamSections] = useState<Record<TeamSectionId, boolean>>(
-    {
-      pinnedResources: false,
-      teamNotes: false,
-      needsAttention: false,
-      activeProjects: false,
-      upcoming: false,
-      recentActivity: false,
-    }
-  );
+  const [collapsedTeamSections, setCollapsedTeamSections] = useState<
+    Record<TeamSectionId, boolean>
+  >({
+    pinnedResources: false,
+    teamNotes: false,
+    needsAttention: false,
+    activeProjects: false,
+    upcoming: false,
+    recentActivity: false,
+  });
 
   const openTeamDetail = (teamId: string) => {
     setSelectedTeamId(teamId);
@@ -611,6 +618,12 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
     setSelectedTeamId(focusTeamId);
     setOpenedTeamId(focusTeamId);
   }, [focusTeamId]);
+
+  useEffect(() => {
+    if (focusContext !== 'try:invite-member') return;
+    setInviteTeamId(null);
+    setIsInviteOpen(true);
+  }, [focusContext]);
 
   useWorkspaceRouteHistory(
     {
@@ -774,7 +787,9 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
           if (focusTeamId && nextTeams.some((team) => team.id === focusTeamId)) return focusTeamId;
           return null;
         });
-        setOpenedTeamId(focusTeamId && nextTeams.some((team) => team.id === focusTeamId) ? focusTeamId : null);
+        setOpenedTeamId(
+          focusTeamId && nextTeams.some((team) => team.id === focusTeamId) ? focusTeamId : null
+        );
       } catch {
         if (!cancelled) {
           setTeams([]);
@@ -842,7 +857,9 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
           recent: true,
           limit: 50,
           search: teamNotesQuery.trim() || undefined,
-        })) as { notes?: TeamOverviewResponse['recent_notes'] } | TeamOverviewResponse['recent_notes'];
+        })) as
+          | { notes?: TeamOverviewResponse['recent_notes'] }
+          | TeamOverviewResponse['recent_notes'];
         if (cancelled) return;
         const nextNotes = Array.isArray(payload)
           ? payload
@@ -1000,12 +1017,17 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
   const teamQuickLinkCounts = new Map(
     (teamOverview?.quick_links ?? []).map((item) => [item.key, item.count ?? null])
   );
-  const normalizeProjectStatus = (status?: string | null): 'NotStarted' | 'InProgress' | 'Paused' | 'Completed' => {
-    const value = String(status ?? '').trim().toLowerCase();
+  const normalizeProjectStatus = (
+    status?: string | null
+  ): 'NotStarted' | 'InProgress' | 'Paused' | 'Completed' => {
+    const value = String(status ?? '')
+      .trim()
+      .toLowerCase();
     if (!value) return 'NotStarted';
     if (value.includes('complete')) return 'Completed';
     if (value.includes('pause') || value.includes('archiv')) return 'Paused';
-    if (value.includes('progress') || value.includes('in_') || value.includes('doing')) return 'InProgress';
+    if (value.includes('progress') || value.includes('in_') || value.includes('doing'))
+      return 'InProgress';
     return 'NotStarted';
   };
   const formatProjectStatusLabel = (status?: string | null) => {
@@ -1072,11 +1094,12 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
   }, [teamNotes, teamOverviewNotes]);
   const teamTaskById = useMemo(() => {
     const map = new Map<string, TeamOverviewResponse['assigned_work'][number]>();
-    [...(teamOverview?.assigned_work ?? []), ...(teamOverview?.needs_attention.overdue_tasks ?? [])].forEach(
-      (task) => {
-        map.set(task.id, task);
-      }
-    );
+    [
+      ...(teamOverview?.assigned_work ?? []),
+      ...(teamOverview?.needs_attention.overdue_tasks ?? []),
+    ].forEach((task) => {
+      map.set(task.id, task);
+    });
     return map;
   }, [teamOverview?.assigned_work, teamOverview?.needs_attention.overdue_tasks]);
   const teamUpcomingById = useMemo(() => {
@@ -1186,7 +1209,12 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
         onClick: () => void window.desktopWindow?.toggleModule('inbox'),
       })),
     ];
-  }, [openedTeam?.id, teamOverview?.needs_attention.intake_items, teamOverview?.needs_attention.overdue_milestones, teamOverview?.needs_attention.overdue_tasks]);
+  }, [
+    openedTeam?.id,
+    teamOverview?.needs_attention.intake_items,
+    teamOverview?.needs_attention.overdue_milestones,
+    teamOverview?.needs_attention.overdue_tasks,
+  ]);
 
   const availableMembers = useMemo(() => {
     if (!addMemberTeam) return [];
@@ -1568,24 +1596,33 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
   };
 
   const openMemberInCircle = (memberId: string, memberName?: string | null) => {
-    void window.desktopWindow?.toggleModule('circle' as any, {
-      kind: 'circle' as any,
-      focusContext: `ledger-person|${memberId}|${encodeURIComponent(memberName ?? 'Member')}`,
-    } as any);
+    void window.desktopWindow?.toggleModule(
+      'circle' as any,
+      {
+        kind: 'circle' as any,
+        focusContext: `ledger-person|${memberId}|${encodeURIComponent(memberName ?? 'Member')}`,
+      } as any
+    );
   };
 
   const openPersonTaskComposer = (memberId: string, memberName?: string | null) => {
-    void window.desktopWindow?.toggleModule('quick-task' as any, {
-      kind: 'quick-task' as any,
-      focusContext: `ledger-person|${memberId}|${encodeURIComponent(memberName ?? 'Member')}`,
-    } as any);
+    void window.desktopWindow?.toggleModule(
+      'quick-task' as any,
+      {
+        kind: 'quick-task' as any,
+        focusContext: `ledger-person|${memberId}|${encodeURIComponent(memberName ?? 'Member')}`,
+      } as any
+    );
   };
 
   const openPersonFollowUpComposer = (memberId: string, memberName?: string | null) => {
-    void window.desktopWindow?.toggleModule('quick-follow-up' as any, {
-      kind: 'quick-follow-up' as any,
-      focusContext: `ledger-person|${memberId}|${encodeURIComponent(memberName ?? 'Member')}`,
-    } as any);
+    void window.desktopWindow?.toggleModule(
+      'quick-follow-up' as any,
+      {
+        kind: 'quick-follow-up' as any,
+        focusContext: `ledger-person|${memberId}|${encodeURIComponent(memberName ?? 'Member')}`,
+      } as any
+    );
   };
 
   const closeTeamRowContextMenu = () => setTeamRowContextMenu(null);
@@ -1683,7 +1720,10 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
     }
   };
 
-  const updateTeamTaskStatus = async (taskId: string, status: 'todo' | 'in_progress' | 'completed') => {
+  const updateTeamTaskStatus = async (
+    taskId: string,
+    status: 'todo' | 'in_progress' | 'completed'
+  ) => {
     try {
       await api.updateTask(taskId, { status });
       await refreshOpenedTeam();
@@ -1727,11 +1767,20 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
     }
   };
 
-  const acceptTeamIntakeItem = async (item: { id: string; suggested_type?: string | null; title: string }) => {
+  const acceptTeamIntakeItem = async (item: {
+    id: string;
+    suggested_type?: string | null;
+    title: string;
+  }) => {
     const type = ['task', 'note', 'reminder', 'event', 'project'].includes(
       String(item.suggested_type ?? '').toLowerCase()
     )
-      ? (String(item.suggested_type).toLowerCase() as 'task' | 'note' | 'reminder' | 'event' | 'project')
+      ? (String(item.suggested_type).toLowerCase() as
+          | 'task'
+          | 'note'
+          | 'reminder'
+          | 'event'
+          | 'project')
       : 'task';
     try {
       await api.convertIntakeItem(item.id, { type, title: item.title });
@@ -1870,7 +1919,11 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
     }
   };
 
-  const openTeamCalendarItem = (item: { id: string; type: 'event' | 'reminder' | 'milestone'; start?: string | null }) => {
+  const openTeamCalendarItem = (item: {
+    id: string;
+    type: 'event' | 'reminder' | 'milestone';
+    start?: string | null;
+  }) => {
     const focusContext =
       item.type === 'event'
         ? `focus-event:${item.id}`
@@ -1979,7 +2032,8 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
     children: ReactNode,
     count?: number
   ) => {
-    const collapsed = typeof count === 'number' && count === 0 ? true : collapsedTeamSections[sectionId];
+    const collapsed =
+      typeof count === 'number' && count === 0 ? true : collapsedTeamSections[sectionId];
     return (
       <section className="min-w-0">
         <div
@@ -2129,7 +2183,9 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
 
         <div className="space-y-2">
           <div className="space-y-1">
-            <span className="text-[11px] font-medium text-[var(--ledger-text-muted)]">Team details</span>
+            <span className="text-[11px] font-medium text-[var(--ledger-text-muted)]">
+              Team details
+            </span>
             <div className="space-y-1 pt-1">
               <div className="flex items-center justify-between gap-3 rounded-none px-0 py-0 text-xs">
                 <span className="text-[var(--ledger-text-muted)]">Identifier</span>
@@ -2139,7 +2195,9 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
               </div>
               <div className="flex items-center justify-between gap-3 rounded-none px-0 py-0 text-xs">
                 <span className="text-[var(--ledger-text-muted)]">Workspace</span>
-                <span className="truncate text-[var(--ledger-text-secondary)]">{workspaceName}</span>
+                <span className="truncate text-[var(--ledger-text-secondary)]">
+                  {workspaceName}
+                </span>
               </div>
               <div className="flex items-center justify-between gap-3 rounded-none px-0 py-0 text-xs">
                 <span className="text-[var(--ledger-text-muted)]">Created</span>
@@ -2200,7 +2258,11 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
       case 'resource': {
         if (teamRowContextMenu.resourceKind === 'project') {
           return (
-            <div className={menuClasses} style={menuStyle} onClick={(event) => event.stopPropagation()}>
+            <div
+              className={menuClasses}
+              style={menuStyle}
+              onClick={(event) => event.stopPropagation()}
+            >
               <button
                 type="button"
                 onClick={() => {
@@ -2240,10 +2302,15 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
 
         if (teamRowContextMenu.resourceKind === 'note') {
           const note = teamNoteById.get(teamRowContextMenu.resourceId);
-          const linkedProjectId = note?.project_id ?? note?.projectId ?? note?.linked_project?.id ?? null;
+          const linkedProjectId =
+            note?.project_id ?? note?.projectId ?? note?.linked_project?.id ?? null;
           const isPinned = teamLinkedNoteIds.has(teamRowContextMenu.resourceId);
           return (
-            <div className={menuClasses} style={menuStyle} onClick={(event) => event.stopPropagation()}>
+            <div
+              className={menuClasses}
+              style={menuStyle}
+              onClick={(event) => event.stopPropagation()}
+            >
               <button
                 type="button"
                 onClick={() => {
@@ -2328,7 +2395,11 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
           const isComplete = String(task?.status ?? '').toLowerCase() === 'completed';
           const linkedProjectId = task?.project?.id ?? task?.project_id ?? null;
           return (
-            <div className={menuClasses} style={menuStyle} onClick={(event) => event.stopPropagation()}>
+            <div
+              className={menuClasses}
+              style={menuStyle}
+              onClick={(event) => event.stopPropagation()}
+            >
               <button
                 type="button"
                 onClick={() => {
@@ -2388,7 +2459,11 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
 
         if (teamRowContextMenu.resourceKind === 'event') {
           return (
-            <div className={menuClasses} style={menuStyle} onClick={(event) => event.stopPropagation()}>
+            <div
+              className={menuClasses}
+              style={menuStyle}
+              onClick={(event) => event.stopPropagation()}
+            >
               <button
                 type="button"
                 onClick={() => {
@@ -2428,7 +2503,11 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
 
         if (teamRowContextMenu.resourceKind === 'external') {
           return (
-            <div className={menuClasses} style={menuStyle} onClick={(event) => event.stopPropagation()}>
+            <div
+              className={menuClasses}
+              style={menuStyle}
+              onClick={(event) => event.stopPropagation()}
+            >
               <button
                 type="button"
                 onClick={() => {
@@ -2456,10 +2535,15 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
       }
       case 'note': {
         const note = teamNoteById.get(teamRowContextMenu.noteId);
-        const linkedProjectId = note?.project_id ?? note?.projectId ?? note?.linked_project?.id ?? null;
+        const linkedProjectId =
+          note?.project_id ?? note?.projectId ?? note?.linked_project?.id ?? null;
         const isPinned = teamLinkedNoteIds.has(teamRowContextMenu.noteId);
         return (
-          <div className={menuClasses} style={menuStyle} onClick={(event) => event.stopPropagation()}>
+          <div
+            className={menuClasses}
+            style={menuStyle}
+            onClick={(event) => event.stopPropagation()}
+          >
             <button
               type="button"
               onClick={() => {
@@ -2515,7 +2599,9 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                 <button
                   type="button"
                   onClick={() => {
-                    void (isPinned ? unpinTeamNote(teamRowContextMenu.noteId) : pinTeamNote(teamRowContextMenu.noteId));
+                    void (isPinned
+                      ? unpinTeamNote(teamRowContextMenu.noteId)
+                      : pinTeamNote(teamRowContextMenu.noteId));
                   }}
                   className={menuItemClass}
                 >
@@ -2541,7 +2627,11 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
         const isComplete = String(task?.status ?? '').toLowerCase() === 'completed';
         const linkedProjectId = task?.project?.id ?? task?.project_id ?? null;
         return (
-          <div className={menuClasses} style={menuStyle} onClick={(event) => event.stopPropagation()}>
+          <div
+            className={menuClasses}
+            style={menuStyle}
+            onClick={(event) => event.stopPropagation()}
+          >
             <button
               type="button"
               onClick={() => {
@@ -2555,7 +2645,10 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
             <button
               type="button"
               onClick={() => {
-                void updateTeamTaskStatus(teamRowContextMenu.taskId, isComplete ? 'todo' : 'completed');
+                void updateTeamTaskStatus(
+                  teamRowContextMenu.taskId,
+                  isComplete ? 'todo' : 'completed'
+                );
               }}
               className={menuItemClass}
             >
@@ -2602,7 +2695,11 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
       case 'project': {
         const project = teamProjectById.get(teamRowContextMenu.projectId);
         return (
-          <div className={menuClasses} style={menuStyle} onClick={(event) => event.stopPropagation()}>
+          <div
+            className={menuClasses}
+            style={menuStyle}
+            onClick={(event) => event.stopPropagation()}
+          >
             <button
               type="button"
               onClick={() => {
@@ -2659,7 +2756,11 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
         const item = teamUpcomingById.get(teamRowContextMenu.itemId);
         if (!item) return null;
         return (
-          <div className={menuClasses} style={menuStyle} onClick={(event) => event.stopPropagation()}>
+          <div
+            className={menuClasses}
+            style={menuStyle}
+            onClick={(event) => event.stopPropagation()}
+          >
             <button
               type="button"
               onClick={() => {
@@ -2727,7 +2828,10 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
               <button
                 type="button"
                 onClick={() => {
-                  void toggleTeamMilestoneComplete(item.id, String(item.status ?? '').toLowerCase() === 'completed');
+                  void toggleTeamMilestoneComplete(
+                    item.id,
+                    String(item.status ?? '').toLowerCase() === 'completed'
+                  );
                 }}
                 className={menuItemClass}
               >
@@ -2760,7 +2864,11 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
         if (!activity) return null;
         const actorId = (activity as { actor_id?: string | null }).actor_id ?? null;
         return (
-          <div className={menuClasses} style={menuStyle} onClick={(event) => event.stopPropagation()}>
+          <div
+            className={menuClasses}
+            style={menuStyle}
+            onClick={(event) => event.stopPropagation()}
+          >
             <button
               type="button"
               onClick={() => {
@@ -2799,13 +2907,19 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
         const member = teamOverviewMembersById.get(teamRowContextMenu.memberId);
         if (!member) return null;
         const isSelf = member.id === user?.id;
-        const isLead = Boolean(member.is_lead || member.role === 'lead' || member.team_role === 'lead');
+        const isLead = Boolean(
+          member.is_lead || member.role === 'lead' || member.team_role === 'lead'
+        );
         const canToggleLead = canManageOpenedTeam && !isSelf;
         const canDemoteLead = canToggleLead && isLead && (teamOverview?.team.lead_count ?? 0) > 1;
         const canRemoveMember =
           canManageOpenedTeam && !isSelf && (!isLead || (teamOverview?.team.lead_count ?? 0) > 1);
         return (
-          <div className={menuClasses} style={menuStyle} onClick={(event) => event.stopPropagation()}>
+          <div
+            className={menuClasses}
+            style={menuStyle}
+            onClick={(event) => event.stopPropagation()}
+          >
             <button
               type="button"
               onClick={() => {
@@ -2900,7 +3014,11 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
         );
         if (!item) return null;
         return (
-          <div className={menuClasses} style={menuStyle} onClick={(event) => event.stopPropagation()}>
+          <div
+            className={menuClasses}
+            style={menuStyle}
+            onClick={(event) => event.stopPropagation()}
+          >
             <button
               type="button"
               onClick={() => {
@@ -2914,7 +3032,11 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
             <button
               type="button"
               onClick={() => {
-                void acceptTeamIntakeItem({ id: item.id, suggested_type: item.suggested_type, title: item.title });
+                void acceptTeamIntakeItem({
+                  id: item.id,
+                  suggested_type: item.suggested_type,
+                  title: item.title,
+                });
               }}
               className={menuItemClass}
             >
@@ -3057,7 +3179,7 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                           key={team.id}
                           type="button"
                           onClick={() => setSelectedTeamId(team.id)}
-                        onDoubleClick={() => openTeamDetail(team.id)}
+                          onDoubleClick={() => openTeamDetail(team.id)}
                           onContextMenu={(event) => {
                             event.preventDefault();
                             setSelectedTeamId(team.id);
@@ -3224,16 +3346,16 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                     ) : null}
                   </div>
                   <button
-                      type="button"
-                      onClick={(event) => {
-                        const rect = event.currentTarget.getBoundingClientRect();
-                        setResourceMenu({ x: rect.right, y: rect.bottom + 8 });
-                      }}
-                      className="inline-flex h-8 items-center gap-2 rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3 text-xs font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]"
-                    >
-                      <Plus size={13} />
-                      Add resources
-                    </button>
+                    type="button"
+                    onClick={(event) => {
+                      const rect = event.currentTarget.getBoundingClientRect();
+                      setResourceMenu({ x: rect.right, y: rect.bottom + 8 });
+                    }}
+                    className="inline-flex h-8 items-center gap-2 rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3 text-xs font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]"
+                  >
+                    <Plus size={13} />
+                    Add resources
+                  </button>
                 </div>
                 {teamOverviewLoading ? (
                   <p className="px-1 text-xs text-[var(--ledger-text-muted)]">
@@ -3405,7 +3527,9 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                                         ? 'upcoming'
                                         : 'intake',
                                     taskId:
-                                      item.kind === 'task' ? item.id.replace(/^task-/, '') : undefined,
+                                      item.kind === 'task'
+                                        ? item.id.replace(/^task-/, '')
+                                        : undefined,
                                     itemId:
                                       item.kind === 'milestone'
                                         ? item.id.replace(/^milestone-/, '')
@@ -3488,7 +3612,9 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                                   <span className={teamRowMetaClass}>
                                     {[
                                       formatProjectStatusLabel(project.status),
-                                      project.lead ? teamMemberLabelById.get(project.lead) ?? null : null,
+                                      project.lead
+                                        ? teamMemberLabelById.get(project.lead) ?? null
+                                        : null,
                                       project.due_date ? formatShortDate(project.due_date) : null,
                                     ]
                                       .filter(Boolean)
@@ -3502,7 +3628,12 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                                       <span className="h-1.5 w-12 overflow-hidden rounded-full bg-[var(--ledger-surface-muted)]">
                                         <span
                                           className="block h-full rounded-full bg-[var(--ledger-accent)]"
-                                          style={{ width: `${Math.max(4, Math.min(100, project.progress))}%` }}
+                                          style={{
+                                            width: `${Math.max(
+                                              4,
+                                              Math.min(100, project.progress)
+                                            )}%`,
+                                          }}
                                         />
                                       </span>
                                     </span>
@@ -3655,27 +3786,29 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                         ).length > 0 ? (
                           <div className="space-y-1">
                             {teamNotes
-                              .filter((note) => /meeting|sync|standup|review|planning/i.test(note.title))
+                              .filter((note) =>
+                                /meeting|sync|standup|review|planning/i.test(note.title)
+                              )
                               .slice(0, 5)
                               .map((note) => (
-                              <button
-                                key={note.id}
-                                type="button"
-                                onClick={() =>
-                                  void window.desktopWindow?.toggleModule('notes', {
-                                    focusNoteId: note.id,
-                                  })
-                                }
-                                onContextMenu={(event) =>
-                                  openTeamRowContextMenu(event, {
-                                    kind: 'note',
-                                    noteId: note.id,
-                                    x: event.clientX,
-                                    y: event.clientY,
-                                  })
-                                }
-                                className={`${teamRowBaseClass} ${teamRowHoverClass}`}
-                              >
+                                <button
+                                  key={note.id}
+                                  type="button"
+                                  onClick={() =>
+                                    void window.desktopWindow?.toggleModule('notes', {
+                                      focusNoteId: note.id,
+                                    })
+                                  }
+                                  onContextMenu={(event) =>
+                                    openTeamRowContextMenu(event, {
+                                      kind: 'note',
+                                      noteId: note.id,
+                                      x: event.clientX,
+                                      y: event.clientY,
+                                    })
+                                  }
+                                  className={`${teamRowBaseClass} ${teamRowHoverClass}`}
+                                >
                                   <span className={teamRowIconClass}>
                                     <FileText size={12} />
                                   </span>
@@ -3709,24 +3842,24 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                               .filter((note) => Boolean(note.projectName))
                               .slice(0, 5)
                               .map((note) => (
-                              <button
-                                key={note.id}
-                                type="button"
-                                onClick={() =>
-                                  void window.desktopWindow?.toggleModule('notes', {
-                                    focusNoteId: note.id,
-                                  })
-                                }
-                                onContextMenu={(event) =>
-                                  openTeamRowContextMenu(event, {
-                                    kind: 'note',
-                                    noteId: note.id,
-                                    x: event.clientX,
-                                    y: event.clientY,
-                                  })
-                                }
-                                className={`${teamRowBaseClass} ${teamRowHoverClass}`}
-                              >
+                                <button
+                                  key={note.id}
+                                  type="button"
+                                  onClick={() =>
+                                    void window.desktopWindow?.toggleModule('notes', {
+                                      focusNoteId: note.id,
+                                    })
+                                  }
+                                  onContextMenu={(event) =>
+                                    openTeamRowContextMenu(event, {
+                                      kind: 'note',
+                                      noteId: note.id,
+                                      x: event.clientX,
+                                      y: event.clientY,
+                                    })
+                                  }
+                                  className={`${teamRowBaseClass} ${teamRowHoverClass}`}
+                                >
                                   <span className={teamRowIconClass}>
                                     <Link2 size={12} />
                                   </span>
@@ -3972,7 +4105,9 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                           key={member.id}
                           type="button"
                           onClick={() => {
-                            setNewTeamMemberIds((current) => current.filter((id) => id !== member.id));
+                            setNewTeamMemberIds((current) =>
+                              current.filter((id) => id !== member.id)
+                            );
                           }}
                           className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2.5 py-1 text-xs font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
                           title={member.name}
@@ -3992,11 +4127,7 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
           </div>
 
           <div className="flex items-center justify-end gap-2 border-t border-[color:var(--ledger-border-subtle)] px-4 py-3.5">
-            <button
-              type="button"
-              onClick={closeNewTeamComposer}
-              className={teamsTheme.action}
-            >
+            <button type="button" onClick={closeNewTeamComposer} className={teamsTheme.action}>
               Cancel
             </button>
             <button

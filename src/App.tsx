@@ -4041,9 +4041,7 @@ function DashboardContent() {
   });
 
   const activeTodayTaskIds = new Set(
-    activeTodayTasks
-      .filter((task) => !isOverviewReminderTask(task))
-      .map((task) => task.id)
+    activeTodayTasks.filter((task) => !isOverviewReminderTask(task)).map((task) => task.id)
   );
   const longTermTaskRows = workspaceTasks
     .filter((task) => task.task_horizon === 'long_term' && !activeTodayTaskIds.has(task.id))
@@ -5415,7 +5413,7 @@ function DashboardContent() {
                   setIsOverviewFilterOpen(false);
                   setIsOverviewDisplayOpen(false);
                 }}
-                className="inline-flex h-7 items-center gap-1.5 rounded-full bg-[var(--ledger-accent)] px-3 text-[12px] font-semibold text-white transition hover:bg-[var(--ledger-accent-hover)]"
+                className="inline-flex h-7 items-center gap-1.5 rounded-md px-1.5 text-[12px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-accent)]/20"
                 aria-haspopup="menu"
                 aria-expanded={isOverviewCreateMenuOpen}
                 aria-label="Create new item"
@@ -5506,7 +5504,7 @@ function DashboardContent() {
             </div>
           )}
 
-          <div className="grid min-h-0 flex-1 lg:grid-cols-[minmax(0,1fr)_320px]">
+          <div className="grid min-h-0 flex-1 md:grid-cols-[minmax(0,1fr)_320px]">
             <main className="flex min-h-0 min-w-0 flex-col overflow-auto px-3 py-3">
               {isLoadingDashboard ? (
                 <div className="space-y-2 p-3">
@@ -5729,7 +5727,7 @@ function DashboardContent() {
               )}
             </main>
 
-            <aside className="min-h-0 border-t border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)]/35 p-4 lg:border-l lg:border-t-0">
+            <aside className="min-h-0 border-t border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)]/35 p-4 md:border-l md:border-t-0">
               <div className="flex h-full min-h-0 flex-col overflow-y-auto pr-0.5">
                 {!selectedOverviewRow ? (
                   <>
@@ -7274,7 +7272,7 @@ function AppShell() {
     }
 
     if (activeModuleKind === 'notes') {
-      return <NotesWindow />;
+      return <NotesWindow focusContext={activeModuleFocusContext || undefined} />;
     }
 
     if (activeModuleKind === 'projects') {

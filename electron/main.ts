@@ -887,21 +887,20 @@ const MIN_DOCK_HEIGHT = {
   compact: 480,
   minimized: 480,
 } as const;
-const DASHBOARD_WIDTH = 1280;
-const DASHBOARD_HEIGHT = 860;
+const DASHBOARD_WIDTH = 1200;
+const DASHBOARD_HEIGHT = 760;
 const AUTH_WIDTH = 1040;
 const AUTH_HEIGHT = 700;
-const MODULE_DEFAULT_WIDTH = 1440;
-const MODULE_DEFAULT_HEIGHT = 860;
-const MODULE_MIN_WIDTH = 1100;
-const MODULE_MIN_HEIGHT = 720;
+const MODULE_DEFAULT_WIDTH = 1200;
+const MODULE_DEFAULT_HEIGHT = 760;
+const MODULE_MIN_WIDTH = 960;
+const MODULE_MIN_HEIGHT = 660;
 const NOTIFICATION_CENTER_WIDTH = 480;
 const NOTIFICATION_CENTER_HEIGHT = 680;
 const NOTIFICATION_CENTER_MIN_WIDTH = 420;
 const NOTIFICATION_CENTER_MIN_HEIGHT = 600;
 const QUICK_CAPTURE_WIDTH = 400;
 const QUICK_CAPTURE_HEIGHT = 320;
-const MODULE_GAP = 12;
 const NOTIFICATION_SCHEDULER_INTERVAL_MS = 60_000;
 const NOTIFICATION_PREFS_REFRESH_MS = 5 * 60_000;
 const NOTIFICATION_SCHEDULER_REFRESH_MIN_DELAY_MS = 15_000;
@@ -4681,6 +4680,42 @@ function isRectInsideWorkArea(rect: Electron.Rectangle, workArea: Electron.Recta
   );
 }
 
+function getSafeWindowDimension(requested: number, minimum: number, available: number) {
+  const safeAvailable = Math.max(1, Math.floor(available));
+  const preferred = Math.max(minimum, Math.round(requested));
+  return Math.min(preferred, safeAvailable);
+}
+
+function getSafeRememberedModuleBounds(
+  kind: ModuleWindowKind,
+  workArea: Electron.Rectangle,
+  minWidth: number,
+  minHeight: number
+) {
+  const remembered = moduleWindowBoundsMemory.get(kind);
+  if (!remembered || remembered.sidebarPosition !== currentSidebarPosition) return null;
+
+  // A saved window can outlive the display it was saved on. Keep its size
+  // useful on the current display, while preserving the user's position when
+  // that position is still valid.
+  const width = getSafeWindowDimension(
+    remembered.bounds.width,
+    minWidth,
+    Math.min(workArea.width - WINDOW_MARGIN * 2, workArea.width * 0.9)
+  );
+  const height = getSafeWindowDimension(
+    remembered.bounds.height,
+    minHeight,
+    Math.min(workArea.height - WINDOW_MARGIN * 2, workArea.height * 0.9)
+  );
+  const candidate = clampRectToWorkArea(
+    { x: remembered.bounds.x, y: remembered.bounds.y, width, height },
+    workArea
+  );
+
+  return isRectInsideWorkArea(candidate, workArea) ? candidate : null;
+}
+
 function resolveModuleBounds(kind: ModuleWindowKind): Electron.Rectangle {
   const defaultWidth = MODULE_DEFAULT_WIDTH;
   const defaultHeight = MODULE_DEFAULT_HEIGHT;
@@ -4712,78 +4747,26 @@ function resolveModuleBounds(kind: ModuleWindowKind): Electron.Rectangle {
     currentSidebarPosition === 'floating' &&
     Boolean(currentFloatingDockTarget && currentFloatingDockBounds);
 
-  const remembered = moduleWindowBoundsMemory.get(kind);
-  if (
-    !shouldUseDockRelativePlacement &&
-    remembered &&
-    remembered.sidebarPosition === currentSidebarPosition
-  ) {
-    const width = Math.max(
-      minWidth,
-      Math.min(remembered.bounds.width, workArea.width - WINDOW_MARGIN * 2)
-    );
-    const height = Math.max(
-      minHeight,
-      Math.min(remembered.bounds.height, workArea.height - WINDOW_MARGIN * 2)
-    );
-    const candidate = clampRectToWorkArea(
-      { x: remembered.bounds.x, y: remembered.bounds.y, width, height },
-      workArea
-    );
-    if (isRectInsideWorkArea(candidate, workArea)) {
-      return candidate;
-    }
+  if (!shouldUseDockRelativePlacement) {
+    const remembered = getSafeRememberedModuleBounds(kind, workArea, minWidth, minHeight);
+    if (remembered) return remembered;
   }
 
-  const maxWidth = Math.max(minWidth, workArea.width - WINDOW_MARGIN * 2);
-  const maxHeight = Math.max(minHeight, workArea.height - WINDOW_MARGIN * 2);
-  const targetWidth = Math.min(defaultWidth, maxWidth);
-  const targetHeight = Math.min(defaultHeight, maxHeight);
+  const targetWidth = getSafeWindowDimension(
+    defaultWidth,
+    minWidth,
+    Math.min(workArea.width - WINDOW_MARGIN * 2, workArea.width * 0.9)
+  );
+  const targetHeight = getSafeWindowDimension(
+    defaultHeight,
+    minHeight,
+    Math.min(workArea.height - WINDOW_MARGIN * 2, workArea.height * 0.9)
+  );
 
-  const leftSpace = sidebarBounds.x - workArea.x - MODULE_GAP - WINDOW_MARGIN;
-  const rightSpace =
-    workArea.x +
-    workArea.width -
-    (sidebarBounds.x + sidebarBounds.width) -
-    MODULE_GAP -
-    WINDOW_MARGIN;
-
-  const preferredSide: 'left' | 'right' =
-    currentSidebarPosition === 'left'
-      ? 'right'
-      : currentSidebarPosition === 'right'
-      ? 'left'
-      : rightSpace >= leftSpace
-      ? 'right'
-      : 'left';
-
-  const canFitPreferred =
-    preferredSide === 'right' ? rightSpace >= targetWidth : leftSpace >= targetWidth;
-  const side: 'left' | 'right' = canFitPreferred
-    ? preferredSide
-    : rightSpace >= leftSpace
-    ? 'right'
-    : 'left';
-
-  const sideSpace = side === 'right' ? rightSpace : leftSpace;
-  const width = Math.max(minWidth, Math.min(targetWidth, Math.max(minWidth, sideSpace)));
-  const height = targetHeight;
-
-  const x =
-    side === 'right'
-      ? sidebarBounds.x + sidebarBounds.width + MODULE_GAP
-      : sidebarBounds.x - width - MODULE_GAP;
-  const y = sidebarBounds.y;
-  const candidate = clampRectToWorkArea({ x, y, width, height }, workArea);
-  const fitsWithoutOverlap =
-    (side === 'right' && candidate.x >= sidebarBounds.x + sidebarBounds.width + MODULE_GAP) ||
-    (side === 'left' && candidate.x + candidate.width <= sidebarBounds.x - MODULE_GAP);
-
-  if (fitsWithoutOverlap && isRectInsideWorkArea(candidate, workArea)) {
-    return candidate;
-  }
-
-  return clampRectToWorkArea(getCenteredBoundsInWorkArea(width, height, workArea), workArea);
+  return clampRectToWorkArea(
+    getCenteredBoundsInWorkArea(targetWidth, targetHeight, workArea),
+    workArea
+  );
 }
 
 function resolveWorkspaceModuleBounds(kind: ModuleWindowKind): Electron.Rectangle {
@@ -4801,10 +4784,32 @@ function resolveWorkspaceModuleBounds(kind: ModuleWindowKind): Electron.Rectangl
   const display = screen.getDisplayNearestPoint(sidebarAnchorPoint);
   const workArea = display.workArea;
 
-  const maxWidth = Math.max(minWidth, workArea.width - WINDOW_MARGIN * 2);
-  const maxHeight = Math.max(minHeight, workArea.height - WINDOW_MARGIN * 2);
-  const targetWidth = Math.min(defaultWidth, maxWidth);
-  const targetHeight = Math.min(defaultHeight, maxHeight);
+  const shouldUseDockRelativePlacement =
+    currentSidebarPosition === 'floating' &&
+    Boolean(currentFloatingDockTarget && currentFloatingDockBounds);
+
+  if (!shouldUseDockRelativePlacement) {
+    const remembered = getSafeRememberedModuleBounds(kind, workArea, minWidth, minHeight);
+    if (remembered) return remembered;
+  }
+
+  const targetWidth = getSafeWindowDimension(
+    defaultWidth,
+    minWidth,
+    Math.min(workArea.width - WINDOW_MARGIN * 2, workArea.width * 0.9)
+  );
+  const targetHeight = getSafeWindowDimension(
+    defaultHeight,
+    minHeight,
+    Math.min(workArea.height - WINDOW_MARGIN * 2, workArea.height * 0.9)
+  );
+
+  if (!shouldUseDockRelativePlacement) {
+    return clampRectToWorkArea(
+      getCenteredBoundsInWorkArea(targetWidth, targetHeight, workArea),
+      workArea
+    );
+  }
 
   const leftSpace = sidebarBounds.x - workArea.x - attachmentGap - WINDOW_MARGIN;
   const rightSpace =
@@ -4850,6 +4855,48 @@ function resolveWorkspaceModuleBounds(kind: ModuleWindowKind): Electron.Rectangl
   }
 
   return clampRectToWorkArea(getCenteredBoundsInWorkArea(width, height, workArea), workArea);
+}
+
+function clampOpenModuleWindowsToDisplays() {
+  const windows = new Set<BrowserWindow>(moduleWins.values());
+  if (workspaceModuleWin && !workspaceModuleWin.isDestroyed()) windows.add(workspaceModuleWin);
+
+  for (const win of windows) {
+    if (win.isDestroyed() || win.isMinimized() || win.isFullScreen()) continue;
+    // The floating sidebar owns this relationship. Let its dock tracker
+    // restore the workspace window instead of fighting it during display
+    // changes or DPI updates.
+    if (win === workspaceModuleWin && isLedgerWindowDockTarget()) continue;
+
+    const bounds = win.getBounds();
+    const display = getDisplayForBounds(bounds);
+    const workArea = display.workArea;
+    const clamped = clampRectToWorkArea(
+      {
+        ...bounds,
+        width: getSafeWindowDimension(
+          bounds.width,
+          MODULE_MIN_WIDTH,
+          Math.min(workArea.width - WINDOW_MARGIN * 2, workArea.width * 0.9)
+        ),
+        height: getSafeWindowDimension(
+          bounds.height,
+          MODULE_MIN_HEIGHT,
+          Math.min(workArea.height - WINDOW_MARGIN * 2, workArea.height * 0.9)
+        ),
+      },
+      workArea
+    );
+
+    if (
+      clamped.x !== bounds.x ||
+      clamped.y !== bounds.y ||
+      clamped.width !== bounds.width ||
+      clamped.height !== bounds.height
+    ) {
+      win.setBounds(clamped, false);
+    }
+  }
 }
 
 function applySidebarWindowMode(mode: SidebarWindowMode, animate = true) {
@@ -5292,6 +5339,9 @@ function sendModuleFocus(
     }
     if (kind === 'settings' && focusSection) {
       existing.webContents.send('settings:focus-section', { section: focusSection });
+    }
+    if (focusSection) {
+      existing.webContents.send('module:focus-section', { kind, focusSection });
     }
   }
 }
@@ -6692,6 +6742,11 @@ function syncTouchBar() {
 app.whenReady().then(() => {
   loadNotificationDeliveryState();
   registerLedgerProtocol();
+  // A remembered module window may refer to a display that was disconnected
+  // or whose work area changed. Reconcile open module windows against the
+  // current display layout without touching the sidebar's docking geometry.
+  screen.on('display-removed', clampOpenModuleWindowsToDisplays);
+  screen.on('display-metrics-changed', clampOpenModuleWindowsToDisplays);
   createSidebarWindow();
   syncTray();
   processPendingLedgerProtocolUrl();

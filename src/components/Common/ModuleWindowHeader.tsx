@@ -7,6 +7,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type Ref,
 } from 'react';
 import { createPortal } from 'react-dom';
 import {
@@ -47,6 +48,7 @@ type ModuleWindowHeaderProps = {
   minimizeLabel?: string;
   fullscreenLabel?: string;
   showPanelToggle?: boolean;
+  showHistoryControl?: boolean;
   panelToggleLabel?: string;
   onTogglePanels?: () => void;
   onGoBack?: () => void;
@@ -60,6 +62,7 @@ type ModuleWindowHeaderProps = {
   compact?: boolean;
   showBodyHeader?: boolean;
   showWorkspaceNavigation?: boolean;
+  headerRef?: Ref<HTMLDivElement>;
 };
 
 type ModuleHeaderActionButtonProps = {
@@ -137,7 +140,12 @@ type AppRegionStyle = CSSProperties & {
   WebkitAppRegion?: 'drag' | 'no-drag';
 };
 
-const dragRegionStyle: AppRegionStyle = { WebkitAppRegion: 'drag' };
+// Module windows use the pointer-driven Electron drag loop so the shared
+// floating sidebar can follow the exact same movement delta. Leaving the
+// native Chromium drag region enabled here makes Windows/macOS move the
+// module independently while the Electron loop also calls setPosition(),
+// which causes the attached sidebar to lag or teleport.
+const dragRegionStyle: AppRegionStyle = { WebkitAppRegion: 'no-drag' };
 const noDragRegionStyle: AppRegionStyle = { WebkitAppRegion: 'no-drag' };
 const HEADER_DRAG_THRESHOLD_PX = 3;
 const actionButtonClassName = `inline-flex h-9 items-center justify-center gap-1.5 rounded-full border ${sidebarTheme.subtleBorder} ${sidebarTheme.mutedSurface} px-3.5 text-xs font-medium ${sidebarTheme.textSecondary} transition hover:${sidebarTheme.hoverSurface} hover:${sidebarTheme.textPrimary} focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-accent)]/20`;
@@ -153,8 +161,9 @@ const segmentedButtonCompactBaseClassName =
   'inline-flex h-7 items-center justify-center rounded-full px-2.5 text-[12px] font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-accent)]/20';
 const stripIconButtonClassName = `inline-flex h-7 w-7 items-center justify-center rounded-lg ${sidebarTheme.textSecondary} transition hover:${sidebarTheme.hoverSurface} hover:${sidebarTheme.textPrimary} focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-accent)]/20`;
 const stripIconButtonDisabledClassName = `cursor-not-allowed opacity-35 hover:bg-transparent hover:${sidebarTheme.textSecondary}`;
-const historyMenuWidth = 256;
-const historyMenuMaxHeight = 280;
+const historyMenuWidth = 224;
+const historyMenuMaxHeight = 240;
+const historyMenuAnchorOffset = 28;
 
 const formatHistoryDate = (value: string | null | undefined) => {
   if (!value) return null;
@@ -477,6 +486,8 @@ export const ModuleWindowHeader = ({
   stripTitle,
   showBodyHeader = true,
   showWorkspaceNavigation = true,
+  showHistoryControl = true,
+  headerRef,
 }: ModuleWindowHeaderProps) => {
   void icon;
   const controlClassName = `flex h-5 w-5 items-center justify-center rounded-full border ${sidebarTheme.subtleBorder} ${sidebarTheme.mutedSurface} ${sidebarTheme.textSecondary} shadow-[0_1px_2px_rgba(15,23,42,0.05)] transition hover:${sidebarTheme.hoverSurface} hover:${sidebarTheme.textPrimary}`;
@@ -650,11 +661,14 @@ export const ModuleWindowHeader = ({
     setHistoryMenuState({
       x: Math.max(
         8,
-        Math.min(buttonRect.right - historyMenuWidth, window.innerWidth - historyMenuWidth - 8)
+        Math.min(
+          buttonRect.left - historyMenuAnchorOffset,
+          window.innerWidth - historyMenuWidth - 8
+        )
       ),
       y: Math.max(
         8,
-        Math.min(buttonRect.bottom + 8, window.innerHeight - historyMenuMaxHeight - 8)
+        Math.min(buttonRect.bottom + 6, window.innerHeight - historyMenuMaxHeight - 8)
       ),
     });
   };
@@ -718,6 +732,7 @@ export const ModuleWindowHeader = ({
 
   return (
     <div
+      ref={headerRef}
       className={`w-full border-b ${sidebarTheme.subtleBorder} ${sidebarTheme.mutedSurface}`}
       style={dragRegionStyle}
       onDoubleClickCapture={handleStripDoubleClick}
@@ -797,21 +812,23 @@ export const ModuleWindowHeader = ({
                 >
                   <ChevronRight size={16} />
                 </button>
-                <button
-                  ref={historyButtonRef}
-                  type="button"
-                  onClick={handleOpenHistoryMenu}
-                  disabled={recentRoutes.length < 2}
-                  title="History"
-                  aria-label="History"
-                  className={`${stripIconButtonClassName} ${
-                    historyMenuState
-                      ? `${sidebarTheme.hoverSurface} ${sidebarTheme.textPrimary}`
-                      : ''
-                  } ${recentRoutes.length < 2 ? stripIconButtonDisabledClassName : ''}`}
-                >
-                  <History size={14} />
-                </button>
+                {showHistoryControl && (
+                  <button
+                    ref={historyButtonRef}
+                    type="button"
+                    onClick={handleOpenHistoryMenu}
+                    disabled={recentRoutes.length < 2}
+                    title="History"
+                    aria-label="History"
+                    className={`${stripIconButtonClassName} ${
+                      historyMenuState
+                        ? `${sidebarTheme.hoverSurface} ${sidebarTheme.textPrimary}`
+                        : ''
+                    } ${recentRoutes.length < 2 ? stripIconButtonDisabledClassName : ''}`}
+                  >
+                    <History size={14} />
+                  </button>
+                )}
               </>
             )}
             {showPanelToggle && onTogglePanels && (
@@ -837,7 +854,7 @@ export const ModuleWindowHeader = ({
           createPortal(
             <div
               ref={historyMenuRef}
-              className={`${sidebarTheme.menu} w-[256px] overflow-hidden`}
+              className={`${sidebarTheme.menu} w-[224px] overflow-hidden`}
               style={
                 {
                   left: `${historyMenuState.x}px`,
@@ -863,13 +880,13 @@ export const ModuleWindowHeader = ({
                       ].join('|')}
                       type="button"
                       onClick={() => handleOpenRecentRoute(route)}
-                      className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px] transition ${
+                      className={`flex w-full items-center gap-1.5 px-2.5 py-1 text-left text-[12px] transition ${
                         active
                           ? `${sidebarTheme.selectedSurface} ${sidebarTheme.textPrimary}`
                           : `${sidebarTheme.textSecondary} hover:${sidebarTheme.hoverSurface} hover:${sidebarTheme.textPrimary}`
                       }`}
                     >
-                      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)]">
+                      <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)]">
                         {getWorkspaceRouteIcon(route)}
                       </span>
                       <span className="min-w-0 flex-1 truncate">

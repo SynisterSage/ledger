@@ -239,7 +239,7 @@ const TemplateLauncher = ({
   onTemplateContextMenu: (template: NotesHomeTemplate, event: ReactMouseEvent<HTMLButtonElement>) => void;
 }) => (
   <div className="rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] p-2">
-    <div className="flex gap-2 overflow-x-auto pb-0.5">
+    <div className="flex gap-1.5 overflow-x-auto pb-2">
       <button
         type="button"
         onClick={onNewNote}

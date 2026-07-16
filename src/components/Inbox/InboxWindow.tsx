@@ -119,8 +119,7 @@ const inboxTheme = {
   contentShell: 'bg-[var(--ledger-background)]',
   iconButton:
     'inline-flex h-8 w-8 items-center justify-center rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]',
-  row:
-    'group border-b border-[color:var(--ledger-border-subtle)] px-1 py-4 transition',
+  row: 'group border-b border-[color:var(--ledger-border-subtle)] px-1 py-4 transition',
   panel:
     'overflow-hidden rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] shadow-[0_12px_32px_rgba(17,24,39,0.12)]',
   sectionHeading: 'text-sm font-semibold text-[var(--ledger-text-primary)]',
@@ -153,7 +152,12 @@ const getDomain = (url: string) => {
   try {
     return new URL(url).hostname.replace(/^www\./, '');
   } catch {
-    return url.replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0] || url;
+    return (
+      url
+        .replace(/^https?:\/\//, '')
+        .replace(/^www\./, '')
+        .split('/')[0] || url
+    );
   }
 };
 
@@ -187,9 +191,7 @@ const stripTrailingSlackLinkLabel = (cleanText: string, rawText?: string | null)
   const labels = getSlackLinkLabels(rawText);
   if (labels.length === 0) return cleanText;
   const last = labels[labels.length - 1].replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  return cleanText
-    .replace(new RegExp(`\\s*[·-]?\\s*${last}\\s*$`, 'i'), '')
-    .trim() || cleanText;
+  return cleanText.replace(new RegExp(`\\s*[·-]?\\s*${last}\\s*$`, 'i'), '').trim() || cleanText;
 };
 
 const summarizeSlackText = (rawText?: string | null) => {
@@ -236,7 +238,10 @@ const defaultReminderAt = (seedText?: string) => {
   }
   return {
     date: date.toISOString().slice(0, 10),
-    time: `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`,
+    time: `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(
+      2,
+      '0'
+    )}`,
   };
 };
 
@@ -248,7 +253,10 @@ const defaultEventStart = (seedText?: string) => {
   }
   return {
     date: date.toISOString().slice(0, 10),
-    time: `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`,
+    time: `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(
+      2,
+      '0'
+    )}`,
   };
 };
 
@@ -271,7 +279,9 @@ const buildDefaultBody = (item: InboxItem) => {
   const title = getDisplayTitle(item);
   const preview = getDisplayPreview(item);
   const parts = [preview || title];
-  const sourceParts = [getSourceLabel(item), getSourceContext(item), item.author_name].filter(Boolean);
+  const sourceParts = [getSourceLabel(item), getSourceContext(item), item.author_name].filter(
+    Boolean
+  );
   if (sourceParts.length > 0) parts.push(`Source: ${sourceParts.join(' · ')}`);
   const linkLabels = getSlackLinkLabels(item.body || item.title);
   if (linkLabels.length > 0) parts.push(`Link: ${linkLabels[linkLabels.length - 1]}`);
@@ -370,7 +380,10 @@ const defaultDisplayState: IntakeDisplayState = {
   showCreated: true,
 };
 
-const normalizeForSearch = (value: unknown) => String(value ?? '').trim().toLowerCase();
+const normalizeForSearch = (value: unknown) =>
+  String(value ?? '')
+    .trim()
+    .toLowerCase();
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   Boolean(value && typeof value === 'object' && !Array.isArray(value));
@@ -536,7 +549,12 @@ const getItemTeamLabel = (item: InboxItem) =>
 
 const getItemCreatedByLabel = (item: InboxItem) =>
   item.author_name ||
-  findDeepString(getRawPayload(item), ['created_by_name', 'created_by', 'author_name', 'user_name']) ||
+  findDeepString(getRawPayload(item), [
+    'created_by_name',
+    'created_by',
+    'author_name',
+    'user_name',
+  ]) ||
   null;
 
 const matchesCreatedFilter = (value: string, createdAt: string) => {
@@ -571,7 +589,8 @@ const getTypeDisplayLabel = (item: InboxItem) => {
 
   if (sourceBucket === 'browser') return 'Browser capture';
   if (sourceBucket === 'meeting') return 'Meeting output';
-  if (sourceBucket === 'calendar') return typeBucket === 'deadline' ? 'Suggested deadline' : 'Calendar item';
+  if (sourceBucket === 'calendar')
+    return typeBucket === 'deadline' ? 'Suggested deadline' : 'Calendar item';
   if (sourceBucket === 'slack later') return 'Slack import';
   if (sourceBucket === 'email later') return 'Email import';
   if (typeBucket === 'project') return 'Project draft';
@@ -598,7 +617,10 @@ const getRowIcon = (item: InboxItem) => {
   return Sparkles;
 };
 
-const snoozeOffset = (mode: 'later-today' | 'tomorrow' | 'next-week' | 'pick-date', date?: string | null) => {
+const snoozeOffset = (
+  mode: 'later-today' | 'tomorrow' | 'next-week' | 'pick-date',
+  date?: string | null
+) => {
   const now = new Date();
   if (mode === 'later-today') {
     const target = new Date(now);
@@ -633,13 +655,21 @@ export default function IntakeWindow() {
   const { workspaceShellLayout } = useSidebar();
   const api = useApi();
   const toast = useToast();
-  const initialFocusContext = new URLSearchParams(window.location.search).get('focusContext')?.trim() ?? '';
+  const initialFocusContext =
+    new URLSearchParams(window.location.search).get('focusContext')?.trim() ?? '';
+  const initialFocusSection =
+    new URLSearchParams(window.location.search).get('section')?.trim() ?? '';
+  const initialInboxStatus: InboxStatus = statusLabels.some(
+    ({ value }) => value === initialFocusSection
+  )
+    ? (initialFocusSection as InboxStatus)
+    : 'unprocessed';
 
   const [items, setItems] = useState<InboxItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
-  const [activeStatus, setActiveStatus] = useState<InboxStatus>('unprocessed');
+  const [activeStatus, setActiveStatus] = useState<InboxStatus>(initialInboxStatus);
   const [searchQuery, setSearchQuery] = useState('');
   const [filters, setFilters] = useState<IntakeFilterState>(defaultFilters);
   const [display, setDisplay] = useState<IntakeDisplayState>(defaultDisplayState);
@@ -650,7 +680,9 @@ export default function IntakeWindow() {
   const [contextMenu, setContextMenu] = useState<IntakeMenuState | null>(null);
   const [filterMenu, setFilterMenu] = useState<MenuAnchorState | null>(null);
   const [displayMenu, setDisplayMenu] = useState<MenuAnchorState | null>(null);
-  const [snoozeMenu, setSnoozeMenu] = useState<{ x: number; y: number; item: InboxItem } | null>(null);
+  const [snoozeMenu, setSnoozeMenu] = useState<{ x: number; y: number; item: InboxItem } | null>(
+    null
+  );
   const [snoozePicker, setSnoozePicker] = useState<string | null>(null);
   const [projects, setProjects] = useState<ProjectOption[]>([]);
   const [calendars, setCalendars] = useState<CalendarOption[]>([]);
@@ -703,10 +735,7 @@ export default function IntakeWindow() {
     () => new Map(calendars.map((calendar) => [calendar.id, calendar] as const)),
     [calendars]
   );
-  const notesById = useMemo(
-    () => new Map(notes.map((note) => [note.id, note] as const)),
-    [notes]
-  );
+  const notesById = useMemo(() => new Map(notes.map((note) => [note.id, note] as const)), [notes]);
   const noteSectionsById = useMemo(
     () => new Map(noteSections.map((section) => [section.id, section] as const)),
     [noteSections]
@@ -740,12 +769,12 @@ export default function IntakeWindow() {
         api.getInboxItems({ status: 'snoozed' }),
         api.getInboxItems({ status: 'archived' }),
       ]);
-      setItems(
-        [...(Array.isArray(unprocessed) ? unprocessed : []),
-          ...(Array.isArray(converted) ? converted : []),
-          ...(Array.isArray(snoozed) ? snoozed : []),
-          ...(Array.isArray(archived) ? archived : [])] as InboxItem[]
-      );
+      setItems([
+        ...(Array.isArray(unprocessed) ? unprocessed : []),
+        ...(Array.isArray(converted) ? converted : []),
+        ...(Array.isArray(snoozed) ? snoozed : []),
+        ...(Array.isArray(archived) ? archived : []),
+      ] as InboxItem[]);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Couldn't load Intake.");
     } finally {
@@ -769,7 +798,9 @@ export default function IntakeWindow() {
     loadNotificationAtRef.current = now;
 
     try {
-      const payload = (await api.getNotificationCenterSummary()) as { counts?: { active?: number } };
+      const payload = (await api.getNotificationCenterSummary()) as {
+        counts?: { active?: number };
+      };
       setNotificationCount(Number(payload?.counts?.active ?? 0));
     } catch {
       setNotificationCount(0);
@@ -801,14 +832,20 @@ export default function IntakeWindow() {
       void loadNotificationSummary({ force: true });
     };
 
-    window.addEventListener('ledger:notifications-summary', handleNotificationsSummary as EventListener);
+    window.addEventListener(
+      'ledger:notifications-summary',
+      handleNotificationsSummary as EventListener
+    );
     window.addEventListener('ledger:notifications-updated', handleNotificationsUpdated);
     window.addEventListener('focus', refreshNotifications);
     document.addEventListener('visibilitychange', refreshNotifications);
 
     return () => {
       cancelled = true;
-      window.removeEventListener('ledger:notifications-summary', handleNotificationsSummary as EventListener);
+      window.removeEventListener(
+        'ledger:notifications-summary',
+        handleNotificationsSummary as EventListener
+      );
       window.removeEventListener('ledger:notifications-updated', handleNotificationsUpdated);
       window.removeEventListener('focus', refreshNotifications);
       document.removeEventListener('visibilitychange', refreshNotifications);
@@ -821,21 +858,39 @@ export default function IntakeWindow() {
 
     const loadContext = async () => {
       try {
-        const [projectPayload, calendarPayload, notePayload, sectionPayload, membersPayload, teamsPayload] =
-          await Promise.allSettled([
-            api.getProjects({ includeCompleted: false }),
-            api.getCalendars(),
-            api.getNotes(),
-            api.getSections(),
-            api.getWorkspaceMembers(activeWorkspaceId),
-            api.getTeams(),
-          ]);
+        const [
+          projectPayload,
+          calendarPayload,
+          notePayload,
+          sectionPayload,
+          membersPayload,
+          teamsPayload,
+        ] = await Promise.allSettled([
+          api.getProjects({ includeCompleted: false }),
+          api.getCalendars(),
+          api.getNotes(),
+          api.getSections(),
+          api.getWorkspaceMembers(activeWorkspaceId),
+          api.getTeams(),
+        ]);
 
         if (cancelled) return;
 
-        setProjects(projectPayload.status === 'fulfilled' && Array.isArray(projectPayload.value) ? projectPayload.value : []);
-        setCalendars(calendarPayload.status === 'fulfilled' && Array.isArray(calendarPayload.value) ? calendarPayload.value : []);
-        setNotes(notePayload.status === 'fulfilled' && Array.isArray(notePayload.value) ? notePayload.value : []);
+        setProjects(
+          projectPayload.status === 'fulfilled' && Array.isArray(projectPayload.value)
+            ? projectPayload.value
+            : []
+        );
+        setCalendars(
+          calendarPayload.status === 'fulfilled' && Array.isArray(calendarPayload.value)
+            ? calendarPayload.value
+            : []
+        );
+        setNotes(
+          notePayload.status === 'fulfilled' && Array.isArray(notePayload.value)
+            ? notePayload.value
+            : []
+        );
         setNoteSections(
           sectionPayload.status === 'fulfilled' && Array.isArray(sectionPayload.value)
             ? sectionPayload.value
@@ -848,24 +903,34 @@ export default function IntakeWindow() {
         );
 
         const mappedMembers =
-          membersPayload.status === 'fulfilled' && Array.isArray((membersPayload.value as { members?: Array<Record<string, unknown>> })?.members)
-            ? ((membersPayload.value as { members?: Array<Record<string, unknown>> }).members ?? []).map((member) => {
-                const name = String(member.full_name ?? '').trim() || String(member.email ?? '').split('@')[0] || 'Workspace member';
-                return {
-                  id: String(member.user_id ?? ''),
-                  name,
-                  email: member.email ? String(member.email) : null,
-                };
-              }).filter((member) => member.id)
+          membersPayload.status === 'fulfilled' &&
+          Array.isArray(
+            (membersPayload.value as { members?: Array<Record<string, unknown>> })?.members
+          )
+            ? ((membersPayload.value as { members?: Array<Record<string, unknown>> }).members ?? [])
+                .map((member) => {
+                  const name =
+                    String(member.full_name ?? '').trim() ||
+                    String(member.email ?? '').split('@')[0] ||
+                    'Workspace member';
+                  return {
+                    id: String(member.user_id ?? ''),
+                    name,
+                    email: member.email ? String(member.email) : null,
+                  };
+                })
+                .filter((member) => member.id)
             : [];
 
         const mappedTeams =
           teamsPayload.status === 'fulfilled'
-            ? getArrayFromPayload(teamsPayload.value, 'teams').map((team: any) => ({
-                id: String(team.id ?? ''),
-                name: String(team.name ?? 'Team'),
-                identifier: team.identifier ? String(team.identifier) : null,
-              })).filter((team) => team.id)
+            ? getArrayFromPayload(teamsPayload.value, 'teams')
+                .map((team: any) => ({
+                  id: String(team.id ?? ''),
+                  name: String(team.name ?? 'Team'),
+                  identifier: team.identifier ? String(team.identifier) : null,
+                }))
+                .filter((team) => team.id)
             : [];
 
         setWorkspaceMembers(mappedMembers);
@@ -889,6 +954,12 @@ export default function IntakeWindow() {
   }, [activeWorkspaceId, api, user]);
 
   useEffect(() => {
+    const applyFocusSection = (focusSection: string | null | undefined) => {
+      if (!statusLabels.some(({ value }) => value === focusSection)) return;
+      setActiveStatus(focusSection as InboxStatus);
+      setSelectedItemId(null);
+    };
+
     const applyTeamFocusContext = (focusContext: string | null | undefined) => {
       const raw = String(focusContext ?? '').trim();
       if (!raw.startsWith('team:')) return;
@@ -899,6 +970,7 @@ export default function IntakeWindow() {
       setSelectedItemId(null);
     };
 
+    applyFocusSection(initialFocusSection);
     applyTeamFocusContext(initialFocusContext);
 
     const focusContextListener = (
@@ -910,10 +982,31 @@ export default function IntakeWindow() {
     };
 
     window.ipcRenderer?.on('module:focus-context', focusContextListener);
+
+    // `openModule` can target an already-open Intake window. The main process
+    // forwards section changes through this event so the existing window still
+    // lands on the requested queue.
     return () => {
       window.ipcRenderer?.off('module:focus-context', focusContextListener);
     };
-  }, [initialFocusContext]);
+  }, [initialFocusContext, initialFocusSection]);
+
+  useEffect(() => {
+    const focusSectionListener = (
+      _event: unknown,
+      payload: { kind?: string; focusSection?: string | null }
+    ) => {
+      if (payload?.kind !== 'inbox') return;
+      if (!statusLabels.some(({ value }) => value === payload.focusSection)) return;
+      setActiveStatus(payload.focusSection as InboxStatus);
+      setSelectedItemId(null);
+    };
+
+    window.ipcRenderer?.on('module:focus-section', focusSectionListener);
+    return () => {
+      window.ipcRenderer?.off('module:focus-section', focusSectionListener);
+    };
+  }, []);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -974,10 +1067,13 @@ export default function IntakeWindow() {
   }, [searchQuery]);
 
   const counts = useMemo(() => {
-    const statusCounts = statusLabels.reduce<Record<InboxStatus, number>>((acc, status) => {
-      acc[status.value] = items.filter((item) => item.status === status.value).length;
-      return acc;
-    }, { unprocessed: 0, converted: 0, snoozed: 0, archived: 0 });
+    const statusCounts = statusLabels.reduce<Record<InboxStatus, number>>(
+      (acc, status) => {
+        acc[status.value] = items.filter((item) => item.status === status.value).length;
+        return acc;
+      },
+      { unprocessed: 0, converted: 0, snoozed: 0, archived: 0 }
+    );
     return statusCounts;
   }, [items]);
 
@@ -994,27 +1090,37 @@ export default function IntakeWindow() {
 
       if (filters.project !== 'all') {
         const project = projects.find((entry) => entry.id === filters.project);
-        const projectText = normalizeForSearch([project?.name, project?.title, project?.id].filter(Boolean).join(' '));
+        const projectText = normalizeForSearch(
+          [project?.name, project?.title, project?.id].filter(Boolean).join(' ')
+        );
         if (projectText && !getSearchCorpus(item).includes(projectText)) return false;
       }
 
       if (filters.assignee !== 'all') {
         if (filters.assignee === 'me') {
           const userMatch = workspaceMembers.find((member) => member.id === currentUserId);
-          const meText = normalizeForSearch([userMatch?.name, userMatch?.email, currentUserId].filter(Boolean).join(' '));
+          const meText = normalizeForSearch(
+            [userMatch?.name, userMatch?.email, currentUserId].filter(Boolean).join(' ')
+          );
           if (meText && !getSearchCorpus(item).includes(meText)) return false;
         } else if (filters.assignee === 'unassigned') {
-          const assigneeText = [getItemAssigneeLabel(item), getItemTeamLabel(item)].filter(Boolean).join(' ');
+          const assigneeText = [getItemAssigneeLabel(item), getItemTeamLabel(item)]
+            .filter(Boolean)
+            .join(' ');
           if (assigneeText) return false;
         } else if (filters.assignee.startsWith('member:')) {
           const memberId = filters.assignee.slice('member:'.length);
           const member = workspaceMembers.find((entry) => entry.id === memberId);
-          const memberText = normalizeForSearch([member?.name, member?.email, member?.id].filter(Boolean).join(' '));
+          const memberText = normalizeForSearch(
+            [member?.name, member?.email, member?.id].filter(Boolean).join(' ')
+          );
           if (memberText && !getSearchCorpus(item).includes(memberText)) return false;
         } else if (filters.assignee.startsWith('team:')) {
           const teamId = filters.assignee.slice('team:'.length);
           const team = workspaceTeams.find((entry) => entry.id === teamId);
-          const teamText = normalizeForSearch([team?.name, team?.identifier, team?.id].filter(Boolean).join(' '));
+          const teamText = normalizeForSearch(
+            [team?.name, team?.identifier, team?.id].filter(Boolean).join(' ')
+          );
           if (teamText && !getSearchCorpus(item).includes(teamText)) return false;
         }
       }
@@ -1027,7 +1133,21 @@ export default function IntakeWindow() {
       const bTime = new Date(b.created_at).getTime();
       return display.order === 'newest' ? bTime - aTime : aTime - bTime;
     });
-  }, [activeStatus, display.order, filters.assignee, filters.created, filters.project, filters.source, filters.type, items, projects, searchQuery, user?.id, workspaceMembers, workspaceTeams]);
+  }, [
+    activeStatus,
+    display.order,
+    filters.assignee,
+    filters.created,
+    filters.project,
+    filters.source,
+    filters.type,
+    items,
+    projects,
+    searchQuery,
+    user?.id,
+    workspaceMembers,
+    workspaceTeams,
+  ]);
 
   const selectedItem = useMemo(() => {
     if (selectedItemId) {
@@ -1068,7 +1188,8 @@ export default function IntakeWindow() {
     const provider = normalizeForSearch(item.source_provider);
     if (source.includes('slack') || provider === 'slack') return 'Slack import';
     if (source.includes('browser')) return 'Browser save';
-    if (source.includes('meeting') || provider === 'zoom' || provider === 'meet') return 'Meeting output';
+    if (source.includes('meeting') || provider === 'zoom' || provider === 'meet')
+      return 'Meeting output';
     if (source.includes('calendar')) return 'Calendar import';
     if (source.includes('quick') || source.includes('manual')) return 'Quick capture';
     if (source.includes('team')) return 'Team submission';
@@ -1085,7 +1206,8 @@ export default function IntakeWindow() {
       if (item.channel_name) parts.push(`#${item.channel_name}`);
       if (item.author_name) parts.push(item.author_name);
     } else if (source.includes('browser')) {
-      if (item.source_url && isValidExternalUrl(item.source_url)) parts.push(getDomain(item.source_url));
+      if (item.source_url && isValidExternalUrl(item.source_url))
+        parts.push(getDomain(item.source_url));
       if (item.author_name) parts.push(item.author_name);
     } else if (source.includes('meeting')) {
       if (item.author_name) parts.push(item.author_name);
@@ -1107,35 +1229,49 @@ export default function IntakeWindow() {
       findDeepString(raw, ['suggested_project_id', 'project_id', 'linked_project_id']);
     const ownerId =
       item.suggested_assignee_id ||
-      findDeepString(raw, ['suggested_assignee_id', 'assigned_to_user_id', 'owner_id', 'assignee_id']);
-    const teamId =
       findDeepString(raw, [
-        'suggested_team_id',
-        'suggested_owner_team_id',
-        'assigned_to_team_id',
-        'owner_team_id',
-        'team_id',
+        'suggested_assignee_id',
+        'assigned_to_user_id',
+        'owner_id',
+        'assignee_id',
       ]);
+    const teamId = findDeepString(raw, [
+      'suggested_team_id',
+      'suggested_owner_team_id',
+      'assigned_to_team_id',
+      'owner_team_id',
+      'team_id',
+    ]);
     const calendarId =
       item.suggested_calendar_id || findDeepString(raw, ['suggested_calendar_id', 'calendar_id']);
     const sectionId =
-      item.suggested_note_section_id || findDeepString(raw, ['suggested_note_section_id', 'section_id', 'note_section_id']);
+      item.suggested_note_section_id ||
+      findDeepString(raw, ['suggested_note_section_id', 'section_id', 'note_section_id']);
     const dueDate =
       item.suggested_due_at ||
       item.suggested_date ||
       findDeepString(raw, ['suggested_due_at', 'due_at', 'due_date', 'date']);
     const startDate = findDeepString(raw, ['start_date', 'project_start_date', 'start_at']);
-    const targetDate = findDeepString(raw, ['end_date', 'project_end_date', 'target_date', 'end_at']);
+    const targetDate = findDeepString(raw, [
+      'end_date',
+      'project_end_date',
+      'target_date',
+      'end_at',
+    ]);
     const projectName =
-      findDeepString(raw, ['project_name', 'project_title', 'linked_project_name', 'project_label']) || fallback;
+      findDeepString(raw, [
+        'project_name',
+        'project_title',
+        'linked_project_name',
+        'project_label',
+      ]) || fallback;
     const ownerName =
-      findDeepString(raw, ['owner_name', 'assigned_to_name', 'assignee_name', 'user_name']) || fallback;
+      findDeepString(raw, ['owner_name', 'assigned_to_name', 'assignee_name', 'user_name']) ||
+      fallback;
     const teamName =
       findDeepString(raw, ['team_name', 'owner_team_name', 'assigned_team_name']) || fallback;
-    const calendarName =
-      findDeepString(raw, ['calendar_name', 'calendar_title']) || fallback;
-    const sectionName =
-      findDeepString(raw, ['section_name', 'note_section_name']) || fallback;
+    const calendarName = findDeepString(raw, ['calendar_name', 'calendar_title']) || fallback;
+    const sectionName = findDeepString(raw, ['section_name', 'note_section_name']) || fallback;
 
     return {
       project: projectId ? getProjectOptionLabel(projectId) : projectName,
@@ -1160,16 +1296,30 @@ export default function IntakeWindow() {
       findDeepString(raw, ['suggested_project_id', 'project_id', 'linked_project_id']);
     const assigneeId =
       item.suggested_assignee_id ||
-      findDeepString(raw, ['suggested_assignee_id', 'assigned_to_user_id', 'assignee_id', 'owner_id']);
-    const teamId = findDeepString(raw, ['suggested_team_id', 'suggested_owner_team_id', 'assigned_to_team_id', 'owner_team_id']);
-    const calendarId = item.suggested_calendar_id || findDeepString(raw, ['suggested_calendar_id', 'calendar_id']);
+      findDeepString(raw, [
+        'suggested_assignee_id',
+        'assigned_to_user_id',
+        'assignee_id',
+        'owner_id',
+      ]);
+    const teamId = findDeepString(raw, [
+      'suggested_team_id',
+      'suggested_owner_team_id',
+      'assigned_to_team_id',
+      'owner_team_id',
+    ]);
+    const calendarId =
+      item.suggested_calendar_id || findDeepString(raw, ['suggested_calendar_id', 'calendar_id']);
     const sectionId =
-      item.suggested_note_section_id || findDeepString(raw, ['suggested_note_section_id', 'section_id', 'note_section_id']);
+      item.suggested_note_section_id ||
+      findDeepString(raw, ['suggested_note_section_id', 'section_id', 'note_section_id']);
     const projectDefaults = {
       brief: cleanSlackText(item.body ?? '') || getItemReason(item) || '',
       startDate: findDeepString(raw, ['start_date', 'project_start_date']) || '',
       endDate: findDeepString(raw, ['end_date', 'project_end_date']) || '',
-      status: normalizeForSearch(findDeepString(raw, ['status', 'project_status']) ?? '') || 'not_started',
+      status:
+        normalizeForSearch(findDeepString(raw, ['status', 'project_status']) ?? '') ||
+        'not_started',
       ownerTeamId: teamId && teamsById.has(teamId) ? teamId : '',
       leadId: assigneeId && membersById.has(assigneeId) ? assigneeId : '',
     };
@@ -1229,7 +1379,11 @@ export default function IntakeWindow() {
     }
   };
 
-  const snoozeItem = async (item: InboxItem, mode: 'later-today' | 'tomorrow' | 'next-week' | 'pick-date', date?: string | null) => {
+  const snoozeItem = async (
+    item: InboxItem,
+    mode: 'later-today' | 'tomorrow' | 'next-week' | 'pick-date',
+    date?: string | null
+  ) => {
     const snoozedUntil = snoozeOffset(mode, date);
     if (!snoozedUntil) return;
     setActiveActionId(item.id);
@@ -1343,7 +1497,9 @@ export default function IntakeWindow() {
         if (!eventDate || !eventTime) throw new Error('Choose when the event starts.');
         const startAt = new Date(`${eventDate}T${eventTime}:00`).toISOString();
         const durationMinutes = Math.max(15, Number(eventDuration) || 30);
-        const endAt = new Date(new Date(startAt).getTime() + durationMinutes * 60 * 1000).toISOString();
+        const endAt = new Date(
+          new Date(startAt).getTime() + durationMinutes * 60 * 1000
+        ).toISOString();
         await api.convertIntakeItem(draft.item.id, {
           ...basePayload,
           type: 'event',
@@ -1356,7 +1512,9 @@ export default function IntakeWindow() {
       await loadInbox(true, { force: true });
       setDraft(null);
       emitInboxItemsUpdated(draft.item.status === 'unprocessed' ? -1 : 0);
-      toast.show(`Created ${draft.type} from ${getSourceLabel(draft.item)} intake item.`, { variant: 'success' });
+      toast.show(`Created ${draft.type} from ${getSourceLabel(draft.item)} intake item.`, {
+        variant: 'success',
+      });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Could not convert intake item.';
       setError(message);
@@ -1390,8 +1548,8 @@ export default function IntakeWindow() {
             : status.value === 'converted'
             ? CheckSquare
             : status.value === 'snoozed'
-              ? Clock3
-              : Archive;
+            ? Clock3
+            : Archive;
         return (
           <button
             key={status.value}
@@ -1491,9 +1649,7 @@ export default function IntakeWindow() {
           setContextMenu({ x: event.clientX, y: event.clientY, item });
         }}
         className={`group flex min-h-[44px] cursor-default items-center gap-3 border-b border-[color:var(--ledger-border-subtle)] px-3 py-2 transition ${
-          selected
-            ? 'bg-[var(--ledger-surface-muted)]'
-            : 'hover:bg-[var(--ledger-surface-muted)]'
+          selected ? 'bg-[var(--ledger-surface-muted)]' : 'hover:bg-[var(--ledger-surface-muted)]'
         }`}
       >
         <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)]">
@@ -1503,8 +1659,8 @@ export default function IntakeWindow() {
         <div className="min-w-0 flex-1">
           <div className="flex min-w-0 items-center gap-2">
             <p className="min-w-0 truncate text-[13px] font-medium leading-5 text-[var(--ledger-text-primary)]">
-                {title}
-              </p>
+              {title}
+            </p>
             <p className="min-w-0 truncate text-[11px] leading-5 text-[var(--ledger-text-muted)]">
               {sourceBits.join(' · ') || sourceLabel}
             </p>
@@ -1523,7 +1679,11 @@ export default function IntakeWindow() {
                 disabled={activeActionId === item.id}
                 className="rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2 py-1 text-[11px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] disabled:opacity-60"
               >
-                {activeActionId === item.id ? <Loader2 size={10} className="animate-spin" /> : 'Restore'}
+                {activeActionId === item.id ? (
+                  <Loader2 size={10} className="animate-spin" />
+                ) : (
+                  'Restore'
+                )}
               </button>
               <button
                 type="button"
@@ -1534,7 +1694,11 @@ export default function IntakeWindow() {
                 disabled={activeActionId === item.id}
                 className="rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2 py-1 text-[11px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] disabled:opacity-60"
               >
-                {activeActionId === item.id ? <Loader2 size={10} className="animate-spin" /> : 'Delete'}
+                {activeActionId === item.id ? (
+                  <Loader2 size={10} className="animate-spin" />
+                ) : (
+                  'Delete'
+                )}
               </button>
             </>
           ) : (
@@ -1570,7 +1734,11 @@ export default function IntakeWindow() {
                 disabled={activeActionId === item.id}
                 className="rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2 py-1 text-[11px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] disabled:opacity-60"
               >
-                {activeActionId === item.id ? <Loader2 size={10} className="animate-spin" /> : 'Archive'}
+                {activeActionId === item.id ? (
+                  <Loader2 size={10} className="animate-spin" />
+                ) : (
+                  'Archive'
+                )}
               </button>
             </>
           )}
@@ -1613,14 +1781,20 @@ export default function IntakeWindow() {
       >
         <div className={sidebarTheme.menu} style={{ width: 220 }}>
           {getItemTypeBucket(contextMenu.item) === 'project' && (
-            <button type="button" onClick={() => openConversion(contextMenu.item, 'project')} className={sidebarTheme.menuItem}>
+            <button
+              type="button"
+              onClick={() => openConversion(contextMenu.item, 'project')}
+              className={sidebarTheme.menuItem}
+            >
               Turn into project
             </button>
           )}
           {contextMenu.item.source_url && (
             <button
               type="button"
-              onClick={() => window.open(contextMenu.item.source_url ?? '', '_blank', 'noopener,noreferrer')}
+              onClick={() =>
+                window.open(contextMenu.item.source_url ?? '', '_blank', 'noopener,noreferrer')
+              }
               className={sidebarTheme.menuItem}
             >
               Open
@@ -1629,37 +1803,61 @@ export default function IntakeWindow() {
           {contextMenu.item.status === 'unprocessed' && (
             <button
               type="button"
-              onClick={() => openConversion(contextMenu.item, getDefaultConversionType(contextMenu.item))}
+              onClick={() =>
+                openConversion(contextMenu.item, getDefaultConversionType(contextMenu.item))
+              }
               className={sidebarTheme.menuItem}
             >
               Accept
             </button>
           )}
           {contextMenu.item.status === 'archived' ? (
-            <button type="button" onClick={() => void restoreItem(contextMenu.item)} className={sidebarTheme.menuItem}>
+            <button
+              type="button"
+              onClick={() => void restoreItem(contextMenu.item)}
+              className={sidebarTheme.menuItem}
+            >
               Restore
             </button>
           ) : (
             <>
-              <button type="button" onClick={() => openConversion(contextMenu.item, 'task')} className={sidebarTheme.menuItem}>
+              <button
+                type="button"
+                onClick={() => openConversion(contextMenu.item, 'task')}
+                className={sidebarTheme.menuItem}
+              >
                 Turn into task
               </button>
-              <button type="button" onClick={() => openConversion(contextMenu.item, 'note')} className={sidebarTheme.menuItem}>
+              <button
+                type="button"
+                onClick={() => openConversion(contextMenu.item, 'note')}
+                className={sidebarTheme.menuItem}
+              >
                 Turn into note
               </button>
               <button
                 type="button"
-                onClick={() => setSnoozeMenu({ x: contextMenu.x, y: contextMenu.y, item: contextMenu.item })}
+                onClick={() =>
+                  setSnoozeMenu({ x: contextMenu.x, y: contextMenu.y, item: contextMenu.item })
+                }
                 className={sidebarTheme.menuItem}
               >
                 Snooze
               </button>
-              <button type="button" onClick={() => void archiveItem(contextMenu.item)} className={sidebarTheme.menuItem}>
+              <button
+                type="button"
+                onClick={() => void archiveItem(contextMenu.item)}
+                className={sidebarTheme.menuItem}
+              >
                 Archive
               </button>
             </>
           )}
-          <button type="button" onClick={() => void deleteItem(contextMenu.item)} className={sidebarTheme.menuItemDanger}>
+          <button
+            type="button"
+            onClick={() => void deleteItem(contextMenu.item)}
+            className={sidebarTheme.menuItemDanger}
+          >
             Delete
           </button>
         </div>
@@ -1671,7 +1869,16 @@ export default function IntakeWindow() {
     filterMenu,
     <div className="py-2">
       <MenuSectionLabel label="Source" />
-      {['all', 'quick capture', 'browser', 'meeting', 'calendar', 'manual', 'slack later', 'email later'].map((value) => (
+      {[
+        'all',
+        'quick capture',
+        'browser',
+        'meeting',
+        'calendar',
+        'manual',
+        'slack later',
+        'email later',
+      ].map((value) => (
         <MenuOption
           key={value}
           label={value === 'all' ? 'All sources' : titleCase(value)}
@@ -1681,7 +1888,17 @@ export default function IntakeWindow() {
       ))}
       <MenuDivider />
       <MenuSectionLabel label="Type" />
-      {['all', 'task', 'note', 'event', 'reminder', 'deadline', 'project', 'milestone', 'capture'].map((value) => (
+      {[
+        'all',
+        'task',
+        'note',
+        'event',
+        'reminder',
+        'deadline',
+        'project',
+        'milestone',
+        'capture',
+      ].map((value) => (
         <MenuOption
           key={value}
           label={value === 'all' ? 'All types' : titleCase(value)}
@@ -1788,17 +2005,23 @@ export default function IntakeWindow() {
       <ToggleOption
         label="Project"
         checked={display.showProject}
-        onToggle={() => setDisplay((current) => ({ ...current, showProject: !current.showProject }))}
+        onToggle={() =>
+          setDisplay((current) => ({ ...current, showProject: !current.showProject }))
+        }
       />
       <ToggleOption
         label="Assignee"
         checked={display.showAssignee}
-        onToggle={() => setDisplay((current) => ({ ...current, showAssignee: !current.showAssignee }))}
+        onToggle={() =>
+          setDisplay((current) => ({ ...current, showAssignee: !current.showAssignee }))
+        }
       />
       <ToggleOption
         label="Created"
         checked={display.showCreated}
-        onToggle={() => setDisplay((current) => ({ ...current, showCreated: !current.showCreated }))}
+        onToggle={() =>
+          setDisplay((current) => ({ ...current, showCreated: !current.showCreated }))
+        }
       />
       <div className="mt-2 border-t border-[color:var(--ledger-border-subtle)] px-3 pt-2">
         <button
@@ -1825,19 +2048,33 @@ export default function IntakeWindow() {
         onContextMenu={(event) => event.preventDefault()}
       >
         <div className={sidebarTheme.menu} style={{ width: 240 }}>
-          <button type="button" className={sidebarTheme.menuItem} onClick={() => void snoozeItem(snoozeMenu.item, 'later-today')}>
+          <button
+            type="button"
+            className={sidebarTheme.menuItem}
+            onClick={() => void snoozeItem(snoozeMenu.item, 'later-today')}
+          >
             Later today
           </button>
-          <button type="button" className={sidebarTheme.menuItem} onClick={() => void snoozeItem(snoozeMenu.item, 'tomorrow')}>
+          <button
+            type="button"
+            className={sidebarTheme.menuItem}
+            onClick={() => void snoozeItem(snoozeMenu.item, 'tomorrow')}
+          >
             Tomorrow
           </button>
-          <button type="button" className={sidebarTheme.menuItem} onClick={() => void snoozeItem(snoozeMenu.item, 'next-week')}>
+          <button
+            type="button"
+            className={sidebarTheme.menuItem}
+            onClick={() => void snoozeItem(snoozeMenu.item, 'next-week')}
+          >
             Next week
           </button>
           <button
             type="button"
             className={sidebarTheme.menuItem}
-            onClick={() => setSnoozePicker(snoozePicker === snoozeMenu.item.id ? null : snoozeMenu.item.id)}
+            onClick={() =>
+              setSnoozePicker(snoozePicker === snoozeMenu.item.id ? null : snoozeMenu.item.id)
+            }
           >
             Pick date
           </button>
@@ -1846,7 +2083,9 @@ export default function IntakeWindow() {
               <input
                 type="date"
                 className={inboxTheme.fieldSoft}
-                onChange={(event) => void snoozeItem(snoozeMenu.item, 'pick-date', event.target.value)}
+                onChange={(event) =>
+                  void snoozeItem(snoozeMenu.item, 'pick-date', event.target.value)
+                }
               />
             </div>
           )}
@@ -1856,400 +2095,451 @@ export default function IntakeWindow() {
     );
 
   const conversionModal = draft && (
-      <ModalOverlay
-        isOpen
-        onClose={closeConversion}
-        backdropBorderRadius="inherit"
-        disablePortal
-        manageWindowChrome={false}
-        classNameContainer="w-full max-w-[620px] overflow-hidden rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-[var(--ledger-shadow)]"
-      >
-        <div className="flex h-[min(calc(100vh-4rem),700px)] min-h-0 w-full flex-col overflow-hidden">
-          <div className="flex items-start justify-between gap-4 border-b border-[color:var(--ledger-border-subtle)] px-5 py-4">
-            <div className="min-w-0">
-              <p className="text-sm font-semibold text-[var(--ledger-text-primary)]">Review item</p>
-              <h2 className="mt-1.5 truncate text-[15px] font-semibold text-[var(--ledger-text-primary)]">
-                {getDisplayTitle(draft.item)}
-              </h2>
-              <p className={`mt-1 text-sm ${inboxTheme.bodyText}`}>
-                {[getSourceLabel(draft.item), getSourceContext(draft.item), draft.item.author_name].filter(Boolean).join(' · ')}
-              </p>
-            </div>
-            <ModalCloseButton onClick={closeConversion} ariaLabel="Close convert modal" className="shrink-0" />
-          </div>
-
-          <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">
-            <div className="grid gap-3">
-              <div className="grid grid-cols-5 gap-1 rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] p-1">
-                {conversionTypes.map(({ value, label, icon: Icon }) => (
-                  <button
-                    key={value}
-                    type="button"
-                    onClick={() => setDraft((current) => (current ? { ...current, type: value } : current))}
-                    className={`inline-flex h-8 items-center justify-center gap-1.5 rounded-full px-2 text-xs font-semibold transition ${
-                      draft.type === value
-                        ? 'bg-[var(--ledger-accent)] text-white'
-                        : 'text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]'
-                    }`}
-                  >
-                    <Icon size={13} />
-                    {label}
-                  </button>
-                ))}
-              </div>
-
-              <label className="block space-y-1">
-                <span className={`text-xs font-medium ${inboxTheme.mutedText}`}>Title</span>
-                <input value={draftTitle} onChange={(event) => setDraftTitle(event.target.value)} className={inboxTheme.field} />
-              </label>
-
-              {draft.type === 'project' ? (
-                <div className="grid gap-3">
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <label className="block space-y-1">
-                      <span className={`text-xs font-medium ${inboxTheme.mutedText}`}>Workspace</span>
-                      <input
-                        value={activeWorkspace?.name ?? 'Current workspace'}
-                        readOnly
-                        className="h-10 w-full rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 text-sm text-[var(--ledger-text-secondary)] outline-none"
-                      />
-                    </label>
-                    <label className="block space-y-1">
-                      <span className={`text-xs font-medium ${inboxTheme.mutedText}`}>Status</span>
-                      <div className="relative">
-                        <select
-                          value={projectStatus}
-                          onChange={(event) => setProjectStatus(event.target.value)}
-                          className={inboxTheme.select}
-                        >
-                          <option value="not_started">Not started</option>
-                          <option value="in_progress">In progress</option>
-                          <option value="paused">Paused</option>
-                          <option value="completed">Completed</option>
-                        </select>
-                        <ChevronDown
-                          size={14}
-                          className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[var(--ledger-text-muted)]"
-                        />
-                      </div>
-                    </label>
-                  </div>
-
-                  <label className="block space-y-1">
-                    <span className={`text-xs font-medium ${inboxTheme.mutedText}`}>Brief</span>
-                    <textarea
-                      value={projectBrief}
-                      onChange={(event) => setProjectBrief(event.target.value)}
-                      rows={4}
-                      className="w-full resize-y rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] px-3 py-2.5 text-sm leading-6 text-[var(--ledger-text-primary)] outline-none transition focus:border-[color:var(--ledger-border-strong)]"
-                    />
-                  </label>
-
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <label className="block space-y-1">
-                      <span className={`text-xs font-medium ${inboxTheme.mutedText}`}>Start date</span>
-                      <input
-                        type="date"
-                        value={projectStartDate}
-                        onChange={(event) => setProjectStartDate(event.target.value)}
-                        className={inboxTheme.field}
-                      />
-                    </label>
-                    <label className="block space-y-1">
-                      <span className={`text-xs font-medium ${inboxTheme.mutedText}`}>End date</span>
-                      <input
-                        type="date"
-                        value={projectEndDate}
-                        onChange={(event) => setProjectEndDate(event.target.value)}
-                        className={inboxTheme.field}
-                      />
-                    </label>
-                  </div>
-
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <label className="block space-y-1">
-                      <span className={`text-xs font-medium ${inboxTheme.mutedText}`}>Owner team</span>
-                      <div className="relative">
-                        <select
-                          value={projectOwnerTeamId}
-                          onChange={(event) => setProjectOwnerTeamId(event.target.value)}
-                          className={inboxTheme.select}
-                        >
-                          <option value="">No team</option>
-                          {workspaceTeams.map((team) => (
-                            <option key={team.id} value={team.id}>
-                              {team.name}
-                            </option>
-                          ))}
-                        </select>
-                        <ChevronDown
-                          size={14}
-                          className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[var(--ledger-text-muted)]"
-                        />
-                      </div>
-                    </label>
-                    <label className="block space-y-1">
-                      <span className={`text-xs font-medium ${inboxTheme.mutedText}`}>Lead</span>
-                      <div className="relative">
-                        <select
-                          value={projectLeadId}
-                          onChange={(event) => setProjectLeadId(event.target.value)}
-                          className={inboxTheme.select}
-                        >
-                          <option value="">No lead</option>
-                          {workspaceMembers.map((member) => (
-                            <option key={member.id} value={member.id}>
-                              {member.name}
-                            </option>
-                          ))}
-                        </select>
-                        <ChevronDown
-                          size={14}
-                          className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[var(--ledger-text-muted)]"
-                        />
-                      </div>
-                    </label>
-                  </div>
-                </div>
-              ) : (
-                <>
-                  <label className="block space-y-1">
-                    <span className={`text-xs font-medium ${inboxTheme.mutedText}`}>{draft.type === 'note' ? 'Content' : 'Notes'}</span>
-                    <textarea
-                      value={draftBody}
-                      onChange={(event) => setDraftBody(event.target.value)}
-                      rows={draft.type === 'note' ? 5 : 4}
-                      className="w-full resize-y rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] px-3 py-2.5 text-sm leading-6 text-[var(--ledger-text-primary)] outline-none transition focus:border-[color:var(--ledger-border-strong)]"
-                    />
-                  </label>
-
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <label className="block space-y-1">
-                      <span className={`text-xs font-medium ${inboxTheme.mutedText}`}>Workspace</span>
-                      <input
-                        value={activeWorkspace?.name ?? 'Current workspace'}
-                        readOnly
-                        className="h-10 w-full rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 text-sm text-[var(--ledger-text-secondary)] outline-none"
-                      />
-                    </label>
-                    <label className="block space-y-1">
-                      <span className={`text-xs font-medium ${inboxTheme.mutedText}`}>Project</span>
-                      <div className="relative">
-                        <select
-                          value={selectedProjectId}
-                          onChange={(event) => setSelectedProjectId(event.target.value)}
-                          className={inboxTheme.select}
-                        >
-                          <option value="">No project</option>
-                          {projects.map((project) => (
-                            <option key={project.id} value={project.id}>
-                              {project.name || project.title || 'Untitled project'}
-                            </option>
-                          ))}
-                        </select>
-                        <ChevronDown
-                          size={14}
-                          className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[var(--ledger-text-muted)]"
-                        />
-                      </div>
-                    </label>
-                  </div>
-
-                  {draft.type === 'note' && (
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      <label className="block space-y-1">
-                        <span className={`text-xs font-medium ${inboxTheme.mutedText}`}>Section</span>
-                        <div className="relative">
-                          <select
-                            value={selectedNoteSectionId}
-                            onChange={(event) => setSelectedNoteSectionId(event.target.value)}
-                            className={inboxTheme.select}
-                          >
-                            <option value="">No section</option>
-                            {noteSections.map((section) => (
-                              <option key={section.id} value={section.id}>
-                                {section.name || 'Section'}
-                              </option>
-                            ))}
-                          </select>
-                          <ChevronDown
-                            size={14}
-                            className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[var(--ledger-text-muted)]"
-                          />
-                        </div>
-                      </label>
-                    </div>
-                  )}
-
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <label className="block space-y-1">
-                      <span className={`text-xs font-medium ${inboxTheme.mutedText}`}>Assignee</span>
-                      <div className="relative">
-                        <select
-                          value={selectedAssigneeId}
-                          onChange={(event) => setSelectedAssigneeId(event.target.value)}
-                          className={inboxTheme.select}
-                        >
-                          <option value="">No assignee</option>
-                          {workspaceMembers.map((member) => (
-                            <option key={member.id} value={member.id}>
-                              {member.name}
-                            </option>
-                          ))}
-                        </select>
-                        <ChevronDown
-                          size={14}
-                          className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[var(--ledger-text-muted)]"
-                        />
-                      </div>
-                    </label>
-                    <label className="block space-y-1">
-                      <span className={`text-xs font-medium ${inboxTheme.mutedText}`}>Team</span>
-                      <div className="relative">
-                        <select
-                          value={selectedTeamId}
-                          onChange={(event) => setSelectedTeamId(event.target.value)}
-                          className={inboxTheme.select}
-                        >
-                          <option value="">No team</option>
-                          {workspaceTeams.map((team) => (
-                            <option key={team.id} value={team.id}>
-                              {team.name}
-                            </option>
-                          ))}
-                        </select>
-                        <ChevronDown
-                          size={14}
-                          className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[var(--ledger-text-muted)]"
-                        />
-                      </div>
-                    </label>
-                  </div>
-
-                  {(draft.type === 'reminder' || draft.type === 'event') && (
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      <label className="block space-y-1">
-                        <span className={`text-xs font-medium ${inboxTheme.mutedText}`}>Calendar</span>
-                        <div className="relative">
-                          <select
-                            value={selectedCalendarId}
-                            onChange={(event) => setSelectedCalendarId(event.target.value)}
-                            className={inboxTheme.select}
-                          >
-                            <option value="">Default calendar</option>
-                            {calendars.map((calendar) => (
-                              <option key={calendar.id} value={calendar.id}>
-                                {calendar.name || 'Calendar'}
-                              </option>
-                            ))}
-                          </select>
-                          <ChevronDown
-                            size={14}
-                            className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[var(--ledger-text-muted)]"
-                          />
-                        </div>
-                      </label>
-                      <label className="block space-y-1">
-                        <span className={`text-xs font-medium ${inboxTheme.mutedText}`}>Linked note</span>
-                        <div className="relative">
-                          <select
-                            value={selectedNoteId}
-                            onChange={(event) => setSelectedNoteId(event.target.value)}
-                            className={inboxTheme.select}
-                          >
-                            <option value="">No note</option>
-                            {notes.map((note) => (
-                              <option key={note.id} value={note.id}>
-                                {note.title || 'Untitled note'}
-                              </option>
-                            ))}
-                          </select>
-                          <ChevronDown
-                            size={14}
-                            className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[var(--ledger-text-muted)]"
-                          />
-                        </div>
-                      </label>
-                    </div>
-                  )}
-
-                  {draft.type === 'task' && (
-                    <label className="inline-flex items-center gap-2 text-sm font-medium text-[var(--ledger-text-secondary)]">
-                      <input
-                        type="checkbox"
-                        checked={showInToday}
-                        onChange={(event) => setShowInToday(event.target.checked)}
-                        className="h-4 w-4 rounded border-[color:var(--ledger-border-subtle)] text-[var(--ledger-accent)] focus:ring-[var(--ledger-accent)]"
-                      />
-                      Mark as Today
-                    </label>
-                  )}
-
-                  {draft.type === 'reminder' && (
-                    <div className="grid grid-cols-2 gap-3">
-                      <label className="block space-y-1">
-                        <span className={`text-xs font-medium ${inboxTheme.mutedText}`}>Remind on</span>
-                        <input type="date" value={reminderDate} onChange={(event) => setReminderDate(event.target.value)} className={inboxTheme.field} />
-                      </label>
-                      <label className="block space-y-1">
-                        <span className={`text-xs font-medium ${inboxTheme.mutedText}`}>Time</span>
-                        <input type="time" value={reminderTime} onChange={(event) => setReminderTime(event.target.value)} className={inboxTheme.field} />
-                      </label>
-                    </div>
-                  )}
-
-                  {draft.type === 'event' && (
-                    <div className="grid gap-3 sm:grid-cols-3">
-                      <label className="block space-y-1">
-                        <span className={`text-xs font-medium ${inboxTheme.mutedText}`}>Date</span>
-                        <input type="date" value={eventDate} onChange={(event) => setEventDate(event.target.value)} className={inboxTheme.field} />
-                      </label>
-                      <label className="block space-y-1">
-                        <span className={`text-xs font-medium ${inboxTheme.mutedText}`}>Start</span>
-                        <input type="time" value={eventTime} onChange={(event) => setEventTime(event.target.value)} className={inboxTheme.field} />
-                      </label>
-                      <label className="block space-y-1">
-                        <span className={`text-xs font-medium ${inboxTheme.mutedText}`}>Minutes</span>
-                        <input type="number" min="15" step="15" value={eventDuration} onChange={(event) => setEventDuration(event.target.value)} className={inboxTheme.field} />
-                      </label>
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
-          </div>
-
-          <div className={inboxTheme.footer}>
-            <p className={`text-xs ${inboxTheme.mutedText}`}>
-              {draft.type === 'project'
-                ? 'Project context is optional, but title is required.'
-                : draft.type === 'reminder'
-                ? 'Date and time are required for reminders.'
-                : draft.type === 'event'
-                  ? 'Date and start time are required for events.'
-                  : 'Source context stays attached in the notes.'}
+    <ModalOverlay
+      isOpen
+      onClose={closeConversion}
+      backdropBorderRadius="inherit"
+      disablePortal
+      manageWindowChrome={false}
+      classNameContainer="w-full max-w-[620px] overflow-hidden rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-[var(--ledger-shadow)]"
+    >
+      <div className="flex h-[min(calc(100vh-4rem),700px)] min-h-0 w-full flex-col overflow-hidden">
+        <div className="flex items-start justify-between gap-4 border-b border-[color:var(--ledger-border-subtle)] px-5 py-4">
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-[var(--ledger-text-primary)]">Review item</p>
+            <h2 className="mt-1.5 truncate text-[15px] font-semibold text-[var(--ledger-text-primary)]">
+              {getDisplayTitle(draft.item)}
+            </h2>
+            <p className={`mt-1 text-sm ${inboxTheme.bodyText}`}>
+              {[getSourceLabel(draft.item), getSourceContext(draft.item), draft.item.author_name]
+                .filter(Boolean)
+                .join(' · ')}
             </p>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={closeConversion}
-                className="rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] px-4 py-2 text-sm font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={() => void submitConversion()}
-                disabled={isConverting}
-                className="rounded-full bg-[var(--ledger-accent)] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[var(--ledger-accent-hover)] disabled:opacity-60"
-              >
-                {isConverting ? 'Creating...' : `Create ${draft.type}`}
-              </button>
+          </div>
+          <ModalCloseButton
+            onClick={closeConversion}
+            ariaLabel="Close convert modal"
+            className="shrink-0"
+          />
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">
+          <div className="grid gap-3">
+            <div className="grid grid-cols-5 gap-1 rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] p-1">
+              {conversionTypes.map(({ value, label, icon: Icon }) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() =>
+                    setDraft((current) => (current ? { ...current, type: value } : current))
+                  }
+                  className={`inline-flex h-8 items-center justify-center gap-1.5 rounded-full px-2 text-xs font-semibold transition ${
+                    draft.type === value
+                      ? 'bg-[var(--ledger-accent)] text-white'
+                      : 'text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]'
+                  }`}
+                >
+                  <Icon size={13} />
+                  {label}
+                </button>
+              ))}
             </div>
+
+            <label className="block space-y-1">
+              <span className={`text-xs font-medium ${inboxTheme.mutedText}`}>Title</span>
+              <input
+                value={draftTitle}
+                onChange={(event) => setDraftTitle(event.target.value)}
+                className={inboxTheme.field}
+              />
+            </label>
+
+            {draft.type === 'project' ? (
+              <div className="grid gap-3">
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <label className="block space-y-1">
+                    <span className={`text-xs font-medium ${inboxTheme.mutedText}`}>Workspace</span>
+                    <input
+                      value={activeWorkspace?.name ?? 'Current workspace'}
+                      readOnly
+                      className="h-10 w-full rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 text-sm text-[var(--ledger-text-secondary)] outline-none"
+                    />
+                  </label>
+                  <label className="block space-y-1">
+                    <span className={`text-xs font-medium ${inboxTheme.mutedText}`}>Status</span>
+                    <div className="relative">
+                      <select
+                        value={projectStatus}
+                        onChange={(event) => setProjectStatus(event.target.value)}
+                        className={inboxTheme.select}
+                      >
+                        <option value="not_started">Not started</option>
+                        <option value="in_progress">In progress</option>
+                        <option value="paused">Paused</option>
+                        <option value="completed">Completed</option>
+                      </select>
+                      <ChevronDown
+                        size={14}
+                        className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[var(--ledger-text-muted)]"
+                      />
+                    </div>
+                  </label>
+                </div>
+
+                <label className="block space-y-1">
+                  <span className={`text-xs font-medium ${inboxTheme.mutedText}`}>Brief</span>
+                  <textarea
+                    value={projectBrief}
+                    onChange={(event) => setProjectBrief(event.target.value)}
+                    rows={4}
+                    className="w-full resize-y rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] px-3 py-2.5 text-sm leading-6 text-[var(--ledger-text-primary)] outline-none transition focus:border-[color:var(--ledger-border-strong)]"
+                  />
+                </label>
+
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <label className="block space-y-1">
+                    <span className={`text-xs font-medium ${inboxTheme.mutedText}`}>
+                      Start date
+                    </span>
+                    <input
+                      type="date"
+                      value={projectStartDate}
+                      onChange={(event) => setProjectStartDate(event.target.value)}
+                      className={inboxTheme.field}
+                    />
+                  </label>
+                  <label className="block space-y-1">
+                    <span className={`text-xs font-medium ${inboxTheme.mutedText}`}>End date</span>
+                    <input
+                      type="date"
+                      value={projectEndDate}
+                      onChange={(event) => setProjectEndDate(event.target.value)}
+                      className={inboxTheme.field}
+                    />
+                  </label>
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <label className="block space-y-1">
+                    <span className={`text-xs font-medium ${inboxTheme.mutedText}`}>
+                      Owner team
+                    </span>
+                    <div className="relative">
+                      <select
+                        value={projectOwnerTeamId}
+                        onChange={(event) => setProjectOwnerTeamId(event.target.value)}
+                        className={inboxTheme.select}
+                      >
+                        <option value="">No team</option>
+                        {workspaceTeams.map((team) => (
+                          <option key={team.id} value={team.id}>
+                            {team.name}
+                          </option>
+                        ))}
+                      </select>
+                      <ChevronDown
+                        size={14}
+                        className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[var(--ledger-text-muted)]"
+                      />
+                    </div>
+                  </label>
+                  <label className="block space-y-1">
+                    <span className={`text-xs font-medium ${inboxTheme.mutedText}`}>Lead</span>
+                    <div className="relative">
+                      <select
+                        value={projectLeadId}
+                        onChange={(event) => setProjectLeadId(event.target.value)}
+                        className={inboxTheme.select}
+                      >
+                        <option value="">No lead</option>
+                        {workspaceMembers.map((member) => (
+                          <option key={member.id} value={member.id}>
+                            {member.name}
+                          </option>
+                        ))}
+                      </select>
+                      <ChevronDown
+                        size={14}
+                        className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[var(--ledger-text-muted)]"
+                      />
+                    </div>
+                  </label>
+                </div>
+              </div>
+            ) : (
+              <>
+                <label className="block space-y-1">
+                  <span className={`text-xs font-medium ${inboxTheme.mutedText}`}>
+                    {draft.type === 'note' ? 'Content' : 'Notes'}
+                  </span>
+                  <textarea
+                    value={draftBody}
+                    onChange={(event) => setDraftBody(event.target.value)}
+                    rows={draft.type === 'note' ? 5 : 4}
+                    className="w-full resize-y rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] px-3 py-2.5 text-sm leading-6 text-[var(--ledger-text-primary)] outline-none transition focus:border-[color:var(--ledger-border-strong)]"
+                  />
+                </label>
+
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <label className="block space-y-1">
+                    <span className={`text-xs font-medium ${inboxTheme.mutedText}`}>Workspace</span>
+                    <input
+                      value={activeWorkspace?.name ?? 'Current workspace'}
+                      readOnly
+                      className="h-10 w-full rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 text-sm text-[var(--ledger-text-secondary)] outline-none"
+                    />
+                  </label>
+                  <label className="block space-y-1">
+                    <span className={`text-xs font-medium ${inboxTheme.mutedText}`}>Project</span>
+                    <div className="relative">
+                      <select
+                        value={selectedProjectId}
+                        onChange={(event) => setSelectedProjectId(event.target.value)}
+                        className={inboxTheme.select}
+                      >
+                        <option value="">No project</option>
+                        {projects.map((project) => (
+                          <option key={project.id} value={project.id}>
+                            {project.name || project.title || 'Untitled project'}
+                          </option>
+                        ))}
+                      </select>
+                      <ChevronDown
+                        size={14}
+                        className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[var(--ledger-text-muted)]"
+                      />
+                    </div>
+                  </label>
+                </div>
+
+                {draft.type === 'note' && (
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <label className="block space-y-1">
+                      <span className={`text-xs font-medium ${inboxTheme.mutedText}`}>Section</span>
+                      <div className="relative">
+                        <select
+                          value={selectedNoteSectionId}
+                          onChange={(event) => setSelectedNoteSectionId(event.target.value)}
+                          className={inboxTheme.select}
+                        >
+                          <option value="">No section</option>
+                          {noteSections.map((section) => (
+                            <option key={section.id} value={section.id}>
+                              {section.name || 'Section'}
+                            </option>
+                          ))}
+                        </select>
+                        <ChevronDown
+                          size={14}
+                          className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[var(--ledger-text-muted)]"
+                        />
+                      </div>
+                    </label>
+                  </div>
+                )}
+
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <label className="block space-y-1">
+                    <span className={`text-xs font-medium ${inboxTheme.mutedText}`}>Assignee</span>
+                    <div className="relative">
+                      <select
+                        value={selectedAssigneeId}
+                        onChange={(event) => setSelectedAssigneeId(event.target.value)}
+                        className={inboxTheme.select}
+                      >
+                        <option value="">No assignee</option>
+                        {workspaceMembers.map((member) => (
+                          <option key={member.id} value={member.id}>
+                            {member.name}
+                          </option>
+                        ))}
+                      </select>
+                      <ChevronDown
+                        size={14}
+                        className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[var(--ledger-text-muted)]"
+                      />
+                    </div>
+                  </label>
+                  <label className="block space-y-1">
+                    <span className={`text-xs font-medium ${inboxTheme.mutedText}`}>Team</span>
+                    <div className="relative">
+                      <select
+                        value={selectedTeamId}
+                        onChange={(event) => setSelectedTeamId(event.target.value)}
+                        className={inboxTheme.select}
+                      >
+                        <option value="">No team</option>
+                        {workspaceTeams.map((team) => (
+                          <option key={team.id} value={team.id}>
+                            {team.name}
+                          </option>
+                        ))}
+                      </select>
+                      <ChevronDown
+                        size={14}
+                        className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[var(--ledger-text-muted)]"
+                      />
+                    </div>
+                  </label>
+                </div>
+
+                {(draft.type === 'reminder' || draft.type === 'event') && (
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <label className="block space-y-1">
+                      <span className={`text-xs font-medium ${inboxTheme.mutedText}`}>
+                        Calendar
+                      </span>
+                      <div className="relative">
+                        <select
+                          value={selectedCalendarId}
+                          onChange={(event) => setSelectedCalendarId(event.target.value)}
+                          className={inboxTheme.select}
+                        >
+                          <option value="">Default calendar</option>
+                          {calendars.map((calendar) => (
+                            <option key={calendar.id} value={calendar.id}>
+                              {calendar.name || 'Calendar'}
+                            </option>
+                          ))}
+                        </select>
+                        <ChevronDown
+                          size={14}
+                          className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[var(--ledger-text-muted)]"
+                        />
+                      </div>
+                    </label>
+                    <label className="block space-y-1">
+                      <span className={`text-xs font-medium ${inboxTheme.mutedText}`}>
+                        Linked note
+                      </span>
+                      <div className="relative">
+                        <select
+                          value={selectedNoteId}
+                          onChange={(event) => setSelectedNoteId(event.target.value)}
+                          className={inboxTheme.select}
+                        >
+                          <option value="">No note</option>
+                          {notes.map((note) => (
+                            <option key={note.id} value={note.id}>
+                              {note.title || 'Untitled note'}
+                            </option>
+                          ))}
+                        </select>
+                        <ChevronDown
+                          size={14}
+                          className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[var(--ledger-text-muted)]"
+                        />
+                      </div>
+                    </label>
+                  </div>
+                )}
+
+                {draft.type === 'task' && (
+                  <label className="inline-flex items-center gap-2 text-sm font-medium text-[var(--ledger-text-secondary)]">
+                    <input
+                      type="checkbox"
+                      checked={showInToday}
+                      onChange={(event) => setShowInToday(event.target.checked)}
+                      className="h-4 w-4 rounded border-[color:var(--ledger-border-subtle)] text-[var(--ledger-accent)] focus:ring-[var(--ledger-accent)]"
+                    />
+                    Mark as Today
+                  </label>
+                )}
+
+                {draft.type === 'reminder' && (
+                  <div className="grid grid-cols-2 gap-3">
+                    <label className="block space-y-1">
+                      <span className={`text-xs font-medium ${inboxTheme.mutedText}`}>
+                        Remind on
+                      </span>
+                      <input
+                        type="date"
+                        value={reminderDate}
+                        onChange={(event) => setReminderDate(event.target.value)}
+                        className={inboxTheme.field}
+                      />
+                    </label>
+                    <label className="block space-y-1">
+                      <span className={`text-xs font-medium ${inboxTheme.mutedText}`}>Time</span>
+                      <input
+                        type="time"
+                        value={reminderTime}
+                        onChange={(event) => setReminderTime(event.target.value)}
+                        className={inboxTheme.field}
+                      />
+                    </label>
+                  </div>
+                )}
+
+                {draft.type === 'event' && (
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    <label className="block space-y-1">
+                      <span className={`text-xs font-medium ${inboxTheme.mutedText}`}>Date</span>
+                      <input
+                        type="date"
+                        value={eventDate}
+                        onChange={(event) => setEventDate(event.target.value)}
+                        className={inboxTheme.field}
+                      />
+                    </label>
+                    <label className="block space-y-1">
+                      <span className={`text-xs font-medium ${inboxTheme.mutedText}`}>Start</span>
+                      <input
+                        type="time"
+                        value={eventTime}
+                        onChange={(event) => setEventTime(event.target.value)}
+                        className={inboxTheme.field}
+                      />
+                    </label>
+                    <label className="block space-y-1">
+                      <span className={`text-xs font-medium ${inboxTheme.mutedText}`}>Minutes</span>
+                      <input
+                        type="number"
+                        min="15"
+                        step="15"
+                        value={eventDuration}
+                        onChange={(event) => setEventDuration(event.target.value)}
+                        className={inboxTheme.field}
+                      />
+                    </label>
+                  </div>
+                )}
+              </>
+            )}
           </div>
         </div>
-      </ModalOverlay>
-    );
+
+        <div className={inboxTheme.footer}>
+          <p className={`text-xs ${inboxTheme.mutedText}`}>
+            {draft.type === 'project'
+              ? 'Project context is optional, but title is required.'
+              : draft.type === 'reminder'
+              ? 'Date and time are required for reminders.'
+              : draft.type === 'event'
+              ? 'Date and start time are required for events.'
+              : 'Source context stays attached in the notes.'}
+          </p>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={closeConversion}
+              className="rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] px-4 py-2 text-sm font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => void submitConversion()}
+              disabled={isConverting}
+              className="rounded-full bg-[var(--ledger-accent)] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[var(--ledger-accent-hover)] disabled:opacity-60"
+            >
+              {isConverting ? 'Creating...' : `Create ${draft.type}`}
+            </button>
+          </div>
+        </div>
+      </div>
+    </ModalOverlay>
+  );
 
   const selectedItemSourceLabel = selectedItem ? getInspectorSourceLabel(selectedItem) : '';
   const selectedItemMetadata = selectedItem ? getInspectorMetadata(selectedItem) : [];
@@ -2258,52 +2548,60 @@ export default function IntakeWindow() {
     selectedItem && isValidExternalUrl(selectedItem.source_url) ? selectedItem.source_url : null;
   const selectedItemStatusLabel = selectedItem ? getStatusLabel(selectedItem.status) : '';
   const selectedItemTypeLabel = selectedItem ? getTypeDisplayLabel(selectedItem) : '';
-  const selectedItemOpenAction = selectedItem && selectedItem.status === 'converted'
-    ? (() => {
-        const convertedType = (selectedItem.converted_type || selectedItem.suggested_type || getDefaultConversionType(selectedItem)) as ConversionType;
-        const convertedId = selectedItem.converted_id ?? '';
-        if (!convertedId) return null;
-        if (convertedType === 'project') {
-          return {
-            label: 'Open created item',
-            onClick: () => void window.desktopWindow?.toggleModule('projects', { focusProjectId: convertedId }),
-          };
-        }
-        if (convertedType === 'note') {
-          return {
-            label: 'Open created item',
-            onClick: () => void window.desktopWindow?.toggleModule('notes', { focusNoteId: convertedId }),
-          };
-        }
-        if (convertedType === 'task') {
-          return {
-            label: 'Open created item',
-            onClick: () => void window.desktopWindow?.toggleModule('dashboard', { focusTaskId: convertedId }),
-          };
-        }
-        if (convertedType === 'event') {
-          return {
-            label: 'Open created item',
-            onClick: () =>
-              void window.desktopWindow?.openModule('calendar', {
-                kind: 'calendar',
-                focusContext: `focus-event:${convertedId}`,
-              } as any),
-          };
-        }
-        if (convertedType === 'reminder') {
-          return {
-            label: 'Open created item',
-            onClick: () =>
-              void window.desktopWindow?.openModule('calendar', {
-                kind: 'calendar',
-                focusContext: `focus-reminder:${convertedId}`,
-              } as any),
-          };
-        }
-        return null;
-      })()
-    : null;
+  const selectedItemOpenAction =
+    selectedItem && selectedItem.status === 'converted'
+      ? (() => {
+          const convertedType = (selectedItem.converted_type ||
+            selectedItem.suggested_type ||
+            getDefaultConversionType(selectedItem)) as ConversionType;
+          const convertedId = selectedItem.converted_id ?? '';
+          if (!convertedId) return null;
+          if (convertedType === 'project') {
+            return {
+              label: 'Open created item',
+              onClick: () =>
+                void window.desktopWindow?.toggleModule('projects', {
+                  focusProjectId: convertedId,
+                }),
+            };
+          }
+          if (convertedType === 'note') {
+            return {
+              label: 'Open created item',
+              onClick: () =>
+                void window.desktopWindow?.toggleModule('notes', { focusNoteId: convertedId }),
+            };
+          }
+          if (convertedType === 'task') {
+            return {
+              label: 'Open created item',
+              onClick: () =>
+                void window.desktopWindow?.toggleModule('dashboard', { focusTaskId: convertedId }),
+            };
+          }
+          if (convertedType === 'event') {
+            return {
+              label: 'Open created item',
+              onClick: () =>
+                void window.desktopWindow?.openModule('calendar', {
+                  kind: 'calendar',
+                  focusContext: `focus-event:${convertedId}`,
+                } as any),
+            };
+          }
+          if (convertedType === 'reminder') {
+            return {
+              label: 'Open created item',
+              onClick: () =>
+                void window.desktopWindow?.openModule('calendar', {
+                  kind: 'calendar',
+                  focusContext: `focus-reminder:${convertedId}`,
+                } as any),
+            };
+          }
+          return null;
+        })()
+      : null;
   const selectedItemPrimaryAction: InspectorAction | null = selectedItem
     ? selectedItem.status === 'archived'
       ? {
@@ -2371,15 +2669,21 @@ export default function IntakeWindow() {
       }
     : null;
   const selectedItemPrimaryLoading = Boolean(
-    selectedItemPrimaryAction && 'loading' in selectedItemPrimaryAction && selectedItemPrimaryAction.loading
+    selectedItemPrimaryAction &&
+      'loading' in selectedItemPrimaryAction &&
+      selectedItemPrimaryAction.loading
   );
   const selectedItemPrimaryDisabled = Boolean(
-    selectedItemPrimaryAction && 'disabled' in selectedItemPrimaryAction && selectedItemPrimaryAction.disabled
+    selectedItemPrimaryAction &&
+      'disabled' in selectedItemPrimaryAction &&
+      selectedItemPrimaryAction.disabled
   );
   const selectedItemTypeBucket = selectedItem ? getItemTypeBucket(selectedItem) : null;
   const selectedItemPlacementRows = selectedItem
     ? (() => {
-        const rows: Array<{ label: string; value: string }> = [{ label: 'Type', value: selectedItemTypeLabel }];
+        const rows: Array<{ label: string; value: string }> = [
+          { label: 'Type', value: selectedItemTypeLabel },
+        ];
         if (selectedItemTypeBucket === 'project') {
           rows.push(
             { label: 'Owner', value: selectedItemPlacement?.owner ?? 'Not suggested' },
@@ -2436,16 +2740,22 @@ export default function IntakeWindow() {
         onToggleFullscreen={() => window.desktopWindow?.toggleModuleFullscreen('inbox')}
         compact
         showBodyHeader={false}
-        stripLeadingActions={(
+        stripLeadingActions={
           <div className="flex min-w-0 items-center gap-2">
             {intakeStatusTabs}
             {intakeFilterDisplayControls}
           </div>
-        )}
+        }
         globalActions={
           <div className="flex items-center gap-1.5">
             <ModuleHeaderStripAction
-              icon={refreshing ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+              icon={
+                refreshing ? (
+                  <Loader2 size={12} className="animate-spin" />
+                ) : (
+                  <RefreshCw size={12} />
+                )
+              }
               onClick={() => void loadInbox(true, { force: true })}
               title="Refresh Intake"
               ariaLabel="Refresh Intake"
@@ -2467,7 +2777,10 @@ export default function IntakeWindow() {
             {isLoading ? (
               <div className="flex h-full items-center justify-center">
                 <div className="text-center">
-                  <Loader2 size={20} className="mx-auto mb-2 animate-spin text-[var(--ledger-text-muted)]" />
+                  <Loader2
+                    size={20}
+                    className="mx-auto mb-2 animate-spin text-[var(--ledger-text-muted)]"
+                  />
                   <p className={`text-sm ${inboxTheme.mutedText}`}>Loading Intake...</p>
                 </div>
               </div>
@@ -2489,8 +2802,12 @@ export default function IntakeWindow() {
                 <section className="min-h-0 overflow-hidden bg-[var(--ledger-surface-card)]">
                   <div className="flex h-12 items-center justify-between gap-3 border-b border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-4">
                     <div className="flex items-baseline gap-2">
-                      <span className="text-sm font-medium text-[var(--ledger-text-primary)]">Queue</span>
-                      <span className="text-sm text-[var(--ledger-text-muted)]">{filteredItems.length}</span>
+                      <span className="text-sm font-medium text-[var(--ledger-text-primary)]">
+                        Queue
+                      </span>
+                      <span className="text-sm text-[var(--ledger-text-muted)]">
+                        {filteredItems.length}
+                      </span>
                     </div>
                     {intakeSearchControl}
                   </div>
@@ -2507,8 +2824,8 @@ export default function IntakeWindow() {
                             {searchQuery.trim()
                               ? 'No search results.'
                               : activeStatus === 'unprocessed'
-                                ? 'No items need review.'
-                                : `No ${getStatusLabel(activeStatus).toLowerCase()} items.`}
+                              ? 'No items need review.'
+                              : `No ${getStatusLabel(activeStatus).toLowerCase()} items.`}
                           </p>
                           <p className="mt-1 text-sm text-[var(--ledger-text-muted)]">
                             {searchQuery.trim()
@@ -2523,15 +2840,23 @@ export default function IntakeWindow() {
 
                 <aside className="flex min-h-0 flex-col overflow-hidden border-l border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-none">
                   <div className="sticky top-0 z-10 flex h-12 items-center justify-between border-b border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-4">
-                    <span className="text-sm font-medium text-[var(--ledger-text-primary)]">Selected item</span>
-                    {selectedItem && <span className="text-xs text-[var(--ledger-text-muted)]">{selectedItemStatusLabel}</span>}
+                    <span className="text-sm font-medium text-[var(--ledger-text-primary)]">
+                      Selected item
+                    </span>
+                    {selectedItem && (
+                      <span className="text-xs text-[var(--ledger-text-muted)]">
+                        {selectedItemStatusLabel}
+                      </span>
+                    )}
                   </div>
 
                   <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
                     {selectedItem ? (
                       <div className="space-y-5">
                         <div>
-                          <p className={inboxTheme.inspectorLabel}>{selectedItemSourceLabel || 'Intake item'}</p>
+                          <p className={inboxTheme.inspectorLabel}>
+                            {selectedItemSourceLabel || 'Intake item'}
+                          </p>
                           <div className="mt-1 flex items-start justify-between gap-3">
                             <h2 className="min-w-0 flex-1 text-[15px] font-semibold leading-6 text-[var(--ledger-text-primary)]">
                               {getDisplayTitle(selectedItem)}
@@ -2541,7 +2866,9 @@ export default function IntakeWindow() {
                             </span>
                           </div>
                           {selectedItemMetadata.length > 0 && (
-                            <p className="mt-1 text-xs text-[var(--ledger-text-muted)]">{selectedItemMetadata.join(' · ')}</p>
+                            <p className="mt-1 text-xs text-[var(--ledger-text-muted)]">
+                              {selectedItemMetadata.join(' · ')}
+                            </p>
                           )}
                         </div>
 
@@ -2553,7 +2880,9 @@ export default function IntakeWindow() {
                           {selectedItemSourceUrl ? (
                             <button
                               type="button"
-                              onClick={() => window.open(selectedItemSourceUrl, '_blank', 'noopener,noreferrer')}
+                              onClick={() =>
+                                window.open(selectedItemSourceUrl, '_blank', 'noopener,noreferrer')
+                              }
                               className="inline-flex items-center gap-1.5 text-xs font-medium text-[var(--ledger-accent)] transition hover:text-[var(--ledger-accent-hover)]"
                             >
                               <ExternalLink size={12} />
@@ -2577,7 +2906,9 @@ export default function IntakeWindow() {
                           <div className="mx-auto mb-3 flex h-9 w-9 items-center justify-center rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] text-[var(--ledger-text-muted)]">
                             <Inbox size={15} />
                           </div>
-                          <p className="text-sm font-medium text-[var(--ledger-text-primary)]">Select an item to review.</p>
+                          <p className="text-sm font-medium text-[var(--ledger-text-primary)]">
+                            Select an item to review.
+                          </p>
                         </div>
                       </div>
                     )}
@@ -2595,7 +2926,11 @@ export default function IntakeWindow() {
                               disabled={action.disabled}
                               className="inline-flex h-8 items-center justify-center rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] px-3 text-xs font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] disabled:cursor-not-allowed disabled:opacity-60"
                             >
-                              {action.loading ? <Loader2 size={11} className="animate-spin" /> : action.label}
+                              {action.loading ? (
+                                <Loader2 size={11} className="animate-spin" />
+                              ) : (
+                                action.label
+                              )}
                             </button>
                           ))}
                           {selectedItemDangerAction && (
@@ -2605,7 +2940,11 @@ export default function IntakeWindow() {
                               disabled={selectedItemDangerAction.disabled}
                               className="inline-flex h-8 items-center justify-center rounded-full border border-[color:rgba(217,45,32,0.18)] bg-[color:rgba(217,45,32,0.08)] px-3 text-xs font-medium text-[var(--ledger-danger)] transition hover:bg-[color:rgba(217,45,32,0.12)] disabled:cursor-not-allowed disabled:opacity-60"
                             >
-                              {selectedItemDangerAction.loading ? <Loader2 size={11} className="animate-spin" /> : selectedItemDangerAction.label}
+                              {selectedItemDangerAction.loading ? (
+                                <Loader2 size={11} className="animate-spin" />
+                              ) : (
+                                selectedItemDangerAction.label
+                              )}
                             </button>
                           )}
                         </div>
@@ -2622,13 +2961,19 @@ export default function IntakeWindow() {
                                   : 'bg-[var(--ledger-accent)] text-white hover:bg-[var(--ledger-accent-hover)]'
                               }`}
                             >
-                              {selectedItemPrimaryLoading ? <Loader2 size={11} className="animate-spin" /> : selectedItemPrimaryAction.label}
+                              {selectedItemPrimaryLoading ? (
+                                <Loader2 size={11} className="animate-spin" />
+                              ) : (
+                                selectedItemPrimaryAction.label
+                              )}
                             </button>
                           )}
                         </div>
                       </div>
                     ) : (
-                      <div className="text-xs text-[var(--ledger-text-muted)]">Select an item to review.</div>
+                      <div className="text-xs text-[var(--ledger-text-muted)]">
+                        Select an item to review.
+                      </div>
                     )}
                   </div>
                 </aside>
@@ -2648,7 +2993,11 @@ export default function IntakeWindow() {
 }
 
 function MenuSectionLabel({ label }: { label: string }) {
-  return <div className="px-3 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--ledger-text-muted)]">{label}</div>;
+  return (
+    <div className="px-3 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--ledger-text-muted)]">
+      {label}
+    </div>
+  );
 }
 
 function MenuDivider() {
@@ -2717,7 +3066,9 @@ function InspectorRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-center justify-between gap-4 border-b border-[color:var(--ledger-border-subtle)] py-1.5 last:border-b-0">
       <span className="text-[12px] text-[var(--ledger-text-muted)]">{label}</span>
-      <span className="min-w-0 truncate text-[12px] text-[var(--ledger-text-secondary)]">{value}</span>
+      <span className="min-w-0 truncate text-[12px] text-[var(--ledger-text-secondary)]">
+        {value}
+      </span>
     </div>
   );
 }

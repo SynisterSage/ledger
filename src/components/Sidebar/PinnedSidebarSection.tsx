@@ -11,10 +11,7 @@ import {
   CheckSquare2,
   X,
 } from 'lucide-react';
-import {
-  useEffect,
-  useState,
-} from 'react';
+import { useEffect, useState } from 'react';
 import { useAuthContext } from '../../context/AuthContext';
 import { ContextMenu, type ContextMenuGroup } from '../Common/ContextMenu';
 import { useWorkspaceContext } from '../../context/WorkspaceContext';
@@ -22,20 +19,17 @@ import { usePins } from '../../context/PinsContext';
 import { sidebarTheme } from './sidebarTheme';
 import { getPinNavigationTarget, type PinRecord } from '../../utils/pins';
 
-type MenuState =
-  | {
-      type: 'pin';
-      x: number;
-      y: number;
-      pinId: string;
-    };
+type MenuState = {
+  type: 'pin';
+  x: number;
+  y: number;
+  pinId: string;
+};
 
-type DragState =
-  | {
-      kind: 'pin';
-      id: string;
-    }
-  | null;
+type DragState = {
+  kind: 'pin';
+  id: string;
+} | null;
 
 type DropHint =
   | {
@@ -123,13 +117,7 @@ const getPinnedTypeLabel = (pin: PinRecord) => {
 export const PinnedSidebarSection = () => {
   const { user } = useAuthContext();
   const { activeWorkspaceId } = useWorkspaceContext();
-  const {
-    pins,
-    activePinId,
-    isLoadingPins,
-    reorderPins,
-    unpinObject,
-  } = usePins();
+  const { pins, activePinId, isLoadingPins, reorderPins, unpinObject } = usePins();
 
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [menuState, setMenuState] = useState<MenuState | null>(null);
@@ -147,7 +135,9 @@ export const PinnedSidebarSection = () => {
     }
 
     try {
-      const raw = window.localStorage.getItem(`${PIN_SECTION_COLLAPSE_STORAGE_KEY}:${storageScope}`);
+      const raw = window.localStorage.getItem(
+        `${PIN_SECTION_COLLAPSE_STORAGE_KEY}:${storageScope}`
+      );
       setIsCollapsed(raw === '1');
     } catch {
       setIsCollapsed(false);
@@ -197,7 +187,10 @@ export const PinnedSidebarSection = () => {
     setIsCollapsed(nextValue);
     if (!storageScope) return;
     try {
-      window.localStorage.setItem(`${PIN_SECTION_COLLAPSE_STORAGE_KEY}:${storageScope}`, nextValue ? '1' : '0');
+      window.localStorage.setItem(
+        `${PIN_SECTION_COLLAPSE_STORAGE_KEY}:${storageScope}`,
+        nextValue ? '1' : '0'
+      );
     } catch {
       // ignore storage failures
     }
@@ -206,7 +199,10 @@ export const PinnedSidebarSection = () => {
   const openPin = (pin: PinRecord, openInNewWindow = false) => {
     const target = resolvePinTarget(pin);
     if (!target) return;
-    const openMethod = openInNewWindow || target.openInNewWindow ? window.desktopWindow?.openModule : window.desktopWindow?.toggleModule;
+    const openMethod =
+      openInNewWindow || target.openInNewWindow
+        ? window.desktopWindow?.openModule
+        : window.desktopWindow?.toggleModule;
     void openMethod?.(target.module as any, target.focus as any);
   };
 
@@ -253,25 +249,36 @@ export const PinnedSidebarSection = () => {
     const sourcePin = visiblePins.find((pin) => pin.id === draggedId);
     if (!sourcePin || !target) return;
 
-    const nextPins = visiblePins.filter((pin) => pin.id !== draggedId).map((pin) => ({
-      ...pin,
-      folder_id: null,
-    }));
+    const nextPins = visiblePins
+      .filter((pin) => pin.id !== draggedId)
+      .map((pin) => ({
+        ...pin,
+        folder_id: null,
+      }));
 
     if (target.kind === 'pin') {
       const targetPin = visiblePins.find((pin) => pin.id === target.pinId);
       if (!targetPin) return;
       const targetIndex = nextPins.findIndex((pin) => pin.id === target.pinId);
       const insertIndex = target.position === 'before' ? targetIndex : targetIndex + 1;
-      nextPins.splice(insertIndex < 0 ? nextPins.length : insertIndex, 0, { ...sourcePin, folder_id: null });
+      nextPins.splice(insertIndex < 0 ? nextPins.length : insertIndex, 0, {
+        ...sourcePin,
+        folder_id: null,
+      });
     } else {
       nextPins.push({ ...sourcePin, folder_id: null });
     }
 
-    const flattened = nextPins.map((pin, index) => ({ ...pin, sort_order: index, folder_id: null }));
+    const flattened = nextPins.map((pin, index) => ({
+      ...pin,
+      sort_order: index,
+      folder_id: null,
+    }));
     setOptimisticPins(flattened);
     try {
-      await reorderPins(flattened.map((pin, index) => ({ id: pin.id, folder_id: null, sort_order: index })));
+      await reorderPins(
+        flattened.map((pin, index) => ({ id: pin.id, folder_id: null, sort_order: index }))
+      );
     } finally {
       setOptimisticPins(null);
     }
@@ -285,12 +292,16 @@ export const PinnedSidebarSection = () => {
   const renderPinRow = (pin: PinRecord) => {
     const isActive = activePinId === pin.id;
     const isDragging = dragState?.kind === 'pin' && dragState.id === pin.id;
-    const showBefore = dropHint?.kind === 'pin' && dropHint.pinId === pin.id && dropHint.position === 'before';
-    const showAfter = dropHint?.kind === 'pin' && dropHint.pinId === pin.id && dropHint.position === 'after';
+    const showBefore =
+      dropHint?.kind === 'pin' && dropHint.pinId === pin.id && dropHint.position === 'before';
+    const showAfter =
+      dropHint?.kind === 'pin' && dropHint.pinId === pin.id && dropHint.position === 'after';
 
     return (
       <div key={pin.id} className="relative">
-        {showBefore && <div className="absolute -top-0.5 left-2 right-2 h-px bg-[var(--ledger-accent)]" />}
+        {showBefore && (
+          <div className="absolute -top-0.5 left-2 right-2 h-px bg-[var(--ledger-accent)]" />
+        )}
         <button
           type="button"
           draggable
@@ -313,7 +324,10 @@ export const PinnedSidebarSection = () => {
             event.preventDefault();
             const draggedId = event.dataTransfer.getData('text/plain') || dragState?.id;
             if (draggedId && draggedId !== pin.id) {
-              void handlePinReorder(draggedId, dropHint ?? { kind: 'pin', pinId: pin.id, position: 'after' });
+              void handlePinReorder(
+                draggedId,
+                dropHint ?? { kind: 'pin', pinId: pin.id, position: 'after' }
+              );
             }
             setDragState(null);
             setDropHint(null);
@@ -328,9 +342,13 @@ export const PinnedSidebarSection = () => {
           className={pinRowClass(isActive, isDragging)}
           title={`${getPinnedTypeLabel(pin)} ${pin.title}`}
         >
-          <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] text-[var(--ledger-text-secondary)]">
-            {getPinIcon(pin)}
-          </span>
+          {pin.icon_kind === 'person' ? (
+            getPinIcon(pin)
+          ) : (
+            <span className="flex h-5 w-5 shrink-0 items-center justify-center text-[var(--ledger-text-secondary)]">
+              {getPinIcon(pin)}
+            </span>
+          )}
           <span className="min-w-0 truncate text-[13px] text-[var(--ledger-text-primary)]">
             {pin.title}
           </span>
@@ -350,7 +368,9 @@ export const PinnedSidebarSection = () => {
             </button>
           </span>
         </button>
-        {showAfter && <div className="absolute -bottom-0.5 left-2 right-2 h-px bg-[var(--ledger-accent)]" />}
+        {showAfter && (
+          <div className="absolute -bottom-0.5 left-2 right-2 h-px bg-[var(--ledger-accent)]" />
+        )}
       </div>
     );
   };
@@ -374,12 +394,16 @@ export const PinnedSidebarSection = () => {
           <span className="truncate">Pinned</span>
           <ChevronDown
             size={12}
-            className={`shrink-0 text-[var(--ledger-text-muted)] transition-transform ${isCollapsed ? 'rotate-180' : ''}`}
+            className={`shrink-0 text-[var(--ledger-text-muted)] transition-transform ${
+              isCollapsed ? 'rotate-180' : ''
+            }`}
           />
         </span>
         <span className="flex items-center gap-1">
           {totalCount > 0 && (
-            <span className="shrink-0 text-[11px] text-[var(--ledger-text-muted)]">{totalCount}</span>
+            <span className="shrink-0 text-[11px] text-[var(--ledger-text-muted)]">
+              {totalCount}
+            </span>
           )}
         </span>
       </div>

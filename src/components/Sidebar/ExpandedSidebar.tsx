@@ -36,9 +36,7 @@ import { useSidebar } from '../../context/SidebarContext';
 import { useSearch } from '../../context/SearchContext';
 import { useApi } from '../../hooks/useApi';
 import { useWorkspaceRealtimeRefresh } from '../../hooks/useWorkspaceRealtimeRefresh';
-import { SkeletonList } from '../Common/Skeleton';
 import { WorkspaceSwitcherMenu } from '../Common/WorkspaceSwitcherMenu';
-import { SkeletonCompactRow } from '../Common/Skeleton';
 import { PinnedSidebarSection } from './PinnedSidebarSection';
 import { sidebarTheme } from './sidebarTheme';
 import { getProjectTypeOption } from '../../utils/projectTypes';
@@ -148,6 +146,18 @@ type SidebarTeamRoute = {
   teamId: string;
   kind: MyTeamRouteKind;
 } | null;
+
+const ExpandedSidebarSkeletonRows = ({ count = 3 }: { count?: number }) => (
+  <div className="space-y-0.5" aria-hidden="true">
+    {Array.from({ length: count }).map((_, index) => (
+      <div key={index} className="flex h-8 w-full items-center gap-2 rounded-lg px-2 animate-pulse">
+        <span className="h-4 w-4 shrink-0 rounded bg-[var(--ledger-surface-muted)]" />
+        <span className="h-3 w-3/5 rounded bg-[var(--ledger-surface-muted)]" />
+        <span className="ml-auto h-2.5 w-10 rounded bg-[var(--ledger-surface-muted)]" />
+      </div>
+    ))}
+  </div>
+);
 
 const formatTodayTaskWorkspace = (item: {
   workspace_name?: string | null;
@@ -401,7 +411,7 @@ export const ExpandedSidebar = ({
   const autoExpireTodayTaskIdsRef = useRef<Set<string>>(new Set());
   const TODAY_COLLAPSE_STORAGE_KEY = 'ledger:sidebar:today-collapsed:v1';
   const CHECKIN_COLLAPSE_STORAGE_KEY = 'ledger:sidebar:checkin-collapsed:v1';
-  const PROJECTS_COLLAPSE_STORAGE_KEY = 'ledger:sidebar:projects-collapsed:v1';
+  const PROJECTS_COLLAPSE_STORAGE_KEY = 'ledger:sidebar:projects-collapsed:v3';
   const EVENTS_COLLAPSE_STORAGE_KEY = 'ledger:sidebar:events-collapsed:v1';
   const WORKSPACE_SECTION_COLLAPSE_STORAGE_KEY = 'ledger:sidebar:workspace-section-collapsed:v1';
   const MY_TEAMS_COLLAPSE_STORAGE_KEY = 'ledger:sidebar:my-teams-collapsed:v1';
@@ -421,7 +431,7 @@ export const ExpandedSidebar = ({
     loadCollapsedPreference(TODAY_COLLAPSE_STORAGE_KEY)
   );
   const [projectsCollapsed, setProjectsCollapsed] = useState<boolean>(() =>
-    loadCollapsedPreference(PROJECTS_COLLAPSE_STORAGE_KEY, false)
+    loadCollapsedPreference(PROJECTS_COLLAPSE_STORAGE_KEY, true)
   );
   const [workspaceSectionCollapsed, setWorkspaceSectionCollapsed] = useState(false);
   const [completedTodayExpanded, setCompletedTodayExpanded] = useState(false);
@@ -457,7 +467,7 @@ export const ExpandedSidebar = ({
   useEffect(() => {
     const timer = window.setInterval(() => {
       setTryRotationTick((current) => current + 1);
-    }, 1000 * 60 * 30);
+    }, 1000 * 60);
 
     return () => window.clearInterval(timer);
   }, []);
@@ -2276,22 +2286,39 @@ export const ExpandedSidebar = ({
     {
       title: 'Try project roadmap',
       icon: FolderKanban,
-      action: () => window.desktopWindow?.toggleModule('projects'),
+      action: () =>
+        window.desktopWindow?.openModule('projects', {
+          kind: 'projects',
+          focusSection: 'timeline:all',
+        }),
     },
     {
       title: 'Invite a member',
       icon: UserPlus,
-      action: () => openSettingsSection('workspace'),
+      action: () =>
+        window.desktopWindow?.openModule('teams', {
+          kind: 'teams',
+          focusContext: 'try:invite-member',
+        }),
     },
     {
       title: 'Add a milestone',
       icon: Milestone,
-      action: () => window.desktopWindow?.toggleModule('projects'),
+      action: () =>
+        window.desktopWindow?.openModule('projects', {
+          kind: 'projects',
+          focusSection: 'timeline:all',
+          focusContext: 'try:add-milestone',
+        }),
     },
     {
       title: 'Review unfinished',
       icon: CheckSquare2,
-      action: () => window.desktopWindow?.toggleModule('dashboard'),
+      action: () =>
+        window.desktopWindow?.openModule('dashboard', {
+          kind: 'dashboard',
+          focusSection: 'today',
+        }),
     },
     {
       title: 'Install browser extension',
@@ -2301,22 +2328,62 @@ export const ExpandedSidebar = ({
     {
       title: 'Create a meeting note',
       icon: FileText,
-      action: () => window.desktopWindow?.toggleModule('quick-note' as any),
+      action: () => window.desktopWindow?.openModule('quick-note', { kind: 'quick-note' }),
     },
     {
       title: 'Link a note to a project',
       icon: Link2,
-      action: () => window.desktopWindow?.toggleModule('projects'),
+      action: () =>
+        window.desktopWindow?.openModule('projects', {
+          kind: 'projects',
+          focusSection: 'timeline:all',
+        }),
     },
     {
       title: 'Try long-term tasks',
       icon: Check,
-      action: () => window.desktopWindow?.toggleModule('quick-task' as any),
+      action: () => window.desktopWindow?.openModule('quick-task', { kind: 'quick-task' }),
     },
     {
       title: 'Set up shortcuts',
       icon: Keyboard,
       action: () => openSettingsSection('shortcuts'),
+    },
+    {
+      title: 'Try a note template',
+      icon: FileText,
+      action: () =>
+        window.desktopWindow?.openModule('notes', {
+          kind: 'notes',
+          focusContext: 'try:template',
+        }),
+    },
+    {
+      title: 'Review Intake',
+      icon: Funnel,
+      action: () =>
+        window.desktopWindow?.openModule('inbox', {
+          kind: 'inbox',
+          focusSection: 'unprocessed',
+        }),
+    },
+    {
+      title: 'Open Circle',
+      icon: CircleUserRound,
+      action: () =>
+        window.desktopWindow?.openModule('circle', {
+          kind: 'circle',
+          focusContext: 'overview',
+        }),
+    },
+    {
+      title: 'Create a team meeting note',
+      icon: Users,
+      action: () =>
+        window.desktopWindow?.openModule('notes', {
+          kind: 'notes',
+          focusContext: 'try:team-meeting-template',
+        }),
     },
   ];
   const trySectionRotationSeed = Number(todayKey().replace(/-/g, '')) + tryRotationTick;
@@ -2814,7 +2881,7 @@ export const ExpandedSidebar = ({
                 </div>
                 <div className="space-y-0.5">
                   {isLoadingWorkspaceTasks && visibleWorkspaceTasks.length === 0 ? (
-                    <SkeletonList />
+                    <ExpandedSidebarSkeletonRows />
                   ) : visibleWorkspaceTasks.length > 0 ? (
                     <>
                       {visibleWorkspaceTasks.map((task) => (
@@ -2958,7 +3025,7 @@ export const ExpandedSidebar = ({
               {!todayCollapsed && (
                 <div className="space-y-0.5 pl-1">
                   {isLoadingToday && todayItems.length === 0 && completedToday.length === 0 ? (
-                    <SkeletonList />
+                    <ExpandedSidebarSkeletonRows />
                   ) : (
                     <>
                       {visibleTodayItems.length > 0 ? (
@@ -3620,7 +3687,7 @@ export const ExpandedSidebar = ({
               {!projectsCollapsed && (
                 <div className="space-y-1">
                   {isLoadingProjects ? (
-                    <SkeletonList count={2} />
+                    <ExpandedSidebarSkeletonRows count={2} />
                   ) : projects.length === 0 ? (
                     <p className="px-0.5 text-xs text-[var(--ledger-text-muted)]">
                       No active projects
@@ -3804,8 +3871,7 @@ export const ExpandedSidebar = ({
                 <div className="space-y-1.5 pl-1">
                   {isLoadingMyTeams && visibleMyTeams.length === 0 ? (
                     <div className="space-y-1.5">
-                      <SkeletonCompactRow />
-                      <SkeletonCompactRow />
+                      <ExpandedSidebarSkeletonRows count={2} />
                     </div>
                   ) : (
                     visibleMyTeams.map((team) => {
@@ -3836,7 +3902,7 @@ export const ExpandedSidebar = ({
                               className="flex min-w-0 flex-1 items-center gap-2 rounded-lg text-left text-[12px] font-medium text-[var(--ledger-text-secondary)] transition hover:text-[var(--ledger-text-primary)]"
                             >
                               <span
-                                className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[8px] font-semibold leading-none text-white"
+                                className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[9px] font-semibold leading-none text-white"
                                 style={{ backgroundColor: team.color || 'var(--ledger-accent)' }}
                               >
                                 {getSidebarTeamInitials(team)}

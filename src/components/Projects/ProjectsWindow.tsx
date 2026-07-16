@@ -53,6 +53,7 @@ import {
   ModuleHeaderStripAction,
   ModuleWindowHeader,
 } from '../Common/ModuleWindowHeader';
+import { ContextMenu } from '../Common/ContextMenu';
 import { CloseGuardModal } from '../Common/CloseGuardModal';
 import { ModalCloseButton } from '../Common/ModalCloseButton';
 import { SkeletonCompactRow, SkeletonProjectCard } from '../Common/Skeleton';
@@ -134,6 +135,7 @@ type ProjectSemanticStatus = 'not_started' | 'in_progress' | 'paused' | 'complet
 type ProjectTab = 'overview' | 'actions' | 'notes' | 'calendar' | 'activity';
 type ProjectsOverviewView = 'timeline' | 'list';
 type ProjectsOverviewRange = 'month' | 'quarter' | 'all';
+type ProjectsHeaderDensity = 'wide' | 'medium' | 'compact';
 type ProjectDocumentSectionId = 'milestones' | 'nextActions' | 'notes' | 'calendar' | 'activity';
 type ProjectDocumentGroupId =
   | 'actions'
@@ -564,6 +566,7 @@ export const ProjectsWindow = () => {
     new URLSearchParams(window.location.search).get('section')?.trim() ?? '';
   const initialFocusHandledRef = useRef(false);
   const initialTeamFocusHandledRef = useRef(false);
+  const initialTryActionHandledRef = useRef(false);
   const initialFocusTaskId = new URLSearchParams(window.location.search).get('focusTaskId');
   const initialFocusContext =
     new URLSearchParams(window.location.search).get('focusContext')?.trim() ?? '';
@@ -770,6 +773,31 @@ export const ProjectsWindow = () => {
   const pendingMilestonePlacementRef = useRef(false);
   const areSidePanelsCollapsed = isLeftPaneCollapsed && isRightPaneCollapsed;
   const taskTitleInputRef = useRef<HTMLInputElement | null>(null);
+  const projectsHeaderRef = useRef<HTMLDivElement | null>(null);
+  const viewMenuButtonRef = useRef<HTMLButtonElement | null>(null);
+  const overflowMenuButtonRef = useRef<HTMLButtonElement | null>(null);
+  const [projectsHeaderWidth, setProjectsHeaderWidth] = useState(() => viewportWidth);
+  const [projectsHeaderMenu, setProjectsHeaderMenu] = useState<{
+    kind: 'view' | 'overflow';
+    x: number;
+    y: number;
+  } | null>(null);
+
+  useEffect(() => {
+    const header = projectsHeaderRef.current;
+    if (!header) return;
+
+    const updateWidth = () =>
+      setProjectsHeaderWidth(Math.round(header.getBoundingClientRect().width));
+    updateWidth();
+
+    const observer = new ResizeObserver(updateWidth);
+    observer.observe(header);
+    return () => observer.disconnect();
+  }, []);
+
+  const projectsHeaderDensity: ProjectsHeaderDensity =
+    projectsHeaderWidth >= 1250 ? 'wide' : projectsHeaderWidth >= 980 ? 'medium' : 'compact';
 
   const handleWorkspaceRefresh = useCallback(() => {
     setWorkspaceRefreshToken((current) => current + 1);
@@ -2625,6 +2653,29 @@ export const ProjectsWindow = () => {
     selectProjectsTimeline,
     selectedProjectId,
   ]);
+
+  useEffect(() => {
+    if (initialTryActionHandledRef.current) return;
+    if (initialFocusContext !== 'try:add-milestone') return;
+
+    initialTryActionHandledRef.current = true;
+    startMilestonePlacement();
+  }, [initialFocusContext, startMilestonePlacement]);
+
+  useEffect(() => {
+    const handleTryAction = (
+      _event: unknown,
+      payload: { kind?: string; focusContext?: string | null }
+    ) => {
+      if (payload?.kind !== 'projects' || payload.focusContext !== 'try:add-milestone') return;
+      startMilestonePlacement();
+    };
+
+    window.ipcRenderer?.on('module:focus-context', handleTryAction as any);
+    return () => {
+      window.ipcRenderer?.off('module:focus-context', handleTryAction as any);
+    };
+  }, [startMilestonePlacement]);
 
   const handleAddMilestoneAtDate = useCallback(
     (date: string | null, position?: { x: number; y: number }) => {
@@ -5770,6 +5821,20 @@ export const ProjectsWindow = () => {
   }, [isSavingProject, isSavingTaskNotes]);
   const showRightPane = !selectedProjectId && !isRightPaneCollapsed;
   const showCollapsedRightPane = !selectedProjectId && isRightPaneCollapsed;
+  const projectsViewLabel = projectsOverviewView === 'timeline' ? 'Roadmap' : 'List';
+  const projectsRangeLabel =
+    projectsOverviewRange === 'all'
+      ? ''
+      : projectsOverviewRange[0].toUpperCase() + projectsOverviewRange.slice(1);
+  const projectsCompactViewLabel = selectedProjectId
+    ? 'Roadmap'
+    : [projectsViewLabel, projectsRangeLabel].filter(Boolean).join(' · ');
+
+  const openProjectsHeaderMenu = (kind: 'view' | 'overflow', button: HTMLElement | null) => {
+    if (!button) return;
+    const rect = button.getBoundingClientRect();
+    setProjectsHeaderMenu({ kind, x: rect.left, y: rect.bottom + 4 });
+  };
 
   return (
     <div
@@ -5795,6 +5860,7 @@ export const ProjectsWindow = () => {
         }}
       />
       <ModuleWindowHeader
+        headerRef={projectsHeaderRef}
         title="Projects"
         subtitle="Outcomes, notes, and next actions in one place."
         icon={<Folder size={18} className="text-[#FF5F40]" />}
@@ -5808,7 +5874,8 @@ export const ProjectsWindow = () => {
           void window.desktopWindow?.toggleModuleFullscreen('projects');
         }}
         onClose={attemptCloseProjects}
-        showPanelToggle
+        showPanelToggle={projectsHeaderDensity !== 'compact'}
+        showHistoryControl={projectsHeaderDensity !== 'compact'}
         panelToggleLabel={areSidePanelsCollapsed ? 'Show panels' : 'Hide panels'}
         onTogglePanels={() => {
           if (areSidePanelsCollapsed) {
@@ -5821,16 +5888,18 @@ export const ProjectsWindow = () => {
         }}
         compact
         showBodyHeader={false}
-        stripTitle="Projects roadmap"
+        stripTitle="Projects"
         globalActions={
           <>
-            <ModuleHeaderStripAction
-              icon={<Inbox size={12} />}
-              count={inboxCount}
-              onClick={() => window.desktopWindow?.toggleModule('inbox')}
-              title="Open Intake"
-              ariaLabel="Open Intake"
-            />
+            {projectsHeaderDensity !== 'compact' && (
+              <ModuleHeaderStripAction
+                icon={<Inbox size={12} />}
+                count={inboxCount}
+                onClick={() => window.desktopWindow?.toggleModule('inbox')}
+                title="Open Intake"
+                ariaLabel="Open Intake"
+              />
+            )}
             <ModuleHeaderStripAction
               icon={<Bell size={12} />}
               count={notificationCount}
@@ -5842,8 +5911,7 @@ export const ProjectsWindow = () => {
         }
         primaryActions={
           <div className="flex items-center gap-2">
-            <button
-              type="button"
+            <ModuleHeaderActionButton
               onClick={() => {
                 if (isCreatingProject) {
                   closeCreateProjectComposer();
@@ -5853,98 +5921,229 @@ export const ProjectsWindow = () => {
               }}
               title={isCreatingProject ? 'Cancel new project' : 'Create a new project'}
               aria-label={isCreatingProject ? 'Cancel new project' : 'Create a new project'}
-              className="inline-flex h-8 items-center gap-1.5 rounded-full bg-[var(--ledger-accent)] px-3 text-xs font-medium text-white transition hover:bg-[var(--ledger-accent-hover)]"
-            >
-              {isCreatingProject ? <X size={12} /> : <Plus size={12} />}
-              <span>{isCreatingProject ? 'Cancel' : 'New'}</span>
-            </button>
-            <ModuleHeaderActionButton
-              onClick={startMilestonePlacement}
-              title={
-                isMilestonePlacementActive ? 'Cancel milestone placement' : 'Place a milestone'
-              }
-              ariaLabel={
-                isMilestonePlacementActive ? 'Cancel milestone placement' : 'Place a milestone'
-              }
-              icon={
-                isMilestonePlacementActive || pendingMilestone ? (
-                  <X size={12} />
-                ) : (
-                  <Flag size={12} />
-                )
-              }
-              iconOnly
-              square
+              icon={isCreatingProject ? <X size={12} /> : <Plus size={12} />}
               variant="strip"
             >
-              {null}
+              <span>{isCreatingProject ? 'Cancel' : 'New'}</span>
             </ModuleHeaderActionButton>
-          </div>
-        }
-        viewControls={
-          <div className="flex items-center gap-1.5">
-            {selectedProjectId ? (
-              <ModuleHeaderSegmentedGroup compact>
-                <ModuleHeaderSegmentedButton
-                  compact
-                  title="Return to roadmap"
-                  onClick={() => void selectProjectsTimeline()}
-                  active={false}
-                >
-                  Roadmap
-                </ModuleHeaderSegmentedButton>
-              </ModuleHeaderSegmentedGroup>
-            ) : (
-              <>
-                <ModuleHeaderSegmentedGroup compact>
-                  {[
-                    { id: 'timeline', label: 'Roadmap' },
-                    { id: 'list', label: 'List' },
-                  ].map((option) => (
-                    <ModuleHeaderSegmentedButton
-                      compact
-                      key={option.id}
-                      title={`Switch to ${option.label.toLowerCase()} view`}
-                      onClick={() =>
-                        option.id === 'timeline'
-                          ? void selectProjectsTimeline()
-                          : setProjectsOverviewView(option.id as ProjectsOverviewView)
-                      }
-                      active={projectsOverviewView === option.id}
-                    >
-                      {option.label}
-                    </ModuleHeaderSegmentedButton>
-                  ))}
-                </ModuleHeaderSegmentedGroup>
-                <ModuleHeaderSegmentedGroup compact>
-                  {[
-                    { id: 'month', label: 'Month' },
-                    { id: 'quarter', label: 'Quarter' },
-                    { id: 'all', label: 'All' },
-                  ].map((option) => (
-                    <ModuleHeaderSegmentedButton
-                      compact
-                      key={option.id}
-                      title={`Switch to ${option.label.toLowerCase()} range`}
-                      onClick={() => setProjectsOverviewRange(option.id as ProjectsOverviewRange)}
-                      active={projectsOverviewRange === option.id}
-                    >
-                      {option.label}
-                    </ModuleHeaderSegmentedButton>
-                  ))}
-                </ModuleHeaderSegmentedGroup>
-              </>
+            {projectsHeaderDensity === 'wide' && (
+              <ModuleHeaderActionButton
+                onClick={startMilestonePlacement}
+                title={
+                  isMilestonePlacementActive ? 'Cancel milestone placement' : 'Place a milestone'
+                }
+                ariaLabel={
+                  isMilestonePlacementActive ? 'Cancel milestone placement' : 'Place a milestone'
+                }
+                icon={
+                  isMilestonePlacementActive || pendingMilestone ? (
+                    <X size={12} />
+                  ) : (
+                    <Flag size={12} />
+                  )
+                }
+                iconOnly
+                square
+                variant="strip"
+              >
+                {null}
+              </ModuleHeaderActionButton>
             )}
           </div>
         }
+        viewControls={
+          projectsHeaderDensity === 'wide' ? (
+            <div className="flex items-center gap-1.5">
+              {selectedProjectId ? (
+                <ModuleHeaderSegmentedGroup compact>
+                  <ModuleHeaderSegmentedButton
+                    compact
+                    title="Return to roadmap"
+                    onClick={() => void selectProjectsTimeline()}
+                    active={false}
+                  >
+                    Roadmap
+                  </ModuleHeaderSegmentedButton>
+                </ModuleHeaderSegmentedGroup>
+              ) : (
+                <>
+                  <ModuleHeaderSegmentedGroup compact>
+                    {[
+                      { id: 'timeline', label: 'Roadmap' },
+                      { id: 'list', label: 'List' },
+                    ].map((option) => (
+                      <ModuleHeaderSegmentedButton
+                        compact
+                        key={option.id}
+                        title={`Switch to ${option.label.toLowerCase()} view`}
+                        onClick={() =>
+                          option.id === 'timeline'
+                            ? void selectProjectsTimeline()
+                            : setProjectsOverviewView(option.id as ProjectsOverviewView)
+                        }
+                        active={projectsOverviewView === option.id}
+                      >
+                        {option.label}
+                      </ModuleHeaderSegmentedButton>
+                    ))}
+                  </ModuleHeaderSegmentedGroup>
+                  <ModuleHeaderSegmentedGroup compact>
+                    {[
+                      { id: 'month', label: 'Month' },
+                      { id: 'quarter', label: 'Quarter' },
+                      { id: 'all', label: 'All' },
+                    ].map((option) => (
+                      <ModuleHeaderSegmentedButton
+                        compact
+                        key={option.id}
+                        title={`Switch to ${option.label.toLowerCase()} range`}
+                        onClick={() => setProjectsOverviewRange(option.id as ProjectsOverviewRange)}
+                        active={projectsOverviewRange === option.id}
+                      >
+                        {option.label}
+                      </ModuleHeaderSegmentedButton>
+                    ))}
+                  </ModuleHeaderSegmentedGroup>
+                </>
+              )}
+            </div>
+          ) : selectedProjectId ? (
+            <button
+              type="button"
+              onClick={() => void selectProjectsTimeline()}
+              className="inline-flex h-7 items-center gap-1 rounded-md px-1.5 text-[12px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-accent)]/20"
+              aria-label="Return to Projects roadmap"
+            >
+              Roadmap
+              <ChevronDown size={12} aria-hidden="true" />
+            </button>
+          ) : (
+            <button
+              type="button"
+              ref={(element) => {
+                viewMenuButtonRef.current = element;
+              }}
+              onClick={() => openProjectsHeaderMenu('view', viewMenuButtonRef.current)}
+              className="inline-flex h-7 items-center gap-1 rounded-md px-1.5 text-[12px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-accent)]/20"
+              aria-haspopup="menu"
+              aria-expanded={projectsHeaderMenu?.kind === 'view'}
+              aria-label={`Project view: ${projectsCompactViewLabel}`}
+            >
+              {projectsCompactViewLabel}
+              <ChevronDown size={12} aria-hidden="true" />
+            </button>
+          )
+        }
+        secondaryActions={
+          projectsHeaderDensity === 'wide' ? null : (
+            <button
+              type="button"
+              ref={(element) => {
+                overflowMenuButtonRef.current = element;
+              }}
+              onClick={() => openProjectsHeaderMenu('overflow', overflowMenuButtonRef.current)}
+              className="inline-flex h-7 w-7 items-center justify-center rounded-md text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-accent)]/20"
+              aria-haspopup="menu"
+              aria-expanded={projectsHeaderMenu?.kind === 'overflow'}
+              aria-label="More project actions"
+              title="More project actions"
+            >
+              <MoreHorizontal size={14} />
+            </button>
+          )
+        }
         syncStatus={
-          <ModuleHeaderStatus
-            label=""
-            state={isLoadingProjects ? 'syncing' : 'synced'}
-            onClick={() => void loadProjects()}
-            title="Refresh projects"
-            ariaLabel="Refresh projects"
-          />
+          projectsHeaderDensity === 'wide' ? (
+            <ModuleHeaderStatus
+              label=""
+              state={isLoadingProjects ? 'syncing' : 'synced'}
+              onClick={() => void loadProjects()}
+              title="Refresh projects"
+              ariaLabel="Refresh projects"
+            />
+          ) : null
+        }
+      />
+
+      <ContextMenu
+        open={Boolean(projectsHeaderMenu)}
+        x={projectsHeaderMenu?.x ?? 0}
+        y={projectsHeaderMenu?.y ?? 0}
+        width={210}
+        onClose={() => setProjectsHeaderMenu(null)}
+        ariaLabel={projectsHeaderMenu?.kind === 'view' ? 'Project view options' : 'Project actions'}
+        groups={
+          projectsHeaderMenu?.kind === 'view'
+            ? [
+                {
+                  label: 'View',
+                  items: [
+                    ...(projectsHeaderDensity === 'compact'
+                      ? [
+                          {
+                            id: 'open-intake',
+                            label: 'Open Intake',
+                            icon: <Inbox size={13} />,
+                            onClick: () => window.desktopWindow?.toggleModule('inbox'),
+                          },
+                        ]
+                      : []),
+                    {
+                      id: 'roadmap',
+                      label: 'Roadmap',
+                      onClick: () => void selectProjectsTimeline(),
+                    },
+                    {
+                      id: 'list',
+                      label: 'List',
+                      onClick: () => setProjectsOverviewView('list'),
+                    },
+                  ],
+                },
+                {
+                  label: 'Time range',
+                  items: [
+                    {
+                      id: 'month',
+                      label: 'Month',
+                      onClick: () => setProjectsOverviewRange('month'),
+                    },
+                    {
+                      id: 'quarter',
+                      label: 'Quarter',
+                      onClick: () => setProjectsOverviewRange('quarter'),
+                    },
+                    {
+                      id: 'all',
+                      label: 'All',
+                      onClick: () => setProjectsOverviewRange('all'),
+                    },
+                  ],
+                },
+              ]
+            : [
+                {
+                  items: [
+                    {
+                      id: 'place-milestone',
+                      label: isMilestonePlacementActive
+                        ? 'Cancel milestone placement'
+                        : 'Place milestone',
+                      icon: <Flag size={13} />,
+                      onClick: startMilestonePlacement,
+                    },
+                    {
+                      id: 'refresh-projects',
+                      label: isLoadingProjects ? 'Refreshing projects…' : 'Refresh projects',
+                      icon: (
+                        <Loader2 size={13} className={isLoadingProjects ? 'animate-spin' : ''} />
+                      ),
+                      disabled: isLoadingProjects,
+                      onClick: () => void loadProjects(),
+                    },
+                  ],
+                },
+              ]
         }
       />
 

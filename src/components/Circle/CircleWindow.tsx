@@ -25,6 +25,7 @@ import {
 import { ModuleHeaderActionButton, ModuleHeaderSegmentedButton, ModuleHeaderSegmentedGroup, ModuleWindowHeader } from '../Common/ModuleWindowHeader';
 import { PinActionButton } from '../Common/PinActionButton';
 import { useApi } from '../../hooks/useApi';
+import { useSidebar } from '../../context/SidebarContext';
 import { useWorkspaceContext } from '../../context/WorkspaceContext';
 import { useWorkspaceRealtimeRefresh } from '../../hooks/useWorkspaceRealtimeRefresh';
 
@@ -502,6 +503,7 @@ const buildPersonContext = (person: CirclePersonSummary) =>
 
 export const CircleWindow = ({ focusContext }: { focusContext?: string | null } = {}) => {
   const api = useApi();
+  const { workspaceShellLayout } = useSidebar();
   const { activeWorkspaceId, activeWorkspace } = useWorkspaceContext();
 
   const [people, setPeople] = useState<CirclePersonSummary[]>([]);
@@ -1400,7 +1402,7 @@ export const CircleWindow = ({ focusContext }: { focusContext?: string | null } 
   const selectedTeamValue = filters.teamId ?? 'all';
 
   return (
-    <div className={circleTheme.shell}>
+    <div className={circleTheme.shell} style={workspaceShellLayout.workspaceShellStyle}>
       <ModuleWindowHeader
         title="Circle"
         subtitle="People, shared work, and what is waiting on whom."
